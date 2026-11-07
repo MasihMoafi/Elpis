@@ -4,11 +4,21 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
+const { homedir } = require('node:os');
 const { createRequire } = require('node:module');
 const ts = require('typescript');
 const { closeNeedsConfirmation } = require('../desktop/preferences.cts');
 
 const root = path.resolve(__dirname, '..');
+test('the history shortcut remains a generated copy of its shared source', () => {
+  const file = fs.readFileSync(path.join(root, 'lib/history-shortcut.ts'), 'utf8');
+  const end = file.indexOf('\n'), header = file.slice(0, end), body = file.slice(end + 1);
+  assert.match(header, /sha256=[0-9a-f]{64}$/);
+  assert.equal(createHash('sha256').update(body).digest('hex'), header.slice(-64));
+  const source = path.join(homedir(), 'Desktop/p/skills/web-dev/behavior/history-shortcut.ts');
+  if (fs.existsSync(source)) assert.equal(body, fs.readFileSync(source, 'utf8'), 'run behavior/sync.mjs --write');
+});
 function loader() {
   const cache = new Map();
   const load = file => {
@@ -104,6 +114,66 @@ test('custom app shortcuts replace defaults, disable, reset and reload without c
   assert.equal(shortcuts.shortcutFor(custom, false), null);
   assert.equal(shortcuts.keyCombination(press('{', 'BracketLeft', { ctrlKey: true, shiftKey: true })), 'Ctrl+Shift+[');
   assert.equal(shortcuts.keyCombination(press('Control', 'ControlLeft', { ctrlKey: true })), null);
+});
+
+test('focused text keeps native undo and redo even when app bindings conflict', () => {
+  browser(); const use = loader();
+  const preferences = use('lib/preferences.ts'), shortcuts = use('lib/shortcuts.ts');
+  const press = (key, code, modifiers = {}) => ({ key, code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
+  preferences.savePreferences({ shortcutBindings: JSON.stringify({ archive: 'Ctrl+Z', settings: 'Ctrl+Shift+Z', 'new-chat': 'Ctrl+Y', rename: 'Ctrl+Alt+Y' }) });
+  for (const event of [
+    press('z', 'KeyZ', { ctrlKey: true }),
+    press('Z', 'KeyZ', { ctrlKey: true, shiftKey: true }),
+    press('y', 'KeyY', { ctrlKey: true }),
+    press('ظ', 'KeyZ', { ctrlKey: true }),
+    press('ظ', 'KeyZ', { ctrlKey: true, shiftKey: true }),
+    press('\u0652', 'KeyZ', { ctrlKey: true, shiftKey: true }),
+    press('~', 'KeyZ', { ctrlKey: true, shiftKey: true }),
+    press('غ', 'KeyY', { ctrlKey: true }),
+  ]) assert.equal(shortcuts.shortcutFor(event, true), null, 'the focused editor owns undo and redo');
+  assert.deepEqual(shortcuts.shortcutFor(press('y', 'KeyY', { ctrlKey: true }), false), { id: 'new-chat' });
+  assert.deepEqual(shortcuts.shortcutFor(press('y', 'KeyY', { ctrlKey: true }), true, 'none'), { id: 'new-chat' }, 'a checkbox is not a text editor');
+  assert.deepEqual(shortcuts.shortcutFor(press('y', 'KeyY', { ctrlKey: true }), true, 'read-only'), { id: 'new-chat' }, 'a read-only field cannot undo an edit');
+  assert.deepEqual(shortcuts.shortcutFor(press('y', 'KeyY', { ctrlKey: true, altKey: true }), true), { id: 'rename' });
+  assert.equal(shortcuts.shortcutFor({ ...press('z', 'KeyZ', { ctrlKey: true }), defaultPrevented: true }, false), null, 'a focused component already handled the key');
+  assert.equal(shortcuts.shortcutFor({ ...press('z', 'KeyZ', { ctrlKey: true }), isComposing: true }, false), null, 'an input method owns unfinished composition');
+  preferences.savePreferences({ shortcutBindings: '{}' });
+  assert.deepEqual(shortcuts.shortcutFor(press('ظ', 'KeyZ', { ctrlKey: true }), false), { id: 'undo-delete' });
+});
+
+test('shortcut search preserves native text keys across keyboard layouts', () => {
+  browser(); const use = loader();
+  const preferences = use('lib/preferences.ts'), shortcuts = use('lib/shortcuts.ts');
+  const press = (key, code, modifiers = {}) => ({ key, code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
+  const ctrl = { ctrlKey: true };
+  for (const event of [press('z', 'KeyZ', ctrl), press('Z', 'KeyZ', { ...ctrl, shiftKey: true }), press('y', 'KeyY', ctrl), press('ظ', 'KeyZ', ctrl), press('غ', 'KeyY', ctrl), press('ر', 'KeyV', ctrl)]) {
+    assert.equal(shortcuts.shortcutSearchKey(event), null, 'search keeps native editing keys');
+  }
+  assert.equal(shortcuts.shortcutSearchKey(press('K', 'KeyK', { ...ctrl, shiftKey: true })), 'Ctrl+Shift+K');
+  assert.deepEqual(shortcuts.shortcutFor(press(';', 'KeyZ', ctrl), true), { id: 'side-chat' }, 'Dvorak punctuation is not Persian undo');
+  assert.equal(shortcuts.isNativeTextShortcut(press('z', 'KeyZ', { metaKey: true }), { platform: 'MacIntel' }), true);
+  assert.equal(shortcuts.isNativeTextShortcut(press('z', 'KeyZ', ctrl), { platform: 'MacIntel' }), false);
+  assert.equal(shortcuts.isNativeTextShortcut(press('y', 'KeyY', { metaKey: true }), { platform: 'MacIntel' }), false);
+  preferences.savePreferences({ shortcutBindings: JSON.stringify({ search: 'Ctrl+V' }) });
+  assert.equal(shortcuts.shortcutFor(press('ر', 'KeyV', ctrl), true), null, 'a custom binding does not steal paste');
+  assert.deepEqual(shortcuts.shortcutFor(press('v', 'KeyV', ctrl), false), { id: 'search' });
+  assert.equal(shortcuts.isNativeTextShortcut(press('w', 'KeyZ', ctrl)), false, 'Latin AZERTY W is not undo');
+  assert.deepEqual(shortcuts.shortcutFor(press('w', 'KeyZ', ctrl), true), { id: 'close-tab' });
+  preferences.savePreferences({ shortcutBindings: JSON.stringify({ settings: 'Ctrl+Super+Y' }) });
+  assert.deepEqual(shortcuts.shortcutFor(press('y', 'KeyY', { ctrlKey: true, metaKey: true }), true), { id: 'settings' });
+  preferences.savePreferences({ shortcutBindings: JSON.stringify({ settings: 'Super+Y' }) });
+  assert.deepEqual(shortcuts.shortcutFor(press('y', 'KeyY', { metaKey: true }), true), { id: 'settings' }, 'Super+Y remains available on Linux');
+});
+
+test('deleted-chat undo stays in chat or the focused chat sidebar', () => {
+  browser(); const shortcuts = loader()('lib/shortcuts.ts');
+  assert.equal(shortcuts.shortcutInScope('undo-delete', 'chat', false), true);
+  assert.equal(shortcuts.shortcutInScope('undo-delete', 'loveSpot', true), true);
+  assert.equal(shortcuts.shortcutInScope('undo-delete', 'loveSpot', false), false);
+  assert.equal(shortcuts.shortcutInScope('undo-delete', 'canvas', false), false);
+  assert.equal(shortcuts.shortcutInScope('undo-delete', 'chat', false, true), false, 'the focused side panel keeps its own history');
+  assert.equal(shortcuts.shortcutInScope('undo-delete', 'chat', true, true), false, 'a focused menu owns its keys even if opened from the sidebar');
+  assert.equal(shortcuts.shortcutInScope('new-chat', 'loveSpot', false), true);
 });
 
 test('app and Quick Entry share recording without triggering the old shortcut; Quick Entry keeps its reserved keys', () => {

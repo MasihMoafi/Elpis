@@ -1,4 +1,5 @@
 import { readPreferences, type Preferences } from "@/lib/preferences";
+import { historyShortcut, isMacPlatform, shortcutLetter } from "@/lib/history-shortcut";
 
 /** The ChatGPT app's shortcuts that Elpis implements. One list for the handler's documentation,
  * the Ctrl+/ dialog and Settings › Keyboard shortcuts; add a row only with its handler. */
@@ -73,7 +74,8 @@ export function configuredShortcuts(preferences: Pick<Preferences, "shortcutBind
   return SHORTCUTS.map(item => { const binding = bindings[item.id]; return Object.hasOwn(bindings, item.id) ? { ...item, keys: binding ? [binding] : [] } : item; });
 }
 
-type KeyPress = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">;
+type KeyPress = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey"> &
+  Partial<Pick<KeyboardEvent, "defaultPrevented" | "isComposing">>;
 /** Stable physical punctuation names keep Ctrl+Shift+[ independent of the keyboard's shifted character. */
 export function keyCombination(event: KeyPress): string | null {
   if (/^(Control|Alt|Shift|Meta)(Left|Right)$/.test(event.code)) return null;
@@ -81,6 +83,26 @@ export function keyCombination(event: KeyPress): string | null {
   const key = punctuation[event.code] ?? (event.code.startsWith("Key") ? event.code.slice(3) : event.code.startsWith("Digit") ? event.code.slice(5)
     : event.code.startsWith("Arrow") ? event.code.slice(5) : event.code === "Space" ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.code);
   return [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Super", key].filter(Boolean).join("+");
+}
+
+/** Editing shortcuts belong to the focused text field, even with custom app bindings. */
+export function isNativeTextShortcut(event: KeyPress, { platform = typeof navigator === "undefined" ? "" : navigator.platform, editable = true }: { platform?: string; editable?: boolean } = {}): boolean {
+  const mac = isMacPlatform(platform);
+  const nativeModifier = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+  if (!nativeModifier || event.altKey) return false;
+  if (historyShortcut(event, platform)) return editable;
+  return !event.shiftKey && (shortcutLetter(event, "a") || shortcutLetter(event, "c") || (editable && (shortcutLetter(event, "v") || shortcutLetter(event, "x"))));
+}
+
+/** Search accepts a key combination without consuming ordinary text editing keys. */
+export function shortcutSearchKey(event: KeyPress): string | null {
+  if (event.isComposing || !(event.ctrlKey || event.metaKey || event.altKey) || event.key === "Tab" || isNativeTextShortcut(event)) return null;
+  return keyCombination(event);
+}
+
+/** Chat deletion is not the undo history of another page, panel or popup. */
+export function shortcutInScope(id: string, view: string, inSidebar: boolean, inOtherSurface = false): boolean {
+  return id !== "undo-delete" || (!inOtherSurface && (inSidebar || view === "chat"));
 }
 
 const normalized = (keys: string) => keys.replace(/Super|Command|Cmd/g, "Ctrl")
@@ -99,7 +121,9 @@ export function shortcutConflict(id: string, binding: string, preferences: Pick<
 }
 
 /** Which app shortcut a key event triggers. Undo and copy-folder retain their text-field behavior. */
-export function shortcutFor(event: KeyboardEvent, typing: boolean): { id: string; index?: number } | null {
+export function shortcutFor(event: KeyboardEvent, typing: boolean, textContext: "editable" | "read-only" | "none" = typing ? "editable" : "none"): { id: string; index?: number } | null {
+  if (event.defaultPrevented || event.isComposing) return null;
+  if (textContext !== "none" && isNativeTextShortcut(event, { editable: textContext === "editable" })) return null;
   if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !/^F\d+$/.test(event.code)) return null;
   const bindings = shortcutBindings(readPreferences()), pressed = keyCombination(event);
   for (const [id, binding] of Object.entries(bindings)) {
@@ -117,7 +141,7 @@ function defaultShortcutFor(event: KeyboardEvent, typing: boolean): { id: string
     if (key === "n") return { id: "new-chat" };
     if (key === ";") return { id: "side-chat" };
     // In a text field Ctrl+Z stays the field's own undo.
-    if (key === "z" && !typing) return { id: "undo-delete" };
+    if (shortcutLetter(event, "z") && !typing) return { id: "undo-delete" };
     if (key === "k") return { id: "command-menu" };
     if (key === "b") return { id: "sidebar" };
     if (key === "t") return { id: "new-tab" };
