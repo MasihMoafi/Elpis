@@ -6,10 +6,31 @@ import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
 import { errorText } from "@/lib/error-text.mts";
 
 type Playback = { controller: AbortController; peer: RTCPeerConnection | null; audio: HTMLAudioElement | null; silence: AudioContext | null; timer: ReturnType<typeof setTimeout> | null; monitor: ReturnType<typeof setInterval> | null; soundTimeout: ReturnType<typeof setTimeout> | null; audible: boolean; draining: boolean; energy: number; session?: string | undefined; ready: boolean; complete: boolean; idle?: boolean; reply: string };
-type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string, literal?: boolean) => Promise<void>; stream: (id: string) => void; stop: () => void; warm: () => void };
+export type LiveSpeech = { feed: (text: string) => void; end: () => void; done: Promise<void> };
+type Speech = { active: string | null; error: { id: string; message: string } | null; play: (id: string, text: string, literal?: boolean) => Promise<void>; stream: (id: string) => void; live: (id: string) => LiveSpeech | null; stop: () => void; warm: () => void };
 /** After a read the call stays open this long, so the next Read aloud only sends its text. */
 const KEEP_OPEN_MS = 60_000;
+/** How many pieces may be voiced at once, counting the one playing. */
+const VOICED_AHEAD = 3;
+const MIN_CLAUSE = 32;
 const SpeechContext = createContext<Speech | null>(null);
+
+/** How much of a reply still being written can be spoken now: through its last finished sentence, or its last clause once
+ * there is enough to sound natural. Unclosed code, comments and links wait. */
+export function speakableLength(pending: string, writing: boolean) {
+  if (!writing) return pending.length;
+  const sentence = [...pending.matchAll(/[.!?؟。！](?:["')\]”’]*)\s+/gu)].at(-1);
+  const clause = pending.length >= MIN_CLAUSE ? [...pending.matchAll(/[,;:،؛]\s+/gu)].at(-1) : undefined;
+  const last = sentence ?? clause;
+  let length = last?.index === undefined ? 0 : last.index + last[0].length;
+  const fence = [...pending.matchAll(/```/g)];
+  if (fence.length % 2) length = Math.min(length, fence.at(-1)!.index);
+  const comment = pending.lastIndexOf("<!--");
+  if (comment > pending.lastIndexOf("-->")) length = Math.min(length, comment);
+  const link = pending.lastIndexOf("[");
+  if (link > pending.lastIndexOf("]")) length = Math.min(length, link);
+  return length;
+}
 
 /** Text as it should sound: no Markdown marks, code or addresses (Matilda's portrait markers included), in sentence groups
  * short enough that the first one plays almost at once. */
@@ -59,31 +80,41 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
   const [error, setError] = useState<Speech["error"]>(null);
   const call = useRef<Playback | null>(null);
   const source = useReadAloudSource(), local = useRef<{ controller: AbortController; audio: HTMLAudioElement } | null>(null);
-  /** Each piece is voiced by the chosen source while the preceding piece plays. */
-  async function speakFile(id: string, text: string, literal = false) {
+  /** One live reading: text may keep arriving while earlier pieces play; the next pieces are voiced ahead of playback. */
+  function openLive(id: string, literal = false): LiveSpeech {
     stop(); setError(null);
     const controller = new AbortController(), audio = new Audio(), mine = { controller, audio };
     local.current = mine; setActive(id);
     const voice = (piece: string) => fetch("/api/read-aloud", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: piece, ...(source.revision ? { revision: source.revision } : {}) }), signal: controller.signal })
       .then(async response => { if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(typeof result?.error === "string" ? result.error : "Read aloud could not voice this reply."); } return URL.createObjectURL(await response.blob()); });
-    try {
-      const pieces = literal ? selectedPieces(text) : spokenPieces(text);
-      let next = pieces[0] === undefined ? null : voice(pieces[0]);
-      for (let index = 0; next && local.current === mine; index++) {
-        const url = await next;
-        const piece = pieces[index + 1];
-        next = piece === undefined ? null : voice(piece);
-        next?.catch(() => {});
-        audio.src = url;
-        await new Promise<void>((resolve, reject) => {
-          audio.onended = () => resolve(); audio.onerror = () => reject(new Error("This reply could not be played."));
-          controller.signal.addEventListener("abort", () => resolve(), { once: true });
-          void audio.play().catch(reject);
-        });
-        URL.revokeObjectURL(url);
-      }
-    } catch (cause) { if (local.current === mine && !controller.signal.aborted) setError({ id, message: errorText(cause, "Read aloud could not voice this reply.") }); }
-    finally { if (local.current === mine) { local.current = null; setActive(null); } }
+    const pieces: string[] = [], voiced: Promise<string>[] = [];
+    let played = 0, ended = false, wake = () => {};
+    const prepare = () => { while (voiced.length < pieces.length && voiced.length < played + VOICED_AHEAD) { const next = voice(pieces[voiced.length]!); next.catch(() => {}); voiced.push(next); } };
+    controller.signal.addEventListener("abort", () => wake(), { once: true });
+    const done = (async () => {
+      try {
+        while (local.current === mine) {
+          if (played >= pieces.length) { if (ended) break; await new Promise<void>(resolve => { wake = resolve; }); continue; }
+          prepare();
+          const url = await voiced[played]!;
+          audio.src = url;
+          await new Promise<void>((resolve, reject) => {
+            audio.onended = () => resolve(); audio.onerror = () => reject(new Error("This reply could not be played."));
+            controller.signal.addEventListener("abort", () => resolve(), { once: true });
+            void audio.play().catch(reject);
+          });
+          URL.revokeObjectURL(url);
+          played++;
+        }
+      } catch (cause) { if (local.current === mine && !controller.signal.aborted) setError({ id, message: errorText(cause, "Read aloud could not voice this reply.") }); }
+      finally { if (local.current === mine) { local.current = null; setActive(null); } }
+    })();
+    return { done, feed: value => { pieces.push(...(literal ? selectedPieces(value) : spokenPieces(value))); prepare(); wake(); }, end: () => { ended = true; wake(); } };
+  }
+  function speakFile(id: string, text: string, literal = false) {
+    const reading = openLive(id, literal);
+    reading.feed(text); reading.end();
+    return reading.done;
   }
   /** The selected file source warms itself when its status is read. */
   function warm() {}
@@ -251,5 +282,5 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
       if (call.current === current) fail("Read aloud disconnected.");
     } catch (cause) { fail(errorText(cause, "Read aloud could not start.")); }
   }
-  return <SpeechContext.Provider value={unavailableReason || !(available || source.available) ? null : { active, error, play: (id, text, literal) => play(id, text, literal), stream: id => void play(id), stop, warm }}>{children}</SpeechContext.Provider>;
+  return <SpeechContext.Provider value={unavailableReason || !(available || source.available) ? null : { active, error, play: (id, text, literal) => play(id, text, literal), stream: id => void play(id), live: id => { if (source.available) return openLive(id); setError({ id, message: "The selected read aloud source is unavailable. Check Models & accounts." }); return null; }, stop, warm }}>{children}</SpeechContext.Provider>;
 }

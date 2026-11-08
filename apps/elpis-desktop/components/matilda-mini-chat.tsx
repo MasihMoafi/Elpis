@@ -7,7 +7,7 @@ import { History, Volume2, VolumeX } from "lucide-react";
 import { Dictation } from "@/components/dictation";
 import { insertTranscript } from "@/lib/dictation";
 import { isSendKey, savePreferences, usePreferences } from "@/lib/preferences";
-import { useReadAloud } from "@/components/read-aloud";
+import { speakableLength, useReadAloud, type LiveSpeech } from "@/components/read-aloud";
 import { SendIcon } from "@/components/elpis-icons";
 import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
@@ -130,11 +130,11 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   const field = useRef<HTMLTextAreaElement>(null), draft = useRef(chat.draft); draft.current = chat.draft;
   const speech = useReadAloud(), speechRef = useRef(speech); speechRef.current = speech;
   const preferences = usePreferences();
-  const voice = useRef({ seen: new Map<string, number>(), stopped: new Set<string>(), queue: [] as { id: string; text: string }[], running: false, generation: 0, suppress: false });
+  const voice = useRef({ seen: new Map<string, number>(), stopped: new Set<string>(), live: null as { id: string; speech: LiveSpeech } | null, suppress: false });
   const [voiceError, setVoiceError] = useState(""), toldUnavailable = useRef(false);
   const stopSpeech = useCallback(() => {
-    const state = voice.current; if (state.running) speechRef.current?.stop();
-    state.generation++; state.queue = []; state.running = false; state.suppress = true;
+    const state = voice.current; if (state.live) speechRef.current?.stop();
+    state.live = null; state.suppress = true;
     for (const id of state.seen.keys()) state.stopped.add(id);
   }, []);
   const dictationBusy = useCallback((busy: boolean) => { if (busy) stopSpeech(); }, [stopSpeech]);
@@ -146,32 +146,17 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
       if (entry.item.type !== "agentMessage" || (entry.item.phase && entry.item.phase !== "final_answer") || chat.earlier.has(entry.turnId)) continue;
       const id = `${entry.turnId}:${entry.item.id}`, text = message(entry), offset = state.seen.get(id) ?? 0;
       if (state.suppress || state.stopped.has(id) || !preferences.speakMatildaReplies) { state.seen.set(id, text.length); state.stopped.add(id); continue; }
-      const pending = text.slice(offset);
-      const complete = chat.conversation.busy ? [...pending.matchAll(/[.!?](?:["')\]]*)\s+/g)].at(-1) : null;
-      let length = complete?.index !== undefined ? complete.index + complete[0].length : chat.conversation.busy ? 0 : pending.length;
-      if (chat.conversation.busy) {
-        // Wait for closing markup before sending a chunk to the shared Markdown-to-speech rules.
-        const fence = [...pending.matchAll(/```/g)];
-        if (fence.length % 2 && fence.at(-1)?.index !== undefined) length = Math.min(length, fence.at(-1)!.index!);
-        const comment = pending.lastIndexOf('<!--');
-        if (comment > pending.lastIndexOf('-->')) length = Math.min(length, comment);
-        const link = pending.lastIndexOf('[');
-        if (link > pending.lastIndexOf(']')) length = Math.min(length, link);
-      }
+      const pending = text.slice(offset), length = speakableLength(pending, chat.conversation.busy);
       if (!length) continue;
-      state.seen.set(id, offset + length); state.queue.push({ id, text: pending.slice(0, length) });
-    }
-    if (!chat.conversation.busy) state.suppress = false;
-    if (state.running || !state.queue.length) return;
-    // Said once per opening, not after every reply while the voice stays unavailable.
-    if (!speech) { state.queue = []; if (!toldUnavailable.current) { toldUnavailable.current = true; setVoiceError("The selected read aloud source is unavailable. Check Models & accounts."); } return; }
-    state.running = true; const generation = state.generation;
-    void (async () => {
-      while (state.generation === generation && state.queue.length) {
-        const piece = state.queue.shift(); if (piece) await speech.play(piece.id, piece.text);
+      if (state.live?.id !== id) {
+        // Said once per opening, not after every reply while the voice stays unavailable.
+        const opened = speech?.live(id) ?? null;
+        if (!opened) { if (!toldUnavailable.current) { toldUnavailable.current = true; setVoiceError("The selected read aloud source is unavailable. Check Models & accounts."); } state.seen.set(id, text.length); continue; }
+        state.live = { id, speech: opened };
       }
-      if (state.generation === generation) state.running = false;
-    })();
+      state.seen.set(id, offset + length); state.live.speech.feed(pending.slice(0, length));
+    }
+    if (!chat.conversation.busy) { state.suppress = false; state.live?.speech.end(); state.live = null; }
   }, [chat.conversation, chat.earlier, preferences.speakMatildaReplies, speech]);
   useEffect(() => { if (speech?.error) setVoiceError(speech.error.message); }, [speech?.error]);
   useEffect(() => { if (voiceError) { const timer = setTimeout(() => setVoiceError(""), 6000); return () => clearTimeout(timer); } }, [voiceError]);
