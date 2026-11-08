@@ -324,8 +324,8 @@ export function MatildaCompanion() {
   </section>;
   return <div className="relative flex min-w-0 shrink-0 items-center gap-1 pr-2">
     <MatildaHeartBurst />
-    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" className="matilda-pin" data-speaking={voice.speaking || undefined} aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><>{character ? <img className="matilda-pin-face matilda-theme-face" src={character.image} alt="" data-character={character.name} /> : <><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></>}{voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}</></Button>}
     {!floating && <HerVoiceControls voice={voice} threadId={state?.threadId} />}
+    {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" className="matilda-pin" data-speaking={voice.speaking || undefined} aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><>{character ? <img className="matilda-pin-face matilda-theme-face" src={character.image} alt="" data-character={character.name} /> : <><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></>}{voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}</></Button>}
     {!floating && <MatildaCharacterPicker compact />}
     {!floating && alert && <div className="hud-popover matilda-alert-popup matilda-alert-anchor">{alert}</div>}
   </div>;
