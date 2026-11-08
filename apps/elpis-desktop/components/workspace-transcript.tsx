@@ -39,9 +39,10 @@ type Props = {
   selectProject: ReturnType<typeof createProjectActions>["selectProject"]; addProject: ReturnType<typeof createProjectActions>["addProject"];
   replaceFrom: ReturnType<typeof createMessageActions>["replaceFrom"]; answerPlan: ReturnType<typeof createConversationSettings>["answerPlan"];
   approvalCardProps: ReturnType<typeof createApprovalActions>["approvalCardProps"]; openById: (id: string) => Promise<void>; show: (view: View) => void;
+  children: React.ReactNode;
 };
 
-export function WorkspaceTranscript({ session, runtime, history, projectState, pages, sidebarModel, selectedModel, replacement, earlier, personal, shownEntries, models, chatConversation, workingHost, activeTurn, proposedPlan, permissionMode, error, dark, awaitingTeam, continues, readOnlyRun, selectProject, addProject, replaceFrom, answerPlan, approvalCardProps, openById, show }: Props) {
+export function WorkspaceTranscript({ session, runtime, history, projectState, pages, sidebarModel, selectedModel, replacement, earlier, personal, shownEntries, models, chatConversation, workingHost, activeTurn, proposedPlan, permissionMode, error, dark, awaitingTeam, continues, readOnlyRun, selectProject, addProject, replaceFrom, answerPlan, approvalCardProps, openById, show, children }: Props) {
   const { selected, threads, loading, busy, scroll, stickToBottom, followingBottom, awayFromBottom, setAwayFromBottom } = session;
   const { ready, connected, stoppedTurns, failedTurns, approvals } = runtime;
   const { itemCursor, heldCount, historyGaps } = history;
@@ -68,6 +69,7 @@ export function WorkspaceTranscript({ session, runtime, history, projectState, p
             {...(!continues && failedInput?.allowed ? { onRetry: (retryModel: string | undefined) => replaceFrom(failedTurn.turnId, failedInput.prompt, undefined, retryModel) } : {})} />}
           {selected && proposedPlan && !readOnlyRun && <PlanCard mode={permissionMode} busy={busy || !connected} onImplement={permissions => answerPlan(selected, proposedPlan, { implement: true, ...(permissions ? { permissions } : {}) })} onKeepPlanning={feedback => answerPlan(selected, proposedPlan, { feedback })} />}
           {approvals.filter(a => a.params.threadId === selected?.id).map(a => <ApprovalCard key={approvalDraftKey(a)} {...approvalCardProps(a)} />)}
+          {children}
         </div><PromptRail scroller={scroll} threadId={selected?.id ?? null} entries={shownEntries} onLoadEarlier={older} onNavigate={() => { followingBottom.current = false; stickToBottom.current = false; }} />
           {awayFromBottom && <Button variant="outline" size="icon-lg" className="scroll-to-bottom" aria-label="Scroll to bottom" title="Scroll to bottom" onClick={() => { followingBottom.current = true; stickToBottom.current = true; scroll.current?.scrollTo({ top: scroll.current.scrollHeight, behavior: "smooth" }); }}><ArrowDown size={16} /></Button>}</div>
           {awaitingTeam && <p role="status" className="chat-loading chat-team-loading text-muted-foreground">Loading conversation…</p>}</div>

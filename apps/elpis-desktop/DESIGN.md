@@ -42,6 +42,8 @@ The accepted Working status: `WorkingPlacement` portals `WorkingStatus` into `.c
 
 The prompt rail keeps a 28 px target inside the existing 32 px gutter, so showing it does not resize the transcript.
 
+Reconnect and error notices follow the last message inside `.chat-content`. Showing, updating or dismissing one never changes the composer or transcript viewport's position or size. Other pages keep their notices at the workspace bottom.
+
 ## 6. Rules for every screen
 - A shown name or label is not a control.
 - A page the user cannot act on is removed or made to work. A hidden page leaves the sidebar and the command menu.

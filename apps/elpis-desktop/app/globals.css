@@ -203,6 +203,7 @@ button:disabled { cursor:not-allowed; }
 .app-shell { --chat-shell-sidebar:var(--sidebar-width,256px); }
 .workspace-body { display:flex; flex:1; min-width:0; min-height:0; }
 .workspace-notices { display:flex; flex-direction:column; flex-shrink:0; min-width:0; max-height:32vh; overflow:auto; }
+.chat-content > .workspace-notices { max-height:none; overflow:visible; }
 /* With the side panel beside the chat (not full view, not a narrow window) the work area is one grid: the panel runs the full
  * height at the right and its header shares a row with the chat's header, so the two line up whatever the chat's header holds.
  * The panel follows its dragged width, while the chat keeps the 320px needed by its compact controls. */

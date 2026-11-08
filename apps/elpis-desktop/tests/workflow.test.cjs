@@ -49,25 +49,30 @@ test('connection recovery preserves draft and delivery error, clears stale appro
   await page.getByLabel('Message Elpis',{exact:true}).fill('Keep this draft');
   await page.getByRole('button',{name:'Send message',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'Delivery is unknown'}).waitFor();
-  const errorAtBottom=async()=>{
+  const errorPlacement=async()=>{
    const notice=await page.getByRole('alert').filter({hasText:'Delivery is unknown'}).boundingBox();
+   if(await page.locator('.chat-scroll').count()){
+    const composer=await page.locator('.composer').boundingBox();
+    assert.equal(await page.locator('.chat-content > .workspace-notices').count(),1,'chat errors follow the messages inside the transcript');
+    assert.ok(notice&&composer&&notice.y+notice.height<=composer.y,'the error stays above the composer');
+    return;
+   }
    const workspace=await page.locator('main.workspace').boundingBox();
-   // The error is a quiet line floating 8px above the bottom edge (globals.css .error-banner.quiet, 6 Nov).
    const gap=notice&&workspace?workspace.y+workspace.height-notice.y-notice.height:-1;
-   assert.ok(gap>=0&&gap<12,`an app error stays at the bottom, never above the page (${gap}px from it)`);
+   assert.ok(gap>=0&&gap<12,`outside chat an app error stays at the workspace bottom (${gap}px from it)`);
   };
-  await errorAtBottom();
+  await errorPlacement();
   await page.getByRole('button',{name:'Settings',exact:true}).click();
   await page.getByRole('button',{name:'Back to app',exact:true}).waitFor();
-  await errorAtBottom();
+  await errorPlacement();
   await page.getByRole('button',{name:'Back to app',exact:true}).click();
   event('approval',{id:'stale',params:{threadId:'reconnect',reason:'Stale approval',availableDecisions:['accept']}});
   await page.getByText('Stale approval',{exact:true}).waitFor();
   reconnectFixture.connected=false;event('connection',{connected:false});
   await page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).waitFor();
   const recovery=await page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).boundingBox();
-  const workspace=await page.locator('main.workspace').boundingBox();
-  assert.ok(recovery&&workspace&&recovery.y>workspace.y+workspace.height*0.7,'reconnecting status stays near the bottom');
+  const transcript=await page.locator('.chat-scroll').boundingBox();
+  assert.ok(recovery&&transcript&&recovery.y>=transcript.y&&recovery.y+recovery.height<=transcript.y+transcript.height,'reconnecting status stays inside the transcript');
   const composer=page.getByLabel('Message Elpis',{exact:true});
   assert.equal(await composer.isEnabled(),true,'disconnection leaves draft editing available');
   const mutations=()=>reconnectFixture.calls.filter(call=>call.method==='POST'&&/\/(turns|steer|shell|side-chat|compact|permissions|effort|service-tier|interrupt|folder)$/.test(call.route)).length;
@@ -141,6 +146,50 @@ test('a transient launch sign-in recovers automatically without replacing the re
 // A125: a lost event stream can miss the end of any open chat, including a chat outside the list's first page.
 const { fixture } = require('./parity-fixture.cjs');
 const { controlValue: draftValue } = require('./controls.cjs');
+for (const layout of [
+ { name:'desktop', width:1440, height:1000, colorScheme:'light', running:true },
+ { name:'side panel', width:1130, height:760, colorScheme:'dark', running:true, panel:true },
+ { name:'narrow chat', width:600, height:844, colorScheme:'light' },
+]) test(`chat notices never move the composer: ${layout.name}`,async()=>{
+ const f=await fixture({...layout,staticDir:process.env.ELPIS_NOTICE_RENDERER});
+ try{
+  await f.open('chat-a');
+  if(layout.panel)await f.page.getByRole('button',{name:'Show side panel',exact:true}).click();
+  await f.composer.fill('Keep typing here');
+  await f.page.evaluate(async()=>{await document.fonts.ready;await new Promise(requestAnimationFrame);});
+  const geometry=()=>f.page.locator('.composer, .chat-scroll').evaluateAll(nodes=>nodes.map(node=>({name:node.className,...node.getBoundingClientRect().toJSON()})));
+  const before=await geometry();
+  assert.equal(before.length,2,'measure both the input and the transcript viewport');
+  const unchanged=async()=>{
+   const after=await geometry();
+   for(let i=0;i<before.length;i++)for(const axis of ['x','y','width','height'])
+    assert.ok(Math.abs(before[i][axis]-after[i][axis])<0.5,`${before[i].name} ${axis} changed from ${before[i][axis]} to ${after[i][axis]}`);
+   assert.equal(await draftValue(f.composer),'Keep typing here');
+   assert.equal(await f.composer.evaluate(node=>document.activeElement===node),true,'the notice leaves the typing focus alone');
+  };
+  const belowMessages=async()=>{
+   assert.equal(await f.page.locator('.chat-content > .workspace-notices').count(),1,'notices belong to the scrolling transcript');
+   assert.equal(await f.page.locator('main.workspace > .workspace-notices').count(),0,'no notice row beneath the composer');
+   assert.equal(await f.page.locator('.workspace-notices').evaluate(node=>!!(document.querySelector('.chat-content .message:last-of-type')?.compareDocumentPosition(node)&Node.DOCUMENT_POSITION_FOLLOWING)),true,'the notice follows the messages');
+  };
+  f.emit('message',{method:'error',params:{threadId:'chat-a',error:{message:'Reconnecting… 4/5'},willRetry:true}});
+  const retry=f.page.getByRole('alert').filter({hasText:'Reconnecting… 4/5'});
+  await retry.waitFor();
+  await unchanged();await belowMessages();
+  // A recovered retry disappears without changing the draft or the input's position.
+  f.emit('message',{method:'item/agentMessage/delta',params:{threadId:'chat-a',turnId:'t4',itemId:'a-t4',delta:' Reply resumed.'}});
+  await retry.waitFor({state:'detached'});await unchanged();
+  f.emit('message',{method:'error',params:{threadId:'chat-a',error:{message:'An actionable conversation error'},willRetry:false}});
+  await f.page.getByRole('alert').filter({hasText:'An actionable conversation error'}).waitFor();
+  await unchanged();await belowMessages();
+  f.emit('connection',{connected:false});
+  await f.page.getByRole('status').filter({hasText:'Reconnecting to Elpis'}).waitFor();
+  await unchanged();await belowMessages();
+  if(process.env.ELPIS_RECONNECT_SHOTS){await fs.mkdir(process.env.ELPIS_RECONNECT_SHOTS,{recursive:true});await f.page.screenshot({path:path.join(process.env.ELPIS_RECONNECT_SHOTS,`notices-${layout.name.replaceAll(' ','-')}.png`)});}
+  assert.deepEqual(f.errors,[]);
+ }finally{await f.close();}
+});
+
 async function reconnectChats(run, colorScheme = 'light') {
  const threads=['chat-a','chat-b','chat-c'].map((id,index)=>({id,name:`Recovery ${index+1}`,model:'sol',modelProvider:'openai',status:{type:'active'},desktopAccess:{writable:true}}));
  const turns=new Map(threads.map(thread=>[thread.id,`turn-${thread.id}`])),reads=[],routes={};
