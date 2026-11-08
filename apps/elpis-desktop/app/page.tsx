@@ -172,7 +172,7 @@ export default function Home() {
   const { rememberFollowing, reconcileLiveThread, loadThread, openThread } = useOpenConversation({ composer, runtime, conversations, history, drafts: draftStore, attachments: attachmentState, tabsRef, updateTabs, session, newDraftKey, markRead, setView, setSidebar, setError, rememberModes: (id, live) => rememberModes(id, live) });
 
   useWorkspaceRestoration({ projects: projectState, composer, attachments: attachmentState, drafts: draftStore, newDraftKey, restoreTabs, setError });
-  useWorkspaceNavigation(shortcutAction);
+  useWorkspaceNavigation(shortcutAction, viewRef);
   useRuntimeEvents({ history, conversations, runtime, selectedRef, request, tabsRef, refreshModels, setError, initialRestoration, rememberFollowing, rememberModes: (id, live) => rememberModes(id, live), reconcileLiveThread, restoredTabs, loadThread, openThread, viewRef, planTurns, setAttention, loveRef, isLoveChatId, setRewindActions, setThreadModes, rewindSwitch, removeThreads, setEntries, clearApprovalDraft });
 
   const { selectedLiveError, related, shownEntries, newestPrompt } = useConversationView({ session, runtime, history, conversations, children, view, showAgentRuns: preferences.showAgentRuns, agentRunsOpen, newDraftKey });

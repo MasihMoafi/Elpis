@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SearchField } from "@/components/ui/search-field";
 import { Button } from "@/components/ui/button";
-import { SHORTCUTS, configuredShortcuts, canCustomizeShortcut, keyCombination, shortcutBindings, shortcutConflict, type Shortcut } from "@/lib/shortcuts";
+import { SHORTCUTS, configuredShortcuts, canCustomizeShortcut, shortcutSearchKey, shortcutBindings, shortcutConflict, type Shortcut } from "@/lib/shortcuts";
 import { savePreferences, usePreferences } from "@/lib/preferences";
 import { ShortcutRecorder } from "@/components/settings/system-settings";
 import { SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
@@ -36,8 +36,8 @@ export function ShortcutSettings() {
     <SettingsHeader title="Keyboard shortcuts" description="Focus an app shortcut and press its new keys. On macOS, use Cmd where Ctrl is shown. Other rows document native window controls and gestures in the focused view." />
     {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
     <SearchField aria-label="Search keyboard shortcuts" placeholder="Search actions or press a key combination" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => {
-      if (!(event.ctrlKey || event.metaKey || event.altKey) || event.key === "Tab" || (!event.shiftKey && !event.altKey && /^[acvxz]$/i.test(event.key))) return;
-      const combination = keyCombination(event);
+      if (event.nativeEvent.isComposing) return;
+      const combination = shortcutSearchKey(event);
       if (!combination) return;
       event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation(); setQuery(combination);
     }} />

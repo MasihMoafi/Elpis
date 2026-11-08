@@ -1,9 +1,9 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { letterKey } from "@/components/action-menu";
-import { shortcutFor } from "@/lib/shortcuts";
+import { shortcutFor, shortcutInScope } from "@/lib/shortcuts";
 import { selectElementContent } from "@/lib/pane-select";
 
-export function useWorkspaceNavigation(shortcutAction: RefObject<(id: string, index?: number) => void>) {
+export function useWorkspaceNavigation(shortcutAction: RefObject<(id: string, index?: number) => void>, view: RefObject<string>) {
   // The mouse's side buttons go back and forward, as in a browser.
   useEffect(() => {
     const onMouse = (event: MouseEvent) => {
@@ -20,6 +20,10 @@ export function useWorkspaceNavigation(shortcutAction: RefObject<(id: string, in
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const textInput = target?.tagName === "INPUT" && !/^(button|checkbox|color|file|hidden|image|radio|range|reset|submit)$/.test((target as HTMLInputElement).type);
+      const textField = !!target && (textInput || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const readOnly = textField && (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") && (target as HTMLInputElement | HTMLTextAreaElement).readOnly;
+      const textContext = textField ? readOnly ? "read-only" : "editable" : "none";
       if (!typing && !event.defaultPrevented && (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey && event.code === "KeyA") {
         event.preventDefault();
         const selection = window.getSelection(), anchor = selection?.anchorNode;
@@ -29,11 +33,12 @@ export function useWorkspaceNavigation(shortcutAction: RefObject<(id: string, in
         return;
       }
       if (target?.closest('[role="dialog"], [role="alertdialog"]')) return;
-      const hit = shortcutFor(event, typing); if (!hit) return;
+      const hit = shortcutFor(event, typing, textContext); if (!hit) return;
+      if (!shortcutInScope(hit.id, view.current, !!target?.closest("aside.sidebar"), !!target?.closest('.side-panel, [role="menu"], [role="listbox"]'))) return;
       event.preventDefault(); shortcutAction.current(hit.id, hit.index);
     };
     window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-  }, [shortcutAction]);
+  }, [shortcutAction, view]);
 }
 
 /** Navigation moves focus; Enter activates the focused control. Menus and text editing keep their own keys. */
