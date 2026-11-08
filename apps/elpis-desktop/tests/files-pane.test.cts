@@ -59,7 +59,11 @@ async function routes() {
   return {
     close: async () => { if (backend) await (await backend).close(); },
     '/api/files/dir': (_body: Body | null, url: URL) => answer(() => files.listDirectory(url.searchParams.get('cwd'), url.searchParams.get('dir') ?? '', url.searchParams.get('hidden') === '1')),
-    '/api/file': (body: Body | null, url: URL) => answer(() => body ? files.writeFile(body.cwd, body.path, body.content, body.mtimeMs) : files.readFile(url.searchParams.get('cwd'), url.searchParams.get('path'))),
+    '/api/file': (body: Body | null, url: URL) => answer(() => body ? files.writeFile(body.cwd, body.path, body.content, body.mtimeMs) : files.readFile(url.searchParams.get('cwd'), url.searchParams.get('path'), {
+      ...(url.searchParams.has('page') ? { page: Number(url.searchParams.get('page')) } : {}),
+      ...(url.searchParams.has('line') ? { line: Number(url.searchParams.get('line')) } : {}),
+      ...(url.searchParams.has('mtimeMs') ? { mtimeMs: Number(url.searchParams.get('mtimeMs')) } : {}),
+    })),
     '/api/file/asset': (_body: Body | null, url: URL) => answer(async () => {
       const app = await assetServer(), response = await fetch(`${app.origin}${url.pathname}${url.search}`, { headers: { Cookie: app.cookie } });
       if (!response.ok) return { __http: response.status, error: (await response.json()).error };

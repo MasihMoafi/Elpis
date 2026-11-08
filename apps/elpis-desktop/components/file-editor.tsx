@@ -7,6 +7,8 @@ import { common, createLowlight } from "lowlight";
 import type { Element, ElementContent, Root } from "hast";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
+import { languageOf } from "@/lib/file-language";
+import { WindowedFileEditor } from "@/components/windowed-file-editor";
 
 /** The line height in pixels: the same number in components/files-pane.css (--fe-line), which every layer shares. */
 const LINE = 20;
@@ -25,8 +27,6 @@ const mod = (n: number, size: number) => ((n % size) + size) % size;
 /** The colours a code block in a reply has (highlight.js classes, styled in app/globals.css), for the languages
  * highlight.js names in its common set; other files stay plain. */
 const lowlight = createLowlight(common);
-const LANGUAGE: Record<string, string> = { ts: "typescript", tsx: "typescript", mts: "typescript", cts: "typescript", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", py: "python", rs: "rust", go: "go", rb: "ruby", java: "java", kt: "kotlin", c: "c", h: "c", cpp: "cpp", cc: "cpp", hpp: "cpp", cs: "csharp", php: "php", swift: "swift", sh: "bash", bash: "bash", zsh: "bash", json: "json", yml: "yaml", yaml: "yaml", toml: "ini", ini: "ini", md: "markdown", css: "css", scss: "scss", html: "xml", xml: "xml", svg: "xml", sql: "sql", lua: "lua", r: "r", diff: "diff" };
-const languageOf = (label: string) => LANGUAGE[label.slice(label.lastIndexOf(".") + 1).toLowerCase()];
 type Piece = { text: string; className?: string | undefined };
 /** Highlights the whole file once, then splits the coloured pieces at line breaks, so each layer line keeps its colours
  * even inside a multi-line comment or string. */
@@ -62,7 +62,13 @@ const NO_PIECES: (Found & { index: number })[] = [];
 
 /** A file's text, edited in place: line numbers, the lines a reply named marked, find in file (Ctrl+F) and Ctrl+S to save.
  * A textarea draws and edits the text; two layers behind it move with its scroll, the numbers and the marks. */
-export function FileEditor({ label, value, marks, softWrap = false, onChange, onSave }: { label: string; value: string; softWrap?: boolean; marks?: Marks; onChange: (value: string) => void; onSave: () => void }) {
+type EditorProps = { label: string; value: string; softWrap?: boolean; marks?: Marks; onChange: (value: string) => void; onSave: () => void; onSelection?: (text: string) => void };
+export function FileEditor(props: EditorProps) {
+  const [windowed] = useState(() => props.value.length > 8000 || props.value.split("\n").length > 200);
+  return windowed ? <WindowedFileEditor {...props} /> : <SmallFileEditor {...props} />;
+}
+
+function SmallFileEditor({ label, value, marks, softWrap = false, onChange, onSave }: EditorProps) {
   const area = useRef<HTMLTextAreaElement>(null), layer = useRef<HTMLDivElement>(null), numbers = useRef<HTMLDivElement>(null), field = useRef<HTMLInputElement>(null);
   const [find, setFind] = useState<{ query: string; at: number; focus: number } | null>(null);
   const lines = useMemo(() => value.split("\n"), [value]);

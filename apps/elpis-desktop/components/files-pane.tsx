@@ -31,6 +31,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   const markdown = /\.(md|markdown)$/i.test(file.path), html = /\.html?$/i.test(file.path), source = file.view === "source", editLabel = markdown && ready ? "Edit" : "Source";
   const actions: MenuAction[] = useFileActions({ abs, rel: file.path, inside: !file.path.startsWith("/"), ...(file.line === undefined ? {} : { line: file.line }) }, setNote, undefined, () => selectedPassage.current);
   const rememberSelection = (event: React.SyntheticEvent<HTMLDivElement>) => {
+    if (event.target instanceof Element && event.target.closest(".cm-content")) return;
     const field = event.target instanceof HTMLTextAreaElement ? event.target : null;
     if (field) selectedPassage.current = field.value.slice(field.selectionStart, field.selectionEnd);
     else { const selection = window.getSelection(); if (selection?.anchorNode && event.currentTarget.contains(selection.anchorNode)) selectedPassage.current = selection.toString(); }
@@ -39,11 +40,11 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
   let body: React.ReactNode;
   if (!doc || doc.status === "loading") body = <p className="files-note" role="status">Reading the file…</p>;
   else if (doc.status === "error") body = <p className="files-note files-error" role="alert">{doc.message}</p>;
-  else if ((doc.status === "ready" || doc.status === "preview") && html && !source) body = <HtmlFilePreview key={file.path} text={doc.text} file={fileScope(cwd, file.path)} label={`Preview of ${file.path}`} onSelection={text => { selectedPassage.current = text; }} />;
-  else if (doc.status === "preview") body = <LargeTextPreview key={file.path} text={doc.text} />;
+  else if ((doc.status === "ready" || doc.status === "preview") && html && !source) body = <HtmlFilePreview key={file.path} text={doc.text} file={fileScope(cwd, file.path)} label={`Preview of ${file.path}`} {...(doc.status === "preview" ? { pages: doc.pages, mtimeMs: doc.mtimeMs } : {})} onSelection={text => { selectedPassage.current = text; }} />;
+  else if (doc.status === "preview") body = <LargeTextPreview key={`${file.path}:${doc.page}`} text={doc.text} file={fileScope(cwd, file.path)} pages={doc.pages} page={doc.page} firstLine={doc.firstLine} mtimeMs={doc.mtimeMs} marks={file} onSelection={text => { selectedPassage.current = text; }} />;
   else if (doc.status === "ready") body = markdown && !source
     ? <article className="file-markdown" tabIndex={-1} onKeyDown={selectPaneContent} aria-label={`Preview of ${file.path}`}><MarkdownText text={doc.text} file={fileScope(cwd, file.path)} /></article>
-    : <FileEditor key={file.path} label={`Contents of ${file.path}`} value={doc.text} softWrap={softWrap} marks={file} onChange={text => edit(cwd, file.path, text)} onSave={() => void save(cwd, file.path)} />;
+    : <FileEditor key={file.path} label={`Contents of ${file.path}`} value={doc.text} softWrap={softWrap} marks={file} onChange={text => edit(cwd, file.path, text)} onSave={() => void save(cwd, file.path)} onSelection={text => { selectedPassage.current = text; }} />;
   else if (doc.status === "image") body = <div className="file-image"><img src={doc.src} alt={nameOf(file.path)} /></div>;
   else if (doc.status === "pdf") body = <iframe className="file-pdf" title={`Preview of ${file.path}`} src={doc.src} />;
   else if (doc.status === "large") body = <p className="files-note">This file is over {doc.limit ? `${doc.limit / 1024 / 1024} MB` : "512 KB"}, too large to show here.</p>;

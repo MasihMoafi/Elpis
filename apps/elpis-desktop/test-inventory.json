@@ -109,7 +109,9 @@
     "tests/live-events.test.mts",
     "tests/model-picker-configure.test.mts",
     "tests/model-settings.test.mts",
-    "tests/love-spot-events.test.mts"
+    "tests/love-spot-events.test.mts",
+    "tests/transcript-cache.test.mts",
+    "bridge/bounded-cache.test.mts"
   ],
   "bridge": [
     "bridge/cloudroom-vm.test.mts",
@@ -204,7 +206,9 @@
     "bridge/router/sources/github-poll.test.mts",
     "components/mother/panel.test.mts",
     "components/mother/marks.test.mts",
-    "bridge/provider-keys.test.mts"
+    "bridge/provider-keys.test.mts",
+    "bridge/file-paging.test.mts",
+    "bridge/rollout-performance.test.mts"
   ],
   "desktop": [
     "desktop/app-menu.test.cts",
@@ -424,7 +428,9 @@
     "tests/matilda-pet.test.cts",
     "tests/canvas-translate.test.cts",
     "tests/live-submissions.test.cts",
-    "tests/matilda-live-voice.test.cts"
+    "tests/matilda-live-voice.test.cts",
+    "tests/file-opening-performance.test.cts",
+    "tests/rendering-performance.test.cts"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cts",

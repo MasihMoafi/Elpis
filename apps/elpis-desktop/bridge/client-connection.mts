@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { smartPruneSnapshot, tokenUsageSnapshot } from './elpis-features.mts';
 import { ACCOUNT_NOTIFICATIONS, APPROVALS, ARCHIVED_SESSION, EXPLAINED, LISTED, NOTIFICATIONS, SIDE_RPCS } from './client-protocol.mts';
 import { modeOf } from './client-permissions.mts';
-import { internal_decorate, internal_forget, internal_learnSpawn } from './client-thread-list.mts';
+import { internal_decorate, internal_forget, internal_learnSpawn, internal_releaseIdle } from './client-thread-list.mts';
 import type { DesktopClient } from './client.mts';
 import type { ApprovalParams, ClientSocket, ClientState } from './client-state.mts';
 
@@ -194,6 +194,9 @@ function internal_receive(this: DesktopClient, clientState: ClientState, raw: un
       this.emit('event', { type: 'message', data: { method: message.method, params: message.params } });
     }
     if (message.method === 'turn/completed' && id && turnId) clientState.liveTurnModels.delete(`${id}:${turnId}`);
+    const status = message.params?.status;
+    const idle = status !== null && typeof status === 'object' && 'type' in status && status.type === 'idle';
+    if (id && (message.method === 'turn/completed' || message.method === 'thread/status/changed' && idle)) void internal_releaseIdle.call(this, clientState, id);
   }
 
 async function internal_approvalOwner(this: DesktopClient, clientState: ClientState, id: unknown) {

@@ -193,6 +193,40 @@ async fn extract_metadata_from_rollout_uses_session_meta() {
     );
     assert_eq!(outcome.memory_mode, None);
     assert_eq!(outcome.parse_errors, 0);
+
+    // A damaged legacy file may have a response before its canonical metadata.
+    // Metadata extraction still uses the first SessionMeta, not the filename defaults.
+    let contents = std::fs::read_to_string(&path).expect("read rollout");
+    let response = RolloutLine {
+        timestamp: rollout_line.timestamp.clone(),
+        ordinal: None,
+        item: RolloutItem::ResponseItem(crate::ResponseItemEnvelope::new(
+            codex_protocol::models::ResponseItem::Message {
+                id: None,
+                role: "assistant".to_string(),
+                content: vec![codex_protocol::models::ContentItem::OutputText {
+                    text: "before metadata".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            },
+        )),
+    };
+    std::fs::write(
+        &path,
+        format!(
+            "{}\n{contents}",
+            serde_json::to_string(&response).expect("response json")
+        ),
+    )
+    .expect("rewrite rollout");
+    let repaired = extract_metadata_from_rollout(&path, "openai")
+        .await
+        .expect("extract legacy file");
+    let mut expected = expected;
+    expected.updated_at = file_modified_time_utc(&path).await.expect("mtime");
+    expected.recency_at = expected.updated_at;
+    assert_eq!(repaired.metadata, expected);
 }
 
 #[tokio::test]

@@ -71,9 +71,9 @@
 .fe-layer { position:absolute; inset:0; overflow:hidden; padding-block:var(--fe-pad); pointer-events:none; font:var(--code-size, 13px)/var(--fe-line) var(--mono); tab-size:4; color:transparent; }
 .fe-layer > div { width:max-content; min-width:100%; }
 .fe-line { height:var(--fe-line); padding-inline:12px; white-space:pre; }
-.fe-line.hit { background:color-mix(in oklab, var(--primary) 13%, transparent); box-shadow:inset 2px 0 0 var(--primary); }
+.fe-line.hit, .fe-window .cm-line.hit { background:color-mix(in oklab, var(--primary) 13%, transparent); box-shadow:inset 2px 0 0 var(--primary); }
 /* Lines a diff added, opened from its row: the diff's own green, so they never read as removed (5 Nov). */
-.fe-line.hit.added { background:color-mix(in oklch, var(--success) 13%, transparent); box-shadow:inset 2px 0 0 var(--success); }
+.fe-line.hit.added, .fe-window .cm-line.hit.added { background:color-mix(in oklch, var(--success) 13%, transparent); box-shadow:inset 2px 0 0 var(--success); }
 .fe-find-hit { color:transparent; background:color-mix(in oklab, var(--context) 38%, transparent); border-radius:2px; }
 .fe-find-hit.current { background:color-mix(in oklab, var(--context) 70%, transparent); outline:1px solid var(--context); }
 .fe-text { position:absolute; inset:0; width:100%; height:100%; margin:0; padding:var(--fe-pad) 12px; resize:none; border:0; border-radius:0; outline:none; background:transparent; color:var(--foreground); caret-color:var(--foreground); font:var(--code-size, 13px)/var(--fe-line) var(--mono); tab-size:4; white-space:pre; overflow:auto; }
@@ -89,5 +89,16 @@
 .fe-coloured .fe-text { -webkit-text-fill-color:transparent; }
 .fe-coloured .fe-find-hit { color:var(--foreground); }
 .fe-coloured .fe-layer * { font-style:normal; font-weight:inherit; }
+/* CodeMirror owns row measurement, wrapping, selection and the viewport; no full-file DOM mirror. */
+.fe-window { flex:1; min-height:0; min-width:0; overflow:hidden; }
+.fe-window .cm-editor { height:100%; color:var(--foreground); background:var(--card); }
+.fe-window .cm-editor.cm-focused { outline:none; }
+.fe-window .cm-scroller { overflow:auto; font:var(--code-size, 13px)/var(--fe-line) var(--mono); }
+.fe-window .cm-content { padding:var(--fe-pad) 0; caret-color:var(--foreground); }
+.fe-window .cm-line { padding:0 12px; }
+.fe-window .cm-gutters { background:var(--recessed); color:var(--muted-foreground); border-inline-end:1px solid var(--hairline); }
+.fe-window .cm-lineNumbers .cm-gutterElement { padding:0 12px 0 10px; }
+.fe-window .cm-cursor { border-left-color:var(--foreground); }
+.fe-window .fe-find-hit { color:inherit; }
 .file-image { display:flex; align-items:flex-start; justify-content:center; flex:1; min-height:0; overflow:auto; padding:12px; background:var(--card); }
 .file-image img { max-width:100%; height:auto; image-rendering:auto; border:1px solid var(--hairline); }

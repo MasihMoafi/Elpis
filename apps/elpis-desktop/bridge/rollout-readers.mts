@@ -7,42 +7,43 @@ import path from 'node:path';
 import readline from 'node:readline';
 import zlib from 'node:zlib';
 import type { Readable } from 'node:stream';
+import { reverseRolloutLines } from './rollout-lines.mts';
 export const rolloutPath = (file: unknown): file is string => typeof file === 'string' && path.isAbsolute(file) && /\.jsonl(\.zst)?$/.test(file);
 async function rolloutInput(file: string, limit: number) {
     if ((await fsp.stat(file)).size > limit) return null;
     if (!file.endsWith('.zst')) return fs.createReadStream(file);
     return typeof zlib.createZstdDecompress === 'function' ? fs.createReadStream(file).pipe(zlib.createZstdDecompress()) : null;
 }
+type AgentModel = { model: string; reasoningEffort: string | null };
+/** A rollout line's model evidence: undefined when the line carries none, null when it records no model. */
+function lineAgentModel(line: string, threadId: string): AgentModel | null | undefined {
+    if (!line.includes('"turn_context"') && !line.includes('"thread_settings_applied"')) return undefined;
+    let row;
+    try { row = JSON.parse(line); } catch { return undefined; }
+    const context = row?.type === 'turn_context' ? row.payload : row?.type === 'event_msg' && row.payload?.type === 'thread_settings_applied' && (!row.payload.thread_id || row.payload.thread_id === threadId) ? row.payload.thread_settings : null;
+    if (!context) return undefined;
+    const model = string(context.model)?.trim();
+    return model ? { model, reasoningEffort: string(context.effort ?? context.reasoning_effort)?.trim() || null } : null;
+}
 /** The latest recorded turn is the evidence for a background agent's model and effort. */
-export async function rolloutAgentModel(file: unknown, threadId: string, limit = 1 << 28): Promise<{
-    model: string;
-    reasoningEffort: string | null;
-} | null> {
+export async function rolloutAgentModel(file: unknown, threadId: string, limit = 1 << 28): Promise<AgentModel | null> {
     if (!rolloutPath(file))
         return null;
-    let latest: {
-        model: string;
-        reasoningEffort: string | null;
-    } | null = null;
+    let latest: AgentModel | null = null;
     try {
+        if (!file.endsWith('.zst')) {
+            for await (const line of reverseRolloutLines(file, Math.min(limit, 8 * 1024 * 1024))) {
+                const found = lineAgentModel(line, threadId);
+                if (found) return found;
+            }
+            return null;
+        }
         const input = await rolloutInput(file, limit);
         if (!input)
             return null;
         for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) {
-            if (!line.includes('"turn_context"') && !line.includes('"thread_settings_applied"'))
-                continue;
-            let row;
-            try {
-                row = JSON.parse(line);
-            }
-            catch {
-                continue;
-            }
-            const context = row?.type === 'turn_context' ? row.payload : row?.type === 'event_msg' && row.payload?.type === 'thread_settings_applied' && (!row.payload.thread_id || row.payload.thread_id === threadId) ? row.payload.thread_settings : null;
-            if (!context)
-                continue;
-            const model = string(context.model)?.trim();
-            latest = model ? { model, reasoningEffort: string(context.effort ?? context.reasoning_effort)?.trim() || null } : null;
+            const found = lineAgentModel(line, threadId);
+            if (found !== undefined) latest = found;
         }
     }
     catch {
@@ -51,11 +52,24 @@ export async function rolloutAgentModel(file: unknown, threadId: string, limit =
     return latest;
 }
 /** The model recorded for each saved turn. Old or imported rows without a model stay absent. */
-export async function rolloutTurnModels(file: unknown, limit = 1 << 28) {
+export async function rolloutTurnModels(file: unknown, limit = 1 << 28, wanted?: ReadonlySet<string>, older = false) {
     const models = new Map<string, string>();
     if (!rolloutPath(file))
         return models;
     try {
+        if (!file.endsWith('.zst') && wanted) {
+            // Older pages may precede the recent suffix. Seek their labels without retaining
+            // intervening messages; opening a chat still has a fixed recent-read budget.
+            for await (const line of reverseRolloutLines(file, older ? Infinity : Math.min(limit, 8 * 1024 * 1024))) {
+                if (!line.includes('"turn_context"')) continue;
+                let row;
+                try { row = JSON.parse(line); } catch { continue; }
+                const turnId = string(row?.payload?.turn_id), model = string(row?.payload?.model);
+                if (row?.type === 'turn_context' && turnId && wanted.has(turnId) && !models.has(turnId) && model?.trim()) models.set(turnId, model);
+                if (models.size === wanted.size) break;
+            }
+            return models;
+        }
         const input = await rolloutInput(file, limit);
         if (!input)
             return models;
@@ -70,7 +84,7 @@ export async function rolloutTurnModels(file: unknown, limit = 1 << 28) {
                 continue;
             }
             const turnId = string(row?.payload?.turn_id), model = string(row?.payload?.model);
-            if (row?.type === 'turn_context' && turnId && model?.trim())
+            if (row?.type === 'turn_context' && turnId && (!wanted || wanted.has(turnId)) && model?.trim())
                 models.set(turnId, model);
         }
     }
