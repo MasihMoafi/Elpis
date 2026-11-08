@@ -17,10 +17,8 @@ import { Dictation } from "@/components/dictation";
 import { ModelPicker } from "@/components/model-picker";
 
 import { MatildaSwitch } from "@/components/matilda-switch";
+import { MatildaCharacterPicker } from "@/components/matilda-character-picker";
 
-import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cts";
-import { savePreferences, usePreferences } from "@/lib/preferences";
-import { THEME_CHARACTER_LIST, useThemeCharacter } from "@/lib/theme-characters";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
 
@@ -34,12 +32,10 @@ type PageControls = {
   setClearing(value: boolean): void; reopenPages: RefObject<boolean>; setPageToDelete(name: string | undefined): void; pagesError: string; renaming: boolean; pageName: string;
 };
 type Props = { pageControls: PageControls; model: ComponentProps<typeof ModelPicker>; dictation: ComponentProps<typeof Dictation>; replies: ComponentProps<typeof MatildaSwitch>;
-  appearance: { dark: boolean; character: ReturnType<typeof useThemeCharacter>; selectedPalette: ReturnType<typeof usePreferences>['selectedPalette'] };
   accountsButton: boolean; onAccounts(): void; replying: boolean; saveStatus: string };
 
-export function LoveSpotControls({ pageControls, model, dictation, replies, appearance, accountsButton, onAccounts, replying, saveStatus }: Props) {
+export function LoveSpotControls({ pageControls, model, dictation, replies, accountsButton, onAccounts, replying, saveStatus }: Props) {
   const { page, pages, pagesOpen, setPagesOpen, loadPages, pageBusy, editorReady, pagesMenu, restoringPages, pagesScroll, stepPage, setPageName, setRenaming, currentKept, changePage, setClearing, reopenPages, setPageToDelete, pagesError, renaming, pageName } = pageControls;
-  const { dark, character, selectedPalette } = appearance;
   return <div className="navbar love-spot-tools accent-scope">
       <div className="love-spot-pages">
         <DropdownMenu open={pagesOpen} onOpenChange={open => { setPagesOpen(open); if (open) loadPages(); }}>
@@ -71,27 +67,7 @@ export function LoveSpotControls({ pageControls, model, dictation, replies, appe
       <div role="group" aria-label="Matilda's model"><ModelPicker {...model} /></div>
       <div role="group" aria-label="Voice note"><Dictation {...dictation} /></div>
       <MatildaSwitch {...replies} />
-      <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Character" title={character ? `${character.name} · ${character.theme}` : "Matilda · Default"} className="shrink-0 gap-1.5 px-2" />}>
-          <img src={character?.image ?? (dark ? MATILDA_SHOTS.softSmile : MATILDA_SHOTS_LIGHT.softSmile)} alt="" className="size-4 shrink-0 rounded-sm object-contain" />
-          <span className="love-spot-label max-w-28 truncate">{character?.name ?? "Matilda"}</span>
-          <ChevronDown aria-hidden="true" size={12} className="love-spot-label shrink-0" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="max-h-96 w-56 overflow-y-auto" aria-label="Characters">
-          <DropdownMenuItem data-character-id="elpis" onClick={() => savePreferences({ selectedPalette: "elpis" })}>
-            <Check aria-hidden="true" className={!character ? "shrink-0" : "invisible shrink-0"} />
-            <img src={dark ? MATILDA_SHOTS.softSmile : MATILDA_SHOTS_LIGHT.softSmile} alt="" className="size-6 shrink-0 rounded-sm object-contain" />
-            <span className="min-w-0 flex-1 truncate">Matilda</span>
-            <span className="text-xs text-muted-foreground">Default</span>
-          </DropdownMenuItem>
-          {THEME_CHARACTER_LIST.map(item => <DropdownMenuItem key={item.id} data-character-id={item.id} onClick={() => savePreferences({ selectedPalette: item.id })}>
-            <Check aria-hidden="true" className={selectedPalette === item.id ? "shrink-0" : "invisible shrink-0"} />
-            <img src={item.image} alt="" className="size-6 shrink-0 rounded-sm object-contain" />
-            <span className="min-w-0 flex-1 truncate">{item.name}</span>
-            <span className="text-xs text-muted-foreground">{item.theme}</span>
-          </DropdownMenuItem>)}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <MatildaCharacterPicker />
       {accountsButton && <Button variant="outline" size="sm" aria-label="Models & accounts" title="Models & accounts" className="shrink-0" onClick={() => onAccounts()}><ModelsIcon aria-hidden="true" /><span className="love-spot-label">Models &amp; accounts</span></Button>}
       {replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}

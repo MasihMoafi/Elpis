@@ -125,7 +125,7 @@ for (const colorScheme of ['light'] as const) test(`Matilda mini chat, mute and 
   const page = f.page, presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
   const avatar = presence.getByRole('button', { name: 'Chat with Matilda', exact: true });
   assert.equal(await avatar.getByAltText('Matilda', { exact: true }).count(), 1, 'the avatar itself opens the mini chat');
-  assert.equal(await presence.getByRole('button').count(), 4, 'avatar, resize, mute and unpin; no separate chat or music-menu button');
+  assert.equal(await presence.getByRole('button').count(), 5, 'avatar, resize, character, mute and unpin; no separate chat or music-menu button');
   const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true });
   const field = mini.getByRole('textbox', { name: 'Message Matilda', exact: true });
   const sends = () => f.posts.filter(post => post.path === '/api/love-spot/talk');

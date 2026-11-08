@@ -32,8 +32,6 @@ import { lightImage } from "@/lib/love-spot";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { told } from "@/lib/matilda";
 
-import { usePreferences } from "@/lib/preferences";
-import { useThemeCharacter } from "@/lib/theme-characters";
 
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
@@ -54,8 +52,6 @@ const standaloneApp = typeof location !== "undefined" && new URLSearchParams(loc
 
 function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
-  const { selectedPalette } = usePreferences();
-  const character = useThemeCharacter();
   const voiceEnabled = useRef(false);
   const voiceVersion = useRef(0);
   const calling = false; // no voice call with her any more (1 Nov)
@@ -284,7 +280,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
     model={{ choices, models, model: shared.settings?.model || pick.model || settings?.main.model || '', choiceId: pick.choiceId, disabled: !choices.length, allowCustom: false,
       onConfigure: () => setAccountsOpen(true), onKeySaved: () => void reloadAccounts(), onChange: value => { setPick(value); keepModel(value); void shared.update({ model: value.model, provider: choices.find(choice => choice.id === value.choiceId)?.provider ?? null }).catch(report); } }}
     dictation={{ provider, disabled: !editor || !settings, onBusy: () => {}, selection: insertion, onTranscript: addVoiceNote, purpose: 'Adds a note to the board.' }}
-    replies={{ settings: shared.settings, onChange: chooseReplies }} appearance={{ dark, character, selectedPalette }}
+    replies={{ settings: shared.settings, onChange: chooseReplies }}
     accountsButton={!toolbarHost} onAccounts={() => setAccountsOpen(true)} replying={matilda.replying} saveStatus={saveStatus} />;
   return <section className="love-spot accent-scope" aria-label="Love Spot">
     {toolbarHost ? createPortal(tools, toolbarHost) : tools}
