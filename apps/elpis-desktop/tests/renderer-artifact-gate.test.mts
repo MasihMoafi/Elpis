@@ -166,9 +166,9 @@ test('shards execute only their slice, including an empty slice; the merged rece
 test('the prepare, shard and merge CLI commands preserve the downloaded renderer and per-file evidence', async t => {
   const f = await fixture(t);
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const name of ['renderer-evidence-pins.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
+  for (const name of ['renderer-evidence-pins.mts', 'renderer-evidence-retained.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
     const source = await fs.readFile(new URL(`../scripts/${name}`, import.meta.url), 'utf8');
-    await fs.writeFile(path.join(f.root, 'scripts', name), source.replace(baselineCommit, f.baseline));
+    await fs.writeFile(path.join(f.root, 'scripts', name), name === 'renderer-evidence-pins.mts' ? source.replace(baselineCommit, f.baseline) : source);
   }
   await f.commitSource();
   const env = { ...process.env };
@@ -360,7 +360,7 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   const identity = JSON.parse(await fs.readFile(path.join(f.root, 'package.json'), 'utf8'));
   await fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ ...identity, name: 'elpis-desktop' }));
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const file of ['renderer-evidence-pins.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'install-desktop.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
+  for (const file of ['renderer-evidence-pins.mts', 'renderer-evidence-retained.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'install-desktop.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));
   }
   // The installer trims old versions with the repository's shared prune script (1 Nov).
