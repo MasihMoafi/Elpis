@@ -20,6 +20,34 @@ impl ClaSource {
     pub const CONFIG_DIR: &'static str = ".claude";
     pub const CONFIG_MD: &'static str = "CLAUDE.md";
     pub const SETTINGS_FILE: &'static str = "settings.json";
+
+    /// Session discovery and import validation share the account registry owned by ClaudeAccounts.
+    /// The native engine does not inherit the active adapter's CLAUDE_CONFIG_DIR.
+    pub(crate) fn session_homes(
+        external_agent_home: &Path,
+        codex_home: &Path,
+    ) -> io::Result<Vec<PathBuf>> {
+        let mut homes = vec![external_agent_home.to_path_buf()];
+        let state_dir = codex_home.join("elpis-claude");
+        if let Some(accounts) = read_json_file(&state_dir.join("claude-accounts.json"))?
+            && let Some(ids) = accounts.get("ids").and_then(JsonValue::as_array)
+        {
+            for id in ids.iter().filter_map(JsonValue::as_str) {
+                // Match the registry's account ID boundary; never join arbitrary paths.
+                if id.len() == 36
+                    && id.bytes().all(|byte| {
+                        byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte) || byte == b'-'
+                    })
+                {
+                    homes.push(state_dir.join("claude-accounts").join(id));
+                }
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        homes.retain(|home| seen.insert(fs::canonicalize(home).unwrap_or_else(|_| home.clone())));
+        Ok(homes)
+    }
+
     pub const REWRITE_PROFILE: RewriteProfile = RewriteProfile::new(
         Self::CONFIG_MD,
         &[
