@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cts');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 const settings = { version: 'v1', main: {}, background: {}, smartPrune: { explicitOverride: {} }, memory: {}, write: { available: true } };
 async function setup(t: TestContext, theme = 'light') {
   const files: Record<string, SettingsFile> = Object.fromEntries(['instructions', 'memory'].map(kind => [kind, { content: '', version: 'missing', path: kind === 'instructions' ? '/isolated/AGENTS.md' : '/isolated/memories/MEMORY.md' }]));

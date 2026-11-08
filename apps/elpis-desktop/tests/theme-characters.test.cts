@@ -2,8 +2,8 @@
 // palette has its own character in the pixel style he chose (lib/theme-characters.ts); Elpis keeps Matilda.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
-const { openSettings, leaveSettings, chooseOption } = require('./controls.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
+const { openSettings, leaveSettings, chooseOption } = require('./controls.cts');
 
 const ALL_CHARACTERS = [
   ['palette-plum', 'Punk rocker'],

@@ -1,4 +1,4 @@
-const { threadMenuItem } = require('./controls.cjs');
+const { threadMenuItem } = require('./controls.cts');
 const { test } = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 import type { Page } from './playwright-types.mts';
@@ -16,9 +16,9 @@ type Fixture = { page: Page; emit(type: string, data: unknown): void; close(): P
 declare global { var sessionWindows: { openLoveSpot(): Promise<void>; flushText(): Promise<boolean>; open(options: object): Promise<void>; windows: Set<unknown> }; var restoreStateBroadcasts: () => void; var appearanceConflicts: string[]; var appearanceWrites: string[]; }
 const { _electron }: { _electron: { launch(options: object): Promise<ElectronApp> } } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const { fixture }: { fixture(options: object): Promise<Fixture> } = require('./parity-fixture.cts');
-const { loveSpotFixture }: { loveSpotFixture(): Promise<LoveFixture> } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture }: { loveSpotFixture(): Promise<LoveFixture> } = require('./love-spot-fixture.cts');
 const { assertUiFit } = require('./ui-fit.cts');
-const { openSettings, chooseOption, controlValue, leaveSettings } = require('./controls.cjs');
+const { openSettings, chooseOption, controlValue, leaveSettings } = require('./controls.cts');
 
 test('native Love Spot dock and embedded windows retain live text after a cancelled quit', { skip: !process.env.ELPIS_PRIVATE_DISPLAY && 'Use ELPIS_PRIVATE_DISPLAY=1 xvfb-run -a for native windows' }, async () => {
   const f = await loveSpotFixture(); let electron: ElectronApp | undefined, standalone: Page | undefined, release: (() => void) | undefined;

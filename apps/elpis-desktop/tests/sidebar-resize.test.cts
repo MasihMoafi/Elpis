@@ -6,7 +6,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore } = require('./controls.cjs');
+const { guardDesktopStore } = require('./controls.cts');
 
 test('the sidebar edge drags to resize, by pointer and keys, clamps, persists and resets on double-click', async () => {
   const server = http.createServer(async (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => {

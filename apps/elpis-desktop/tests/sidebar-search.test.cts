@@ -4,7 +4,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const { rowAction } = require('./controls.cjs');
+const { rowAction } = require('./controls.cts');
 
 const chat = (id: string, name: string, extra = {}) => ({ id, name, preview: name, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, ...extra });
 const threads = [

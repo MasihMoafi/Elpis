@@ -11,7 +11,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 const exec = promisify(execFile);
 
 test('A25 packaged app: real recorded changes, file selection, manual edit, reload and both themes', {

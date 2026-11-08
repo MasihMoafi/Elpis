@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 
 // 30 Oct (C7): "the unread badge clears once he has read it". An answer he reads in Matilda's small chat is read.
 for (const colorScheme of ['light']) test(`an answer read in her small chat leaves no unread badge on Love Spot (${colorScheme})`, { timeout: 90000 }, async (t: import('node:test').TestContext) => {

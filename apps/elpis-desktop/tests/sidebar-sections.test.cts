@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, CWD } = require('./parity-fixture.cts');
-const { chooseTheme, leaveSettings, openSettings } = require('./controls.cjs');
+const { chooseTheme, leaveSettings, openSettings } = require('./controls.cts');
 
 const chat = (id: string, name: string) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const threads = Array.from({ length: 16 }, (_, index) => chat(`chat-${String.fromCharCode(97 + index)}`, `${String.fromCharCode(65 + index)} chat`));

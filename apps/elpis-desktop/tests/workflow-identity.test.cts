@@ -10,7 +10,7 @@ type Task = { id: string; title: string; assignedThreadId?: string; status?: str
 type Run = { id: string; rootThreadId: string; name: string; status: string; startedAt?: number; tasks: Task[]; mother?: { sessionId?: string; threads?: string[]; [key: string]: unknown }; [key: string]: unknown };
 type PlannedRun = Run & { startedAt: number; tasks: (Task & { assignedThreadId: string; status: string })[] };
 const { assertUiFit } = require('./ui-fit.cts');
-const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
+const { chooseTheme, openSettings, leaveSettings } = require('./controls.cts');
 
 const runs = ['Fix a bug', 'Fix a bug', 'Research pricing', 'Ship exporter'].map((name, i) => ({
   id: `run-${i}`, rootThreadId: i ? `root-${i}` : 'chat-a', name, status: i < 2 ? 'running' : 'succeeded', startedAt: 100 + i,

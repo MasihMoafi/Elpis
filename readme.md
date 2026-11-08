@@ -104,7 +104,7 @@ flowchart LR
 | No two mutable borrows at once | Two agents linked to work alongside may not share a folder. |
 | The owner decides what lives | The Mother agent reviews the combined commit and must pass it with evidence before Elpis fast-forwards your project. |
 
-A Voting team (three answering agents and one tally agent, each with its own check) finished on GPT-6 Luna and on Claude Haiku 5.5 in 74 to 100 seconds; the test is [`tests/canvas-live.runtime.mjs`](apps/elpis-desktop/tests/canvas-live.runtime.mjs). Outside a Git project the folders are instructions, not enforced.
+A Voting team (three answering agents and one tally agent, each with its own check) finished on GPT-6 Luna and on Claude Haiku 5.5 in 74 to 100 seconds; the test is [`tests/canvas-live.runtime.mts`](apps/elpis-desktop/tests/canvas-live.runtime.mts). Outside a Git project the folders are instructions, not enforced.
 
 <img src="website/assets/technical/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
 

@@ -2,7 +2,7 @@
 // should automatically unlock her." Writing in her chat turns her on; off still keeps her quiet on the board until then.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 
 test('a message in Matilda\'s chat turns her on instead of being refused', async () => {
   const chatId = (n: number) => `00000000-0000-4000-8000-${String(n + 301).padStart(12, '0')}`, love = chatId(0);

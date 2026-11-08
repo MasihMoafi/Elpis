@@ -2,7 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 type Page = { locator(selector: string): { innerText(): Promise<string>; getByRole(role: string, options: { name: string; exact: boolean }): { click(): Promise<void> } } };
 const title = (page: Page) => page.locator('.workspace-header h1');
 const nav = (page: Page) => page.locator('aside.sidebar nav[aria-label="Workspace"]');

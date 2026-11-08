@@ -3,8 +3,8 @@ const assert: typeof import('node:assert/strict') = require('node:assert/strict'
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption, chooseTheme, controlValue } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseOption, chooseTheme, controlValue } = require('./controls.cts');
 type SavedNode = { id: string; type: string; position: { x: number; y: number }; data: { provider?: string; effort?: string | null } };
 type Edge = { source: string; target: string };
 type WorkingWindow = Window & { __workingSetItem?: (key: string, value: string) => void };

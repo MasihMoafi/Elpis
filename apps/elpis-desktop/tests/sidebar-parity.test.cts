@@ -1,6 +1,6 @@
 // The sidebar and start screen as in Claude's desktop app: a "+" on every project header that starts a chat in that
 // project, a persistent colour control and active status on chat rows, a "Local" chip beside the project chip above the composer, and the account
-// row at the bottom left with its menu. The exported UI against a scripted desktop bridge (tests/fake-desktop.cjs) and a
+// row at the bottom left with its menu. The exported UI against a scripted desktop bridge (tests/fake-desktop.cts) and a
 // synthetic bridge HTTP/SSE server: no engine, no provider. Screenshots go to $ELPIS_PARITY_SHOTS when it is set.
 const { test } = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
@@ -8,8 +8,8 @@ const http: typeof import('node:http') = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore } = require('./controls.cjs');
-const { fakeDesktop } = require('./fake-desktop.cjs');
+const { guardDesktopStore } = require('./controls.cts');
+const { fakeDesktop } = require('./fake-desktop.cts');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_PARITY_SHOTS;
 type Box = { x: number; y: number; width: number; height: number };

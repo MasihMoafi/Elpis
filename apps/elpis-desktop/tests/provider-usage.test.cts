@@ -1,4 +1,4 @@
-const { leaveSettings, sidebar, openSettings } = require('./controls.cjs');
+const { leaveSettings, sidebar, openSettings } = require('./controls.cts');
 // Account usage and Models & accounts against a local adapter: one shared usage store, reported usage that stays,
 // no internal gateway listed as a server, and the settings search spacing. No runtime or model calls.
 const { test } = require('node:test');

@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 const file = '/tmp/code-open-outside/config.toml';
 async function open(routes = {}) {
   const f = await fixture({ width: 1280, height: 850, routes: {

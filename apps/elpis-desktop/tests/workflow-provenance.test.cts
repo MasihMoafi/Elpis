@@ -1,19 +1,49 @@
-const { test } = require('node:test');
+const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption, chooseTheme } = require('./controls.cjs');
-const fs = require('node:fs/promises');
+type Bounds = { x: number; y: number; width: number; height: number };
+type Locator = {
+  getByRole(role: string, options?: object): Locator;
+  getByText(text: string, options?: object): Locator;
+  filter(options: object): Locator;
+  first(): Locator;
+  nth(index: number): Locator;
+  all(): Promise<Locator[]>;
+  click(): Promise<void>;
+  fill(value: string): Promise<void>;
+  count(): Promise<number>;
+  waitFor(options?: object): Promise<void>;
+  innerText(): Promise<string>;
+  getAttribute(name: string): Promise<string | null>;
+  isDisabled(): Promise<boolean>;
+  isEnabled(): Promise<boolean>;
+  boundingBox(): Promise<Bounds | null>;
+  evaluate<T>(fn: (element: HTMLElement) => T): Promise<T>;
+};
+type ExperimentRequest = { action?: never; repetitions: number; pattern: string; stopWhen: string; stages: { kind: string; instruction: string }[] } | { action: 'stop' };
+type Route = { request(): { method(): string; postDataJSON(): ExperimentRequest }; fulfill(options: object): Promise<void> };
+type Page = {
+  locator(selector: string): Locator;
+  getByRole(role: string, options?: object): Locator;
+  keyboard: { press(key: string): Promise<void> };
+  route(pattern: string, handler: (route: Route) => void | Promise<void>): Promise<void>;
+  waitForRequest(fn: (request: { url(): string; method(): string }) => boolean): Promise<unknown>;
+  waitForEvent(event: 'download'): Promise<{ suggestedFilename(): string }>;
+  setViewportSize(size: { width: number; height: number }): Promise<void>;
+  screenshot(options: object): Promise<void>;
+  reload(): Promise<void>;
+};
+type CanvasFixture = { page: Page; canvas: Locator; agents: Locator; errors: unknown[]; saved(): Promise<unknown>; close(): Promise<void> };
+type ExperimentRecord = { id?: string; status: string; model?: string; request?: ExperimentRequest; trials?: object[]; stopReason?: string };
+const { openCanvas }: { openCanvas(options: object): Promise<CanvasFixture> } = require('./canvas-fixture.cts');
+const { chooseOption, chooseTheme }: { chooseOption(locator: Locator, value: string): Promise<void>; chooseTheme(page: Page, theme: string): Promise<void> } = require('./controls.cts');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
 require('./parity-fixture.cts');
-
-type LabRequest = { action?: string; repetitions: number; pattern: string; stopWhen: string; stages: { instruction: string; kind: string }[] };
-type Route = { request(): { method(): string; postDataJSON(): LabRequest }; fulfill(options: { json: unknown }): Promise<void> };
-type RecordState = { status: string; [key: string]: unknown };
 
 test('Lab receives the current board even when navigation immediately follows an edit', async () => {
   const f = await openCanvas({ desktop: true });
-  const requests: LabRequest[] = [];
-  await f.page.route('**/api/experiment-lab', (route: Route) => {
-    if (route.request().method() === 'POST') requests.push(route.request().postDataJSON());
+  let request: ExperimentRequest | undefined;
+  await f.page.route('**/api/experiment-lab', route => {
+    if (route.request().method() === 'POST') request = route.request().postDataJSON();
     return route.fulfill({ json: { record: null } });
   });
   try {
@@ -27,7 +57,7 @@ test('Lab receives the current board even when navigation immediately follows an
     const sent = f.page.waitForRequest((req: { url(): string; method(): string }) => req.url().endsWith('/api/experiment-lab') && req.method() === 'POST');
     await lab.getByRole('button', { name: 'Run comparison', exact: true }).click();
     await sent;
-    const request = requests.at(-1); assert.ok(request);
+    assert.ok(request && 'stages' in request);
     assert.ok(request.stages.some(stage => stage.instruction.includes('Fresh board instruction for the Lab')), JSON.stringify(request));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -35,8 +65,8 @@ test('Lab receives the current board even when navigation immediately follows an
 
 test('Lab runs the declared repeated comparison, restores evidence, exports, shows failures and stops a run', async () => {
   const f = await openCanvas({ desktop: true });
-  let current: RecordState | null = null; const requests: LabRequest[] = [];
-  await f.page.route('**/api/experiment-lab**', async (route: Route) => {
+  let current: ExperimentRecord | null = null; const requests: ExperimentRequest[] = [];
+  await f.page.route('**/api/experiment-lab**', async route => {
     const req = route.request();
     if (req.method() === 'POST') {
       const data = req.postDataJSON(); requests.push(data);
@@ -62,9 +92,9 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
     const rows = lab.getByRole('row');
     assert.match(await rows.nth(1).innerText(), /0\/2[\s\S]*Unknown/);
     assert.match(await rows.nth(2).innerText(), /2\/2[\s\S]*120/);
-    const request = requests[0]; assert.ok(request);
-    assert.equal(request.repetitions, 2); assert.equal(request.pattern, 'voting'); assert.equal(request.stopWhen, 'count', 'fixed-count stays the default');
-    assert.equal(request.stages.filter(s => s.kind === 'implement').length, 4);
+    const first = requests[0]; assert.ok(first && 'repetitions' in first);
+    assert.equal(first.repetitions, 2); assert.equal(first.pattern, 'voting'); assert.equal(first.stopWhen, 'count', 'fixed-count stays the default');
+    assert.equal(first.stages.filter(s => s.kind === 'implement').length, 4);
     await lab.getByText('Trial 1 · Single agent · Fail', { exact: true }).click();
     await lab.getByText('41', { exact: true }).first().waitFor();
     const download = f.page.waitForEvent('download');
@@ -73,7 +103,7 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
     await f.page.reload();
     await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
     await lab.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
-    current = { ...(current as RecordState | null), status: 'running' };
+    current = { ...(current as ExperimentRecord | null), status: 'running' };
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.page.getByRole('navigation', { name: 'Workspace', exact: true }).getByRole('button', { name: 'Lab', exact: true }).click();
     await lab.getByRole('button', { name: 'Stop experiment', exact: true }).click();
@@ -89,9 +119,9 @@ test('Lab runs the declared repeated comparison, restores evidence, exports, sho
 
 test('Lab offers “Until the task finishes”, sends and restores the choice, and says where the run stands and what is next', async () => {
   const f = await openCanvas({ desktop: true, width: 1130, height: 660 });
-  let current: RecordState | null = null; const requests: LabRequest[] = [];
+  let current: ExperimentRecord | null = null; const requests: ExperimentRequest[] = [];
   const trial = (repetition: number, arm: string, passed: boolean) => ({ repetition, arm, passed, elapsedMs: 1000, tokens: 10, answer: passed ? '42' : '41', error: null, steps: [], endedAt: '2026-10-19T00:00:00Z' });
-  await f.page.route('**/api/experiment-lab**', async (route: Route) => {
+  await f.page.route('**/api/experiment-lab**', async route => {
     const req = route.request();
     if (req.method() === 'POST') {
       const data = req.postDataJSON(); requests.push(data);
@@ -117,8 +147,8 @@ test('Lab offers “Until the task finishes”, sends and restores the choice, a
     assert.match(await lab.innerText(), /Up to \d+ model calls/);
     await lab.getByRole('button', { name: 'Run comparison', exact: true }).click();
     await lab.getByRole('table', { name: 'Comparison', exact: true }).waitFor();
-    const request = requests[0]; assert.ok(request);
-    assert.equal(request.stopWhen, 'solved'); assert.equal(request.repetitions, 10);
+    const first = requests[0]; assert.ok(first && 'repetitions' in first);
+    assert.equal(first.stopWhen, 'solved'); assert.equal(first.repetitions, 10);
     assert.match(await lab.getByRole('status').innerText(), /Completed · Repetition 2 of up to 10 · 4 trials/);
     assert.match(await lab.innerText(), /Solved on repetition 2: the pattern’s answer matched/);
     assert.equal(await lab.getByRole('button', { name: 'New experiment', exact: true }).isEnabled(), true);

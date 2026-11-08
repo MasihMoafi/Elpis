@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { existingSocket } from '../bridge/client.mts';
 import type { Page } from './playwright-types.mts';
 const require = createRequire(import.meta.url);
-const { chooseOption, chooseTheme, openSettings } = require('./controls.cjs');
+const { chooseOption, chooseTheme, openSettings } = require('./controls.cts');
 type ElectronExports = { dialog: { showOpenDialog(): Promise<{ canceled: boolean; filePaths: string[] }> }; app: { getPath(name: string): string }; BrowserWindow: { getAllWindows(): { setSize(width: number, height: number): void }[] } };
 type ElectronApp = { firstWindow(): Promise<Page>; close(): Promise<void>; evaluate<T>(fn: (electron: ElectronExports) => T): Promise<Awaited<T>>; evaluate<T, A>(fn: (electron: ElectronExports, arg: A) => T, arg: A): Promise<Awaited<T>> };
 type ModelRequest = { tools: { name: string }[]; input: unknown; model: string; reasoning: { effort: string } };

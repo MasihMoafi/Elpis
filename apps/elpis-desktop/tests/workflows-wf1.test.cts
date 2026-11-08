@@ -1,24 +1,46 @@
-const { test } = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const { openCanvas } = require(process.env.ELPIS_WF1_CDP ? './workflows-wf1-real.cts' : './canvas-fixture.cjs');
-const { chooseTheme } = require('./controls.cjs');
-
+const { test }: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
 type Point = { x: number; y: number };
-type NodePosition = { id: string; position: Point };
-type SelectionFixture = { canvas: { locator(selector: string): { evaluateAll(fn: (items: HTMLElement[]) => (string | undefined)[]): Promise<(string | undefined)[]> } } };
-type DragPage = {
-  keyboard: { down(key: string): Promise<void>; up(key: string): Promise<void>; press(key: string): Promise<void> };
-  mouse: { move(x: number, y: number, options?: { steps: number }): Promise<void>; down(): Promise<void>; up(): Promise<void> };
-  locator(selector: string): { count(): Promise<number>; evaluate<T>(fn: (el: HTMLElement) => T): Promise<T> };
-  screenshot(options: { path: string }): Promise<void>;
+type Bounds = Point & { width: number; height: number };
+type Locator = {
+  locator(selector: string): Locator;
+  getByRole(role: string, options?: object): Locator;
+  filter(options: object): Locator;
+  count(): Promise<number>;
+  click(): Promise<void>;
+  waitFor(options?: object): Promise<void>;
+  innerText(): Promise<string>;
+  getAttribute(name: string): Promise<string | null>;
+  boundingBox(): Promise<Bounds | null>;
+  evaluate<T>(fn: (element: HTMLElement) => T): Promise<T>;
+  evaluateAll<T>(fn: (elements: HTMLElement[]) => T): Promise<T>;
 };
+type Page = {
+  locator(selector: string): Locator;
+  getByRole(role: string, options?: object): Locator;
+  keyboard: { down(key: string): Promise<void>; up(key: string): Promise<void>; press(key: string): Promise<void> };
+  mouse: { move(x: number, y: number, options?: object): Promise<void>; down(options?: object): Promise<void>; up(options?: object): Promise<void>; click(x: number, y: number): Promise<void>; wheel(x: number, y: number): Promise<void> };
+  screenshot(options: object): Promise<void>;
+  waitForTimeout(ms: number): Promise<void>;
+  waitForFunction<T>(fn: (value: T) => boolean, value: T): Promise<void>;
+  reload(): Promise<void>;
+  route(pattern: string, handler: (route: { fulfill(options: object): Promise<void> }) => Promise<void>): Promise<void>;
+  unroute(pattern: string): Promise<void>;
+  setViewportSize(size: { width: number; height: number }): Promise<void>;
+};
+type CanvasFixture = { page: Page; canvas: Locator; errors: unknown[]; fit(): Promise<void>; close(): Promise<void>; saved(): Promise<{ nodes: { id: string; position: Point }[] }> };
+type Run = { graphId: string; tasks: { id: string }[] };
+const { openCanvas }: { openCanvas(options: { graph: object; folders: string[]; listed?: (run: Run) => object }): Promise<CanvasFixture> } = require(process.env.ELPIS_WF1_CDP ? './workflows-wf1-real.cts' : './canvas-fixture.cts');
+const { chooseTheme }: { chooseTheme(page: Page, value: string): Promise<void> } = require('./controls.cts');
+
+type NodePosition = { id: string; position: Point };
 
 const shots = process.env.ELPIS_SHOTS || '/tmp/wf1-shots';
 const agent = (id: string, x: number) => ({ id, type: 'agent', position: { x, y: 0 }, data: { title: id, instruction: `Write the ${id} report`, model: null, provider: null, effort: null, writeScopes: [], acceptanceCriteria: ['Report exists'] } });
 const graph = { name: 'W3 A27 A30', nodes: ['First', 'Middle', 'Last'].map((id, i) => agent(id, i * 400)), edges: [{ id: 'first-middle', source: 'First', target: 'Middle' }, { id: 'middle-last', source: 'Middle', target: 'Last' }] };
-const picked = (f: SelectionFixture, iso: boolean) => f.canvas.locator(iso ? '.iso-node[aria-pressed="true"]' : '.react-flow__node.selected').evaluateAll(items => items.map(n => n.dataset.id).sort());
-async function drag(page: DragPage, from: Point, to: Point, { shift = false, cancel = false, shot }: { shift?: boolean; cancel?: boolean; shot?: string } = {}) {
+const picked = (f: CanvasFixture, iso: boolean) => f.canvas.locator(iso ? '.iso-node[aria-pressed="true"]' : '.react-flow__node.selected').evaluateAll(items => items.map(n => n.dataset.id).sort());
+async function drag(page: Page, from: Point, to: Point, { shift = false, cancel = false, shot }: { shift?: boolean; cancel?: boolean; shot?: string } = {}) {
   if (shift) await page.keyboard.down('Shift');
   await page.mouse.move(from.x, from.y); await page.mouse.down();
   await page.mouse.move(to.x, to.y, { steps: 12 });
@@ -32,7 +54,7 @@ async function drag(page: DragPage, from: Point, to: Point, { shift = false, can
   await page.mouse.up();
   if (shift) await page.keyboard.up('Shift');
 }
-async function theme(f: { page: { locator(selector: string): { evaluate<T>(fn: (el: HTMLElement) => T): Promise<T> } } }, value: string) {
+async function theme(f: CanvasFixture, value: string) {
   if (await f.page.locator('html').evaluate(el => el.classList.contains('dark')) !== (value === 'dark')) await chooseTheme(f.page, value);
 }
 
@@ -46,6 +68,7 @@ for (const iso of [false, true]) for (const color of ['light']) {
       await f.fit();
       const initial = (await f.saved()).nodes.map((n: NodePosition) => ({ id: n.id, position: n.position }));
       const box = await f.canvas.locator(iso ? '.iso-node[data-id="Middle"]' : '.react-flow__node[data-id="Middle"]').boundingBox();
+      assert.ok(box);
       const left = { x: box.x - 8, y: box.y - 8 }, right = { x: box.x + box.width + 8, y: box.y + box.height + 8 };
       const partial = { x: box.x + box.width / 2, y: right.y };
       const world = f.canvas.locator(iso ? '.iso-world' : '.react-flow__viewport');
@@ -61,6 +84,7 @@ for (const iso of [false, true]) for (const color of ['light']) {
       assert.deepEqual(await picked(f, iso), ['Middle'], 'left to right selects an enclosed agent');
       for (const id of ['First', 'Last']) {
         const b = await f.canvas.locator(iso ? `.iso-node[data-id="${id}"]` : `.react-flow__node[data-id="${id}"]`).boundingBox();
+        assert.ok(b);
         await drag(f.page, { x: b.x + b.width + 8, y: b.y - 8 }, { x: b.x + b.width / 2, y: b.y + b.height + 8 }, { shift: true });
       }
       assert.deepEqual(await picked(f, iso), ['First', 'Last', 'Middle'], 'Shift adds first and last agents');
@@ -68,6 +92,7 @@ for (const iso of [false, true]) for (const color of ['light']) {
       assert.deepEqual(await picked(f, iso), ['First', 'Last', 'Middle'], 'Escape restores the selection from before the drag');
       assert.equal(await f.canvas.locator('.canvas-selection').count(), 0);
       const board = await f.canvas.locator(iso ? '.iso-board' : '.react-flow__pane').boundingBox();
+      assert.ok(board);
       await f.page.mouse.click(board.x + 10, board.y + 10);
       assert.deepEqual(await picked(f, iso), [], 'empty board click clears selection');
       const panBefore = await transform();
@@ -89,6 +114,7 @@ for (const iso of [false, true]) for (const color of ['light']) {
       assert.equal(await f.canvas.locator(iso ? '.iso-node[data-kind="agent"]' : '.react-flow__node-agent').count(), 0);
       await f.fit();
       const empty = await f.canvas.locator(iso ? '.iso-board' : '.react-flow__pane').boundingBox();
+      assert.ok(empty);
       const a = { x: empty.x + 12, y: empty.y + 12 }, b = { x: empty.x + 75, y: empty.y + 55 };
       await drag(f.page, a, b); assert.deepEqual(await picked(f, iso), []);
       await drag(f.page, b, a, { cancel: true }); assert.deepEqual(await picked(f, iso), []);
@@ -152,6 +178,7 @@ for (const color of ['light']) test(`A30 ${color}: run rejection and failed agen
       const fits = await header.evaluate((el: HTMLElement) => el.scrollWidth <= el.clientWidth && [...el.querySelectorAll('[role="alert"], button')].every(child => { const b = child.getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth; }));
       assert.equal(fits, true, `run toolbar fits at ${width}`);
       const box = await problem.boundingBox(), workspace = await f.canvas.boundingBox();
+      assert.ok(box && workspace);
       assert.ok(box.x >= workspace.x && box.x + box.width <= workspace.x + workspace.width + 1, `run error fits at ${width}`);
       assert.ok(Math.abs(box.y + box.height - workspace.y - workspace.height) <= 14, 'the complete refusal stays at the bottom');
       await f.page.screenshot({ path: `${shots}/A30-${color}-refused-${width}.png` });

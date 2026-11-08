@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { startApp, stopApp, skipFirstRun } = require('./real-app.cts');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 
 type PopupPage = { url(): string; locator(selector: string): { count(): Promise<number>; click(): Promise<void> }; waitForTimeout(ms: number): Promise<void>; screenshot(options: { path: string }): Promise<void>; waitForEvent(event: string, options: { timeout: number }): Promise<void> };
 type Browser = { contexts(): { pages(): PopupPage[] }[] };

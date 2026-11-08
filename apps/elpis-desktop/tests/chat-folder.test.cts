@@ -11,7 +11,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { fakeDesktop } = require('./fake-desktop.cjs');
+const { fakeDesktop } = require('./fake-desktop.cts');
 const root = path.resolve(__dirname, '../out');
 
 test('a chat moves to a folder chosen after it started; its chip shows the new folder', async () => {

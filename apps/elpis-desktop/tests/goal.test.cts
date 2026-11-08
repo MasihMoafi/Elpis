@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { captureReview } = require('./controls.cjs');
+const { captureReview } = require('./controls.cts');
 const { fixture } = require('./parity-fixture.cts');
 const { files, contextRoutes } = require('./context-files-fixture.cts');
 const { assertUiFit } = require('./ui-fit.cts');

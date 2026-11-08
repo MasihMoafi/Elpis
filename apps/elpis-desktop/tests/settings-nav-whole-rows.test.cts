@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 
 const cutTabs = (page: { locator: (selector: string) => { evaluate: (fn: (nav: HTMLElement) => string[]) => Promise<string[]> } }) => page.locator('.settings-nav').evaluate((nav: HTMLElement) => {
   const view = nav.getBoundingClientRect();

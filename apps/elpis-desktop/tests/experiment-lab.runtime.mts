@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mts';
 
 const require = createRequire(import.meta.url), { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseOption } = require('./controls.cjs');
+const { chooseOption } = require('./controls.cts');
 const [engine, evidence] = process.argv.slice(2);
 assert(engine && evidence && path.isAbsolute(engine) && path.isAbsolute(evidence), 'Give an absolute engine path and evidence directory');
 const bridgeScript = path.join(path.dirname(realpathSync(engine)), 'tools/elpis-claude/acp-bridge.mjs');

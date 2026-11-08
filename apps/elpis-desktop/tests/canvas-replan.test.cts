@@ -2,8 +2,8 @@
 // her decisions are lines in the run history, agents she adds appear on the board live and ones she cancels show cancelled.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseOption } = require('./controls.cts');
 
 const graph = { name: 'Re-plan team', edges: [], nodes: ['a', 'b'].map((id, index) => ({ id, type: 'agent', position: { x: 260, y: 40 + index * 160 },
   data: { title: id === 'a' ? 'Section writer' : 'Index builder', instruction: `Write part ${id}.`, model: null, writeScopes: ['src'], acceptanceCriteria: ['It exists'] } })) };

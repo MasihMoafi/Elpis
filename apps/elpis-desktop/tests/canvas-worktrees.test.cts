@@ -3,7 +3,7 @@
 // agent is marked (engine contract: codex-rs core/src/tools/handlers/work_graph_worktrees.rs, docs/WORK_GRAPHS.md).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
 
 const writer = (id: string, title: string, x: number, y: number, folder: string) => ({ id, type: 'agent', position: { x, y }, data: { title, instruction: `Do ${title}`, model: null, writeScopes: [folder], acceptanceCriteria: [] } });
 /** Two parts side by side and a join that waits for both. */

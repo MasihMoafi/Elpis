@@ -6,7 +6,7 @@ const path = require('node:path');
 const assert = require('node:assert/strict');
 const { spawn, execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme, openSettings, leaveSettings } = require('./controls.cjs');
+const { chooseTheme, openSettings, leaveSettings } = require('./controls.cts');
 const { PAGES, visit } = require('./settings-row-audit.cts');
 const { scanDisclosures, modelSpacing, cornerWidths, checkWidths, shot } = require('./polish-check.cts');
 

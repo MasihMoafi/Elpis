@@ -2,7 +2,7 @@
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { openSettings } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
 
 type Box = { x: number; y: number; width: number; height: number };
 type Locator = {

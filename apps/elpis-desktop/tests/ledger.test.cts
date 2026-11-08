@@ -1,4 +1,4 @@
-// Regression only: real-engine acceptance is ledger-engine.runtime.mjs and ledger-app.cjs.
+// Regression only: real-engine acceptance is ledger-engine.runtime.mts and ledger-app.cjs.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');

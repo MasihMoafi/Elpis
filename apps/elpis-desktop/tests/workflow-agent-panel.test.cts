@@ -4,8 +4,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseTheme } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseTheme } = require('./controls.cts');
 const { assertUiFit } = require('./ui-fit.cts');
 
 const shots = process.env.ELPIS_SHOTS;

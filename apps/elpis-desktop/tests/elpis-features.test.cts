@@ -6,7 +6,7 @@ const http: typeof import('node:http') = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { LOGO_ACCENT, unapprovedOranges } = require('./controls.cjs');
+const { LOGO_ACCENT, unapprovedOranges } = require('./controls.cts');
 
 test('the main chat shows Elpis features under the message box, one click each, and light mode has only approved logo accent', async () => {
   const thread = { id: 'ledger', name: 'Ledger chat', cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } };

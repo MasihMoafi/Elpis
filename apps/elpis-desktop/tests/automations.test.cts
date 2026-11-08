@@ -2,7 +2,7 @@
 // opens the chat it ran in.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loveSpotFixture } = require('./love-spot-fixture.cjs');
+const { loveSpotFixture } = require('./love-spot-fixture.cts');
 
 test('a new automation is listed with its schedule; Run now sends it and its run opens the chat', async () => {
   const f = await loveSpotFixture({ automations: true, reply: 'All builds are green.' });

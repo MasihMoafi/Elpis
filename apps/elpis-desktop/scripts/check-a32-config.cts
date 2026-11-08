@@ -6,7 +6,7 @@ const path = require('node:path');
 const playwrightPackage = process.env.ELPIS_PLAYWRIGHT_PACKAGE;
 if (!playwrightPackage) throw new Error('Set ELPIS_PLAYWRIGHT_PACKAGE to the Playwright package path');
 const { chromium } = require(playwrightPackage);
-const { openSettings, chooseOption, controlValue } = require('../tests/controls.cjs');
+const { openSettings, chooseOption, controlValue } = require('../tests/controls.cts');
 
 (async () => {
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${process.argv[2]}`);

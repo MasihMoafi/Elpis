@@ -6,7 +6,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const { leaveSettings, openSettings } = require('./controls.cjs');
+const { leaveSettings, openSettings } = require('./controls.cts');
 type Locator = { waitFor(options?: object): Promise<void>; click(): Promise<void>; fill(text: string): Promise<void>; inputValue(): Promise<string>; getAttribute(name: string): Promise<string | null>; count(): Promise<number>; getByText(text: string, options?: object): Locator; getByRole(role: string, options?: object): Locator };
 type Page = { getByRole(role: string, options?: object): Locator; getByText(text: string | RegExp, options?: object): Locator; keyboard: { press(key: string): Promise<void> }; waitForFunction(fn: () => boolean): Promise<void>; evaluate<T>(fn: () => T): Promise<T> };
 type Fixture = { page: Page; composer: Locator; posts: { path: string; body: { text: string } }[]; errors: unknown[]; open(id: string): Promise<void>; close(): Promise<void>; emit(name: string, data: object): void };

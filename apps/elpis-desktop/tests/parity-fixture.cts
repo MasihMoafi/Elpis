@@ -13,8 +13,8 @@ type FixtureBrowser = { newPage(options: object): Promise<FixturePage>; close():
 type Options = { staticDir?: string; cwd?: string; width?: number; height?: number; colorScheme?: string; deviceScaleFactor?: number; running?: boolean; desktop?: boolean; chat?: Turn[]; threads?: Thread[]; readyThreadId?: string; routes?: Record<string, (body: unknown, url: URL, response: import('node:http').ServerResponse) => unknown>; storage?: Record<string, string>; browserChannel?: string; browserArgs?: string[]; nativeClipboard?: boolean; showScrollbars?: boolean; clockTime?: string | number | Date; loveScene?: unknown };
 type ClipboardWindow = Window & { __copied?: string };
 const { chromium }: { chromium: { launch(options: object): Promise<FixtureBrowser> } } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore } = require('./controls.cjs');
-const { fakeDesktop } = require('./fake-desktop.cjs');
+const { guardDesktopStore } = require('./controls.cts');
+const { fakeDesktop } = require('./fake-desktop.cts');
 
 const out = path.resolve(__dirname, '../out');
 const CWD = '/tmp/parity-fixture';

@@ -8,7 +8,7 @@ const { fixture }: { fixture(options: VoiceOptions): Promise<VoiceFixture> } = r
 type FakeVoicePeer = { connectionState: string };
 type VoiceTest = { mode: string; tracks: MediaStreamTrack[]; peers: FakeVoicePeer[]; resolve: (() => void) | null; channel?: { onmessage(event: { data: string }): void } };
 declare global { interface Window { voiceTest: VoiceTest; voiceLaunches: { microphone: number; peers: number } } }
-const { controlValue, openSettings } = require('./controls.cjs');
+const { controlValue, openSettings } = require('./controls.cts');
 const { assertCollectionIcon } = require('./collection-icon-assertions.cts');
 const fs = require('node:fs/promises');
 const path = require('node:path');

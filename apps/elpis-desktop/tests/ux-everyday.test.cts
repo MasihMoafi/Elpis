@@ -6,7 +6,7 @@ const fs=require('node:fs/promises');
 const http: typeof import('node:http')=require('node:http');
 const path=require('node:path');
 const {chromium}=require(process.env.ELPIS_PLAYWRIGHT_PACKAGE||'playwright');
-const { chooseOption, openSettings } = require('./controls.cjs');
+const { chooseOption, openSettings } = require('./controls.cts');
 
 type Post = { path: string; data: { text?: string; [key: string]: unknown } };
 type Fixture = { page: Page; composer: Locator; open(): Promise<void>; focused(): Promise<boolean>; emit(method: string, params: unknown): void; approve(id: string): void; posts: Post[]; shot(name: string): Promise<void> };

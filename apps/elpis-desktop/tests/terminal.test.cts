@@ -1,4 +1,4 @@
-const { threadMenuItem } = require('./controls.cjs');
+const { threadMenuItem } = require('./controls.cts');
 // The integrated terminal as in the ChatGPT app (Codex mode), and the Elpis TUI handoff in both directions.
 // The desktop bridge is a fake that records calls; no shell, engine or provider is started.
 const { test } = require('node:test');
@@ -7,7 +7,7 @@ const http: typeof import('node:http') = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore } = require('./controls.cjs');
+const { guardDesktopStore } = require('./controls.cts');
 const root = path.resolve(__dirname, '../out');
 const shots = process.env.ELPIS_TERMINAL_SHOTS;
 type Calls = { open: [string, string, number, number][]; restart: [string, string, number, number][]; closed: string[]; tui: [string, string, string, number, number][]; input: [string, string][]; resize: [string, number, number][]; copied: string[] };

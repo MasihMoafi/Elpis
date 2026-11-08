@@ -2,7 +2,7 @@
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { LOGO_ACCENT }: { LOGO_ACCENT: string } = require('./controls.cjs');
+const { LOGO_ACCENT }: { LOGO_ACCENT: string } = require('./controls.cts');
 type RGBA = [number, number, number, number];
 type Measurement = { theme: string; accent: string; state: string; rgba: RGBA; foregroundRgba: RGBA; tokens: Record<string, RGBA>; paints: Record<string, RGBA>; disabled: boolean; hover: boolean; pressed: boolean; focus: boolean; shadow: string };
 type Locator = { evaluate<T>(fn: (element: HTMLButtonElement) => T): Promise<T>; fill(value: string): Promise<void>; focus(): Promise<void>; isEnabled(): Promise<boolean>; isDisabled(): Promise<boolean>; hover(): Promise<void>; boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> };

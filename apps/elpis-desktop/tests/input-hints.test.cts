@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const { openSettings, openPatterns } = require('./controls.cjs');
+const { openSettings, openPatterns } = require('./controls.cts');
 
 for (const colorScheme of ['light']) test(`long input hints show an ellipsis and expose their complete text (${colorScheme})`, async () => {
   const f = await fixture({ width: 900, height: 700, colorScheme, routes: {

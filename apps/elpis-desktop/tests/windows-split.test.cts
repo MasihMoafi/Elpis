@@ -1,4 +1,4 @@
-const { threadMenuItem } = require('./controls.cjs');
+const { threadMenuItem } = require('./controls.cts');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');

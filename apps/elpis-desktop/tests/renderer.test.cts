@@ -1,12 +1,12 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-const { chooseOption, controlValue } = require("./controls.cjs");
+const { chooseOption, controlValue } = require("./controls.cts");
 // Renderer contract checks against deterministic HTTP/SSE fixtures; no provider calls.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../out');
 

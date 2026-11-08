@@ -1,17 +1,20 @@
-const { fixture } = require('./parity-fixture.cts');
-const { openSettings } = require('./controls.cjs');
-const fs = require('node:fs/promises');
-const path = require('node:path');
-
 type Locator = {
-  click(): Promise<void>;
+  locator(selector: string): Locator;
+  getByRole(role: string, options?: object): Locator;
   filter(options: object): Locator;
+  click(): Promise<void>;
   waitFor(): Promise<void>;
   evaluate<T>(fn: (element: HTMLElement) => T): Promise<Awaited<T>>;
-  screenshot(options: { path: string }): Promise<void>;
+  screenshot(options: object): Promise<void>;
 };
-type Page = { getByRole(role: string, options: object): Locator; locator(selector: string): Locator; waitForTimeout(ms: number): Promise<void> };
-type Routes = Record<string, (body: unknown, url: URL) => unknown>;
+type Page = { locator(selector: string): Locator; getByRole(role: string, options?: object): Locator; waitForTimeout(ms: number): Promise<void> };
+type Fixture = { page: Page; posts: { path: string }[]; close(): Promise<void> };
+type Extra = { routes?: Record<string, (body: unknown, url: URL) => unknown>; [key: string]: unknown };
+const { fixture }: { fixture(options: object): Promise<Fixture> } = require('./parity-fixture.cts');
+const { openSettings }: { openSettings(page: Page): Promise<void> } = require('./controls.cts');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const path: typeof import('node:path') = require('node:path');
+
 
 const PAGES = ['Models & accounts', 'Configuration', 'Personalization', 'MCP servers', 'Browser', 'Voice', 'Git', 'Worktrees', 'Hooks', 'General', 'Notifications', 'Appearance', 'Keyboard shortcuts', 'Usage & limits', 'Archived chats', 'About'];
 const settings = { version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }],
@@ -19,7 +22,7 @@ const settings = { version: 'v1', main: { model: 'sol', provider: 'openai' }, ba
   options: { defaultPermissions: 'full', webSearch: null, verbosity: null, reasoningSummary: null, serviceTier: null, developerInstructions: null, projectRootMarkers: null, worktreeRoot: null },
   managed: { allowedApprovalPolicies: null, allowedSandboxModes: ['read-only', 'workspace-write'] }, write: { available: true } };
 
-async function settingsFixture(theme = 'light', extra: { routes?: Routes; [key: string]: unknown } = {}) {
+async function settingsFixture(theme = 'light', extra: Extra = {}) {
   const app = await fixture({ width: 1600, height: 1000, colorScheme: theme, storage: { 'elpis-theme': theme }, ...extra, routes: {
     '/api/settings': () => settings,
     '/api/mcp': () => ({ version: 'm1', configPath: '/tmp/elpis/config.toml', write: { available: true }, servers: [{ name: 'whispertype', enabled: true, transport: 'stdio', command: 'whispertype-mcp', credentials: [], whispertype: { backend: 'openrouter', model: null } }] }),
@@ -61,18 +64,19 @@ async function captureSettings(page: Page, directory: string, name: string) {
 
 // Read rendered geometry and computed styles, including elements below the scroll fold.
 function measureRows() {
-  const pane = document.querySelector('.settings-page');
-  if (!pane) throw new Error('Settings page is missing');
+  const pane = document.querySelector<HTMLElement>('.settings-page');
+  if (!pane) throw Error('Settings page unavailable');
   // Inputs inside a closed <details> can have rectangles without being painted.
   const visible = (element: Element) => element.checkVisibility();
-  const shared = (element: Element | null) => /^components\/settings\/rows\.tsx#(?:SettingRow|SettingsActions|RowFrame)$/.test((element as HTMLElement | null)?.dataset.elpisSource ?? '');
+  const shared = (element: HTMLElement | null) => /^components\/settings\/rows\.tsx#(?:SettingRow|SettingsActions|RowFrame)$/.test(element?.dataset.elpisSource ?? '');
   const box = (element: Element) => { const r = element.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height, right: r.right, bottom: r.bottom }; };
   const type = (element: Element) => { const s = getComputedStyle(element); return { fontSize: s.fontSize, fontWeight: s.fontWeight, lineHeight: s.lineHeight, color: s.color }; };
   const baseline = (element: Element) => { const probe = document.createElement('span'); probe.style.cssText = 'display:inline-block;width:0;height:0;padding:0;margin:0;vertical-align:baseline'; element.append(probe); const y = probe.getBoundingClientRect().y; probe.remove(); return y; };
-  const rows = [...pane.querySelectorAll('.settings-row')].filter(visible).map(row => {
-    const title = row.querySelector('.settings-row-title'), description = row.querySelector('.settings-row-description'), scope = row.querySelector('.settings-scope');
-    const control = row.querySelector('.settings-row-control'), style = getComputedStyle(row), rect = box(row);
-    const controls = [...(control?.querySelectorAll<HTMLElement>('[data-slot="button"], [data-slot="select-trigger"], [data-slot="input"], [data-slot="switch"], [data-slot="segment"]') ?? [])].filter(visible).map(element => ({ slot: element.dataset.slot, size: element.dataset.size, text: (element.textContent as string).trim(), ...type(element), ...box(element), centreOffset: box(element).y + box(element).height / 2 - (rect.y + rect.height / 2) }));
+  const text = (element: Element) => { const value = element.textContent; if (value === null) throw Error('Control text unavailable'); return value.trim(); };
+  const rows = [...pane.querySelectorAll<HTMLElement>('.settings-row')].filter(visible).map(row => {
+    const title = row.querySelector<HTMLElement>('.settings-row-title'), description = row.querySelector<HTMLElement>('.settings-row-description'), scope = row.querySelector<HTMLElement>('.settings-scope');
+    const control = row.querySelector<HTMLElement>('.settings-row-control'), style = getComputedStyle(row), rect = box(row);
+    const controls = [...(control?.querySelectorAll<HTMLElement>('[data-slot="button"], [data-slot="select-trigger"], [data-slot="input"], [data-slot="switch"], [data-slot="segment"]') ?? [])].filter(visible).map(element => ({ slot: element.dataset.slot, size: element.dataset.size, text: text(element), ...type(element), ...box(element), centreOffset: box(element).y + box(element).height / 2 - (rect.y + rect.height / 2) }));
     const disclosure = control?.querySelector('details');
     const controlBox = control && box(disclosure?.closest('[role="group"]') ?? control);
     const multilineControl = Boolean(disclosure);
@@ -81,13 +85,14 @@ function measureRows() {
   });
   return { pane: box(pane), rows, headers: [...pane.querySelectorAll('.settings-group-heading h3')].filter(visible).map(el => ({ text: el.textContent, ...type(el), ...box(el) })),
     pageHeader: [...pane.querySelectorAll('.settings-page-header')].filter(visible).map(box),
-    orphanParts: [...pane.querySelectorAll('.settings-row-title, .settings-row-description, .settings-row-control, .settings-rows:not(.settings-empty) button, .settings-rows:not(.settings-empty) input, .settings-rows:not(.settings-empty) [role="combobox"]')].filter(visible).filter(el => !shared(el.closest('.settings-row'))).map(el => el.className),
+    orphanParts: [...pane.querySelectorAll<HTMLElement>('.settings-row-title, .settings-row-description, .settings-row-control, .settings-rows:not(.settings-empty) button, .settings-rows:not(.settings-empty) input, .settings-rows:not(.settings-empty) [role="combobox"]')].filter(visible).filter(el => !shared(el.closest<HTMLElement>('.settings-row'))).map(el => el.className),
     scrolls: document.documentElement.scrollWidth > innerWidth + 1 };
 }
 
 function violations(pages: { name: string; measurement: ReturnType<typeof measureRows> }[]) {
-  const problems: string[] = [], titles = new Map(), descriptions = new Map(), controls = new Map(), headers = new Map(), widths = new Map();
-  const compare = (map: Map<string, { value: string | number; where: string }>, key: string, value: string | number, where: string) => { const saved = map.get(key); if (saved && saved.value !== value) problems.push(`${where}: ${key} ${value}, expected ${saved.value} (${saved.where})`); else if (!saved) map.set(key, { value, where }); };
+  const problems: string[] = [], titles = new Map<string, Comparison>(), descriptions = new Map<string, Comparison>(), controls = new Map<string, Comparison>(), headers = new Map<string, Comparison>(), widths = new Map<string, Comparison>();
+  type Comparison = { value: string | number; where: string };
+  const compare = (map: Map<string, Comparison>, key: string, value: string | number, where: string) => { const saved = map.get(key); if (saved && saved.value !== value) problems.push(`${where}: ${key} ${value}, expected ${saved.value} (${saved.where})`); else if (!saved) map.set(key, { value, where }); };
   for (const { name, measurement: m } of pages) {
     if (m.scrolls) problems.push(`${name}: horizontal overflow`);
     if (m.orphanParts.length) problems.push(`${name}: row parts outside shared component: ${m.orphanParts.join(', ')}`);
@@ -109,7 +114,8 @@ function violations(pages: { name: string; measurement: ReturnType<typeof measur
         const group = row.controlBox;
         if (!row.stacked && Math.abs(group.y + group.height / 2 - row.y - row.height / 2) > 0.6) problems.push(`${where}: control group off centre`);
         if (group.y < row.y - 1 || group.bottom > row.bottom + 1) problems.push(`${where}: clipped control group`);
-        if (row.multilineControl && row.controls[0] && Math.abs(row.controls[0].y - group.y) > 0.6) problems.push(`${where}: leading control off top`);
+        const first = row.controls[0];
+        if (row.multilineControl && first && Math.abs(first.y - group.y) > 0.6) problems.push(`${where}: leading control off top`);
       }
       for (const control of row.controls) {
         // Switches and icon actions retain their semantic shape; labelled buttons, selects and fields share a size.

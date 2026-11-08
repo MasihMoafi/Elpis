@@ -4,8 +4,8 @@ const http: typeof import('node:http') = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { leaveSettings, sidebar, openSettings, chooseTheme } = require('./controls.cjs');
-const { fakeDesktop } = require('./fake-desktop.cjs');
+const { leaveSettings, sidebar, openSettings, chooseTheme } = require('./controls.cts');
+const { fakeDesktop } = require('./fake-desktop.cts');
 
 type Locator = {
   getByRole(role: string, options?: object): Locator; getByLabel(label: string, options?: object): Locator;

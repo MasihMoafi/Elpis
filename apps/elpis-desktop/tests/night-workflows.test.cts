@@ -3,8 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseTheme } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseTheme } = require('./controls.cts');
 const shots = path.join(os.homedir(), '.cache/elpis-tests/night-workflows');
 type GraphNode = { id: string; type: string; data: { title: string; instruction: string } };
 const matrix = (page: { locator: (selector: string) => { evaluate: (fn: (el: HTMLElement) => { zoom: number; x: number; y: number }) => Promise<{ zoom: number; x: number; y: number }> } }, selector: string) => page.locator(selector).evaluate((el: HTMLElement) => {

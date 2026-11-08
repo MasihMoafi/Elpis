@@ -6,7 +6,7 @@ const assert = require('node:assert/strict');
 const os = require('node:os');
 const path = require('node:path');
 const { fixture } = require('./parity-fixture.cts');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 
 const notice = (runId: string, name: string, status: string, summary: string, result?: unknown) => ['<workflow-notification>', `<run-id>${runId}</run-id>`, `<name>${name}</name>`, `<status>${status}</status>`,
   `<summary>${summary}</summary>`, ...(result === undefined ? [] : [`<result>\n${JSON.stringify(result, null, 2)}\n</result>`]),

@@ -33,7 +33,7 @@ function fixture(t: TestContext) {
   const finished=async (id: string)=>{
     for(let n=0;n<300;n++) {
       const found=(await client.workflows(rootId)).data.find(row=>row.id===id);
-      if(found?.status!=='running')return found;
+      if(found?.status!=='running'){assert.ok(found);return found;}
       await new Promise(resolve=>setTimeout(resolve,10));
     }
     throw Error('ACP run did not finish');

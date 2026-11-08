@@ -1,0 +1,189 @@
+import type { Electron, ElectronApplication, Locator, Page } from 'playwright-core';
+type Fixture = { page: Page; close(): Promise<void> };
+type BrowserGlobal = typeof global & { browserSocket: { path: string; scope(session: string): string }; sessionWindows: { closeBrowser(session: string): void; flushBrowsers(): Promise<void> }; releaseBrowserRead: (() => void) | null };
+type BrowserResults = { browser_open: { tabId: string }; browser_wait: object; browser_snapshot: { viewport: { width: number; height: number }; text: string }; browser_screenshot: { content: { type: string }[] }; browser_tabs: { tabs: { id: string }[] }; browser_type: object; browser_click: object };
+const { threadMenuItem }: { threadMenuItem(page: Page, name: string): Promise<Locator> } = require('./controls.cts');
+const { test }: typeof import('node:test') = require('node:test');
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs/promises') = require('node:fs/promises');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const http: typeof import('node:http') = require('node:http');
+const { spawn, execFileSync }: typeof import('node:child_process') = require('node:child_process');
+const { _electron }: { _electron: Electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { fixture }: { fixture(options: { desktop: boolean; routes: { '/api/trash': (body: { threadIds: string[] }) => object } }): Promise<Fixture> } = require('./parity-fixture.cts');
+
+test('session browsers switch, start empty, restore history, isolate concurrent tools and close with their chat', async () => {
+  const profiles = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(profiles, { recursive: true });
+  const root = await fs.mkdtemp(path.join(profiles, 'session-browsers-'));
+  const shots = process.env.ELPIS_BROWSER_SESSION_SHOTS;
+  const f = await fixture({ desktop: false, routes: { '/api/trash': body => ({ trashed: body.threadIds }) } });
+  const site = http.createServer((req, res) => {
+    res.setHeader('content-type', 'text/html');
+    res.end(`<title>Page ${req.url}</title><script>window.browserIdentityAtLoad = navigator.userAgentData?.brands.map(item => item.brand)</script><style>:root{color-scheme:light dark}body{background:Canvas;color:CanvasText}</style><h1>Session page ${req.url}</h1><input aria-label="Session note"><button class="btn" onclick="const heading=document.querySelector('h1');heading.textContent=document.querySelector('input').value;heading.dataset.saved='true'">Save</button>`);
+  });
+  await new Promise<void>(resolve => site.listen(0, '127.0.0.1', resolve));
+  const siteAddress = site.address(); assert.ok(siteAddress && typeof siteAddress !== 'string'); const base = `http://127.0.0.1:${siteAddress.port}`;
+  const xvfb = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1440x960x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
+  const display = await new Promise<string>((resolve, reject) => { xvfb.once('error', reject); const channel = xvfb.stdio[3]; assert.ok(channel); channel.once('data', value => resolve(`:${String(value).trim()}`)); });
+  let electron: ElectronApplication | null = null, page: Page, nativeErrors = '';
+  const launch = async () => {
+    const app = await _electron.launch({ executablePath: require('electron'), args: ['--no-sandbox', '--ozone-platform=x11', path.resolve(__dirname, 'session-windows-electron.cts')],
+      env: { ...process.env, DISPLAY: display, WAYLAND_DISPLAY: '', ELECTRON_OZONE_PLATFORM_HINT: 'x11', HOME: root, ELPIS_HOME: root, SESSION_WINDOW_PROFILE: path.join(root, 'profile'), SESSION_WINDOW_URL: f.page.url(), SESSION_BROWSER_TOOLS: '1' } });
+    app.process().stderr?.on('data', data => { nativeErrors = (nativeErrors + data).slice(-6000); });
+    const first = await app.firstWindow(); first.setDefaultTimeout(10000);
+    await first.locator('.thread-row[data-thread-id="chat-a"] .thread-link').waitFor();
+    await first.locator('.startup-splash').waitFor({ state: 'detached' });
+    return { electron: app, page: first };
+  };
+  const select = async (id: string) => { await page.locator(`.thread-row[data-thread-id="${id}"] .thread-link`).click(); await page.locator(`.thread-row.active[data-thread-id="${id}"]`).waitFor(); };
+  const state = () => page.evaluate(() => { if (!window.elpisDesktop) throw Error('Desktop bridge missing'); return window.elpisDesktop.browser.command('state'); });
+  const address = () => page.getByRole('textbox', { name: 'Search or enter a URL', exact: true });
+  const visit = async (url: string) => { await address().fill(url); await address().press('Enter'); await page.getByRole('tab', { name: `Page ${new URL(url).pathname}`, exact: true }).waitFor(); };
+  const newPage = async (url: string) => {
+    const show = page.getByRole('button', { name: 'Show side panel', exact: true }); if (await show.count()) await show.click();
+    await page.getByRole('button', { name: 'New side panel tab', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Browser tab', exact: true }).click(); await visit(url);
+  };
+  const { callBrowser } = await import('../bridge/browser-mcp.mts');
+  try {
+    ({ electron, page } = await launch());
+    const initial = await state();
+    const background = await electron.evaluate(() => { const target = global as BrowserGlobal; return { path: target.browserSocket.path, capability: target.browserSocket.scope('first-background'), other: target.browserSocket.scope('other-background') }; });
+    const backgroundCall = <N extends keyof BrowserResults>(name: N, args: object = {}) => callBrowser(background.path, name, args, background.capability) as Promise<BrowserResults[N]>;
+    const backgroundTab = (await backgroundCall('browser_open', { url: `${base}/background` })).tabId;
+    await backgroundCall('browser_wait', { tabId: backgroundTab, selector: 'button' });
+    const backgroundPage = await backgroundCall('browser_snapshot', { tabId: backgroundTab });
+    assert.ok(backgroundPage.viewport.width > 0 && backgroundPage.viewport.height > 0, 'a never-shown session has a usable viewport');
+    await backgroundCall('browser_type', { tabId: backgroundTab, selector: 'input', text: 'FIRST_BACKGROUND_PROOF' });
+    await backgroundCall('browser_click', { tabId: backgroundTab, selector: 'button' });
+    // Native input dispatch is asynchronous. Wait for its DOM result before reading a snapshot.
+    await backgroundCall('browser_wait', { tabId: backgroundTab, selector: 'h1[data-saved]' });
+    assert.match((await backgroundCall('browser_snapshot', { tabId: backgroundTab })).text, /FIRST_BACKGROUND_PROOF/);
+    const content = (await backgroundCall('browser_screenshot', { tabId: backgroundTab })).content[0]; assert.ok(content); assert.equal(content.type, 'image');
+    await assert.rejects(callBrowser(background.path, 'browser_snapshot', { tabId: backgroundTab }, background.other), /closed/);
+    assert.equal((await state()).sessionId, initial.sessionId, 'background input does not switch the shown session');
+    assert.equal((await state()).tabs.length, 0);
+    await electron.evaluate(() => (global as BrowserGlobal).sessionWindows.closeBrowser('first-background'));
+    await select('chat-a'); await newPage(`${base}/a`);
+    const firstHistory = await electron.evaluate(({ webContents }, url) => {
+      const wc = webContents.getAllWebContents().find(contents => contents.getURL() === url);
+      if (!wc) throw Error('Browser page missing');
+      return wc.navigationHistory.getAllEntries().map(entry => entry.url);
+    }, `${base}/a`);
+    assert.deepEqual(firstHistory, ['about:blank', `${base}/a`], 'a new tab keeps exactly its original blank page in history');
+    await visit(`${base}/a-next`);
+    const a = (await state()).tabs[0]; assert.ok(a); assert.equal(a.canGoBack, true);
+    await newPage(`${base}/a-extra`); const extra = (await state()).tabs[1]; assert.ok(extra);
+    await page.getByRole('tab', { name: 'Page /a-next', exact: true }).click();
+    await select('chat-b');
+    assert.equal((await state()).tabs.length, 0, 'chat B must not inherit A pages');
+    await newPage(`${base}/b`); const b = (await state()).tabs[0]; assert.ok(b);
+    const nativeA = electron.context().pages().find(page => page.url() === `${base}/a-next`), nativeB = electron.context().pages().find(page => page.url() === `${base}/b`);
+    assert.ok(nativeA && nativeB); await nativeA.evaluate(() => { document.cookie = 'browser-sign-in=shared;path=/'; });
+    assert.match(await nativeB.evaluate(() => document.cookie), /browser-sign-in=shared/, 'website sign-ins stay shared');
+    await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a-next`);
+    assert.deepEqual((await state()).tabs.map(tab => tab.id), [a.id, extra.id]);
+    await page.getByRole('button', { name: 'Close Page /a-extra tab', exact: true }).click();
+    await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('tab', { name: 'Page /a', exact: true }).waitFor();
+    await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Forward', exact: true }).click();
+    await page.getByRole('tab', { name: 'Page /a-next', exact: true }).waitFor();
+    // Ctrl+T is a real renderer key: each unsent chat also starts with an empty browser.
+    await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).focus(); await page.keyboard.press('Control+t');
+    await page.waitForFunction(() => !document.querySelector('.thread-row.active'));
+    assert.equal((await state()).tabs.length, 0, 'new chat browser is empty');
+    await newPage(`${base}/draft`);
+    await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).focus(); await page.keyboard.press('Control+t');
+    assert.equal((await state()).tabs.length, 0, 'another new chat must not share the first draft browser');
+    await select('chat-b'); assert.equal(await address().inputValue(), `${base}/b`);
+
+    const credentials = await electron.evaluate(() => { const target = global as BrowserGlobal; return { path: target.browserSocket.path, a: target.browserSocket.scope('chat-a'), b: target.browserSocket.scope('chat-b') }; });
+    const call = <N extends keyof BrowserResults>(session: 'a' | 'b', name: N, args: object = {}) => callBrowser(credentials.path, name, args, credentials[session]) as Promise<BrowserResults[N]>;
+    const [ta, tb] = await Promise.all([call('a', 'browser_tabs'), call('b', 'browser_tabs')]);
+    assert.deepEqual(ta.tabs.map(tab => tab.id), [a.id]); assert.deepEqual(tb.tabs.map(tab => tab.id), [b.id]);
+    await assert.rejects(call('a', 'browser_snapshot', { tabId: b.id }), /closed/);
+    await assert.rejects(callBrowser(credentials.path, 'browser_tabs', {}), /session|capability/i);
+    // Each agent types in a tab of its own; the person's tabs a and b stay readable only.
+    const [agentA, agentB] = (await Promise.all([call('a', 'browser_open', { url: `${base}/a-agent` }), call('b', 'browser_open', { url: `${base}/b-agent` })])).map(result => result.tabId);
+    await Promise.all([call('a', 'browser_wait', { tabId: agentA, selector: 'button' }), call('b', 'browser_wait', { tabId: agentB, selector: 'button' })]);
+    // Hold A's DOM read while B types and clicks. B must finish before A is released.
+    await electron.evaluate(({ webContents }, url) => {
+      const wc = webContents.getAllWebContents().find(wc => wc.getURL() === url); if (!wc) throw Error('Browser page missing'); const original = wc.executeJavaScriptInIsolatedWorld.bind(wc);
+      const target = global as BrowserGlobal; target.releaseBrowserRead = null;
+      wc.executeJavaScriptInIsolatedWorld = (...args) => new Promise(resolve => { target.releaseBrowserRead = () => { wc.executeJavaScriptInIsolatedWorld = original; resolve(original(...args)); }; });
+    }, `${base}/a-next`);
+    const pendingA = call('a', 'browser_snapshot', { tabId: a.id });
+    await electron.waitForEvent('console', { predicate: () => false, timeout: 50 }).catch(() => {});
+    await call('b', 'browser_type', { tabId: agentB, selector: 'input', text: 'Only session B' });
+    await call('b', 'browser_click', { tabId: agentB, selector: 'button' });
+    await call('b', 'browser_wait', { tabId: agentB, selector: 'h1[data-saved]' });
+    await electron.evaluate(() => { const target = global as BrowserGlobal; if (!target.releaseBrowserRead) throw Error('A read did not start'); target.releaseBrowserRead(); });
+    assert.match((await pendingA).text, /Session page \/a-next/);
+    assert.match((await call('b', 'browser_snapshot', { tabId: agentB })).text, /Only session B/);
+    await call('a', 'browser_type', { tabId: agentA, selector: 'input', text: 'Only hidden session A' });
+    await call('a', 'browser_click', { tabId: agentA, selector: 'button' });
+    await call('a', 'browser_wait', { tabId: agentA, selector: 'h1[data-saved]' });
+    assert.match((await call('a', 'browser_snapshot', { tabId: agentA })).text, /Only hidden session A/);
+    assert.match((await call('b', 'browser_snapshot', { tabId: agentB })).text, /Only session B/);
+    await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a-next`, 'B tools did not select or navigate A');
+    if (shots) {
+      await fs.mkdir(shots, { recursive: true });
+      for (const colorScheme of ['light'] as ('light' | 'dark')[]) {
+        await page.emulateMedia({ colorScheme });
+        await page.waitForFunction(dark => document.querySelector('.app-shell')?.classList.contains('dark') === dark, colorScheme === 'dark');
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const box = await (await electron.browserWindow(page)).evaluate(host => host.getContentBounds());
+        const file = path.join(shots, `session-a-${colorScheme}.png`);
+        execFileSync('python3', ['-c', `from PIL import ImageGrab;ImageGrab.grab(xdisplay=${JSON.stringify(display)}).crop((${box.x},${box.y},${box.x + box.width},${box.y + box.height})).save(${JSON.stringify(file)})`]);
+      }
+    }
+    await page.getByRole('button', { name: 'Chat actions', exact: true }).click();
+    const opened = electron.waitForEvent('window');
+    await (await threadMenuItem(page, 'Open session in new window')).click();
+    const secondWindow = await opened; secondWindow.setDefaultTimeout(10000);
+    await secondWindow.getByRole('textbox', { name: 'Search or enter a URL', exact: true }).waitFor();
+    assert.deepEqual((await secondWindow.evaluate(() => { if (!window.elpisDesktop) throw Error('Desktop bridge missing'); return window.elpisDesktop.browser.command('state'); })).tabs.map(tab => tab.id), [a.id, agentA]);
+    assert.equal(await electron.evaluate(({ webContents }, url) => webContents.getAllWebContents().filter(wc => wc.getURL() === url).length, `${base}/a-next`), 1, 'one session keeps one native page across windows');
+    await secondWindow.close(); await page.bringToFront();
+    await address().waitFor(); assert.equal(await address().inputValue(), `${base}/a-next`);
+    await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Back', exact: true }).click();
+    await page.getByRole('tab', { name: 'Page /a', exact: true }).waitFor();
+    await electron.evaluate(() => (global as BrowserGlobal).sessionWindows.flushBrowsers());
+    await electron.close(); electron = null; ({ electron, page } = await launch());
+    await select('chat-a'); assert.equal(await address().inputValue(), `${base}/a`);
+    assert.equal((await state()).tabs[0]?.canGoForward, true, 'forward history survives app restart');
+    const restored = await electron.evaluate(async ({ webContents }, url) => {
+      const deadline = Date.now() + 10000;
+      let wc;
+      while (!(wc = webContents.getAllWebContents().find(contents => contents.getURL() === url))) {
+        if (Date.now() > deadline) throw Error('The restored page did not load');
+        await new Promise(resolve => setTimeout(resolve, 20));
+      }
+      return { history: wc.navigationHistory.getAllEntries().map(entry => entry.url),
+        brands: await wc.executeJavaScript('window.browserIdentityAtLoad') };
+    }, `${base}/a`);
+    assert.deepEqual(restored.history, ['about:blank', `${base}/a`, `${base}/a-next`], 'restoration leaves no temporary page in history');
+    assert.ok(restored.brands.includes('Google Chrome'), 'the restored page has Chrome identity from its first load');
+    await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Forward', exact: true }).click();
+    await page.getByRole('tab', { name: 'Page /a-next', exact: true }).waitFor();
+    await page.getByRole('form', { name: 'Browser navigation' }).getByRole('button', { name: 'Back', exact: true }).click(); await page.getByRole('tab', { name: 'Page /a', exact: true }).waitFor();
+    await select('chat-b'); assert.equal(await address().inputValue(), `${base}/b`);
+    await page.getByRole('textbox', { name: 'Message Elpis', exact: true }).focus(); await page.keyboard.press('Control+w');
+    await select('chat-b'); assert.equal((await state()).tabs.length, 0, 'closing a chat closes its pages');
+    await select('chat-a');
+    await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').focus(); await page.keyboard.press('d');
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await page.locator('.thread-row[data-thread-id="chat-a"]').waitFor({ state: 'detached' });
+    assert.equal((await state()).tabs.length, 0, 'deleted sessions lose their pages');
+    await electron.evaluate(async ({ webContents }, url) => {
+      const deadline = Date.now() + 4000;
+      while (webContents.getAllWebContents().some(wc => /^\/(a|a-next|b)$/.test(wc.getURL().slice(url.length)))) {
+        if (Date.now() > deadline) throw Error('Closed sessions still have native pages');
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+    }, base);
+  } catch (error) { console.error(nativeErrors); throw error; } finally {
+    if (electron) await electron.close(); xvfb.kill(); await f.close(); await new Promise<void>(resolve => site.close(() => resolve()));
+  }
+});

@@ -17,7 +17,7 @@ import { createRequire } from 'node:module';
 import type { Browser, Page } from './playwright-types.mts';
 
 const require = createRequire(import.meta.url);
-const { chooseOption, controlValue, openSettings, leaveSettings, chooseTheme } = require('./controls.cjs');
+const { chooseOption, controlValue, openSettings, leaveSettings, chooseTheme } = require('./controls.cts');
 const run = promisify(execFile);
 const ready = !!(process.env.ELPIS_TEST_APP && process.env.ELPIS_TEST_ENGINE);
 const helper = process.env.ELPIS_E2E_APP_HELPER || path.join(os.homedir(), '.cache/elpis-tests/e2e/app.sh');

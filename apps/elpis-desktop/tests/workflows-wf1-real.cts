@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme } = require('./controls.cjs');
+const { chooseTheme } = require('./controls.cts');
 
 async function openCanvas({ graph, width = 1440, height = 900 }: { graph: object; width?: number; height?: number }) {
   const home = await fs.realpath(process.env.ELPIS_WF1_HOME || '/not-a-throwaway-home');

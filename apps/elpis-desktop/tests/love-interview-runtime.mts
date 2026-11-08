@@ -19,7 +19,7 @@ export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL(
   const update = (change: Partial<{ answer: string; failure: string | null; hold: boolean }>) => { Object.assign(control, change); syncFs.writeFileSync(`${controlFile}.next`, JSON.stringify(control)); syncFs.renameSync(`${controlFile}.next`, controlFile); };
   update({});
   const engine = path.join(root, 'engine');
-  await fs.writeFile(engine, `#!/bin/sh\nexec '${process.execPath}' '${fileURLToPath(new URL('./love-interview-engine.mjs', import.meta.url))}' "$@"\n`, { mode: 0o700 });
+  await fs.writeFile(engine, `#!/bin/sh\nexec '${process.execPath}' '${fileURLToPath(new URL('./love-interview-engine.mts', import.meta.url))}' "$@"\n`, { mode: 0o700 });
   const env = { ...process.env, HOME: root, ELPIS_HOME: path.join(root, 'elpis'), CODEX_HOME: path.join(root, 'codex'), TMPDIR: root, XDG_RUNTIME_DIR: root, XDG_CONFIG_HOME: path.join(root, '.config'), XDG_CACHE_HOME: path.join(root, '.cache'), XDG_STATE_HOME: path.join(root, '.local/state'), XDG_DATA_HOME: path.join(root, '.local/share'), ELPIS_APP_BRIDGE_SOCKET: '', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_SHARED_BRIDGE: '1', ELPIS_ENGINE_BIN: engine, ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1', ACP_BRIDGE_LOG: path.join(root, 'bridge.log'), INTERVIEW_CONTROL: controlFile, INTERVIEW_REQUESTS: requestsFile };
   const bridge = spawn(process.execPath, [path.join(toolsDirectory, 'acp-bridge.mjs')], { env, stdio: ['pipe', 'ignore', 'pipe'] });
   let stderr = ''; bridge.stderr.on('data', data => { stderr += data; });

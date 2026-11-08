@@ -9,7 +9,7 @@ type Locator = { getByRole(role: string, options?: object): Locator; getByText(t
 type RuntimePage = { url(): string; setDefaultTimeout(ms: number): void; setViewportSize(size: { width: number; height: number }): Promise<void>; locator(selector: string): Locator; getByRole(role: string, options?: object): Locator; getByText(text: string, options?: object): Locator; waitForFunction<T>(fn: (arg: T) => boolean, arg: T): Promise<void>; screenshot(options: { path: string }): Promise<void>; keyboard: { press(key: string): Promise<void> } };
 type RuntimeBrowser = { contexts(): { pages(): RuntimePage[] }[]; close(): Promise<void> };
 const { chromium }: { chromium: { connectOverCDP(url: string): Promise<RuntimeBrowser> } } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme, openSettings } = require('./controls.cjs');
+const { chooseTheme, openSettings } = require('./controls.cts');
 const shots = process.env.ELPIS_SETTINGS2_SHOTS || path.resolve(process.env.HOME, '.cache/elpis-tests/settings2/shots');
 const visit = async (page: RuntimePage, name: string) => page.getByRole('tab', { name, exact: true }).click();
 async function capture(page: RuntimePage, name: string) { await fs.mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, `${name}.png`) }); }

@@ -2,8 +2,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const { openSettings } = require('./controls.cjs');
-const { controlValue } = require('./controls.cjs');
+const { openSettings } = require('./controls.cts');
+const { controlValue } = require('./controls.cts');
 const settings = { version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
   providers: [{ id: 'openai', displayName: 'OpenAI' }], smartPrune: { enabled: false, explicitOverride: {} },
   memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, write: { available: true } };

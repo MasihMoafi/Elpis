@@ -1,10 +1,10 @@
 // The Father: past the Mother's ten agents, the rest run under him in his own chat, once her part has succeeded, and
 // he reports to her (lat.md/tasks.md, 17 October 2026). The bridge runs both stages (A41, 20 October): the fixture plays
-// its part (tests/canvas-fixture.cjs), and the screen only sends the run and shows it.
+// its part (tests/canvas-fixture.cts), and the screen only sends the run and shows it.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { openCanvas } = require('./canvas-fixture.cjs');
-const { chooseOption } = require('./controls.cjs');
+const { openCanvas } = require('./canvas-fixture.cts');
+const { chooseOption } = require('./controls.cts');
 
 type Run = { graphId: string; name: string; tasks: { id: string; title: string }[] };
 type Post = { path: string; body: { agents: boolean } };

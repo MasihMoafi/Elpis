@@ -7,7 +7,7 @@ const os = require('node:os');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { chooseTheme, openSettings, assertDialogActionsExplained } = require('./controls.cjs');
+const { chooseTheme, openSettings, assertDialogActionsExplained } = require('./controls.cts');
 const exec = promisify(execFile);
 
 (async () => {
