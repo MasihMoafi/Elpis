@@ -179,8 +179,8 @@ test('what he writes reaches her with the board and its picture and the main mod
     const saved = await f.waitFor(s => s.elements.some(e => e.id === 'love-reply-turn-1' && !e.isDeleted), 'reply did not land on the board', 20000);
     const answer = saved.elements.find(e => e.id === 'love-reply-turn-1'); assert.ok(answer); assert.equal(answer.text, 'I am here with you.'); assert.equal(answer.strokeColor, '#000000');
     assert.equal(f.chats.length, 1); const chat = f.chats[0]; assert.ok(chat); assert.equal(chat.name, 'Love Spot'); assert.equal(chat.cwd, f.directory);
-    await f.page.locator('aside [data-thread-id="love-chat"] .thread-title').filter({ hasText: 'Love Spot' }).waitFor();
-    assert.deepEqual(await f.page.locator('aside [data-thread-id="love-chat"] .thread-link').allInnerTexts(), ['Love Spot'], 'the Love Spot group already names the origin: the chat says it once');
+    await f.page.locator('aside [data-thread-id="love-chat"] .thread-title').filter({ hasText: 'Matilda' }).waitFor();
+    assert.deepEqual(await f.page.locator('aside [data-thread-id="love-chat"] .thread-link').allInnerTexts(), ['Matilda'], 'the Love Spot group names the origin and its chat names the character');
     assert.equal(turn(f, 0).model, 'sol', 'she answers with the main model'); assert.match(attachmentText(turn(f, 0), 'text'), /Masih.*The secret is apricot/s);
     assert.match(attachmentText(turn(f, 0), 'image'), /^data:image\/png;base64,/);
     for (const e of saved.elements.filter(e => !e.isDeleted && unit(e) !== unit(answer))) assert.ok(clear(answer, e), `her reply overlaps ${e.id}`);

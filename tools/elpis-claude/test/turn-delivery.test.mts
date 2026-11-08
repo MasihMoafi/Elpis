@@ -687,6 +687,7 @@ test("A143: rewinding a Claude chat forks its Claude session after the last kept
 
 test("A37: Claude's report on a background job that ends after its reply opens a turn in the chat", { timeout: 20000 }, async t => {
   const f = await fixture(t, {}, { prepare: (root, env) => { env.FAKE_ACP_BACKGROUND_RELEASE = path.join(root, "background"); } });
+  await f.client.resume(f.id, {});
   const { turn } = await sendTurn(f.client, f.id, { text: "build it [background]" });
   await until(() => f.ended(turn.id), "the reply ends while the job runs");
   fs.writeFileSync(required(f.env.FAKE_ACP_BACKGROUND_RELEASE), "");
@@ -710,6 +711,7 @@ for (const [message, expected] of [
 
 test("a dropped connection retries on its own until Claude answers, without an ACP error", { timeout: 20000 }, async t => {
   const f = await fixture(t, { ELPIS_RECONNECT_MS: "300" }, { prepare: (root, env) => { env.FAKE_ACP_OFFLINE = path.join(root, "offline"); fs.writeFileSync(env.FAKE_ACP_OFFLINE, ""); } });
+  await f.client.resume(f.id, {});
   const { turn } = await sendTurn(f.client, f.id, { text: "hello" });
   await until(() => f.ended(turn.id), "the dropped turn ends");
   assert.match(required(required(required(f.ended(turn.id)).params.turn).error).message, /^Connection lost\. Retrying/);

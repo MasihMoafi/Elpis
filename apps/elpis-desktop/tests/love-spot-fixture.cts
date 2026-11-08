@@ -21,6 +21,9 @@ const FAKE_ACP_AGENT = path.resolve(path.dirname(require.resolve('../bridge/serv
 async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am here with you.', replyDelay = 80, configureClient, prepareDirectory, agentEnv, prepareScreenshots, newBoard = false, automations = false }: Options = {}) {
   const base = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(base, { recursive: true });
   const root = createTestTempDir(path.join(base, 'love-spot-ui-'));
+  // These board journeys script their own chats; the independent Elpis router stays off in this fixture's home.
+  await fs.mkdir(path.join(root, 'router'));
+  await fs.writeFile(path.join(root, 'router/mother.json'), JSON.stringify({ enabled: false }));
   // The renderer gate installs only desktop dependencies. Run the shared SDK
   // agent beside those dependencies instead of the tools package's node_modules.
   const fakeAgent = path.join(root, 'fake-acp-agent.mts');
@@ -70,7 +73,7 @@ async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am 
   const acp = async () => { try { return (await fs.readFile(acpLog, 'utf8')).trim().split('\n').filter(Boolean).map(line => JSON.parse(line)); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return []; throw e; } };
   // Kokoro (read aloud) depends on this computer's files; tests run without it unless they say otherwise.
   const kokoro = { available: () => false, warm() {}, speak: async () => { throw new Error('Read aloud is off in tests.'); }, close() {} };
-  const server = await startDesktopServer({ kokoro, client, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec },
+  const server = await startDesktopServer({ kokoro, client, elpisHome: root, staticDir: process.env.LOVE_SPOT_TEST_STATIC_DIR, loveSpot: { directory, screenshots }, trashFile: path.join(root, 'trash.json'), loveAgents: { nodeSpec },
     // Automations only where a test asks for them, in its own folder.
     ...(automations ? { automationsFile: path.join(root, 'automations.json') } : {}) });
   const browser = await chromium.launch({ ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}), headless: process.env.ELPIS_UI_HEADFUL !== '1' });
@@ -96,7 +99,7 @@ async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am 
   };
   const open = async (target: Page) => {
     try { await target.locator('.nav-list').getByRole('button', { name: 'Love Spot', exact: true }).click(); await target.locator('.excalidraw canvas').first().waitFor(); await target.evaluate(() => document.fonts.load('20px Excalifont')); await target.locator('.nav-list').getByRole('button', { name: 'Love Spot', exact: true }).blur(); }
-    catch (e) { await target.screenshot({ path: '/tmp/love-spot-failure.png' }); throw new Error(`${e instanceof Error ? e.message : String(e)}; browser errors: ${JSON.stringify(errors)}; page: ${(await target.locator('body').innerText()).slice(0, 300)}`); }
+    catch (e) { await target.screenshot({ path: path.join(root, 'failure.png') }); throw new Error(`${e instanceof Error ? e.message : String(e)}; browser errors: ${JSON.stringify(errors)}; page: ${(await target.locator('body').innerText()).slice(0, 300)}`); }
   };
   const draw = async (target: Page, offset = 0) => {
     await target.keyboard.press('Escape');

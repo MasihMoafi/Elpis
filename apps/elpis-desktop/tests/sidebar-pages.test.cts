@@ -17,7 +17,7 @@ test('a saved order with Observability keeps its place, and a saved Observabilit
     for (let reload = 0; reload < 2; reload++) {
       if (reload) await f.page.reload();
       await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
-      assert.deepEqual(await labels(f.page), ['New chat', ...order.map(id => names[id]), 'Mother'], 'the new page is appended without changing the saved order');
+      assert.deepEqual(await labels(f.page), ['New chat', ...order.map(id => names[id]), 'Elpis'], 'the new page is appended without changing the saved order');
       await f.open('chat-a');
       assert.equal(await f.composer.isVisible(), true);
     }

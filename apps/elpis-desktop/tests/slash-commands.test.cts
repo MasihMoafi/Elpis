@@ -123,9 +123,11 @@ test('clearing a Matilda chat starts a fresh Love Spot chat in both themes and k
         });
         assert.equal(await page.getByText('Matilda kept the old conversation.', { exact: true }).count(), 0, 'the new chat starts empty');
         await page.getByRole('heading', { name: 'Love Spot', exact: true }).waitFor();
-        await page.getByText('Matilda', { exact: true }).waitFor();
-        await page.locator('.thread-row[data-thread-id="matilda"]').waitFor();
-        await page.locator('.thread-row[data-thread-id="matilda-fresh"]').waitFor();
+        await page.getByRole('main').locator('.thread-meta').filter({ hasText: /^Matilda$/ }).waitFor();
+        for (const id of ['matilda', 'matilda-fresh']) {
+          const row = page.locator(`.thread-row[data-thread-id="${id}"]`); await row.waitFor();
+          assert.equal(await row.locator('.thread-title').textContent(), 'Matilda', 'both Love Spot chats show their character');
+        }
         if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/clear-matilda-${colorScheme}.png` });
         assert.equal(await composer.inputValue(), '');
         assert.equal(posts.some(post => /\/matilda\/(delete|archive)$/.test(post.path)), false, 'the old Matilda history remains');

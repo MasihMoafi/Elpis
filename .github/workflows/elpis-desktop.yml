@@ -110,6 +110,7 @@ jobs:
       - name: Prepare the retained UI checkpoint and browser prerequisite
         run: |
           bash scripts/fetch-retained.sh
+          node node_modules/electron/install.js
           npm install --prefix "$RUNNER_TEMP/elpis-ui" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.62.1
           test -x /usr/bin/google-chrome
           # The browser-tab test types and clicks as the person, through X input.
@@ -202,7 +203,7 @@ jobs:
       - name: Install the ACP test agent dependencies
         run: npm ci --prefix ../../tools/elpis-claude --ignore-scripts --no-audit --no-fund
       - name: Install the Electron test binary
-        run: npm rebuild electron --no-audit --no-fund
+        run: node node_modules/electron/install.js
       - name: Install PDF text and audio tools the attachment and transcription tests use
         run: |
           sudo apt-get update

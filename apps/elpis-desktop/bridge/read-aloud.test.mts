@@ -347,7 +347,7 @@ test('Claude and Antigravity voice handoffs queue ordinary turns and speak only 
     assert.equal(f.methods('turn/start').length, 2);
     assert.equal(f.methods('turn/interrupt').length, 0); assert.equal(f.methods('turn/steer').length, 0);
     controller.abort(); await reader.cancel().catch(() => {});
-    await until(() => f.methods('thread/unsubscribe').length === 1);
+    await until(() => f.methods('thread/unsubscribe').filter(call => call.params.threadId === SPEECH).length === 1);
     assert.equal(required(f.methods('thread/realtime/stop')[0]).params.threadId, SPEECH);
   });
 });
