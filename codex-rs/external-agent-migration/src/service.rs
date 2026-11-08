@@ -181,12 +181,23 @@ impl ExternalAgentConfigService {
             Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(err) => return Err(err),
         };
-        let projects_root = match fs::canonicalize(self.external_agent_home.join("projects")) {
-            Ok(projects_root) => projects_root,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
-            Err(err) => return Err(err),
+        let homes = match self.source {
+            ExternalAgentSource::Cla => {
+                crate::ClaSource::session_homes(&self.external_agent_home, &self.codex_home)?
+            }
+            ExternalAgentSource::Cur => vec![self.external_agent_home.clone()],
         };
-        Ok(path.starts_with(projects_root).then_some(path))
+        for home in homes {
+            let projects_root = match fs::canonicalize(home.join("projects")) {
+                Ok(projects_root) => projects_root,
+                Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
+                Err(err) => return Err(err),
+            };
+            if path.starts_with(projects_root) {
+                return Ok(Some(path));
+            }
+        }
+        Ok(None)
     }
 
     pub async fn import(

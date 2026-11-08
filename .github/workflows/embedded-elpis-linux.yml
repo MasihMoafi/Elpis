@@ -268,6 +268,12 @@ jobs:
         if: inputs.verification == 'build'
         working-directory: codex-rs
         run: cargo test --profile dev-small --locked -p codex-app-server --test all -- websocket_read_only_follow_delivers_child_events_across_connections_and_reconnect
+      - name: Claude account chat import regressions
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        working-directory: codex-rs
+        run: |
+          cargo test --profile dev-small --locked -p codex-external-agent-migration --lib detect::sessions::cla::tests
+          node ../scripts/claude-import-runtime.test.cjs "$PWD/target/release/elpis"
       - name: Record diagnostic runtime provenance
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         working-directory: codex-rs/target/release

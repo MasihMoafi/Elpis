@@ -1,5 +1,6 @@
 use super::common::SessionFileCandidate;
 use super::common::detect_recent_sessions;
+use crate::ClaSource;
 use crate::model::ExternalAgentSessionImportLimits;
 use crate::sessions::ExternalAgentSessionMigration;
 use crate::sessions::SessionRecordFormat;
@@ -23,36 +24,37 @@ pub(crate) fn detect_recent_cla_sessions_with_limits(
     codex_home: &Path,
     limits: ExternalAgentSessionImportLimits,
 ) -> io::Result<Vec<ExternalAgentSessionMigration>> {
-    let projects_root = external_agent_home.join("projects");
-    if !projects_root.is_dir() {
-        return Ok(Vec::new());
-    }
-
     let mut candidates = Vec::new();
-    for project_entry in fs::read_dir(projects_root)? {
-        let Ok(project_entry) = project_entry else {
-            continue;
-        };
-        let project_path = project_entry.path();
-        if !project_path.is_dir() {
+    for home in ClaSource::session_homes(external_agent_home, codex_home)? {
+        let projects_root = home.join("projects");
+        if !projects_root.is_dir() {
             continue;
         }
-        let Ok(entries) = fs::read_dir(project_path) else {
-            continue;
-        };
-        for entry in entries {
-            let Ok(entry) = entry else {
+        for project_entry in fs::read_dir(projects_root)? {
+            let Ok(project_entry) = project_entry else {
                 continue;
             };
-            let path = entry.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+            let project_path = project_entry.path();
+            if !project_path.is_dir() {
                 continue;
             }
-            candidates.push(SessionFileCandidate {
-                path,
-                fallback_cwd: None,
-                record_format: SessionRecordFormat::Cla,
-            });
+            let Ok(entries) = fs::read_dir(project_path) else {
+                continue;
+            };
+            for entry in entries {
+                let Ok(entry) = entry else {
+                    continue;
+                };
+                let path = entry.path();
+                if path.extension().and_then(|value| value.to_str()) != Some("jsonl") {
+                    continue;
+                }
+                candidates.push(SessionFileCandidate {
+                    path,
+                    fallback_cwd: None,
+                    record_format: SessionRecordFormat::Cla,
+                });
+            }
         }
     }
     detect_recent_sessions(
@@ -72,6 +74,68 @@ mod tests {
     use std::time::Duration;
     use std::time::SystemTime;
     use tempfile::TempDir;
+
+    #[test]
+    fn detects_registered_account_sessions_and_imports_each_version_once() {
+        let root = TempDir::new().expect("tempdir");
+        let account_id = "01234567-89ab-4cde-8fab-0123456789ab";
+        let state = root.path().join("elpis-claude");
+        let account = state.join("claude-accounts").join(account_id);
+        let project = root.path().join("repo");
+        let session = write_session(
+            &account,
+            &project,
+            "session.jsonl",
+            &[record("user", "account chat", &project)],
+        );
+        fs::write(
+            state.join("claude-accounts.json"),
+            serde_json::json!({ "activeId": account_id, "ids": [account_id] }).to_string(),
+        )
+        .expect("account registry");
+        let default_home = root.path().join("missing-default-home");
+        let sessions = detect_recent_cla_sessions(&default_home, root.path()).expect("detect");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].path, session);
+
+        // A configured CLAUDE_CONFIG_DIR can already point at the registered account.
+        assert_eq!(
+            detect_recent_cla_sessions(&account, root.path()).expect("detect same home"),
+            sessions
+        );
+        record_imported_session(root.path(), &session, ThreadId::new()).expect("record import");
+        assert!(
+            detect_recent_cla_sessions(&default_home, root.path())
+                .expect("detect imported")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn account_discovery_excludes_unregistered_and_invalid_account_paths() {
+        let root = TempDir::new().expect("tempdir");
+        let state = root.path().join("elpis-claude");
+        let account = state
+            .join("claude-accounts")
+            .join("01234567-89ab-4cde-8fab-0123456789ab");
+        let project = root.path().join("repo");
+        write_session(
+            &account,
+            &project,
+            "session.jsonl",
+            &[record("user", "unregistered", &project)],
+        );
+        fs::write(
+            state.join("claude-accounts.json"),
+            serde_json::json!({ "ids": ["../outside", "", 42] }).to_string(),
+        )
+        .expect("account registry");
+        assert!(
+            detect_recent_cla_sessions(&root.path().join("default"), root.path())
+                .expect("detect")
+                .is_empty()
+        );
+    }
 
     #[test]
     fn detects_recent_sessions_with_existing_roots() {
