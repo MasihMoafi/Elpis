@@ -145,6 +145,11 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      # The evidence gate discovers tests with the TypeScript parser.
+      - name: Install the locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: renderer-unverified
