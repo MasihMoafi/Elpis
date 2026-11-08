@@ -47,9 +47,9 @@ export class MotherAgent {
   /** Native lists omit chats without a native preview; Elpis owns her history in the bridge. */
   async list(threads: ListedThread[], query: ThreadListOptions, excluded: (id: string) => boolean = () => false): Promise<ListedThread[]> {
     const id = this.file.read().threadId
-    // The router's own session is reached from the panel; the sidebar shows one Elpis.
-    const main = this.app?.workers.sessions.nativeId(this.app.masterId)
-    const rows = threads.filter(thread => thread.id !== main && !excluded(thread.id)).map(thread => this.decorate(thread))
+    // Every router session runs in the router's state folder, current and replaced ones alike. The sidebar shows one Elpis.
+    const routerDirectory = join(this.options.home, 'router')
+    const rows = threads.filter(thread => thread.cwd !== routerDirectory && !excluded(thread.id)).map(thread => this.decorate(thread))
     if (!id || excluded(id) || query.archived || query.cursor || query.ancestorThreadId || rows.some(thread => thread.id === id)) return rows
     if (typeof query.searchTerm === 'string' && !'elpis'.includes(query.searchTerm.toLowerCase())) return rows
     try { const thread = await this.options.client.readThreadMetadata(id); if (!thread.archived) rows.unshift(this.decorate(thread)) }

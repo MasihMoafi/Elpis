@@ -66,9 +66,8 @@ test('changing the router model replaces its session and the sidebar never lists
     const starts = workers.calls.filter(call => call.method === 'thread/start')
     assert.equal(starts.length, first + 1)
     assert.ok(workers.calls.some(call => call.method === 'thread/archive'))
-    const main = (elpis as unknown as { app: { workers: { sessions: { nativeId(id: string): string } }; masterId: string } }).app
-    const id = main.workers.sessions.nativeId(main.masterId)
-    assert.equal((await elpis.list([{ id } as never], {})).some(thread => thread.id === id), false)
+    const router = { id: 'replaced-router', cwd: join(h.home, 'router') } as never, worker = { id: 'worker', cwd: join(h.home, 'work') } as never
+    assert.deepEqual((await elpis.list([router, worker], {})).map(thread => thread.id).filter(id => id !== CHAT), ['worker'])
   } finally { await elpis.close(); client.close(); rmSync(h.home, { recursive: true, force: true }) }
 })
 
