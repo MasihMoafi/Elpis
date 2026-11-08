@@ -9,8 +9,8 @@ const optional = (v: unknown, check: (value: unknown) => boolean) => v === undef
 const nullable = (v: unknown, check: (value: unknown) => boolean) => v === null || check(v);
 const array = (v: unknown, check: (value: unknown) => boolean) => Array.isArray(v) && v.every(check);
 const strings = (v: unknown) => array(v, string);
-const historyOptions = (v: unknown) => wireObject(v) && optional(v.limit, number)
-  && optional(v.sortDirection, string) && optional(v.itemsView, string) && optional(v.cursor, string) && optional(v.turnId, string);
+const historyOptions = (v: unknown) => wireObject(v) && optional(v.limit, x => nullable(x, number))
+  && [v.sortDirection, v.itemsView].every(x => optional(x, y => nullable(y, string))) && optional(v.cursor, string) && optional(v.turnId, string);
 const params = (v: unknown): v is GlobalParams => wireObject(v)
   && [v.threadId, v.approvalPolicy, v.approvalsReviewer, v.permissions, v.rootThreadId, v.action, v.id, v.code,
     v.scriptPath, v.resumeFromRunId, v.sortDirection, v.itemsView, v.cursor, v.turnId, v.beforeTurnId, v.lastTurnId,
@@ -29,7 +29,7 @@ const params = (v: unknown): v is GlobalParams => wireObject(v)
   && optional(v.edits, x => array(x, edit => wireObject(edit) && string(edit.keyPath)))
   && optional(v.elpisWorkflow, x => wireObject(x) && optional(x.runId, string) && optional(x.agentId, y => nullable(y, string)))
   && optional(v.collaborationMode, x => wireObject(x) && optional(x.mode, string)
-    && optional(x.settings, y => wireObject(y) && optional(y.model, z => nullable(z, string)) && optional(y.developer_instructions, string)));
+    && optional(x.settings, y => wireObject(y) && optional(y.model, z => nullable(z, string)) && optional(y.developer_instructions, z => nullable(z, string))));
 
 /** Accept objects only after checking every field the bridge reads. Other envelopes pass through. */
 export function readClientRequest(value: unknown): GlobalRequest | null {
@@ -38,7 +38,7 @@ export function readClientRequest(value: unknown): GlobalRequest | null {
   // In the app-server schema these null overrides mean the same as omission.
   const optionalNulls = ["threadId", "cwd", "config", "approvalPolicy", "approvalsReviewer", "permissions", "sandbox", "sandboxPolicy",
     "cursor", "limit", "sortKey", "sortDirection", "itemsView", "turnId", "modelProviders", "sourceKinds", "archived", "searchTerm",
-    "beforeTurnId", "lastTurnId", "initialTurnsPage"];
+    "beforeTurnId", "lastTurnId", "initialTurnsPage", "collaborationMode"];
   const p = wireObject(raw) ? { ...raw } : raw;
   if (wireObject(p)) for (const key of optionalNulls) if (p[key] === null) delete p[key];
   if (!params(p)) return null;

@@ -1,4 +1,5 @@
 import { personAskedForWorkflow } from "./workflow-runner.mts";
+import { isPromptInput } from "./bridge-transcript.mts";
 import type { WorkflowRunner } from "./workflow-runner.mts";
 import type { EngineCall,BridgeClient,BridgeMessage,BridgeResponses,PromptInput,ProviderOwner,ProviderTurn,Store,GlobalRequest } from "./bridge-types.mts";
 
@@ -27,11 +28,11 @@ export function createWorkflowRequests({ storeChain, loadStore, providerOwners, 
     if (isBridged(provider)) {
       const active = store[threadId]?.active;
       running = Boolean(active) || activeTurns.has(threadId);
-      texts = (active?.userItems ?? []).filter((item) => item.type === "userMessage").map((item) => textOf(item.content));
+      texts = (active?.userItems ?? []).filter((item) => item.type === "userMessage").map((item) => textOf(item.content?.filter(isPromptInput)));
     } else {
       const turn = (await engineCall("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "full" }, 10_000))?.data?.[0];
       running = turn?.status === "inProgress";
-      texts = (turn?.items ?? []).filter((item) => item.type === "userMessage").map((item) => textOf(item.content));
+      texts = (turn?.items ?? []).filter((item) => item.type === "userMessage").map((item) => textOf(item.content?.filter(isPromptInput)));
     }
     log(`workflow opt-in for ${threadId}: ${isBridged(provider) ? provider : "engine"} turn ${running ? "running" : "idle"}, ${texts.length} messages`);
     if (!running) refuse("Workflows start only during a message from the person.");

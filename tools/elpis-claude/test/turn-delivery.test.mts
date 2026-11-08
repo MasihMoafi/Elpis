@@ -15,6 +15,7 @@ import { setTimeout as pause } from "node:timers/promises";
 import type { DesktopClient as DesktopClientType, DesktopClientOptions } from "../../../apps/elpis-desktop/bridge/client.mts";
 import importedMockProvider from "../../../scripts/lib/mock-provider.cts";
 import type { ProviderApi } from "../../../scripts/lib/mock-provider.cts";
+import type { ThreadElpisInstructionsReadResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/ThreadElpisInstructionsReadResponse.ts";
 const mockProvider = importedMockProvider as unknown as ProviderApi;
 const { DesktopClient } = await import((process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mts", import.meta.url)).href) as typeof import("../../../apps/elpis-desktop/bridge/client.mts");
 
@@ -22,7 +23,7 @@ type StoredItem = { id: string; type: string; text?: string; content?: { text: s
 type StoredTurn = { id: string; status: string; items: StoredItem[]; claudeMessageId?: string };
 type Session = { session?: string; turns: StoredTurn[]; active?: { turnId: string; userItems?: StoredItem[] }; effort?: string };
 type Entry = { method?: string; text?: string; ended?: boolean; toolStarted?: string; toolCompleted?: string; interruptedTool?: boolean; betweenTools?: boolean; params?: { sessionId?: string; configId?: string; prompt?: { text: string }[]; mcpServers?: { name: string; env: { name: string; value: string }[] }[]; _meta?: { claudeCode?: { options: { disallowedTools?: string[]; allowedTools?: string[] } }; systemPrompt?: { append: string }; jetbrains?: { air: { fork: { messageId: string } } } } } };
-type Event = { method: string; params: { threadId?: string; turn?: { id: string; status: string; error?: { message: string; codexErrorInfo?: string | null } }; item?: { id: string; type: string; text?: string; exitCode?: number; aggregatedOutput?: string }; thread?: { id: string; name?: string; parentThreadId?: string }; status?: { type: string } } };
+type Event = { method: string; params: { threadId?: string; turnId?: string; turn?: { id: string; status: string; error?: { message: string; codexErrorInfo?: string | null } }; item?: { id: string; type: string; text?: string; exitCode?: number; aggregatedOutput?: string }; thread?: { id: string; name?: string; parentThreadId?: string }; status?: { type: string } } };
 type FixtureEnv = NodeJS.ProcessEnv & { ELPIS_HOME: string; ELPIS_BRIDGE_SOCKET: string; ACP_BRIDGE_STORE: string; FAKE_ENGINE_LOG: string; FAKE_ACP_NEXT_TOOL_RELEASE: string; FAKE_ACP_BETWEEN_TOOL_RELEASE: string };
 type FixtureOptions = { model?: string; prepare?: (root: string, env: FixtureEnv) => void | Promise<void>; connectOptions?: DesktopClientOptions; nativeCalls?: boolean };
 const required = <T,>(value: T | null | undefined): T => { assert.ok(value !== undefined && value !== null); return value; };
@@ -128,6 +129,54 @@ async function fixture(t: TestContext, extra: NodeJS.ProcessEnv = {}, { model = 
     releaseBetweenTools: () => fs.writeFileSync(env.FAKE_ACP_BETWEEN_TOOL_RELEASE, ""),
     ended: (turnId: string) => desktop.events.find(e => e.method === "turn/completed" && e.params.turn?.id === turnId) };
 }
+
+test("native nullable instructions reach Claude, refresh between turns and reject malformed fields", { timeout: 20000, skip: !standInEngine && "scripted schema responses, including malformed native output" }, async t => {
+  const f = await fixture(t, {}, { prepare: (root, env) => {
+    env.FAKE_ENGINE_INSTRUCTIONS = path.join(root, "instructions.json");
+    env.FAKE_ENGINE_CONFIG = path.join(root, "config.json");
+    fs.writeFileSync(env.FAKE_ENGINE_CONFIG, JSON.stringify({ config: { features: { multi_agent: true } } }));
+  } });
+  const empty: ThreadElpisInstructionsReadResponse = { developerInstructions: null, agentsMd: null, continuity: null };
+  const cases: [ThreadElpisInstructionsReadResponse, string][] = [
+    [empty, ""],
+    [{ ...empty, developerInstructions: "Developer rules" }, "Developer rules"],
+    [{ ...empty, agentsMd: "Project rules" }, "# Project and global instructions admitted by Elpis (AGENTS.md)\n\nProject rules"],
+    [{ ...empty, continuity: "Current goal" }, "Current goal"],
+    [{ developerInstructions: "Developer rules", agentsMd: "Project rules", continuity: "Current goal" }, "Developer rules\n\n# Project and global instructions admitted by Elpis (AGENTS.md)\n\nProject rules\n\nCurrent goal"],
+    [empty, ""],
+  ];
+  for (const [instructions, expected] of cases) {
+    fs.writeFileSync(required(f.env.FAKE_ENGINE_INSTRUCTIONS), JSON.stringify(instructions));
+    const { turn } = await sendTurn(f.client, f.id, { text: "Check admitted instructions" });
+    const ended = await until(() => f.ended(turn.id), "the provider turn completes");
+    assert.equal(ended.params.turn?.status, "completed", ended.params.turn?.error?.message);
+    assert.ok(f.events.some(event => event.method === "item/completed" && event.params.turnId === turn.id && event.params.item?.type === "agentMessage" && event.params.item.text?.includes("answered: Check admitted instructions")));
+    const session = f.agent().findLast(event => ["session/new", "session/load"].includes(event.method ?? "") && event.params?._meta);
+    assert.equal(session?.params?._meta?.systemPrompt?.append, expected);
+  }
+  for (const [field, malformed] of [["developerInstructions", 42], ["agentsMd", {}], ["continuity", []]] as const) {
+    fs.writeFileSync(required(f.env.FAKE_ENGINE_INSTRUCTIONS), JSON.stringify({ ...empty, [field]: malformed }));
+    const prompts = f.agent().filter(event => event.method === "session/prompt").length;
+    const { turn } = await sendTurn(f.client, f.id, { text: "Reject malformed instructions" });
+    const ended = await until(() => f.ended(turn.id), "the malformed instruction turn fails");
+    assert.equal(ended.params.turn?.status, "failed");
+    assert.match(required(ended.params.turn?.error?.message), /Invalid engine response for thread\/elpisInstructions\/read/);
+    assert.equal(f.agent().filter(event => event.method === "session/prompt").length, prompts, `${field} must be rejected before provider inference`);
+  }
+});
+
+test("Plan and default mode keep Claude as inference owner with nullable built-in instructions", { timeout: 20000 }, async t => {
+  const f = await fixture(t);
+  for (const mode of ["plan", "default"]) {
+    const prompts = f.agent().filter(event => event.method === "session/prompt").length;
+    const { turn } = await sendTurn(f.client, f.id, { text: `Answer in ${mode} mode`, mode });
+    const ended = await until(() => f.ended(turn.id), "the provider mode turn completes");
+    assert.equal(ended.params.turn?.status, "completed", ended.params.turn?.error?.message);
+    assert.equal(f.agent().filter(event => event.method === "session/prompt").length, prompts + 1, "Claude receives the turn instead of the native carrier");
+    assert.ok(f.events.some(event => event.method === "item/completed" && event.params.turnId === turn.id && event.params.item?.type === "agentMessage" && event.params.item.text?.includes(`answered: Answer in ${mode} mode`)));
+  }
+  assert.equal(lines(f.env.FAKE_ENGINE_LOG).some(event => event.method === "turn/start"), false, "provider turns never enter the native inference path");
+});
 
 test("Subagents Off denies shell agents in Claude session options and survives reconnect/restart; On restores access", { timeout: 20000 }, async t => {
   const f = await fixture(t, {}, { prepare: (root, env) => {

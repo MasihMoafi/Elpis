@@ -232,7 +232,9 @@ function handle(msg: Wire, socket?: WebSocket) {
       fs.writeFileSync(process.env.FAKE_ENGINE_CONFIG, JSON.stringify(read));
       return reply({});
     }
-    case "thread/elpisInstructions/read": return reply({});
+    case "thread/elpisInstructions/read": return reply(process.env.FAKE_ENGINE_INSTRUCTIONS
+      ? JSON.parse(fs.readFileSync(process.env.FAKE_ENGINE_INSTRUCTIONS, "utf8"))
+      : { developerInstructions: null, agentsMd: null, continuity: null });
     case "thread/inject_items": if (process.env.FAKE_ENGINE_HOLD_INJECT) return; return reply({});
     case "thread/start": {
       const id = randomUUID();

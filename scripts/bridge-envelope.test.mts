@@ -6,14 +6,25 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
+import { createRequire } from "node:module";
 import { setTimeout as pause } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import WebSocket from "../tools/elpis-claude/node_modules/ws/wrapper.mjs";
+import type WebSocket from "ws";
 import { createTestTempDir,removeTestTempDir } from "../apps/elpis-desktop/tests/temp-root.cts";
 import { wireObject } from "../tools/elpis-claude/bridge-wire.mts";
+import type { ThreadItem } from "../codex-rs/app-server-protocol/schema/typescript/v2/ThreadItem.ts";
+import type { CollaborationMode } from "../codex-rs/app-server-protocol/schema/typescript/CollaborationMode.ts";
+import type { ThreadResumeInitialTurnsPageParams } from "../codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeInitialTurnsPageParams.ts";
+import { readClientRequest } from "../tools/elpis-claude/bridge-client-protocol.mts";
+
+const WebSocketClient: typeof WebSocket = createRequire(new URL("../tools/elpis-claude/package.json", import.meta.url))("ws");
 
 if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
   const send = (value: object) => process.stdout.write(JSON.stringify(value) + "\n");
+  const reasoning: Extract<ThreadItem, { type: "reasoning" }> = { type: "reasoning", id: "thought", summary: ["Summary"], content: ["Native reasoning"] };
+  const history = (threadId: unknown) => typeof threadId === "string" && threadId.includes("reasoning")
+    ? [{ id: "native-turn", status: "completed", items: [{ ...reasoning, ...(threadId === "broken-reasoning" ? { content: [42] } : {}) }] }]
+    : threadId === "broken-user" ? [{ id: "native-turn", items: [{ type: "userMessage", content: ["not input blocks"] }] }] : [];
   readline.createInterface({ input: process.stdin }).on("line", line => {
     const msg: unknown = JSON.parse(line);
     if (!wireObject(msg) || msg.id === undefined) return;
@@ -22,19 +33,33 @@ if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
       send({ method: "thread/name/updated", params: null });
       send({ method: "fixture/event", params: { extra: { retained: true } } });
       send({ id: msg.id, result: { opaque: ["kept", { nested: true }] } });
-    } else if (msg.method === "thread/read" && wireObject(msg.params) && typeof msg.params.threadId === "string") {
-      send({ id: msg.id, result: { thread: { id: msg.params.threadId, cwd: msg.params.threadId === "broken" ? 42 : "/valid", recencyAt: null, turns: [] } } });
+    } else if ((msg.method === "thread/read" || msg.method === "thread/resume") && wireObject(msg.params) && typeof msg.params.threadId === "string") {
+      send({ id: msg.id, result: { thread: { id: msg.params.threadId, cwd: msg.params.threadId === "broken" ? 42 : "/valid", recencyAt: null, turns: history(msg.params.threadId) } } });
     } else if (msg.method === "thread/turns/list") {
-      send({ id: msg.id, result: { data: [], nextCursor: null } });
+      send({ id: msg.id, result: { data: history(wireObject(msg.params) ? msg.params.threadId : undefined), nextCursor: null } });
+    } else if (msg.method === "thread/items/list") {
+      const turns = history(wireObject(msg.params) ? msg.params.threadId : undefined);
+      send({ id: msg.id, result: { data: turns.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item, startedAtMs: null, completedAtMs: null }))), nextCursor: null } });
     } else send({ id: msg.id, result: {} });
   });
 } else {
+  test("client null overrides follow the native collaboration and history schemas", () => {
+    const collaborationMode: CollaborationMode = { mode: "plan", settings: { model: "claude/sonnet", reasoning_effort: null, developer_instructions: null } };
+    const initialTurnsPage: ThreadResumeInitialTurnsPageParams = { limit: null, sortDirection: null, itemsView: null };
+    const request = (params: object) => readClientRequest({ id: "native-client", method: "thread/resume", params: { threadId: "chat", ...params } });
+    assert.deepEqual(request({ collaborationMode })?.params.collaborationMode, collaborationMode);
+    assert.deepEqual(request({ initialTurnsPage })?.params.initialTurnsPage, initialTurnsPage);
+    assert.deepEqual(request({ collaborationMode: null })?.params, { threadId: "chat" });
+    assert.equal(request({ collaborationMode: { ...collaborationMode, settings: { ...collaborationMode.settings, developer_instructions: 42 } } }), null);
+    assert.equal(request({ initialTurnsPage: { ...initialTurnsPage, limit: "25" } }), null);
+  });
+
   test("global requests and unknown engine events survive malformed neighbouring events", { timeout: 20000 }, async t => {
     const root = createTestTempDir(path.join(os.tmpdir(), "elpis-envelope-"));
     const engine = path.join(root, "engine.mjs"), trace = path.join(root, "trace"), log = path.join(root, "bridge.log");
     fs.writeFileSync(engine, `#!${process.execPath}\nimport ${JSON.stringify(fileURLToPath(import.meta.url))};\n`, { mode: 0o755 });
     fs.writeFileSync(trace, "");
-    fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify({ valid: { providerHistory: true }, broken: { providerHistory: true } }));
+    fs.writeFileSync(path.join(root, "sessions.json"), JSON.stringify(Object.fromEntries(["valid", "broken", "reasoning", "broken-reasoning", "broken-user"].map(id => [id, { providerHistory: true }]))));
     const bridge = process.env.ELPIS_ENVELOPE_TEST_BRIDGE ?? fileURLToPath(new URL("../tools/elpis-claude/acp-bridge.mts", import.meta.url));
     const child = spawn(process.execPath, [bridge], { cwd: root, stdio: ["ignore", "ignore", "pipe"], env: {
       PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
@@ -59,7 +84,7 @@ if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
     await until(() => fs.existsSync(log) && /LISTENING (\d+)/.test(fs.readFileSync(log, "utf8")));
     const port = /LISTENING (\d+)/.exec(fs.readFileSync(log, "utf8"))?.[1];
     assert.ok(port);
-    socket = new WebSocket(`ws://127.0.0.1:${port}`);
+    socket = new WebSocketClient(`ws://127.0.0.1:${port}`);
     await once(socket, "open");
     const pending = new Map<number, (value: Record<string, unknown>) => void>(), events: Record<string, unknown>[] = [];
     let id = 0;
@@ -87,6 +112,23 @@ if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
     assert.ok(wireObject(valid.result) && wireObject(valid.result.thread) && valid.result.thread.id === "valid");
     const invalid = await call("thread/read", { threadId: "broken", includeTurns: true });
     assert.ok(wireObject(invalid.error) && typeof invalid.error.message === "string" && invalid.error.message.includes("Invalid engine response"));
+    const reasoning = await call("thread/read", { threadId: "reasoning", includeTurns: true });
+    assert.ok(wireObject(reasoning.result) && wireObject(reasoning.result.thread), JSON.stringify(reasoning));
+    assert.deepEqual(reasoning.result.thread.turns, [{ id: "native-turn", status: "completed", items: [{ type: "reasoning", id: "thought", summary: ["Summary"], content: ["Native reasoning"] }] }]);
+    for (const method of ["thread/turns/list", "thread/items/list"]) {
+      const page = await call(method, { threadId: "reasoning", itemsView: "full" });
+      assert.ok(wireObject(page.result) && Array.isArray(page.result.data), JSON.stringify(page));
+      const first = page.result.data[0];
+      assert.ok(wireObject(first));
+      assert.deepEqual(method === "thread/items/list" ? first.item : Array.isArray(first.items) && first.items[0], { type: "reasoning", id: "thought", summary: ["Summary"], content: ["Native reasoning"] });
+    }
+    const resumed = await call("thread/resume", { threadId: "reasoning", initialTurnsPage: { limit: null, sortDirection: null, itemsView: null } });
+    assert.ok(wireObject(resumed.result) && wireObject(resumed.result.initialTurnsPage), JSON.stringify(resumed));
+    assert.ok(Array.isArray(resumed.result.initialTurnsPage.data) && resumed.result.initialTurnsPage.data.length === 1);
+    for (const threadId of ["broken-reasoning", "broken-user"]) {
+      const invalid = await call("thread/read", { threadId, includeTurns: true });
+      assert.ok(wireObject(invalid.error) && typeof invalid.error.message === "string" && invalid.error.message.includes("Invalid engine response"), JSON.stringify(invalid));
+    }
     assert.ok((await call("fixture/after", {})).result);
     assert.ok(!fs.readFileSync(trace, "utf8").includes('"method":"workflowRun/list"'));
   });

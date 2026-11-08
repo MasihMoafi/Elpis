@@ -1,4 +1,4 @@
-import { plainCommand } from "./bridge-transcript.mts";
+import { isPromptInput,plainCommand } from "./bridge-transcript.mts";
 import { wireObject } from "./bridge-wire.mts";
 import type { EngineCall,BridgeResponses,RequestId,BridgeClient,BridgeError,BridgeMessage,EngineThread,ForkLink,HistoryOptions,HistoryRequest,ProviderOwner,ProviderTurn,ResumeResult,Store,ThreadRequest,TranscriptItem,TranscriptTurn,TurnPage,ItemPage,ItemRow } from "./bridge-types.mts";
 
@@ -212,7 +212,7 @@ export function createProviderHistory({ forkParent, engineCall, resumeResults, a
       const all = [...(r.data ?? []), ...stored.filter((t) => !have.has(t.id))].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
       const lines = [];
       for (const turn of all) for (const it of turn.items ?? []) {
-        if (it.type === "userMessage") lines.push(`User: ${textOf(it.content)}`);
+        if (it.type === "userMessage") lines.push(`User: ${textOf(it.content?.filter(isPromptInput))}`);
         else if (it.type === "agentMessage" && it.text?.trim()) lines.push(`Assistant: ${it.text.trim()}`);
         else if (it.type === "commandExecution") lines.push(`(Assistant ran: ${plainCommand(it.command as string)})`);
         else if (it.type === "fileChange") lines.push(`(Assistant edited: ${(it.changes ?? []).map((c) => c.path).join(", ")})`);

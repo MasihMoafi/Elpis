@@ -237,6 +237,8 @@ jobs:
       - name: Provider history and message retention checks
         run: |
           node apps/elpis-desktop/bridge/build-resources.mts --bridge-only
+          node --test --test-concurrency=1 scripts/bridge-envelope.test.mts scripts/acp-boundary.test.mts
+          node --test --test-name-pattern='native nullable instructions|Plan and default mode' tools/elpis-claude/test/turn-delivery.test.mts
           node --test --test-concurrency=1 --test-name-pattern='existing chats are written directly|opening a chat rejoins|opening a completed parent-owned child|a child in a legacy drain' apps/elpis-desktop/bridge/bridge.test.mts
           node --test tools/elpis-claude/test/handover-subscribe.test.mts
           node scripts/store-guard.test.cts

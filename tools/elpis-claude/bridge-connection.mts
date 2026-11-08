@@ -397,7 +397,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   const permissionRefreshes = new Set<RequestId>();
   let handleMessage: (data: WebSocket.RawData | string, recovered?: boolean) => void;
   const textOf = (content: PromptInput[] | undefined) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
-  async function elpisInstructions(threadId: string, developerInstructions?: string) {
+  async function elpisInstructions(threadId: string, developerInstructions?: string | null) {
     try {
       const r = await engineCall("thread/elpisInstructions/read", { threadId });
       const parts = [];

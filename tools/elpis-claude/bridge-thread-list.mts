@@ -1,11 +1,11 @@
-import { inputSummary } from "./bridge-transcript.mts";
+import { inputSummary,isPromptInput } from "./bridge-transcript.mts";
 import type { EngineCall,ActiveRecord,BridgeResponses,EngineThread,ProviderTurn,SavedSession,Store,TranscriptItem,TranscriptTurn } from "./bridge-types.mts";
 
 export type ThreadListRequest = { sortKey?: string; sortDirection?: string; cursor?: string; cwd?: string | string[]; sourceKinds?: string[]; modelProviders?: string[]; searchTerm?: string; archived?: boolean; sectionId?: unknown; projectId?: unknown; parentThreadId?: unknown; ancestorThreadId?: unknown };
 type Dependencies = { engineCall: EngineCall; activeTurns: Map<string, ProviderTurn>; ownModel: (thread: EngineThread, store: Store) => boolean; storeChain: () => Promise<void>; loadStore: () => Promise<Store>; now: () => number; log: (message: string) => void };
 
 export const listField = (req: ThreadListRequest) => ({ updated_at: "updatedAt", recency_at: "recencyAt" } as Record<string, "updatedAt" | "recencyAt">)[req.sortKey as string] ?? "createdAt";
-export const previewOf = (first: TranscriptItem | undefined) => first?.type === "userMessage" ? inputSummary(first.content ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
+export const previewOf = (first: TranscriptItem | undefined) => first?.type === "userMessage" ? inputSummary(first.content?.filter(isPromptInput) ?? []) : first?.type === "enteredReviewMode" ? `Code review: ${first.review}` : "";
 export const processAlive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === "EPERM"; } };
 
 export const shouldMergeThreadList = (req: ThreadListRequest) => !req.archived && req.sortKey !== "section_position" && req.sortDirection !== "asc"

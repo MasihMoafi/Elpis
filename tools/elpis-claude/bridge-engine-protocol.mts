@@ -74,7 +74,7 @@ export function validEngineReply(method: string, value: unknown): boolean {
     case "thread/turns/list": return page(value, isTranscriptTurn);
     case "thread/items/list": return page(value, itemRow);
     case "thread/contextFiles/list": case "thread/contextFiles/set": return Array.isArray(value.files) && value.files.every(contextFile);
-    case "thread/elpisInstructions/read": return [value.developerInstructions, value.agentsMd, value.continuity].every(x => optional(x, string));
+    case "thread/elpisInstructions/read": return [value.developerInstructions, value.agentsMd, value.continuity].every(x => optional(x, y => nullable(y, string)));
     case "thread/approval/review": return optional(value.decision, string) && optional(value.rationale, string);
     default: return true;
   }

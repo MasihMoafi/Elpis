@@ -11,7 +11,7 @@ export const isPromptInput = (v: unknown): v is PromptInput => wireObject(v) && 
   && optional(v.text_elements, Array.isArray);
 export const isTranscriptItem = (v: unknown): v is TranscriptItem => wireObject(v) && string(v.type) && optional(v.id, string)
   && optional(v.status, string) && optional(v.text, string) && optional(v.review, string)
-  && optional(v.aggregatedOutput, x => nullable(x, string)) && optional(v.content, x => array(x, isPromptInput))
+  && optional(v.aggregatedOutput, x => nullable(x, string)) && optional(v.content, x => array(x, v.type === "reasoning" ? string : isPromptInput))
   && optional(v.commandActions, x => array(x, action => wireObject(action) && string(action.type) && optional(action.path, y => nullable(y, string))))
   && optional(v.changes, x => array(x, change => wireObject(change) && string(change.path) && string(change.diff)));
 export const isTranscriptTurn = (v: unknown): v is TranscriptTurn => wireObject(v) && optional(v.id, string) && array(v.items, isTranscriptItem)

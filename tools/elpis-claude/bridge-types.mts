@@ -1,5 +1,6 @@
 import type WebSocket from "ws";
 import type { Acp } from "./bridge-acp.mts";
+import type { ThreadElpisInstructionsReadResponse } from "../../codex-rs/app-server-protocol/schema/typescript/v2/ThreadElpisInstructionsReadResponse.ts";
 
 export type BridgeError = { message?: string; code?: string | number; signedOut?: boolean; data?: { errorKind?: unknown } | null; errorKind?: unknown };
 export type RequestId = string | number;
@@ -29,7 +30,7 @@ export type ToolState = {
   status: string; declined: boolean; shown: boolean; start: number; end: number | null;
 };
 
-export type TranscriptItem = { type: string; id?: string; status?: string; commandActions?: { type: string; path?: string | null }[]; text?: string; content?: PromptInput[]; review?: string | undefined; changes?: { path: string; diff: string; [key: string]: unknown }[]; aggregatedOutput?: string | null; [key: string]: unknown };
+export type TranscriptItem = { type: string; id?: string; status?: string; commandActions?: { type: string; path?: string | null }[]; text?: string; content?: PromptInput[] | string[]; review?: string | undefined; changes?: { path: string; diff: string; [key: string]: unknown }[]; aggregatedOutput?: string | null; [key: string]: unknown };
 export type TranscriptTurn = { id?: string; items: TranscriptItem[]; startedAt?: number | null; startedAtMs?: number | null; completedAt?: number | null; status?: string | undefined; claudeMessageId?: string | null; [key: string]: unknown };
 export type ContextFile = { name: string; path: string; estimatedTokens?: number | undefined; group: string; included: boolean; selectable: boolean; reason?: string };
 export type Goal = { threadId: string; objective: string; status: string; tokenBudget: number | null; tokensUsed: number; timeUsedSeconds: number; createdAt: number; updatedAt: number };
@@ -65,7 +66,7 @@ export type BridgeResponses = {
   "thread/items/list": ItemPage;
   "thread/contextFiles/list": { files: ContextFile[] };
   "thread/contextFiles/set": { files: ContextFile[] };
-  "thread/elpisInstructions/read": { developerInstructions?: string; agentsMd?: string; continuity?: string };
+  "thread/elpisInstructions/read": Partial<ThreadElpisInstructionsReadResponse>;
   "thread/approval/review": { decision?: string; rationale?: string };
   "thread/revert": { thread?: EngineThread; turnsBackwardsCursor?: string | null };
 };
@@ -107,13 +108,13 @@ export type ChildThread = { thread: EngineThread; lane: SubLane; rootThreadId: s
 export type Steer = { cancelled: boolean; phase: string; turnId: string };
 export type TurnOutcome = { status: string; turnId: string; seconds: number; tokens: number };
 export type QueueEntry = { id: string; input: PromptInput[]; clientUserMessageId?: string | null | undefined; goal?: boolean; steer?: Steer; after?: (result: TurnOutcome) => void };
-export type HistoryRequest = { threadId: string; limit?: number; sortDirection?: string; itemsView?: string; cursor?: string; turnId?: string };
+export type HistoryRequest = { threadId: string; limit?: number | null; sortDirection?: string | null; itemsView?: string | null; cursor?: string; turnId?: string };
 export type HistoryOptions = Omit<HistoryRequest, "threadId">;
-export type GlobalParams = { threadId?: string; excludeTurns?: boolean; initialTurnsPage?: HistoryOptions; approvalPolicy?: string; approvalsReviewer?: string; permissions?: string; model?: string | null; effort?: string | null; sandbox?: Ceiling; sandboxPolicy?: string | { type?: string }; config?: Record<string, unknown>; rootThreadId?: string; signedOut?: unknown; action?: string; id?: string; code?: string; script?: string | null | undefined; scriptPath?: string | undefined; args?: unknown; resumeFromRunId?: string | undefined; cwd?: string | string[]; budget?: number | null; limit?: number; sortDirection?: string; itemsView?: string; cursor?: string; turnId?: string; beforeTurnId?: string; lastTurnId?: string; target?: { type?: string; branch?: string; sha?: string; title?: string; instructions?: string }; input?: PromptInput[]; clientUserMessageId?: string | null; queuedSubmissionId?: string; queuedSubmissionIds?: string[]; objective?: string; status?: string; tokenBudget?: number | null; clientUserMessageIds?: string[]; includeTurns?: boolean; instructions?: string; collaborationMode?: { mode?: string; settings?: { model?: string | null; developer_instructions?: string } }; clientInfo?: { name?: string }; edits?: { keyPath: string; value?: unknown }[]; ancestorThreadId?: string; archived?: boolean; sortKey?: string; sourceKinds?: string[]; modelProviders?: string[]; searchTerm?: string; elpisParentThreadId?: string; elpisRequestedScope?: string; elpisWorkflow?: { runId?: string; agentId?: string | null }; parentThreadId?: string; [key: string]: unknown };
+export type GlobalParams = { threadId?: string; excludeTurns?: boolean; initialTurnsPage?: HistoryOptions; approvalPolicy?: string; approvalsReviewer?: string; permissions?: string; model?: string | null; effort?: string | null; sandbox?: Ceiling; sandboxPolicy?: string | { type?: string }; config?: Record<string, unknown>; rootThreadId?: string; signedOut?: unknown; action?: string; id?: string; code?: string; script?: string | null | undefined; scriptPath?: string | undefined; args?: unknown; resumeFromRunId?: string | undefined; cwd?: string | string[]; budget?: number | null; limit?: number; sortDirection?: string; itemsView?: string; cursor?: string; turnId?: string; beforeTurnId?: string; lastTurnId?: string; target?: { type?: string; branch?: string; sha?: string; title?: string; instructions?: string }; input?: PromptInput[]; clientUserMessageId?: string | null; queuedSubmissionId?: string; queuedSubmissionIds?: string[]; objective?: string; status?: string; tokenBudget?: number | null; clientUserMessageIds?: string[]; includeTurns?: boolean; instructions?: string; collaborationMode?: { mode?: string; settings?: { model?: string | null; developer_instructions?: string | null } }; clientInfo?: { name?: string }; edits?: { keyPath: string; value?: unknown }[]; ancestorThreadId?: string; archived?: boolean; sortKey?: string; sourceKinds?: string[]; modelProviders?: string[]; searchTerm?: string; elpisParentThreadId?: string; elpisRequestedScope?: string; elpisWorkflow?: { runId?: string; agentId?: string | null }; parentThreadId?: string; [key: string]: unknown };
 export type ThreadParams = GlobalParams & { threadId: string; cwd?: string };
 export type GlobalRequest = { id: RequestId; method: string; params: GlobalParams };
 export type ThreadRequest = { id: RequestId; method: string; params: ThreadParams };
-export type ClaudeTurnRequest = { id?: RequestId; kind?: string; params: { threadId: string; input?: PromptInput[]; clientUserMessageId?: string | null | undefined; collaborationMode?: { settings?: { developer_instructions?: string } } }; reviewHint?: string; acp?: Acp; sessionId?: string };
+export type ClaudeTurnRequest = { id?: RequestId; kind?: string; params: { threadId: string; input?: PromptInput[]; clientUserMessageId?: string | null | undefined; collaborationMode?: GlobalParams["collaborationMode"] }; reviewHint?: string; acp?: Acp; sessionId?: string };
 export type ProviderTurn = {
   threadId: string; turnId: string; done: Promise<unknown>; sessionId: string | null; items: TranscriptItem[]; closeMessage: () => void;
   cancelled: boolean; ready: Promise<string | null>; toolsIdle: (() => void)[]; steers: Promise<void>; promptEnded: boolean; bufferedUpdates: AcpUpdate[] | null;

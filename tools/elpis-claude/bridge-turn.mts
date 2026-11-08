@@ -70,7 +70,7 @@ type Dependencies = {
   ensureAcp: (agent: ProviderAgent) => Promise<Acp>;
   catalogFor: (agent: ProviderAgent) => Promise<CatalogResult>;
   engineCall: EngineCall;
-  elpisInstructions: (threadId: string, developerInstructions?: string) => Promise<string>;
+  elpisInstructions: (threadId: string, developerInstructions?: string | null) => Promise<string>;
   subagentsAllowed: (cwd: string | undefined) => Promise<boolean>;
   activeTurns: Map<string, ProviderTurn>;
   reconnects: Map<string, NodeJS.Timeout>;
