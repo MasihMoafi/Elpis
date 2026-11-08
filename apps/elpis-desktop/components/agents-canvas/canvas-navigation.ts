@@ -1,3 +1,4 @@
+import type { PlaceNode } from "./canvas-placement-types";
 import { useReactFlow, type XYPosition } from "@xyflow/react";
 import { isoLayout } from "@/lib/iso";
 import { type IsoController } from "@/components/agents-iso";
@@ -43,12 +44,7 @@ export function canvasNavigation({
   setGraph: React.Dispatch<React.SetStateAction<CanvasGraph>>;
   tidy: () => void;
   boxes: () => { x: number; y: number; w: number; h: number }[];
-  place: (
-    near?: XYPosition,
-    taken?: { x: number; y: number; w: number; h: number }[],
-    size?: { w: number; h: number },
-    closest?: boolean,
-  ) => { x: number; y: number };
+  place: PlaceNode;
   NODE_W: number;
   NODE_H: number;
 }) {

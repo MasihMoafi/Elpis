@@ -1,3 +1,4 @@
+import { motherRunOptions } from "./mother-runtime.mts";
 import type { MotherRuntime } from "./mother-runtime.mts";
 
 import type { createRunProgress } from "./create-run-progress.mts";
@@ -93,14 +94,7 @@ Prefer continue. Add only for a part the plan misses; cancel only work that is n
         {
           task: `Workflow: ${record.name}. Goal: ${record.goal ?? ""}.\nJust finished: ${finished.map(title).join(", ")}.\nFinished agents (summary and the file with the whole answer):\n${JSON.stringify(done).slice(0, 14000)}\nRemaining plan:\n${JSON.stringify(left).slice(0, 8000)}\nProject folders: ${JSON.stringify(folders)}`,
         },
-        {
-          cwd: root.cwd,
-          signal: controller.signal,
-          timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-          onUpdate: update => progress(record, mother, update),
-          onControl: control => controls.set(`${record.id}:mother`, control),
-          onPermission: request => permission(record, mother, request),
-        },
+        motherRunOptions({ record, mother, controls, progress, permission, timeoutMs }, root.cwd, controller.signal),
       ).finally(() => controls.delete(`${record.id}:mother`));
       let answer;
       try {

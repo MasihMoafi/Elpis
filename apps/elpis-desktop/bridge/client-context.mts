@@ -14,7 +14,7 @@ import { sessionContextFiles } from "./session-context.mts";
 import { BUILT_IN_KEY_PROVIDERS } from "./provider-settings.mts";
 import { internal_decorate } from "./client-thread-list.mts";
 import { internal_mutate } from "./client-mutation.mts";
-import { internal_rpc } from "./client-rpc.mts";
+import { internal_rpc, internal_writeConfig } from "./client-rpc.mts";
 import type { DesktopClient } from "./client.mts";
 import type { ClientState } from "./client-state.mts";
 
@@ -188,18 +188,7 @@ export async function impl_saveContextSwitches(this: DesktopClient, clientState:
     edits.push({ keyPath, value: input[field], mergeStrategy: "replace" });
   }
   if (!edits.length) throw new BridgeError("No switch was changed");
-  try {
-    await internal_rpc(this, clientState, "config/batchWrite", {
-      edits,
-      expectedVersion: input.version,
-      reloadUserConfig: true,
-    });
-  } catch (error) {
-    const failure = error as { status?: number };
-    if (failure.status === 409)
-      throw new BridgeError("Settings changed in another client. Reload settings before saving again.", 409);
-    throw new BridgeError("The switch could not be saved. Refresh and try again.", failure.status ?? 502);
-  }
+  await internal_writeConfig(this, clientState, edits, input.version, "The switch could not be saved. Refresh and try again.");
   if ("rag" in input) await internal_rpc(this, clientState, "config/mcpServer/reload", undefined).catch(() => {});
   return this.contextSwitches();
 }

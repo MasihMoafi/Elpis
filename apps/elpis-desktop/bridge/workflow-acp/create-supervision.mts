@@ -1,3 +1,4 @@
+import { motherRunOptions } from "./mother-runtime.mts";
 import type { MotherRuntime } from "./mother-runtime.mts";
 
 import { randomUUID } from "node:crypto";
@@ -88,14 +89,7 @@ export function createSupervision({
         {
           task: `Workflow: ${record.name}. Goal: ${record.goal ?? ""}. Failed node: ${task.id}. Failure: ${(error as Error).message}.\nCurrent nodes:\n${JSON.stringify(record.tasks.map(node => ({ id: node.id, status: node.status, instruction: node.instruction, evidence: node.result ? handed(node) : undefined, failure: node.failureReason, recentProgress: node.progress?.slice(-3) }))).slice(0, 22000)}`,
         },
-        {
-          cwd: root.cwd,
-          signal: controller.signal,
-          timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-          onUpdate: update => progress(record, mother, update),
-          onControl: control => controls.set(`${record.id}:mother`, control),
-          onPermission: request => permission(record, mother, request),
-        },
+        motherRunOptions({ record, mother, controls, progress, permission, timeoutMs }, root.cwd, controller.signal),
       );
       let decision;
       try {

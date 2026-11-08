@@ -1,5 +1,6 @@
 "use client";
 
+import { PREFERENCE_CHOICES } from "./preference-choices.cts";
 import { useEffect, useSyncExternalStore } from "react";
 import { appStorage } from "@/lib/projects";
 // Types only: desktop/state.test.cjs runs this file with nothing but appStorage to require. readingStyle (lib/reading.ts)
@@ -107,19 +108,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
 };
 export const PROFILE_NAME_MAX = 40;
 export const PREFERENCES_KEY = "elpis-preferences-v1";
-const choices: { [K in keyof Preferences]?: readonly Preferences[K][] } = {
-  sendShortcut: ["enter", "modEnter"],
-  followUp: ["steer", "queue"],
-  turnNotifications: ["never", "unfocused", "always"],
-  transcriptSize: ["s", "m", "l"],
-  transcriptWidth: ["s", "m", "l"],
-  interfaceFont: ["sans", "serif"],
-  interfaceSize: ["s", "m", "l"],
-  codeSize: ["s", "m", "l"],
-  cornerStyle: ["cut", "sharp", "rounded"],
-  chatFont: ["default", "sans", "serif", "mono", "system"],
-  accent: ["amber", "blue", "teal", "green", "violet", "rose", "orange"],
-};
+const choices: { [K in keyof Preferences]?: readonly Preferences[K][] } = PREFERENCE_CHOICES;
 
 function parse(raw: string | null): Preferences {
   const result = { ...DEFAULT_PREFERENCES };

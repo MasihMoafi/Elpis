@@ -39,6 +39,14 @@ function browserUrlImpl(input: unknown, appOrigin?: string) {
   return url.href;
 }
 
+export type IpcListeners = {
+  on: (channel: string, listener: (event: import("electron").IpcMainEvent, ...args: unknown[]) => void) => void;
+  removeListener: (
+    channel: string,
+    listener: (event: import("electron").IpcMainEvent, ...args: unknown[]) => void,
+  ) => void;
+};
+
 /** What a desktop feature needs to answer the Elpis application frame over IPC. */
 export type AppFrameIpc = {
   host: import("electron").BrowserWindow;

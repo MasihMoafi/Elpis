@@ -1,5 +1,6 @@
 "use client";
 
+import { findFieldEvents } from "@/lib/find-in-file";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Compartment, EditorState, StateEffect, StateField, Transaction, type Range } from "@codemirror/state";
 import {
@@ -298,13 +299,7 @@ export function WindowedFileEditor({
             aria-label="Find in file"
             placeholder="Find in file…"
             value={find.query}
-            onChange={event => setFind({ ...find, query: event.target.value, at: 0 })}
-            onKeyDown={event => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                step(event.shiftKey ? -1 : 1);
-              }
-            }}
+            {...findFieldEvents(find, setFind, step)}
           />
           <span role="status" className="fe-find-count">
             {!find.query ? "" : found.length ? `Finding ${current + 1} of ${found.length}` : "No matches"}

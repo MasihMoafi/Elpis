@@ -1,6 +1,7 @@
+import { startThread } from "@/lib/start-thread";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
-import { api, type ProviderChoice, type Thread } from "@/lib/api";
+import { api, type ProviderChoice } from "@/lib/api";
 import type { ChatTabs } from "@/lib/chat-tabs";
 import { errorText } from "@/lib/error-text.mts";
 import { newChatFolder } from "@/lib/preferences";
@@ -73,12 +74,7 @@ export function createShellSend({
       browserDraft = `draft:${tabsRef.current.activeId}`;
     try {
       if (!thread) {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", {
-          ...(newMode ? { permissions: newMode } : {}),
-          ...(model.trim() ? { model: model.trim() } : {}),
-          ...(newChoice?.provider ? { provider: newChoice.provider } : {}),
-          ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}),
-        });
+        const result = await startThread(newMode, model, newChoice?.provider, newChatFolder(cwd));
         thread = result.thread;
         upsertThread(thread);
         noteStartedMode(thread.id, result.permissions ?? newMode);

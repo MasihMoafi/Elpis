@@ -5,7 +5,7 @@ import path from "node:path";
 import { providerModels } from "./provider-models.mts";
 import { savedProviderKey } from "./provider-keys.mts";
 import { subscriptionModels } from "./subscription-models.mts";
-import { internal_rpc } from "./client-rpc.mts";
+import { internal_rpc, internal_readConfigAndPolicy } from "./client-rpc.mts";
 import type { DesktopClient } from "./client.mts";
 import type { ClientState } from "./client-state.mts";
 
@@ -45,10 +45,7 @@ export async function impl_models(this: DesktopClient, clientState: ClientState,
   if (options.provider !== undefined) {
     const provider = text(options.provider, "configured connection", 64);
     if (!/^[a-z][a-z0-9_-]*$/.test(provider)) throw new BridgeError("Choose an existing configured connection");
-    const [read, policy] = await Promise.all([
-      internal_rpc(this, clientState, "config/read", { includeLayers: true }),
-      internal_rpc(this, clientState, "configRequirements/read", {}).catch(() => null),
-    ]);
+    const [read, policy] = await internal_readConfigAndPolicy(this, clientState);
     if (policy === null)
       throw new BridgeError("Connection policy could not be read. Try again after reconnecting.", 503);
     const managed = policy.requirements;

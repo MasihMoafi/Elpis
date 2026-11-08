@@ -1,3 +1,4 @@
+import type { PlaceNode } from "./canvas-placement-types";
 import type { IsoPlace } from "@/lib/iso";
 import { useReactFlow, type FinalConnectionState, type XYPosition } from "@xyflow/react";
 import { isoLayout } from "@/lib/iso";
@@ -55,12 +56,7 @@ export function canvasCreation({
   graph: CanvasGraph;
   boxes: () => { x: number; y: number; w: number; h: number }[];
   agents: Extract<CanvasNode, { type: "agent" }>[];
-  place: (
-    near?: XYPosition,
-    taken?: { x: number; y: number; w: number; h: number }[],
-    size?: { w: number; h: number },
-    closest?: boolean,
-  ) => { x: number; y: number };
+  place: PlaceNode;
   NODE_W: number;
   NODE_H: number;
   iso: boolean;

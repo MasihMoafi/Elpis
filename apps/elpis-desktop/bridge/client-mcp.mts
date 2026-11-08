@@ -2,7 +2,7 @@ import { BridgeError, object, text } from "./validate.mts";
 import { privateConfigFile } from "./provider-settings.mts";
 import { readClaudeMcp } from "./claude-mcp-import.mts";
 
-import { internal_rpc } from "./client-rpc.mts";
+import { internal_rpc, internal_writeConfig } from "./client-rpc.mts";
 import type { DesktopClient } from "./client.mts";
 import type { ClientState } from "./client-state.mts";
 
@@ -149,19 +149,7 @@ export async function impl_saveMcp(this: DesktopClient, clientState: ClientState
   if (input.action === "credentials") {
     privateConfigFile(current.configPath);
   }
-  try {
-    await internal_rpc(this, clientState, "config/batchWrite", {
-      edits,
-      expectedVersion: input.version,
-      reloadUserConfig: true,
-    });
-  } catch (error) {
-    // Native TOML errors can contain submitted values. Keep safe status semantics only.
-    const failure = error as { status?: number };
-    if (failure.status === 409)
-      throw new BridgeError("Settings changed in another client. Reload settings before saving again.", 409);
-    throw new BridgeError("MCP settings could not be saved. Refresh settings before retrying.", failure.status ?? 502);
-  }
+  await internal_writeConfig(this, clientState, edits, input.version, "MCP settings could not be saved. Refresh settings before retrying.");
   let reloadRequested = true;
   await internal_rpc(this, clientState, "config/mcpServer/reload", undefined).catch(() => {
     reloadRequested = false;

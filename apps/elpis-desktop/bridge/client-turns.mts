@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { archivedSession } from "./client-protocol.mts";
 import { collaborationMode, modeOf, permissionMode, permissionSetting, reviewTarget } from "./client-permissions.mts";
 import { internal_attach, internal_decorate } from "./client-thread-list.mts";
-import { internal_browserOptions, internal_rpc } from "./client-rpc.mts";
+import { internal_rpc, internal_forkOwned } from "./client-rpc.mts";
 import { internal_chatModel } from "./client-context.mts";
 import { internal_current, internal_effort, internal_startTurn } from "./client-rewind.mts";
 import { internal_mutate } from "./client-mutation.mts";
@@ -77,18 +77,11 @@ async function internal_send(this: DesktopClient, clientState: ClientState, id: 
         // The agent's own thread refuses direct turns; a fork carries its whole history and recorded model.
         const name = text(body.continueAs, "continued conversation name", 200).trim();
         const browserSession = `pending-${randomUUID()}`;
-        const fork = await internal_rpc(this, clientState, "thread/fork", {
+        const fork = await internal_forkOwned(this, clientState, browserSession, {
           threadId: id,
           model: model ?? thread.model ?? undefined,
           modelProvider: thread.modelProvider,
-          ...internal_browserOptions.call(this, clientState, browserSession),
-        }).catch(error => {
-          clientState.browserConfig?.close?.(browserSession);
-          throw error;
-        });
-        threadId(fork.thread?.id);
-        clientState.browserConfig?.bind?.(browserSession, fork.thread.id);
-        clientState.owned.add(fork.thread.id);
+          });
         const continued = { thread: internal_decorate.call(this, clientState, fork.thread), continuedFrom: id };
         try {
           await internal_rpc(this, clientState, "thread/name/set", { threadId: fork.thread.id, name });

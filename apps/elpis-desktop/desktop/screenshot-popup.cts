@@ -108,10 +108,7 @@ function createScreenshotPopupImpl({
     }: {
       host: Window;
       origin: string;
-      ipcMain: {
-        on: (channel: string, listener: (event: IpcMainEvent, ...args: unknown[]) => void) => void;
-        removeListener: (channel: string, listener: (event: IpcMainEvent, ...args: unknown[]) => void) => void;
-      };
+      ipcMain: import("./browser-policy.cts").IpcListeners;
     }) {
       const request = (event: IpcMainEvent, raw: unknown) => {
         const shot = raw as { id?: unknown; name?: unknown; dataURL?: unknown; count?: number } | null | undefined;

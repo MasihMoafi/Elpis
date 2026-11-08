@@ -13,7 +13,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { PERMISSIONS, modeOf, permissionMode, permissionSetting } from "./client-permissions.mts";
 import { SOURCE_KINDS, internal_decorate, internal_forget, internal_itemsPage } from "./client-thread-list.mts";
-import { internal_browserOptions, internal_rpc } from "./client-rpc.mts";
+import { internal_browserOptions, internal_rpc, internal_forkOwned } from "./client-rpc.mts";
 import { internal_current } from "./client-rewind.mts";
 import { internal_folderOf } from "./client-changes.mts";
 import { internal_mutate } from "./client-mutation.mts";
@@ -400,20 +400,13 @@ async function internal_forkChat(
   model: Record<string, unknown> = {},
 ) {
   const browserSession = `pending-${randomUUID()}`;
-  const fork = await internal_rpc(this, clientState, "thread/fork", {
+  const fork = await internal_forkOwned(this, clientState, browserSession, {
     threadId: thread.id,
     ...(lastTurnId ? { lastTurnId } : {}),
     ...(thread.model ? { model: thread.model } : {}),
     ...(thread.modelProvider ? { modelProvider: thread.modelProvider } : {}),
     ...model,
-    ...internal_browserOptions.call(this, clientState, browserSession),
-  }).catch(error => {
-    clientState.browserConfig?.close?.(browserSession);
-    throw error;
-  });
-  threadId(fork.thread?.id);
-  clientState.browserConfig?.bind?.(browserSession, fork.thread.id);
-  clientState.owned.add(fork.thread.id);
+    });
   await clientState.versions.list(fork.thread.id, true).catch(() => {});
   const name = `${(thread.name?.trim() || (String(thread.preview ?? "").split("\n")[0] as string).trim() || "Chat").slice(0, 110)} (${suffix})`;
   try {

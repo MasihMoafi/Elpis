@@ -14,6 +14,13 @@ import type { DesktopClient } from "./client.mts";
 import type { ArchiveOptions } from "./client-archive-history.mts";
 import type { ClientState } from "./client-state.mts";
 
+function readListedThread(client: Parameters<typeof internal_rpc>[0], clientState: ClientState, id: string) {
+  return internal_rpc(client, clientState, "thread/read", { threadId: id, includeTurns: false }).then(
+    result => result.thread,
+    () => undefined,
+  );
+}
+
 export const { isVoiceHandoff } = voiceHandoff;
 
 /** Every kind of conversation the window lists, agents included. */
@@ -301,10 +308,7 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
       ...(await clientState.versions.listed()),
     ])) {
       if (result.data.some((thread: { id: string }) => thread.id === id)) continue;
-      const { thread } = await internal_rpc(this, clientState, "thread/read", {
-        threadId: id,
-        includeTurns: false,
-      }).catch(() => ({ thread: undefined }));
+      const thread = await readListedThread(this, clientState, id);
       if (!thread || isArchivedThread(thread)) continue;
       if (
         searchTerm &&
@@ -338,10 +342,7 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
   if (options.ancestorThreadId && !options.cursor && !options.archived)
     for (const id of clientState.spawnLinks.madeBy(options.ancestorThreadId)) {
       if (result.data.some((thread: { id: string }) => thread.id === id)) continue;
-      const { thread } = await internal_rpc(this, clientState, "thread/read", {
-        threadId: id,
-        includeTurns: false,
-      }).catch(() => ({ thread: undefined }));
+      const thread = await readListedThread(this, clientState, id);
       if (thread && thread.id === id && !isArchivedThread(thread)) result.data.push(thread);
     }
   await internal_loadWorkflowTitles.call(this, clientState, result.data);

@@ -23,6 +23,7 @@ export const productionFiles = [
   "bridge/matilda-companion.mts",
   "desktop/app-menu.cts",
   "lib/app-menu-commands.cts",
+  "lib/preference-choices.cts",
   "bridge/voice.mts",
   "bridge/voice-handoff.cts",
   "bridge/kokoro.mts",

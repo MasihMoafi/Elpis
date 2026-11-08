@@ -1,5 +1,6 @@
 "use client";
 
+import { playRemoteAudio } from "@/lib/remote-audio";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
 import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
@@ -441,23 +442,20 @@ export function ReadAloud({
           /* Non-JSON transport events carry no playback state. */
         }
       };
-      const audio = new Audio();
+      const audio = playRemoteAudio(
+        peer,
+        () => call.current === current,
+        track => {
+          track.onended = () => {
+            if (call.current === current) {
+              if (current.complete) stop();
+              else fail("Read aloud disconnected before finishing.");
+            }
+          };
+          void audio.play().catch(() => fail("Audio playback was blocked. Press Read aloud to try again."));
+        },
+      );
       current.audio = audio;
-      audio.autoplay = true;
-      peer.ontrack = event => {
-        if (call.current !== current) {
-          event.track.stop();
-          return;
-        }
-        audio.srcObject = new MediaStream([event.track]);
-        event.track.onended = () => {
-          if (call.current === current) {
-            if (current.complete) stop();
-            else fail("Read aloud disconnected before finishing.");
-          }
-        };
-        void audio.play().catch(() => fail("Audio playback was blocked. Press Read aloud to try again."));
-      };
       peer.onconnectionstatechange = () => {
         if (call.current !== current) return;
         if (peer.connectionState === "connected") {

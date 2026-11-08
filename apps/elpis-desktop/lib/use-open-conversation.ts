@@ -1,33 +1,19 @@
-import { useCallback, type Dispatch, type RefObject, type SetStateAction } from "react";
+import type { ChatWiring } from "@/lib/chat-wiring";
+import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { api, retryableSessionError, unreadable, type Thread } from "@/lib/api";
 import { activate, tabFor } from "@/lib/chat-tabs";
 import { historyPath, type HistoryPage } from "@/lib/chat-history";
 import { errorText } from "@/lib/error-text.mts";
 import { mergeHistoryWithLive } from "@/lib/live-events";
-import type { useChatTabs } from "@/lib/use-chat-tabs";
 import type { useComposerState } from "@/lib/use-composer-state";
-import type { useComposerAttachments } from "@/lib/use-composer-attachments";
-import type { useConversationSession } from "@/lib/use-conversation-session";
-import type { useConversationList } from "@/lib/use-conversation-list";
-import type { useDraftStore } from "@/lib/use-drafts";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
-import type { useTranscriptHistory } from "@/lib/use-transcript-history";
 import { without } from "@/lib/utils";
 import type { Live, View } from "@/lib/workspace-types";
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
-type Ref<T> = RefObject<T>;
-type OpenInputs = {
+type OpenInputs = ChatWiring & {
   composer: ReturnType<typeof useComposerState>;
   runtime: ReturnType<typeof useRuntimeState>;
-  conversations: ReturnType<typeof useConversationList>;
-  history: ReturnType<typeof useTranscriptHistory>;
-  drafts: ReturnType<typeof useDraftStore>;
-  attachments: ReturnType<typeof useComposerAttachments>;
-  tabsRef: ReturnType<typeof useChatTabs>["tabsRef"];
-  updateTabs: ReturnType<typeof useChatTabs>["updateTabs"];
-  session: ReturnType<typeof useConversationSession>;
-  newDraftKey: Ref<string>;
   markRead: (id: string) => void;
   setView: Setter<View>;
   setSidebar: Setter<boolean>;

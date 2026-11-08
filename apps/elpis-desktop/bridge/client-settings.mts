@@ -13,7 +13,7 @@ import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from "./provid
 
 import { internal_effort } from "./client-rewind.mts";
 import { internal_modelList } from "./client-models.mts";
-import { internal_rpc } from "./client-rpc.mts";
+import { internal_rpc, internal_readConfigAndPolicy } from "./client-rpc.mts";
 import type { DesktopClient } from "./client.mts";
 import type { ClientState } from "./client-state.mts";
 import type { CustomizePage } from "./customize-page.mts";
@@ -217,10 +217,7 @@ export async function impl_providers(this: DesktopClient, clientState: ClientSta
 }
 
 export async function impl_providerSettings(this: DesktopClient, clientState: ClientState) {
-  const [read, requirements] = await Promise.all([
-    internal_rpc(this, clientState, "config/read", { includeLayers: true }),
-    internal_rpc(this, clientState, "configRequirements/read", {}).catch(() => null),
-  ]);
+  const [read, requirements] = await internal_readConfigAndPolicy(this, clientState);
   return providerSettingsSnapshot(read, requirements, process.env, savedProviderKeyIds(configHome(read)));
 }
 
@@ -228,10 +225,7 @@ export async function impl_providerSettings(this: DesktopClient, clientState: Cl
 export async function impl_readAloudProvider(this: DesktopClient, clientState: ClientState, id?: unknown) {
   if (typeof id !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(id))
     throw new BridgeError("Choose a configured speech provider.");
-  const [read, policy] = await Promise.all([
-    internal_rpc(this, clientState, "config/read", { includeLayers: true }),
-    internal_rpc(this, clientState, "configRequirements/read", {}).catch(() => null),
-  ]);
+  const [read, policy] = await internal_readConfigAndPolicy(this, clientState);
   if (policy === null) throw new BridgeError("Provider policy is unavailable.", 503);
   if (policy.requirements?.modelProvider && policy.requirements.modelProvider !== id)
     throw new BridgeError("This provider is restricted by your organization.", 403);
@@ -265,10 +259,7 @@ export async function impl_readAloudProvider(this: DesktopClient, clientState: C
 /** Saves a pasted API key to the Elpis home's private key file; the key is never sent back. */
 export async function impl_saveProviderKey(this: DesktopClient, clientState: ClientState, raw?: unknown) {
   const input = object(raw, ["provider", "key"]) as Record<string, unknown>;
-  const [read, requirements] = await Promise.all([
-    internal_rpc(this, clientState, "config/read", { includeLayers: true }),
-    internal_rpc(this, clientState, "configRequirements/read", {}).catch(() => null),
-  ]);
+  const [read, requirements] = await internal_readConfigAndPolicy(this, clientState);
   const id = typeof input.provider === "string" ? input.provider : "";
   if (
     requirements === null ||

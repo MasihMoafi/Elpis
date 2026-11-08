@@ -108,10 +108,7 @@ function createDocumentsImpl() {
   }: {
     host: BrowserWindow;
     origin: string;
-    ipcMain: {
-      on: (channel: string, listener: (event: IpcMainEvent, ...args: unknown[]) => void) => void;
-      removeListener: (channel: string, listener: (event: IpcMainEvent, ...args: unknown[]) => void) => void;
-    };
+    ipcMain: import("./browser-policy.cts").IpcListeners;
     session: () => string | null;
   }) {
     if (closed) throw Error("Document service is closed.");

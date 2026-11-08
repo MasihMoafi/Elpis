@@ -1,5 +1,6 @@
 "use client";
 
+import { findFieldEvents } from "@/lib/find-in-file";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { selectPaneContent } from "@/lib/pane-select";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
@@ -245,13 +246,7 @@ function SmallFileEditor({ label, value, marks, softWrap = false, onChange, onSa
               value={find.query}
               spellCheck={false}
               autoComplete="off"
-              onChange={event => setFind({ ...find, query: event.target.value, at: 0 })}
-              onKeyDown={event => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  step(event.shiftKey ? -1 : 1);
-                }
-              }}
+              {...findFieldEvents(find, setFind, step)}
             />
           </SearchField>
           <span role="status" className="fe-find-count">

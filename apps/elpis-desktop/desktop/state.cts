@@ -6,6 +6,7 @@ type Patch = { key: string; baseRevision: number; value?: string | null; changes
 type Change = { key: string; value: string | null; revision: number; rebased: boolean };
 type Version = { revision: number; writer: number | null | undefined };
 type Listener = (change: Change) => void;
+const { PREFERENCE_CHOICES }: typeof import("../lib/preference-choices.cts") = require("../lib/preference-choices.cts");
 const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
@@ -21,14 +22,13 @@ const textJournalPatch = (value: unknown) =>
   typeof value === "object" &&
   !Array.isArray(value) &&
   Object.entries(value).every(([id, entry]) => id.length > 0 && id.length < 500 && typeof entry === "string");
-const preferenceTypes: Record<string, string | string[]> = {
+const preferenceTypes: Record<string, string | readonly string[]> = {
   loveChatCharacters: "string",
   themeFollowsLoveChat: "boolean",
   speakMatildaReplies: "boolean",
   defaultFolder: "string",
   softWrap: "boolean",
-  sendShortcut: ["enter", "modEnter"],
-  followUp: ["steer", "queue"],
+  ...PREFERENCE_CHOICES,
   showContextUsage: "boolean",
   showAgentRuns: "boolean",
   sidebarWorkflows: "boolean",
@@ -37,18 +37,9 @@ const preferenceTypes: Record<string, string | string[]> = {
   closeToTray: "boolean",
   quickEntryShortcut: "string",
   confirmDeleteChats: "boolean",
-  turnNotifications: ["never", "unfocused", "always"],
   inputNotifications: "boolean",
   notificationSound: "boolean",
-  transcriptSize: ["s", "m", "l"],
-  transcriptWidth: ["s", "m", "l"],
-  interfaceFont: ["sans", "serif"],
   codeFont: "string",
-  interfaceSize: ["s", "m", "l"],
-  codeSize: ["s", "m", "l"],
-  cornerStyle: ["cut", "sharp", "rounded"],
-  chatFont: ["default", "sans", "serif", "mono", "system"],
-  accent: ["amber", "blue", "teal", "green", "violet", "rose", "orange"],
   customThemes: "string",
   selectedPalette: "string",
   navOrder: "string",

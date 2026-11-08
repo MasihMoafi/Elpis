@@ -1,3 +1,4 @@
+import { motherRunOptions } from "./mother-runtime.mts";
 import type { MotherRuntime } from "./mother-runtime.mts";
 
 import { BridgeError } from "../validate.mts";
@@ -45,14 +46,7 @@ export function createReview({
             ...(task.result ? handed(task) : { answer: task.failureReason ?? task.status }),
           })),
         },
-        {
-          cwd: ready.review.path,
-          signal,
-          timeoutMs: Math.min(timeoutMs ?? Infinity, (record.maxRuntimeSeconds ?? 1800) * 1000),
-          onUpdate: update => progress(record, mother, update),
-          onControl: control => controls.set(`${record.id}:mother`, control),
-          onPermission: request => permission(record, mother, request),
-        },
+        motherRunOptions({ record, mother, controls, progress, permission, timeoutMs }, ready.review.path, signal),
       );
       let verdict;
       try {

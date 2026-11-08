@@ -1,3 +1,4 @@
+import { startThread } from "@/lib/start-thread";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
 import { api, title, type ProviderChoice, type Thread } from "@/lib/api";
@@ -170,13 +171,7 @@ export function createChatSend({
     try {
       let thread = selected;
       if (!thread) {
-        const result = await api<{ thread: Thread; permissions?: PermissionMode | null }>("/threads", {
-          ...(newMode ? { permissions: newMode } : {}),
-          ...(model.trim() ? { model: model.trim() } : {}),
-          ...(newChoice?.provider ? { provider: newChoice.provider } : {}),
-          ...(newChatFolder(cwd) ? { cwd: newChatFolder(cwd) } : {}),
-          ...(newWorktree ? { worktree: true } : {}),
-        });
+        const result = await startThread(newMode, model, newChoice?.provider, newChatFolder(cwd), newWorktree);
         thread = result.thread;
         errorThreadId = thread.id;
         noteStartedMode(result.thread.id, result.permissions ?? newMode);

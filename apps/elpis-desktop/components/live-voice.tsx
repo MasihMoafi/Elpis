@@ -1,5 +1,6 @@
 "use client";
 
+import { playRemoteAudio } from "@/lib/remote-audio";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, sessionReady } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mts";
@@ -208,20 +209,17 @@ export function LiveVoiceProvider({ children }: { children: ReactNode }) {
             /* An event that is not JSON changes nothing. */
           }
         };
-      const audio = new Audio();
+      const audio = playRemoteAudio(
+        peer,
+        () => call.current === current,
+        () => {
+          apply();
+          void audio.play().catch(() => {
+            if (call.current === current) end("Audio playback was blocked. Start voice again to allow it.");
+          });
+        },
+      );
       current.audio = audio;
-      audio.autoplay = true;
-      peer.ontrack = event => {
-        if (call.current !== current) {
-          event.track.stop();
-          return;
-        }
-        audio.srcObject = new MediaStream([event.track]);
-        apply();
-        void audio.play().catch(() => {
-          if (call.current === current) end("Audio playback was blocked. Start voice again to allow it.");
-        });
-      };
       peer.onconnectionstatechange = () => {
         if (call.current !== current) return;
         if (peer.connectionState === "connected") {

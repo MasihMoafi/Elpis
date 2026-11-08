@@ -653,6 +653,13 @@ export function IsoBoard({
       : null;
 
   const overview = `${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
+  const subjectLine = !subjectPlace
+    ? ""
+    : subjectPlace.kind !== "agent"
+      ? parentLine(subjectPlace.id).join(" · ")
+      : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity
+        ? `Now: ${states[subjectPlace.id]?.activity}`
+        : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`;
   return (
     <div
       ref={root}
@@ -1288,21 +1295,7 @@ export function IsoBoard({
         {subjectPlace ? (
           <>
             <strong title={titleOf(subjectPlace.id)}>{titleOf(subjectPlace.id)}</strong>
-            <small
-              title={
-                subjectPlace.kind !== "agent"
-                  ? parentLine(subjectPlace.id).join(" · ")
-                  : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity
-                    ? `Now: ${states[subjectPlace.id]?.activity}`
-                    : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`
-              }
-            >
-              {subjectPlace.kind !== "agent"
-                ? parentLine(subjectPlace.id).join(" · ")
-                : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity
-                  ? `Now: ${states[subjectPlace.id]?.activity}`
-                  : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`}
-            </small>
+            <small title={subjectLine}>{subjectLine}</small>
             {subjectModel && <small title={subjectModel}>{subjectModel}</small>}
           </>
         ) : (

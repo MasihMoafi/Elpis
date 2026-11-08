@@ -139,7 +139,12 @@ function windows(t: import("node:test").TestContext, initial = {}) {
     ).outputText;
     const exports = {} as Preferences;
     vm.runInContext("(function(require,exports){" + code + "\n})", context)(
-      (name: string) => (name === "react" ? {} : { appStorage: () => storage }),
+      (name: string) =>
+        name === "react"
+          ? {}
+          : name.includes("preference-choices")
+            ? require("../lib/preference-choices.cts")
+            : { appStorage: () => storage },
       exports,
     );
     exports.readPreferences(); // Both windows cache defaults before either edits.

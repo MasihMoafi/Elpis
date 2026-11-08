@@ -1,3 +1,4 @@
+import type { PlaceNode } from "./canvas-placement-types";
 import type { IsoPlace } from "@/lib/iso";
 import { useRef } from "react";
 import { useReactFlow, type XYPosition } from "@xyflow/react";
@@ -24,12 +25,7 @@ export function useCanvasClipboard({
   room: number;
   setNotice: React.Dispatch<React.SetStateAction<string>>;
   limit: number;
-  place: (
-    near?: XYPosition,
-    taken?: { x: number; y: number; w: number; h: number }[],
-    size?: { w: number; h: number },
-    closest?: boolean,
-  ) => { x: number; y: number };
+  place: PlaceNode;
   agents: Extract<CanvasNode, { type: "agent" }>[];
   isoBoxes: (scene?: IsoPlace[]) => { x: number; y: number; w: number; h: number }[];
   ISO_NODE: { w: number; h: number; top: number };
