@@ -27,6 +27,7 @@ type Modules = {
   'lib/preferences.ts': PreferenceTestApi;
   'lib/nav-order.ts': typeof import('../lib/nav-order');
   'lib/shortcuts.ts': typeof import('../lib/shortcuts');
+  'lib/use-love-chat-characters.ts': typeof import('../lib/use-love-chat-characters');
   'lib/follow-ups.ts': Omit<FollowUpModule, 'queueFollowUp'> & { queueFollowUp(threadId: string, text: string, attachments?: { id: string; type: string; name: string }[]): boolean };
   'lib/notifications.ts': typeof import('../lib/notifications');
   'components/settings/system-settings.tsx': { ShortcutRecorder(props: { label: string; shortcut: string; onRecord(key: string): void; onRefuse(text: string): void; reserved?: string[] }): { props: { onKeyDown(event: object): void } } };
