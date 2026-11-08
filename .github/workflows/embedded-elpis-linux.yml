@@ -230,10 +230,9 @@ jobs:
       - name: Install locked bridge dependencies
         working-directory: tools/elpis-claude
         run: npm ci --ignore-scripts
-      - name: Install locked desktop runtime dependencies
-        # The bridge tests load bridge/schedule-rules.mts, which needs rrule (7 Nov: "package 'rrule' not found").
+      - name: Install locked desktop bridge dependencies
         working-directory: apps/elpis-desktop
-        run: npm ci --ignore-scripts --omit=dev
+        run: npm ci --ignore-scripts
       - name: Provider history and message retention checks
         run: |
           node apps/elpis-desktop/bridge/build-resources.mts --bridge-only
