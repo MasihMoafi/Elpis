@@ -24,7 +24,7 @@ function RoleChoice({ role, label, value, settings, models, disabled, onChange }
   return <>
     <SettingRow title={`${label} provider`} description={role === "dispatch" ? "Routes goals and replies in the Elpis chat." : "Used when Elpis starts a new worker session."}>
       <OptionSelect aria-label={`${label} provider`} className="settings-choice" value={value?.provider ?? ""} disabled={disabled} onChange={event => { const next = SUBSCRIPTIONS.find(item => item.id === event.target.value); onChange(event.target.value ? { provider: event.target.value, model: next ? models.find(model => model.model.startsWith(next.prefix))?.model ?? "" : "" } : null); }}>
-        <option value="">Use background model (then main)</option>{subscriptionOptions(models)}{providerOptions(provider, settings.providers)}
+        <option value="">Use background model (then main)</option>{subscriptionOptions(models)}{providerOptions(subscription ? "" : provider, settings.providers)}
       </OptionSelect>
     </SettingRow>
     <SettingRow title={`${label} model`}>
