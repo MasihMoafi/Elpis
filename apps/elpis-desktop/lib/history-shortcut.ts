@@ -8,14 +8,10 @@ export const isMacPlatform = (platform: string) => /^(Mac|iPhone|iPad|iPod)/i.te
 // Prefer a logical Latin key (including Dvorak punctuation); use the physical
 // key only when the current keyboard emits a non-Latin letter or mark.
 export function shortcutLetter(event: HistoryKey, value: string): boolean {
-  return (
-    event.key.toLowerCase() === value ||
+  return event.key.toLowerCase() === value ||
     // On the standard Arabic layout Shift+physical Z produces an ASCII tilde.
     (value === "z" && event.code === "KeyZ" && event.shiftKey && event.key === "~") ||
-    (/^[\p{L}\p{M}]$/u.test(event.key) &&
-      !/^\p{Script_Extensions=Latin}$/u.test(event.key) &&
-      event.code === `Key${value.toUpperCase()}`)
-  );
+    (/^[\p{L}\p{M}]$/u.test(event.key) && !/^\p{Script_Extensions=Latin}$/u.test(event.key) && event.code === `Key${value.toUpperCase()}`);
 }
 
 export function historyShortcut(event: HistoryKey, platform: string): "undo" | "redo" | null {

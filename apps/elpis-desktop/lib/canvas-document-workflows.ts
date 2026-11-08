@@ -7,7 +7,7 @@ export const PAGE_IMAGE = /\.(png|jpe?g|webp|gif)$/i;
 /** At most this many readers or translators at once; more pages are shared out evenly. */
 export const AT_ONCE = 8;
 /** Items in order, shared over at most `most` groups as evenly as possible. */
-export const share = <T>(items: T[], most: number): T[][] => {
+export const share = <T,>(items: T[], most: number): T[][] => {
   const n = Math.min(items.length, most);
   return Array.from({ length: n }, (_, i) =>
     items.slice(Math.round((i * items.length) / n), Math.round(((i + 1) * items.length) / n)),

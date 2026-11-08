@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /** `record` without `key`; the same object when the key is not there, so React sees no change. */
-export const without = <T>(record: Record<string, T>, key: string) => {
+export const without = <T,>(record: Record<string, T>, key: string) => {
   if (!(key in record)) return record;
   const next = { ...record };
   delete next[key];
