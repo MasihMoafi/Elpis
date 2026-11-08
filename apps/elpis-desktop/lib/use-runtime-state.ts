@@ -13,7 +13,9 @@ export function useRuntimeState() {
   const [plans, setPlans] = useState<Record<string, TaskPlan>>({});
   // A fast turn can finish over SSE before its HTTP start response arrives.
   const completedTurns = useRef(new Set<string>());
-  const markTurnStarted = (threadId: string, turnId: string) => { if (!completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [threadId]: turnId })); };
+  const markTurnStarted = (threadId: string, turnId: string) => {
+    if (!completedTurns.current.has(turnId)) setActiveTurns(prev => ({ ...prev, [threadId]: turnId }));
+  };
   // A resume snapshot must not overwrite a newer turn event or settings announcement.
   const turnRevisions = useRef<Record<string, number>>({});
   const modeRevisions = useRef<Record<string, number>>({});
@@ -25,8 +27,38 @@ export function useRuntimeState() {
   const [stoppedTurns, setStoppedTurns] = useState<Record<string, string>>({});
   const [accountRefresh, setAccountRefresh] = useState(0);
   const [replays, setReplays] = useState<WorkflowReplay[]>([]);
-  return { connected, setConnected, connectionStatus, setConnectionStatus, ready, setReady, runtimeNotices, setRuntimeNotices,
-    activeTurns, setActiveTurns, plans, setPlans, completedTurns, markTurnStarted, turnRevisions, modeRevisions, approvals, setApprovals,
-    activity, setActivity, liveError, setLiveError, historyOnly, setHistoryOnly, failedTurns, setFailedTurns, stoppedTurns, setStoppedTurns,
-    accountRefresh, setAccountRefresh, replays, setReplays };
+  return {
+    connected,
+    setConnected,
+    connectionStatus,
+    setConnectionStatus,
+    ready,
+    setReady,
+    runtimeNotices,
+    setRuntimeNotices,
+    activeTurns,
+    setActiveTurns,
+    plans,
+    setPlans,
+    completedTurns,
+    markTurnStarted,
+    turnRevisions,
+    modeRevisions,
+    approvals,
+    setApprovals,
+    activity,
+    setActivity,
+    liveError,
+    setLiveError,
+    historyOnly,
+    setHistoryOnly,
+    failedTurns,
+    setFailedTurns,
+    stoppedTurns,
+    setStoppedTurns,
+    accountRefresh,
+    setAccountRefresh,
+    replays,
+    setReplays,
+  };
 }

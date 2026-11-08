@@ -9,7 +9,10 @@ import { AppUpdate } from "@/components/app-update";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { ReadAloud } from "@/components/read-aloud";
 
-const LoveSpot = dynamic(() => import("@/components/love-spot"), { ssr: false, loading: () => <p role="status">Opening Love Spot…</p> });
+const LoveSpot = dynamic(() => import("@/components/love-spot"), {
+  ssr: false,
+  loading: () => <p role="status">Opening Love Spot…</p>,
+});
 
 /** The dock uses the same editor and bridge as Elpis, without the chat workspace. */
 export default function LoveSpotWindow() {
@@ -22,16 +25,36 @@ export default function LoveSpotWindow() {
       const saved = appStorage().getItem("elpis-theme");
       const source = saved === "dark" || saved === "light" ? saved : "system";
       const dark = source === "dark" || (source === "system" && media.matches);
-      setDark(dark); document.documentElement.classList.toggle("dark", dark);
+      setDark(dark);
+      document.documentElement.classList.toggle("dark", dark);
       window.elpisDesktop?.setTheme?.(dark, { source, background: getComputedStyle(document.body).backgroundColor });
     };
-    refresh(); media.addEventListener("change", refresh); window.addEventListener("storage", refresh);
-    const stop = window.elpisDesktop?.storage?.onChange?.(key => { if (key === "elpis-theme" || key === PREFERENCES_KEY) refresh(); });
-    return () => { media.removeEventListener("change", refresh); window.removeEventListener("storage", refresh); stop?.(); };
+    refresh();
+    media.addEventListener("change", refresh);
+    window.addEventListener("storage", refresh);
+    const stop = window.elpisDesktop?.storage?.onChange?.(key => {
+      if (key === "elpis-theme" || key === PREFERENCES_KEY) refresh();
+    });
+    return () => {
+      media.removeEventListener("change", refresh);
+      window.removeEventListener("storage", refresh);
+      stop?.();
+    };
   }, []);
-  return <ReadAloud threadId="love-spot" enabled><main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
-    <title>Love Spot · Elpis</title>
-    <div className="title-bar shrink-0"><div className="title-bar-actions"><MatildaCompanion />{desktop && <AppUpdate inTitleBar />}</div></div>
-    <ViewBoundary label="Love Spot"><LoveSpot dark={dark} /></ViewBoundary>
-  </main></ReadAloud>;
+  return (
+    <ReadAloud threadId="love-spot" enabled>
+      <main className={`flex h-dvh min-w-0 flex-col bg-background text-foreground${dark ? " dark" : ""}`}>
+        <title>Love Spot · Elpis</title>
+        <div className="title-bar shrink-0">
+          <div className="title-bar-actions">
+            <MatildaCompanion />
+            {desktop && <AppUpdate inTitleBar />}
+          </div>
+        </div>
+        <ViewBoundary label="Love Spot">
+          <LoveSpot dark={dark} />
+        </ViewBoundary>
+      </main>
+    </ReadAloud>
+  );
 }

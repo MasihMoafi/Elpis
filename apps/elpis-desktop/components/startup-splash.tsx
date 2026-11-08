@@ -9,24 +9,53 @@ const INTRO_MS = 700;
 
 /** The third motion study's E gyroscope, with its surrounding rings removed. */
 export function StartupSplash({ onLeaving }: { onLeaving?: () => void }) {
-  const [leaving, setLeaving] = useState(false), [gone, setGone] = useState(false), [theme, setTheme] = useState("");
+  const [leaving, setLeaving] = useState(false),
+    [gone, setGone] = useState(false),
+    [theme, setTheme] = useState("");
   const onLeavingRef = useRef(onLeaving);
-  useEffect(() => { onLeavingRef.current = onLeaving; }, [onLeaving]);
+  useEffect(() => {
+    onLeavingRef.current = onLeaving;
+  }, [onLeaving]);
   useEffect(() => {
     // The saved theme wins over the system's (lib/use-appearance.ts); System keeps the media query in charge.
-    try { const saved = appStorage().getItem("elpis-theme"); if (saved === "light" || saved === "dark") setTheme(saved); } catch { /* System */ }
+    try {
+      const saved = appStorage().getItem("elpis-theme");
+      if (saved === "light" || saved === "dark") setTheme(saved);
+    } catch {
+      /* System */
+    }
     // The introduction is visual only. Bridge health, lists and restored history load in the app.
-    const intro = setTimeout(() => { onLeavingRef.current?.(); setLeaving(true); }, INTRO_MS);
+    const intro = setTimeout(() => {
+      onLeavingRef.current?.();
+      setLeaving(true);
+    }, INTRO_MS);
     const timer = setTimeout(() => setGone(true), INTRO_MS + FADE_MS);
-    return () => { clearTimeout(intro); clearTimeout(timer); };
+    return () => {
+      clearTimeout(intro);
+      clearTimeout(timer);
+    };
   }, []);
   if (gone) return null;
-  return <div className={`startup-splash${theme ? ` splash-${theme}` : ""}${leaving ? " leaving" : ""}`} style={{ transitionDuration: `${FADE_MS}ms` }} role="status" aria-label="Elpis is starting">
-    <div className="splash-stage" aria-hidden="true">
-      <div className="splash-gyro">
-        <img className="splash-logo" src="/branding/elpis-symbol-amber.svg" alt="" width={160} height={160} draggable={false} />
+  return (
+    <div
+      className={`startup-splash${theme ? ` splash-${theme}` : ""}${leaving ? " leaving" : ""}`}
+      style={{ transitionDuration: `${FADE_MS}ms` }}
+      role="status"
+      aria-label="Elpis is starting"
+    >
+      <div className="splash-stage" aria-hidden="true">
+        <div className="splash-gyro">
+          <img
+            className="splash-logo"
+            src="/branding/elpis-symbol-amber.svg"
+            alt=""
+            width={160}
+            height={160}
+            draggable={false}
+          />
+        </div>
+        <p className="splash-name">Elpis</p>
       </div>
-      <p className="splash-name">Elpis</p>
     </div>
-  </div>;
+  );
 }

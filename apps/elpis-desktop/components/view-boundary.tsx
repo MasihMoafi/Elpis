@@ -18,13 +18,23 @@ type State = { error: string | null; resetKey: unknown };
  * replies defensively too (lib/api.ts `unreadable`); this catches whatever they did not foresee. */
 export class ViewBoundary extends Component<Props, State> {
   override state: State = { error: null, resetKey: this.props.resetKey };
-  static getDerivedStateFromError(error: unknown) { return { error: errorText(error) }; }
-  static getDerivedStateFromProps(props: Props, state: State) { return props.resetKey === state.resetKey ? null : { error: null, resetKey: props.resetKey }; }
+  static getDerivedStateFromError(error: unknown) {
+    return { error: errorText(error) };
+  }
+  static getDerivedStateFromProps(props: Props, state: State) {
+    return props.resetKey === state.resetKey ? null : { error: null, resetKey: props.resetKey };
+  }
   override render() {
     if (this.state.error === null) return this.props.children;
-    return <div role="alert" className="alert view-error">
-      <p>{this.props.label ?? "This page"} could not be shown: {this.state.error}</p>
-      <Button type="button" variant="outline" size="sm" onClick={() => this.setState({ error: null })}>Reload</Button>
-    </div>;
+    return (
+      <div role="alert" className="alert view-error">
+        <p>
+          {this.props.label ?? "This page"} could not be shown: {this.state.error}
+        </p>
+        <Button type="button" variant="outline" size="sm" onClick={() => this.setState({ error: null })}>
+          Reload
+        </Button>
+      </div>
+    );
   }
 }

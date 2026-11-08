@@ -3,12 +3,27 @@
 import "@/lib/love-spot-assets";
 import { DRAWING_NOTE } from "@/lib/browser-notes";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Excalidraw, MainMenu, convertToExcalidrawElements, exportToCanvas, getCommonBounds, restoreElements } from "@excalidraw/excalidraw";
+import {
+  Excalidraw,
+  MainMenu,
+  convertToExcalidrawElements,
+  exportToCanvas,
+  getCommonBounds,
+  restoreElements,
+} from "@excalidraw/excalidraw";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { Button } from "@/components/ui/button";
 import { useDrawingStyle } from "@/components/drawing-style";
-import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { AttachToChat } from "@/components/browser-annotations";
 import { holdDrawing, type DrawingDraft } from "@/lib/browser-drawing-store";
 import "@excalidraw/excalidraw/index.css";
@@ -16,21 +31,61 @@ import { errorText } from "@/lib/error-text.mts";
 
 const BACKGROUND = "page-shot";
 const IMAGE_LIMIT = 3.8 * 1024 * 1024;
-const bytes = (dataUrl: string) => Math.ceil((dataUrl.length - dataUrl.indexOf(",") - 1) * 3 / 4);
+const bytes = (dataUrl: string) => Math.ceil(((dataUrl.length - dataUrl.indexOf(",") - 1) * 3) / 4);
 
 /** The captured page as a locked image at the scene's origin, ready to be Excalidraw's initial data. */
-function backgroundScene(shot: string, width: number, height: number): { elements: readonly ExcalidrawElement[]; files: BinaryFiles } {
+function backgroundScene(
+  shot: string,
+  width: number,
+  height: number,
+): { elements: readonly ExcalidrawElement[]; files: BinaryFiles } {
   const fileId = "page-shot-file" as BinaryFiles[string]["id"];
   // The converter assigns its own ids; the backdrop is found by its fixed one.
-  const elements = restoreElements(convertToExcalidrawElements([{ type: "image", fileId, x: 0, y: 0, width, height, status: "saved", locked: true }]).map(element => ({ ...element, id: BACKGROUND })), null);
-  return { elements, files: { [fileId]: { id: fileId, mimeType: "image/jpeg", dataURL: shot as BinaryFiles[string]["dataURL"], created: Date.now() } } };
+  const elements = restoreElements(
+    convertToExcalidrawElements([
+      { type: "image", fileId, x: 0, y: 0, width, height, status: "saved", locked: true },
+    ]).map(element => ({ ...element, id: BACKGROUND })),
+    null,
+  );
+  return {
+    elements,
+    files: {
+      [fileId]: {
+        id: fileId,
+        mimeType: "image/jpeg",
+        dataURL: shot as BinaryFiles[string]["dataURL"],
+        created: Date.now(),
+      },
+    },
+  };
 }
 
-const marks = (elements: readonly ExcalidrawElement[]) => elements.filter(element => !element.isDeleted && element.id !== BACKGROUND);
+const marks = (elements: readonly ExcalidrawElement[]) =>
+  elements.filter(element => !element.isDeleted && element.id !== BACKGROUND);
 
 /** The page screenshot under Excalidraw's own editor: draw on it, then add the marked picture and its address to the composer. */
-export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, onAdded, onChat }: { draft: DrawingDraft; dark: boolean; onAttach: AttachToChat; onClose: () => void; onAdded: () => void; onChat: () => void }) {
-  const [draft] = useState(() => ({ ...given, ...(given.elements ? {} : backgroundScene(given.shot, given.width, given.height)) }) as DrawingDraft & { elements: readonly ExcalidrawElement[]; files: BinaryFiles });
+export default function BrowserDrawing({
+  draft: given,
+  dark,
+  onAttach,
+  onClose,
+  onAdded,
+  onChat,
+}: {
+  draft: DrawingDraft;
+  dark: boolean;
+  onAttach: AttachToChat;
+  onClose: () => void;
+  onAdded: () => void;
+  onChat: () => void;
+}) {
+  const [draft] = useState(
+    () =>
+      ({
+        ...given,
+        ...(given.elements ? {} : backgroundScene(given.shot, given.width, given.height)),
+      }) as DrawingDraft & { elements: readonly ExcalidrawElement[]; files: BinaryFiles },
+  );
   const [editor, setEditor] = useState<ExcalidrawImperativeAPI>();
   const [marked, setMarked] = useState(() => marks(draft.elements).length > 0);
   const [busy, setBusy] = useState(false);
@@ -42,14 +97,23 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
   const first = useRef<ExcalidrawElement>(draft.elements.find(element => element.id === BACKGROUND)!);
 
   // Drawing belongs to the browser panel; the adjacent chat and its composer stay reachable.
-  useEffect(() => { root.current?.focus(); }, []);
+  useEffect(() => {
+    root.current?.focus();
+  }, []);
   // Excalidraw restores initialData after publishing its API. Fitting before that restore is overwritten.
   useEffect(() => {
     if (!editor) return;
     let fitted = false;
     const fit = () => {
       const state = editor.getAppState();
-      if (fitted || state.isLoading || !state.width || !state.height || !editor.getSceneElements().some(element => element.id === BACKGROUND)) return;
+      if (
+        fitted ||
+        state.isLoading ||
+        !state.width ||
+        !state.height ||
+        !editor.getSceneElements().some(element => element.id === BACKGROUND)
+      )
+        return;
       fitted = true;
       editor.scrollToContent(first.current, { fitToViewport: true, viewportZoomFactor: 0.9 });
     };
@@ -59,81 +123,219 @@ export default function BrowserDrawing({ draft: given, dark, onAttach, onClose, 
   }, [editor]);
 
   // The unsent drawing is held until it is added or discarded, so closing the panel never loses it.
-  const changed = useCallback((elements: readonly ExcalidrawElement[], state: AppState, files: BinaryFiles) => {
-    noticeStyle(state);
-    const all = editor?.getSceneElementsIncludingDeleted() ?? elements;
-    const shot = all.find(element => element.id === BACKGROUND), origin = first.current;
-    // The screenshot is a fixed backdrop: restore it if anything (unlock all, clear canvas) moved or removed it.
-    if (editor && (!shot || shot.isDeleted || !shot.locked || shot.x !== origin.x || shot.y !== origin.y || shot.width !== origin.width || shot.height !== origin.height)) {
-      editor.updateScene({ elements: [origin, ...all.filter(element => element.id !== BACKGROUND)] }); return;
-    }
-    scene.current = { ...scene.current, elements: all, files: { ...files } };
-    holdDrawing(scene.current);
-    setMarked(marks(all).length > 0);
-  }, [editor, noticeStyle]);
+  const changed = useCallback(
+    (elements: readonly ExcalidrawElement[], state: AppState, files: BinaryFiles) => {
+      noticeStyle(state);
+      const all = editor?.getSceneElementsIncludingDeleted() ?? elements;
+      const shot = all.find(element => element.id === BACKGROUND),
+        origin = first.current;
+      // The screenshot is a fixed backdrop: restore it if anything (unlock all, clear canvas) moved or removed it.
+      if (
+        editor &&
+        (!shot ||
+          shot.isDeleted ||
+          !shot.locked ||
+          shot.x !== origin.x ||
+          shot.y !== origin.y ||
+          shot.width !== origin.width ||
+          shot.height !== origin.height)
+      ) {
+        editor.updateScene({ elements: [origin, ...all.filter(element => element.id !== BACKGROUND)] });
+        return;
+      }
+      scene.current = { ...scene.current, elements: all, files: { ...files } };
+      holdDrawing(scene.current);
+      setMarked(marks(all).length > 0);
+    },
+    [editor, noticeStyle],
+  );
 
-  const close = () => { holdDrawing(null); onClose(); };
-  const cancel = () => { if (busy) return; if (marked) setAsking(true); else close(); };
+  const close = () => {
+    holdDrawing(null);
+    onClose();
+  };
+  const cancel = () => {
+    if (busy) return;
+    if (marked) setAsking(true);
+    else close();
+  };
 
   async function add() {
     if (!editor || busy) return;
-    setBusy(true); setError("");
+    setBusy(true);
+    setError("");
     try {
-      const elements = editor.getSceneElements(), files = editor.getFiles();
+      const elements = editor.getSceneElements(),
+        files = editor.getFiles();
       // Marks that run off the page are cut at its edge, so the picture is exactly the page that was captured.
-      const sheet = await exportToCanvas({ elements, files, exportPadding: 0, appState: { exportBackground: true, exportWithDarkMode: false, viewBackgroundColor: "#ffffff" } });
-      const [left, top] = getCommonBounds(elements), scale = Math.min(1, 2048 / Math.max(draft.width, draft.height));
-      const page = document.createElement("canvas"); page.width = Math.round(draft.width * scale); page.height = Math.round(draft.height * scale);
-      const context = page.getContext("2d"); if (!context) throw Error("The drawing cannot be exported on this computer.");
-      context.drawImage(sheet, Math.max(0, -left), Math.max(0, -top), draft.width, draft.height, 0, 0, page.width, page.height);
+      const sheet = await exportToCanvas({
+        elements,
+        files,
+        exportPadding: 0,
+        appState: { exportBackground: true, exportWithDarkMode: false, viewBackgroundColor: "#ffffff" },
+      });
+      const [left, top] = getCommonBounds(elements),
+        scale = Math.min(1, 2048 / Math.max(draft.width, draft.height));
+      const page = document.createElement("canvas");
+      page.width = Math.round(draft.width * scale);
+      page.height = Math.round(draft.height * scale);
+      const context = page.getContext("2d");
+      if (!context) throw Error("The drawing cannot be exported on this computer.");
+      context.drawImage(
+        sheet,
+        Math.max(0, -left),
+        Math.max(0, -top),
+        draft.width,
+        draft.height,
+        0,
+        0,
+        page.width,
+        page.height,
+      );
       let url = "";
-      for (const quality of [0.85, 0.7, 0.55, 0.4]) { url = page.toDataURL("image/jpeg", quality); if (bytes(url) <= IMAGE_LIMIT) break; url = ""; }
+      for (const quality of [0.85, 0.7, 0.55, 0.4]) {
+        url = page.toDataURL("image/jpeg", quality);
+        if (bytes(url) <= IMAGE_LIMIT) break;
+        url = "";
+      }
       if (!url) throw Error("The marked picture is too large to attach.");
       const note = `The attached image "Page drawing.jpg" is a screenshot of the browser page ${draft.url}${draft.title ? ` (“${draft.title}”)` : ""}, ${draft.width}×${draft.height} px, with the user's own marks drawn on top: arrows, pen strokes, shapes and text. Read the marks as the changes or questions the user wants about that page.`;
-      const added = await onAttach([{ id: crypto.randomUUID(), name: DRAWING_NOTE, type: "text", mimeType: "text/plain", text: note }, { id: crypto.randomUUID(), name: "Page drawing.jpg", type: "image", mimeType: "image/jpeg", dataUrl: url }], false);
-      if (added) { holdDrawing(null); onAdded(); } else setError("The drawing could not be added to your message. It is still here: try again.");
-    } catch (e) { setError(`${errorText(e)} Your drawing is still here: try again.`); }
-    finally { setBusy(false); }
+      const added = await onAttach(
+        [
+          { id: crypto.randomUUID(), name: DRAWING_NOTE, type: "text", mimeType: "text/plain", text: note },
+          { id: crypto.randomUUID(), name: "Page drawing.jpg", type: "image", mimeType: "image/jpeg", dataUrl: url },
+        ],
+        false,
+      );
+      if (added) {
+        holdDrawing(null);
+        onAdded();
+      } else setError("The drawing could not be added to your message. It is still here: try again.");
+    } catch (e) {
+      setError(`${errorText(e)} Your drawing is still here: try again.`);
+    } finally {
+      setBusy(false);
+    }
   }
 
-  return <div ref={root} tabIndex={-1} role="dialog" aria-label="Draw on the page" className="browser-drawing absolute inset-0 z-10 flex flex-col bg-background text-foreground outline-none"
-    onKeyDownCapture={event => {
-      if (event.key !== "Escape" || asking) return;
-      const state = editor?.getAppState();
-      // Escape belongs to the editor while it has a tool, a selection, a text box or a menu open.
-      if (!state || state.activeTool.type !== "selection" || state.editingTextElement || state.openDialog || state.openPopup || state.openMenu || Object.keys(state.selectedElementIds).length) return;
-      event.preventDefault(); event.stopPropagation(); cancel();
-    }}>
-    <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
-      <div className="min-w-0 flex-1">
-        <h2 className="text-sm font-semibold">Draw on the page</h2>
-        <p className="truncate text-xs text-muted-foreground" title={draft.url}>{draft.title ? `${draft.title} · ` : ""}{draft.url}</p>
+  return (
+    <div
+      ref={root}
+      tabIndex={-1}
+      role="dialog"
+      aria-label="Draw on the page"
+      className="browser-drawing absolute inset-0 z-10 flex flex-col bg-background text-foreground outline-none"
+      onKeyDownCapture={event => {
+        if (event.key !== "Escape" || asking) return;
+        const state = editor?.getAppState();
+        // Escape belongs to the editor while it has a tool, a selection, a text box or a menu open.
+        if (
+          !state ||
+          state.activeTool.type !== "selection" ||
+          state.editingTextElement ||
+          state.openDialog ||
+          state.openPopup ||
+          state.openMenu ||
+          Object.keys(state.selectedElementIds).length
+        )
+          return;
+        event.preventDefault();
+        event.stopPropagation();
+        cancel();
+      }}
+    >
+      <header className="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-semibold">Draw on the page</h2>
+          <p className="truncate text-xs text-muted-foreground" title={draft.url}>
+            {draft.title ? `${draft.title} · ` : ""}
+            {draft.url}
+          </p>
+        </div>
+        {error && (
+          <p role="alert" className="max-w-[40%] text-xs text-destructive">
+            {error}
+          </p>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={busy}
+          title="Return to chat and keep this drawing for Resume"
+          onClick={() => {
+            holdDrawing(scene.current);
+            onChat();
+          }}
+        >
+          Chat
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={busy}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void add()}
+          disabled={!marked || busy}
+          title={marked ? "Add the marked picture and the page address to your message" : "Draw something first"}
+        >
+          {busy ? "Adding…" : "Add to message"}
+        </Button>
+      </header>
+      <div className={`browser-drawing-editor relative min-h-0 flex-1 ${styleClassName}`}>
+        {styleToggle}
+        <Excalidraw
+          initialData={{ elements: draft.elements, files: draft.files, appState: { collaborators: new Map() } }}
+          excalidrawAPI={setEditor}
+          onChange={changed}
+          theme={dark ? "dark" : "light"}
+          handleKeyboardGlobally={false}
+          autoFocus
+          UIOptions={{
+            canvasActions: {
+              loadScene: false,
+              saveToActiveFile: false,
+              export: false,
+              saveAsImage: false,
+              clearCanvas: false,
+              changeViewBackgroundColor: false,
+            },
+          }}
+        >
+          {/* Without the default menu's file actions and its links to other sites. */}
+          <MainMenu>
+            <MainMenu.DefaultItems.SearchMenu />
+            <MainMenu.DefaultItems.Help />
+          </MainMenu>
+        </Excalidraw>
       </div>
-      {error && <p role="alert" className="max-w-[40%] text-xs text-destructive">{error}</p>}
-      <Button type="button" variant="ghost" size="sm" disabled={busy} title="Return to chat and keep this drawing for Resume" onClick={() => { holdDrawing(scene.current); onChat(); }}>Chat</Button>
-      <Button type="button" variant="ghost" size="sm" onClick={cancel} disabled={busy}>Cancel</Button>
-      <Button type="button" size="sm" onClick={() => void add()} disabled={!marked || busy} title={marked ? "Add the marked picture and the page address to your message" : "Draw something first"}>{busy ? "Adding…" : "Add to message"}</Button>
-    </header>
-    <div className={`browser-drawing-editor relative min-h-0 flex-1 ${styleClassName}`}>
-      {styleToggle}
-      <Excalidraw initialData={{ elements: draft.elements, files: draft.files, appState: { collaborators: new Map() } }} excalidrawAPI={setEditor} onChange={changed}
-        theme={dark ? "dark" : "light"} handleKeyboardGlobally={false} autoFocus
-        UIOptions={{ canvasActions: { loadScene: false, saveToActiveFile: false, export: false, saveAsImage: false, clearCanvas: false, changeViewBackgroundColor: false } }}>
-        {/* Without the default menu's file actions and its links to other sites. */}
-        <MainMenu><MainMenu.DefaultItems.SearchMenu /><MainMenu.DefaultItems.Help /></MainMenu>
-      </Excalidraw>
+      <AlertDialog open={asking} onOpenChange={setAsking}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Discard this drawing?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your marks on the page are removed and cannot be brought back.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button type="button" variant="outline" size="sm" />}>
+              Keep drawing
+            </AlertDialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setAsking(false);
+                close();
+              }}
+            >
+              Discard
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
-    <AlertDialog open={asking} onOpenChange={setAsking}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Discard this drawing?</AlertDialogTitle>
-          <AlertDialogDescription>Your marks on the page are removed and cannot be brought back.</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogClose render={<Button type="button" variant="outline" size="sm" />}>Keep drawing</AlertDialogClose>
-          <Button type="button" variant="destructive" size="sm" onClick={() => { setAsking(false); close(); }}>Discard</Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  </div>;
+  );
 }

@@ -3,53 +3,168 @@ import { errorText } from "./error-text.mts";
 export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mts";
 export type Thread = {
   motherAgent?: boolean;
-  id: string; cwd?: string; name?: string | null; workflowTaskTitle?: string; preview?: string; model?: string | null; modelProvider?: string | undefined;
-  reasoningEffort?: string | null; serviceTier?: string | null; parentThreadId?: string | null; forkedFromId?: string | null;
-  updatedAt?: number; recencyAt?: number; createdAt?: number;
-  archivedAt?: number | null; archiveReason?: string;
-  agentNickname?: string | null; agentRole?: string | null; canAcceptDirectInput?: boolean | null;
-  source?: string | {subAgent?:unknown;custom?:string};
+  id: string;
+  cwd?: string;
+  name?: string | null;
+  workflowTaskTitle?: string;
+  preview?: string;
+  model?: string | null;
+  modelProvider?: string | undefined;
+  reasoningEffort?: string | null;
+  serviceTier?: string | null;
+  parentThreadId?: string | null;
+  forkedFromId?: string | null;
+  updatedAt?: number;
+  recencyAt?: number;
+  createdAt?: number;
+  archivedAt?: number | null;
+  archiveReason?: string;
+  agentNickname?: string | null;
+  agentRole?: string | null;
+  canAcceptDirectInput?: boolean | null;
+  source?: string | { subAgent?: unknown; custom?: string };
   status?: { type: string; activeFlags?: string[] } | undefined;
   desktopAccess?: { writable: boolean; mode?: "direct" | "continue"; canContinue?: boolean; reason: string | null };
 };
-export type Item = { id: string; type: string; text?: string; content?: {type: string; text?: string}[]; command?: string; aggregatedOutput?: string; [key: string]: unknown };
-export type Entry = { turnId: string; item: Item; model?: string; startedAtMs?: number; completedAtMs?: number; clientKey?: string; clientTurnKey?: string; clientPending?: boolean };
+export type Item = {
+  id: string;
+  type: string;
+  text?: string;
+  content?: { type: string; text?: string }[];
+  command?: string;
+  aggregatedOutput?: string;
+  [key: string]: unknown;
+};
+export type Entry = {
+  turnId: string;
+  item: Item;
+  model?: string;
+  startedAtMs?: number;
+  completedAtMs?: number;
+  clientKey?: string;
+  clientTurnKey?: string;
+  clientPending?: boolean;
+};
 /** Where the bridge serves an entry's recorded pictures and sounds (`/<index>` after it); it serves only what the
  * chat's record holds. */
-export const mediaUrl = (threadId: string, entry: Entry) => `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(entry.turnId)}/items/${encodeURIComponent(entry.item.id)}/media`;
-export type Model = { id: string; model: string; displayName: string; description?: string; inputModalities?: string[]; supportedReasoningEfforts?: {reasoningEffort:string;description?:string}[]; defaultReasoningEffort?: string; serviceTiers?: { id: string; name: string; description?: string }[] };
-export type PermissionRequirements = { allowedApprovalPolicies?:string[]|null;allowedApprovalsReviewers?:string[]|null;allowedSandboxModes?:string[]|null;allowedPermissionProfiles?:Record<string,boolean>|null };
-export type ProviderSettings = { version?:string|null; main:{model:string|null;provider:string|null}; providers:{id:string;displayName:string;needsKey?:boolean}[]; options?:{defaultPermissions:string|null;serviceTier?:string|null}; managed?:PermissionRequirements & {modelProvider:string|null} };
-export type Approval = { id: string; ownerThreadId: string; thread?: Thread; method: string; supported?: boolean; params: import("./approvals").ElicitationParams & { permissions?: import("./approvals").RequestPermissionProfile; cwd?: string; availableDecisions?: unknown[]; threadId?: string; turnId?: string; command?: string; reason?: string; changes?: unknown; questions?: {id:string;header:string;question:string;isOther?:boolean;isSecret?:boolean;options?:{label:string;description?:string}[]|null}[] } };
+export const mediaUrl = (threadId: string, entry: Entry) =>
+  `/api/threads/${encodeURIComponent(threadId)}/turns/${encodeURIComponent(entry.turnId)}/items/${encodeURIComponent(entry.item.id)}/media`;
+export type Model = {
+  id: string;
+  model: string;
+  displayName: string;
+  description?: string;
+  inputModalities?: string[];
+  supportedReasoningEfforts?: { reasoningEffort: string; description?: string }[];
+  defaultReasoningEffort?: string;
+  serviceTiers?: { id: string; name: string; description?: string }[];
+};
+export type PermissionRequirements = {
+  allowedApprovalPolicies?: string[] | null;
+  allowedApprovalsReviewers?: string[] | null;
+  allowedSandboxModes?: string[] | null;
+  allowedPermissionProfiles?: Record<string, boolean> | null;
+};
+export type ProviderSettings = {
+  version?: string | null;
+  main: { model: string | null; provider: string | null };
+  providers: { id: string; displayName: string; needsKey?: boolean }[];
+  options?: { defaultPermissions: string | null; serviceTier?: string | null };
+  managed?: PermissionRequirements & { modelProvider: string | null };
+};
+export type Approval = {
+  id: string;
+  ownerThreadId: string;
+  thread?: Thread;
+  method: string;
+  supported?: boolean;
+  params: import("./approvals").ElicitationParams & {
+    permissions?: import("./approvals").RequestPermissionProfile;
+    cwd?: string;
+    availableDecisions?: unknown[];
+    threadId?: string;
+    turnId?: string;
+    command?: string;
+    reason?: string;
+    changes?: unknown;
+    questions?: {
+      id: string;
+      header: string;
+      question: string;
+      isOther?: boolean;
+      isSecret?: boolean;
+      options?: { label: string; description?: string }[] | null;
+    }[];
+  };
+};
 /** The error for a reply that is not what the app asked for (an older bridge, a proxy's page). A view checks the part it
  * reads and throws this, so it shows the failure in its own place instead of drawing from missing data. */
-export const unreadable = (what: string) => new Error(`Elpis sent a reply the app could not read (${what}). Update Elpis and try again.`);
+export const unreadable = (what: string) =>
+  new Error(`Elpis sent a reply the app could not read (${what}). Update Elpis and try again.`);
 /** Every bridge reply is a JSON object; anything else is refused before a view can read from it. */
-const isObject = (value: unknown): value is object => typeof value === "object" && value !== null && !Array.isArray(value);
+const isObject = (value: unknown): value is object =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 class RequestError extends Error {
   readonly status: number;
-  constructor(message: string, status: number) { super(message); this.status = status; }
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
 }
 class SessionError extends Error {
   readonly retryable: boolean;
-  constructor(message: string, retryable: boolean) { super(message); this.retryable = retryable; }
+  constructor(message: string, retryable: boolean) {
+    super(message);
+    this.retryable = retryable;
+  }
 }
 export const retryableSessionError = (error: unknown) => error instanceof SessionError && error.retryable;
 async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
-  try { response = await fetch(`/api${path}`, body === undefined ? (signal ? { signal } : undefined) : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), ...(signal ? { signal } : {}) }); }
-  catch { throw new RequestError("Could not reach Elpis. Check the connection and try again.", 0); }
+  try {
+    response = await fetch(
+      `/api${path}`,
+      body === undefined
+        ? signal
+          ? { signal }
+          : undefined
+        : {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            ...(signal ? { signal } : {}),
+          },
+    );
+  } catch {
+    throw new RequestError("Could not reach Elpis. Check the connection and try again.", 0);
+  }
   const result = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const detail = typeof result?.error?.message === "string" ? result.error.message : typeof result?.error === "string" ? result.error : "";
+    const detail =
+      typeof result?.error?.message === "string"
+        ? result.error.message
+        : typeof result?.error === "string"
+          ? result.error
+          : "";
     const unsupported = /^(?:-32601$|Elpis rejected the operation \(-32601\))/.test(detail.trim());
-    const fallback = unsupported ? "This action is unavailable in the connected Elpis runtime. Update Elpis and try again." : response.status >= 500 ? "Elpis is temporarily unavailable. Try again in a moment." : "Elpis could not complete this action. Try again.";
-    const message = detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim()) ? detail : fallback;
+    const fallback = unsupported
+      ? "This action is unavailable in the connected Elpis runtime. Update Elpis and try again."
+      : response.status >= 500
+        ? "Elpis is temporarily unavailable. Try again in a moment."
+        : "Elpis could not complete this action. Try again.";
+    const message =
+      detail.trim() && !/^-?\d+$/.test(detail.trim()) && !/^Elpis rejected the operation \([^)]+\)/.test(detail.trim())
+        ? detail
+        : fallback;
     const code = typeof result?.code === "string" && /^ELPIS_[A-Z_]{1,64}$/.test(result.code) ? result.code : "";
-    const requestId = typeof result?.requestId === "string" && /^[a-f0-9-]{36}$/.test(result.requestId) ? result.requestId : "";
+    const requestId =
+      typeof result?.requestId === "string" && /^[a-f0-9-]{36}$/.test(result.requestId) ? result.requestId : "";
     // The code and request ID stay on the message for the app's own checks (refusedOffline in app/page.tsx); every notice shows
     // it through plainMessage (lib/use-workspace-notices.ts), without them (6 Nov, Masih: "I don't like to see such errors").
-    throw new RequestError(`${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`, response.status);
+    throw new RequestError(
+      `${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`,
+      response.status,
+    );
   }
   if (!isObject(result)) throw unreadable(path.split("?")[0] ?? path);
   return result as T;
@@ -59,19 +174,29 @@ async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Prom
 const token = typeof location === "undefined" ? null : new URLSearchParams(location.hash.slice(1)).get("token");
 let mayRetrySession = false;
 function exchangeSession(): Promise<void> {
-  const pending = token ? call("/session", { token }).then(() => history.replaceState(null, "", location.pathname + location.search)).catch(error => {
-    const status = error instanceof RequestError ? error.status : undefined;
-    mayRetrySession = status === 0 || status === 408 || status === 429 || status !== undefined && status >= 500;
-    throw new SessionError(status === 401 || status === 403
-      ? "Could not sign in to Elpis. Reopen this window to refresh its connection token."
-      : errorText(error), mayRetrySession);
-  }) : Promise.resolve();
+  const pending = token
+    ? call("/session", { token })
+        .then(() => history.replaceState(null, "", location.pathname + location.search))
+        .catch(error => {
+          const status = error instanceof RequestError ? error.status : undefined;
+          mayRetrySession = status === 0 || status === 408 || status === 429 || (status !== undefined && status >= 500);
+          throw new SessionError(
+            status === 401 || status === 403
+              ? "Could not sign in to Elpis. Reopen this window to refresh its connection token."
+              : errorText(error),
+            mayRetrySession,
+          );
+        })
+    : Promise.resolve();
   pending.catch(() => {}); // Initialization owns reporting; do not create an unhandled rejection before it mounts.
   return pending;
 }
 let session = exchangeSession();
 export function sessionReady(retry = false) {
-  if (retry && mayRetrySession) { mayRetrySession = false; session = exchangeSession(); }
+  if (retry && mayRetrySession) {
+    mayRetrySession = false;
+    session = exchangeSession();
+  }
   return session;
 }
 /** Resolves true once this window has signed in, waiting through the exchanges initialization retries without sending
@@ -79,20 +204,28 @@ export function sessionReady(retry = false) {
  * subscribed before sign-in and a refused token is reported once, by the page's banner. */
 export async function signedIn(live: () => boolean) {
   while (live()) {
-    try { await sessionReady(); return true; }
-    catch { await new Promise(resolve => setTimeout(resolve, 1000)); }
+    try {
+      await sessionReady();
+      return true;
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
   }
   return false;
 }
 /** The bridge refuses a second action on one chat while another runs, and refuses it before doing anything, so asking again a
  * moment later is safe. A send that overlaps another action on the chat (22 Oct: annotating a page, then Enter) waits for it. */
-const BUSY = /Another operation on this conversation is pending/, BUSY_RETRIES = 5, BUSY_WAIT_MS = 150;
+const BUSY = /Another operation on this conversation is pending/,
+  BUSY_RETRIES = 5,
+  BUSY_WAIT_MS = 150;
 export async function api<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   await sessionReady();
   for (let attempt = 0; ; attempt++) {
-    try { return await call<T>(path, body, signal); }
-    catch (error) {
-      if (attempt >= BUSY_RETRIES || signal?.aborted || !(error instanceof Error) || !BUSY.test(error.message)) throw error;
+    try {
+      return await call<T>(path, body, signal);
+    } catch (error) {
+      if (attempt >= BUSY_RETRIES || signal?.aborted || !(error instanceof Error) || !BUSY.test(error.message))
+        throw error;
       await new Promise(resolve => setTimeout(resolve, BUSY_WAIT_MS));
     }
   }
@@ -101,11 +234,13 @@ const spawn = (thread: Thread) => {
   const source = thread.source;
   if (!source || typeof source !== "object" || !("subAgent" in source)) return null;
   const sub = source.subAgent as Record<string, unknown> | null;
-  const spawned = sub && typeof sub === "object" ? sub.thread_spawn ?? sub.threadSpawn : null;
-  return spawned && typeof spawned === "object" ? spawned as Record<string, unknown> : null;
+  const spawned = sub && typeof sub === "object" ? (sub.thread_spawn ?? sub.threadSpawn) : null;
+  return spawned && typeof spawned === "object" ? (spawned as Record<string, unknown>) : null;
 };
 /** The task a parent gave a spawned agent, recorded as the last segment of its agent path. */
-export function taskOf(thread: Thread) { return taskFromPath(spawn(thread)?.agent_path ?? spawn(thread)?.agentPath); }
+export function taskOf(thread: Thread) {
+  return taskFromPath(spawn(thread)?.agent_path ?? spawn(thread)?.agentPath);
+}
 export function taskFromPath(path: unknown) {
   const task = typeof path === "string" ? path.split("/").filter(Boolean).at(-1)?.replace(/[_-]+/g, " ").trim() : "";
   return task ? task.charAt(0).toUpperCase() + task.slice(1) : "";
@@ -117,7 +252,8 @@ export function agentName(thread?: Thread | null): string {
 }
 /** How the terminal names a helper, "Plato [worker]" (tui/src/multi_agents.rs), so the app shows the same agent. */
 export function agentLabel(thread: Thread): string {
-  const nickname = thread.agentNickname?.trim(), role = thread.agentRole?.trim();
+  const nickname = thread.agentNickname?.trim(),
+    role = thread.agentRole?.trim();
   return nickname && role ? `${nickname} [${role}]` : nickname || (role ? `[${role}]` : "");
 }
 /** Use recorded task metadata before an agent's instruction preamble; an unnamed helper leads with its agent label. */
@@ -143,10 +279,10 @@ export function title(thread: Thread) {
   return isAgent(thread) ? `Untitled agent · ${thread.id.slice(-8)}` : "Untitled conversation";
 }
 
-const subAgentSource = (thread: Thread) => typeof thread.source === "object" && thread.source !== null && "subAgent" in thread.source;
-export const isUnlinkedAgent = (thread:Thread,threads:Thread[]) => agentParentId(thread)
-  ? !threads.some(parent=>parent.id===agentParentId(thread))
-  : subAgentSource(thread);
+const subAgentSource = (thread: Thread) =>
+  typeof thread.source === "object" && thread.source !== null && "subAgent" in thread.source;
+export const isUnlinkedAgent = (thread: Thread, threads: Thread[]) =>
+  agentParentId(thread) ? !threads.some(parent => parent.id === agentParentId(thread)) : subAgentSource(thread);
 export const isAgent = (thread: Thread) => !!agentParentId(thread) || subAgentSource(thread);
 
 // Subscription models reach Elpis through its bridge by a model-ID prefix while the engine still
@@ -155,13 +291,24 @@ export const SUBSCRIPTIONS = [
   { prefix: "claude/", id: "claude", label: "Anthropic" },
   { prefix: "agy/", id: "gemini", label: "Antigravity" },
 ] as const;
-export const subscriptionOf = (model?: string | null) => SUBSCRIPTIONS.find(item => model?.startsWith(item.prefix)) ?? null;
+export const subscriptionOf = (model?: string | null) =>
+  SUBSCRIPTIONS.find(item => model?.startsWith(item.prefix)) ?? null;
 const providerNames: Record<string, string> = {
-  openai: "OpenAI", lmstudio: "LM Studio", ollama: "Ollama", openrouter: "OpenRouter",
-  anthropic: "Anthropic API", "anthropic-credits": "Anthropic credits", "google-gemini": "Google Gemini",
-  "amazon-bedrock": "Amazon Bedrock", "amazon-bedrock-runtime": "Amazon Bedrock Runtime",
+  openai: "OpenAI",
+  lmstudio: "LM Studio",
+  ollama: "Ollama",
+  openrouter: "OpenRouter",
+  anthropic: "Anthropic API",
+  "anthropic-credits": "Anthropic credits",
+  "google-gemini": "Google Gemini",
+  "amazon-bedrock": "Amazon Bedrock",
+  "amazon-bedrock-runtime": "Amazon Bedrock Runtime",
 };
-export function providerLabel(model: string | null | undefined, provider: string | null | undefined, providers: ProviderSettings["providers"] = []) {
+export function providerLabel(
+  model: string | null | undefined,
+  provider: string | null | undefined,
+  providers: ProviderSettings["providers"] = [],
+) {
   const subscription = subscriptionOf(model);
   if (subscription) return subscription.label;
   if (!provider) return "";
@@ -169,7 +316,9 @@ export function providerLabel(model: string | null | undefined, provider: string
   const name = providerNames[provider];
   if (name) return name;
   if (!saved) return provider;
-  const sameNames = providers.filter(item => item.displayName?.trim() === saved).sort((a, b) => a.id.localeCompare(b.id));
+  const sameNames = providers
+    .filter(item => item.displayName?.trim() === saved)
+    .sort((a, b) => a.id.localeCompare(b.id));
   return sameNames.length > 1 ? `${saved} (${sameNames.findIndex(item => item.id === provider) + 1})` : saved;
 }
 /** A subscription model's name without the route its bridge appends, since the provider is shown beside it. */
@@ -183,7 +332,10 @@ export function agentModelLabel(thread: Thread, models: Model[]) {
 }
 
 export type Activity = { label: string; at: number };
-const firstLine = (value: unknown) => typeof value === "string" ? (value.replace(/[`*]+/g, "").trim().split("\n")[0] ?? "").replace(/^[#>\s-]+/, "").slice(0, 120) : "";
+const firstLine = (value: unknown) =>
+  typeof value === "string"
+    ? (value.replace(/[`*]+/g, "").trim().split("\n")[0] ?? "").replace(/^[#>\s-]+/, "").slice(0, 120)
+    : "";
 /** One line saying what an agent is doing, from the native item it just started or finished. */
 export function activityOf(method: string, params: Record<string, unknown>): string | null {
   const item = (params.item ?? {}) as Record<string, unknown>;
@@ -192,62 +344,128 @@ export function activityOf(method: string, params: Record<string, unknown>): str
   if (method !== "item/started" && method !== "item/completed") return null;
   const done = method === "item/completed";
   switch (item.type) {
-    case "commandExecution": return `${done ? "Ran" : "Running"}: ${firstLine(item.command)}`;
-    case "mcpToolCall": return `${done ? "Used" : "Using"} ${[item.server, item.tool].filter(Boolean).join(".")}`;
-    case "dynamicToolCall": return `${done ? "Used" : "Using"} ${firstLine(item.tool) || "a tool"}`;
-    case "fileChange": return `${done ? "Changed" : "Changing"} ${Array.isArray(item.changes) ? item.changes.length : ""} file${Array.isArray(item.changes) && item.changes.length === 1 ? "" : "s"}`;
-    case "collabAgentToolCall": return `${done ? "Agent" : "Starting agent"}: ${firstLine(item.prompt) || firstLine(item.tool)}`;
-    case "webSearch": return `Searching: ${firstLine(item.query)}`;
-    case "reasoning": return done ? null : "Thinking…";
-    case "agentMessage": return done ? `Said: ${firstLine(item.text)}` : "Writing…";
-    default: return null;
+    case "commandExecution":
+      return `${done ? "Ran" : "Running"}: ${firstLine(item.command)}`;
+    case "mcpToolCall":
+      return `${done ? "Used" : "Using"} ${[item.server, item.tool].filter(Boolean).join(".")}`;
+    case "dynamicToolCall":
+      return `${done ? "Used" : "Using"} ${firstLine(item.tool) || "a tool"}`;
+    case "fileChange":
+      return `${done ? "Changed" : "Changing"} ${Array.isArray(item.changes) ? item.changes.length : ""} file${Array.isArray(item.changes) && item.changes.length === 1 ? "" : "s"}`;
+    case "collabAgentToolCall":
+      return `${done ? "Agent" : "Starting agent"}: ${firstLine(item.prompt) || firstLine(item.tool)}`;
+    case "webSearch":
+      return `Searching: ${firstLine(item.query)}`;
+    case "reasoning":
+      return done ? null : "Thinking…";
+    case "agentMessage":
+      return done ? `Said: ${firstLine(item.text)}` : "Writing…";
+    default:
+      return null;
   }
 }
 
 /** Where a new chat can run: the engine's provider, each subscription the bridge offers, and other configured providers.
  * Choice IDs are stable provider IDs (or subscription prefixes); an empty selection inherits the current default. */
-export type ProviderChoice = { id: string; label: string; provider?: string; models: Model[]; catalogVersion?: string | null; needsKey?: boolean };
+export type ProviderChoice = {
+  id: string;
+  label: string;
+  provider?: string;
+  models: Model[];
+  catalogVersion?: string | null;
+  needsKey?: boolean;
+};
 /** Engine providers the model list leaves out: the local gpt-oss servers and Amazon Bedrock. */
 const UNLISTED = new Set(["ollama", "lmstudio", "amazon-bedrock", "amazon-bedrock-runtime"]);
 /** Where each connection sits in every list, by what Masih has: the OpenAI and subscription connections, then OpenRouter, then API-key providers; any other after them, by name. */
 const ORDER = ["claude/", "openai", "agy/", "openrouter", "anthropic", "anthropic-credits", "google-gemini"];
-const rank = (id: string) => { const index = ORDER.indexOf(id); return index < 0 ? ORDER.length : index; };
+const rank = (id: string) => {
+  const index = ORDER.indexOf(id);
+  return index < 0 ? ORDER.length : index;
+};
 /** Connections in list order. */
-export const connectionOrder = <T extends { id: string; label: string }>(items: readonly T[]) => [...items].sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));
+export const connectionOrder = <T extends { id: string; label: string }>(items: readonly T[]) =>
+  [...items].sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));
 /** Whether a provider belongs in a list: Bedrock and the local servers appear only where already chosen. */
 export const isListedProvider = (id: string) => !UNLISTED.has(id);
 export function providerChoices(models: Model[], settings: ProviderSettings | null): ProviderChoice[] {
   const main = settings?.main.provider ?? null;
-  const connection = (provider: string, id = provider): ProviderChoice => ({ id, label: providerLabel(null, provider, settings?.providers), provider,
-    models: [], ...(settings?.version !== undefined ? { catalogVersion: settings.version } : {}), ...(settings?.providers?.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}) });
+  const connection = (provider: string, id = provider): ProviderChoice => ({
+    id,
+    label: providerLabel(null, provider, settings?.providers),
+    provider,
+    models: [],
+    ...(settings?.version !== undefined ? { catalogVersion: settings.version } : {}),
+    ...(settings?.providers?.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}),
+  });
   const others: ProviderChoice[] = [
-    ...SUBSCRIPTIONS.map(item => ({ id: item.prefix, label: item.label, models: models.filter(model => model.model.startsWith(item.prefix)) })).filter(choice => choice.models.length),
-    ...(settings?.providers ?? []).filter(item => item.id !== main && !UNLISTED.has(item.id) && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id))
+    ...SUBSCRIPTIONS.map(item => ({
+      id: item.prefix,
+      label: item.label,
+      models: models.filter(model => model.model.startsWith(item.prefix)),
+    })).filter(choice => choice.models.length),
+    ...(settings?.providers ?? [])
+      .filter(
+        item =>
+          item.id !== main &&
+          !UNLISTED.has(item.id) &&
+          !(settings?.managed?.modelProvider && settings.managed.modelProvider !== item.id),
+      )
       .map(item => connection(item.id)),
     // ChatGPT when another connection is the default: its subscription models, listed by the engine (bridge/subscription-models.mts). Every
     // model menu builds from here, so Luna and Sol show in all of them (1 Nov: missing with the Anthropic credits default).
-    ...main && main !== "openai" && !(settings?.providers ?? []).some(item => item.id === "openai") && !(settings?.managed?.modelProvider && settings.managed.modelProvider !== "openai") ? [connection("openai")] : [],
+    ...(main &&
+    main !== "openai" &&
+    !(settings?.providers ?? []).some(item => item.id === "openai") &&
+    !(settings?.managed?.modelProvider && settings.managed.modelProvider !== "openai")
+      ? [connection("openai")]
+      : []),
   ];
   return [
     // Defaults can change while model/list still belongs to the engine's startup provider.
     // API connections, including the default, get their own catalog and explicit route.
     // ChatGPT as the default too: its own live list, never the engine's startup catalog (2 Nov: started on the Anthropic
     // credits, the OpenAI tab listed Claude models).
-    main && !UNLISTED.has(main) ? connection(main)
-      : { id: main ?? "", label: providerLabel(null, main, settings?.providers) || "Configured provider", models: models.filter(model => !subscriptionOf(model.model)) },
+    main && !UNLISTED.has(main)
+      ? connection(main)
+      : {
+          id: main ?? "",
+          label: providerLabel(null, main, settings?.providers) || "Configured provider",
+          models: models.filter(model => !subscriptionOf(model.model)),
+        },
     ...connectionOrder(others),
   ];
 }
 /** An unset selection inherits the default; a removed explicit connection never changes its route. */
-export const choiceById = (choices: ProviderChoice[], id: string) => choices.find(choice => choice.id === id) ?? (!id ? choices[0] : undefined);
+export const choiceById = (choices: ProviderChoice[], id: string) =>
+  choices.find(choice => choice.id === id) ?? (!id ? choices[0] : undefined);
 /** The choice an existing chat runs under: its subscription, its own configured provider, or the engine. */
 export function choiceOf(thread: Thread, choices: ProviderChoice[]) {
   const subscription = subscriptionOf(thread.model);
-  return choices.find(choice => subscription ? choice.id === subscription.prefix : !!thread.modelProvider && (choice.id === thread.modelProvider || choice.provider === thread.modelProvider))
-    ?? (subscription ? { id: subscription.prefix, label: subscription.label, models: [] }
-      // Until provider settings arrive the engine's choice has no ID and stands for whatever provider the chat names.
-      : thread.modelProvider && choices[0]?.id !== "" ? { id: thread.modelProvider, provider: thread.modelProvider, label: providerLabel(thread.model, thread.modelProvider), models: [] } : choices[0]);
+  return (
+    choices.find(choice =>
+      subscription
+        ? choice.id === subscription.prefix
+        : !!thread.modelProvider && (choice.id === thread.modelProvider || choice.provider === thread.modelProvider),
+    ) ??
+    (subscription
+      ? { id: subscription.prefix, label: subscription.label, models: [] }
+      : // Until provider settings arrive the engine's choice has no ID and stands for whatever provider the chat names.
+        thread.modelProvider && choices[0]?.id !== ""
+        ? {
+            id: thread.modelProvider,
+            provider: thread.modelProvider,
+            label: providerLabel(thread.model, thread.modelProvider),
+            models: [],
+          }
+        : choices[0])
+  );
 }
 /** The provider a chat runs on, as the microphone needs it: a subscription by its model prefix, else the chat's own provider, else the engine's default (ChatGPT). */
-export const chatProvider = (model: string | null | undefined, provider: string | null | undefined, main: string | null | undefined) => subscriptionOf(model)?.id ?? (provider || main || "openai");
-export const effortsOf = (model: string | null | undefined, models: Model[]) => models.find(item => item.model === model)?.supportedReasoningEfforts?.map(item => item.reasoningEffort) ?? [];
+export const chatProvider = (
+  model: string | null | undefined,
+  provider: string | null | undefined,
+  main: string | null | undefined,
+) => subscriptionOf(model)?.id ?? (provider || main || "openai");
+export const effortsOf = (model: string | null | undefined, models: Model[]) =>
+  models.find(item => item.model === model)?.supportedReasoningEfforts?.map(item => item.reasoningEffort) ?? [];

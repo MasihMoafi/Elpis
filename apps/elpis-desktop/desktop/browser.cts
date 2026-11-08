@@ -1,395 +1,1075 @@
-'use strict';
-import type { BrowserWindow, WebContentsView as View, Session, IpcMain, Menu as ElectronMenu, Event as ElectronEvent, IpcMainEvent, IpcMainInvokeEvent, Input, ContextMenuParams, MenuItemConstructorOptions, Rectangle } from 'electron';
-type Pick = ReturnType<typeof import('./browser-annotations.cts').cleanPick>;
-type Comment = { id: string; number: number; kind: string; pageUrl: string; anchor: Pick; body: string; screenshot: string | null; editing: string | null };
+"use strict";
+import type {
+  BrowserWindow,
+  WebContentsView as View,
+  Session,
+  IpcMain,
+  Menu as ElectronMenu,
+  Event as ElectronEvent,
+  IpcMainEvent,
+  IpcMainInvokeEvent,
+  Input,
+  ContextMenuParams,
+  MenuItemConstructorOptions,
+  Rectangle,
+} from "electron";
+type Pick = ReturnType<typeof import("./browser-annotations.cts").cleanPick>;
+type Comment = {
+  id: string;
+  number: number;
+  kind: string;
+  pageUrl: string;
+  anchor: Pick;
+  body: string;
+  screenshot: string | null;
+  editing: string | null;
+};
 type RestoreHistory = { entries: Electron.NavigationEntry[]; index: number };
-type Tab = { id: string; url: string; title: string; customTitle: string | null; agent: boolean; loading: boolean; error: string | null; failure: ReturnType<typeof import('./browser-policy.cts').loadFailure> | null; view: View; identityReady: Promise<void>; navigation: number; pendingHistory: RestoreHistory | null; comments: Comment[]; draft: Comment | null; find: { open: boolean; text: string; matches: number; active: number; focus: number } };
-type Options = { host: BrowserWindow; origin: string; WebContentsView: typeof View; session: { fromPartition: (partition: string) => Session }; ipcMain: IpcMain; openExternal?: (url: string) => Promise<void>; Menu?: typeof ElectronMenu; clipboard: { writeText: (text: string) => void; writeImage: (image: Electron.NativeImage) => void };  sessionId?: string; onChange?: () => void; presented?: boolean };
-type Command = { action: string; id: string; url: string; body: unknown; text: unknown; value: string | boolean | undefined };
-type Saved = { visible: boolean; activeId: string; tabs: { id: string; url: string; title: string; customTitle: string; agent: boolean; muted: boolean; zoom: number; history: Electron.NavigationEntry[]; historyIndex: number }[] };
+type Tab = {
+  id: string;
+  url: string;
+  title: string;
+  customTitle: string | null;
+  agent: boolean;
+  loading: boolean;
+  error: string | null;
+  failure: ReturnType<typeof import("./browser-policy.cts").loadFailure> | null;
+  view: View;
+  identityReady: Promise<void>;
+  navigation: number;
+  pendingHistory: RestoreHistory | null;
+  comments: Comment[];
+  draft: Comment | null;
+  find: { open: boolean; text: string; matches: number; active: number; focus: number };
+};
+type Options = {
+  host: BrowserWindow;
+  origin: string;
+  WebContentsView: typeof View;
+  session: { fromPartition: (partition: string) => Session };
+  ipcMain: IpcMain;
+  openExternal?: (url: string) => Promise<void>;
+  Menu?: typeof ElectronMenu;
+  clipboard: { writeText: (text: string) => void; writeImage: (image: Electron.NativeImage) => void };
+  sessionId?: string;
+  onChange?: () => void;
+  presented?: boolean;
+};
+type Command = {
+  action: string;
+  id: string;
+  url: string;
+  body: unknown;
+  text: unknown;
+  value: string | boolean | undefined;
+};
+type Saved = {
+  visible: boolean;
+  activeId: string;
+  tabs: {
+    id: string;
+    url: string;
+    title: string;
+    customTitle: string;
+    agent: boolean;
+    muted: boolean;
+    zoom: number;
+    history: Electron.NavigationEntry[];
+    historyIndex: number;
+  }[];
+};
 
-const {randomUUID}=require('node:crypto');
-const {preloadPath}: typeof import('./preload-path.cts')=require('./preload-path.cts');
-const {browserUrl,trustedBrowserSender,nativeBounds,loadFailure,pageSecurity,zoomStep}=require('./browser-policy.cts') as typeof import('./browser-policy.cts');
-const {cleanPick,commentLabel,commentsPrompt}=require('./browser-annotations.cts') as typeof import('./browser-annotations.cts');
-const {contextMenuTemplate}=require('./context-menu.cts') as typeof import('./context-menu.cts');
-const {createBrowserAgent}=require('./browser-agent.cts');
-const {presentAsChrome,presentPageAsChrome}=require('./browser-identity.cts') as typeof import('./browser-identity.cts');
+const { randomUUID } = require("node:crypto");
+const { preloadPath }: typeof import("./preload-path.cts") = require("./preload-path.cts");
+const { browserUrl, trustedBrowserSender, nativeBounds, loadFailure, pageSecurity, zoomStep } =
+  require("./browser-policy.cts") as typeof import("./browser-policy.cts");
+const { cleanPick, commentLabel, commentsPrompt } =
+  require("./browser-annotations.cts") as typeof import("./browser-annotations.cts");
+const { contextMenuTemplate } = require("./context-menu.cts") as typeof import("./context-menu.cts");
+const { createBrowserAgent } = require("./browser-agent.cts");
+const { presentAsChrome, presentPageAsChrome } =
+  require("./browser-identity.cts") as typeof import("./browser-identity.cts");
 
-const PRELOAD=preloadPath('browser-page-preload');
-const COMMANDS=['action','id','url','body','text','value'];
+const PRELOAD = preloadPath("browser-page-preload");
+const COMMANDS = ["action", "id", "url", "body", "text", "value"];
 // One screenshot sheet holds twelve panels; send these before adding more.
-const MAX_COMMENTS=12;
+const MAX_COMMENTS = 12;
 
-function createBrowserImpl({host,origin,WebContentsView,session,ipcMain,openExternal,Menu,clipboard,sessionId,onChange,presented=true}: Options) {
-  const tabs=new Map<string, Tab>();let activeId: string | null=null,visible=false,bounds: Rectangle | null=null,obscured=false,focusAddress=0,fullView=0,disposed=false,popups: number[]=[],presentation=0;
+function createBrowserImpl({
+  host,
+  origin,
+  WebContentsView,
+  session,
+  ipcMain,
+  openExternal,
+  Menu,
+  clipboard,
+  sessionId,
+  onChange,
+  presented = true,
+}: Options) {
+  const tabs = new Map<string, Tab>();
+  let activeId: string | null = null,
+    visible = false,
+    bounds: Rectangle | null = null,
+    obscured = false,
+    focusAddress = 0,
+    fullView = 0,
+    disposed = false,
+    popups: number[] = [],
+    presentation = 0;
   // Annotation mode (the ChatGPT app's "Annotate") follows the active tab; comments belong to their tab.
-  let annotating=false,markersVisible=true;const painted=new Map<string, () => void>();
-  const browserSession=session.fromPartition('persist:elpis-browser');
-  browserSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
-  browserSession.setPermissionCheckHandler(()=>false);
+  let annotating = false,
+    markersVisible = true;
+  const painted = new Map<string, () => void>();
+  const browserSession = session.fromPartition("persist:elpis-browser");
+  browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  browserSession.setPermissionCheckHandler(() => false);
   presentAsChrome(browserSession);
-  const active=()=>tabs.get(activeId as string);
+  const active = () => tabs.get(activeId as string);
   // The app's page background (its theme token): a tab's page is painted with it, so a blank tab matches the app, not white.
-  let background: string | null=null;
-  const tint=(tab: Tab)=>{if(background&&!tab.view.webContents.isDestroyed())tab.view.setBackgroundColor(background);};
-  const setBackground=(color: string)=>{background=color;for(const tab of tabs.values())tint(tab);};
-  const commentView=(tab: Tab,item: Comment)=>({id:item.id,number:item.number,kind:item.kind,label:commentLabel(item),body:item.body});
-  const snapshot=()=>{
-    const tab=active();
-    return {...(sessionId?{sessionId,presentation}:{}),visible,activeId,focusAddress,fullView,annotating,markersVisible,agent:agent.state(),
-      annotations:tab?tab.comments.map(item=>commentView(tab,item)):[],
-      draft:tab?.draft?{...commentView(tab,tab.draft),editing:!!tab.draft.editing}:null,
-      find:tab?{open:tab.find.open,text:tab.find.text,matches:tab.find.matches,active:tab.find.active,focus:tab.find.focus}:{open:false,text:'',matches:0,active:0,focus:0},
-      tabs:[...tabs.values()].map(item=>({id:item.id,url:item.url,title:item.customTitle??item.title,customTitle:item.customTitle,muted:item.view.webContents.isAudioMuted?.()??false,loading:item.loading,error:item.error,failure:item.failure,security:pageSecurity(item.url),zoom:Math.round(item.view.webContents.getZoomFactor()*100),comments:item.comments.length,canGoBack:item.pendingHistory?item.pendingHistory.index>0:item.view.webContents.navigationHistory.canGoBack(),canGoForward:item.pendingHistory?item.pendingHistory.index<item.pendingHistory.entries.length-1:item.view.webContents.navigationHistory.canGoForward()}))};
+  let background: string | null = null;
+  const tint = (tab: Tab) => {
+    if (background && !tab.view.webContents.isDestroyed()) tab.view.setBackgroundColor(background);
   };
-  const emit=()=>{if(disposed)return;onChange?.();if(presented&&!host.isDestroyed()&&!host.webContents.isDestroyed())host.webContents.send('elpis:browser:state',snapshot());};
-  const agent=createBrowserAgent({tabs,open,origin,emit,prepare(id: string){if(annotating&&id===activeId)setAnnotating(false);}});
+  const setBackground = (color: string) => {
+    background = color;
+    for (const tab of tabs.values()) tint(tab);
+  };
+  const commentView = (tab: Tab, item: Comment) => ({
+    id: item.id,
+    number: item.number,
+    kind: item.kind,
+    label: commentLabel(item),
+    body: item.body,
+  });
+  const snapshot = () => {
+    const tab = active();
+    return {
+      ...(sessionId ? { sessionId, presentation } : {}),
+      visible,
+      activeId,
+      focusAddress,
+      fullView,
+      annotating,
+      markersVisible,
+      agent: agent.state(),
+      annotations: tab ? tab.comments.map(item => commentView(tab, item)) : [],
+      draft: tab?.draft ? { ...commentView(tab, tab.draft), editing: !!tab.draft.editing } : null,
+      find: tab
+        ? {
+            open: tab.find.open,
+            text: tab.find.text,
+            matches: tab.find.matches,
+            active: tab.find.active,
+            focus: tab.find.focus,
+          }
+        : { open: false, text: "", matches: 0, active: 0, focus: 0 },
+      tabs: [...tabs.values()].map(item => ({
+        id: item.id,
+        url: item.url,
+        title: item.customTitle ?? item.title,
+        customTitle: item.customTitle,
+        muted: item.view.webContents.isAudioMuted?.() ?? false,
+        loading: item.loading,
+        error: item.error,
+        failure: item.failure,
+        security: pageSecurity(item.url),
+        zoom: Math.round(item.view.webContents.getZoomFactor() * 100),
+        comments: item.comments.length,
+        canGoBack: item.pendingHistory
+          ? item.pendingHistory.index > 0
+          : item.view.webContents.navigationHistory.canGoBack(),
+        canGoForward: item.pendingHistory
+          ? item.pendingHistory.index < item.pendingHistory.entries.length - 1
+          : item.view.webContents.navigationHistory.canGoForward(),
+      })),
+    };
+  };
+  const emit = () => {
+    if (disposed) return;
+    onChange?.();
+    if (presented && !host.isDestroyed() && !host.webContents.isDestroyed())
+      host.webContents.send("elpis:browser:state", snapshot());
+  };
+  const agent = createBrowserAgent({
+    tabs,
+    open,
+    origin,
+    emit,
+    prepare(id: string) {
+      if (annotating && id === activeId) setAnnotating(false);
+    },
+  });
   // What the page layer draws: markers for saved comments and the outline of the one being written.
-  function syncPage(tab: Tab | undefined){
-    if(!tab||tab.view.webContents.isDestroyed())return;
-    const anchor=(item: Comment)=>({id:item.id,number:item.number,kind:item.kind,pageUrl:item.pageUrl,anchor:{selector:item.anchor.selector,rect:item.anchor.rect,isFixed:item.anchor.isFixed}});
-    tab.view.webContents.send('elpis:annotate',{type:'state',mode:annotating&&tab.id===activeId,markersVisible,comments:tab.comments.map(anchor),draft:tab.draft?{...anchor(tab.draft),editing:tab.draft.editing||null}:null});
+  function syncPage(tab: Tab | undefined) {
+    if (!tab || tab.view.webContents.isDestroyed()) return;
+    const anchor = (item: Comment) => ({
+      id: item.id,
+      number: item.number,
+      kind: item.kind,
+      pageUrl: item.pageUrl,
+      anchor: { selector: item.anchor.selector, rect: item.anchor.rect, isFixed: item.anchor.isFixed },
+    });
+    tab.view.webContents.send("elpis:annotate", {
+      type: "state",
+      mode: annotating && tab.id === activeId,
+      markersVisible,
+      comments: tab.comments.map(anchor),
+      draft: tab.draft ? { ...anchor(tab.draft), editing: tab.draft.editing || null } : null,
+    });
   }
-  function place(){
-    if(disposed||host.isDestroyed())return;
-    const size=host.getContentBounds();
-    const rectangle=bounds?nativeBounds(bounds,host.webContents.getZoomFactor(),size):null;
-    for(const tab of tabs.values()){
-      const show=presented&&visible&&!obscured&&tab.id===activeId&&!!rectangle;
-      if(show)tab.view.setBounds(rectangle);
+  function place() {
+    if (disposed || host.isDestroyed()) return;
+    const size = host.getContentBounds();
+    const rectangle = bounds ? nativeBounds(bounds, host.webContents.getZoomFactor(), size) : null;
+    for (const tab of tabs.values()) {
+      const show = presented && visible && !obscured && tab.id === activeId && !!rectangle;
+      if (show) tab.view.setBounds(rectangle);
       tab.view.setVisible(show);
     }
   }
-  function focusInput(){focusAddress++;if(presented)host.webContents.focus();emit();}
+  function focusInput() {
+    focusAddress++;
+    if (presented) host.webContents.focus();
+    emit();
+  }
   // focus: true focuses the page, false the address bar of a blank tab, null nothing (the agent's tab).
-  function select(id: string,focus: boolean | null=true){
-    if(!tabs.has(id))throw Error('This browser tab is closed.');
-    const previous=active();activeId=id;visible=true;place();
-    if(previous&&previous.id!==id)syncPage(previous);
-    syncPage(tabs.get(id));emit();
-    const tab=tabs.get(id)!;if(focus===null)return;
-    if(presented&&focus&&tab.url!=='about:blank')tab.view.webContents.focus();else if(tab.url==='about:blank')focusInput();
+  function select(id: string, focus: boolean | null = true) {
+    if (!tabs.has(id)) throw Error("This browser tab is closed.");
+    const previous = active();
+    activeId = id;
+    visible = true;
+    place();
+    if (previous && previous.id !== id) syncPage(previous);
+    syncPage(tabs.get(id));
+    emit();
+    const tab = tabs.get(id)!;
+    if (focus === null) return;
+    if (presented && focus && tab.url !== "about:blank") tab.view.webContents.focus();
+    else if (tab.url === "about:blank") focusInput();
   }
-  function close(id: string | null){
-    const tab=tabs.get(id as string);if(!tab)return;
-    const order=[...tabs.keys()],index=order.indexOf(id as string);tabs.delete(id as string);
-    if(!host.isDestroyed())host.contentView.removeChildView(tab.view);
-    const webContents=tab.view.webContents;
-    if(webContents&&!webContents.isDestroyed())webContents.close({waitForBeforeUnload:false});
-    if(activeId===id){activeId=order[index+1]??order[index-1]??null;syncPage(active());}
-    if(!tabs.size){visible=false;annotating=false;}
-    place();emit();
+  function close(id: string | null) {
+    const tab = tabs.get(id as string);
+    if (!tab) return;
+    const order = [...tabs.keys()],
+      index = order.indexOf(id as string);
+    tabs.delete(id as string);
+    if (!host.isDestroyed()) host.contentView.removeChildView(tab.view);
+    const webContents = tab.view.webContents;
+    if (webContents && !webContents.isDestroyed()) webContents.close({ waitForBeforeUnload: false });
+    if (activeId === id) {
+      activeId = order[index + 1] ?? order[index - 1] ?? null;
+      syncPage(active());
+    }
+    if (!tabs.size) {
+      visible = false;
+      annotating = false;
+    }
+    place();
+    emit();
   }
-  function navigate(tab: Tab,url: string){
-    const target=browserUrl(url,origin);tab.pendingHistory=null;tab.url=target;tab.error=null;tab.failure=null;tab.title=tab.url==='about:blank'?'New tab':new URL(tab.url).hostname||decodeURIComponent(new URL(tab.url).pathname.split('/').pop()||'File');emit();
-    const revision=++tab.navigation,wc=tab.view.webContents;
+  function navigate(tab: Tab, url: string) {
+    const target = browserUrl(url, origin);
+    tab.pendingHistory = null;
+    tab.url = target;
+    tab.error = null;
+    tab.failure = null;
+    tab.title =
+      tab.url === "about:blank"
+        ? "New tab"
+        : new URL(tab.url).hostname || decodeURIComponent(new URL(tab.url).pathname.split("/").pop() || "File");
+    emit();
+    const revision = ++tab.navigation,
+      wc = tab.view.webContents;
     // A new tab (including an OAuth popup) must have its identity before its first document loads.
     // did-fail-load owns page errors; Stop and replaced navigations also reject loadURL.
-    void tab.identityReady.then(()=>{if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed()&&tab.navigation===revision)return wc.loadURL(target);}).catch(()=>{});
+    void tab.identityReady
+      .then(() => {
+        if (!disposed && tabs.has(tab.id) && !wc.isDestroyed() && tab.navigation === revision)
+          return wc.loadURL(target);
+      })
+      .catch(() => {});
   }
   // An agent's tab opens behind the person's tab; it is shown only when he has none.
-  function open(url='about:blank',{focus=false,after=null,id=null,restoring=null,agent:owned=false}: { focus?: boolean; after?: string | null; id?: string | null; restoring?: RestoreHistory | null; agent?: boolean }={}){
-    const target=browserUrl(url,origin);if(tabs.size>=20)throw Error('Close a browser tab before opening another (20 tab limit).');
+  function open(
+    url = "about:blank",
+    {
+      focus = false,
+      after = null,
+      id = null,
+      restoring = null,
+      agent: owned = false,
+    }: {
+      focus?: boolean;
+      after?: string | null;
+      id?: string | null;
+      restoring?: RestoreHistory | null;
+      agent?: boolean;
+    } = {},
+  ) {
+    const target = browserUrl(url, origin);
+    if (tabs.size >= 20) throw Error("Close a browser tab before opening another (20 tab limit).");
     // Electron focuses a page on every navigation by default; an agent's page loads must never take the person's keyboard.
-    const view=new WebContentsView({webPreferences:{partition:'persist:elpis-browser',preload:PRELOAD,nodeIntegration:false,contextIsolation:true,sandbox:true,webSecurity:true,plugins:true,webviewTag:false,focusOnNavigation:owned!==true,
-      // A launch with --remote-debugging-port=0 (Playwright, agent-driven instances) marks every page as automated (navigator.webdriver); sign-in pages refuse that.
-      disableBlinkFeatures:'AutomationControlled'}});
+    const view = new WebContentsView({
+      webPreferences: {
+        partition: "persist:elpis-browser",
+        preload: PRELOAD,
+        nodeIntegration: false,
+        contextIsolation: true,
+        sandbox: true,
+        webSecurity: true,
+        plugins: true,
+        webviewTag: false,
+        focusOnNavigation: owned !== true,
+        // A launch with --remote-debugging-port=0 (Playwright, agent-driven instances) marks every page as automated (navigator.webdriver); sign-in pages refuse that.
+        disableBlinkFeatures: "AutomationControlled",
+      },
+    });
     view.setVisible(false);
     // A session can receive agent input before its pane has ever been shown.
-    const {width,height}=host.getContentBounds();view.setBounds({x:0,y:0,width,height});
+    const { width, height } = host.getContentBounds();
+    view.setBounds({ x: 0, y: 0, width, height });
     host.contentView.addChildView(view);
-    const tab: Tab={id:typeof id==='string'&&/^[A-Za-z0-9_-]{1,200}$/.test(id)&&!tabs.has(id)?id:randomUUID(),url:'about:blank',title:'New tab',customTitle:null,agent:owned===true,loading:false,error:null,failure:null,view,identityReady:Promise.resolve(),navigation:0,pendingHistory:restoring,comments:[],draft:null,find:{open:false,text:'',matches:0,active:0,focus:0}};tabs.set(tab.id,tab);
-    if(after&&tabs.has(after)){const order=[...tabs.entries()].filter(([id])=>id!==tab.id),at=order.findIndex(([id])=>id===after)+1;order.splice(at,0,[tab.id,tab]);tabs.clear();for(const [id,item] of order)tabs.set(id,item);}
-    const wc=view.webContents;tint(tab);
+    const tab: Tab = {
+      id: typeof id === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(id) && !tabs.has(id) ? id : randomUUID(),
+      url: "about:blank",
+      title: "New tab",
+      customTitle: null,
+      agent: owned === true,
+      loading: false,
+      error: null,
+      failure: null,
+      view,
+      identityReady: Promise.resolve(),
+      navigation: 0,
+      pendingHistory: restoring,
+      comments: [],
+      draft: null,
+      find: { open: false, text: "", matches: 0, active: 0, focus: 0 },
+    };
+    tabs.set(tab.id, tab);
+    if (after && tabs.has(after)) {
+      const order = [...tabs.entries()].filter(([id]) => id !== tab.id),
+        at = order.findIndex(([id]) => id === after) + 1;
+      order.splice(at, 0, [tab.id, tab]);
+      tabs.clear();
+      for (const [id, item] of order) tabs.set(id, item);
+    }
+    const wc = view.webContents;
+    tint(tab);
     // Electron needs a renderer for the identity override, but can restore history only before its first load.
     // Restore onto a temporary blank entry, set the identity, then select the saved entry and remove the temporary one.
-    let initializing=true;
-    const initial=restoring?wc.navigationHistory.restore({entries:[...restoring.entries,{url:'about:blank',title:'New tab'}],index:restoring.entries.length}):wc.loadURL('about:blank');
-    tab.identityReady=initial.then(()=>{
-      initializing=false;
-      if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed())return presentPageAsChrome(wc);
-    }).catch((error: unknown)=>{
-      initializing=false;
-      const aborted=error instanceof Error&&(('code' in error&&error.code==='ERR_ABORTED')||('errno' in error&&error.errno===-3));
-      if(!disposed&&tabs.has(tab.id)&&!wc.isDestroyed()&&!aborted){
-        tab.loading=false;tab.error='The browser could not initialize this tab.';emit();
-      }
-      throw error;
-    });
+    let initializing = true;
+    const initial = restoring
+      ? wc.navigationHistory.restore({
+          entries: [...restoring.entries, { url: "about:blank", title: "New tab" }],
+          index: restoring.entries.length,
+        })
+      : wc.loadURL("about:blank");
+    tab.identityReady = initial
+      .then(() => {
+        initializing = false;
+        if (!disposed && tabs.has(tab.id) && !wc.isDestroyed()) return presentPageAsChrome(wc);
+      })
+      .catch((error: unknown) => {
+        initializing = false;
+        const aborted =
+          error instanceof Error &&
+          (("code" in error && error.code === "ERR_ABORTED") || ("errno" in error && error.errno === -3));
+        if (!disposed && tabs.has(tab.id) && !wc.isDestroyed() && !aborted) {
+          tab.loading = false;
+          tab.error = "The browser could not initialize this tab.";
+          emit();
+        }
+        throw error;
+      });
     agent.observe(tab);
-    wc.on('will-attach-webview',event=>event.preventDefault());
-    const guard=(event: ElectronEvent,url: string)=>{try{browserUrl(url,origin);}catch{event.preventDefault();tab.error='This address cannot be opened in the browser.';emit();}};
-    wc.on('will-navigate',guard);wc.on('will-redirect',guard);
-    wc.setWindowOpenHandler(({url})=>{
-      const now=Date.now();popups=popups.filter(time=>now-time<10000);
-      if(popups.length<5){try{open(url,{agent:tab.agent});popups.push(now);}catch{}}
-      return {action:'deny'};
+    wc.on("will-attach-webview", event => event.preventDefault());
+    const guard = (event: ElectronEvent, url: string) => {
+      try {
+        browserUrl(url, origin);
+      } catch {
+        event.preventDefault();
+        tab.error = "This address cannot be opened in the browser.";
+        emit();
+      }
+    };
+    wc.on("will-navigate", guard);
+    wc.on("will-redirect", guard);
+    wc.setWindowOpenHandler(({ url }) => {
+      const now = Date.now();
+      popups = popups.filter(time => now - time < 10000);
+      if (popups.length < 5) {
+        try {
+          open(url, { agent: tab.agent });
+          popups.push(now);
+        } catch {}
+      }
+      return { action: "deny" };
     });
-    wc.on('did-start-loading',()=>{tab.loading=true;tab.error=null;emit();});
-    wc.on('did-stop-loading',()=>{tab.loading=false;emit();});
-    wc.on('did-start-navigation',(_event,_url,inPlace,isMainFrame)=>{if(isMainFrame&&!inPlace&&tab.failure){tab.failure=null;emit();}});
-    const navigated=(_event: ElectronEvent,url: string)=>{
-      if(initializing&&url==='about:blank')return;
-      tab.url=url;tab.error=null;tab.failure=null;
-      if(tab.pendingHistory&&wc.navigationHistory.removeEntryAtIndex(tab.pendingHistory.entries.length))tab.pendingHistory=null;
+    wc.on("did-start-loading", () => {
+      tab.loading = true;
+      tab.error = null;
+      emit();
+    });
+    wc.on("did-stop-loading", () => {
+      tab.loading = false;
+      emit();
+    });
+    wc.on("did-start-navigation", (_event, _url, inPlace, isMainFrame) => {
+      if (isMainFrame && !inPlace && tab.failure) {
+        tab.failure = null;
+        emit();
+      }
+    });
+    const navigated = (_event: ElectronEvent, url: string) => {
+      if (initializing && url === "about:blank") return;
+      tab.url = url;
+      tab.error = null;
+      tab.failure = null;
+      if (tab.pendingHistory && wc.navigationHistory.removeEntryAtIndex(tab.pendingHistory.entries.length))
+        tab.pendingHistory = null;
       emit();
     };
-    wc.on('did-navigate',navigated);wc.on('did-navigate-in-page',(event,url,isMainFrame)=>{if(isMainFrame)navigated(event,url);});
-    wc.on('page-title-updated',(_event,title)=>{if(!initializing){tab.title=String(title).slice(0,200)||'New tab';emit();}});
-    wc.on('did-fail-load',(_event,code,description,url,isMainFrame)=>{if(isMainFrame&&code!==-3){tab.loading=false;tab.error=description;tab.failure=loadFailure(code,description,url||tab.url);emit();}});
-    wc.on('render-process-gone',()=>{tab.loading=false;tab.error='This page stopped responding. Reload to try again.';emit();});
-    wc.on('found-in-page',(_event,result)=>{if(result?.finalUpdate){tab.find.matches=result.matches;tab.find.active=result.activeMatchOrdinal;emit();}});
-    wc.on('context-menu',(_event,params)=>pageMenu(tab,params));
-    wc.on('destroyed',()=>{if(!disposed)close(tab.id);});
-    wc.on('before-input-event',(event,input)=>keyboard(event,input,tab));
-    if(!tab.agent)select(tab.id,focus);else if(active())place();else select(tab.id,null);
-    if(restoring){tab.url=target;emit();}else navigate(tab,target);
+    wc.on("did-navigate", navigated);
+    wc.on("did-navigate-in-page", (event, url, isMainFrame) => {
+      if (isMainFrame) navigated(event, url);
+    });
+    wc.on("page-title-updated", (_event, title) => {
+      if (!initializing) {
+        tab.title = String(title).slice(0, 200) || "New tab";
+        emit();
+      }
+    });
+    wc.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
+      if (isMainFrame && code !== -3) {
+        tab.loading = false;
+        tab.error = description;
+        tab.failure = loadFailure(code, description, url || tab.url);
+        emit();
+      }
+    });
+    wc.on("render-process-gone", () => {
+      tab.loading = false;
+      tab.error = "This page stopped responding. Reload to try again.";
+      emit();
+    });
+    wc.on("found-in-page", (_event, result) => {
+      if (result?.finalUpdate) {
+        tab.find.matches = result.matches;
+        tab.find.active = result.activeMatchOrdinal;
+        emit();
+      }
+    });
+    wc.on("context-menu", (_event, params) => pageMenu(tab, params));
+    wc.on("destroyed", () => {
+      if (!disposed) close(tab.id);
+    });
+    wc.on("before-input-event", (event, input) => keyboard(event, input, tab));
+    if (!tab.agent) select(tab.id, focus);
+    else if (active()) place();
+    else select(tab.id, null);
+    if (restoring) {
+      tab.url = target;
+      emit();
+    } else navigate(tab, target);
     return tab.id;
   }
 
   // --- Annotation ---
-  async function capture(tab: Tab){
-    const image=await tab.view.webContents.capturePage();
-    if(!image||image.isEmpty?.())return null;
-    const scaled=image.getSize().width>1280?image.resize({width:1280,quality:'good'}):image;
-    return `data:image/jpeg;base64,${scaled.toJPEG(82).toString('base64')}`;
+  async function capture(tab: Tab) {
+    const image = await tab.view.webContents.capturePage();
+    if (!image || image.isEmpty?.()) return null;
+    const scaled = image.getSize().width > 1280 ? image.resize({ width: 1280, quality: "good" }) : image;
+    return `data:image/jpeg;base64,${scaled.toJPEG(82).toString("base64")}`;
   }
-  function paint(tab: Tab,id: string){
-    return new Promise<void>(resolve=>{
-      const timer=setTimeout(()=>{painted.delete(id);resolve();},700);
-      painted.set(id,()=>{clearTimeout(timer);painted.delete(id);resolve();});
-      tab.view.webContents.send('elpis:annotate',{type:'paint',id});
+  function paint(tab: Tab, id: string) {
+    return new Promise<void>(resolve => {
+      const timer = setTimeout(() => {
+        painted.delete(id);
+        resolve();
+      }, 700);
+      painted.set(id, () => {
+        clearTimeout(timer);
+        painted.delete(id);
+        resolve();
+      });
+      tab.view.webContents.send("elpis:annotate", { type: "paint", id });
     });
   }
-  async function picked(tab: Tab,raw: unknown){
-    if(!annotating||tab.id!==activeId||tab.comments.length>=MAX_COMMENTS&&!tab.draft?.editing)return;
-    let pick;try{pick=cleanPick(raw);}catch{return;}
-    const keep=tab.draft&&!tab.draft.editing?tab.draft.number:tab.comments.length+1;
-    tab.draft={id:pick.id,number:keep,kind:pick.kind,pageUrl:tab.view.webContents.getURL()||tab.url,anchor:pick,body:'',screenshot:null,editing:null};
-    syncPage(tab);emit();host.webContents.focus();
-    await paint(tab,pick.id);
+  async function picked(tab: Tab, raw: unknown) {
+    if (!annotating || tab.id !== activeId || (tab.comments.length >= MAX_COMMENTS && !tab.draft?.editing)) return;
+    let pick;
+    try {
+      pick = cleanPick(raw);
+    } catch {
+      return;
+    }
+    const keep = tab.draft && !tab.draft.editing ? tab.draft.number : tab.comments.length + 1;
+    tab.draft = {
+      id: pick.id,
+      number: keep,
+      kind: pick.kind,
+      pageUrl: tab.view.webContents.getURL() || tab.url,
+      anchor: pick,
+      body: "",
+      screenshot: null,
+      editing: null,
+    };
+    syncPage(tab);
+    emit();
+    host.webContents.focus();
+    await paint(tab, pick.id);
     // Two animation frames commit the outline; the compositor can still present the frame after that.
-    await new Promise<void>(resolve=>setTimeout(resolve,120));
-    const screenshot=await capture(tab).catch(()=>null);
-    const owner=tab.draft?.id===pick.id?tab.draft:tab.comments.find(item=>item.id===pick.id);
-    if(owner)owner.screenshot=screenshot;
+    await new Promise<void>(resolve => setTimeout(resolve, 120));
+    const screenshot = await capture(tab).catch(() => null);
+    const owner = tab.draft?.id === pick.id ? tab.draft : tab.comments.find(item => item.id === pick.id);
+    if (owner) owner.screenshot = screenshot;
   }
-  function editComment(tab: Tab,id: string){
-    const item=tab.comments.find(comment=>comment.id===id);if(!item)throw Error('This comment was removed.');
-    tab.draft={...item,editing:item.id};syncPage(tab);emit();host.webContents.focus();
+  function editComment(tab: Tab, id: string) {
+    const item = tab.comments.find(comment => comment.id === id);
+    if (!item) throw Error("This comment was removed.");
+    tab.draft = { ...item, editing: item.id };
+    syncPage(tab);
+    emit();
+    host.webContents.focus();
   }
-  function renumber(tab: Tab){tab.comments.forEach((item,index)=>{item.number=index+1;});if(tab.draft&&!tab.draft.editing)tab.draft.number=tab.comments.length+1;}
-  function setAnnotating(value: boolean){
-    if(value&&!active()?.url.startsWith('http'))throw Error('Open a web page to annotate it.');
-    annotating=value;const tab=active();
-    if(!value&&tab?.draft)tab.draft=null;
-    if(tab){syncPage(tab);if(value)tab.view.webContents.focus();}
+  function renumber(tab: Tab) {
+    tab.comments.forEach((item, index) => {
+      item.number = index + 1;
+    });
+    if (tab.draft && !tab.draft.editing) tab.draft.number = tab.comments.length + 1;
+  }
+  function setAnnotating(value: boolean) {
+    if (value && !active()?.url.startsWith("http")) throw Error("Open a web page to annotate it.");
+    annotating = value;
+    const tab = active();
+    if (!value && tab?.draft) tab.draft = null;
+    if (tab) {
+      syncPage(tab);
+      if (value) tab.view.webContents.focus();
+    }
     emit();
   }
-  function collect(tab: Tab,images: boolean){
-    const comments=tab.comments.filter(item=>item.body.trim());
+  function collect(tab: Tab, images: boolean) {
+    const comments = tab.comments.filter(item => item.body.trim());
     // Comments stay until the message that carries them is accepted ("annotationsSent").
-    return {count:comments.length,text:comments.length?commentsPrompt(comments,{images}):'',images:images?comments.filter(item=>item.screenshot).map(item=>({number:item.number,dataUrl:item.screenshot})):[]};
+    return {
+      count: comments.length,
+      text: comments.length ? commentsPrompt(comments, { images }) : "",
+      images: images
+        ? comments.filter(item => item.screenshot).map(item => ({ number: item.number, dataUrl: item.screenshot }))
+        : [],
+    };
   }
-  function pageMessage(event: IpcMainEvent,message: { type: string; id: string; pick: unknown }){
-    const tab=[...tabs.values()].find(item=>item.view.webContents===event.sender);
-    if(!tab||event.senderFrame!==event.sender.mainFrame||!message||typeof message!=='object')return;
-    switch(message.type){
-      case 'ready':syncPage(tab);break;
-      case 'pick':void picked(tab,message.pick);break;
-      case 'painted':painted.get(message.id)?.();break;
-      case 'edit':if(annotating&&tab.id===activeId&&typeof message.id==='string')try{editComment(tab,message.id);}catch{}break;
-      case 'cancel':if(tab.draft){tab.draft=null;syncPage(tab);emit();}break;
-      case 'exit':if(annotating&&tab.id===activeId)setAnnotating(false);break;
+  function pageMessage(event: IpcMainEvent, message: { type: string; id: string; pick: unknown }) {
+    const tab = [...tabs.values()].find(item => item.view.webContents === event.sender);
+    if (!tab || event.senderFrame !== event.sender.mainFrame || !message || typeof message !== "object") return;
+    switch (message.type) {
+      case "ready":
+        syncPage(tab);
+        break;
+      case "pick":
+        void picked(tab, message.pick);
+        break;
+      case "painted":
+        painted.get(message.id)?.();
+        break;
+      case "edit":
+        if (annotating && tab.id === activeId && typeof message.id === "string")
+          try {
+            editComment(tab, message.id);
+          } catch {}
+        break;
+      case "cancel":
+        if (tab.draft) {
+          tab.draft = null;
+          syncPage(tab);
+          emit();
+        }
+        break;
+      case "exit":
+        if (annotating && tab.id === activeId) setAnnotating(false);
+        break;
     }
   }
 
   // --- Page menu (right-click on a page), as in the ChatGPT app's browser ---
-  function pageMenu(tab: Tab,params: ContextMenuParams){
-    if(!Menu)return;
-    const wc=tab.view.webContents,zoom=wc.getZoomFactor()||1,x=Math.round(params.x/zoom),y=Math.round(params.y/zoom),groups: MenuItemConstructorOptions[][]=[];
+  function pageMenu(tab: Tab, params: ContextMenuParams) {
+    if (!Menu) return;
+    const wc = tab.view.webContents,
+      zoom = wc.getZoomFactor() || 1,
+      x = Math.round(params.x / zoom),
+      y = Math.round(params.y / zoom),
+      groups: MenuItemConstructorOptions[][] = [];
     // Text, spelling, image and link items are the app's own (desktop/context-menu.cts); a link opens in a new tab.
-    const shared=contextMenuTemplate(params,{contents:wc,clipboard,origin,openLink:url=>{try{open(url);}catch{}}});
-    if(/^https?:/i.test(params.linkURL||'')&&openExternal)shared.push({label:'Open link in external browser',click:()=>void openExternal(params.linkURL)});
-    if(shared.length)groups.push(shared);
+    const shared = contextMenuTemplate(params, {
+      contents: wc,
+      clipboard,
+      origin,
+      openLink: url => {
+        try {
+          open(url);
+        } catch {}
+      },
+    });
+    if (/^https?:/i.test(params.linkURL || "") && openExternal)
+      shared.push({ label: "Open link in external browser", click: () => void openExternal(params.linkURL) });
+    if (shared.length) groups.push(shared);
     groups.push([
-      {label:'Back',enabled:wc.navigationHistory.canGoBack(),click:()=>wc.navigationHistory.goBack()},
-      {label:'Forward',enabled:wc.navigationHistory.canGoForward(),click:()=>wc.navigationHistory.goForward()},
-      {label:'Reload',click:()=>wc.reload()},
+      { label: "Back", enabled: wc.navigationHistory.canGoBack(), click: () => wc.navigationHistory.goBack() },
+      { label: "Forward", enabled: wc.navigationHistory.canGoForward(), click: () => wc.navigationHistory.goForward() },
+      { label: "Reload", click: () => wc.reload() },
     ]);
     groups.push([
-      {label:'Comment',enabled:/^https?:/.test(tab.url),click:()=>{try{if(tab.id!==activeId)select(tab.id);if(!annotating)setAnnotating(true);wc.send('elpis:annotate',{type:'pickAt',x,y});}catch{}}},
-      {label:'Inspect',click:()=>{if(!wc.isDevToolsOpened?.())wc.openDevTools({mode:'detach'});wc.inspectElement(params.x,params.y);}},
+      {
+        label: "Comment",
+        enabled: /^https?:/.test(tab.url),
+        click: () => {
+          try {
+            if (tab.id !== activeId) select(tab.id);
+            if (!annotating) setAnnotating(true);
+            wc.send("elpis:annotate", { type: "pickAt", x, y });
+          } catch {}
+        },
+      },
+      {
+        label: "Inspect",
+        click: () => {
+          if (!wc.isDevToolsOpened?.()) wc.openDevTools({ mode: "detach" });
+          wc.inspectElement(params.x, params.y);
+        },
+      },
     ]);
-    Menu.buildFromTemplate(groups.flatMap((group,index)=>index?[{type:'separator'},...group]:group)).popup({window:host});
+    Menu.buildFromTemplate(groups.flatMap((group, index) => (index ? [{ type: "separator" }, ...group] : group))).popup(
+      { window: host },
+    );
   }
 
-  function zoom(tab: Tab,direction: string){const wc=tab.view.webContents;wc.setZoomFactor(zoomStep(wc.getZoomFactor(),direction)!);emit();}
-  function openFind(tab: Tab){tab.find.open=true;tab.find.focus++;emit();host.webContents.focus();}
-  function keyboard(event: ElectronEvent,input: Input,tab: Tab | null=null){
-    // Only the shown page has the person's keyboard; keys on a background page are the agent's.
-    if(input.type!=='keyDown'||!visible||!presented||tab&&tab.id!==activeId)return;
-    const key=input.key.toLowerCase(),primary=(input.control||input.meta)&&!input.alt;
-    const page=tab??null,act=(fn: () => void)=>{event.preventDefault();fn();};
-    if(page&&input.alt&&!input.control&&!input.meta&&(key==='arrowleft'||key==='arrowright'))return act(()=>{const history=page.view.webContents.navigationHistory;if(key==='arrowleft'&&history.canGoBack())history.goBack();else if(key==='arrowright'&&history.canGoForward())history.goForward();});
-    if(page&&key==='f5')return act(()=>input.shift?page.view.webContents.reloadIgnoringCache():page.view.webContents.reload());
-    if(!primary)return;
-    if(key==='l')act(focusInput);
-    // In Elpis's own window Ctrl+T, Ctrl+W and Ctrl+Tab belong to the chat tabs (the renderer); a page that has the focus keeps them for the side panel's page tabs.
-    else if(!page)return;
-    else if(key==='t')act(()=>{try{open();}catch{}});
-    else if(key==='w')act(()=>close(activeId));
-    else if(key==='tab'&&tabs.size)act(()=>{const ids=[...tabs.keys()],index=ids.indexOf(activeId as string);select(ids[(index+(input.shift?ids.length-1:1))%ids.length]!);});
-    else if(key==='r')act(()=>input.shift?page.view.webContents.reloadIgnoringCache():page.view.webContents.reload());
-    // Ctrl+Shift+F is full view (the window toggles it when the count changes), not find.
-    else if(key==='f'&&input.shift)act(()=>{fullView++;emit();});
-    else if(key==='f')act(()=>openFind(page));
-    else if(key==='='||key==='+')act(()=>zoom(page,'in'));
-    else if(key==='-')act(()=>zoom(page,'out'));
-    else if(key==='0')act(()=>zoom(page,'reset'));
-    else if(key==='p')act(()=>page.view.webContents.print({}));
+  function zoom(tab: Tab, direction: string) {
+    const wc = tab.view.webContents;
+    wc.setZoomFactor(zoomStep(wc.getZoomFactor(), direction)!);
+    emit();
   }
-  const rootKeyboard=(event: ElectronEvent,input: Input)=>keyboard(event,input);
-  const resetLayout=(_event: ElectronEvent,_url: string,inPlace: boolean,isMainFrame: boolean)=>{if(isMainFrame&&!inPlace){bounds=null;place();}};
-  function detach(){if(!host.isDestroyed()){host.webContents.removeListener('before-input-event',rootKeyboard);host.webContents.removeListener('did-start-navigation',resetLayout);}host.removeListener('resize',place);}
-  function attach(){host.webContents.on('before-input-event',rootKeyboard);host.webContents.on('did-start-navigation',resetLayout);host.on('resize',place);}
+  function openFind(tab: Tab) {
+    tab.find.open = true;
+    tab.find.focus++;
+    emit();
+    host.webContents.focus();
+  }
+  function keyboard(event: ElectronEvent, input: Input, tab: Tab | null = null) {
+    // Only the shown page has the person's keyboard; keys on a background page are the agent's.
+    if (input.type !== "keyDown" || !visible || !presented || (tab && tab.id !== activeId)) return;
+    const key = input.key.toLowerCase(),
+      primary = (input.control || input.meta) && !input.alt;
+    const page = tab ?? null,
+      act = (fn: () => void) => {
+        event.preventDefault();
+        fn();
+      };
+    if (page && input.alt && !input.control && !input.meta && (key === "arrowleft" || key === "arrowright"))
+      return act(() => {
+        const history = page.view.webContents.navigationHistory;
+        if (key === "arrowleft" && history.canGoBack()) history.goBack();
+        else if (key === "arrowright" && history.canGoForward()) history.goForward();
+      });
+    if (page && key === "f5")
+      return act(() => (input.shift ? page.view.webContents.reloadIgnoringCache() : page.view.webContents.reload()));
+    if (!primary) return;
+    if (key === "l") act(focusInput);
+    // In Elpis's own window Ctrl+T, Ctrl+W and Ctrl+Tab belong to the chat tabs (the renderer); a page that has the focus keeps them for the side panel's page tabs.
+    else if (!page) return;
+    else if (key === "t")
+      act(() => {
+        try {
+          open();
+        } catch {}
+      });
+    else if (key === "w") act(() => close(activeId));
+    else if (key === "tab" && tabs.size)
+      act(() => {
+        const ids = [...tabs.keys()],
+          index = ids.indexOf(activeId as string);
+        select(ids[(index + (input.shift ? ids.length - 1 : 1)) % ids.length]!);
+      });
+    else if (key === "r")
+      act(() => (input.shift ? page.view.webContents.reloadIgnoringCache() : page.view.webContents.reload()));
+    // Ctrl+Shift+F is full view (the window toggles it when the count changes), not find.
+    else if (key === "f" && input.shift)
+      act(() => {
+        fullView++;
+        emit();
+      });
+    else if (key === "f") act(() => openFind(page));
+    else if (key === "=" || key === "+") act(() => zoom(page, "in"));
+    else if (key === "-") act(() => zoom(page, "out"));
+    else if (key === "0") act(() => zoom(page, "reset"));
+    else if (key === "p") act(() => page.view.webContents.print({}));
+  }
+  const rootKeyboard = (event: ElectronEvent, input: Input) => keyboard(event, input);
+  const resetLayout = (_event: ElectronEvent, _url: string, inPlace: boolean, isMainFrame: boolean) => {
+    if (isMainFrame && !inPlace) {
+      bounds = null;
+      place();
+    }
+  };
+  function detach() {
+    if (!host.isDestroyed()) {
+      host.webContents.removeListener("before-input-event", rootKeyboard);
+      host.webContents.removeListener("did-start-navigation", resetLayout);
+    }
+    host.removeListener("resize", place);
+  }
+  function attach() {
+    host.webContents.on("before-input-event", rootKeyboard);
+    host.webContents.on("did-start-navigation", resetLayout);
+    host.on("resize", place);
+  }
   attach();
-  const trusted=(event: IpcMainEvent | IpcMainInvokeEvent)=>{if(!trustedBrowserSender(event,host.webContents,origin))throw Error('Browser controls are available only to Elpis.');};
-  const text=(value: unknown,limit: number,label: string)=>{if(typeof value!=='string'||value.length>limit)throw Error(`Invalid ${label}.`);return value;};
-  async function run(input: Command){
-    const tab=tabs.get((input.id??activeId) as string),current=active();
-    const need=()=>{if(!current)throw Error('Open a browser tab first.');return current;};
-    switch(input.action){
-      case 'state':break;
-      case 'agentStop':agent.stop();break;
-      case 'agentAllow':agent.allow();break;
-      case 'toggle':if(!tabs.size)open();else{visible=!visible;place();emit();}break;
-      case 'hide':visible=false;place();emit();break;
-      case 'new':if(input.id&&!tab)throw Error('This browser tab is closed.');open(input.url,{after:input.id??null});break;
-      case 'select':select(input.id);break;
-      case 'close':close(input.id);break;
-      case 'navigate':if(!tab)throw Error('Open a browser tab first.');navigate(tab,input.url);break;
-      case 'back':if(tab?.view.webContents.navigationHistory.canGoBack())tab.view.webContents.navigationHistory.goBack();break;
-      case 'forward':if(tab?.view.webContents.navigationHistory.canGoForward())tab.view.webContents.navigationHistory.goForward();break;
-      case 'reload':tab?.view.webContents.reload();break;
-      case 'hardReload':tab?.view.webContents.reloadIgnoringCache();break;
-      case 'stop':if(tab){tab.navigation++;tab.view.webContents.stop();}break;
-      case 'external-url':{
-        const url=browserUrl(input.url,origin),target=new URL(url);
-        // Sign-in pages only: Claude's, OpenAI's, and CloudRoom's desktop sign-in (1 Nov, bridge/cloudroom-vm.mts).
-        const claude=['claude.com','claude.ai','console.anthropic.com','platform.claude.com'].includes(target.hostname)&&target.pathname.includes('oauth/authorize');
-        const openai=['auth.openai.com','chatgpt.com','login.openai.com'].includes(target.hostname);
-        const cloudroom=target.hostname==='www.cloudroom.dev'&&target.pathname==='/desktop';
-        if(target.protocol!=='https:'||!(claude||openai||cloudroom)||!openExternal)throw Error('Choose a Claude, OpenAI, or CloudRoom sign-in page.');
-        await openExternal(url);break;
-      }
-      case 'external':if(tab&&/^https?:/.test(tab.url)&&openExternal)void openExternal(tab.url);break;
-      case 'duplicate':if(tab)open(tab.url,{after:tab.id});break;
-      case 'rename':if(!tab)throw Error('This browser tab is closed.');tab.customTitle=text(input.text,200,'tab name').trim()||null;emit();break;
-      case 'mute':if(!tab)throw Error('This browser tab is closed.');if(typeof input.value!=='boolean')throw Error('Invalid audio setting.');tab.view.webContents.setAudioMuted(input.value);emit();break;
-      case 'copyUrl':if(tab&&/^https?:/.test(tab.url))clipboard?.writeText(tab.url);break;
-      case 'annotate':setAnnotating(input.value===undefined?!annotating:input.value===true);break;
-      case 'comment':{
-        const page=need(),body=text(input.body,8000,'comment').trim();
-        if(!page.draft)throw Error('Select something on the page first.');
-        if(!body)throw Error('Write a comment first.');
-        if(page.draft.editing){const item=page.comments.find(comment=>comment.id===page.draft!.editing);if(item)item.body=body;}
-        else page.comments.push({...page.draft,number:page.comments.length+1,body,editing:null});
-        page.draft=null;syncPage(page);emit();break;
-      }
-      case 'commentEdit':editComment(need(),text(input.id,100,'comment'));break;
-      case 'commentDelete':{const page=need();page.comments=page.comments.filter(item=>item.id!==input.id);if(page.draft?.editing===input.id)page.draft=null;renumber(page);syncPage(page);emit();break;}
-      case 'commentCancel':{const page=need();page.draft=null;syncPage(page);emit();break;}
-      case 'markers':markersVisible=!markersVisible;syncPage(current);emit();break;
-      case 'annotationsDiscard':{const page=need();page.comments=[];page.draft=null;syncPage(page);emit();break;}
-      case 'annotationsCollect':return {...snapshot(),result:collect(need(),input.value==='images')};
-      case 'annotationsSent':{const page=need();page.comments=[];page.draft=null;annotating=false;syncPage(page);emit();break;}
-      case 'zoom':if(!['in','out','reset'].includes(input.value as string))throw Error('Invalid zoom.');zoom(need(),input.value as string);break;
-      case 'findOpen':openFind(need());break;
-      case 'find':{
-        const page=need(),query=text(input.text,500,'search');
-        const again=page.find.text===query;page.find={...page.find,open:true,text:query};
-        // Electron's findNext starts a new search session: true for new text, false to step through matches.
-        if(query)page.view.webContents.findInPage(query,{forward:input.value!=='previous',findNext:!again});
-        else{page.view.webContents.stopFindInPage('clearSelection');page.find.matches=0;page.find.active=0;}
-        emit();break;
-      }
-      case 'findClose':{const page=need();page.view.webContents.stopFindInPage('keepSelection');page.find={...page.find,open:false,matches:0,active:0};emit();break;}
-      case 'print':need().view.webContents.print({});break;
-      case 'devtools':{const wc=need().view.webContents;if(wc.isDevToolsOpened?.())wc.closeDevTools?.();else wc.openDevTools({mode:'detach'});break;}
-      case 'screenshot':{
-        const page=need(),image=await page.view.webContents.capturePage();
-        if(input.value==='copy'){clipboard?.writeImage(image);return {...snapshot(),result:{copied:true}};}
-        return {...snapshot(),result:{image:await capture(page)}};
-      }
-      case 'clearData':
-        if(input.value==='cookies')await browserSession.clearStorageData({storages:['cookies']});
-        else if(input.value==='cache')await browserSession.clearCache();
-        else throw Error('Choose cookies or cache.');
+  const trusted = (event: IpcMainEvent | IpcMainInvokeEvent) => {
+    if (!trustedBrowserSender(event, host.webContents, origin))
+      throw Error("Browser controls are available only to Elpis.");
+  };
+  const text = (value: unknown, limit: number, label: string) => {
+    if (typeof value !== "string" || value.length > limit) throw Error(`Invalid ${label}.`);
+    return value;
+  };
+  async function run(input: Command) {
+    const tab = tabs.get((input.id ?? activeId) as string),
+      current = active();
+    const need = () => {
+      if (!current) throw Error("Open a browser tab first.");
+      return current;
+    };
+    switch (input.action) {
+      case "state":
         break;
-      default:throw Error('Unknown browser command.');
+      case "agentStop":
+        agent.stop();
+        break;
+      case "agentAllow":
+        agent.allow();
+        break;
+      case "toggle":
+        if (!tabs.size) open();
+        else {
+          visible = !visible;
+          place();
+          emit();
+        }
+        break;
+      case "hide":
+        visible = false;
+        place();
+        emit();
+        break;
+      case "new":
+        if (input.id && !tab) throw Error("This browser tab is closed.");
+        open(input.url, { after: input.id ?? null });
+        break;
+      case "select":
+        select(input.id);
+        break;
+      case "close":
+        close(input.id);
+        break;
+      case "navigate":
+        if (!tab) throw Error("Open a browser tab first.");
+        navigate(tab, input.url);
+        break;
+      case "back":
+        if (tab?.view.webContents.navigationHistory.canGoBack()) tab.view.webContents.navigationHistory.goBack();
+        break;
+      case "forward":
+        if (tab?.view.webContents.navigationHistory.canGoForward()) tab.view.webContents.navigationHistory.goForward();
+        break;
+      case "reload":
+        tab?.view.webContents.reload();
+        break;
+      case "hardReload":
+        tab?.view.webContents.reloadIgnoringCache();
+        break;
+      case "stop":
+        if (tab) {
+          tab.navigation++;
+          tab.view.webContents.stop();
+        }
+        break;
+      case "external-url": {
+        const url = browserUrl(input.url, origin),
+          target = new URL(url);
+        // Sign-in pages only: Claude's, OpenAI's, and CloudRoom's desktop sign-in (1 Nov, bridge/cloudroom-vm.mts).
+        const claude =
+          ["claude.com", "claude.ai", "console.anthropic.com", "platform.claude.com"].includes(target.hostname) &&
+          target.pathname.includes("oauth/authorize");
+        const openai = ["auth.openai.com", "chatgpt.com", "login.openai.com"].includes(target.hostname);
+        const cloudroom = target.hostname === "www.cloudroom.dev" && target.pathname === "/desktop";
+        if (target.protocol !== "https:" || !(claude || openai || cloudroom) || !openExternal)
+          throw Error("Choose a Claude, OpenAI, or CloudRoom sign-in page.");
+        await openExternal(url);
+        break;
+      }
+      case "external":
+        if (tab && /^https?:/.test(tab.url) && openExternal) void openExternal(tab.url);
+        break;
+      case "duplicate":
+        if (tab) open(tab.url, { after: tab.id });
+        break;
+      case "rename":
+        if (!tab) throw Error("This browser tab is closed.");
+        tab.customTitle = text(input.text, 200, "tab name").trim() || null;
+        emit();
+        break;
+      case "mute":
+        if (!tab) throw Error("This browser tab is closed.");
+        if (typeof input.value !== "boolean") throw Error("Invalid audio setting.");
+        tab.view.webContents.setAudioMuted(input.value);
+        emit();
+        break;
+      case "copyUrl":
+        if (tab && /^https?:/.test(tab.url)) clipboard?.writeText(tab.url);
+        break;
+      case "annotate":
+        setAnnotating(input.value === undefined ? !annotating : input.value === true);
+        break;
+      case "comment": {
+        const page = need(),
+          body = text(input.body, 8000, "comment").trim();
+        if (!page.draft) throw Error("Select something on the page first.");
+        if (!body) throw Error("Write a comment first.");
+        if (page.draft.editing) {
+          const item = page.comments.find(comment => comment.id === page.draft!.editing);
+          if (item) item.body = body;
+        } else page.comments.push({ ...page.draft, number: page.comments.length + 1, body, editing: null });
+        page.draft = null;
+        syncPage(page);
+        emit();
+        break;
+      }
+      case "commentEdit":
+        editComment(need(), text(input.id, 100, "comment"));
+        break;
+      case "commentDelete": {
+        const page = need();
+        page.comments = page.comments.filter(item => item.id !== input.id);
+        if (page.draft?.editing === input.id) page.draft = null;
+        renumber(page);
+        syncPage(page);
+        emit();
+        break;
+      }
+      case "commentCancel": {
+        const page = need();
+        page.draft = null;
+        syncPage(page);
+        emit();
+        break;
+      }
+      case "markers":
+        markersVisible = !markersVisible;
+        syncPage(current);
+        emit();
+        break;
+      case "annotationsDiscard": {
+        const page = need();
+        page.comments = [];
+        page.draft = null;
+        syncPage(page);
+        emit();
+        break;
+      }
+      case "annotationsCollect":
+        return { ...snapshot(), result: collect(need(), input.value === "images") };
+      case "annotationsSent": {
+        const page = need();
+        page.comments = [];
+        page.draft = null;
+        annotating = false;
+        syncPage(page);
+        emit();
+        break;
+      }
+      case "zoom":
+        if (!["in", "out", "reset"].includes(input.value as string)) throw Error("Invalid zoom.");
+        zoom(need(), input.value as string);
+        break;
+      case "findOpen":
+        openFind(need());
+        break;
+      case "find": {
+        const page = need(),
+          query = text(input.text, 500, "search");
+        const again = page.find.text === query;
+        page.find = { ...page.find, open: true, text: query };
+        // Electron's findNext starts a new search session: true for new text, false to step through matches.
+        if (query) page.view.webContents.findInPage(query, { forward: input.value !== "previous", findNext: !again });
+        else {
+          page.view.webContents.stopFindInPage("clearSelection");
+          page.find.matches = 0;
+          page.find.active = 0;
+        }
+        emit();
+        break;
+      }
+      case "findClose": {
+        const page = need();
+        page.view.webContents.stopFindInPage("keepSelection");
+        page.find = { ...page.find, open: false, matches: 0, active: 0 };
+        emit();
+        break;
+      }
+      case "print":
+        need().view.webContents.print({});
+        break;
+      case "devtools": {
+        const wc = need().view.webContents;
+        if (wc.isDevToolsOpened?.()) wc.closeDevTools?.();
+        else wc.openDevTools({ mode: "detach" });
+        break;
+      }
+      case "screenshot": {
+        const page = need(),
+          image = await page.view.webContents.capturePage();
+        if (input.value === "copy") {
+          clipboard?.writeImage(image);
+          return { ...snapshot(), result: { copied: true } };
+        }
+        return { ...snapshot(), result: { image: await capture(page) } };
+      }
+      case "clearData":
+        if (input.value === "cookies") await browserSession.clearStorageData({ storages: ["cookies"] });
+        else if (input.value === "cache") await browserSession.clearCache();
+        else throw Error("Choose cookies or cache.");
+        break;
+      default:
+        throw Error("Unknown browser command.");
     }
     return snapshot();
   }
-  ipcMain.handle('elpis:browser',async(event,input)=>{
+  ipcMain.handle("elpis:browser", async (event, input) => {
     try {
       trusted(event);
-      if(!input||typeof input!=='object'||Object.keys(input).some(key=>!COMMANDS.includes(key)))throw Error('Invalid browser command.');
+      if (!input || typeof input !== "object" || Object.keys(input).some(key => !COMMANDS.includes(key)))
+        throw Error("Invalid browser command.");
       return await run(input);
-    } catch(error) { return {error:(error as Error).message||'The browser is unavailable. Try opening it again.'}; }
+    } catch (error) {
+      return { error: (error as Error).message || "The browser is unavailable. Try opening it again." };
+    }
   });
-  const layout=(event: IpcMainEvent,input: { bounds: Rectangle; obscured: boolean })=>{
-    try{
-      trusted(event);if(!input||typeof input.obscured!=='boolean')return;
-      nativeBounds(input.bounds,1,host.getContentBounds());bounds=input.bounds;obscured=input.obscured;place();
-    }catch{ /* Ignore malformed or untrusted layout messages. */ }
+  const layout = (event: IpcMainEvent, input: { bounds: Rectangle; obscured: boolean }) => {
+    try {
+      trusted(event);
+      if (!input || typeof input.obscured !== "boolean") return;
+      nativeBounds(input.bounds, 1, host.getContentBounds());
+      bounds = input.bounds;
+      obscured = input.obscured;
+      place();
+    } catch {
+      /* Ignore malformed or untrusted layout messages. */
+    }
   };
-  ipcMain.on('elpis:browser:layout',layout);
-  ipcMain.on('elpis:browser:page',pageMessage);
-  return {open,agent,setBackground,snapshot,
-    present(value: boolean,nextHost=host){
-      if(value&&(!presented||nextHost!==host))presentation++;
-      if(nextHost!==host){
-        detach();for(const tab of tabs.values()){if(!host.isDestroyed())host.contentView.removeChildView(tab.view);nextHost.contentView.addChildView(tab.view);}
-        host=nextHost;attach();bounds=null;
+  ipcMain.on("elpis:browser:layout", layout);
+  ipcMain.on("elpis:browser:page", pageMessage);
+  return {
+    open,
+    agent,
+    setBackground,
+    snapshot,
+    present(value: boolean, nextHost = host) {
+      if (value && (!presented || nextHost !== host)) presentation++;
+      if (nextHost !== host) {
+        detach();
+        for (const tab of tabs.values()) {
+          if (!host.isDestroyed()) host.contentView.removeChildView(tab.view);
+          nextHost.contentView.addChildView(tab.view);
+        }
+        host = nextHost;
+        attach();
+        bounds = null;
       }
-      presented=value;if(!value){bounds=null;obscured=true;}place();if(value)emit();
+      presented = value;
+      if (!value) {
+        bounds = null;
+        obscured = true;
+      }
+      place();
+      if (value) emit();
     },
-    saved(){return {visible,activeId,tabs:[...tabs.values()].map(tab=>({id:tab.id,url:tab.url,title:tab.title,customTitle:tab.customTitle,agent:tab.agent,muted:tab.view.webContents.isAudioMuted?.()??false,zoom:tab.view.webContents.getZoomFactor(),
-      history:tab.pendingHistory?.entries??tab.view.webContents.navigationHistory.getAllEntries?.(),historyIndex:tab.pendingHistory?.index??tab.view.webContents.navigationHistory.getActiveIndex?.()}))};},
-    async restore(saved: Saved){
-      if(!saved||!Array.isArray(saved.tabs))return;
-      const preparations: Promise<void>[]=[];
-      for(const item of saved.tabs.slice(0,20)){
-        try{
-          const history=Array.isArray(item.history)&&item.history.length&&Number.isInteger(item.historyIndex)&&item.historyIndex>=0&&item.historyIndex<item.history.length
-            ?item.history.map(entry=>({...entry,url:browserUrl(entry.url,origin)})):null;
-          const pending=history?{entries:history,index:item.historyIndex}:null;
-          const id=open(item.url,{id:item.id,restoring:pending,agent:item.agent===true}),tab=tabs.get(id)!,wc=tab.view.webContents;
-          if(typeof item.title==='string')tab.title=item.title.slice(0,200);
-          if(typeof item.customTitle==='string')tab.customTitle=item.customTitle.trim().slice(0,200)||null;
-          if(item.muted===true)wc.setAudioMuted(true);
-          if(Number.isFinite(item.zoom)&&item.zoom>=0.25&&item.zoom<=5)wc.setZoomFactor(item.zoom);
+    saved() {
+      return {
+        visible,
+        activeId,
+        tabs: [...tabs.values()].map(tab => ({
+          id: tab.id,
+          url: tab.url,
+          title: tab.title,
+          customTitle: tab.customTitle,
+          agent: tab.agent,
+          muted: tab.view.webContents.isAudioMuted?.() ?? false,
+          zoom: tab.view.webContents.getZoomFactor(),
+          history: tab.pendingHistory?.entries ?? tab.view.webContents.navigationHistory.getAllEntries?.(),
+          historyIndex: tab.pendingHistory?.index ?? tab.view.webContents.navigationHistory.getActiveIndex?.(),
+        })),
+      };
+    },
+    async restore(saved: Saved) {
+      if (!saved || !Array.isArray(saved.tabs)) return;
+      const preparations: Promise<void>[] = [];
+      for (const item of saved.tabs.slice(0, 20)) {
+        try {
+          const history =
+            Array.isArray(item.history) &&
+            item.history.length &&
+            Number.isInteger(item.historyIndex) &&
+            item.historyIndex >= 0 &&
+            item.historyIndex < item.history.length
+              ? item.history.map(entry => ({ ...entry, url: browserUrl(entry.url, origin) }))
+              : null;
+          const pending = history ? { entries: history, index: item.historyIndex } : null;
+          const id = open(item.url, { id: item.id, restoring: pending, agent: item.agent === true }),
+            tab = tabs.get(id)!,
+            wc = tab.view.webContents;
+          if (typeof item.title === "string") tab.title = item.title.slice(0, 200);
+          if (typeof item.customTitle === "string") tab.customTitle = item.customTitle.trim().slice(0, 200) || null;
+          if (item.muted === true) wc.setAudioMuted(true);
+          if (Number.isFinite(item.zoom) && item.zoom >= 0.25 && item.zoom <= 5) wc.setZoomFactor(item.zoom);
           // Start the saved entry after identity setup; do not wait for the remote site to switch chats.
-          if(pending){
-            preparations.push(tab.identityReady.then(()=>{
-              if(!disposed&&tabs.has(id)&&!wc.isDestroyed()&&tab.navigation===0){
-                wc.navigationHistory.goToIndex(pending.index);
-              }
-            }).catch(()=>{}));
+          if (pending) {
+            preparations.push(
+              tab.identityReady
+                .then(() => {
+                  if (!disposed && tabs.has(id) && !wc.isDestroyed() && tab.navigation === 0) {
+                    wc.navigationHistory.goToIndex(pending.index);
+                  }
+                })
+                .catch(() => {}),
+            );
           }
-        }catch{ /* An unavailable or previously blocked address must not expose another session. */ }
+        } catch {
+          /* An unavailable or previously blocked address must not expose another session. */
+        }
       }
-      if(tabs.has(saved.activeId))activeId=saved.activeId;
-      visible=saved.visible===true&&tabs.size>0;place();emit();
+      if (tabs.has(saved.activeId)) activeId = saved.activeId;
+      visible = saved.visible === true && tabs.size > 0;
+      place();
+      emit();
       await Promise.all(preparations);
-    },dispose(){
-    agent.dispose();
-    disposed=true;ipcMain.removeHandler('elpis:browser');ipcMain.removeListener('elpis:browser:layout',layout);ipcMain.removeListener('elpis:browser:page',pageMessage);
-    detach();
-    for(const tab of tabs.values()){if(!host.isDestroyed())host.contentView.removeChildView(tab.view);if(!tab.view.webContents.isDestroyed())tab.view.webContents.close({waitForBeforeUnload:false});}tabs.clear();
-  }};
+    },
+    dispose() {
+      agent.dispose();
+      disposed = true;
+      ipcMain.removeHandler("elpis:browser");
+      ipcMain.removeListener("elpis:browser:layout", layout);
+      ipcMain.removeListener("elpis:browser:page", pageMessage);
+      detach();
+      for (const tab of tabs.values()) {
+        if (!host.isDestroyed()) host.contentView.removeChildView(tab.view);
+        if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close({ waitForBeforeUnload: false });
+      }
+      tabs.clear();
+    },
+  };
 }
 export declare const createBrowser: (options: unknown) => ReturnType<typeof createBrowserImpl>;
-module.exports={createBrowser:createBrowserImpl};
+module.exports = { createBrowser: createBrowserImpl };

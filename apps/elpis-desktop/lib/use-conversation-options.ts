@@ -14,6 +14,26 @@ export function useConversationOptions() {
   const [newPlan, setNewPlan] = useState(false);
   const [planAnswered, setPlanAnswered] = useState<Record<string, string>>({});
   const [newMode, setNewMode] = useState<PermissionMode | null>(null);
-  return { choiceId, setChoiceId, model, setModel, effort, setEffort, nextTurn, setNextTurn, threadModes, setThreadModes,
-    changingPermissions, setChangingPermissions, threadPlans, setThreadPlans, newPlan, setNewPlan, planAnswered, setPlanAnswered, newMode, setNewMode };
+  return {
+    choiceId,
+    setChoiceId,
+    model,
+    setModel,
+    effort,
+    setEffort,
+    nextTurn,
+    setNextTurn,
+    threadModes,
+    setThreadModes,
+    changingPermissions,
+    setChangingPermissions,
+    threadPlans,
+    setThreadPlans,
+    newPlan,
+    setNewPlan,
+    planAnswered,
+    setPlanAnswered,
+    newMode,
+    setNewMode,
+  };
 }

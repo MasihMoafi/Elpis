@@ -5,11 +5,22 @@ import type { useConversationSession } from "@/lib/use-conversation-session";
 import type { useTurnReplacementView } from "@/lib/use-turn-replacement-view";
 
 type Inputs = {
-  composer: ReturnType<typeof useComposerState>; session: ReturnType<typeof useConversationSession>; replacement: ReturnType<typeof useTurnReplacementView>;
-  editDraft: (value: string) => void; setMessageEdits: Dispatch<SetStateAction<Record<string, string>>>; setSlashNotice: Dispatch<SetStateAction<string>>;
+  composer: ReturnType<typeof useComposerState>;
+  session: ReturnType<typeof useConversationSession>;
+  replacement: ReturnType<typeof useTurnReplacementView>;
+  editDraft: (value: string) => void;
+  setMessageEdits: Dispatch<SetStateAction<Record<string, string>>>;
+  setSlashNotice: Dispatch<SetStateAction<string>>;
 };
 
-export function createPromptEditing({ composer, session, replacement, editDraft, setMessageEdits, setSlashNotice }: Inputs) {
+export function createPromptEditing({
+  composer,
+  session,
+  replacement,
+  editDraft,
+  setMessageEdits,
+  setSlashNotice,
+}: Inputs) {
   const { composerRef } = composer;
   const { selected, entries } = session;
   const { replaceable, replacementOptions } = replacement;
@@ -22,10 +33,17 @@ export function createPromptEditing({ composer, session, replacement, editDraft,
   /** Esc Esc in an empty box opens the newest message you sent for editing, as in Claude; one that cannot be replaced says why. */
   function editLastMessage() {
     if (!replaceable || !selected) return;
-    const last = entries.filter(entry => entry.item.type === "userMessage").at(-1); if (!last) return;
+    const last = entries.filter(entry => entry.item.type === "userMessage").at(-1);
+    if (!last) return;
     const option = replacementOptions.get(last.turnId);
-    if (!option?.allowed) { if (option) setSlashNotice(option.reason); return; }
-    setMessageEdits(previous => ({ ...previous, [JSON.stringify([selected.id, last.turnId, option.messageId])]: option.prompt }));
+    if (!option?.allowed) {
+      if (option) setSlashNotice(option.reason);
+      return;
+    }
+    setMessageEdits(previous => ({
+      ...previous,
+      [JSON.stringify([selected.id, last.turnId, option.messageId])]: option.prompt,
+    }));
   }
   return { writePrompt, editLastMessage };
 }

@@ -13,6 +13,25 @@ export function useComposerState() {
   const filePickerRef = useRef<HTMLInputElement>(null);
   const [dictating, setDictating] = useState(false);
   const [voiceBusy, setVoiceBusy] = useState(false);
-  const setText = useCallback((value: string) => { textRef.current = value; setTextState(value); }, []);
-  return { text, setText, shellMode, setShellMode, shellCreated, textRef, composerRef, caret, setCaret, pickedMentions, filePickerRef, dictating, setDictating, voiceBusy, setVoiceBusy };
+  const setText = useCallback((value: string) => {
+    textRef.current = value;
+    setTextState(value);
+  }, []);
+  return {
+    text,
+    setText,
+    shellMode,
+    setShellMode,
+    shellCreated,
+    textRef,
+    composerRef,
+    caret,
+    setCaret,
+    pickedMentions,
+    filePickerRef,
+    dictating,
+    setDictating,
+    voiceBusy,
+    setVoiceBusy,
+  };
 }

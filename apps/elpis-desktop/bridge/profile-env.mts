@@ -1,6 +1,6 @@
-import path from 'node:path';
+import path from "node:path";
 
-export const BRIDGE_ENDPOINT_KEYS = ['ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL'];
+export const BRIDGE_ENDPOINT_KEYS = ["ELPIS_APP_BRIDGE_SOCKET", "ELPIS_BRIDGE_SOCKET", "ELPIS_BRIDGE_URL"];
 
 /** An explicit profile owns its agents' default endpoint; intentional overrides remain explicit. */
 export function profileEnvironment(home?: string, overrides: NodeJS.ProcessEnv = {}) {

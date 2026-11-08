@@ -14,7 +14,12 @@ export function useComposerHeight(ref: RefObject<HTMLTextAreaElement | null>, de
     };
     fit();
     let width = box.clientWidth;
-    const observer = new ResizeObserver(() => { if (box.clientWidth !== width) { width = box.clientWidth; fit(); } });
+    const observer = new ResizeObserver(() => {
+      if (box.clientWidth !== width) {
+        width = box.clientWidth;
+        fit();
+      }
+    });
     observer.observe(box);
     return () => observer.disconnect();
   }, deps); // the caller names what refits it

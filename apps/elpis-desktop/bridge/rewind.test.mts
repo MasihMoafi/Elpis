@@ -1,53 +1,96 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
-import { DesktopClient } from './client.mts';
+import test from "node:test";
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { DesktopClient } from "./client.mts";
 
 type SentMessage = { id?: number; method: string; params: Record<string, unknown> };
 type MockSocket = EventEmitter & { sent: SentMessage[]; close: () => void; send: (raw: string) => void };
 
-const ID = '00000000-0000-0000-0000-000000000002';
-function fixture(mode = 'direct', status = 'idle') {
+const ID = "00000000-0000-0000-0000-000000000002";
+function fixture(mode = "direct", status = "idle") {
   const socket = Object.assign(new EventEmitter(), {
     sent: [] as SentMessage[],
-    close: (): void => { socket.emit('close'); },
+    close: (): void => {
+      socket.emit("close");
+    },
     send: (raw: string): void => {
-      const row = JSON.parse(raw) as SentMessage; socket.sent.push(row); if (!row.id) return;
-      const thread = { id: ID, source: 'cli', modelProvider: 'openai', status: { type: status }, canAcceptDirectInput: mode === 'direct' };
-      const result = row.method === 'thread/read' || row.method === 'thread/resume' ? { thread } : {};
-      queueMicrotask(() => socket.emit('message', JSON.stringify({ id: row.id, result })));
-    }
+      const row = JSON.parse(raw) as SentMessage;
+      socket.sent.push(row);
+      if (!row.id) return;
+      const thread = {
+        id: ID,
+        source: "cli",
+        modelProvider: "openai",
+        status: { type: status },
+        canAcceptDirectInput: mode === "direct",
+      };
+      const result = row.method === "thread/read" || row.method === "thread/resume" ? { thread } : {};
+      queueMicrotask(() => socket.emit("message", JSON.stringify({ id: row.id, result })));
+    },
   });
   return { socket, client: new DesktopClient(socket) };
 }
-const methods = (socket: MockSocket) => socket.sent.map(row => row.method).filter(method => ['thread/revert', 'turn/start', 'thread/items/list'].includes(method));
+const methods = (socket: MockSocket) =>
+  socket.sent
+    .map(row => row.method)
+    .filter(method => ["thread/revert", "turn/start", "thread/items/list"].includes(method));
 
-test('a revert without text only rewinds: thread/revert, no verification of the input and no new turn', async t => {
-  const { socket, client } = fixture(); t.after(() => client.close()); await client.initialize();
-  assert.deepEqual(await client.revert(ID, { beforeTurnId: 'turn-3' }), { rewound: true, beforeTurnId: 'turn-3' });
-  assert.deepEqual(methods(socket), ['thread/revert']);
-  assert.deepEqual(socket.sent.find(row => row.method === 'thread/revert')?.params, { threadId: ID, beforeTurnId: 'turn-3' });
+test("a revert without text only rewinds: thread/revert, no verification of the input and no new turn", async t => {
+  const { socket, client } = fixture();
+  t.after(() => client.close());
+  await client.initialize();
+  assert.deepEqual(await client.revert(ID, { beforeTurnId: "turn-3" }), { rewound: true, beforeTurnId: "turn-3" });
+  assert.deepEqual(methods(socket), ["thread/revert"]);
+  assert.deepEqual(socket.sent.find(row => row.method === "thread/revert")?.params, {
+    threadId: ID,
+    beforeTurnId: "turn-3",
+  });
 });
 
-test('a rewind obeys the replacement rules: not while a turn runs and never for an agent its parent owns', async t => {
-  const direct = fixture(); t.after(() => direct.client.close()); await direct.client.initialize();
-  await assert.rejects(direct.client.revert(ID, { beforeTurnId: 'turn-3', model: 'x' }), /text|message/i);
-  const owned = fixture('continue'); t.after(() => owned.client.close()); await owned.client.initialize();
-  await assert.rejects(owned.client.revert(ID, { beforeTurnId: 'turn-3' }), /only from its parent/);
+test("a rewind obeys the replacement rules: not while a turn runs and never for an agent its parent owns", async t => {
+  const direct = fixture();
+  t.after(() => direct.client.close());
+  await direct.client.initialize();
+  await assert.rejects(direct.client.revert(ID, { beforeTurnId: "turn-3", model: "x" }), /text|message/i);
+  const owned = fixture("continue");
+  t.after(() => owned.client.close());
+  await owned.client.initialize();
+  await assert.rejects(owned.client.revert(ID, { beforeTurnId: "turn-3" }), /only from its parent/);
   assert.deepEqual(methods(owned.socket), []);
 });
 
-test('restore scopes fail closed for missing file checkpoints, invalid modes and parent-owned agents', async t => {
-  const direct = fixture(); t.after(() => direct.client.close()); await direct.client.initialize();
-  const preview = await direct.client.rewind(ID, { action: 'preview', beforeTurnId: 'turn-3' });
-  assert.ok(preview && 'available' in preview);
+test("restore scopes fail closed for missing file checkpoints, invalid modes and parent-owned agents", async t => {
+  const direct = fixture();
+  t.after(() => direct.client.close());
+  await direct.client.initialize();
+  const preview = await direct.client.rewind(ID, { action: "preview", beforeTurnId: "turn-3" });
+  assert.ok(preview && "available" in preview);
   assert.equal(preview.available, false);
-  await assert.rejects(direct.client.rewind(ID, { action: 'restore', beforeTurnId: 'turn-3', mode: 'code' }), /checkpoint|preview/);
-  await assert.rejects(direct.client.rewind(ID, { action: 'restore', beforeTurnId: 'turn-3', mode: 'invalid' }), /what to restore/);
-  await assert.rejects(direct.client.rewind(ID, { action: 'unknown' }), /rewind action/);
-  const owned = fixture('continue'); t.after(() => owned.client.close()); await owned.client.initialize();
-  await assert.rejects(owned.client.rewind(ID, { action: 'restore', beforeTurnId: 'turn-3', mode: 'conversation' }), /parent/);
-  const running = fixture('direct', 'active'); t.after(() => running.client.close()); await running.client.initialize();
-  await assert.rejects(running.client.rewind(ID, { action: 'restore', beforeTurnId: 'turn-3', mode: 'conversation' }), /working/);
-  assert.equal(direct.socket.sent.some(row => ['thread/revert', 'thread/fork', 'turn/start'].includes(row.method)), false);
+  await assert.rejects(
+    direct.client.rewind(ID, { action: "restore", beforeTurnId: "turn-3", mode: "code" }),
+    /checkpoint|preview/,
+  );
+  await assert.rejects(
+    direct.client.rewind(ID, { action: "restore", beforeTurnId: "turn-3", mode: "invalid" }),
+    /what to restore/,
+  );
+  await assert.rejects(direct.client.rewind(ID, { action: "unknown" }), /rewind action/);
+  const owned = fixture("continue");
+  t.after(() => owned.client.close());
+  await owned.client.initialize();
+  await assert.rejects(
+    owned.client.rewind(ID, { action: "restore", beforeTurnId: "turn-3", mode: "conversation" }),
+    /parent/,
+  );
+  const running = fixture("direct", "active");
+  t.after(() => running.client.close());
+  await running.client.initialize();
+  await assert.rejects(
+    running.client.rewind(ID, { action: "restore", beforeTurnId: "turn-3", mode: "conversation" }),
+    /working/,
+  );
+  assert.equal(
+    direct.socket.sent.some(row => ["thread/revert", "thread/fork", "turn/start"].includes(row.method)),
+    false,
+  );
 });

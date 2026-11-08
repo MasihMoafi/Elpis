@@ -1,26 +1,34 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), tests/sources.spec.ts and outbox.spec.ts.
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, writeFileSync, chmodSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { fixture } from '../fixtures/app.mts'
-import { setTimeout as delay } from 'node:timers/promises'
-import { SettingsSchema } from '../policy.mts'
-import { subprocess } from '../subprocess.mts'
-import { githubKind, pollRound } from './github.mts'
-import { KV } from './kv.mts'
-import { GH_UNSET } from '../infra/github-env.mts'
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fixture } from "../fixtures/app.mts";
+import { setTimeout as delay } from "node:timers/promises";
+import { SettingsSchema } from "../policy.mts";
+import { subprocess } from "../subprocess.mts";
+import { githubKind, pollRound } from "./github.mts";
+import { KV } from "./kv.mts";
+import { GH_UNSET } from "../infra/github-env.mts";
 
 /** The executable boundary is fake; Commands, deployment, polling, Engine, native tools and receipts are real. */
-test('saved gh login polls events and subscriptions, replays safely, and reports CI and merge to its owning worker', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'mother-gh-')), state = join(dir, 'state.json'), log = join(dir, 'calls.jsonl')
-  const pathBefore = process.env.PATH
-  const at = new Date(Date.now() + 1000).toISOString()
-  const update = (phase: number) => writeFileSync(state, JSON.stringify({ ...(phase ? JSON.parse(readFileSync(state, 'utf8')) as object : {}), phase, at }))
-  update(0)
-  const program = join(dir, 'gh')
-  writeFileSync(program, `#!${process.execPath}
+test("saved gh login polls events and subscriptions, replays safely, and reports CI and merge to its owning worker", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "mother-gh-")),
+    state = join(dir, "state.json"),
+    log = join(dir, "calls.jsonl");
+  const pathBefore = process.env.PATH;
+  const at = new Date(Date.now() + 1000).toISOString();
+  const update = (phase: number) =>
+    writeFileSync(
+      state,
+      JSON.stringify({ ...(phase ? (JSON.parse(readFileSync(state, "utf8")) as object) : {}), phase, at }),
+    );
+  update(0);
+  const program = join(dir, "gh");
+  writeFileSync(
+    program,
+    `#!${process.execPath}
 const fs = require('node:fs');
 const state = JSON.parse(fs.readFileSync(${JSON.stringify(state)}, 'utf8'));
 const args = process.argv.slice(2), path = (args[1] || '').split('?')[0];
@@ -53,50 +61,98 @@ else throw new Error('Unexpected fake gh request: ' + args.join(' '));
 if (args.includes('--slurp')) value = [value];
 if (args.includes('--include')) process.stdout.write('HTTP/2 200 OK\\netag: "fixture"\\nx-poll-interval: 60\\n\\n');
 process.stdout.write(JSON.stringify(value));
-`)
-  chmodSync(program, 0o755)
-  process.env.PATH = `${dir}:${pathBefore ?? ''}`
-  const h = fixture({ subprocess, settings: () => SettingsSchema.parse({
-    eval: { model: { provider: 'openai', model: 'router' } }, executor: { model: { provider: 'openai', model: 'worker' } },
-    sources: { github: { enabled: true, config: { repository: 'acme/widgets', observeIssues: true, observePulls: true, observeComments: true } } },
-    policy: { sources: { github: { allowed: [{ id: 'bob' }] } } },
-  }) })
+`,
+  );
+  chmodSync(program, 0o755);
+  process.env.PATH = `${dir}:${pathBefore ?? ""}`;
+  const h = fixture({
+    subprocess,
+    settings: () =>
+      SettingsSchema.parse({
+        eval: { model: { provider: "openai", model: "router" } },
+        executor: { model: { provider: "openai", model: "worker" } },
+        sources: {
+          github: {
+            enabled: true,
+            config: { repository: "acme/widgets", observeIssues: true, observePulls: true, observeComments: true },
+          },
+        },
+        policy: { sources: { github: { allowed: [{ id: "bob" }] } } },
+      }),
+  });
   try {
-    await h.app.start()
-    for (let attempt = 0; h.app.health.github?.state !== 'ready' && attempt < 200; attempt++) await delay(10)
-    assert.equal(h.app.health.github?.state, 'ready', h.app.health.github?.detail)
-    assert.equal(h.app.setup.deployment.github.login, 'agent-bot')
-    update(1)
-    const ctx = h.app.context(githubKind)
-    await pollRound(ctx); await h.app.pump()
-    assert.deepEqual(new Set(h.app.store.read.recentTriggers().map(item => item.meta.kind)), new Set(['issue', 'pull', 'conversation', 'inline']))
-    const count = h.app.store.read.recentTriggers().length
-    await pollRound(ctx); await h.app.pump()
-    assert.equal(h.app.store.read.recentTriggers().length, count)
-    assert.ok(h.app.store.get(KV.github.stream('issues'))?.etag)
-    const prTrigger = h.app.store.read.recentTriggers().find(item => item.meta.kind === 'pull')!
-    await h.route(prTrigger.id); await h.app.pump()
-    const ticket = h.app.store.tickets.list()[0]!, worker = h.app.workers.sessions.nativeId(`worker-${ticket.id}`)!
-    await h.call(worker, 'orchestrator_report', { state: 'ready', summary: 'Ready for CI and review', pr_number: 2 })
-    assert.equal(h.app.store.tickets.get(ticket.id)?.ended, undefined)
-    await pollRound(ctx)
-    update(2); await pollRound(ctx); await h.app.pump()
-    assert.ok(h.app.store.read.recentTriggers().some(item => item.meta.kind === 'review' && item.text.includes('APPROVED')))
-    assert.ok(h.app.store.tickets.get(ticket.id)?.inputs.some(input => input.kind === 'trigger' && h.app.store.triggers.get(input.triggerId)?.text.includes('accessibility')))
-    update(3); await pollRound(ctx); await h.app.pump()
-    assert.ok(h.app.store.read.recentTriggers().some(item => item.meta.ci === true && item.text.includes('failed')))
-    assert.match(JSON.stringify(h.server.threads.get(worker)?.turns), /CI failed/)
-    await h.call(worker, 'orchestrator_report', { state: 'ready', summary: 'Handled the follow-up and CI feedback', pr_number: 2 })
-    update(4); await pollRound(ctx); await h.app.pump()
-    assert.equal(h.app.store.tickets.get(ticket.id)?.ended?.outcome, 'merged')
-    const calls = readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as { args: string[]; ambient: string[] })
-    assert.ok(calls.length > 15)
-    assert.ok(calls.every(call => !call.ambient.length), 'Every gh invocation uses saved auth without token/proxy overrides')
-    assert.equal(calls.filter(call => call.args.includes('--method')).length, 1, 'Only one acknowledgement is posted to the local fake gh')
-    assert.ok(calls.some(call => call.args.some(arg => arg.startsWith('If-None-Match:'))))
+    await h.app.start();
+    for (let attempt = 0; h.app.health.github?.state !== "ready" && attempt < 200; attempt++) await delay(10);
+    assert.equal(h.app.health.github?.state, "ready", h.app.health.github?.detail);
+    assert.equal(h.app.setup.deployment.github.login, "agent-bot");
+    update(1);
+    const ctx = h.app.context(githubKind);
+    await pollRound(ctx);
+    await h.app.pump();
+    assert.deepEqual(
+      new Set(h.app.store.read.recentTriggers().map(item => item.meta.kind)),
+      new Set(["issue", "pull", "conversation", "inline"]),
+    );
+    const count = h.app.store.read.recentTriggers().length;
+    await pollRound(ctx);
+    await h.app.pump();
+    assert.equal(h.app.store.read.recentTriggers().length, count);
+    assert.ok(h.app.store.get(KV.github.stream("issues"))?.etag);
+    const prTrigger = h.app.store.read.recentTriggers().find(item => item.meta.kind === "pull")!;
+    await h.route(prTrigger.id);
+    await h.app.pump();
+    const ticket = h.app.store.tickets.list()[0]!,
+      worker = h.app.workers.sessions.nativeId(`worker-${ticket.id}`)!;
+    await h.call(worker, "orchestrator_report", { state: "ready", summary: "Ready for CI and review", pr_number: 2 });
+    assert.equal(h.app.store.tickets.get(ticket.id)?.ended, undefined);
+    await pollRound(ctx);
+    update(2);
+    await pollRound(ctx);
+    await h.app.pump();
+    assert.ok(
+      h.app.store.read.recentTriggers().some(item => item.meta.kind === "review" && item.text.includes("APPROVED")),
+    );
+    assert.ok(
+      h.app.store.tickets
+        .get(ticket.id)
+        ?.inputs.some(
+          input =>
+            input.kind === "trigger" && h.app.store.triggers.get(input.triggerId)?.text.includes("accessibility"),
+        ),
+    );
+    update(3);
+    await pollRound(ctx);
+    await h.app.pump();
+    assert.ok(h.app.store.read.recentTriggers().some(item => item.meta.ci === true && item.text.includes("failed")));
+    assert.match(JSON.stringify(h.server.threads.get(worker)?.turns), /CI failed/);
+    await h.call(worker, "orchestrator_report", {
+      state: "ready",
+      summary: "Handled the follow-up and CI feedback",
+      pr_number: 2,
+    });
+    update(4);
+    await pollRound(ctx);
+    await h.app.pump();
+    assert.equal(h.app.store.tickets.get(ticket.id)?.ended?.outcome, "merged");
+    const calls = readFileSync(log, "utf8")
+      .trim()
+      .split("\n")
+      .map(line => JSON.parse(line) as { args: string[]; ambient: string[] });
+    assert.ok(calls.length > 15);
+    assert.ok(
+      calls.every(call => !call.ambient.length),
+      "Every gh invocation uses saved auth without token/proxy overrides",
+    );
+    assert.equal(
+      calls.filter(call => call.args.includes("--method")).length,
+      1,
+      "Only one acknowledgement is posted to the local fake gh",
+    );
+    assert.ok(calls.some(call => call.args.some(arg => arg.startsWith("If-None-Match:"))));
   } finally {
-    await h.close()
-    if (pathBefore === undefined) delete process.env.PATH; else process.env.PATH = pathBefore
-    rmSync(dir, { recursive: true, force: true })
+    await h.close();
+    if (pathBefore === undefined) delete process.env.PATH;
+    else process.env.PATH = pathBefore;
+    rmSync(dir, { recursive: true, force: true });
   }
-})
+});

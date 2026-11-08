@@ -16,9 +16,15 @@ type Props = ComponentProps<typeof Input> & {
 
 /** Every search field in the app: the same magnifier, gap, text size and focus outline (.search-field in globals.css). */
 export function SearchField({ hint, variant = "filled", children, className, ...props }: Props) {
-  return <label className={cn("search-field", variant === "bare" && "bare", className)}>
-    <SearchIcon aria-hidden="true" />
-    {children ?? <Input {...props} />}
-    {hint && <kbd className="kbd-hint" aria-hidden="true">{hint}</kbd>}
-  </label>;
+  return (
+    <label className={cn("search-field", variant === "bare" && "bare", className)}>
+      <SearchIcon aria-hidden="true" />
+      {children ?? <Input {...props} />}
+      {hint && (
+        <kbd className="kbd-hint" aria-hidden="true">
+          {hint}
+        </kbd>
+      )}
+    </label>
+  );
 }

@@ -11,17 +11,39 @@ export function useRewindState() {
   const [messageVersions, setMessageVersions] = useState<Record<string, MessageVersion[]>>({});
   const [rewindBusy, setRewindBusy] = useState(false);
   const rewindSwitch = useRef<string | null>(null);
-  return { rewindTurn, setRewindTurn, rewindActions, setRewindActions, messageVersions, setMessageVersions, rewindBusy, setRewindBusy, rewindSwitch };
+  return {
+    rewindTurn,
+    setRewindTurn,
+    rewindActions,
+    setRewindActions,
+    messageVersions,
+    setMessageVersions,
+    rewindBusy,
+    setRewindBusy,
+    rewindSwitch,
+  };
 }
 
-export function useRewindStatus(ready: boolean, connected: boolean, threadId: string | undefined, activeTurn: string | undefined, setRewindActions: Dispatch<SetStateAction<Record<string, "undo" | "redo" | undefined>>>, loadVersions: ReturnType<typeof createMessageActions>["loadVersions"]) {
+export function useRewindStatus(
+  ready: boolean,
+  connected: boolean,
+  threadId: string | undefined,
+  activeTurn: string | undefined,
+  setRewindActions: Dispatch<SetStateAction<Record<string, "undo" | "redo" | undefined>>>,
+  loadVersions: ReturnType<typeof createMessageActions>["loadVersions"],
+) {
   useEffect(() => {
-    const id = threadId; if (!ready || !connected || !id || activeTurn) return;
+    const id = threadId;
+    if (!ready || !connected || !id || activeTurn) return;
     let disposed = false;
-    api<{ action?: "undo" | "redo" } | null>(`/threads/${encodeURIComponent(id)}/rewind`, { action: "status" }).then(result => {
-      if (!disposed) setRewindActions(prev => ({ ...prev, [id]: result?.action }));
-    }).catch(() => {});
+    api<{ action?: "undo" | "redo" } | null>(`/threads/${encodeURIComponent(id)}/rewind`, { action: "status" })
+      .then(result => {
+        if (!disposed) setRewindActions(prev => ({ ...prev, [id]: result?.action }));
+      })
+      .catch(() => {});
     loadVersions(id, () => disposed);
-    return () => { disposed = true; };
+    return () => {
+      disposed = true;
+    };
   }, [ready, connected, threadId, activeTurn]);
 }

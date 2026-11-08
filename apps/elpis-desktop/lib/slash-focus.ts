@@ -5,20 +5,39 @@
  */
 export function openControl(trigger: HTMLElement, composer: () => HTMLElement | null) {
   if (trigger.hasAttribute("disabled") || trigger.getAttribute("aria-disabled") === "true") return;
-  let opened = false, timer: ReturnType<typeof setTimeout> | undefined;
-  const finish = () => { observer.disconnect(); document.removeEventListener("focusin", onFocus, true); clearTimeout(timer); };
-  const handBack = () => { finish(); composer()?.focus(); };
+  let opened = false,
+    timer: ReturnType<typeof setTimeout> | undefined;
+  const finish = () => {
+    observer.disconnect();
+    document.removeEventListener("focusin", onFocus, true);
+    clearTimeout(timer);
+  };
+  const handBack = () => {
+    finish();
+    composer()?.focus();
+  };
   // The picker returned the focus to its button as it closed.
-  function onFocus(event: FocusEvent) { if (opened && event.target === trigger) handBack(); }
+  function onFocus(event: FocusEvent) {
+    if (opened && event.target === trigger) handBack();
+  }
   const observer = new MutationObserver(() => {
     clearTimeout(timer);
-    if (trigger.getAttribute("aria-expanded") === "true") { opened = true; return; }
+    if (trigger.getAttribute("aria-expanded") === "true") {
+      opened = true;
+      return;
+    }
     if (!opened) return;
     // Closed without the focus coming back to the button (it is nowhere, or still on the button): the composer has it.
-    timer = setTimeout(() => { const active = document.activeElement; if (!active || active === document.body || active === trigger) handBack(); else finish(); }, 150);
+    timer = setTimeout(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body || active === trigger) handBack();
+      else finish();
+    }, 150);
   });
   observer.observe(trigger, { attributes: true, attributeFilter: ["aria-expanded"] });
   document.addEventListener("focusin", onFocus, true);
   trigger.click();
-  timer = setTimeout(() => { if (!opened) finish(); }, 1500); // it never opened
+  timer = setTimeout(() => {
+    if (!opened) finish();
+  }, 1500); // it never opened
 }

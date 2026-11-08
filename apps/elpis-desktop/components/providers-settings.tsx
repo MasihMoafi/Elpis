@@ -8,78 +8,231 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { type ProviderType } from "@/lib/provider-form";
-import { openAuthPage, providerLogin, readProviderConfig, type ProviderConfigItem as ProviderConfig, type ProviderConfigsSnapshot as ProviderConfigs } from "@/lib/provider-login";
+import {
+  openAuthPage,
+  providerLogin,
+  readProviderConfig,
+  type ProviderConfigItem as ProviderConfig,
+  type ProviderConfigsSnapshot as ProviderConfigs,
+} from "@/lib/provider-login";
 import { RefreshButton, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { ClaudeAccountsSettings } from "@/components/claude-accounts-settings";
 import { ProviderKeyForm } from "@/components/model-picker";
 import { useKeyUses } from "@/components/settings/use-for-settings";
 
-import { useProviderUsage, type ConfiguredProvider as Configured, type Subscription } from "@/components/provider-usage";
+import {
+  useProviderUsage,
+  type ConfiguredProvider as Configured,
+  type Subscription,
+} from "@/components/provider-usage";
 import { errorText } from "@/lib/error-text.mts";
-type ProviderEdit = { id: string; type: ProviderType; name: string; baseUrl: string; existing: boolean; credential: "preserve" | "replace" | "clear"; secret: string };
+type ProviderEdit = {
+  id: string;
+  type: ProviderType;
+  name: string;
+  baseUrl: string;
+  existing: boolean;
+  credential: "preserve" | "replace" | "clear";
+  secret: string;
+};
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-const State = ({ tone, children }: { tone: "ok" | "warn" | "off"; children: React.ReactNode }) => <span className={`settings-badge ${tone}`}>{children}</span>;
-function Card({ id, name, state, children }: { id: string; name: string; state: React.ReactNode; children: React.ReactNode }) {
-  return <section className="provider-card settings-card" data-provider={id} aria-label={name}>
-    <header className="flex flex-wrap items-center justify-between gap-2"><h3>{name}</h3><span className="settings-scope mr-auto">this device</span>{state}</header>
-    {children}
-  </section>;
+const State = ({ tone, children }: { tone: "ok" | "warn" | "off"; children: React.ReactNode }) => (
+  <span className={`settings-badge ${tone}`}>{children}</span>
+);
+function Card({
+  id,
+  name,
+  state,
+  children,
+}: {
+  id: string;
+  name: string;
+  state: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="provider-card settings-card" data-provider={id} aria-label={name}>
+      <header className="flex flex-wrap items-center justify-between gap-2">
+        <h3>{name}</h3>
+        <span className="settings-scope mr-auto">this device</span>
+        {state}
+      </header>
+      {children}
+    </section>
+  );
 }
 /** Each key lists the features it can be used for (`uses`), ticked where it is. */
-function ConfiguredList({ items, empty, config, onEdit, uses }: { items: Configured[]; empty: string; config: ProviderConfigs | null; onEdit: (provider: ProviderConfig) => void; uses: (provider: ProviderConfig) => React.ReactNode }) {
+function ConfiguredList({
+  items,
+  empty,
+  config,
+  onEdit,
+  uses,
+}: {
+  items: Configured[];
+  empty: string;
+  config: ProviderConfigs | null;
+  onEdit: (provider: ProviderConfig) => void;
+  uses: (provider: ProviderConfig) => React.ReactNode;
+}) {
   if (!items.length) return <p className="provider-note">{empty}</p>;
-  return <ul className="grid gap-3">{items.map(item => {
-    const provider = config?.providers.find(provider => provider.id === item.id);
-    return <li key={item.id} className="text-sm"><div className="flex flex-wrap items-center justify-between gap-2"><p className="min-w-0 break-all"><span className="font-medium">{item.name}</span><span className="text-muted-foreground"> · {item.baseUrl ?? "no base URL"}</span></p>{provider && <Button variant="outline" disabled={!config?.write?.available || !provider.editable} onClick={() => onEdit(provider)}>Edit {item.name}</Button>}</div>
-      {(item.envKey || provider?.auth.keySet) && <p className="mt-1 text-xs text-muted-foreground">API key {item.keySet || provider?.auth.keySet ? "set" : "not set"}</p>}
-      {provider && uses(provider)}
-    </li>;
-  })}</ul>;
+  return (
+    <ul className="grid gap-3">
+      {items.map(item => {
+        const provider = config?.providers.find(provider => provider.id === item.id);
+        return (
+          <li key={item.id} className="text-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 break-all">
+                <span className="font-medium">{item.name}</span>
+                <span className="text-muted-foreground"> · {item.baseUrl ?? "no base URL"}</span>
+              </p>
+              {provider && (
+                <Button
+                  variant="outline"
+                  disabled={!config?.write?.available || !provider.editable}
+                  onClick={() => onEdit(provider)}
+                >
+                  Edit {item.name}
+                </Button>
+              )}
+            </div>
+            {(item.envKey || provider?.auth.keySet) && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                API key {item.keySet || provider?.auth.keySet ? "set" : "not set"}
+              </p>
+            )}
+            {provider && uses(provider)}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
-type Cloudroom = { signedIn: boolean; signingIn: boolean; email?: string; kind?: "vm" | "sandbox"; error?: string | null; url?: string;
-  vm?: { state: "awake" | "asleep" | "signed_out" | "error"; message?: string; claude?: { installed: boolean; signedIn: boolean }; codex?: { installed: boolean; signedIn: boolean } } };
-const cli = (name: string, value?: { installed: boolean; signedIn: boolean }) => `${name} ${!value?.installed ? "not installed" : value.signedIn ? "signed in" : "not signed in"}`;
+type Cloudroom = {
+  signedIn: boolean;
+  signingIn: boolean;
+  email?: string;
+  kind?: "vm" | "sandbox";
+  error?: string | null;
+  url?: string;
+  vm?: {
+    state: "awake" | "asleep" | "signed_out" | "error";
+    message?: string;
+    claude?: { installed: boolean; signedIn: boolean };
+    codex?: { installed: boolean; signedIn: boolean };
+  };
+};
+const cli = (name: string, value?: { installed: boolean; signedIn: boolean }) =>
+  `${name} ${!value?.installed ? "not installed" : value.signedIn ? "signed in" : "not signed in"}`;
 /** His CloudRoom VM (1 Nov): workflow agents can run there. Elpis signs in through cloudroom.dev itself; no CloudRoom app. */
 function CloudroomCard() {
   const [data, setData] = useState<Cloudroom | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const load = useCallback(async () => { setData(await api<Cloudroom>("/providers/cloudroom")); }, []);
-  useEffect(() => { void load().catch(e => setError(errorText(e))); }, [load]);
+  const load = useCallback(async () => {
+    setData(await api<Cloudroom>("/providers/cloudroom"));
+  }, []);
+  useEffect(() => {
+    void load().catch(e => setError(errorText(e)));
+  }, [load]);
   useEffect(() => {
     if (!data?.signingIn) return;
-    const timer = setInterval(() => { void load().catch(() => {}); }, 1500);
+    const timer = setInterval(() => {
+      void load().catch(() => {});
+    }, 1500);
     return () => clearInterval(timer);
   }, [data?.signingIn, load]);
   async function action(action: "signIn" | "status" | "signOut") {
-    setBusy(true); setError("");
+    setBusy(true);
+    setError("");
     try {
       const next = await api<Cloudroom>("/providers/cloudroom", { action });
       setData(next);
       if (next.url) await openAuthPage(next.url);
-    } catch (e) { setError(errorText(e)); }
-    finally { setBusy(false); }
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
   }
   const vm = data?.vm;
-  return <Card id="cloudroom" name="CloudRoom VM" state={!data ? <State tone="off">Reading…</State> : data.signedIn ? <State tone="ok">Signed in</State> : <State tone="off">Not signed in</State>}>
-    {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    {data?.error && <p role="alert" className="text-sm text-destructive">{data.error}</p>}
-    <p className="provider-note">{data?.signedIn ? `${data.email}${data.kind === "sandbox" ? " · cloud sandbox" : ""}. Workflows can run their agents here: choose CloudRoom VM under Runs on in the Mother agent panel.` : "Sign in with your CloudRoom subscription to run workflow agents on your CloudRoom VM."}</p>
-    {vm && <p role="status" className="provider-note">{vm.state === "awake" ? `VM awake · ${cli("Claude Code", vm.claude)} · ${cli("Codex", vm.codex)}` : vm.message}</p>}
-    <div className="flex flex-wrap gap-2">
-      {data?.signedIn
-        ? <><Button variant="outline" disabled={busy} onClick={() => void action("status")}>{busy ? "Checking…" : "Check status"}</Button><Button variant="outline" disabled={busy} onClick={() => void action("signOut")}>Sign out</Button></>
-        : <Button disabled={busy || !data || data.signingIn} onClick={() => void action("signIn")}>{data?.signingIn ? "Waiting for sign-in…" : "Sign in"}</Button>}
-      {data?.signingIn && <span role="status" className="self-center text-sm text-muted-foreground">Complete sign-in in the page that opened.</span>}
-    </div>
-  </Card>;
+  return (
+    <Card
+      id="cloudroom"
+      name="CloudRoom VM"
+      state={
+        !data ? (
+          <State tone="off">Reading…</State>
+        ) : data.signedIn ? (
+          <State tone="ok">Signed in</State>
+        ) : (
+          <State tone="off">Not signed in</State>
+        )
+      }
+    >
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      {data?.error && (
+        <p role="alert" className="text-sm text-destructive">
+          {data.error}
+        </p>
+      )}
+      <p className="provider-note">
+        {data?.signedIn
+          ? `${data.email}${data.kind === "sandbox" ? " · cloud sandbox" : ""}. Workflows can run their agents here: choose CloudRoom VM under Runs on in the Mother agent panel.`
+          : "Sign in with your CloudRoom subscription to run workflow agents on your CloudRoom VM."}
+      </p>
+      {vm && (
+        <p role="status" className="provider-note">
+          {vm.state === "awake"
+            ? `VM awake · ${cli("Claude Code", vm.claude)} · ${cli("Codex", vm.codex)}`
+            : vm.message}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {data?.signedIn ? (
+          <>
+            <Button variant="outline" disabled={busy} onClick={() => void action("status")}>
+              {busy ? "Checking…" : "Check status"}
+            </Button>
+            <Button variant="outline" disabled={busy} onClick={() => void action("signOut")}>
+              Sign out
+            </Button>
+          </>
+        ) : (
+          <Button disabled={busy || !data || data.signingIn} onClick={() => void action("signIn")}>
+            {data?.signingIn ? "Waiting for sign-in…" : "Sign in"}
+          </Button>
+        )}
+        {data?.signingIn && (
+          <span role="status" className="self-center text-sm text-muted-foreground">
+            Complete sign-in in the page that opened.
+          </span>
+        )}
+      </div>
+    </Card>
+  );
 }
 
 /** `standalone`: the Love Spot app, which may not route Claude or Gemini subscriptions (skills/provider-login/spec.md),
  *  so Anthropic is an API key there and Antigravity is unavailable. */
-export function ProvidersSettings({ refreshKey, onChanged, active = true, standalone = false }: { refreshKey: number; onChanged?: () => Promise<void> | void; active?: boolean; standalone?: boolean }) {
+export function ProvidersSettings({
+  refreshKey,
+  onChanged,
+  active = true,
+  standalone = false,
+}: {
+  refreshKey: number;
+  onChanged?: () => Promise<void> | void;
+  active?: boolean;
+  standalone?: boolean;
+}) {
   const { data, error: accountsError, load: loadAccounts } = useProviderUsage(refreshKey);
   const [config, setConfig] = useState<ProviderConfigs | null>(null);
   const [editing, setEditing] = useState<ProviderEdit | null>(null);
@@ -92,11 +245,29 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true, standa
     setConfig(await readProviderConfig());
   }, []);
   // Accounts come from the app's shared usage store, which also reloads them when an account changes.
-  const load = useCallback(async () => { setError(""); await Promise.all([loadConfig(), loadAccounts()]); }, [loadConfig, loadAccounts]);
-  function edit(provider: ProviderConfig) { setNotice(""); setError(""); setEditing({ id: provider.id, type: "custom", name: provider.name, baseUrl: provider.baseUrl ?? "", existing: true, credential: "preserve", secret: "" }); }
+  const load = useCallback(async () => {
+    setError("");
+    await Promise.all([loadConfig(), loadAccounts()]);
+  }, [loadConfig, loadAccounts]);
+  function edit(provider: ProviderConfig) {
+    setNotice("");
+    setError("");
+    setEditing({
+      id: provider.id,
+      type: "custom",
+      name: provider.name,
+      baseUrl: provider.baseUrl ?? "",
+      existing: true,
+      credential: "preserve",
+      secret: "",
+    });
+  }
   async function saveProvider(event: React.FormEvent) {
-    event.preventDefault(); if (!editing || !config?.write?.available || saving) return;
-    setSaving(true); setError(""); setNotice("");
+    event.preventDefault();
+    if (!editing || !config?.write?.available || saving) return;
+    setSaving(true);
+    setError("");
+    setNotice("");
     try {
       const saved = await providerLogin.setKey(editing.id || editing.type, editing.id, editing.secret, {
         type: editing.type,
@@ -106,11 +277,27 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true, standa
         existing: editing.existing,
         action: editing.credential,
       });
-      setEditing(null); await load(); await onChanged?.(); setNotice(saved?.application?.message ?? "Saved for new conversations and agents. Existing conversations keep their current provider settings.");
-    } catch (e) { const fresh = await readProviderConfig(); if (fresh) setConfig(fresh); setError(errorText(e)); }
-    finally { setSaving(false); }
+      setEditing(null);
+      await load();
+      await onChanged?.();
+      setNotice(
+        saved?.application?.message ??
+          "Saved for new conversations and agents. Existing conversations keep their current provider settings.",
+      );
+    } catch (e) {
+      const fresh = await readProviderConfig();
+      if (fresh) setConfig(fresh);
+      setError(errorText(e));
+    } finally {
+      setSaving(false);
+    }
   }
-  useEffect(() => { if (active) { void loadConfig(); setWaiting(false); } }, [active, loadConfig, refreshKey]);
+  useEffect(() => {
+    if (active) {
+      void loadConfig();
+      setWaiting(false);
+    }
+  }, [active, loadConfig, refreshKey]);
   useEffect(() => {
     if (!waiting) return;
     if (data?.openai.auth.state === "signedIn") {
@@ -118,15 +305,19 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true, standa
       void onChanged?.();
       return;
     }
-    const timer = setInterval(() => { void load().catch(() => {}); }, 1500);
+    const timer = setInterval(() => {
+      void load().catch(() => {});
+    }, 1500);
     return () => clearInterval(timer);
   }, [waiting, data?.openai.auth.state, load, onChanged]);
   async function account(action: "chatgpt" | "signOut" | "anthropicSignOut" | "anthropicSignIn") {
-    setBusy(true); setError("");
+    setBusy(true);
+    setError("");
     try {
       if (action === "chatgpt") {
         const attempt = await providerLogin.signIn({ provider: "openai", method: "chatgpt-subscription" });
-        if (attempt.authUrl) setWaiting(true); else await load();
+        if (attempt.authUrl) setWaiting(true);
+        else await load();
       } else if (action === "signOut") {
         await providerLogin.signOut({ provider: "openai" });
         await load();
@@ -139,64 +330,356 @@ export function ProvidersSettings({ refreshKey, onChanged, active = true, standa
       }
       // Elpis's own Anthropic sign-out: the model picker follows at once, as the usage store did in load().
       if (action.startsWith("anthropic")) await onChanged?.();
-    } catch (e) { setError(errorText(e)); }
-    finally { setBusy(false); }
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
   }
-  const uses = useKeyUses({ providers: config?.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway) ?? [], refreshKey, active });
-  const custom = config && data ? config.providers.filter(provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway && !data.openrouter.some(item => item.id === provider.id)) : [];
-  const sub = (value: Subscription) => value.state === "connected" ? <State tone="ok">Connected</State> : value.state === "available" ? <State tone="warn">Models available</State> : value.state === "unknown" ? <State tone="off">Not reported</State> : <State tone="off">Not connected</State>;
-  return <div aria-label="Providers">
-    <SettingsHeader title="Models & accounts" description="Account connections and keys are on this device. Default models apply to new chats under Configuration." action={<RefreshButton onClick={() => void load()} />} />
-    <div className="settings-stack">
-    {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}
-    {notice && <SettingsNotice>{notice}</SettingsNotice>}
-    {config?.write?.reason && !config.write?.available && <p className="settings-notice">{config.write?.reason}</p>}
-    {!data && !accountsError && <SettingsNotice>Reading providers…</SettingsNotice>}
-    {data && <>
-      <Card id="openai" name="OpenAI / ChatGPT" state={data.openai.auth.state === "signedIn" ? <State tone="ok">Signed in{data.openai.auth.method ? ` with ${data.openai.auth.method}` : ""}</State> : data.openai.auth.state === "unknown" ? <State tone="warn">Sign-in state unavailable</State> : <State tone="off">Not signed in</State>}>
-        {data.openai.auth.email && <p className="text-sm">{data.openai.auth.email}{data.openai.auth.plan ? ` · ${data.openai.auth.plan} plan` : ""}</p>}
-        <div className="flex flex-wrap gap-2">
-          {data.openai.auth.state === "signedIn"
-            ? <Button variant="outline" disabled={busy} onClick={() => void account("signOut")}>Sign out</Button>
-            : <Button disabled={busy} onClick={() => void account("chatgpt")}>Sign in with ChatGPT</Button>}
-          {waiting && <span role="status" className="self-center text-sm text-muted-foreground">Complete sign-in in the page that opened.</span>}
-        </div>
-      </Card>
-      {standalone ? <Card id="claude" name="Anthropic" state={config?.providers.find(item => item.id === "anthropic")?.auth.keySet ? <State tone="ok">Key set</State> : <State tone="off">No key</State>}>
-        <p className="provider-note">Love Spot uses Claude through an Anthropic API key. A Claude subscription works only in Claude Code.</p>
-        <ProviderKeyForm provider="anthropic" label="Anthropic" onSaved={() => { void load(); void onChanged?.(); }} />
-      </Card> : <Card id="claude" name="Anthropic" state={data.claude.signedOut ? <State tone="off">Signed out in Elpis</State> : sub(data.claude)}>
-        <ClaudeAccountsSettings refreshKey={refreshKey} onChanged={async () => { await load(); await onChanged?.(); }} />
-        <p className="provider-note">{data.claude.signedOut ? "Elpis is not using your Claude subscription. Claude Code on this computer stays signed in." : data.claude.models.length ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.` : "Sign in to Claude Code on this computer to connect your subscription."}</p>
-        <div className="flex flex-wrap gap-2">
-          {data.claude.signedOut
-            ? <Button disabled={busy} onClick={() => void account("anthropicSignIn")}>Sign in</Button>
-            : data.claude.state !== "notConnected" && <Button variant="outline" disabled={busy} onClick={() => void account("anthropicSignOut")}>Sign out</Button>}
-        </div>
-      </Card>}
-      {!standalone && <CloudroomCard />}
-      {!standalone && <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>
-        <p className="provider-note">{data.gemini.models.length ? `${plural(data.gemini.models.length, "model")} available through your existing Google/Antigravity connection.` : "Sign in to Antigravity with Google on this computer to connect its models."}</p>
-      </Card>}
-      {data.openrouter.length > 0 && <Card id="openrouter" name="OpenRouter" state={data.openrouter.length ? (data.openrouter.every(item => item.keySet) ? <State tone="ok">Key set</State> : <State tone="warn">Key missing</State>) : <State tone="off">Not configured</State>}>
-        <ConfiguredList config={config} onEdit={edit} uses={uses} items={data.openrouter} empty="No OpenRouter connection yet." />
-      </Card>}
-      {custom.length > 0 && <Card id="custom" name="Custom API providers" state={<State tone="ok">Configured</State>}><ConfiguredList config={config} onEdit={edit} uses={uses} empty="No custom providers configured." items={custom.map(provider => ({ id: provider.id, name: provider.name, baseUrl: provider.baseUrl, envKey: provider.auth.envKey, keySet: provider.auth.keySet }))} /></Card>}
-    </>}
-    <details className="provider-advanced settings-card"><DisclosureSummary>Advanced API connections</DisclosureSummary><p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p><Button variant="outline" disabled={!config?.write?.available || saving} onClick={() => { setNotice(""); setError(""); setEditing({ id: "", type: "custom", name: "", baseUrl: "", existing: false, credential: "preserve", secret: "" }); }}>Add API provider</Button></details>
-    {editing && <form className="settings-card" aria-label="API provider settings" onSubmit={event => { void saveProvider(event); }}>
-      <h3 className="font-semibold">{editing.existing ? `Edit ${editing.name}` : "Add API provider"}</h3>
-      <p className="provider-note">Provider settings apply to new conversations and agents. Existing conversations keep their original connection settings and credentials.</p>
-      {!editing.existing && <label className="field">Connection type<OptionSelect aria-label="Provider type" className="h-9 rounded-lg border bg-background px-3" value={editing.type} disabled={saving} onChange={event => { const type = event.target.value as ProviderType; setEditing({ ...editing, type, name: type === "openrouter" ? "OpenRouter" : type === "local" ? "Local server" : "", baseUrl: type === "openrouter" ? "https://openrouter.ai/api/v1" : type === "local" ? "http://127.0.0.1:1234/v1" : "", credential: "preserve", secret: "" }); }}><option value="openrouter">OpenRouter</option><option value="local">Local server</option><option value="custom">Other API service</option></OptionSelect></label>}
-      <label className="field">Connection name<Input required aria-label="Provider display name" value={editing.name} disabled={saving} maxLength={200} placeholder="Name shown in Elpis" onChange={event => setEditing({ ...editing, name: event.target.value })} /></label>
-      <label className="field">API endpoint<Input required aria-label="API endpoint" type="url" value={editing.baseUrl} disabled={saving} placeholder="https://api.example.com/v1" onChange={event => setEditing({ ...editing, baseUrl: event.target.value })} /></label>
-      <p className="text-xs text-muted-foreground">Use a Responses API endpoint. Local servers can use HTTP; hosted services require HTTPS.</p>
-      <label className="field">API key action<OptionSelect aria-label="API key action" className="h-9 rounded-lg border bg-background px-3" value={editing.credential} disabled={saving} onChange={event => setEditing({ ...editing, credential: event.target.value as ProviderEdit["credential"], secret: "" })}><option value="preserve">{editing.existing ? "Keep current key" : "No key"}</option><option value="replace">Set a new key</option><option value="clear">Clear stored key</option></OptionSelect></label>
-      {editing.credential === "clear" && <p className="provider-note">{config?.application?.credentialClearMessage ?? "This clears the saved key for new conversations. Existing conversations keep their original credentials."}</p>}
-      {editing.credential === "replace" && <label className="field">API key<Input aria-label="Provider API key" type="password" autoComplete="new-password" value={editing.secret} disabled={saving} onChange={event => setEditing({ ...editing, secret: event.target.value })} placeholder="Enter API key" /><span className="text-xs text-muted-foreground">Saved keys are never displayed. An empty field keeps the current key.</span></label>}
-      {editing.existing && <p className="text-xs text-muted-foreground">Current key: {config?.providers.find(provider => provider.id === editing.id)?.auth.keySet ? "set" : "not set"}</p>}
-      <div className="flex gap-2"><Button type="submit" disabled={!config?.write?.available || saving || !editing.name.trim() || !editing.baseUrl.trim()}>{saving ? "Saving…" : "Save provider"}</Button><Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>Cancel</Button></div>
-    </form>}
+  const uses = useKeyUses({
+    providers:
+      config?.providers.filter(
+        provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway,
+      ) ?? [],
+    refreshKey,
+    active,
+  });
+  const custom =
+    config && data
+      ? config.providers.filter(
+          provider =>
+            provider.id !== "openai" &&
+            provider.auth.source !== "subscription" &&
+            !provider.gateway &&
+            !data.openrouter.some(item => item.id === provider.id),
+        )
+      : [];
+  const sub = (value: Subscription) =>
+    value.state === "connected" ? (
+      <State tone="ok">Connected</State>
+    ) : value.state === "available" ? (
+      <State tone="warn">Models available</State>
+    ) : value.state === "unknown" ? (
+      <State tone="off">Not reported</State>
+    ) : (
+      <State tone="off">Not connected</State>
+    );
+  return (
+    <div aria-label="Providers">
+      <SettingsHeader
+        title="Models & accounts"
+        description="Account connections and keys are on this device. Default models apply to new chats under Configuration."
+        action={<RefreshButton onClick={() => void load()} />}
+      />
+      <div className="settings-stack">
+        {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}
+        {notice && <SettingsNotice>{notice}</SettingsNotice>}
+        {config?.write?.reason && !config.write?.available && <p className="settings-notice">{config.write?.reason}</p>}
+        {!data && !accountsError && <SettingsNotice>Reading providers…</SettingsNotice>}
+        {data && (
+          <>
+            <Card
+              id="openai"
+              name="OpenAI / ChatGPT"
+              state={
+                data.openai.auth.state === "signedIn" ? (
+                  <State tone="ok">Signed in{data.openai.auth.method ? ` with ${data.openai.auth.method}` : ""}</State>
+                ) : data.openai.auth.state === "unknown" ? (
+                  <State tone="warn">Sign-in state unavailable</State>
+                ) : (
+                  <State tone="off">Not signed in</State>
+                )
+              }
+            >
+              {data.openai.auth.email && (
+                <p className="text-sm">
+                  {data.openai.auth.email}
+                  {data.openai.auth.plan ? ` · ${data.openai.auth.plan} plan` : ""}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {data.openai.auth.state === "signedIn" ? (
+                  <Button variant="outline" disabled={busy} onClick={() => void account("signOut")}>
+                    Sign out
+                  </Button>
+                ) : (
+                  <Button disabled={busy} onClick={() => void account("chatgpt")}>
+                    Sign in with ChatGPT
+                  </Button>
+                )}
+                {waiting && (
+                  <span role="status" className="self-center text-sm text-muted-foreground">
+                    Complete sign-in in the page that opened.
+                  </span>
+                )}
+              </div>
+            </Card>
+            {standalone ? (
+              <Card
+                id="claude"
+                name="Anthropic"
+                state={
+                  config?.providers.find(item => item.id === "anthropic")?.auth.keySet ? (
+                    <State tone="ok">Key set</State>
+                  ) : (
+                    <State tone="off">No key</State>
+                  )
+                }
+              >
+                <p className="provider-note">
+                  Love Spot uses Claude through an Anthropic API key. A Claude subscription works only in Claude Code.
+                </p>
+                <ProviderKeyForm
+                  provider="anthropic"
+                  label="Anthropic"
+                  onSaved={() => {
+                    void load();
+                    void onChanged?.();
+                  }}
+                />
+              </Card>
+            ) : (
+              <Card
+                id="claude"
+                name="Anthropic"
+                state={data.claude.signedOut ? <State tone="off">Signed out in Elpis</State> : sub(data.claude)}
+              >
+                <ClaudeAccountsSettings
+                  refreshKey={refreshKey}
+                  onChanged={async () => {
+                    await load();
+                    await onChanged?.();
+                  }}
+                />
+                <p className="provider-note">
+                  {data.claude.signedOut
+                    ? "Elpis is not using your Claude subscription. Claude Code on this computer stays signed in."
+                    : data.claude.models.length
+                      ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.`
+                      : "Sign in to Claude Code on this computer to connect your subscription."}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {data.claude.signedOut ? (
+                    <Button disabled={busy} onClick={() => void account("anthropicSignIn")}>
+                      Sign in
+                    </Button>
+                  ) : (
+                    data.claude.state !== "notConnected" && (
+                      <Button variant="outline" disabled={busy} onClick={() => void account("anthropicSignOut")}>
+                        Sign out
+                      </Button>
+                    )
+                  )}
+                </div>
+              </Card>
+            )}
+            {!standalone && <CloudroomCard />}
+            {!standalone && (
+              <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>
+                <p className="provider-note">
+                  {data.gemini.models.length
+                    ? `${plural(data.gemini.models.length, "model")} available through your existing Google/Antigravity connection.`
+                    : "Sign in to Antigravity with Google on this computer to connect its models."}
+                </p>
+              </Card>
+            )}
+            {data.openrouter.length > 0 && (
+              <Card
+                id="openrouter"
+                name="OpenRouter"
+                state={
+                  data.openrouter.length ? (
+                    data.openrouter.every(item => item.keySet) ? (
+                      <State tone="ok">Key set</State>
+                    ) : (
+                      <State tone="warn">Key missing</State>
+                    )
+                  ) : (
+                    <State tone="off">Not configured</State>
+                  )
+                }
+              >
+                <ConfiguredList
+                  config={config}
+                  onEdit={edit}
+                  uses={uses}
+                  items={data.openrouter}
+                  empty="No OpenRouter connection yet."
+                />
+              </Card>
+            )}
+            {custom.length > 0 && (
+              <Card id="custom" name="Custom API providers" state={<State tone="ok">Configured</State>}>
+                <ConfiguredList
+                  config={config}
+                  onEdit={edit}
+                  uses={uses}
+                  empty="No custom providers configured."
+                  items={custom.map(provider => ({
+                    id: provider.id,
+                    name: provider.name,
+                    baseUrl: provider.baseUrl,
+                    envKey: provider.auth.envKey,
+                    keySet: provider.auth.keySet,
+                  }))}
+                />
+              </Card>
+            )}
+          </>
+        )}
+        <details className="provider-advanced settings-card">
+          <DisclosureSummary>Advanced API connections</DisclosureSummary>
+          <p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p>
+          <Button
+            variant="outline"
+            disabled={!config?.write?.available || saving}
+            onClick={() => {
+              setNotice("");
+              setError("");
+              setEditing({
+                id: "",
+                type: "custom",
+                name: "",
+                baseUrl: "",
+                existing: false,
+                credential: "preserve",
+                secret: "",
+              });
+            }}
+          >
+            Add API provider
+          </Button>
+        </details>
+        {editing && (
+          <form
+            className="settings-card"
+            aria-label="API provider settings"
+            onSubmit={event => {
+              void saveProvider(event);
+            }}
+          >
+            <h3 className="font-semibold">{editing.existing ? `Edit ${editing.name}` : "Add API provider"}</h3>
+            <p className="provider-note">
+              Provider settings apply to new conversations and agents. Existing conversations keep their original
+              connection settings and credentials.
+            </p>
+            {!editing.existing && (
+              <label className="field">
+                Connection type
+                <OptionSelect
+                  aria-label="Provider type"
+                  className="h-9 rounded-lg border bg-background px-3"
+                  value={editing.type}
+                  disabled={saving}
+                  onChange={event => {
+                    const type = event.target.value as ProviderType;
+                    setEditing({
+                      ...editing,
+                      type,
+                      name: type === "openrouter" ? "OpenRouter" : type === "local" ? "Local server" : "",
+                      baseUrl:
+                        type === "openrouter"
+                          ? "https://openrouter.ai/api/v1"
+                          : type === "local"
+                            ? "http://127.0.0.1:1234/v1"
+                            : "",
+                      credential: "preserve",
+                      secret: "",
+                    });
+                  }}
+                >
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="local">Local server</option>
+                  <option value="custom">Other API service</option>
+                </OptionSelect>
+              </label>
+            )}
+            <label className="field">
+              Connection name
+              <Input
+                required
+                aria-label="Provider display name"
+                value={editing.name}
+                disabled={saving}
+                maxLength={200}
+                placeholder="Name shown in Elpis"
+                onChange={event => setEditing({ ...editing, name: event.target.value })}
+              />
+            </label>
+            <label className="field">
+              API endpoint
+              <Input
+                required
+                aria-label="API endpoint"
+                type="url"
+                value={editing.baseUrl}
+                disabled={saving}
+                placeholder="https://api.example.com/v1"
+                onChange={event => setEditing({ ...editing, baseUrl: event.target.value })}
+              />
+            </label>
+            <p className="text-xs text-muted-foreground">
+              Use a Responses API endpoint. Local servers can use HTTP; hosted services require HTTPS.
+            </p>
+            <label className="field">
+              API key action
+              <OptionSelect
+                aria-label="API key action"
+                className="h-9 rounded-lg border bg-background px-3"
+                value={editing.credential}
+                disabled={saving}
+                onChange={event =>
+                  setEditing({ ...editing, credential: event.target.value as ProviderEdit["credential"], secret: "" })
+                }
+              >
+                <option value="preserve">{editing.existing ? "Keep current key" : "No key"}</option>
+                <option value="replace">Set a new key</option>
+                <option value="clear">Clear stored key</option>
+              </OptionSelect>
+            </label>
+            {editing.credential === "clear" && (
+              <p className="provider-note">
+                {config?.application?.credentialClearMessage ??
+                  "This clears the saved key for new conversations. Existing conversations keep their original credentials."}
+              </p>
+            )}
+            {editing.credential === "replace" && (
+              <label className="field">
+                API key
+                <Input
+                  aria-label="Provider API key"
+                  type="password"
+                  autoComplete="new-password"
+                  value={editing.secret}
+                  disabled={saving}
+                  onChange={event => setEditing({ ...editing, secret: event.target.value })}
+                  placeholder="Enter API key"
+                />
+                <span className="text-xs text-muted-foreground">
+                  Saved keys are never displayed. An empty field keeps the current key.
+                </span>
+              </label>
+            )}
+            {editing.existing && (
+              <p className="text-xs text-muted-foreground">
+                Current key:{" "}
+                {config?.providers.find(provider => provider.id === editing.id)?.auth.keySet ? "set" : "not set"}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="submit"
+                disabled={!config?.write?.available || saving || !editing.name.trim() || !editing.baseUrl.trim()}
+              >
+                {saving ? "Saving…" : "Save provider"}
+              </Button>
+              <Button type="button" variant="outline" disabled={saving} onClick={() => setEditing(null)}>
+                Cancel
+              </Button>
+            </div>
+          </form>
+        )}
+      </div>
     </div>
-  </div>;
+  );
 }

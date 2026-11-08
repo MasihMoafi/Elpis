@@ -15,16 +15,59 @@ const folderOf = (path: string) => path.slice(0, path.lastIndexOf("/")) || "/";
  * the system's default app, show its folder, copy its path. A path's right-click menu, the Files tab's header and the tree's
  * rows all draw it. Choosing an editor remembers it (the Files tab's "Open in" button uses it); choosing the default app
  * forgets it. A failure is passed to `onError`. */
-export function fileActions(target: FileTarget, editors: EditorInfo[], onError: (message: string) => void, onFiles?: () => void): MenuAction[] {
+export function fileActions(
+  target: FileTarget,
+  editors: EditorInfo[],
+  onError: (message: string) => void,
+  onFiles?: () => void,
+): MenuAction[] {
   const desktop = typeof window === "undefined" ? undefined : window.elpisDesktop;
-  const attempt = (run: Promise<unknown> | undefined) => { run?.then(() => onError(""), cause => onError(errorText(cause, "Could not do that."))); };
-  const copy = (text: string) => () => { navigator.clipboard.writeText(text).then(() => onError(""), () => onError("Could not copy. Select the text to copy it.")); };
+  const attempt = (run: Promise<unknown> | undefined) => {
+    run?.then(
+      () => onError(""),
+      cause => onError(errorText(cause, "Could not do that.")),
+    );
+  };
+  const copy = (text: string) => () => {
+    navigator.clipboard.writeText(text).then(
+      () => onError(""),
+      () => onError("Could not copy. Select the text to copy it."),
+    );
+  };
   const line = target.dir ? undefined : target.line;
   return [
     ...(onFiles && !target.dir ? [{ id: "files", label: "Open in Files pane", run: onFiles }] : []),
-    ...(target.dir || !desktop?.openInEditor ? [] : editors.map(editor => ({ id: `editor-${editor.id}`, label: `Open in ${editor.name}`, run: () => { chooseEditor(editor.id); attempt(desktop.openInEditor?.(target.abs, editor.id, line)); } }))),
-    ...(target.dir || !desktop?.openExternalFile ? [] : [{ id: "default", label: "Open in default app", run: () => { chooseEditor(null); attempt(desktop.openExternalFile?.(line ? `${target.abs}:${line}` : target.abs)); } }]),
-    ...(desktop?.openFolder ? [{ id: "folder", label: "Show in folder", run: () => attempt(desktop.openFolder?.(target.dir ? target.abs : folderOf(target.abs))) }] : []),
+    ...(target.dir || !desktop?.openInEditor
+      ? []
+      : editors.map(editor => ({
+          id: `editor-${editor.id}`,
+          label: `Open in ${editor.name}`,
+          run: () => {
+            chooseEditor(editor.id);
+            attempt(desktop.openInEditor?.(target.abs, editor.id, line));
+          },
+        }))),
+    ...(target.dir || !desktop?.openExternalFile
+      ? []
+      : [
+          {
+            id: "default",
+            label: "Open in default app",
+            run: () => {
+              chooseEditor(null);
+              attempt(desktop.openExternalFile?.(line ? `${target.abs}:${line}` : target.abs));
+            },
+          },
+        ]),
+    ...(desktop?.openFolder
+      ? [
+          {
+            id: "folder",
+            label: "Show in folder",
+            run: () => attempt(desktop.openFolder?.(target.dir ? target.abs : folderOf(target.abs))),
+          },
+        ]
+      : []),
     { id: "copy-abs", label: "Copy absolute path", run: copy(target.abs) },
     ...(target.inside ? [{ id: "copy-rel", label: "Copy relative path", run: copy(target.rel) }] : []),
     ...(target.dir ? [] : [{ id: "copy-name", label: "Copy filename", run: copy(nameOf(target.abs)) }]),
@@ -32,11 +75,29 @@ export function fileActions(target: FileTarget, editors: EditorInfo[], onError: 
 }
 
 /** `fileActions` for a target, with the installed editors the app has. */
-export function useFileActions(target: FileTarget, onError: (message: string) => void, onFiles?: () => void, selection?: () => string) {
-  const editors = useEditors(), review = useDocumentReview();
-  return useMemo(() => [...fileActions(target, editors, onError, onFiles), ...(!target.dir && review ? [
-    { id: "review-mark", label: "Mark for agent", run: () => review(target.abs, "mark", selection?.() ?? "") },
-    { id: "review-edit", label: "Suggest edit", run: () => review(target.abs, "edit", selection?.() ?? "") },
-    { id: "review-remove", label: "Ask agent to remove", run: () => review(target.abs, "remove", selection?.() ?? "") },
-  ] : [])], [target.abs, target.rel, target.inside, target.dir, target.line, editors, onError, onFiles, review, selection]);
+export function useFileActions(
+  target: FileTarget,
+  onError: (message: string) => void,
+  onFiles?: () => void,
+  selection?: () => string,
+) {
+  const editors = useEditors(),
+    review = useDocumentReview();
+  return useMemo(
+    () => [
+      ...fileActions(target, editors, onError, onFiles),
+      ...(!target.dir && review
+        ? [
+            { id: "review-mark", label: "Mark for agent", run: () => review(target.abs, "mark", selection?.() ?? "") },
+            { id: "review-edit", label: "Suggest edit", run: () => review(target.abs, "edit", selection?.() ?? "") },
+            {
+              id: "review-remove",
+              label: "Ask agent to remove",
+              run: () => review(target.abs, "remove", selection?.() ?? ""),
+            },
+          ]
+        : []),
+    ],
+    [target.abs, target.rel, target.inside, target.dir, target.line, editors, onError, onFiles, review, selection],
+  );
 }

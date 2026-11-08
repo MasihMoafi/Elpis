@@ -1,35 +1,125 @@
-const { createBoardWatcher, directoryNames: names }: typeof import('./love-spot-watcher.cts') = require('./love-spot-watcher.cts');
+const {
+  createBoardWatcher,
+  directoryNames: names,
+}: typeof import("./love-spot-watcher.cts") = require("./love-spot-watcher.cts");
 // Shared by the bridge and the standalone window. Every writer takes the same directory lock,
 // rereads the drawing, and atomically writes the union, including deletion tombstones.
-export type DrawingElement = { id: string; type: string; version: number; versionNonce: number; x: number; y: number; width: number; height: number; angle?: number; isDeleted?: boolean; fileId?: string | null; groupIds?: string[]; strokeColor: string; updated?: number; text?: string | undefined; originalText?: string | undefined; points?: [number, number][]; customData?: { streaming?: boolean; [key: string]: unknown }; [key: string]: unknown };
-export type DrawingFile = { id: string; dataURL: string; mimeType: string; loveSpotResized?: boolean; [key: string]: unknown };
+export type DrawingElement = {
+  id: string;
+  type: string;
+  version: number;
+  versionNonce: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  angle?: number;
+  isDeleted?: boolean;
+  fileId?: string | null;
+  groupIds?: string[];
+  strokeColor: string;
+  updated?: number;
+  text?: string | undefined;
+  originalText?: string | undefined;
+  points?: [number, number][];
+  customData?: { streaming?: boolean; [key: string]: unknown };
+  [key: string]: unknown;
+};
+export type DrawingFile = {
+  id: string;
+  dataURL: string;
+  mimeType: string;
+  loveSpotResized?: boolean;
+  [key: string]: unknown;
+};
 export type Page = { name: string; session: string };
-export type Drawing = { elements: DrawingElement[]; files: Record<string, DrawingFile>; appState: Record<string, unknown>; page: Page; [key: string]: unknown };
-export type IncomingDrawing = { elements: DrawingElement[]; files?: Record<string, DrawingFile>; appState?: Record<string, unknown>; page?: Page; [key: string]: unknown };
-const fs: typeof import('node:fs/promises') = require('node:fs/promises');
-const path = require('node:path');
-const os = require('node:os');
-const { createHash, randomUUID } = require('node:crypto');
-const { execFile } = require('node:child_process');
-const { promisify } = require('node:util');
-const { newer: newerImpl } = require('./love-spot-order.cts') as typeof import('./love-spot-order.cts');
-const { paintElements, paintingSize, splitPainting } = require('./love-spot-painting.cts') as typeof import('./love-spot-painting.cts');
-const { BOARD_FACE, OLD_BOARD_FACES, OLD_BOARD_SHOTS, replyPortrait } = require('./matilda-face.cts');
-const FACE = 96, FACE_SIDE = FACE + 12;
-const WELCOME_SHAPES = splitPainting('```excalidraw\n' + JSON.stringify([
-  { type: 'text', x: 0, y: 0, text: 'Welcome to Love Spot', fontSize: 28, fontFamily: 5, textAlign: 'center', strokeColor: '#000000' },
-  { type: 'line', x: 144, y: 68, points: [[0, 15], [2, 8], [7, 3], [14, 0], [22, 1], [29, 7], [31, 13], [34, 7], [41, 1], [49, 0], [56, 3], [60, 8], [62, 14], [61, 20], [57, 25], [31, 45], [5, 25], [1, 20], [0, 15]], strokeColor: '#e03131', strokeWidth: 2.5, roughness: 1 },
-]) + '\n```').shapes;
+export type Drawing = {
+  elements: DrawingElement[];
+  files: Record<string, DrawingFile>;
+  appState: Record<string, unknown>;
+  page: Page;
+  [key: string]: unknown;
+};
+export type IncomingDrawing = {
+  elements: DrawingElement[];
+  files?: Record<string, DrawingFile>;
+  appState?: Record<string, unknown>;
+  page?: Page;
+  [key: string]: unknown;
+};
+const fs: typeof import("node:fs/promises") = require("node:fs/promises");
+const path = require("node:path");
+const os = require("node:os");
+const { createHash, randomUUID } = require("node:crypto");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+const { newer: newerImpl } = require("./love-spot-order.cts") as typeof import("./love-spot-order.cts");
+const { paintElements, paintingSize, splitPainting } =
+  require("./love-spot-painting.cts") as typeof import("./love-spot-painting.cts");
+const { BOARD_FACE, OLD_BOARD_FACES, OLD_BOARD_SHOTS, replyPortrait } = require("./matilda-face.cts");
+const FACE = 96,
+  FACE_SIDE = FACE + 12;
+const WELCOME_SHAPES = splitPainting(
+  "```excalidraw\n" +
+    JSON.stringify([
+      {
+        type: "text",
+        x: 0,
+        y: 0,
+        text: "Welcome to Love Spot",
+        fontSize: 28,
+        fontFamily: 5,
+        textAlign: "center",
+        strokeColor: "#000000",
+      },
+      {
+        type: "line",
+        x: 144,
+        y: 68,
+        points: [
+          [0, 15],
+          [2, 8],
+          [7, 3],
+          [14, 0],
+          [22, 1],
+          [29, 7],
+          [31, 13],
+          [34, 7],
+          [41, 1],
+          [49, 0],
+          [56, 3],
+          [60, 8],
+          [62, 14],
+          [61, 20],
+          [57, 25],
+          [31, 45],
+          [5, 25],
+          [1, 20],
+          [0, 15],
+        ],
+        strokeColor: "#e03131",
+        strokeWidth: 2.5,
+        roughness: 1,
+      },
+    ]) +
+    "\n```",
+).shapes;
 const exec = promisify(execFile);
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const fail = (message: string, status = 400) => Object.assign(new Error(message), { status, loveSpot: true });
-const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
-const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const hash = (value: string | Buffer) => createHash("sha256").update(value).digest("hex");
 async function trashFile(file: string) {
-  await exec('gio', ['trash', file]).catch(async (e: NodeJS.ErrnoException) => {
-    try { await fs.access(file); } catch (missing) { if ((missing as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') return; throw missing; }
-    if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') {
-      const trash = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 'Trash/files');
+  await exec("gio", ["trash", file]).catch(async (e: NodeJS.ErrnoException) => {
+    try {
+      await fs.access(file);
+    } catch (missing) {
+      if ((missing as NodeJS.ErrnoException & { loveSpot?: boolean }).code === "ENOENT") return;
+      throw missing;
+    }
+    if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === "ENOENT") {
+      const trash = path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local/share"), "Trash/files");
       await fs.mkdir(trash, { recursive: true });
       await fs.rename(file, path.join(trash, `${Date.now()}-${path.basename(file)}`));
       return;
@@ -37,83 +127,153 @@ async function trashFile(file: string) {
     throw e;
   });
 }
-const PNG = Buffer.from('89504e470d0a1a0a', 'hex');
-const screenshotId = (name: string, bytes: Buffer) => `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`;
+const PNG = Buffer.from("89504e470d0a1a0a", "hex");
+const screenshotId = (name: string, bytes: Buffer) =>
+  `shot-${hash(Buffer.concat([Buffer.from(name), bytes])).slice(0, 32)}`;
 function validate(scene: unknown): Drawing {
-  if (!record(scene) || !Array.isArray(scene.elements) || (scene.files !== undefined && !record(scene.files)) || (scene.appState !== undefined && !record(scene.appState))) throw fail('Invalid drawing');
+  if (
+    !record(scene) ||
+    !Array.isArray(scene.elements) ||
+    (scene.files !== undefined && !record(scene.files)) ||
+    (scene.appState !== undefined && !record(scene.appState))
+  )
+    throw fail("Invalid drawing");
   for (const e of scene.elements) {
-    if (!record(e) || typeof e.id !== 'string' || !e.id || typeof e.type !== 'string' || !Number.isInteger(e.version) || (e.version as number) < 1 || !Number.isInteger(e.versionNonce)
-      || !['x', 'y', 'width', 'height'].every(key => Number.isFinite(e[key]))) throw fail('Invalid drawing element');
+    if (
+      !record(e) ||
+      typeof e.id !== "string" ||
+      !e.id ||
+      typeof e.type !== "string" ||
+      !Number.isInteger(e.version) ||
+      (e.version as number) < 1 ||
+      !Number.isInteger(e.versionNonce) ||
+      !["x", "y", "width", "height"].every(key => Number.isFinite(e[key]))
+    )
+      throw fail("Invalid drawing element");
   }
   for (const [id, file] of Object.entries(scene.files ?? {})) {
-    if (!record(file) || file.id !== id || typeof file.dataURL !== 'string' || !/^data:image\/(png|jpeg|webp|gif|svg\+xml);/.test(file.dataURL) || typeof file.mimeType !== 'string') throw fail('Invalid drawing image');
+    if (
+      !record(file) ||
+      file.id !== id ||
+      typeof file.dataURL !== "string" ||
+      !/^data:image\/(png|jpeg|webp|gif|svg\+xml);/.test(file.dataURL) ||
+      typeof file.mimeType !== "string"
+    )
+      throw fail("Invalid drawing image");
   }
   return scene as Drawing;
 }
 function mergeImpl(current: Drawing, incoming: IncomingDrawing) {
   const elements = new Map(current.elements.map(e => [e.id, e]));
-  for (const e of incoming.elements) if (!elements.has(e.id) || newerImpl(e, elements.get(e.id)!)) elements.set(e.id, e);
+  for (const e of incoming.elements)
+    if (!elements.has(e.id) || newerImpl(e, elements.get(e.id)!)) elements.set(e.id, e);
   const files = { ...incoming.files, ...current.files };
   // A normalized image replaces its original, but a stale window cannot put the large bytes back.
   for (const [id, file] of Object.entries(incoming.files ?? {})) {
-    if (!files[id] || (file.loveSpotResized && !files[id].loveSpotResized) || (file.loveSpotResized === files[id].loveSpotResized && file.dataURL.length < files[id].dataURL.length)) files[id] = file;
+    if (
+      !files[id] ||
+      (file.loveSpotResized && !files[id].loveSpotResized) ||
+      (file.loveSpotResized === files[id].loveSpotResized && file.dataURL.length < files[id].dataURL.length)
+    )
+      files[id] = file;
   }
   const referenced = new Set([...elements.values()].filter(e => !e.isDeleted && e.fileId).map(e => e.fileId));
-  return { ...current, type: 'excalidraw', version: 2, source: 'Love Spot', elements: [...elements.values()],
-    appState: { ...current.appState, ...incoming.appState }, files: Object.fromEntries(Object.entries(files).filter(([id]) => referenced.has(id))) };
+  return {
+    ...current,
+    type: "excalidraw",
+    version: 2,
+    source: "Love Spot",
+    elements: [...elements.values()],
+    appState: { ...current.appState, ...incoming.appState },
+    files: Object.fromEntries(Object.entries(files).filter(([id]) => referenced.has(id))),
+  };
 }
 // Masih, 7 Nov: the Love Spot app and Love Spot inside Elpis are separate, boards included ("Separate boards"). The app
 // (LOVE_SPOT_APP, desktop/main-profile.cts) keeps the board it always had; inside Elpis the board lives in the Elpis home.
-const defaultBoard = () => process.env.EXCALIDRAW_LOCAL_DIR || (process.env.LOVE_SPOT_APP === '1'
-  ? path.join(os.homedir(), '.local/share/excalidraw-local')
-  : path.join(process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'), 'love-spot'));
-function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
-  const sceneFile = path.join(directory, 'scene.excalidraw'), lock = path.join(directory, '.scene-lock'), inbox = path.join(directory, 'inbox'), pages = path.join(directory, 'pages');
+const defaultBoard = () =>
+  process.env.EXCALIDRAW_LOCAL_DIR ||
+  (process.env.LOVE_SPOT_APP === "1"
+    ? path.join(os.homedir(), ".local/share/excalidraw-local")
+    : path.join(process.env.ELPIS_HOME || path.join(os.homedir(), ".elpis-next"), "love-spot"));
+function createLoveSpotImpl({
+  directory = defaultBoard(),
+  screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), "Pictures/Screenshots"),
+} = {}) {
+  const sceneFile = path.join(directory, "scene.excalidraw"),
+    lock = path.join(directory, ".scene-lock"),
+    inbox = path.join(directory, "inbox"),
+    pages = path.join(directory, "pages");
   // Same-user local IPC keeps private trays available to a later dock process
   // without journaling screenshot names or pixels to the board directory.
   // Linux limits Unix socket paths to 107 bytes. TMPDIR can be a long isolated test/app home,
   // so keep these tiny private sockets under the short system temp root.
   async function read() {
     let text;
-    try { text = await fs.readFile(sceneFile, 'utf8'); }
-    catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }
     try {
-      const scene = (text === undefined ? { type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} } : validate(JSON.parse(text))) as Drawing;
+      text = await fs.readFile(sceneFile, "utf8");
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT") throw e;
+    }
+    try {
+      const scene = (
+        text === undefined
+          ? { type: "excalidraw", version: 2, elements: [], files: {}, appState: {} }
+          : validate(JSON.parse(text))
+      ) as Drawing;
       scene.elements = scene.elements.map(element => {
-        if (element.type !== 'text' || !element.id.startsWith('love-reply-')) return element;
-        const redHearts = (value: string | undefined) => typeof value === 'string' ? value.replaceAll('💙', '❤️') : value;
-        return { ...element, strokeColor: '#000000', text: redHearts(element.text), originalText: redHearts(element.originalText) };
+        if (element.type !== "text" || !element.id.startsWith("love-reply-")) return element;
+        const redHearts = (value: string | undefined) =>
+          typeof value === "string" ? value.replaceAll("💙", "❤️") : value;
+        return {
+          ...element,
+          strokeColor: "#000000",
+          text: redHearts(element.text),
+          originalText: redHearts(element.originalText),
+        };
       });
       // Existing replies share this preset asset; an older face is replaced, a custom portrait kept.
-      if (OLD_BOARD_FACES.includes(scene.files['matilda-face']?.dataURL)) {
-        scene.files['matilda-face'] = { ...scene.files['matilda-face'], ...BOARD_FACE };
+      if (OLD_BOARD_FACES.includes(scene.files["matilda-face"]?.dataURL)) {
+        scene.files["matilda-face"] = { ...scene.files["matilda-face"], ...BOARD_FACE };
       }
       // Each reply's expression face moves to its raster picture the same way.
       for (const [id, file] of Object.entries(scene.files)) {
-        const expression = id.startsWith('matilda-face-') && OLD_BOARD_SHOTS[file?.dataURL];
+        const expression = id.startsWith("matilda-face-") && OLD_BOARD_SHOTS[file?.dataURL];
         if (expression) scene.files[id] = { ...file, ...replyPortrait(`<!--matilda:${expression}-->`).board };
       }
       if (!scene.page) {
-        const pageFiles = await names(pages), existing = new Set(pageFiles); let name = 'Current page', suffix = 2;
-        if (text === undefined && !pageFiles.some(file => file.endsWith('.excalidraw'))) {
-          scene.elements = paintElements(WELCOME_SHAPES, { x: -174, y: -56 }, 'welcome', undefined, 0);
+        const pageFiles = await names(pages),
+          existing = new Set(pageFiles);
+        let name = "Current page",
+          suffix = 2;
+        if (text === undefined && !pageFiles.some(file => file.endsWith(".excalidraw"))) {
+          scene.elements = paintElements(WELCOME_SHAPES, { x: -174, y: -56 }, "welcome", undefined, 0);
         }
         while (existing.has(`${name}.excalidraw`)) name = `Current page ${suffix++}`;
-        scene.page = { name, session: 'legacy' };
+        scene.page = { name, session: "legacy" };
       }
       pageName(scene.page.name);
-      if (typeof scene.page.session !== 'string' || !scene.page.session) throw fail('Invalid page');
-      return { scene, revision: hash(text ?? '') };
+      if (typeof scene.page.session !== "string" || !scene.page.session) throw fail("Invalid page");
+      return { scene, revision: hash(text ?? "") };
+    } catch {
+      throw fail("The drawing could not be read. It has been left untouched.", 409);
     }
-    catch { throw fail('The drawing could not be read. It has been left untouched.', 409); }
   }
   function pageName(name: unknown): string {
-    if (typeof name !== 'string' || !name.trim() || name !== name.trim() || name.length > 100 || /[/\\\x00-\x1f]/.test(name) || /^\.+$/.test(name)) throw fail('Use a page name of 1–100 characters without slashes.');
+    if (
+      typeof name !== "string" ||
+      !name.trim() ||
+      name !== name.trim() ||
+      name.length > 100 ||
+      /[/\\\x00-\x1f]/.test(name) ||
+      /^\.+$/.test(name)
+    )
+      throw fail("Use a page name of 1–100 characters without slashes.");
     return name;
   }
   const pageFile = (name: unknown) => path.join(pages, `${pageName(name)}.excalidraw`);
   function samePage(incoming: Page | undefined, current: Page) {
-    if ((incoming && incoming.session !== current.session) || (!incoming && current.session !== 'legacy')) throw fail('The page changed in another window. Your old drawing was not added to it.', 409);
+    if ((incoming && incoming.session !== current.session) || (!incoming && current.session !== "legacy"))
+      throw fail("The page changed in another window. Your old drawing was not added to it.", 409);
   }
   async function locked<T>(action: () => Promise<T>): Promise<T> {
     await fs.mkdir(inbox, { recursive: true });
@@ -121,52 +281,86 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
     // owner (or an empty lock older than 30 seconds) can be recovered.
     const started = Date.now();
     while (true) {
-      try { await fs.mkdir(lock); break; }
-      catch (e) {
-        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'EEXIST') throw e;
+      try {
+        await fs.mkdir(lock);
+        break;
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "EEXIST") throw e;
         let directoryHandle;
         try {
           // Pin Linux cleanup to the directory whose owner was read. Another
           // process may release it and acquire a new lock at the same path.
-          if (process.platform === 'linux') directoryHandle = await fs.open(lock, 'r');
-          const ownerFile = directoryHandle ? `/proc/self/fd/${directoryHandle.fd}/owner` : path.join(lock, 'owner');
+          if (process.platform === "linux") directoryHandle = await fs.open(lock, "r");
+          const ownerFile = directoryHandle ? `/proc/self/fd/${directoryHandle.fd}/owner` : path.join(lock, "owner");
           try {
-            const owner = Number(await fs.readFile(ownerFile, 'utf8'));
+            const owner = Number(await fs.readFile(ownerFile, "utf8"));
             // A crash between creating the owner file and writing its pid leaves it empty, and process.kill(0, 0)
             // reads as alive forever. After the same grace as an empty lock, the claimant whose rename wins removes it.
-            if ((!Number.isSafeInteger(owner) || owner <= 0) && Date.now() - (await fs.stat(ownerFile)).mtimeMs > 30000) {
+            if (
+              (!Number.isSafeInteger(owner) || owner <= 0) &&
+              Date.now() - (await fs.stat(ownerFile)).mtimeMs > 30000
+            ) {
               const claim = `${ownerFile}.${process.pid}.${randomUUID()}`;
-              await fs.rename(ownerFile, claim); await fs.unlink(claim); await fs.rmdir(lock);
+              await fs.rename(ownerFile, claim);
+              await fs.unlink(claim);
+              await fs.rmdir(lock);
             } else {
-              try { process.kill(owner, 0); }
-              catch (probe) { if ((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ESRCH') { await fs.unlink(ownerFile); await fs.rmdir(lock); } }
+              try {
+                process.kill(owner, 0);
+              } catch (probe) {
+                if ((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code === "ESRCH") {
+                  await fs.unlink(ownerFile);
+                  await fs.rmdir(lock);
+                }
+              }
             }
           } catch (probe) {
-            if ((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') {
+            if ((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code === "ENOENT") {
               const stat = directoryHandle ? await directoryHandle.stat() : await fs.stat(lock);
               if (Date.now() - stat.mtimeMs > 30000) {
                 // Claim the empty generation before removing it. A handle to
                 // an already removed directory cannot create this owner file.
-                const claim = await fs.open(ownerFile, 'wx');
-                try { await claim.writeFile(String(process.pid)); } finally { await claim.close(); }
-                await fs.unlink(ownerFile); await fs.rmdir(lock);
+                const claim = await fs.open(ownerFile, "wx");
+                try {
+                  await claim.writeFile(String(process.pid));
+                } finally {
+                  await claim.close();
+                }
+                await fs.unlink(ownerFile);
+                await fs.rmdir(lock);
               }
             }
           }
         } catch (probe) {
-          if (!['ENOENT', 'EEXIST', 'ENOTEMPTY'].includes((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code!)) throw probe;
-        } finally { await directoryHandle?.close(); }
-        if (Date.now() - started > 5000) throw fail('The drawing is busy. Please retry.', 503);
+          if (
+            !["ENOENT", "EEXIST", "ENOTEMPTY"].includes((probe as NodeJS.ErrnoException & { loveSpot?: boolean }).code!)
+          )
+            throw probe;
+        } finally {
+          await directoryHandle?.close();
+        }
+        if (Date.now() - started > 5000) throw fail("The drawing is busy. Please retry.", 503);
         await pause(10);
       }
     }
-    try { await fs.writeFile(path.join(lock, 'owner'), String(process.pid)); return await action(); }
-    finally { await fs.unlink(path.join(lock, 'owner')); await fs.rmdir(lock); }
+    try {
+      await fs.writeFile(path.join(lock, "owner"), String(process.pid));
+      return await action();
+    } finally {
+      await fs.unlink(path.join(lock, "owner"));
+      await fs.rmdir(lock);
+    }
   }
   async function atomic(file: string, data: string | Buffer) {
     const temp = `${file}.${process.pid}.${randomUUID()}.tmp`;
-    try { await fs.writeFile(temp, data); await fs.rename(temp, file); }
-    finally { await fs.unlink(temp).catch(e => { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }); }
+    try {
+      await fs.writeFile(temp, data);
+      await fs.rename(temp, file);
+    } finally {
+      await fs.unlink(temp).catch(e => {
+        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT") throw e;
+      });
+    }
   }
   const droppedEmpty = new Map<string, string>(); // page name → session of each page left empty and so not kept (changePage, saveText)
   async function persist(scene: Drawing) {
@@ -179,8 +373,10 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
   async function save(value: unknown) {
     const incoming = validate(value);
     return locked(async () => {
-      const current = await read(); samePage(incoming.page, current.scene.page);
-      const scene = mergeImpl(current.scene, incoming), text = JSON.stringify(scene);
+      const current = await read();
+      samePage(incoming.page, current.scene.page);
+      const scene = mergeImpl(current.scene, incoming),
+        text = JSON.stringify(scene);
       if (hash(text) !== current.revision) return persist(scene);
       return { scene, revision: hash(text) };
     });
@@ -189,23 +385,43 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
   // Flush only its text to that exact archived page, without switching anyone.
   async function saveText(value: unknown) {
     const incoming = validate(value);
-    if (Object.keys(incoming).some(key => !['elements', 'page'].includes(key)) || incoming.elements.some(e => e.type !== 'text')
-      || !record(incoming.page) || typeof incoming.page.session !== 'string' || !incoming.page.session) throw fail('Invalid text draft');
+    if (
+      Object.keys(incoming).some(key => !["elements", "page"].includes(key)) ||
+      incoming.elements.some(e => e.type !== "text") ||
+      !record(incoming.page) ||
+      typeof incoming.page.session !== "string" ||
+      !incoming.page.session
+    )
+      throw fail("Invalid text draft");
     pageName(incoming.page.name);
     return locked(async () => {
       const current = await read();
       if (incoming.page.session === current.scene.page.session) return persist(mergeImpl(current.scene, incoming));
       let scene;
-      try { scene = validate(JSON.parse(await fs.readFile(pageFile(incoming.page.name), 'utf8'))); }
-      catch (e) {
+      try {
+        scene = validate(JSON.parse(await fs.readFile(pageFile(incoming.page.name), "utf8")));
+      } catch (e) {
         // A page left empty is not kept (changePage), yet words being typed on it in another window still belong there:
         // they bring it back. Only such a page: one deleted on purpose stays deleted, whatever arrives for it later.
-        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT' || droppedEmpty.get(incoming.page.name) !== incoming.page.session) throw fail('The original text page could not be read. Your draft is still local.', 409);
+        if (
+          (e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT" ||
+          droppedEmpty.get(incoming.page.name) !== incoming.page.session
+        )
+          throw fail("The original text page could not be read. Your draft is still local.", 409);
         droppedEmpty.delete(incoming.page.name);
-        scene = { type: 'excalidraw', version: 2, source: 'Love Spot', elements: [], files: {}, appState: {}, page: incoming.page };
+        scene = {
+          type: "excalidraw",
+          version: 2,
+          source: "Love Spot",
+          elements: [],
+          files: {},
+          appState: {},
+          page: incoming.page,
+        };
       }
       samePage(incoming.page, scene.page);
-      const merged = mergeImpl(scene, incoming), text = JSON.stringify(merged);
+      const merged = mergeImpl(scene, incoming),
+        text = JSON.stringify(merged);
       await fs.mkdir(pages, { recursive: true });
       await atomic(pageFile(scene.page.name), text);
       return { scene: merged, revision: hash(text) };
@@ -214,12 +430,18 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
   // Page lifecycle (Masih, 31 Oct: "pages have accumulated; things shouldn't just stay here permanently"). A page he has not
   // marked Keep goes to the system trash, where it can be restored, after PAGE_DAYS untouched; the page he is on never does.
   // Pages from before this rule count from the day it first ran, so nothing old leaves without a week shown in the page menu.
-  const lifecycleFile = path.join(directory, '.page-lifecycle.json'), PAGE_DAYS = 7, DAY = 24 * 60 * 60 * 1000;
+  const lifecycleFile = path.join(directory, ".page-lifecycle.json"),
+    PAGE_DAYS = 7,
+    DAY = 24 * 60 * 60 * 1000;
   async function lifecycle() {
     try {
-      const value = JSON.parse(await fs.readFile(lifecycleFile, 'utf8'));
-      if (record(value) && Number.isFinite(value.since) && Array.isArray(value.kept)) return { since: value.since as number, kept: value.kept.filter(name => typeof name === 'string') };
-    } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+      const value = JSON.parse(await fs.readFile(lifecycleFile, "utf8"));
+      if (record(value) && Number.isFinite(value.since) && Array.isArray(value.kept))
+        return { since: value.since as number, kept: value.kept.filter(name => typeof name === "string") };
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT" && !(e instanceof SyntaxError))
+        throw e;
+    }
     const fresh = { since: Date.now(), kept: [] };
     await atomic(lifecycleFile, JSON.stringify(fresh));
     return fresh;
@@ -228,11 +450,16 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
   // One Matilda (Masih, 31 Oct: "what happens with Matilda in the chat isn't the same as what happens on the board"): whether
   // she answers, and with which model, is one setting here that the board, the small chat and her chat tab all read.
   // Each app has its own board, so each keeps its own choice (7 Nov).
-  const matildaFile = path.join(directory, '.matilda-settings.json');
+  const matildaFile = path.join(directory, ".matilda-settings.json");
   async function matildaSettings(update?: Record<string, unknown>) {
     let value: Record<string, unknown> = {};
-    try { const saved = JSON.parse(await fs.readFile(matildaFile, 'utf8')); if (record(saved)) value = saved; }
-    catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT' && !(e instanceof SyntaxError)) throw e; }
+    try {
+      const saved = JSON.parse(await fs.readFile(matildaFile, "utf8"));
+      if (record(saved)) value = saved;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT" && !(e instanceof SyntaxError))
+        throw e;
+    }
     if (update) {
       value = { ...value, ...update };
       for (const key of Object.keys(value)) if (value[key] === null) delete value[key];
@@ -240,45 +467,79 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
       await fs.mkdir(directory, { recursive: true });
       await atomic(matildaFile, JSON.stringify(value));
     }
-    const settings = { replies: value.replies !== false, model: typeof value.model === 'string' ? value.model : null, provider: typeof value.provider === 'string' ? value.provider : null };
+    const settings = {
+      replies: value.replies !== false,
+      model: typeof value.model === "string" ? value.model : null,
+      provider: typeof value.provider === "string" ? value.provider : null,
+    };
     // Every open window hears a change on the Love Spot stream it already has open (no extra connection per window).
     if (update) watcher.publishMatilda(settings);
     return settings;
   }
   async function listPages() {
-    const life = await lifecycle(), now = Date.now(), current0 = (await read()).scene.page.name;
+    const life = await lifecycle(),
+      now = Date.now(),
+      current0 = (await read()).scene.page.name;
     await locked(async () => {
-      for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
+      for (const file of (await names(pages)).filter(n => n.endsWith(".excalidraw"))) {
         const name = file.slice(0, -11);
         if (name === current0 || life.kept.includes(name)) continue;
         const stat = await fs.stat(path.join(pages, file)).catch(() => null);
         if (stat?.isFile() && expiresAt(stat.mtimeMs, life) <= now) await trashFile(path.join(pages, file));
       }
     });
-    const current = await read(), listed = new Map();
-    for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
+    const current = await read(),
+      listed = new Map();
+    for (const file of (await names(pages)).filter(n => n.endsWith(".excalidraw"))) {
       const name = file.slice(0, -11);
-      try { pageName(name); const stat = await fs.stat(pageFile(name)); if (stat.isFile()) listed.set(name, { name, modified: stat.mtimeMs }); }
-      catch (e) { if (!(e as NodeJS.ErrnoException & { loveSpot?: boolean }).loveSpot && (e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }
+      try {
+        pageName(name);
+        const stat = await fs.stat(pageFile(name));
+        if (stat.isFile()) listed.set(name, { name, modified: stat.mtimeMs });
+      } catch (e) {
+        if (
+          !(e as NodeJS.ErrnoException & { loveSpot?: boolean }).loveSpot &&
+          (e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT"
+        )
+          throw e;
+      }
     }
-    const modified = await fs.stat(sceneFile).then(s => s.mtimeMs).catch(e => { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') return Date.now(); throw e; });
+    const modified = await fs
+      .stat(sceneFile)
+      .then(s => s.mtimeMs)
+      .catch(e => {
+        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === "ENOENT") return Date.now();
+        throw e;
+      });
     listed.set(current.scene.page.name, { name: current.scene.page.name, modified });
-    for (const page of listed.values()) Object.assign(page, life.kept.includes(page.name) ? { kept: true } : { kept: false, expires: expiresAt(page.modified, life) });
-    return { current: current.scene.page, // Page 13 before Page 12 before Page 9: the order never depends on which page was touched last, which the person cannot see (Masih, 23 Oct: "the order of these don't make any sense").
-    pages: [...listed.values()].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true })) };
+    for (const page of listed.values())
+      Object.assign(
+        page,
+        life.kept.includes(page.name) ? { kept: true } : { kept: false, expires: expiresAt(page.modified, life) },
+      );
+    return {
+      current: current.scene.page, // Page 13 before Page 12 before Page 9: the order never depends on which page was touched last, which the person cannot see (Masih, 23 Oct: "the order of these don't make any sense").
+      pages: [...listed.values()].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true })),
+    };
   }
   async function changePage(value: unknown) {
     const input = value as { action: string; name?: string; page?: Page };
-    if (!record(input) || !['new', 'switch', 'rename', 'delete', 'keep', 'release', 'clear'].includes(input.action) || Object.keys(input).some(k => !['action', 'name', 'page'].includes(k))
-      || (['delete', 'keep', 'release'].includes(input.action) && (input.name === undefined || !input.page)) || (input.action === 'clear' && (!input.page || input.name !== undefined))) throw fail('Invalid page action');
+    if (
+      !record(input) ||
+      !["new", "switch", "rename", "delete", "keep", "release", "clear"].includes(input.action) ||
+      Object.keys(input).some(k => !["action", "name", "page"].includes(k)) ||
+      (["delete", "keep", "release"].includes(input.action) && (input.name === undefined || !input.page)) ||
+      (input.action === "clear" && (!input.page || input.name !== undefined))
+    )
+      throw fail("Invalid page action");
     // Delete all (Masih, 31 Oct: "so many chats here. I said there should be an option to delete them all"): every page but the
     // open one and the kept ones goes to the system trash, where it can be restored.
-    if (input.action === 'clear') {
+    if (input.action === "clear") {
       const life = await lifecycle();
       return locked(async () => {
         const current = await read();
         samePage(input.page, current.scene.page);
-        for (const file of (await names(pages)).filter(n => n.endsWith('.excalidraw'))) {
+        for (const file of (await names(pages)).filter(n => n.endsWith(".excalidraw"))) {
           const name = file.slice(0, -11);
           if (name !== current.scene.page.name && !life.kept.includes(name)) await trashFile(path.join(pages, file));
         }
@@ -286,63 +547,110 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
       });
     }
     if (input.name !== undefined) pageName(input.name);
-    if (['keep', 'release', 'rename', 'delete'].includes(input.action)) {
-      const life = await lifecycle(), current = (await read()).scene.page.name;
-      const from = input.action === 'rename' ? current : input.name, kept = new Set(life.kept);
+    if (["keep", "release", "rename", "delete"].includes(input.action)) {
+      const life = await lifecycle(),
+        current = (await read()).scene.page.name;
+      const from = input.action === "rename" ? current : input.name,
+        kept = new Set(life.kept);
       // A renamed page stays kept under its new name; the old name stays listed too, in case the rename is refused.
-      if (input.action === 'keep' || input.action === 'rename' && kept.has(from!)) kept.add((input.action === 'keep' ? from : input.name)!);
-      else if (input.action !== 'rename') kept.delete(from!);
+      if (input.action === "keep" || (input.action === "rename" && kept.has(from!)))
+        kept.add((input.action === "keep" ? from : input.name)!);
+      else if (input.action !== "rename") kept.delete(from!);
       await atomic(lifecycleFile, JSON.stringify({ since: life.since, kept: [...kept] }));
-      if (input.action === 'keep' || input.action === 'release') return read();
+      if (input.action === "keep" || input.action === "release") return read();
     }
     return locked(async () => {
       const current = await read();
       if (input.page) samePage(input.page, current.scene.page);
       const listed = await names(pages);
       let name = input.name;
-      if (input.action === 'delete') {
+      if (input.action === "delete") {
         const file = pageFile(name);
-        try { await fs.access(file); }
-        catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') throw fail('That page could not be found.', 404); throw e; }
-        if (name !== current.scene.page.name) { await trashFile(file); return current; }
+        try {
+          await fs.access(file);
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === "ENOENT")
+            throw fail("That page could not be found.", 404);
+          throw e;
+        }
+        if (name !== current.scene.page.name) {
+          await trashFile(file);
+          return current;
+        }
         await fs.mkdir(pages, { recursive: true });
         await atomic(file, JSON.stringify(current.scene));
         let index = new Set([...listed, `${current.scene.page.name}.excalidraw`]).size + 1;
         let nextName;
-        do { nextName = `Page ${index++}`; } while (listed.includes(`${nextName}.excalidraw`) || nextName === name);
+        do {
+          nextName = `Page ${index++}`;
+        } while (listed.includes(`${nextName}.excalidraw`) || nextName === name);
         await trashFile(file);
-        return persist({ type: 'excalidraw', version: 2, source: 'Love Spot', elements: [], files: {}, appState: {}, page: { name: nextName, session: randomUUID() } });
+        return persist({
+          type: "excalidraw",
+          version: 2,
+          source: "Love Spot",
+          elements: [],
+          files: {},
+          appState: {},
+          page: { name: nextName, session: randomUUID() },
+        });
       }
-      if (input.action === 'new' && name === undefined) {
+      if (input.action === "new" && name === undefined) {
         let index = new Set([...listed, `${current.scene.page.name}.excalidraw`]).size + 1;
-        do { name = `Page ${index++}`; } while (listed.includes(`${name}.excalidraw`));
+        do {
+          name = `Page ${index++}`;
+        } while (listed.includes(`${name}.excalidraw`));
       }
       pageName(name);
-      if (name === current.scene.page.name && input.action !== 'new') return current;
-      if (input.action !== 'switch' && (name === current.scene.page.name || listed.includes(`${name}.excalidraw`))) throw fail('A page with that name already exists.', 409);
+      if (name === current.scene.page.name && input.action !== "new") return current;
+      if (input.action !== "switch" && (name === current.scene.page.name || listed.includes(`${name}.excalidraw`)))
+        throw fail("A page with that name already exists.", 409);
       let scene;
-      if (input.action === 'switch') {
-        try { scene = validate(JSON.parse(await fs.readFile(pageFile(name), 'utf8'))); }
-        catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === 'ENOENT') throw fail('That page could not be found.', 404); throw fail('That page could not be read. It has been left untouched.', 409); }
-      } else scene = input.action === 'new' ? { type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} } : current.scene;
+      if (input.action === "switch") {
+        try {
+          scene = validate(JSON.parse(await fs.readFile(pageFile(name), "utf8")));
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code === "ENOENT")
+            throw fail("That page could not be found.", 404);
+          throw fail("That page could not be read. It has been left untouched.", 409);
+        }
+      } else
+        scene =
+          input.action === "new"
+            ? { type: "excalidraw", version: 2, elements: [], files: {}, appState: {} }
+            : current.scene;
       await fs.mkdir(pages, { recursive: true });
       // A page left with nothing on it is not kept (Masih, 5 Nov: "the pages are too many and piled up … delete the empty pages").
       const leaving = pageFile(current.scene.page.name);
-      if (input.action !== 'rename' && !current.scene.elements.some(e => !e.isDeleted) && !(await lifecycle()).kept.includes(current.scene.page.name)) {
-        await fs.rm(leaving, { force: true }); droppedEmpty.set(current.scene.page.name, current.scene.page.session);
+      if (
+        input.action !== "rename" &&
+        !current.scene.elements.some(e => !e.isDeleted) &&
+        !(await lifecycle()).kept.includes(current.scene.page.name)
+      ) {
+        await fs.rm(leaving, { force: true });
+        droppedEmpty.set(current.scene.page.name, current.scene.page.session);
       } else await atomic(leaving, JSON.stringify(mergeImpl(current.scene, { elements: [] })));
-      if (input.action === 'rename') await fs.rename(pageFile(current.scene.page.name), pageFile(name));
-      return persist(mergeImpl({ ...scene, page: { name: name!, session: input.action === 'rename' ? current.scene.page.session : randomUUID() } }, { elements: [] }));
+      if (input.action === "rename") await fs.rename(pageFile(current.scene.page.name), pageFile(name));
+      return persist(
+        mergeImpl(
+          {
+            ...scene,
+            page: { name: name!, session: input.action === "rename" ? current.scene.page.session : randomUUID() },
+          },
+          { elements: [] },
+        ),
+      );
     });
   }
   async function picture({ revision, png }: { revision?: string; png?: string } = {}) {
-    if (typeof png !== 'string' || !/^[A-Za-z0-9+/]*={0,2}$/.test(png)) throw fail('Invalid PNG');
-    const bytes = Buffer.from(png, 'base64');
-    if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG) || !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20)) throw fail('Invalid PNG');
+    if (typeof png !== "string" || !/^[A-Za-z0-9+/]*={0,2}$/.test(png)) throw fail("Invalid PNG");
+    const bytes = Buffer.from(png, "base64");
+    if (bytes.length < 24 || !bytes.subarray(0, 8).equals(PNG) || !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20))
+      throw fail("Invalid PNG");
     return locked(async () => {
-      if (revision !== (await read()).revision) throw fail('The drawing changed. Export its current picture.', 409);
-      await atomic(path.join(directory, 'view.png'), bytes);
-      await atomic(path.join(directory, '.view-revision'), revision!);
+      if (revision !== (await read()).revision) throw fail("The drawing changed. Export its current picture.", 409);
+      await atomic(path.join(directory, "view.png"), bytes);
+      await atomic(path.join(directory, ".view-revision"), revision!);
       return { saved: true };
     });
   }
@@ -350,12 +658,14 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
   // `stale` names a saved chat Elpis no longer has: it is replaced, unless another window already did so.
   async function chat(create?: (directory: string) => Promise<string>, stale?: string) {
     return locked(async () => {
-      const file = path.join(directory, '.love-spot-chat.json');
+      const file = path.join(directory, ".love-spot-chat.json");
       try {
-        const saved = JSON.parse(await fs.readFile(file, 'utf8'));
-        if (typeof saved.threadId !== 'string' || !saved.threadId) throw fail('Love Spot chat could not be read.', 409);
+        const saved = JSON.parse(await fs.readFile(file, "utf8"));
+        if (typeof saved.threadId !== "string" || !saved.threadId) throw fail("Love Spot chat could not be read.", 409);
         if (saved.threadId !== stale) return saved.threadId;
-      } catch (e) { if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw e; }
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT") throw e;
+      }
       if (!create) return null;
       const id = await create(directory);
       await atomic(file, JSON.stringify({ threadId: id }));
@@ -365,69 +675,173 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
   async function boardPicture(revision: string) {
     return locked(async () => {
       const current = await read();
-      if (revision !== current.revision || await fs.readFile(path.join(directory, '.view-revision'), 'utf8').catch(() => '') !== revision) throw fail('The drawing changed. Try sending again with its current picture.', 409);
-      return (await fs.readFile(path.join(directory, 'view.png'))).toString('base64');
+      if (
+        revision !== current.revision ||
+        (await fs.readFile(path.join(directory, ".view-revision"), "utf8").catch(() => "")) !== revision
+      )
+        throw fail("The drawing changed. Try sending again with its current picture.", 409);
+      return (await fs.readFile(path.join(directory, "view.png"))).toString("base64");
     });
   }
   /** The last exported picture while it still shows the current drawing, else null: for a chat away from the board. */
   async function currentPicture() {
     return locked(async () => {
       const current = await read();
-      if (await fs.readFile(path.join(directory, '.view-revision'), 'utf8').catch(() => '') !== current.revision) return null;
-      return (await fs.readFile(path.join(directory, 'view.png')).catch(() => null))?.toString('base64') ?? null;
+      if ((await fs.readFile(path.join(directory, ".view-revision"), "utf8").catch(() => "")) !== current.revision)
+        return null;
+      return (await fs.readFile(path.join(directory, "view.png")).catch(() => null))?.toString("base64") ?? null;
     });
   }
   /** Writes the reply as a black note with her face to its left, and draws her painting (shapes from bridge/love-spot-painting.cts) beneath it; either may be missing. Face, note and painting are one group. */
-  async function reply(turnId: string, text: string, agentColor: (color: string, id?: string) => boolean, page?: Page, shapes: ReturnType<typeof splitPainting>['shapes'] = [], { preview = false } = {}) {
-    if (typeof text === 'string') text = text.replaceAll('💙', '❤️');
+  async function reply(
+    turnId: string,
+    text: string,
+    agentColor: (color: string, id?: string) => boolean,
+    page?: Page,
+    shapes: ReturnType<typeof splitPainting>["shapes"] = [],
+    { preview = false } = {},
+  ) {
+    if (typeof text === "string") text = text.replaceAll("💙", "❤️");
     const portrait = replyPortrait(text, preview);
     text = portrait.text;
-    const note = typeof text === 'string' && text.trim() !== '';
+    const note = typeof text === "string" && text.trim() !== "";
     if (!note && !shapes.length) return;
     return locked(async () => {
-      const { scene } = await read(), id = note ? `love-reply-${turnId}` : `love-paint-${turnId}-0`;
+      const { scene } = await read(),
+        id = note ? `love-reply-${turnId}` : `love-paint-${turnId}-0`;
       if (page) samePage(page, scene.page);
       const previousFace = scene.elements.find(e => e.id === `love-face-${turnId}`);
       if (previousFace && !previousFace.customData?.streaming) return;
       const live = scene.elements.filter(e => !e.isDeleted && !e.groupIds?.includes(`love-reply-group-${turnId}`));
-      const anchor = live.filter(e => e.type === 'text' && !agentColor(e.strokeColor, e.id)).sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0];
+      const anchor = live
+        .filter(e => e.type === "text" && !agentColor(e.strokeColor, e.id))
+        .sort((a, b) => (b.updated ?? 0) - (a.updated ?? 0))[0];
       // Her note is set in Nunito, the board's friendly sans; its lines are cut at 38 columns, so its height is known without measuring text.
-      const lines = (note ? text.trim() : '').split('\n').flatMap(line => {
-        const chars = Array.from(line), wrapped = [];
+      const lines = (note ? text.trim() : "").split("\n").flatMap(line => {
+        const chars = Array.from(line),
+          wrapped = [];
         // Wide glyphs and expanded tabs need more room than Latin letters when Excalidraw restores the font.
-        const columns = (char: string) => char === '\t' ? 8 : char.codePointAt(0)! > 127 ? 2 : 1;
+        const columns = (char: string) => (char === "\t" ? 8 : char.codePointAt(0)! > 127 ? 2 : 1);
         while (chars.length) {
-          let at = 0, used = 0;
+          let at = 0,
+            used = 0;
           while (at < chars.length && used + columns(chars[at]!) <= 38) used += columns(chars[at++]!);
-          if (at === chars.length) { wrapped.push(chars.join('')); break; }
-          const space = chars.slice(0, at + 1).lastIndexOf(' '); if (space >= 8) at = space;
-          wrapped.push(chars.splice(0, at).join('')); if (chars[0] === ' ') chars.shift();
+          if (at === chars.length) {
+            wrapped.push(chars.join(""));
+            break;
+          }
+          const space = chars.slice(0, at + 1).lastIndexOf(" ");
+          if (space >= 8) at = space;
+          wrapped.push(chars.splice(0, at).join(""));
+          if (chars[0] === " ") chars.shift();
         }
-        return wrapped.length ? wrapped : [''];
+        return wrapped.length ? wrapped : [""];
       });
-      const noteHeight = note ? Math.max(1, lines.length) * 25 : 0, painted = paintingSize(shapes), gap = note && shapes.length ? 24 : 0;
-      const width = FACE_SIDE + Math.max(note ? 480 : 0, painted.width), height = Math.max(FACE, noteHeight + gap + painted.height);
+      const noteHeight = note ? Math.max(1, lines.length) * 25 : 0,
+        painted = paintingSize(shapes),
+        gap = note && shapes.length ? 24 : 0;
+      const width = FACE_SIDE + Math.max(note ? 480 : 0, painted.width),
+        height = Math.max(FACE, noteHeight + gap + painted.height);
       const bounds = (e: DrawingElement) => {
-        const angle = e.angle || 0, w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)), h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
+        const angle = e.angle || 0,
+          w = Math.abs(e.width * Math.cos(angle)) + Math.abs(e.height * Math.sin(angle)),
+          h = Math.abs(e.width * Math.sin(angle)) + Math.abs(e.height * Math.cos(angle));
         return { x: e.x + e.width / 2 - w / 2, y: e.y + e.height / 2 - h / 2, width: w, height: h };
       };
-      const a = previousFace ? { x: previousFace.x, y: previousFace.y - 40, height: 0 } : anchor ? bounds(anchor) : { x: 0, y: -40, height: 0 };
-      const x = a.x, group = `love-reply-group-${turnId}`; let y = a.y + a.height + 40;
+      const a = previousFace
+        ? { x: previousFace.x, y: previousFace.y - 40, height: 0 }
+        : anchor
+          ? bounds(anchor)
+          : { x: 0, y: -40, height: 0 };
+      const x = a.x,
+        group = `love-reply-group-${turnId}`;
+      let y = a.y + a.height + 40;
       for (;;) {
-        const hits = live.map(bounds).filter(e => x < e.x + e.width + 24 && x + width + 24 > e.x && y < e.y + e.height + 24 && y + height + 24 > e.y);
+        const hits = live
+          .map(bounds)
+          .filter(
+            e => x < e.x + e.width + 24 && x + width + 24 > e.x && y < e.y + e.height + 24 && y + height + 24 > e.y,
+          );
         if (!hits.length) break;
         y = Math.max(...hits.map(e => e.y + e.height)) + 40;
       }
-      const now = Date.now(), file = { id: `matilda-face-${portrait.expression}`, ...portrait.board, created: now, lastRetrieved: now };
-      const face: DrawingElement = { id: `love-face-${turnId}`, type: 'image', fileId: file.id, x, y, width: FACE, height: FACE, angle: 0, strokeColor: 'transparent', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
-        strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0, isDeleted: false, boundElements: null,
-        updated: now, link: null, locked: false, status: 'saved', scale: [1, 1], crop: null };
-      const element = !note ? null : { id, type: 'text', x: x + FACE_SIDE, y, width: 480, height: noteHeight, angle: 0, strokeColor: '#000000', backgroundColor: 'transparent', fillStyle: 'solid', strokeWidth: 1,
-        strokeStyle: 'solid', roughness: 0, opacity: 100, groupIds: [group], frameId: null, roundness: null, seed: 1, version: 1, versionNonce: 0,
-        isDeleted: false, boundElements: null, updated: now, link: null, locked: false, fontSize: 20, fontFamily: 6, text: lines.join('\n'),
-        originalText: text.trim(), textAlign: 'left', verticalAlign: 'top', containerId: null, autoResize: false, lineHeight: 1.25 };
+      const now = Date.now(),
+        file = { id: `matilda-face-${portrait.expression}`, ...portrait.board, created: now, lastRetrieved: now };
+      const face: DrawingElement = {
+        id: `love-face-${turnId}`,
+        type: "image",
+        fileId: file.id,
+        x,
+        y,
+        width: FACE,
+        height: FACE,
+        angle: 0,
+        strokeColor: "transparent",
+        backgroundColor: "transparent",
+        fillStyle: "solid",
+        strokeWidth: 1,
+        strokeStyle: "solid",
+        roughness: 0,
+        opacity: 100,
+        groupIds: [group],
+        frameId: null,
+        roundness: null,
+        seed: 1,
+        version: 1,
+        versionNonce: 0,
+        isDeleted: false,
+        boundElements: null,
+        updated: now,
+        link: null,
+        locked: false,
+        status: "saved",
+        scale: [1, 1],
+        crop: null,
+      };
+      const element = !note
+        ? null
+        : {
+            id,
+            type: "text",
+            x: x + FACE_SIDE,
+            y,
+            width: 480,
+            height: noteHeight,
+            angle: 0,
+            strokeColor: "#000000",
+            backgroundColor: "transparent",
+            fillStyle: "solid",
+            strokeWidth: 1,
+            strokeStyle: "solid",
+            roughness: 0,
+            opacity: 100,
+            groupIds: [group],
+            frameId: null,
+            roundness: null,
+            seed: 1,
+            version: 1,
+            versionNonce: 0,
+            isDeleted: false,
+            boundElements: null,
+            updated: now,
+            link: null,
+            locked: false,
+            fontSize: 20,
+            fontFamily: 6,
+            text: lines.join("\n"),
+            originalText: text.trim(),
+            textAlign: "left",
+            verticalAlign: "top",
+            containerId: null,
+            autoResize: false,
+            lineHeight: 1.25,
+          };
       face.customData = { streaming: preview, expression: portrait.expression };
-      const updated = [face, ...(element ? [element] : []), ...paintElements(shapes, { x: x + FACE_SIDE, y: y + noteHeight + gap }, turnId, group)].map(e => {
+      const updated = [
+        face,
+        ...(element ? [element] : []),
+        ...paintElements(shapes, { x: x + FACE_SIDE, y: y + noteHeight + gap }, turnId, group),
+      ].map(e => {
         const previous = scene.elements.find(old => old.id === e.id);
         return previous ? { ...e, version: previous.version + 1, versionNonce: previous.versionNonce + 1 } : e;
       });
@@ -436,66 +850,159 @@ function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.
   }
   async function voice(muted?: boolean) {
     return locked(async () => {
-      const file = path.join(directory, '.voice.json');
+      const file = path.join(directory, ".voice.json");
       if (muted !== undefined) {
-        if (typeof muted !== 'boolean') throw fail('Invalid voice preference');
+        if (typeof muted !== "boolean") throw fail("Invalid voice preference");
         const temporary = `${file}.${randomUUID()}.tmp`;
         await fs.writeFile(temporary, JSON.stringify({ muted }), { mode: 0o600 });
         await fs.rename(temporary, file);
       }
       try {
-        const saved = JSON.parse(await fs.readFile(file, 'utf8'));
-        if (typeof saved?.muted !== 'boolean') throw fail('Invalid Voice preference');
+        const saved = JSON.parse(await fs.readFile(file, "utf8"));
+        if (typeof saved?.muted !== "boolean") throw fail("Invalid Voice preference");
         return saved.muted;
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT") throw cause;
+        return false;
       }
-      catch (cause) { if ((cause as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw cause; return false; }
     });
   }
   /** Correct the ignored-origin bug only when the recorded geometry still matches the drawing. */
-  async function repairPaintings(paintings: { turnId: string; shapes: ReturnType<typeof splitPainting>['shapes'] }[]) {
+  async function repairPaintings(paintings: { turnId: string; shapes: ReturnType<typeof splitPainting>["shapes"] }[]) {
     if (!paintings.length) return;
     return locked(async () => {
-      const { scene } = await read(), byId = new Map(scene.elements.map(e => [e.id, e])), updates: DrawingElement[] = [];
+      const { scene } = await read(),
+        byId = new Map(scene.elements.map(e => [e.id, e])),
+        updates: DrawingElement[] = [];
       for (const { turnId, shapes } of paintings) {
         const id = (index: number) => `love-paint-${turnId}-${index}`;
-        if (scene.elements.some(e => e.id.startsWith(`love-paint-${turnId}-`) && Number(e.id.match(/-(\d+)$/)?.[1]) >= shapes.length)) continue;
+        if (
+          scene.elements.some(
+            e => e.id.startsWith(`love-paint-${turnId}-`) && Number(e.id.match(/-(\d+)$/)?.[1]) >= shapes.length,
+          )
+        )
+          continue;
         const anchorIndex = shapes.findIndex((shape, index) => {
           const e = byId.get(id(index));
-          return !['line', 'arrow'].includes(shape.type) && e?.type === shape.type && !e!.isDeleted && !e!.angle;
+          return !["line", "arrow"].includes(shape.type) && e?.type === shape.type && !e!.isDeleted && !e!.angle;
         });
         if (anchorIndex < 0) continue;
-        const anchor = byId.get(id(anchorIndex)), x = anchor!.x - shapes[anchorIndex]!.x, y = anchor!.y - shapes[anchorIndex]!.y;
-        if (shapes.some((shape, index) => {
-          if (['line', 'arrow'].includes(shape.type)) return false;
-          const e = byId.get(id(index));
-          if (!e || e.isDeleted) return false;
-          return e.type !== shape.type || e.angle || Math.abs(e.x - (x + shape.x)) > 0.001 || Math.abs(e.y - (y + shape.y)) > 0.001 || (shape.type !== 'text' && (Math.abs(e.width - shape.width) > 0.001 || Math.abs(e.height - shape.height) > 0.001));
-        })) continue;
+        const anchor = byId.get(id(anchorIndex)),
+          x = anchor!.x - shapes[anchorIndex]!.x,
+          y = anchor!.y - shapes[anchorIndex]!.y;
+        if (
+          shapes.some((shape, index) => {
+            if (["line", "arrow"].includes(shape.type)) return false;
+            const e = byId.get(id(index));
+            if (!e || e.isDeleted) return false;
+            return (
+              e.type !== shape.type ||
+              e.angle ||
+              Math.abs(e.x - (x + shape.x)) > 0.001 ||
+              Math.abs(e.y - (y + shape.y)) > 0.001 ||
+              (shape.type !== "text" &&
+                (Math.abs(e.width - shape.width) > 0.001 || Math.abs(e.height - shape.height) > 0.001))
+            );
+          })
+        )
+          continue;
         shapes.forEach((shape, index) => {
           if (!shape.offsetX && !shape.offsetY) return;
           const e = byId.get(id(index));
-          if (!e || e.isDeleted || e.angle || e.type !== shape.type || JSON.stringify(e.points) !== JSON.stringify((shape as typeof shape & { points?: [number, number][] }).points)) return;
-          if (Math.abs(e.x - (x + shape.x - shape.offsetX!)) > 0.001 || Math.abs(e.y - (y + shape.y - shape.offsetY!)) > 0.001) return;
-          updates.push({ ...e, x: x + shape.x, y: y + shape.y, version: e.version + 1, versionNonce: e.versionNonce + 1, updated: Date.now() });
+          if (
+            !e ||
+            e.isDeleted ||
+            e.angle ||
+            e.type !== shape.type ||
+            JSON.stringify(e.points) !==
+              JSON.stringify((shape as typeof shape & { points?: [number, number][] }).points)
+          )
+            return;
+          if (
+            Math.abs(e.x - (x + shape.x - shape.offsetX!)) > 0.001 ||
+            Math.abs(e.y - (y + shape.y - shape.offsetY!)) > 0.001
+          )
+            return;
+          updates.push({
+            ...e,
+            x: x + shape.x,
+            y: y + shape.y,
+            version: e.version + 1,
+            versionNonce: e.versionNonce + 1,
+            updated: Date.now(),
+          });
         });
       }
       if (updates.length) await persist(mergeImpl(scene, { elements: updates }));
     });
   }
-  async function companion(update?: (value: { pinned: unknown[]; favorite: Record<string, unknown> | null; [key: string]: unknown }) => Record<string, unknown>) {
+  async function companion(
+    update?: (value: {
+      pinned: unknown[];
+      favorite: Record<string, unknown> | null;
+      [key: string]: unknown;
+    }) => Record<string, unknown>,
+  ) {
     return locked(async () => {
-      const file = path.join(directory, '.matilda-companion.json');
+      const file = path.join(directory, ".matilda-companion.json");
       let value;
-      try { value = JSON.parse(await fs.readFile(file, 'utf8')); }
-      catch (cause) { if ((cause as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== 'ENOENT') throw fail('Matilda settings could not be read; they were left untouched.', 409); value = { pinned: [], favorite: null }; }
-      if (!record(value) || !Array.isArray(value.pinned)) throw fail('Matilda settings are invalid; they were left untouched.', 409);
-      if (update) { value = update(value as { pinned: unknown[]; favorite: Record<string, unknown> | null; [key: string]: unknown }); await atomic(file, JSON.stringify(value)); }
+      try {
+        value = JSON.parse(await fs.readFile(file, "utf8"));
+      } catch (cause) {
+        if ((cause as NodeJS.ErrnoException & { loveSpot?: boolean }).code !== "ENOENT")
+          throw fail("Matilda settings could not be read; they were left untouched.", 409);
+        value = { pinned: [], favorite: null };
+      }
+      if (!record(value) || !Array.isArray(value.pinned))
+        throw fail("Matilda settings are invalid; they were left untouched.", 409);
+      if (update) {
+        value = update(
+          value as { pinned: unknown[]; favorite: Record<string, unknown> | null; [key: string]: unknown },
+        );
+        await atomic(file, JSON.stringify(value));
+      }
       return value;
     });
   }
-  const watcher = createBoardWatcher(directory, screenshots, { read, save, persist, locked, atomic, matildaSettings, validate, mergeImpl, record, hash, screenshotId, trashFile, fail, PNG, pause });
+  const watcher = createBoardWatcher(directory, screenshots, {
+    read,
+    save,
+    persist,
+    locked,
+    atomic,
+    matildaSettings,
+    validate,
+    mergeImpl,
+    record,
+    hash,
+    screenshotId,
+    trashFile,
+    fail,
+    PNG,
+    pause,
+  });
   const { start, watch, close, screenshotsList, chooseScreenshot } = watcher;
-  return { matildaSettings, read, save, saveText, listPages, changePage, picture, boardPicture, currentPicture, chat, reply, voice, start, watch, screenshotsList, chooseScreenshot, companion, repairPaintings, close };
+  return {
+    matildaSettings,
+    read,
+    save,
+    saveText,
+    listPages,
+    changePage,
+    picture,
+    boardPicture,
+    currentPicture,
+    chat,
+    reply,
+    voice,
+    start,
+    watch,
+    screenshotsList,
+    chooseScreenshot,
+    companion,
+    repairPaintings,
+    close,
+  };
 }
 export declare const createLoveSpot: typeof createLoveSpotImpl;
 export declare const merge: typeof mergeImpl;

@@ -5,10 +5,16 @@ export const BROWSER_COMMENTS = "Browser comments";
 
 /** The comment texts of a "# Browser comments:" note, in order. */
 export function browserComments(note: string): string[] {
-  return note.split(/^## User Comment \d+[ \t]*$/m).slice(1).flatMap(block => {
-    const at = block.indexOf("\nComment:\n");
-    if (at < 0) return [];
-    const body = block.slice(at + "\nComment:\n".length).replace(/\n*The attached image shows[\s\S]*$/, "").trim();
-    return body ? [body] : [];
-  });
+  return note
+    .split(/^## User Comment \d+[ \t]*$/m)
+    .slice(1)
+    .flatMap(block => {
+      const at = block.indexOf("\nComment:\n");
+      if (at < 0) return [];
+      const body = block
+        .slice(at + "\nComment:\n".length)
+        .replace(/\n*The attached image shows[\s\S]*$/, "")
+        .trim();
+      return body ? [body] : [];
+    });
 }

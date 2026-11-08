@@ -17,32 +17,59 @@ export const PROTOCOL = [
 ].join("\n\n");
 
 const PERSONA_KEY = "elpis-matilda-persona";
-export const savedPersona = () => { try { return appStorage().getItem(PERSONA_KEY) || PROTOCOL; } catch { return PROTOCOL; } };
-export const keepPersona = (value: string) => { try { appStorage().setItem(PERSONA_KEY, value); } catch { /* Who she is is a convenience. */ } };
+export const savedPersona = () => {
+  try {
+    return appStorage().getItem(PERSONA_KEY) || PROTOCOL;
+  } catch {
+    return PROTOCOL;
+  }
+};
+export const keepPersona = (value: string) => {
+  try {
+    appStorage().setItem(PERSONA_KEY, value);
+  } catch {
+    /* Who she is is a convenience. */
+  }
+};
 
 /** The model she runs on: empty means the app's main model (Settings), anything else is the person's choice in "Who Matilda is". */
 const MODEL_KEY = "elpis-matilda-model";
 export type ModelPick = { model: string; choiceId: string };
 export const savedModel = (): ModelPick => {
-  try { const value = JSON.parse(appStorage().getItem(MODEL_KEY) || "null"); if (typeof value?.model === "string" && typeof value?.choiceId === "string") return value; } catch { /* The main model is the default. */ }
+  try {
+    const value = JSON.parse(appStorage().getItem(MODEL_KEY) || "null");
+    if (typeof value?.model === "string" && typeof value?.choiceId === "string") return value;
+  } catch {
+    /* The main model is the default. */
+  }
   return { model: "", choiceId: "" };
 };
-export const keepModel = (value: ModelPick) => { try { appStorage().setItem(MODEL_KEY, JSON.stringify(value)); } catch { /* The model is a convenience. */ } };
+export const keepModel = (value: ModelPick) => {
+  try {
+    appStorage().setItem(MODEL_KEY, JSON.stringify(value));
+  } catch {
+    /* The model is a convenience. */
+  }
+};
 
 /** What she answers: her own notes, paintings and face never count, a new shape does, a note does when its words change, and moving a shape does not. */
 const hers = (e: ExcalidrawElement) => e.id.startsWith("love-") || (e.type === "text" && agentColor(e.strokeColor));
 export function noticed(before: readonly ExcalidrawElement[], after: readonly ExcalidrawElement[]) {
   const was = new Map(before.map(e => [e.id, e]));
-  return after.filter(e => {
-    if (e.isDeleted || hers(e)) return false;
-    const old = was.get(e.id);
-    return e.type === "text" ? e.text !== (old?.type === "text" ? old.text : undefined) : !old;
-  }).map(e => e.id);
+  return after
+    .filter(e => {
+      if (e.isDeleted || hers(e)) return false;
+      const old = was.get(e.id);
+      return e.type === "text" ? e.text !== (old?.type === "text" ? old.text : undefined) : !old;
+    })
+    .map(e => e.id);
 }
 
 /** What she is told about those: his words, and a line saying he drew when he did (her picture shows what). */
 export function told(elements: readonly ExcalidrawElement[], ids: ReadonlySet<string>) {
   const live = elements.filter(e => ids.has(e.id) && !e.isDeleted && !hers(e));
-  const words = live.flatMap(e => e.type === "text" && (e.originalText || e.text).trim() ? [(e.originalText || e.text).trim()] : []);
-  return [...words, ...live.some(e => e.type !== "text") ? ["I drew something on the board."] : []].join("\n\n");
+  const words = live.flatMap(e =>
+    e.type === "text" && (e.originalText || e.text).trim() ? [(e.originalText || e.text).trim()] : [],
+  );
+  return [...words, ...(live.some(e => e.type !== "text") ? ["I drew something on the board."] : [])].join("\n\n");
 }

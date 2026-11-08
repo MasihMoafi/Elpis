@@ -1,20 +1,31 @@
-import { BridgeError, object, text } from './validate.mts';
-import { PERMISSION_PRESETS, PROFILES } from './permission-presets.mts';
+import { BridgeError, object, text } from "./validate.mts";
+import { PERMISSION_PRESETS, PROFILES } from "./permission-presets.mts";
 
 /** The ChatGPT app's three permission modes, plus Elpis's Bypass permissions, as Elpis approval settings and
  * the engine's built-in permission profiles. Bypass is `:bypass-permissions`: Full access plus no refusals
  * (codex-rs/protocol/src/models.rs bypass_permissions_active). Each mode is a named profile, not a bare sandbox,
  * because a reopened chat gets back its last profile id; a sandbox chosen alone fell back to the config's. */
-const BYPASS_PROFILE = ':bypass-permissions';
+const BYPASS_PROFILE = ":bypass-permissions";
 
-export const PERMISSIONS: Record<string, { approvalPolicy: string; approvalsReviewer: string; permissions: unknown }> = {
-  ...Object.fromEntries(Object.entries(PERMISSION_PRESETS).map(([mode, preset]) => [mode, { approvalPolicy: preset.approval, approvalsReviewer: preset.reviewer, permissions: (PROFILES as Record<string, string>)[preset.sandbox] }])),
-  bypass: { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: BYPASS_PROFILE },
-};
+export const PERMISSIONS: Record<string, { approvalPolicy: string; approvalsReviewer: string; permissions: unknown }> =
+  {
+    ...Object.fromEntries(
+      Object.entries(PERMISSION_PRESETS).map(([mode, preset]) => [
+        mode,
+        {
+          approvalPolicy: preset.approval,
+          approvalsReviewer: preset.reviewer,
+          permissions: (PROFILES as Record<string, string>)[preset.sandbox],
+        },
+      ]),
+    ),
+    bypass: { approvalPolicy: "never", approvalsReviewer: "user", permissions: BYPASS_PROFILE },
+  };
 
 export function permissionMode(value: unknown) {
   if (value === undefined) return;
-  if (typeof value !== 'string' || !Object.hasOwn(PERMISSIONS, value)) throw new BridgeError('Choose a permission mode: ask, auto, full or bypass');
+  if (typeof value !== "string" || !Object.hasOwn(PERMISSIONS, value))
+    throw new BridgeError("Choose a permission mode: ask, auto, full or bypass");
   return value;
 }
 
@@ -22,41 +33,68 @@ export function permissionMode(value: unknown) {
  * engine keeps the mode for later turns, so it is sent only when it changes. */
 export function collaborationMode(value: unknown, model: unknown, effort: unknown) {
   if (value === undefined) return {};
-  if (value !== 'plan' && value !== 'default') throw new BridgeError('Choose a chat mode: plan or default');
-  if (!model) throw new BridgeError('Choose a model before switching Plan mode', 409);
-  return { collaborationMode: { mode: value, settings: { model, reasoning_effort: effort ?? null, developer_instructions: null } } };
+  if (value !== "plan" && value !== "default") throw new BridgeError("Choose a chat mode: plan or default");
+  if (!model) throw new BridgeError("Choose a model before switching Plan mode", 409);
+  return {
+    collaborationMode: {
+      mode: value,
+      settings: { model, reasoning_effort: effort ?? null, developer_instructions: null },
+    },
+  };
 }
 
 /** One of the terminal's /review targets (codex-rs/app-server-protocol review.rs), checked field by field. */
 export function reviewTarget(value: unknown) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new BridgeError('Unknown review target');
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new BridgeError("Unknown review target");
   const target = value as Record<string, unknown>;
   switch (target.type) {
-    case 'uncommittedChanges': object(target, ['type']); return { type: target.type };
-    case 'baseBranch': {
-      object(target, ['type', 'branch']);
-      const branch = text(target.branch, 'branch name', 255);
-      if (!/^[A-Za-z0-9][A-Za-z0-9._/@+-]*$/.test(branch)) throw new BridgeError('Invalid branch name');
+    case "uncommittedChanges":
+      object(target, ["type"]);
+      return { type: target.type };
+    case "baseBranch": {
+      object(target, ["type", "branch"]);
+      const branch = text(target.branch, "branch name", 255);
+      if (!/^[A-Za-z0-9][A-Za-z0-9._/@+-]*$/.test(branch)) throw new BridgeError("Invalid branch name");
       return { type: target.type, branch };
     }
-    case 'commit': {
-      object(target, ['type', 'sha', 'title']);
-      if (typeof target.sha !== 'string' || !/^[0-9a-f]{7,64}$/i.test(target.sha)) throw new BridgeError('Invalid commit');
-      return { type: target.type, sha: target.sha, ...(target.title === undefined ? {} : { title: text(target.title, 'commit title', 500) }) };
+    case "commit": {
+      object(target, ["type", "sha", "title"]);
+      if (typeof target.sha !== "string" || !/^[0-9a-f]{7,64}$/i.test(target.sha))
+        throw new BridgeError("Invalid commit");
+      return {
+        type: target.type,
+        sha: target.sha,
+        ...(target.title === undefined ? {} : { title: text(target.title, "commit title", 500) }),
+      };
     }
-    case 'custom': object(target, ['type', 'instructions']); return { type: target.type, instructions: text(target.instructions, 'review instructions', 32000) };
-    default: throw new BridgeError('Unknown review target');
+    case "custom":
+      object(target, ["type", "instructions"]);
+      return { type: target.type, instructions: text(target.instructions, "review instructions", 32000) };
+    default:
+      throw new BridgeError("Unknown review target");
   }
 }
 
-export const permissionSetting = (mode: string | undefined) => mode ? { ...PERMISSIONS[mode] } : {};
+export const permissionSetting = (mode: string | undefined) => (mode ? { ...PERMISSIONS[mode] } : {});
 
 /** The mode a chat runs in, read back from its approval, sandbox and profile settings: a resume
  * result (`sandbox`) or the engine's thread/settings/updated (`sandboxPolicy`). */
 export function modeOf(input: unknown) {
-  const result = input as { approvalPolicy?: unknown; activePermissionProfile?: { id?: unknown } | null; sandbox?: { type?: unknown } | null; sandboxPolicy?: { type?: unknown } | null; approvalsReviewer?: unknown } | null | undefined;
+  const result = input as
+    | {
+        approvalPolicy?: unknown;
+        activePermissionProfile?: { id?: unknown } | null;
+        sandbox?: { type?: unknown } | null;
+        sandboxPolicy?: { type?: unknown } | null;
+        approvalsReviewer?: unknown;
+      }
+    | null
+    | undefined;
   if (!result?.approvalPolicy) return null;
-  if (result.activePermissionProfile?.id === BYPASS_PROFILE && result.approvalPolicy === 'never') return 'bypass';
-  if ((result.sandbox ?? result.sandboxPolicy)?.type === 'dangerFullAccess' && result.approvalPolicy === 'never') return 'full';
-  return result.approvalsReviewer === 'auto_review' || result.approvalsReviewer === 'guardian_subagent' ? 'auto' : 'ask';
+  if (result.activePermissionProfile?.id === BYPASS_PROFILE && result.approvalPolicy === "never") return "bypass";
+  if ((result.sandbox ?? result.sandboxPolicy)?.type === "dangerFullAccess" && result.approvalPolicy === "never")
+    return "full";
+  return result.approvalsReviewer === "auto_review" || result.approvalsReviewer === "guardian_subagent"
+    ? "auto"
+    : "ask";
 }

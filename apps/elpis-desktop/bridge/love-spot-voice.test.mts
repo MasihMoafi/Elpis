@@ -1,109 +1,217 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { EventEmitter } from 'node:events';
-import { createLoveSpot } from './love-spot-store.cts';
-import { createLoveSpotTalk } from './love-spot-talk.mts';
-import { startDesktopServer } from './server.mts';
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { EventEmitter } from "node:events";
+import { createLoveSpot } from "./love-spot-store.cts";
+import { createLoveSpotTalk } from "./love-spot-talk.mts";
+import { startDesktopServer } from "./server.mts";
+import { createTestTempDir, removeTestTempDir } from "../tests/temp-root.cts";
 
 const enabledAudio = { available: true };
 
-test('live Matilda carries board/persona context and saves growing speech once; mute and hang-up reject later output', async t => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'lovevoice-unit-'));
-  const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
+test("live Matilda carries board/persona context and saves growing speech once; mute and hang-up reject later output", async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "lovevoice-unit-"));
+  const store = createLoveSpot({ directory, screenshots: path.join(directory, "shots") });
   const client = Object.assign(new EventEmitter(), { voiceStatus: async () => ({ available: true }) });
-  const talk = createLoveSpotTalk({ client: client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store, audio: enabledAudio });
-  t.after(async () => { talk.close(); await talk.idle(); await store.close(); });
-  await store.save({ elements: [{ id: 'user-note', type: 'text', text: 'Our secret is apricot lantern.', strokeColor: '#2f9e44', version: 1, versionNonce: 1, x: 20, y: 20, width: 240, height: 40 }] });
-  const call = await talk.conversation('Be brief and friendly.');
-  assert.match(call.context, /apricot lantern/); assert.match(call.context, /Be brief and friendly/);
-  const contexts: string[] = [], stop = await call.watch(context => contexts.push(context), assert.fail);
+  const talk = createLoveSpotTalk({
+    client: client as unknown as Parameters<typeof createLoveSpotTalk>[0]["client"],
+    store,
+    audio: enabledAudio,
+  });
+  t.after(async () => {
+    talk.close();
+    await talk.idle();
+    await store.close();
+  });
+  await store.save({
+    elements: [
+      {
+        id: "user-note",
+        type: "text",
+        text: "Our secret is apricot lantern.",
+        strokeColor: "#2f9e44",
+        version: 1,
+        versionNonce: 1,
+        x: 20,
+        y: 20,
+        width: 240,
+        height: 40,
+      },
+    ],
+  });
+  const call = await talk.conversation("Be brief and friendly.");
+  assert.match(call.context, /apricot lantern/);
+  assert.match(call.context, /Be brief and friendly/);
+  const contexts: string[] = [],
+    stop = await call.watch(context => contexts.push(context), assert.fail);
   const before = await store.read();
-  await store.save({ elements: before.scene.elements.map(element => ({ ...element, text: 'Our secret is orange blossom.', version: 2 })) });
+  await store.save({
+    elements: before.scene.elements.map(element => ({ ...element, text: "Our secret is orange blossom.", version: 2 })),
+  });
   for (let n = 0; !contexts.length && n < 40; n++) await new Promise(resolve => setTimeout(resolve, 50));
-  assert.ok(contexts[0]); assert.match(contexts[0], /orange blossom/);
-  call.transcript({ role: 'assistant', delta: 'Hello ' });
-  await new Promise(resolve => setTimeout(resolve, 350)); await talk.idle();
+  assert.ok(contexts[0]);
+  assert.match(contexts[0], /orange blossom/);
+  call.transcript({ role: "assistant", delta: "Hello " });
+  await new Promise(resolve => setTimeout(resolve, 350));
+  await talk.idle();
   let scene = (await store.read()).scene;
-  assert.equal(scene.elements.find(e => e.id.startsWith('love-reply-'))?.originalText, 'Hello');
+  assert.equal(scene.elements.find(e => e.id.startsWith("love-reply-"))?.originalText, "Hello");
   // V3 interleaves the user's delayed final/last words with the assistant's already-started answer.
-  call.transcript({ role: 'user', text: 'Hello there.' });
-  call.transcript({ role: 'assistant', delta: 'Masih.' });
-  call.transcript({ role: 'user', delta: ' there.' });
-  call.transcript({ role: 'assistant', text: 'Hello Masih.' });
+  call.transcript({ role: "user", text: "Hello there." });
+  call.transcript({ role: "assistant", delta: "Masih." });
+  call.transcript({ role: "user", delta: " there." });
+  call.transcript({ role: "assistant", text: "Hello Masih." });
   await talk.idle();
   scene = (await store.read()).scene;
-  assert.deepEqual(scene.elements.filter(e => e.id.startsWith('love-reply-')).map(e => e.originalText), ['Hello Masih.']);
+  assert.deepEqual(
+    scene.elements.filter(e => e.id.startsWith("love-reply-")).map(e => e.originalText),
+    ["Hello Masih."],
+  );
   await new Promise(resolve => setTimeout(resolve, 200));
-  assert.equal(contexts.length, 1, 'her speech is not fed back as another board edit');
-  call.close(); call.transcript({ role: 'assistant', text: 'Late audio must not appear.' }); await talk.idle();
+  assert.equal(contexts.length, 1, "her speech is not fed back as another board edit");
+  call.close();
+  call.transcript({ role: "assistant", text: "Late audio must not appear." });
+  await talk.idle();
   stop();
-  assert.equal((await store.read()).scene.elements.filter(e => e.id.startsWith('love-reply-')).length, 1);
+  assert.equal((await store.read()).scene.elements.filter(e => e.id.startsWith("love-reply-")).length, 1);
   await talk.setVoice({ enabled: false });
-  await assert.rejects(talk.conversation('Be brief.'), /off|muted/i);
-  assert.equal((await store.read()).scene.elements.filter(e => e.id.startsWith('love-reply-')).length, 1);
+  await assert.rejects(talk.conversation("Be brief."), /off|muted/i);
+  assert.equal((await store.read()).scene.elements.filter(e => e.id.startsWith("love-reply-")).length, 1);
 });
 
-test('the live microphone endpoint starts the saved subscription voice with context and refuses muted/invalid requests', async t => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lovevoice-http-'));
-  const client = new EventEmitter(), starts: unknown[][] = [];
-  Object.assign(client, { connected: true, pendingApprovals: [], close() {}, voiceStatus: async () => ({ available: true }),
-    createSpeechThread: async () => ({ id: 'speech', voice: 'juniper' }),
-    startSpeechThread: async (...args: unknown[]) => { starts.push(args); client.emit('side', { method: 'thread/realtime/sdp', params: { threadId: 'speech', sdp: 'v=0\r\nanswer' } }); },
+test("the live microphone endpoint starts the saved subscription voice with context and refuses muted/invalid requests", async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "lovevoice-http-"));
+  const client = new EventEmitter(),
+    starts: unknown[][] = [];
+  Object.assign(client, {
+    connected: true,
+    pendingApprovals: [],
+    close() {},
+    voiceStatus: async () => ({ available: true }),
+    createSpeechThread: async () => ({ id: "speech", voice: "juniper" }),
+    startSpeechThread: async (...args: unknown[]) => {
+      starts.push(args);
+      client.emit("side", { method: "thread/realtime/sdp", params: { threadId: "speech", sdp: "v=0\r\nanswer" } });
+    },
     closeSpeechThread: async () => {},
   });
-  const app = await startDesktopServer({ client, elpisHome: root, loveSpotAudio: enabledAudio, trashFile: path.join(root, 'trash.json'), loveSpot: { directory: path.join(root, 'board'), screenshots: path.join(root, 'shots') } });
+  const app = await startDesktopServer({
+    client,
+    elpisHome: root,
+    loveSpotAudio: enabledAudio,
+    trashFile: path.join(root, "trash.json"),
+    loveSpot: { directory: path.join(root, "board"), screenshots: path.join(root, "shots") },
+  });
   t.after(() => app.close());
-  const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
-  const headers = { origin: url.origin, cookie, 'Content-Type': 'application/json' };
-  const post = (route: string, body: unknown) => fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
-  const reply = await post('love-spot/voice/call', { sdp: 'v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=sendrecv\r\n', persona: 'Be kind and brief.' });
+  const url = new URL(app.url),
+    token = new URLSearchParams(url.hash.slice(1)).get("token");
+  const auth = await fetch(new URL("/api/session", url), {
+    method: "POST",
+    headers: { origin: url.origin, "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const cookie = auth.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie);
+  const headers = { origin: url.origin, cookie, "Content-Type": "application/json" };
+  const post = (route: string, body: unknown) =>
+    fetch(new URL(`/api/${route}`, url), { method: "POST", headers, body: JSON.stringify(body) });
+  const reply = await post("love-spot/voice/call", {
+    sdp: "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=sendrecv\r\n",
+    persona: "Be kind and brief.",
+  });
   assert.equal(reply.status, 200);
-  assert.ok(reply.body); const reader = reply.body.getReader();
+  assert.ok(reply.body);
+  const reader = reply.body.getReader();
   assert.match(new TextDecoder().decode((await reader.read()).value), /sdp/);
   assert.ok(starts[0]);
-  assert.deepEqual(starts[0][0], { id: 'speech', voice: 'juniper' });
-  assert.ok(starts[0][2] && typeof starts[0][2] === 'object' && 'conversation' in starts[0][2]);
+  assert.deepEqual(starts[0][0], { id: "speech", voice: "juniper" });
+  assert.ok(starts[0][2] && typeof starts[0][2] === "object" && "conversation" in starts[0][2]);
   assert.match(String(starts[0][2].conversation), /Be kind and brief/);
   await reader.cancel();
-  assert.equal((await post('love-spot/voice/call', { sdp: 'invalid', persona: 42 })).status, 400);
-  assert.equal((await post('love-spot/voice/settings', { enabled: false })).status, 200);
-  assert.equal((await post('love-spot/voice/call', { sdp: 'v=0\r\n', persona: 'Be brief.' })).status, 409);
-  assert.equal(starts.length, 1, 'refused requests must not start another subscription session');
+  assert.equal((await post("love-spot/voice/call", { sdp: "invalid", persona: 42 })).status, 400);
+  assert.equal((await post("love-spot/voice/settings", { enabled: false })).status, 200);
+  assert.equal((await post("love-spot/voice/call", { sdp: "v=0\r\n", persona: "Be brief." })).status, 409);
+  assert.equal(starts.length, 1, "refused requests must not start another subscription session");
 });
 
-test('disabled audio skips legacy voice files, status and native audio', async t => {
-  const disabledAudio = { available: false, reason: 'Voice is unavailable.' };
-  const home = createTestTempDir(path.join(os.tmpdir(), 'lovevoice-disabled-'));
-  const directory = path.join(home, 'board'), file = path.join(directory, '.voice.json'), saved = '{legacy invalid voice preference';
-  await fs.mkdir(directory); await fs.writeFile(file, saved);
-  let reads = 0, statuses = 0, starts = 0;
+test("disabled audio skips legacy voice files, status and native audio", async t => {
+  const disabledAudio = { available: false, reason: "Voice is unavailable." };
+  const home = createTestTempDir(path.join(os.tmpdir(), "lovevoice-disabled-"));
+  const directory = path.join(home, "board"),
+    file = path.join(directory, ".voice.json"),
+    saved = "{legacy invalid voice preference";
+  await fs.mkdir(directory);
+  await fs.writeFile(file, saved);
+  let reads = 0,
+    statuses = 0,
+    starts = 0;
   const readFile = fs.readFile;
-  t.mock.method(fs, 'readFile', async (...args: Parameters<typeof readFile>) => { if (typeof args[0] === 'string' && args[0] === file) reads++; return readFile(...args); });
-  const client = Object.assign(new EventEmitter(), { connected: true, pendingApprovals: [], close() {},
-    voiceStatus: async () => { statuses++; throw Error('Disabled audio status must not load'); },
-    createSpeechThread: async () => { starts++; throw Error('Disabled audio must not warm'); },
-    startSpeechThread: async () => { starts++; throw Error('Disabled audio must not start'); } });
-  const app = await startDesktopServer({ client, loveSpotAudio: disabledAudio, elpisHome: home, trashFile: path.join(home, 'trash.json'), loveSpot: { directory, screenshots: path.join(home, 'shots') } });
-  t.after(async () => { await app.close(); removeTestTempDir(home); });
-  const url = new URL(app.url), token = new URLSearchParams(url.hash.slice(1)).get('token');
-  const auth = await fetch(new URL('/api/session', url), { method: 'POST', headers: { origin: url.origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
-  const cookie = auth.headers.get('set-cookie')?.split(';')[0]; assert.ok(cookie);
-  const headers = { origin: url.origin, cookie, 'Content-Type': 'application/json' };
-  for (const route of ['love-spot/talk', 'love-spot/voice/settings']) {
+  t.mock.method(fs, "readFile", async (...args: Parameters<typeof readFile>) => {
+    if (typeof args[0] === "string" && args[0] === file) reads++;
+    return readFile(...args);
+  });
+  const client = Object.assign(new EventEmitter(), {
+    connected: true,
+    pendingApprovals: [],
+    close() {},
+    voiceStatus: async () => {
+      statuses++;
+      throw Error("Disabled audio status must not load");
+    },
+    createSpeechThread: async () => {
+      starts++;
+      throw Error("Disabled audio must not warm");
+    },
+    startSpeechThread: async () => {
+      starts++;
+      throw Error("Disabled audio must not start");
+    },
+  });
+  const app = await startDesktopServer({
+    client,
+    loveSpotAudio: disabledAudio,
+    elpisHome: home,
+    trashFile: path.join(home, "trash.json"),
+    loveSpot: { directory, screenshots: path.join(home, "shots") },
+  });
+  t.after(async () => {
+    await app.close();
+    removeTestTempDir(home);
+  });
+  const url = new URL(app.url),
+    token = new URLSearchParams(url.hash.slice(1)).get("token");
+  const auth = await fetch(new URL("/api/session", url), {
+    method: "POST",
+    headers: { origin: url.origin, "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const cookie = auth.headers.get("set-cookie")?.split(";")[0];
+  assert.ok(cookie);
+  const headers = { origin: url.origin, cookie, "Content-Type": "application/json" };
+  for (const route of ["love-spot/talk", "love-spot/voice/settings"]) {
     const response = await fetch(new URL(`/api/${route}`, url), { headers });
     assert.equal(response.status, 200);
-    const state = await response.json(); assert.equal((state.voice ?? state).reason, disabledAudio.reason);
+    const state = await response.json();
+    assert.equal((state.voice ?? state).reason, disabledAudio.reason);
   }
-  for (const [route, body] of [['love-spot/voice/settings', { enabled: true }], ['love-spot/voice', { sdp: 'v=0\r\n' }], ['love-spot/voice/call', { sdp: 'v=0\r\n', persona: 'Be brief.' }]] as const) {
-    const response = await fetch(new URL(`/api/${route}`, url), { method: 'POST', headers, body: JSON.stringify(body) });
+  for (const [route, body] of [
+    ["love-spot/voice/settings", { enabled: true }],
+    ["love-spot/voice", { sdp: "v=0\r\n" }],
+    ["love-spot/voice/call", { sdp: "v=0\r\n", persona: "Be brief." }],
+  ] as const) {
+    const response = await fetch(new URL(`/api/${route}`, url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
     assert.equal(response.status, 403, route);
   }
-  assert.deepEqual([reads, statuses, starts], [0, 0, 0], 'indirect startup and direct refused audio never consult or start the voice service');
-  assert.equal(await readFile(file, 'utf8'), saved);
+  assert.deepEqual(
+    [reads, statuses, starts],
+    [0, 0, 0],
+    "indirect startup and direct refused audio never consult or start the voice service",
+  );
+  assert.equal(await readFile(file, "utf8"), saved);
 });

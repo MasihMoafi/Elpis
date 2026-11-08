@@ -6,7 +6,8 @@ export type Mention = { name: string; path: string };
 /** One line of the picker: a file or a chat, `detail` being the words shown beside its name. */
 export type MentionItem = { kind: "file" | "chat"; name: string; detail: string; path: string };
 
-const SHOWN = 8, CHATS = 3;
+const SHOWN = 8,
+  CHATS = 3;
 const space = /\s/;
 
 /** The mention being typed: an "@" at the start of the text or after whitespace, up to the caret. */
@@ -19,7 +20,8 @@ export function mentionAt(text: string, caret: number): { start: number; query: 
 
 /** 0 the path starts with the query, 1 the file name does, 2 the file name contains it, 3 the path does; null no match. */
 function score(item: MentionItem, query: string): number | null {
-  const name = item.name.toLowerCase(), base = item.kind === "file" ? name.slice(name.lastIndexOf("/") + 1) : name;
+  const name = item.name.toLowerCase(),
+    base = item.kind === "file" ? name.slice(name.lastIndexOf("/") + 1) : name;
   if (name.startsWith(query)) return 0;
   if (base.startsWith(query)) return 1;
   if (base.includes(query)) return 2;
@@ -31,28 +33,49 @@ function score(item: MentionItem, query: string): number | null {
 export function rankFiles(files: string[], typed: string): string[] {
   const query = typed.trim().toLowerCase();
   if (!query) return files;
-  const inOrder = (name: string) => { let at = 0; for (const letter of query) { at = name.indexOf(letter, at) + 1; if (!at) return false; } return true; };
-  return files.map((name, order) => ({ name, order, rank: score({ kind: "file", name, detail: "", path: name }, query) ?? (inOrder(name.toLowerCase()) ? 4 : null) }))
+  const inOrder = (name: string) => {
+    let at = 0;
+    for (const letter of query) {
+      at = name.indexOf(letter, at) + 1;
+      if (!at) return false;
+    }
+    return true;
+  };
+  return files
+    .map((name, order) => ({
+      name,
+      order,
+      rank: score({ kind: "file", name, detail: "", path: name }, query) ?? (inOrder(name.toLowerCase()) ? 4 : null),
+    }))
     .filter((entry): entry is { name: string; order: number; rank: number } => entry.rank !== null)
-    .sort((a, b) => a.rank - b.rank || a.name.length - b.name.length || a.order - b.order).map(entry => entry.name);
+    .sort((a, b) => a.rank - b.rank || a.name.length - b.name.length || a.order - b.order)
+    .map(entry => entry.name);
 }
 
 /** The picker's lines: with nothing typed the first files then up to three chats; otherwise the best matches. */
 export function rankMentions(items: MentionItem[], typed: string): MentionItem[] {
   const query = typed.toLowerCase();
   if (!query) {
-    const files = items.filter(item => item.kind === "file"), chats = items.filter(item => item.kind === "chat");
+    const files = items.filter(item => item.kind === "file"),
+      chats = items.filter(item => item.kind === "chat");
     const chatCount = Math.min(chats.length, Math.max(CHATS, SHOWN - files.length));
     return [...files.slice(0, SHOWN - chatCount), ...chats.slice(0, chatCount)];
   }
-  return items.map((item, order) => ({ item, order, rank: score(item, query) }))
+  return items
+    .map((item, order) => ({ item, order, rank: score(item, query) }))
     .filter((entry): entry is { item: MentionItem; order: number; rank: number } => entry.rank !== null)
     .sort((a, b) => a.rank - b.rank || a.item.name.length - b.item.name.length || a.order - b.order)
-    .slice(0, SHOWN).map(entry => entry.item);
+    .slice(0, SHOWN)
+    .map(entry => entry.item);
 }
 
 /** Replaces the "@query" (from `start` to the caret) with "@name " and reports where the caret goes. */
-export function insertMention(text: string, start: number, caret: number, name: string): { text: string; caret: number } {
+export function insertMention(
+  text: string,
+  start: number,
+  caret: number,
+  name: string,
+): { text: string; caret: number } {
   const token = `@${name} `;
   return { text: text.slice(0, start) + token + text.slice(caret), caret: start + token.length };
 }
@@ -60,5 +83,7 @@ export function insertMention(text: string, start: number, caret: number, name: 
 /** The picked mentions whose "@name" is still in the text, each once. */
 export function usedMentions(text: string, picked: Mention[]): Mention[] {
   const seen = new Set<string>();
-  return picked.filter(mention => text.includes(`@${mention.name}`) && !seen.has(mention.path) && !!seen.add(mention.path));
+  return picked.filter(
+    mention => text.includes(`@${mention.name}`) && !seen.has(mention.path) && !!seen.add(mention.path),
+  );
 }

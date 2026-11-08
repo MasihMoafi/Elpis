@@ -20,11 +20,41 @@ export function useConversationSession() {
   const scrollPositions = useRef(new Map<string, { top: number; atBottom: boolean }>());
   const pendingPosition = useRef<{ id: string; top: number; atBottom: boolean } | null>(null);
   const saveScroll = () => {
-    const id = selectedRef.current?.id, element = scroll.current;
-    if (id && element) scrollPositions.current.set(id, { top: element.scrollTop, atBottom: element.scrollHeight - element.scrollTop - element.clientHeight < 80 });
+    const id = selectedRef.current?.id,
+      element = scroll.current;
+    if (id && element)
+      scrollPositions.current.set(id, {
+        top: element.scrollTop,
+        atBottom: element.scrollHeight - element.scrollTop - element.clientHeight < 80,
+      });
   };
   const request = useRef(0);
   const initialRestoration = useRef<{ threadId: string; promise: Promise<void> } | null>(null);
-  return { threads, setThreads, selected, setSelected, selectedRef, entries, setEntries, submissions, setSubmissions, busy, setBusy, sending, loading, setLoading,
-    scroll, stickToBottom, followingBottom, awayFromBottom, setAwayFromBottom, restoreScroll, scrollPositions, pendingPosition, saveScroll, request, initialRestoration };
+  return {
+    threads,
+    setThreads,
+    selected,
+    setSelected,
+    selectedRef,
+    entries,
+    setEntries,
+    submissions,
+    setSubmissions,
+    busy,
+    setBusy,
+    sending,
+    loading,
+    setLoading,
+    scroll,
+    stickToBottom,
+    followingBottom,
+    awayFromBottom,
+    setAwayFromBottom,
+    restoreScroll,
+    scrollPositions,
+    pendingPosition,
+    saveScroll,
+    request,
+    initialRestoration,
+  };
 }

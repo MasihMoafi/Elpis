@@ -8,10 +8,12 @@ function fences(text: string, offset: number, continued: MarkdownFence | null) {
   let active = continued;
   const blocks: { offset: number; fence: MarkdownFence }[] = continued ? [{ offset: 0, fence: continued }] : [];
   for (let at = 0; at < text.length;) {
-    const newline = text.indexOf('\n', at), end = newline < 0 ? text.length : newline;
+    const newline = text.indexOf("\n", at),
+      end = newline < 0 ? text.length : newline;
     const match = /^ {0,3}(`{3,}|~{3,})(.*)\r?$/.exec(text.slice(at, end));
     if (match) {
-      const marker = match[1]!, info = match[2]!.trim();
+      const marker = match[1]!,
+        info = match[2]!.trim();
       if (!active) {
         active = { marker, info, body: offset + (newline < 0 ? end : end + 1) };
         blocks.push({ offset: at, fence: active });
@@ -26,15 +28,16 @@ export function markdownPage(text: string, position: MarkdownPosition) {
   const { start, fence } = position;
   let end = Math.min(text.length, start + PART);
   if (end < text.length) {
-    const newline = text.lastIndexOf('\n', end - 1);
+    const newline = text.lastIndexOf("\n", end - 1);
     if (newline > start + PART / 2) end = newline + 1;
     // A forced break must not split a surrogate pair.
-    if (/[\uD800-\uDBFF]/.test(text[end - 1] ?? '')) end--;
+    if (/[\uD800-\uDBFF]/.test(text[end - 1] ?? "")) end--;
   }
-  const raw = text.slice(start, end), parsed = fences(raw, start, fence);
-  const prefix = fence ? `${fence.marker}${fence.info}\n` : '';
+  const raw = text.slice(start, end),
+    parsed = fences(raw, start, fence);
+  const prefix = fence ? `${fence.marker}${fence.info}\n` : "";
   return {
-    source: prefix + raw + (parsed.active ? `\n${parsed.active.marker}` : ''),
+    source: prefix + raw + (parsed.active ? `\n${parsed.active.marker}` : ""),
     next: end < text.length ? { start: end, fence: parsed.active } : null,
     codeSource(rendered: string, offset: number): string | undefined {
       const renderedBlocks = fences(rendered, 0, null).blocks;
@@ -44,12 +47,16 @@ export function markdownPage(text: string, position: MarkdownPosition) {
       // Scan the rest only on an explicit copy, never during paint or parsing.
       let end = text.length;
       for (let at = block.body; at < text.length;) {
-        const newline = text.indexOf('\n', at), lineEnd = newline < 0 ? text.length : newline;
+        const newline = text.indexOf("\n", at),
+          lineEnd = newline < 0 ? text.length : newline;
         const line = text.slice(at, lineEnd).trim();
-        if (line.startsWith(block.marker) && /^(?:`+|~+)$/.test(line)) { end = at; break; }
+        if (line.startsWith(block.marker) && /^(?:`+|~+)$/.test(line)) {
+          end = at;
+          break;
+        }
         at = lineEnd + 1;
       }
-      return text.slice(block.body, end).replace(/\r?\n$/, '');
+      return text.slice(block.body, end).replace(/\r?\n$/, "");
     },
   };
 }

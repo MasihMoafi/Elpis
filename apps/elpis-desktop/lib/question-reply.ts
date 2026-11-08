@@ -10,10 +10,16 @@ export function questionReplies(text: string): QuestionReply[] | null {
     const valid = (reply: unknown): reply is QuestionReply => {
       if (!reply || typeof reply !== "object" || Array.isArray(reply)) return false;
       const fields = reply as Record<string, unknown>;
-      return typeof fields.questionItemId === "string" && typeof fields.question === "string" && typeof fields.answer === "string";
+      return (
+        typeof fields.questionItemId === "string" &&
+        typeof fields.question === "string" &&
+        typeof fields.answer === "string"
+      );
     };
     return replies.length && replies.every(valid) ? replies : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 /** Plain text for copying and editing; storage and agent input keep the original envelope. */

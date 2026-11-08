@@ -10,12 +10,23 @@ export function useChatTabs(onError: (message: string) => void) {
   const [restoreDone, setRestoreDone] = useState(false);
   /** Whether the tabs came from the store (rather than starting afresh). */
   const restored = useRef(false);
-  const updateTabs = useCallback((next: ChatTabs) => { tabsRef.current = next; setTabs(next); }, []);
+  const updateTabs = useCallback((next: ChatTabs) => {
+    tabsRef.current = next;
+    setTabs(next);
+  }, []);
   /** Reads the saved tabs into the strip, once at start; returns them, or null when there were none. */
   const restoreTabs = useCallback(() => {
     let saved: ChatTabs | null = null;
-    try { const store = window.elpisDesktop?.storage; saved = store ? readTabs(store) : null; } catch { /* The tabs start afresh. */ }
-    if (saved) { updateTabs(saved); restored.current = true; }
+    try {
+      const store = window.elpisDesktop?.storage;
+      saved = store ? readTabs(store) : null;
+    } catch {
+      /* The tabs start afresh. */
+    }
+    if (saved) {
+      updateTabs(saved);
+      restored.current = true;
+    }
     setRestoreDone(true);
     return saved;
   }, [updateTabs]);

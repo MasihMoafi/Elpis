@@ -1,38 +1,52 @@
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const { closeNeedsConfirmation }: typeof import('./preferences.cts') = require('./preferences.cts');
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const { closeNeedsConfirmation }: typeof import("./preferences.cts") = require("./preferences.cts");
 
-test('closing asks only when the saved preference says so', () => {
+test("closing asks only when the saved preference says so", () => {
   const store = (value: Record<string, unknown>) => ({ read: () => value });
-  assert.equal(closeNeedsConfirmation(store({ 'elpis-preferences-v1': JSON.stringify({ confirmClose: true }) })), true);
-  for (const value of [{}, { error: 'unreadable' }, { 'elpis-preferences-v1': '{"confirmClose":false}' }, { 'elpis-preferences-v1': 'not json' }, { 'elpis-preferences-v1': '{"confirmClose":"yes"}' }]) assert.equal(closeNeedsConfirmation(store(value)), false);
+  assert.equal(closeNeedsConfirmation(store({ "elpis-preferences-v1": JSON.stringify({ confirmClose: true }) })), true);
+  for (const value of [
+    {},
+    { error: "unreadable" },
+    { "elpis-preferences-v1": '{"confirmClose":false}' },
+    { "elpis-preferences-v1": "not json" },
+    { "elpis-preferences-v1": '{"confirmClose":"yes"}' },
+  ])
+    assert.equal(closeNeedsConfirmation(store(value)), false);
 });
 
-test('the real store accepts the seed, keeps other preferences and seeds only once', async () => {
-  const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
-  const { createStateStore }: typeof import('./state.cts') = require('./state.cts');
-  const { seedShippedDefaults, PREFERENCES_KEY }: typeof import('./preferences.cts') = require('./preferences.cts');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-seed-'));
-  const store = createStateStore(path.join(dir, 'workspace.json'));
-  await store.set(PREFERENCES_KEY, JSON.stringify({ navOrder: 'customize' }));
+test("the real store accepts the seed, keeps other preferences and seeds only once", async () => {
+  const fs = require("node:fs"),
+    os = require("node:os"),
+    path = require("node:path");
+  const { createStateStore }: typeof import("./state.cts") = require("./state.cts");
+  const { seedShippedDefaults, PREFERENCES_KEY }: typeof import("./preferences.cts") = require("./preferences.cts");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-seed-"));
+  const store = createStateStore(path.join(dir, "workspace.json"));
+  await store.set(PREFERENCES_KEY, JSON.stringify({ navOrder: "customize" }));
   await seedShippedDefaults(store);
   const saved = JSON.parse((store.read() as Record<string, string>)[PREFERENCES_KEY]!);
-  assert.deepEqual(saved, { navOrder: 'customize', hiddenPages: 'experimentLab', profileAsked: false });
+  assert.deepEqual(saved, { navOrder: "customize", hiddenPages: "experimentLab", profileAsked: false });
   const revision = store.snapshot().revision;
   await seedShippedDefaults(store);
-  assert.equal(store.snapshot().revision, revision, 'a second start changes nothing');
+  assert.equal(store.snapshot().revision, revision, "a second start changes nothing");
 });
 
-test('Close to tray is off unless saved on; the Quick Entry shortcut is Ctrl+Alt+Space unless saved, and empty turns it off', () => {
-  const { closesToTray, quickEntryShortcut }: typeof import('./preferences.cts') = require('./preferences.cts');
+test("Close to tray is off unless saved on; the Quick Entry shortcut is Ctrl+Alt+Space unless saved, and empty turns it off", () => {
+  const { closesToTray, quickEntryShortcut }: typeof import("./preferences.cts") = require("./preferences.cts");
   const store = (value: Record<string, unknown>) => ({ read: () => value });
-  const saved = (value: unknown) => store({ 'elpis-preferences-v1': JSON.stringify(value) });
+  const saved = (value: unknown) => store({ "elpis-preferences-v1": JSON.stringify(value) });
   assert.equal(closesToTray(saved({ closeToTray: true })), true);
-  for (const value of [store({}), store({ error: 'unreadable' }), saved({ closeToTray: 'yes' }), store({ 'elpis-preferences-v1': 'not json' })]) {
+  for (const value of [
+    store({}),
+    store({ error: "unreadable" }),
+    saved({ closeToTray: "yes" }),
+    store({ "elpis-preferences-v1": "not json" }),
+  ]) {
     assert.equal(closesToTray(value), false);
-    assert.equal(quickEntryShortcut(value), 'Ctrl+Alt+Space');
+    assert.equal(quickEntryShortcut(value), "Ctrl+Alt+Space");
   }
-  assert.equal(quickEntryShortcut(saved({ quickEntryShortcut: 'Super+E' })), 'Super+E');
-  assert.equal(quickEntryShortcut(saved({ quickEntryShortcut: '' })), '');
-  assert.equal(quickEntryShortcut(saved({ quickEntryShortcut: 7 })), 'Ctrl+Alt+Space');
+  assert.equal(quickEntryShortcut(saved({ quickEntryShortcut: "Super+E" })), "Super+E");
+  assert.equal(quickEntryShortcut(saved({ quickEntryShortcut: "" })), "");
+  assert.equal(quickEntryShortcut(saved({ quickEntryShortcut: 7 })), "Ctrl+Alt+Space");
 });

@@ -1,33 +1,91 @@
-import { object } from './validate.mts';
-import { elpisHome } from './client-paths.mts';
-import { recordVoiceCall } from './voice.mts';
-import { body, json } from './server-http.mts';
+import { object } from "./validate.mts";
+import { elpisHome } from "./client-paths.mts";
+import { recordVoiceCall } from "./voice.mts";
+import { body, json } from "./server-http.mts";
 
-export async function handleVoiceRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {
+export async function handleVoiceRoutes(
+  state: import("./server-http.mts").ServerState,
+  request: import("node:http").IncomingMessage,
+  response: import("node:http").ServerResponse,
+  url: URL,
+  method: string,
+) {
   const { client, options, readAloud, kokoro, voice, transcription, tools } = state;
-  if (url.pathname === '/api/voice/report' && method === 'POST') { json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request))); return true; }
-  if (url.pathname === '/api/read-aloud/settings' && method === 'GET') { json(response, 200, await readAloud.read()); return true; }
-  if (url.pathname === '/api/read-aloud/settings' && method === 'POST') { json(response, 200, await readAloud.save(await body(request))); return true; }
-  if (url.pathname === '/api/read-aloud/voices' && method === 'GET') { json(response, 200, { voices: await kokoro.voices?.() ?? [], defaultVoice: kokoro.defaultVoice }); return true; }
+  if (url.pathname === "/api/voice/report" && method === "POST") {
+    json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
+    return true;
+  }
+  if (url.pathname === "/api/read-aloud/settings" && method === "GET") {
+    json(response, 200, await readAloud.read());
+    return true;
+  }
+  if (url.pathname === "/api/read-aloud/settings" && method === "POST") {
+    json(response, 200, await readAloud.save(await body(request)));
+    return true;
+  }
+  if (url.pathname === "/api/read-aloud/voices" && method === "GET") {
+    json(response, 200, { voices: (await kokoro.voices?.()) ?? [], defaultVoice: kokoro.defaultVoice });
+    return true;
+  }
   // Read aloud returns only the chosen source's audio; an API failure never starts Kokoro.
-  if (url.pathname === '/api/read-aloud' && method === 'GET') { json(response, 200, await readAloud.status()); return true; }
-  if (url.pathname === '/api/read-aloud' && method === 'POST') {
+  if (url.pathname === "/api/read-aloud" && method === "GET") {
+    json(response, 200, await readAloud.status());
+    return true;
+  }
+  if (url.pathname === "/api/read-aloud" && method === "POST") {
     const controller = new AbortController();
-    const abort = () => { if (!response.writableEnded) controller.abort(); };
-    request.once('aborted', abort); response.once('close', abort);
+    const abort = () => {
+      if (!response.writableEnded) controller.abort();
+    };
+    request.once("aborted", abort);
+    response.once("close", abort);
     try {
       const result = await readAloud.speak(await body(request), controller.signal);
-      response.writeHead(200, { 'Content-Type': result.type, 'Cache-Control': 'no-store' }); response.end(result.audio); return true;
-    } finally { request.removeListener('aborted', abort); response.removeListener('close', abort); }
+      response.writeHead(200, { "Content-Type": result.type, "Cache-Control": "no-store" });
+      response.end(result.audio);
+      return true;
+    } finally {
+      request.removeListener("aborted", abort);
+      response.removeListener("close", abort);
+    }
   }
-  if (url.pathname === '/api/voice' && method === 'GET') { json(response, 200, await client.voiceStatus()); return true; }
-  if (url.pathname === '/api/voice' && method === 'POST') { await voice.start(await body(request), response); return true; }
-  if (url.pathname === '/api/voice/read-aloud' && method === 'POST') { await voice.start(await body(request, 8 * 1024 * 1024), response, { readAloud: true }); return true; }
-  if (url.pathname === '/api/voice/read-aloud/ready' && method === 'POST') { json(response, 200, voice.ready(await body(request))); return true; }
-  if (url.pathname === '/api/voice/read-aloud/more' && method === 'POST') { json(response, 200, voice.more(await body(request, 8 * 1024 * 1024))); return true; }
-  if (url.pathname === '/api/voice/read-aloud/warm' && method === 'POST') { const input = await body(request); object(input, ['threadId']); json(response, 200, await client.warmSpeechThread(input.threadId)); return true; }
-  if (url.pathname === '/api/voice/choice' && method === 'POST') { json(response, 200, await client.setVoice(await body(request))); return true; }
-  if (url.pathname === '/api/tools/transcription') { await transcription(request, response, json); return true; }
-  if (url.pathname.startsWith('/api/tools/')) { await tools(request, response, url, json); return true; }
+  if (url.pathname === "/api/voice" && method === "GET") {
+    json(response, 200, await client.voiceStatus());
+    return true;
+  }
+  if (url.pathname === "/api/voice" && method === "POST") {
+    await voice.start(await body(request), response);
+    return true;
+  }
+  if (url.pathname === "/api/voice/read-aloud" && method === "POST") {
+    await voice.start(await body(request, 8 * 1024 * 1024), response, { readAloud: true });
+    return true;
+  }
+  if (url.pathname === "/api/voice/read-aloud/ready" && method === "POST") {
+    json(response, 200, voice.ready(await body(request)));
+    return true;
+  }
+  if (url.pathname === "/api/voice/read-aloud/more" && method === "POST") {
+    json(response, 200, voice.more(await body(request, 8 * 1024 * 1024)));
+    return true;
+  }
+  if (url.pathname === "/api/voice/read-aloud/warm" && method === "POST") {
+    const input = await body(request);
+    object(input, ["threadId"]);
+    json(response, 200, await client.warmSpeechThread(input.threadId));
+    return true;
+  }
+  if (url.pathname === "/api/voice/choice" && method === "POST") {
+    json(response, 200, await client.setVoice(await body(request)));
+    return true;
+  }
+  if (url.pathname === "/api/tools/transcription") {
+    await transcription(request, response, json);
+    return true;
+  }
+  if (url.pathname.startsWith("/api/tools/")) {
+    await tools(request, response, url, json);
+    return true;
+  }
   return false;
 }

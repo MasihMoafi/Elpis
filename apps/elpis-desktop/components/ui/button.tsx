@@ -1,7 +1,7 @@
-import { Button as ButtonPrimitive } from "@base-ui/react/button"
-import { cva, type VariantProps } from "class-variance-authority"
+import { Button as ButtonPrimitive } from "@base-ui/react/button";
+import { cva, type VariantProps } from "class-variance-authority";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 // Colours and edges change at once (no transition): dark edges and text are gold, and switching to light must not fade
 // through orange.
@@ -17,24 +17,20 @@ const buttonVariants = cva(
           "border-(--hud-edge) bg-(--hud-face) hover:bg-[color-mix(in_oklab,var(--hud-face),var(--primary)_8%)] hover:text-foreground aria-expanded:bg-(--hud-face-hover) aria-expanded:text-foreground dark:text-primary dark:hover:text-primary",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklab,var(--secondary),var(--primary)_6%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
-        ghost:
-          "hover:bg-(--hover) hover:text-foreground aria-expanded:bg-(--hover) aria-expanded:text-foreground",
+        ghost: "hover:bg-(--hover) hover:text-foreground aria-expanded:bg-(--hover) aria-expanded:text-foreground",
         destructive:
           "bg-destructive/10 text-destructive hover:bg-(--hover) focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
         content: "h-auto whitespace-normal text-[0.8125rem] font-normal",
-        default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pe-2 has-data-[icon=inline-start]:ps-2",
+        default: "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pe-2 has-data-[icon=inline-start]:ps-2",
         xs: "hud-cut-sm h-6 gap-1 px-2 text-xs has-data-[icon=inline-end]:pe-1.5 has-data-[icon=inline-start]:ps-1.5 [&_svg:not([class*='size-'])]:size-3.5",
         sm: "h-7 gap-1 px-2.5 text-sm has-data-[icon=inline-end]:pe-1.5 has-data-[icon=inline-start]:ps-1.5 [&_svg:not([class*='size-'])]:size-4",
         lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pe-2 has-data-[icon=inline-start]:ps-2",
         icon: "size-8",
-        "icon-xs":
-          "hud-cut-sm size-6 [&_svg:not([class*='size-'])]:size-4",
-        "icon-sm":
-          "size-7",
+        "icon-xs": "hud-cut-sm size-6 [&_svg:not([class*='size-'])]:size-4",
+        "icon-sm": "size-7",
         "icon-lg": "size-9",
         logo: "h-auto w-auto p-0",
       },
@@ -48,8 +44,8 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
-)
+  },
+);
 
 function Button({
   className,
@@ -66,7 +62,7 @@ function Button({
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
-  )
+  );
 }
 
-export { Button, buttonVariants }
+export { Button, buttonVariants };

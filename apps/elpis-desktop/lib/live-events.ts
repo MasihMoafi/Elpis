@@ -1,6 +1,7 @@
 import type { Entry, Item } from "./api";
 
-const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+const record = (value: unknown): Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 const nonEmptyString = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
 const itemKey = (turnId: string, itemId: string) => `${turnId}:${itemId}`;
 // A delta received before its full item cannot safely replace a fetched baseline.
@@ -12,9 +13,16 @@ const deltaItemTypes: Record<string, "agentMessage" | "commandExecution" | "file
   "item/reasoning/summaryTextDelta": "reasoning",
 };
 
-type LiveItemEvent = { turnId: string; item: Item; model?: string | undefined } | {
-  turnId: string; itemId: string; type: string; delta: string; summaryIndex: number; model?: string | undefined;
-};
+type LiveItemEvent =
+  | { turnId: string; item: Item; model?: string | undefined }
+  | {
+      turnId: string;
+      itemId: string;
+      type: string;
+      delta: string;
+      summaryIndex: number;
+      model?: string | undefined;
+    };
 
 function liveItemEvent(method: string, params: Record<string, unknown>): LiveItemEvent | null {
   const { turnId, itemId, delta } = params;
@@ -42,7 +50,11 @@ export function liveEventItemKey(method: string, params: Record<string, unknown>
 }
 
 /** Keep the chronological snapshot, except for items changed while its read was in flight. */
-export function mergeHistoryWithLive(current: Entry[], snapshot: Entry[], changedSinceRead: ReadonlySet<string>): Entry[] {
+export function mergeHistoryWithLive(
+  current: Entry[],
+  snapshot: Entry[],
+  changedSinceRead: ReadonlySet<string>,
+): Entry[] {
   const merged = new Map<string, Entry>();
   for (const entry of snapshot) merged.set(itemKey(entry.turnId, entry.item.id), entry);
   for (const entry of current) {
@@ -56,7 +68,12 @@ export function mergeHistoryWithLive(current: Entry[], snapshot: Entry[], change
 }
 
 /** Update the selected conversation only; completion replaces its streamed item. */
-export function mergeLiveItem(entries: Entry[], method: string, params: Record<string, unknown>, selectedId: string): Entry[] {
+export function mergeLiveItem(
+  entries: Entry[],
+  method: string,
+  params: Record<string, unknown>,
+  selectedId: string,
+): Entry[] {
   if (params.threadId !== selectedId) return entries;
   const event = liveItemEvent(method, params);
   if (!event) return entries;
@@ -75,13 +92,16 @@ export function mergeLiveItem(entries: Entry[], method: string, params: Record<s
       summary[index] = (typeof summary[index] === "string" ? summary[index] : "") + event.delta;
       item.summary = summary;
     } else {
-      const field = event.type === "agentMessage" ? "text" : event.type === "commandExecution" ? "aggregatedOutput" : "output";
+      const field =
+        event.type === "agentMessage" ? "text" : event.type === "commandExecution" ? "aggregatedOutput" : "output";
       item[field] = (typeof previous?.[field] === "string" ? previous[field] : "") + event.delta;
     }
   }
   const index = entries.findIndex(entry => entry.turnId === event.turnId && entry.item.id === item.id);
   if (index < 0) return [...entries, { turnId: event.turnId, item, ...(event.model ? { model: event.model } : {}) }];
-  return entries.map((entry, i) => i === index ? { ...entry, item, ...(event.model ? { model: event.model } : {}) } : entry);
+  return entries.map((entry, i) =>
+    i === index ? { ...entry, item, ...(event.model ? { model: event.model } : {}) } : entry,
+  );
 }
 
 export const RETRYING = " — retrying…";
@@ -94,5 +114,9 @@ export function runtimeErrorNotice(params: Record<string, unknown>): string | nu
 
 /** New output in a turn: an item started, streamed or finished. After a retry notice it means the retry worked. */
 export function retryRecovered(method: string): boolean {
-  return method === "item/started" || method === "item/completed" || /^item\/[A-Za-z]+\/(?:delta|[A-Za-z]*Delta)$/.test(method);
+  return (
+    method === "item/started" ||
+    method === "item/completed" ||
+    /^item\/[A-Za-z]+\/(?:delta|[A-Za-z]*Delta)$/.test(method)
+  );
 }

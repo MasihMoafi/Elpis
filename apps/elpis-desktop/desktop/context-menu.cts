@@ -1,63 +1,104 @@
-'use strict';
+"use strict";
 
-import type { BrowserWindow, ContextMenuParams, MenuItemConstructorOptions, WebContents, Menu as ElectronMenu, Event as ElectronEvent } from 'electron';
-type Options = { contents: WebContents; clipboard: { writeText: (text: string) => void }; openLink?: ((url: string) => void) | undefined; origin: string; changeThis?: ((point: { x: number; y: number }) => void) | undefined };
-type AttachOptions = Omit<Options, 'contents'> & { Menu: typeof ElectronMenu; window: BrowserWindow };
+import type {
+  BrowserWindow,
+  ContextMenuParams,
+  MenuItemConstructorOptions,
+  WebContents,
+  Menu as ElectronMenu,
+  Event as ElectronEvent,
+} from "electron";
+type Options = {
+  contents: WebContents;
+  clipboard: { writeText: (text: string) => void };
+  openLink?: ((url: string) => void) | undefined;
+  origin: string;
+  changeThis?: ((point: { x: number; y: number }) => void) | undefined;
+};
+type AttachOptions = Omit<Options, "contents"> & { Menu: typeof ElectronMenu; window: BrowserWindow };
 
 // Electron shows no menu on right-click by itself. This is the ChatGPT app's text menu: spelling
 // suggestions, Cut/Copy/Paste/Select all in fields, Copy for selected text, link and image items.
 // App objects (chats, projects, tabs, messages) draw their own menu in the page and cancel this one.
 
 const external = (url: string, origin: string) => {
-  try { const { protocol, origin: target } = new URL(url); return (protocol === 'https:' || protocol === 'http:') && target !== origin; }
-  catch { return false; }
+  try {
+    const { protocol, origin: target } = new URL(url);
+    return (protocol === "https:" || protocol === "http:") && target !== origin;
+  } catch {
+    return false;
+  }
 };
 
 /** The items for one right-click, from Electron's `context-menu` parameters. Empty when there is nothing to offer. */
-function contextMenuTemplateImpl(params: ContextMenuParams, { contents, clipboard, openLink, origin, changeThis }: Options) {
+function contextMenuTemplateImpl(
+  params: ContextMenuParams,
+  { contents, clipboard, openLink, origin, changeThis }: Options,
+) {
   const flags = params.editFlags ?? {};
-  const edit = (label: string, accelerator: string, enabled: boolean, click: () => void) => ({ label, accelerator, registerAccelerator: false, enabled, click });
+  const edit = (label: string, accelerator: string, enabled: boolean, click: () => void) => ({
+    label,
+    accelerator,
+    registerAccelerator: false,
+    enabled,
+    click,
+  });
   const groups: MenuItemConstructorOptions[][] = [];
   if (params.isEditable && params.misspelledWord) {
-    const word = params.misspelledWord, suggestions = params.dictionarySuggestions ?? [];
+    const word = params.misspelledWord,
+      suggestions = params.dictionarySuggestions ?? [];
     groups.push([
-      ...(suggestions.length ? suggestions.map(label => ({ label, click: () => contents.replaceMisspelling(label) })) : [{ label: 'No guesses found', enabled: false }]),
-      { type: 'separator' },
-      { label: 'Learn spelling', click: () => contents.session.addWordToSpellCheckerDictionary(word) },
+      ...(suggestions.length
+        ? suggestions.map(label => ({ label, click: () => contents.replaceMisspelling(label) }))
+        : [{ label: "No guesses found", enabled: false }]),
+      { type: "separator" },
+      { label: "Learn spelling", click: () => contents.session.addWordToSpellCheckerDictionary(word) },
     ]);
   }
   if (params.isEditable) {
     groups.push([
-      edit('Cut', 'CmdOrCtrl+X', !!flags.canCut, () => contents.cut()),
-      edit('Copy', 'CmdOrCtrl+C', !!flags.canCopy, () => contents.copy()),
-      edit('Paste', 'CmdOrCtrl+V', !!flags.canPaste, () => contents.paste()),
-      edit('Select all', 'CmdOrCtrl+A', !!flags.canSelectAll, () => contents.selectAll()),
+      edit("Cut", "CmdOrCtrl+X", !!flags.canCut, () => contents.cut()),
+      edit("Copy", "CmdOrCtrl+C", !!flags.canCopy, () => contents.copy()),
+      edit("Paste", "CmdOrCtrl+V", !!flags.canPaste, () => contents.paste()),
+      edit("Select all", "CmdOrCtrl+A", !!flags.canSelectAll, () => contents.selectAll()),
     ]);
-  } else if (params.selectionText) groups.push([edit('Copy', 'CmdOrCtrl+C', true, () => contents.copy())]);
-  if (params.mediaType === 'image') {
+  } else if (params.selectionText) groups.push([edit("Copy", "CmdOrCtrl+C", true, () => contents.copy())]);
+  if (params.mediaType === "image") {
     groups.push([
-      { label: 'Copy image', click: () => contents.copyImageAt(params.x, params.y) },
-      ...(/^(https?:|data:image\/)/i.test(params.srcURL ?? '') ? [{ label: 'Save image as…', click: () => contents.downloadURL(params.srcURL) }] : []),
+      { label: "Copy image", click: () => contents.copyImageAt(params.x, params.y) },
+      ...(/^(https?:|data:image\/)/i.test(params.srcURL ?? "")
+        ? [{ label: "Save image as…", click: () => contents.downloadURL(params.srcURL) }]
+        : []),
     ]);
   }
   if (external(params.linkURL, origin)) {
     groups.push([
-      ...(openLink ? [{ label: 'Open link', click: () => openLink(params.linkURL) }] : []),
-      { label: 'Copy link', click: () => { Promise.resolve(clipboard.writeText(params.linkURL)).catch(() => { /* The clipboard stays as it was. */ }); } },
+      ...(openLink ? [{ label: "Open link", click: () => openLink(params.linkURL) }] : []),
+      {
+        label: "Copy link",
+        click: () => {
+          Promise.resolve(clipboard.writeText(params.linkURL)).catch(() => {
+            /* The clipboard stays as it was. */
+          });
+        },
+      },
     ]);
   }
-  if (changeThis) groups.push([{ label: 'Change this…', click: () => changeThis({ x: params.x, y: params.y }) }]);
-  return groups.flatMap((group, index) => index ? [{ type: 'separator' as const }, ...group] : group);
+  if (changeThis) groups.push([{ label: "Change this…", click: () => changeThis({ x: params.x, y: params.y }) }]);
+  return groups.flatMap((group, index) => (index ? [{ type: "separator" as const }, ...group] : group));
 }
 
 /** Shows that menu for right-clicks in these web contents. Returns a function that detaches it. */
-function attachContextMenuImpl(contents: WebContents, { Menu, clipboard, openLink, origin, window, changeThis }: AttachOptions) {
+function attachContextMenuImpl(
+  contents: WebContents,
+  { Menu, clipboard, openLink, origin, window, changeThis }: AttachOptions,
+) {
   const show = (_event: ElectronEvent, params: ContextMenuParams) => {
     const template = contextMenuTemplateImpl(params, { contents, clipboard, openLink, origin, changeThis });
     if (template.length) Menu.buildFromTemplate(template).popup({ window });
   };
-  contents.on('context-menu', show);
-  return () => contents.removeListener('context-menu', show);
+  contents.on("context-menu", show);
+  return () => contents.removeListener("context-menu", show);
 }
 
 export declare const contextMenuTemplate: typeof contextMenuTemplateImpl;

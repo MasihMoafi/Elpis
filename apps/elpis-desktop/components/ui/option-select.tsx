@@ -5,42 +5,112 @@ type Change = { target: { value: string }; currentTarget: { value: string } };
 type Props = Omit<React.ComponentProps<"select">, "onChange" | "value" | "defaultValue" | "multiple" | "size"> & {
   /** The trigger's size, as the shared select has them. */
   size?: "sm" | "default";
-  value?: string | number; defaultValue?: string | number; onChange?: (event: Change) => void;
+  value?: string | number;
+  defaultValue?: string | number;
+  onChange?: (event: Change) => void;
 };
 type Item = { value: string; label: ReactNode; hint?: string | undefined; disabled: boolean };
 function optionText(children: ReactNode): string {
-  return Children.toArray(children).map(child => isValidElement<{ children?: ReactNode }>(child) ? optionText(child.props.children)
-    : typeof child === "string" || typeof child === "number" || typeof child === "bigint" ? String(child) : "").join("");
+  return Children.toArray(children)
+    .map(child =>
+      isValidElement<{ children?: ReactNode }>(child)
+        ? optionText(child.props.children)
+        : typeof child === "string" || typeof child === "number" || typeof child === "bigint"
+          ? String(child)
+          : "",
+    )
+    .join("");
 }
 /** Reads `<option>`s; an option's `data-hint` shows under its name in the menu but not in the closed control. */
 function options(children: ReactNode): Item[] {
   const result: Item[] = [];
   Children.forEach(children, child => {
-    if (!isValidElement<{ children?: ReactNode; value?: string | number; disabled?: boolean; "data-hint"?: string }>(child)) return;
+    if (
+      !isValidElement<{ children?: ReactNode; value?: string | number; disabled?: boolean; "data-hint"?: string }>(
+        child,
+      )
+    )
+      return;
     if (child.type === Fragment || child.type === "optgroup") result.push(...options(child.props.children));
-    else if (child.type === "option") result.push({ value: child.props.value == null ? optionText(child.props.children) : String(child.props.value), label: child.props.children, hint: child.props["data-hint"], disabled: !!child.props.disabled });
+    else if (child.type === "option")
+      result.push({
+        value: child.props.value == null ? optionText(child.props.children) : String(child.props.value),
+        label: child.props.children,
+        hint: child.props["data-hint"],
+        disabled: !!child.props.disabled,
+      });
   });
   return result;
 }
 /** Shared adapter keeps existing field logic while the control uses shadcn Select. */
-export function OptionSelect({ children, value, defaultValue = "", onChange, className, disabled, required, name, id, ...props }: Props) {
+export function OptionSelect({
+  children,
+  value,
+  defaultValue = "",
+  onChange,
+  className,
+  disabled,
+  required,
+  name,
+  id,
+  ...props
+}: Props) {
   const [internal, setInternal] = useState(String(defaultValue));
-  const keyboardDispatch = useRef<KeyboardEvent | null>(null), triggerProps = props as React.ComponentProps<typeof SelectTrigger>;
-  const items = options(children), selected = String(value ?? internal);
+  const keyboardDispatch = useRef<KeyboardEvent | null>(null),
+    triggerProps = props as React.ComponentProps<typeof SelectTrigger>;
+  const items = options(children),
+    selected = String(value ?? internal);
   const label = items.find(item => item.value === selected)?.label ?? selected;
-  return <Select value={selected} disabled={disabled} required={required} name={name}
-    items={items.map(item => ({ value: item.value, label: item.label }))}
-    onValueChange={(next, details) => {
-      // Collection registration can briefly lose a replaced option. That is not a field edit.
-      // Base UI's closed-list typeahead also uses this synthetic reason, synchronously inside keydown.
-      if (details.reason === "none" && details.event.type === "base-ui" && !keyboardDispatch.current) { details.cancel(); return; }
-      if (next == null) return; const value = String(next); setInternal(value); onChange?.({ target: { value }, currentTarget: { value } });
-    }}>
-    <SelectTrigger {...triggerProps} id={id} className={className} data-value={selected} onKeyDown={event => {
-      const key = event.nativeEvent; keyboardDispatch.current = key;
-      queueMicrotask(() => { if (keyboardDispatch.current === key) keyboardDispatch.current = null; });
-      triggerProps.onKeyDown?.(event);
-    }}><SelectValue placeholder={label}>{label}</SelectValue></SelectTrigger>
-    <SelectContent alignItemWithTrigger={false} className="elpis-select-content">{items.map(item => <SelectItem key={item.value} value={item.value} disabled={item.disabled} data-value={item.value}>{item.hint ? <span className="select-option">{item.label}<small>{item.hint}</small></span> : item.label}</SelectItem>)}</SelectContent>
-  </Select>;
+  return (
+    <Select
+      value={selected}
+      disabled={disabled}
+      required={required}
+      name={name}
+      items={items.map(item => ({ value: item.value, label: item.label }))}
+      onValueChange={(next, details) => {
+        // Collection registration can briefly lose a replaced option. That is not a field edit.
+        // Base UI's closed-list typeahead also uses this synthetic reason, synchronously inside keydown.
+        if (details.reason === "none" && details.event.type === "base-ui" && !keyboardDispatch.current) {
+          details.cancel();
+          return;
+        }
+        if (next == null) return;
+        const value = String(next);
+        setInternal(value);
+        onChange?.({ target: { value }, currentTarget: { value } });
+      }}
+    >
+      <SelectTrigger
+        {...triggerProps}
+        id={id}
+        className={className}
+        data-value={selected}
+        onKeyDown={event => {
+          const key = event.nativeEvent;
+          keyboardDispatch.current = key;
+          queueMicrotask(() => {
+            if (keyboardDispatch.current === key) keyboardDispatch.current = null;
+          });
+          triggerProps.onKeyDown?.(event);
+        }}
+      >
+        <SelectValue placeholder={label}>{label}</SelectValue>
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false} className="elpis-select-content">
+        {items.map(item => (
+          <SelectItem key={item.value} value={item.value} disabled={item.disabled} data-value={item.value}>
+            {item.hint ? (
+              <span className="select-option">
+                {item.label}
+                <small>{item.hint}</small>
+              </span>
+            ) : (
+              item.label
+            )}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }

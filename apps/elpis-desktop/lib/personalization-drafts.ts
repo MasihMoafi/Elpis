@@ -8,17 +8,38 @@ export function readPersonalizationDraft(key: string) {
   const raw = appStorage().getItem(key);
   if (!raw) return null;
   const value: unknown = JSON.parse(raw);
-  if (!value || typeof value !== "object" || !("content" in value) || typeof value.content !== "string" || !("version" in value) || typeof value.version !== "string") throw Error("The saved draft could not be read. Keep the original workspace file.");
-  const draft = { content: value.content, version: value.version }; drafts.set(key, draft); return draft;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    !("content" in value) ||
+    typeof value.content !== "string" ||
+    !("version" in value) ||
+    typeof value.version !== "string"
+  )
+    throw Error("The saved draft could not be read. Keep the original workspace file.");
+  const draft = { content: value.content, version: value.version };
+  drafts.set(key, draft);
+  return draft;
 }
 export function writePersonalizationDraft(key: string, value: PersonalizationDraft | null) {
-  if (value) drafts.set(key, value); else drafts.delete(key);
-  if (value) appStorage().setItem(key, JSON.stringify(value)); else appStorage().removeItem(key);
+  if (value) drafts.set(key, value);
+  else drafts.delete(key);
+  if (value) appStorage().setItem(key, JSON.stringify(value));
+  else appStorage().removeItem(key);
 }
 if (typeof window !== "undefined") {
-  window.addEventListener("beforeunload", event => { if (drafts.size) { event.preventDefault(); event.returnValue = ""; } });
+  window.addEventListener("beforeunload", event => {
+    if (drafts.size) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
   window.__elpisFlushSettings = () => {
-    try { for (const [key, draft] of drafts) appStorage().setItem(key, JSON.stringify(draft)); return true; }
-    catch { return false; }
+    try {
+      for (const [key, draft] of drafts) appStorage().setItem(key, JSON.stringify(draft));
+      return true;
+    } catch {
+      return false;
+    }
   };
 }

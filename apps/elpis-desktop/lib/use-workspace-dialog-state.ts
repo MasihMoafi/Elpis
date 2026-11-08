@@ -15,7 +15,23 @@ export function useWorkspaceDialogState() {
   const shortcutsReturnFocus = useRef<HTMLElement | null>(null);
   const [renameRequest, setRenameRequest] = useState(false);
   const [resumeOpen, setResumeOpen] = useState(false);
-  return { newGroupFor, setNewGroupFor, deleteTargets, setDeleteTargets, deleteRunHistory, setDeleteRunHistory, shownWhenDeleted,
-    shortcutsOpen, setShortcutsOpen, commandMenuOpen, setCommandMenuOpen, commandReturnFocus, shortcutsReturnFocus,
-    renameRequest, setRenameRequest, resumeOpen, setResumeOpen };
+  return {
+    newGroupFor,
+    setNewGroupFor,
+    deleteTargets,
+    setDeleteTargets,
+    deleteRunHistory,
+    setDeleteRunHistory,
+    shownWhenDeleted,
+    shortcutsOpen,
+    setShortcutsOpen,
+    commandMenuOpen,
+    setCommandMenuOpen,
+    commandReturnFocus,
+    shortcutsReturnFocus,
+    renameRequest,
+    setRenameRequest,
+    resumeOpen,
+    setResumeOpen,
+  };
 }

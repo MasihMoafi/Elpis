@@ -4,7 +4,10 @@
  * @param {{ version: number, versionNonce: number, isDeleted?: boolean }} incoming
  * @param {{ version: number, versionNonce: number, isDeleted?: boolean }} current
  */
-function compareOrder(incoming: { version: number; versionNonce: number; isDeleted?: boolean }, current: { version: number; versionNonce: number; isDeleted?: boolean }) {
+function compareOrder(
+  incoming: { version: number; versionNonce: number; isDeleted?: boolean },
+  current: { version: number; versionNonce: number; isDeleted?: boolean },
+) {
   if (incoming.version !== current.version) return incoming.version > current.version;
   if (!!incoming.isDeleted !== !!current.isDeleted) return !!incoming.isDeleted;
   return incoming.versionNonce < current.versionNonce;

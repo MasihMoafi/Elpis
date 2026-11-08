@@ -11,9 +11,12 @@ export function useSessionSplit(session: Session, focus: () => void, promote: (s
   const [thread, setThread] = useState<Thread | null>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const other = useRef<Session | null>(null);
-  const focusRef = useRef(focus); focusRef.current = focus;
-  const promoteRef = useRef(promote); promoteRef.current = promote;
-  const splitRef = useRef(thread); splitRef.current = thread;
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+  const promoteRef = useRef(promote);
+  promoteRef.current = promote;
+  const splitRef = useRef(thread);
+  splitRef.current = thread;
   useEffect(() => {
     const embedded = window.parent !== window && new URLSearchParams(location.search).get("pane") === "1";
     setPane(embedded);
@@ -23,25 +26,55 @@ export function useSessionSplit(session: Session, focus: () => void, promote: (s
         if (event.data?.type === "elpis:focus-pane") focusRef.current();
       } else if (event.source === frame.current?.contentWindow) {
         if (event.data?.type === "elpis:pane-state") other.current = event.data.session as Session;
-        if (event.data?.type === "elpis:close-pane") { setThread(null); focusRef.current(); }
+        if (event.data?.type === "elpis:close-pane") {
+          setThread(null);
+          focusRef.current();
+        }
         if (event.data?.type === "elpis:previous-pane") focusRef.current();
       }
     };
     const key = (event: KeyboardEvent) => {
-      if (!(event.ctrlKey || event.metaKey) || !event.altKey || event.shiftKey || !["BracketLeft", "BracketRight"].includes(event.code)) return;
+      if (
+        !(event.ctrlKey || event.metaKey) ||
+        !event.altKey ||
+        event.shiftKey ||
+        !["BracketLeft", "BracketRight"].includes(event.code)
+      )
+        return;
       if (embedded) {
-        event.preventDefault(); window.parent.postMessage({ type: "elpis:previous-pane" }, location.origin);
+        event.preventDefault();
+        window.parent.postMessage({ type: "elpis:previous-pane" }, location.origin);
       } else if (splitRef.current) {
-        event.preventDefault(); frame.current?.contentWindow?.postMessage({ type: "elpis:focus-pane" }, location.origin);
+        event.preventDefault();
+        frame.current?.contentWindow?.postMessage({ type: "elpis:focus-pane" }, location.origin);
       }
     };
-    window.addEventListener("message", message); window.addEventListener("keydown", key);
-    return () => { window.removeEventListener("message", message); window.removeEventListener("keydown", key); };
+    window.addEventListener("message", message);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("message", message);
+      window.removeEventListener("keydown", key);
+    };
   }, []);
-  useEffect(() => { if (pane) window.parent.postMessage({ type: "elpis:pane-state", session }, location.origin); }, [pane, session.thread, session.text, session.attachments]);
+  useEffect(() => {
+    if (pane) window.parent.postMessage({ type: "elpis:pane-state", session }, location.origin);
+  }, [pane, session.thread, session.text, session.attachments]);
   const close = () => {
     if (pane) window.parent.postMessage({ type: "elpis:close-pane" }, location.origin);
-    else if (other.current) { const remaining = other.current; setThread(null); promoteRef.current(remaining); }
+    else if (other.current) {
+      const remaining = other.current;
+      setThread(null);
+      promoteRef.current(remaining);
+    }
   };
-  return { pane, thread, frame, close, open: (next: Thread) => { other.current = null; setThread(next); } };
+  return {
+    pane,
+    thread,
+    frame,
+    close,
+    open: (next: Thread) => {
+      other.current = null;
+      setThread(next);
+    },
+  };
 }

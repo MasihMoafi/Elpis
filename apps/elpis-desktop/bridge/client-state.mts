@@ -1,21 +1,48 @@
-import type { ArchiveHistory } from './client-archive-history.mts';
-import type { CustomizePage } from './customize-page.mts';
-import type { MessageVersions } from './message-versions.mts';
-import type { RewindHistory } from './rewind-history.mts';
-import type { RewindSnapshots } from './rewind-snapshots.mts';
-import type { SpawnLinks } from './spawn-links.mts';
-import type { createCloudroomVm } from './cloudroom-vm.mts';
-import type { createGithubConnector } from './github-connector.mts';
-import type { createWorkflowHistory, createWorkflowRuns } from './workflow-acp.mts';
-import type { ElpisChatHistory } from './router/sources/elpis-chat-history.mts';
-import type { RpcResponse } from './client-wire.mts';
-import type { ElicitationParams } from '../lib/approvals.ts';
-import type { restoredTokenUsage, rolloutShares, rolloutTurnModels, smartPruneSnapshot, tokenUsageSnapshot } from './elpis-features.mts';
-import { BoundedCache } from './bounded-cache.mts';
+import type { ArchiveHistory } from "./client-archive-history.mts";
+import type { CustomizePage } from "./customize-page.mts";
+import type { MessageVersions } from "./message-versions.mts";
+import type { RewindHistory } from "./rewind-history.mts";
+import type { RewindSnapshots } from "./rewind-snapshots.mts";
+import type { SpawnLinks } from "./spawn-links.mts";
+import type { createCloudroomVm } from "./cloudroom-vm.mts";
+import type { createGithubConnector } from "./github-connector.mts";
+import type { createWorkflowHistory, createWorkflowRuns } from "./workflow-acp.mts";
+import type { ElpisChatHistory } from "./router/sources/elpis-chat-history.mts";
+import type { RpcResponse } from "./client-wire.mts";
+import type { ElicitationParams } from "../lib/approvals.ts";
+import type {
+  restoredTokenUsage,
+  rolloutShares,
+  rolloutTurnModels,
+  smartPruneSnapshot,
+  tokenUsageSnapshot,
+} from "./elpis-features.mts";
+import { BoundedCache } from "./bounded-cache.mts";
 
-type PendingRpc = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; method: string; reading: boolean };
-export type ApprovalParams = ElicitationParams & { threadId?: unknown; turnId?: unknown; permissions?: unknown; questions?: { id: string }[] | undefined; availableDecisions?: unknown[] | undefined; [key: string]: unknown };
-type Approval = { id: string; wireId: unknown; method: string; params: ApprovalParams; supported: boolean; ownerThreadId: unknown; thread?: unknown };
+type PendingRpc = {
+  resolve(value: unknown): void;
+  reject(error: Error): void;
+  timer: ReturnType<typeof setTimeout>;
+  method: string;
+  reading: boolean;
+};
+export type ApprovalParams = ElicitationParams & {
+  threadId?: unknown;
+  turnId?: unknown;
+  permissions?: unknown;
+  questions?: { id: string }[] | undefined;
+  availableDecisions?: unknown[] | undefined;
+  [key: string]: unknown;
+};
+type Approval = {
+  id: string;
+  wireId: unknown;
+  method: string;
+  params: ApprovalParams;
+  supported: boolean;
+  ownerThreadId: unknown;
+  thread?: unknown;
+};
 type Cached<T> = { key: string; value: T };
 
 export type ClientSocket = {
@@ -90,17 +117,23 @@ export class ClientState {
   mutationWaiters = new Map<unknown, (() => void)[]>();
   closed = false;
   ready = false;
-  attaching = new Map<unknown, Promise<{ thread: RpcResponse<'thread/read'>['thread']; followingLive?: boolean }>>();
-  context: Map<unknown, { tokenUsage?: ReturnType<typeof tokenUsageSnapshot>; smartPrune?: ReturnType<typeof smartPruneSnapshot> }> = new BoundedCache(64);
+  attaching = new Map<unknown, Promise<{ thread: RpcResponse<"thread/read">["thread"]; followingLive?: boolean }>>();
+  context: Map<
+    unknown,
+    { tokenUsage?: ReturnType<typeof tokenUsageSnapshot>; smartPrune?: ReturnType<typeof smartPruneSnapshot> }
+  > = new BoundedCache(64);
   restored: Map<unknown, Cached<Awaited<ReturnType<typeof restoredTokenUsage>>>> = new BoundedCache(16);
   shares: Map<unknown, Cached<Awaited<ReturnType<typeof rolloutShares>>>> = new BoundedCache(16);
   turnModels: Map<unknown, Cached<Awaited<ReturnType<typeof rolloutTurnModels>>>> = new BoundedCache(16);
   liveTurnModels = new Map<string, string>();
   side = new Set<unknown>();
-  sideChats = new Map<unknown, { turnId: string | null | undefined; starting: boolean; pending: Promise<unknown> | null; closing: boolean }>();
+  sideChats = new Map<
+    unknown,
+    { turnId: string | null | undefined; starting: boolean; pending: Promise<unknown> | null; closing: boolean }
+  >();
   interviewThreads = new Set<unknown>();
   workflowTitles = new Map<unknown, { source: string; title: string; rootThreadId: string }>();
-  workflowLookups = new Map<unknown, Promise<RpcResponse<'workGraph/list'> | null>>();
+  workflowLookups = new Map<unknown, Promise<RpcResponse<"workGraph/list"> | null>>();
   endedNodes = new Set<unknown>();
   opened: string | null = null;
   checkingApprovals = new Map<unknown, object>();
@@ -111,5 +144,9 @@ export class ClientState {
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   retryAttempt = 0;
   connectionError: string | null = null;
-  warmSpeech: { chatId: string; speech: Promise<{ id: string; voice: unknown }>; timer: ReturnType<typeof setTimeout> } | null = null;
+  warmSpeech: {
+    chatId: string;
+    speech: Promise<{ id: string; voice: unknown }>;
+    timer: ReturnType<typeof setTimeout>;
+  } | null = null;
 }

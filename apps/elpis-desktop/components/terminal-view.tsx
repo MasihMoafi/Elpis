@@ -15,23 +15,41 @@ import { errorText } from "@/lib/error-text.mts";
 const folderName = (cwd: string) => cwd.split("/").filter(Boolean).at(-1) || cwd || "~";
 
 /** One xterm per terminal tab for this page's lifetime; its element moves into the panel when that tab is shown. */
-type View = { term: Terminal; fit: FitAddon; element: HTMLDivElement; session: number | null; offset: number; pending: [number, number, string][]; shell: string; exited: number | null; changed: () => void };
+type View = {
+  term: Terminal;
+  fit: FitAddon;
+  element: HTMLDivElement;
+  session: number | null;
+  offset: number;
+  pending: [number, number, string][];
+  shell: string;
+  exited: number | null;
+  changed: () => void;
+};
 const views = new Map<string, View>();
 /** "Open in Elpis TUI" requests already carried out, so remounting a tab does not repeat one. */
 const launched = new Set<number>();
-let modules: Promise<[typeof import("@xterm/xterm"), typeof import("@xterm/addon-fit"), typeof import("@xterm/addon-web-links")]> | null = null;
+let modules: Promise<
+  [typeof import("@xterm/xterm"), typeof import("@xterm/addon-fit"), typeof import("@xterm/addon-web-links")]
+> | null = null;
 let subscribed = false;
 
 /** Writes the part of a chunk this view has not shown yet: a reopened shell's replay and its live output may overlap. */
 function write(view: View, id: number, end: number, data: string) {
-  if (view.session === null) { view.pending.push([id, end, data]); return; }
+  if (view.session === null) {
+    view.pending.push([id, end, data]);
+    return;
+  }
   if (id !== view.session || end <= view.offset) return;
   const start = end - data.length;
   view.term.write(start < view.offset ? data.slice(view.offset - start) : data);
   view.offset = end;
 }
 function attach(view: View, session: TerminalSession) {
-  view.session = session.id; view.offset = session.end - session.output.length; view.shell = session.shell; view.exited = session.exited;
+  view.session = session.id;
+  view.offset = session.end - session.output.length;
+  view.shell = session.shell;
+  view.exited = session.exited;
   write(view, session.id, session.end, session.output);
   for (const [id, end, data] of view.pending.splice(0)) write(view, id, end, data);
   view.changed();
@@ -39,39 +57,67 @@ function attach(view: View, session: TerminalSession) {
 
 /** Resolves a CSS colour (the app's tokens use color-mix) to #rrggbb for xterm. */
 function rgb(value: string, alpha?: number) {
-  const context = document.createElement("canvas").getContext("2d"); if (!context) return value;
-  context.fillStyle = value; context.fillRect(0, 0, 1, 1);
+  const context = document.createElement("canvas").getContext("2d");
+  if (!context) return value;
+  context.fillStyle = value;
+  context.fillRect(0, 0, 1, 1);
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
-  return alpha === undefined ? `#${[r, g, b].map(part => (part ?? 0).toString(16).padStart(2, "0")).join("")}` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  return alpha === undefined
+    ? `#${[r, g, b].map(part => (part ?? 0).toString(16).padStart(2, "0")).join("")}`
+    : `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 function theme(element: HTMLElement) {
-  const style = getComputedStyle(element), token = (name: string) => style.getPropertyValue(name).trim();
-  return { background: rgb(token("--background")), foreground: rgb(token("--foreground")), cursor: rgb(token("--primary")), cursorAccent: rgb(token("--background")), selectionBackground: rgb(token("--primary"), 0.3) };
+  const style = getComputedStyle(element),
+    token = (name: string) => style.getPropertyValue(name).trim();
+  return {
+    background: rgb(token("--background")),
+    foreground: rgb(token("--foreground")),
+    cursor: rgb(token("--primary")),
+    cursorAccent: rgb(token("--background")),
+    selectionBackground: rgb(token("--primary"), 0.3),
+  };
 }
 
 /** Copy and paste as in the ChatGPT app on Linux: Ctrl+Shift+C/V, Ctrl+C with a selection, Ctrl/Shift+Insert. */
 function clipboardKey(event: KeyboardEvent, term: Terminal, api: DesktopTerminal) {
   if (event.type !== "keydown" || event.altKey || event.metaKey) return false;
   const key = event.key.toLowerCase();
-  const copy = (event.ctrlKey && key === "c" && (event.shiftKey || term.hasSelection())) || (event.ctrlKey && !event.shiftKey && key === "insert");
-  const paste = (event.ctrlKey && event.shiftKey && key === "v") || (!event.ctrlKey && event.shiftKey && key === "insert");
+  const copy =
+    (event.ctrlKey && key === "c" && (event.shiftKey || term.hasSelection())) ||
+    (event.ctrlKey && !event.shiftKey && key === "insert");
+  const paste =
+    (event.ctrlKey && event.shiftKey && key === "v") || (!event.ctrlKey && event.shiftKey && key === "insert");
   if (!copy && !paste) return false;
-  event.preventDefault(); event.stopPropagation();
-  if (copy) { const text = term.getSelection(); if (text) void api.copy(text).catch(() => {}); if (!event.shiftKey) term.clearSelection(); }
-  else void api.paste().then(text => { if (text) term.paste(text); }).catch(() => {});
+  event.preventDefault();
+  event.stopPropagation();
+  if (copy) {
+    const text = term.getSelection();
+    if (text) void api.copy(text).catch(() => {});
+    if (!event.shiftKey) term.clearSelection();
+  } else
+    void api
+      .paste()
+      .then(text => {
+        if (text) term.paste(text);
+      })
+      .catch(() => {});
   return true;
 }
 
 /** A closed terminal tab: its shell ends and its screen is dropped. */
 export function endTerminal(key: string) {
-  const view = views.get(key); views.delete(key); view?.term.dispose();
+  const view = views.get(key);
+  views.delete(key);
+  view?.term.dispose();
   void window.elpisDesktop?.terminal?.close(key).catch(() => {});
 }
 
 export type TerminalLaunch = { key: string; token: number } & ({ threadId: string } | { command: "github-login" });
 type Props = {
   /** The terminal tab whose shell this is (its key), and the folder that shell starts in. */
-  termKey: string; cwd: string; dark: boolean;
+  termKey: string;
+  cwd: string;
+  dark: boolean;
   /** "Open in Elpis TUI": resume this chat in the shell of the tab named by `key` once that shell is attached. */
   launch: TerminalLaunch | null;
 };
@@ -79,53 +125,119 @@ type Props = {
 /** A terminal tab's shell in the side panel, as in the ChatGPT app's Codex mode (Ctrl+`). */
 export function TerminalView({ termKey, cwd, dark, launch }: Props) {
   const api = typeof window === "undefined" ? undefined : window.elpisDesktop?.terminal;
-  const panel = useRef<HTMLElement>(null), host = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null),
+    host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<{ shell: string; exited: number | null }>({ shell: "", exited: null });
   const [error, setError] = useState("");
   const current = useRef<View | null>(null);
 
   // The page's one subscription routes each shell's output to its chat's view.
   useEffect(() => {
-    if (!api || subscribed) return; subscribed = true;
-    api.subscribe((key, id, end, data) => { const view = views.get(key); if (view) write(view, id, end, data); },
-      (key, id, code) => { const view = views.get(key); if (view && view.session === id) { view.exited = code; view.changed(); } });
+    if (!api || subscribed) return;
+    subscribed = true;
+    api.subscribe(
+      (key, id, end, data) => {
+        const view = views.get(key);
+        if (view) write(view, id, end, data);
+      },
+      (key, id, code) => {
+        const view = views.get(key);
+        if (view && view.session === id) {
+          view.exited = code;
+          view.changed();
+        }
+      },
+    );
   }, [api]);
 
   useEffect(() => {
     if (!api || !host.current) return;
-    let disposed = false; const target = host.current; setError("");
+    let disposed = false;
+    const target = host.current;
+    setError("");
     modules ??= Promise.all([import("@xterm/xterm"), import("@xterm/addon-fit"), import("@xterm/addon-web-links")]);
     void modules.then(([{ Terminal }, { FitAddon }, { WebLinksAddon }]) => {
       if (disposed) return;
       let view = views.get(termKey);
       if (!view) {
-        const term = new Terminal({ fontFamily: getComputedStyle(target).getPropertyValue("--mono").trim() || "monospace", fontSize: parseFloat(getComputedStyle(target).getPropertyValue("--code-size")) || 13, lineHeight: 1.2, cursorBlink: true, scrollback: 5000, allowProposedApi: false, minimumContrastRatio: 4.5, theme: theme(target) });
-        const fit = new FitAddon(), element = document.createElement("div");
+        const term = new Terminal({
+          fontFamily: getComputedStyle(target).getPropertyValue("--mono").trim() || "monospace",
+          fontSize: parseFloat(getComputedStyle(target).getPropertyValue("--code-size")) || 13,
+          lineHeight: 1.2,
+          cursorBlink: true,
+          scrollback: 5000,
+          allowProposedApi: false,
+          minimumContrastRatio: 4.5,
+          theme: theme(target),
+        });
+        const fit = new FitAddon(),
+          element = document.createElement("div");
         element.className = "terminal-view";
-        term.loadAddon(fit); term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, "_blank")));
-        const created: View = { term, fit, element, session: null, offset: 0, pending: [], shell: "", exited: null, changed: () => {} };
-        term.attachCustomKeyEventHandler(event => !clipboardKey(event, term, api) && !(event.ctrlKey && event.code === "Backquote"));
+        term.loadAddon(fit);
+        term.loadAddon(new WebLinksAddon((_event, uri) => window.open(uri, "_blank")));
+        const created: View = {
+          term,
+          fit,
+          element,
+          session: null,
+          offset: 0,
+          pending: [],
+          shell: "",
+          exited: null,
+          changed: () => {},
+        };
+        term.attachCustomKeyEventHandler(
+          event => !clipboardKey(event, term, api) && !(event.ctrlKey && event.code === "Backquote"),
+        );
         term.onData(data => api.input(termKey, data));
         term.onResize(({ cols, rows }) => api.resize(termKey, cols, rows));
-        target.replaceChildren(element); term.open(element); fit.fit();
-        views.set(termKey, view = created);
-        void api.open(termKey, cwd, term.cols, term.rows).then(session => attach(created, session)).catch(cause => { views.delete(termKey); setError(errorText(cause)); });
-      } else { target.replaceChildren(view.element); view.fit.fit(); }
+        target.replaceChildren(element);
+        term.open(element);
+        fit.fit();
+        views.set(termKey, (view = created));
+        void api
+          .open(termKey, cwd, term.cols, term.rows)
+          .then(session => attach(created, session))
+          .catch(cause => {
+            views.delete(termKey);
+            setError(errorText(cause));
+          });
+      } else {
+        target.replaceChildren(view.element);
+        view.fit.fit();
+      }
       const shown = view;
       current.current = shown;
-      shown.changed = () => { if (!disposed) setState({ shell: shown.shell, exited: shown.exited }); };
-      shown.changed(); shown.term.focus();
+      shown.changed = () => {
+        if (!disposed) setState({ shell: shown.shell, exited: shown.exited });
+      };
+      shown.changed();
+      shown.term.focus();
     });
-    return () => { disposed = true; const shown = current.current; if (shown) shown.changed = () => {}; current.current = null; };
+    return () => {
+      disposed = true;
+      const shown = current.current;
+      if (shown) shown.changed = () => {};
+      current.current = null;
+    };
   }, [api, termKey]);
 
   // Resize: the panel's size gives the shell its rows and columns.
   useEffect(() => {
     if (!host.current) return;
-    const observer = new ResizeObserver(() => { const view = current.current; if (view && host.current?.contains(view.element)) view.fit.fit(); });
-    observer.observe(host.current); return () => observer.disconnect();
+    const observer = new ResizeObserver(() => {
+      const view = current.current;
+      if (view && host.current?.contains(view.element)) view.fit.fit();
+    });
+    observer.observe(host.current);
+    return () => observer.disconnect();
   }, []);
-  useEffect(() => { const frame = requestAnimationFrame(() => { if (panel.current) for (const view of views.values()) view.term.options.theme = theme(panel.current); }); return () => cancelAnimationFrame(frame); }, [dark]);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      if (panel.current) for (const view of views.values()) view.term.options.theme = theme(panel.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [dark]);
   // Settings → Appearance → Code font: open shells take it too, once the page has set --mono (a frame later).
   const { codeFont, codeSize } = usePreferences();
   useEffect(() => {
@@ -133,7 +245,11 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
       if (!panel.current) return;
       const font = getComputedStyle(panel.current).getPropertyValue("--mono").trim() || "monospace";
       const size = parseFloat(getComputedStyle(panel.current).getPropertyValue("--code-size")) || 13;
-      for (const view of views.values()) { view.term.options.fontFamily = font; view.term.options.fontSize = size; view.fit.fit(); }
+      for (const view of views.values()) {
+        view.term.options.fontFamily = font;
+        view.term.options.fontSize = size;
+        view.fit.fit();
+      }
     });
     return () => cancelAnimationFrame(frame);
   }, [codeFont, codeSize]);
@@ -144,28 +260,70 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
     launched.add(launch.token);
     const run = () => {
       const view = views.get(termKey);
-      if (!view || view.session === null) { requestAnimationFrame(run); return; }
-      if ("command" in launch) { api.input(termKey, "\x05\x15gh auth login --web\r"); view.term.focus(); return; }
-      void api.tui(termKey, cwd, launch.threadId, view.term.cols, view.term.rows).then(() => { setError(""); view.term.focus(); })
+      if (!view || view.session === null) {
+        requestAnimationFrame(run);
+        return;
+      }
+      if ("command" in launch) {
+        api.input(termKey, "\x05\x15gh auth login --web\r");
+        view.term.focus();
+        return;
+      }
+      void api
+        .tui(termKey, cwd, launch.threadId, view.term.cols, view.term.rows)
+        .then(() => {
+          setError("");
+          view.term.focus();
+        })
         .catch(cause => setError(errorText(cause)));
     };
     run();
   }, [api, launch, termKey, cwd]);
 
   async function restart() {
-    const view = views.get(termKey); if (!api || !view) return;
-    view.session = null; view.pending = []; view.term.reset(); setError("");
-    try { attach(view, await api.restart(termKey, cwd, view.term.cols, view.term.rows)); view.term.focus(); }
-    catch (cause) { setError(errorText(cause)); }
+    const view = views.get(termKey);
+    if (!api || !view) return;
+    view.session = null;
+    view.pending = [];
+    view.term.reset();
+    setError("");
+    try {
+      attach(view, await api.restart(termKey, cwd, view.term.cols, view.term.rows));
+      view.term.focus();
+    } catch (cause) {
+      setError(errorText(cause));
+    }
   }
-  const status = error || (state.exited !== null ? `Shell exited with code ${state.exited}. Restart the terminal to open a new shell.` : "");
-  return <section ref={panel} className="terminal-body" aria-label="Terminal">
-    <div className="terminal-header">
-      <span className="terminal-tab"><TerminalIcon size={14} aria-hidden="true" />{state.shell || "Terminal"}</span>
-      <span className="terminal-folder" title={cwd}>{folderName(cwd)}</span>
-      <Button className="terminal-restart" variant="ghost" size="icon-xs" aria-label="Restart terminal" title="Restart terminal" onClick={() => void restart()}><RotateCcw size={13} /></Button>
-    </div>
-    <div ref={host} className="terminal-host" />
-    {status && <p className="terminal-status" role="status">{status}</p>}
-  </section>;
+  const status =
+    error ||
+    (state.exited !== null ? `Shell exited with code ${state.exited}. Restart the terminal to open a new shell.` : "");
+  return (
+    <section ref={panel} className="terminal-body" aria-label="Terminal">
+      <div className="terminal-header">
+        <span className="terminal-tab">
+          <TerminalIcon size={14} aria-hidden="true" />
+          {state.shell || "Terminal"}
+        </span>
+        <span className="terminal-folder" title={cwd}>
+          {folderName(cwd)}
+        </span>
+        <Button
+          className="terminal-restart"
+          variant="ghost"
+          size="icon-xs"
+          aria-label="Restart terminal"
+          title="Restart terminal"
+          onClick={() => void restart()}
+        >
+          <RotateCcw size={13} />
+        </Button>
+      </div>
+      <div ref={host} className="terminal-host" />
+      {status && (
+        <p className="terminal-status" role="status">
+          {status}
+        </p>
+      )}
+    </section>
+  );
 }

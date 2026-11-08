@@ -11,23 +11,44 @@ export type GroupBy = "none" | "custom";
 export type SortBy = "recency" | "created" | "name" | "manual";
 /** `members`: chat id → group id; `collapsed`: groups drawn closed; `order`: chat ids in the person's order, which Pinned,
  * each group and Recents each show in turn (kept when another sort is chosen, used when "manual" is). */
-export type ChatGroups = { groups: ChatGroup[]; members: Record<string, string>; groupBy: GroupBy; sortBy: SortBy; collapsed: string[]; order: string[]; parents?: Record<string, string | null> };
+export type ChatGroups = {
+  groups: ChatGroup[];
+  members: Record<string, string>;
+  groupBy: GroupBy;
+  sortBy: SortBy;
+  collapsed: string[];
+  order: string[];
+  parents?: Record<string, string | null>;
+};
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const GROUPS_KEY = "elpis-chat-groups-v1";
 const NAME_LIMIT = 60;
-const GROUP_BY: readonly GroupBy[] = ["none", "custom"], SORT_BY: readonly SortBy[] = ["recency", "created", "name", "manual"];
+const GROUP_BY: readonly GroupBy[] = ["none", "custom"],
+  SORT_BY: readonly SortBy[] = ["recency", "created", "name", "manual"];
 
-export const emptyGroups = (): ChatGroups => ({ groups: [], members: {}, groupBy: "none", sortBy: "recency", collapsed: [], order: [] });
+export const emptyGroups = (): ChatGroups => ({
+  groups: [],
+  members: {},
+  groupBy: "none",
+  sortBy: "recency",
+  collapsed: [],
+  order: [],
+});
 /** The sidebar as it is before anyone changes it: no group sections, the bridge's order. */
 export const isDefaultView = (state: ChatGroups) => state.groupBy === "none" && state.sortBy === "recency";
 
-const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+const record = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === "object" && !Array.isArray(value);
 
 /** What was saved, keeping only what can be used: named groups once each, members and collapsed of known groups. */
 export function readGroups(storage: Storage): ChatGroups {
   let value: unknown;
-  try { value = JSON.parse(storage.getItem(GROUPS_KEY) || "null"); } catch { return emptyGroups(); }
+  try {
+    value = JSON.parse(storage.getItem(GROUPS_KEY) || "null");
+  } catch {
+    return emptyGroups();
+  }
   if (!record(value)) return emptyGroups();
   const groups: ChatGroup[] = [];
   for (const item of Array.isArray(value.groups) ? value.groups : []) {
@@ -36,30 +57,62 @@ export function readGroups(storage: Storage): ChatGroups {
     if (name && !groups.some(group => group.id === item.id)) groups.push({ id: item.id, name });
   }
   const known = new Set(groups.map(group => group.id));
-  const members = Object.fromEntries(Object.entries(record(value.members) ? value.members : {}).filter((entry): entry is [string, string] => typeof entry[1] === "string" && known.has(entry[1])));
-  const collapsed = [...new Set((Array.isArray(value.collapsed) ? value.collapsed : []).filter((id: unknown): id is string => typeof id === "string" && known.has(id)))];
-  const order = [...new Set((Array.isArray(value.order) ? value.order : []).filter((id: unknown): id is string => typeof id === "string" && !!id))];
+  const members = Object.fromEntries(
+    Object.entries(record(value.members) ? value.members : {}).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string" && known.has(entry[1]),
+    ),
+  );
+  const collapsed = [
+    ...new Set(
+      (Array.isArray(value.collapsed) ? value.collapsed : []).filter(
+        (id: unknown): id is string => typeof id === "string" && known.has(id),
+      ),
+    ),
+  ];
+  const order = [
+    ...new Set(
+      (Array.isArray(value.order) ? value.order : []).filter(
+        (id: unknown): id is string => typeof id === "string" && !!id,
+      ),
+    ),
+  ];
   const savedParents = record(value.parents) ? value.parents : {};
-  const parents = withoutParentCycles(Object.fromEntries(Object.entries(savedParents).filter((entry): entry is [string, string | null] =>
-    !!entry[0] && (entry[1] === null || typeof entry[1] === "string" && !!entry[1]))));
+  const parents = withoutParentCycles(
+    Object.fromEntries(
+      Object.entries(savedParents).filter(
+        (entry): entry is [string, string | null] =>
+          !!entry[0] && (entry[1] === null || (typeof entry[1] === "string" && !!entry[1])),
+      ),
+    ),
+  );
   return {
-    groups, members, collapsed, order,
+    groups,
+    members,
+    collapsed,
+    order,
     ...(Object.keys(parents).length ? { parents } : {}),
-    groupBy: GROUP_BY.includes(value.groupBy as GroupBy) ? value.groupBy as GroupBy : "none",
-    sortBy: SORT_BY.includes(value.sortBy as SortBy) ? value.sortBy as SortBy : "recency",
+    groupBy: GROUP_BY.includes(value.groupBy as GroupBy) ? (value.groupBy as GroupBy) : "none",
+    sortBy: SORT_BY.includes(value.sortBy as SortBy) ? (value.sortBy as SortBy) : "recency",
   };
 }
 
 /** Break malformed cycles at their members; explicit roots also override any native lineage. */
 function withoutParentCycles(parents: Record<string, string | null>): Record<string, string | null> {
-  const safe = { ...parents }, checked = new Set<string>();
+  const safe = { ...parents },
+    checked = new Set<string>();
   for (const id of Object.keys(safe)) {
-    const chain: string[] = [], at = new Map<string, number>();
+    const chain: string[] = [],
+      at = new Map<string, number>();
     let current: string | null = id;
     while (current && !checked.has(current)) {
       const cycle = at.get(current);
-      if (cycle !== undefined) { for (const member of chain.slice(cycle)) safe[member] = null; break; }
-      at.set(current, chain.length); chain.push(current); current = safe[current] ?? null;
+      if (cycle !== undefined) {
+        for (const member of chain.slice(cycle)) safe[member] = null;
+        break;
+      }
+      at.set(current, chain.length);
+      chain.push(current);
+      current = safe[current] ?? null;
     }
     chain.forEach(member => checked.add(member));
   }
@@ -67,33 +120,68 @@ function withoutParentCycles(parents: Record<string, string | null>): Record<str
 }
 
 /** One visible tree: explicit display choices, including null, win over runtime parents. Missing parents stay visible. */
-export function sidebarParents(ids: readonly string[], state: ChatGroups, native: Readonly<Record<string, string | null | undefined>>): Record<string, string> {
-  const known = new Set(ids), parents = withoutParentCycles({ ...native, ...state.parents } as Record<string, string | null>);
-  return Object.fromEntries(Object.entries(parents).filter((entry): entry is [string, string] => known.has(entry[0]) && typeof entry[1] === "string" && known.has(entry[1])));
+export function sidebarParents(
+  ids: readonly string[],
+  state: ChatGroups,
+  native: Readonly<Record<string, string | null | undefined>>,
+): Record<string, string> {
+  const known = new Set(ids),
+    parents = withoutParentCycles({ ...native, ...state.parents } as Record<string, string | null>);
+  return Object.fromEntries(
+    Object.entries(parents).filter(
+      (entry): entry is [string, string] => known.has(entry[0]) && typeof entry[1] === "string" && known.has(entry[1]),
+    ),
+  );
 }
 
 /** All descendants travel with a moved branch; selected descendants keep their place within it. */
-export function chatSubtree(ids: readonly string[], parents: Readonly<Record<string, string | null | undefined>>): string[] {
-  const included = new Set(ids), children = new Map<string, string[]>();
-  for (const [child, parent] of Object.entries(parents)) if (parent) children.set(parent, [...(children.get(parent) ?? []), child]);
+export function chatSubtree(
+  ids: readonly string[],
+  parents: Readonly<Record<string, string | null | undefined>>,
+): string[] {
+  const included = new Set(ids),
+    children = new Map<string, string[]>();
+  for (const [child, parent] of Object.entries(parents))
+    if (parent) children.set(parent, [...(children.get(parent) ?? []), child]);
   const pending = [...included];
-  for (let index = 0; index < pending.length; index++) { const id = pending[index]; if (id !== undefined) for (const child of children.get(id) ?? []) if (!included.has(child)) { included.add(child); pending.push(child); } }
+  for (let index = 0; index < pending.length; index++) {
+    const id = pending[index];
+    if (id !== undefined)
+      for (const child of children.get(id) ?? [])
+        if (!included.has(child)) {
+          included.add(child);
+          pending.push(child);
+        }
+  }
   return [...included];
 }
 
-export function chatSelectionRoots(ids: readonly string[], parents: Readonly<Record<string, string | null | undefined>>): string[] {
+export function chatSelectionRoots(
+  ids: readonly string[],
+  parents: Readonly<Record<string, string | null | undefined>>,
+): string[] {
   const selected = new Set(ids);
   return [...selected].filter(id => {
-    const seen = new Set([id]); let parent = parents[id];
-    while (parent && !seen.has(parent)) { if (selected.has(parent)) return false; seen.add(parent); parent = parents[parent]; }
+    const seen = new Set([id]);
+    let parent = parents[id];
+    while (parent && !seen.has(parent)) {
+      if (selected.has(parent)) return false;
+      seen.add(parent);
+      parent = parents[parent];
+    }
     return true;
   });
 }
 
 /** Display placement only. Reject cycles against native and saved lineage before changing any selected branch. */
-export function putChatsUnder(state: ChatGroups, ids: string[], parent: string | null, native: Readonly<Record<string, string | null | undefined>> = {}): ChatGroups {
+export function putChatsUnder(
+  state: ChatGroups,
+  ids: string[],
+  parent: string | null,
+  native: Readonly<Record<string, string | null | undefined>> = {},
+): ChatGroups {
   const effective = withoutParentCycles({ ...native, ...state.parents } as Record<string, string | null>);
-  if (!ids.length || parent !== null && chatSubtree(ids, effective).includes(parent)) return state;
+  if (!ids.length || (parent !== null && chatSubtree(ids, effective).includes(parent))) return state;
   const roots = chatSelectionRoots(ids, effective);
   const parents = { ...state.parents };
   if (roots.every(id => Object.hasOwn(parents, id) && parents[id] === parent)) return state;
@@ -103,7 +191,12 @@ export function putChatsUnder(state: ChatGroups, ids: string[], parent: string |
 
 /** False when the store refused it. */
 export function writeGroups(state: ChatGroups, storage: Storage): boolean {
-  try { storage.setItem(GROUPS_KEY, JSON.stringify(state)); return true; } catch { return false; }
+  try {
+    storage.setItem(GROUPS_KEY, JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Why `name` cannot name a group (empty, too long, or another group's, in any case), or null. `except` is the group
@@ -112,7 +205,9 @@ export function groupNameProblem(state: ChatGroups, name: string, except?: strin
   const wanted = name.trim();
   if (!wanted) return "Name the group.";
   if (wanted.length > NAME_LIMIT) return `Use ${NAME_LIMIT} characters or fewer.`;
-  const taken = state.groups.some(group => group.id !== except && group.name.toLocaleLowerCase() === wanted.toLocaleLowerCase());
+  const taken = state.groups.some(
+    group => group.id !== except && group.name.toLocaleLowerCase() === wanted.toLocaleLowerCase(),
+  );
   return taken ? "A group with this name already exists." : null;
 }
 
@@ -122,40 +217,66 @@ export function addGroup(state: ChatGroups, name: string, id: string): ChatGroup
 }
 
 export function renameGroup(state: ChatGroups, id: string, name: string): ChatGroups {
-  return { ...state, groups: state.groups.map(group => group.id === id ? { ...group, name: name.trim().slice(0, NAME_LIMIT) } : group) };
+  return {
+    ...state,
+    groups: state.groups.map(group => (group.id === id ? { ...group, name: name.trim().slice(0, NAME_LIMIT) } : group)),
+  };
 }
 
 /** The group goes; its chats are ungrouped, not deleted. */
 export function deleteGroup(state: ChatGroups, id: string): ChatGroups {
-  return { ...state, groups: state.groups.filter(group => group.id !== id), members: Object.fromEntries(Object.entries(state.members).filter(([, group]) => group !== id)), collapsed: state.collapsed.filter(group => group !== id) };
+  return {
+    ...state,
+    groups: state.groups.filter(group => group.id !== id),
+    members: Object.fromEntries(Object.entries(state.members).filter(([, group]) => group !== id)),
+    collapsed: state.collapsed.filter(group => group !== id),
+  };
 }
 
 /** Puts the chats in `groupId`, or takes them out of their groups with null. An unknown group moves nothing. */
 export function moveChats(state: ChatGroups, threadIds: string[], groupId: string | null): ChatGroups {
   if (groupId !== null && !state.groups.some(group => group.id === groupId)) return state;
   const members = { ...state.members };
-  for (const id of threadIds) { if (groupId === null) delete members[id]; else members[id] = groupId; }
+  for (const id of threadIds) {
+    if (groupId === null) delete members[id];
+    else members[id] = groupId;
+  }
   return { ...state, members };
 }
 
 export function toggleCollapsed(state: ChatGroups, id: string): ChatGroups {
-  return { ...state, collapsed: state.collapsed.includes(id) ? state.collapsed.filter(group => group !== id) : [...state.collapsed, id] };
+  return {
+    ...state,
+    collapsed: state.collapsed.includes(id) ? state.collapsed.filter(group => group !== id) : [...state.collapsed, id],
+  };
 }
 
 const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
 /** A sorted copy. Last activity uses bridge timestamps, preserving arrival order for ties or missing times;
  * a chat without a creation time goes last when sorting by creation.
  * Manual puts the chats the person has not placed (new ones) first, in the given order, then the placed ones in `order`. */
-export function sortChats<T extends { id: string; createdAt?: number; updatedAt?: number; recencyAt?: number }>(threads: T[], sortBy: SortBy, nameOf: (thread: T) => string, order: readonly string[] = []): T[] {
-  if (sortBy === "recency") return [...threads].sort((a, b) => (b.recencyAt ?? b.updatedAt ?? 0) - (a.recencyAt ?? a.updatedAt ?? 0));
+export function sortChats<T extends { id: string; createdAt?: number; updatedAt?: number; recencyAt?: number }>(
+  threads: T[],
+  sortBy: SortBy,
+  nameOf: (thread: T) => string,
+  order: readonly string[] = [],
+): T[] {
+  if (sortBy === "recency")
+    return [...threads].sort((a, b) => (b.recencyAt ?? b.updatedAt ?? 0) - (a.recencyAt ?? a.updatedAt ?? 0));
   if (sortBy === "manual") {
     const place = new Map(order.map((id, index) => [id, index]));
-    return [...threads.filter(thread => !place.has(thread.id)), ...threads.filter(thread => place.has(thread.id)).sort((a, b) => place.get(a.id)! - place.get(b.id)!)];
+    return [
+      ...threads.filter(thread => !place.has(thread.id)),
+      ...threads.filter(thread => place.has(thread.id)).sort((a, b) => place.get(a.id)! - place.get(b.id)!),
+    ];
   }
   const indexed = threads.map((thread, index) => ({ thread, index }));
-  const compare = sortBy === "name"
-    ? (a: { thread: T }, b: { thread: T }) => byName.compare(nameOf(a.thread), nameOf(b.thread))
-    : (a: { thread: T }, b: { thread: T }) => (typeof b.thread.createdAt === "number" ? b.thread.createdAt : -Infinity) - (typeof a.thread.createdAt === "number" ? a.thread.createdAt : -Infinity) || 0;
+  const compare =
+    sortBy === "name"
+      ? (a: { thread: T }, b: { thread: T }) => byName.compare(nameOf(a.thread), nameOf(b.thread))
+      : (a: { thread: T }, b: { thread: T }) =>
+          (typeof b.thread.createdAt === "number" ? b.thread.createdAt : -Infinity) -
+            (typeof a.thread.createdAt === "number" ? a.thread.createdAt : -Infinity) || 0;
   return indexed.sort((a, b) => compare(a, b) || a.index - b.index).map(entry => entry.thread);
 }
 
@@ -183,22 +304,41 @@ export function holdChatOrder<T extends { id: string }>(threads: T[], held: read
   if (!held) return threads;
   const current = new Map(threads.map(thread => [thread.id, thread]));
   const ordered: T[] = [];
-  for (const id of held) { const thread = current.get(id); if (thread) { ordered.push(thread); current.delete(id); } }
+  for (const id of held) {
+    const thread = current.get(id);
+    if (thread) {
+      ordered.push(thread);
+      current.delete(id);
+    }
+  }
   return [...ordered, ...current.values()];
 }
 
 /** The list drawn by groups: each group, in its order, with its chats in list order (an empty group too), then the rest. */
-export function groupSections<T extends { id: string }>(threads: T[], state: ChatGroups): { groups: { group: ChatGroup; chats: T[] }[]; ungrouped: T[] } {
+export function groupSections<T extends { id: string }>(
+  threads: T[],
+  state: ChatGroups,
+): { groups: { group: ChatGroup; chats: T[] }[]; ungrouped: T[] } {
   const known = new Set(state.groups.map(group => group.id));
   return {
-    groups: state.groups.map(group => ({ group, chats: threads.filter(thread => state.members[thread.id] === group.id) })),
-    ungrouped: threads.filter(thread => { const group = state.members[thread.id]; return group === undefined || !known.has(group); }),
+    groups: state.groups.map(group => ({
+      group,
+      chats: threads.filter(thread => state.members[thread.id] === group.id),
+    })),
+    ungrouped: threads.filter(thread => {
+      const group = state.members[thread.id];
+      return group === undefined || !known.has(group);
+    }),
   };
 }
 
 /** The chat after a drag or Alt+Up/Down: the list is now manual, in `order` (every listed chat, the chat moved), and the
  * chat belongs to `group` when that is given (null: ungrouped). Placed chats the list does not show are kept after it. */
 export function placeChat(state: ChatGroups, order: string[], id: string, group?: string | null): ChatGroups {
-  const next = { ...state, sortBy: "manual" as const, order: [...order, ...state.order.filter(other => !order.includes(other))] };
+  const next = {
+    ...state,
+    sortBy: "manual" as const,
+    order: [...order, ...state.order.filter(other => !order.includes(other))],
+  };
   return group === undefined ? next : moveChats(next, [id], group);
 }

@@ -15,18 +15,29 @@ export function useDraftStore(onError: (message: string) => void) {
   const savedDraft = useCallback((id: string) => drafts.current[id] ?? readDraft(id), []);
   const saveDraft = useCallback((id: string, value: string) => {
     drafts.current[id] = value;
-    if (!writeDraft(id, value)) onError("Draft recovery is unavailable. Your text is kept in this window; copy it before reloading.");
+    if (!writeDraft(id, value))
+      onError("Draft recovery is unavailable. Your text is kept in this window; copy it before reloading.");
   }, []);
-  const savedAttachments = useCallback((id: string) => attachmentDrafts.current[id] ?? (attachmentDrafts.current[id] = readAttachmentDraft(id)), []);
+  const savedAttachments = useCallback(
+    (id: string) => attachmentDrafts.current[id] ?? (attachmentDrafts.current[id] = readAttachmentDraft(id)),
+    [],
+  );
   const saveAttachments = useCallback((id: string, value: Attachment[]) => {
     attachmentDrafts.current[id] = value;
-    if (!writeAttachmentDraft(id, value)) onError("Attachment recovery is unavailable. Your files are kept in this window; save them before reloading.");
+    if (!writeAttachmentDraft(id, value))
+      onError("Attachment recovery is unavailable. Your files are kept in this window; save them before reloading.");
   }, []);
   /** Attachments already read for a key, without reading the store. */
   const heldAttachments = (id: string) => attachmentDrafts.current[id];
   /** A deleted chat's drafts, its own and its recovery copy. */
   const forget = useCallback((ids: Iterable<string>) => {
-    for (const id of ids) for (const key of [id, `recovery-${id}`]) { delete drafts.current[key]; writeDraft(key, ""); delete attachmentDrafts.current[key]; writeAttachmentDraft(key, []); }
+    for (const id of ids)
+      for (const key of [id, `recovery-${id}`]) {
+        delete drafts.current[key];
+        writeDraft(key, "");
+        delete attachmentDrafts.current[key];
+        writeAttachmentDraft(key, []);
+      }
   }, []);
   return { savedDraft, saveDraft, savedAttachments, saveAttachments, heldAttachments, forget };
 }
@@ -35,11 +46,16 @@ export function useDraftStore(onError: (message: string) => void) {
 export function useSubmitOnce() {
   const submitting = useRef(new Set<string>());
   const [pending, setPending] = useState<Record<string, boolean>>({});
-  async function submit<T,>(key: string, send: () => Promise<T>): Promise<T> {
+  async function submit<T>(key: string, send: () => Promise<T>): Promise<T> {
     if (submitting.current.has(key)) throw new Error("This request is already being sent.");
-    submitting.current.add(key); setPending(previous => ({ ...previous, [key]: true }));
-    try { return await send(); }
-    finally { submitting.current.delete(key); setPending(previous => without(previous, key)); }
+    submitting.current.add(key);
+    setPending(previous => ({ ...previous, [key]: true }));
+    try {
+      return await send();
+    } finally {
+      submitting.current.delete(key);
+      setPending(previous => without(previous, key));
+    }
   }
   return { pending, submit };
 }
@@ -53,13 +69,22 @@ export function useApprovalDrafts() {
   const answersFor = (approval: Approval) => drafts[approvalDraftKey(approval)]?.answers ?? {};
   const draftAnswer = (approval: Approval, id: string, value: string[]) => {
     const key = approvalDraftKey(approval);
-    setDrafts(previous => ({ ...previous, [key]: { id: approval.id, answers: { ...previous[key]?.answers, [id]: value } } }));
+    setDrafts(previous => ({
+      ...previous,
+      [key]: { id: approval.id, answers: { ...previous[key]?.answers, [id]: value } },
+    }));
   };
   /** A request answered or withdrawn: its drafts go, in every chat. */
-  const clearApprovalDraft = useCallback((id: string) => setDrafts(previous => {
-    const keys = Object.keys(previous).filter(key => previous[key]?.id === id);
-    if (!keys.length) return previous;
-    const next = { ...previous }; for (const key of keys) delete next[key]; return next;
-  }), []);
+  const clearApprovalDraft = useCallback(
+    (id: string) =>
+      setDrafts(previous => {
+        const keys = Object.keys(previous).filter(key => previous[key]?.id === id);
+        if (!keys.length) return previous;
+        const next = { ...previous };
+        for (const key of keys) delete next[key];
+        return next;
+      }),
+    [],
+  );
   return { answersFor, draftAnswer, clearApprovalDraft };
 }

@@ -16,5 +16,12 @@ export type ConfigSectionId = (typeof SECTIONS)[number]["id"];
 /** Legacy category names open a working page; there are no category landing pages. */
 export function configDestination(input?: string): (typeof SECTIONS)[number]["tab"] {
   const name = input?.trim().toLowerCase().replace(/\s+/g, " ") ?? "";
-  return SECTIONS.find(section => section.id === name || section.label.toLowerCase() === name || section.label.toLowerCase().startsWith(`${name} `))?.tab ?? "configuration";
+  return (
+    SECTIONS.find(
+      section =>
+        section.id === name ||
+        section.label.toLowerCase() === name ||
+        section.label.toLowerCase().startsWith(`${name} `),
+    )?.tab ?? "configuration"
+  );
 }

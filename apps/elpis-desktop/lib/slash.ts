@@ -7,9 +7,14 @@ export function splitCommand(text: string): { name: string; args: string } | nul
   return match?.[1] !== undefined && match[2] !== undefined ? { name: match[1].toLowerCase(), args: match[2] } : null;
 }
 
-const messageText = (item: Item) => isVoiceHandoff(item) ? "" : item.type === "userMessage"
-  ? (item.content ?? []).map(part => part.type === "text" ? part.text ?? "" : "").join("")
-  : item.type === "agentMessage" ? item.text ?? "" : "";
+const messageText = (item: Item) =>
+  isVoiceHandoff(item)
+    ? ""
+    : item.type === "userMessage"
+      ? (item.content ?? []).map(part => (part.type === "text" ? (part.text ?? "") : "")).join("")
+      : item.type === "agentMessage"
+        ? (item.text ?? "")
+        : "";
 
 /** The text of Elpis's newest non-empty reply, which /copy puts on the clipboard. */
 export function lastReply(entries: Entry[]): string | null {
@@ -32,12 +37,21 @@ export function conversationMarkdown(title: string, entries: Entry[]): string {
 
 /** A file name for the exported chat: its title in lower case, safe on every system. */
 export function exportFileName(title: string): string {
-  const stem = title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-+|-+$/g, "").slice(0, 60).replace(/-+$/, "");
+  const stem = title
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60)
+    .replace(/-+$/, "");
   return `${stem || "conversation"}.md`;
 }
 
 /** The slash menu's order, as in the ChatGPT app's Codex composer: the name typed in full first (so Enter on "/prune" runs
  * /prune, not /pruner-model), then names that start with the typed text, then names that contain it. */
 export function commandMatches<T extends { name: string }>(usable: T[], query: string): T[] {
-  return [...usable.filter(command => command.name === query), ...usable.filter(command => command.name !== query && command.name.startsWith(query)), ...usable.filter(command => !command.name.startsWith(query) && command.name.includes(query))];
+  return [
+    ...usable.filter(command => command.name === query),
+    ...usable.filter(command => command.name !== query && command.name.startsWith(query)),
+    ...usable.filter(command => !command.name.startsWith(query) && command.name.includes(query)),
+  ];
 }

@@ -19,14 +19,40 @@ export function useAppearance(onError: (message: string) => void) {
   }, []);
   useEffect(() => {
     let saved: string | null = null;
-    try { saved = appStorage().getItem("elpis-theme"); } catch { /* The theme starts as System. */ }
+    try {
+      saved = appStorage().getItem("elpis-theme");
+    } catch {
+      /* The theme starts as System. */
+    }
     if (saved === "system" || saved === "light" || saved === "dark") setThemeChoice(saved);
-    const media = matchMedia("(prefers-color-scheme: dark)"); setSystemDark(media.matches);
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    setSystemDark(media.matches);
     const follow = (event: MediaQueryListEvent) => setSystemDark(event.matches);
-    media.addEventListener("change", follow); return () => media.removeEventListener("change", follow);
+    media.addEventListener("change", follow);
+    return () => media.removeEventListener("change", follow);
   }, []);
-  useEffect(() => { document.documentElement.classList.toggle("dark", dark); window.elpisDesktop?.setTheme?.(dark, { source: theme, background: getComputedStyle(document.body).backgroundColor }); }, [dark, theme]);
-  const resizeSidebar = (width: number) => { setSidebarWidth(width); try { appStorage().setItem("elpis-sidebar-width", String(width)); } catch { /* the width still applies to this window */ } };
-  const setTheme = (next: ThemeChoice) => { setThemeChoice(next); try { appStorage().setItem("elpis-theme", next); } catch { onError("Could not save appearance on this device."); } };
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+    window.elpisDesktop?.setTheme?.(dark, {
+      source: theme,
+      background: getComputedStyle(document.body).backgroundColor,
+    });
+  }, [dark, theme]);
+  const resizeSidebar = (width: number) => {
+    setSidebarWidth(width);
+    try {
+      appStorage().setItem("elpis-sidebar-width", String(width));
+    } catch {
+      /* the width still applies to this window */
+    }
+  };
+  const setTheme = (next: ThemeChoice) => {
+    setThemeChoice(next);
+    try {
+      appStorage().setItem("elpis-theme", next);
+    } catch {
+      onError("Could not save appearance on this device.");
+    }
+  };
   return { theme, dark, setTheme, sidebarWidth, resizeSidebar };
 }

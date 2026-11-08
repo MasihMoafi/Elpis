@@ -4,7 +4,7 @@ export type HeartReaction = { threadId: string; itemId: string };
 export const HEART_REACTION = "elpis:heart-reaction";
 
 function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }
 
 function reaction(threadId: unknown, itemId: unknown, portrait: unknown): HeartReaction | null {
@@ -14,7 +14,8 @@ function reaction(threadId: unknown, itemId: unknown, portrait: unknown): HeartR
 
 export function nativeHeartReaction(method: string, params: unknown): HeartReaction | null {
   if (method !== "item/completed") return null;
-  const event = record(params), item = record(event?.item);
+  const event = record(params),
+    item = record(event?.item);
   if (item?.type !== "agentMessage" || typeof item.text !== "string") return null;
   return reaction(event?.threadId, item.id, replyPortrait(item.text).expression);
 }

@@ -18,11 +18,18 @@ export function subscribeLoveSpotEvents(onmessage: (event: MessageEvent<string>)
   const current = new EventSource("/api/love-spot/events");
   source = current;
   current.onmessage = event => {
-    if (source === current) updates.dispatchEvent(new MessageEvent("message", {
-      data: event.data, lastEventId: event.lastEventId, origin: event.origin,
-    }));
+    if (source === current)
+      updates.dispatchEvent(
+        new MessageEvent("message", {
+          data: event.data,
+          lastEventId: event.lastEventId,
+          origin: event.origin,
+        }),
+      );
   };
-  current.onerror = () => { if (source === current) updates.dispatchEvent(new Event("error")); };
+  current.onerror = () => {
+    if (source === current) updates.dispatchEvent(new Event("error"));
+  };
 
   let listening = true;
   return () => {

@@ -1,35 +1,47 @@
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { randomUUID } from 'node:crypto';
-import type { Stats } from 'node:fs';
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
+import type { Stats } from "node:fs";
 
 type Skill = { name: string; scope: string; path: string; plugin?: unknown };
-type ConfigRead = { layers?: { name?: { type?: string; file?: string; dotCodexFolder?: string } }[]; config?: { skills?: { extra_roots?: unknown } } };
+type ConfigRead = {
+  layers?: { name?: { type?: string; file?: string; dotCodexFolder?: string } }[];
+  config?: { skills?: { extra_roots?: unknown } };
+};
 type Target = { skill: Skill; folder: string; realRoot: string; realFolder: string; folderStat: Stats };
 type TrashEntry = { info: string; file: string };
 type Pending = TrashEntry & Target & { until: number };
 
 const run = promisify(execFile);
-export const ownedSkill = (skill: Pick<Skill, 'scope' | 'plugin'>) => ['user', 'repo'].includes(skill.scope) && !skill.plugin;
-const inside = (root: string, target: string) => { const rel = path.relative(root, target); return rel !== '' && !rel.startsWith(`..${path.sep}`) && rel !== '..' && !path.isAbsolute(rel); };
-const missing = (error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error; return null; };
+export const ownedSkill = (skill: Pick<Skill, "scope" | "plugin">) =>
+  ["user", "repo"].includes(skill.scope) && !skill.plugin;
+const inside = (root: string, target: string) => {
+  const rel = path.relative(root, target);
+  return rel !== "" && !rel.startsWith(`..${path.sep}`) && rel !== ".." && !path.isAbsolute(rel);
+};
+const missing = (error: NodeJS.ErrnoException) => {
+  if (error.code !== "ENOENT") throw error;
+  return null;
+};
 
 /** The engine's skill roots (codex-rs ext/skills host_roots.rs): the user config folder's `skills`, `~/.agents/skills`,
  * `[skills] extra_roots`, each project config folder's `skills` and `.agents/skills` from the project folder upwards.
  * skills/list reports only canonical SKILL.md paths, so a folder linked into a root shows at its target, outside it. */
 export function skillRoots(read: ConfigRead | null | undefined, cwd: unknown) {
-  const roots = [path.join(os.homedir(), '.agents', 'skills')];
+  const roots = [path.join(os.homedir(), ".agents", "skills")];
   for (const { name } of Array.isArray(read?.layers) ? read.layers : []) {
-    if (name?.type === 'user' && typeof name.file === 'string') roots.push(path.join(path.dirname(name.file), 'skills'));
-    if (name?.type === 'project' && typeof name.dotCodexFolder === 'string') roots.push(path.join(name.dotCodexFolder, 'skills'));
+    if (name?.type === "user" && typeof name.file === "string")
+      roots.push(path.join(path.dirname(name.file), "skills"));
+    if (name?.type === "project" && typeof name.dotCodexFolder === "string")
+      roots.push(path.join(name.dotCodexFolder, "skills"));
   }
   const extra = read?.config?.skills?.extra_roots;
-  if (Array.isArray(extra)) roots.push(...extra.filter(root => typeof root === 'string'));
-  for (let dir = cwd; typeof dir === 'string' && path.isAbsolute(dir); dir = path.dirname(dir)) {
-    roots.push(path.join(dir, '.agents', 'skills'));
+  if (Array.isArray(extra)) roots.push(...extra.filter(root => typeof root === "string"));
+  for (let dir = cwd; typeof dir === "string" && path.isAbsolute(dir); dir = path.dirname(dir)) {
+    roots.push(path.join(dir, ".agents", "skills"));
     if (path.dirname(dir) === dir) break;
   }
   return roots.filter(root => path.isAbsolute(root));
@@ -38,20 +50,42 @@ export function skillRoots(read: ConfigRead | null | undefined, cwd: unknown) {
 /** Only exact listed files can be removed, and only from inside one of the engine's roots (`skillRoots`);
  * resolving both ends prevents symlinks escaping that root. */
 async function skillFolder(file: unknown, skills: Skill[], roots?: string[]) {
-  if (typeof file !== 'string' || !path.isAbsolute(file) || file.includes('\0') || file.split(path.sep).includes('..') || path.basename(file) !== 'SKILL.md') throw Error('Invalid skill path');
+  if (
+    typeof file !== "string" ||
+    !path.isAbsolute(file) ||
+    file.includes("\0") ||
+    file.split(path.sep).includes("..") ||
+    path.basename(file) !== "SKILL.md"
+  )
+    throw Error("Invalid skill path");
   const skill = skills.find(skill => skill.path === file);
-  if (!skill) throw Error('That skill is not listed');
-  if (!ownedSkill(skill)) throw Error('This skill is protected; it can be turned off instead');
-  const folder = path.dirname(file), root = path.dirname(folder);
+  if (!skill) throw Error("That skill is not listed");
+  if (!ownedSkill(skill)) throw Error("This skill is protected; it can be turned off instead");
+  const folder = path.dirname(file),
+    root = path.dirname(folder);
   const [realRoot, realFolder, realFile, folderStat, fileStat] = await Promise.all([
-    fs.realpath(root), fs.realpath(folder), fs.realpath(file), fs.lstat(folder), fs.lstat(file),
+    fs.realpath(root),
+    fs.realpath(folder),
+    fs.realpath(file),
+    fs.lstat(folder),
+    fs.lstat(file),
   ]);
-  if (realFolder !== path.resolve(folder) || folderStat.isSymbolicLink() || fileStat.isSymbolicLink() || !folderStat.isDirectory() || !fileStat.isFile()
-      || !inside(realRoot, realFolder) || path.dirname(realFile) !== realFolder
-      || (process.getuid && folderStat.uid !== process.getuid())) throw Error('Skill folder must be owned and inside its known root, without symbolic links');
-  if (skills.some(other => other.path !== file && inside(folder, other.path) && !ownedSkill(other))) throw Error('Skill folder contains other listed skills that are protected');
+  if (
+    realFolder !== path.resolve(folder) ||
+    folderStat.isSymbolicLink() ||
+    fileStat.isSymbolicLink() ||
+    !folderStat.isDirectory() ||
+    !fileStat.isFile() ||
+    !inside(realRoot, realFolder) ||
+    path.dirname(realFile) !== realFolder ||
+    (process.getuid && folderStat.uid !== process.getuid())
+  )
+    throw Error("Skill folder must be owned and inside its known root, without symbolic links");
+  if (skills.some(other => other.path !== file && inside(folder, other.path) && !ownedSkill(other)))
+    throw Error("Skill folder contains other listed skills that are protected");
   const realRoots = await Promise.all((roots ?? []).map(known => fs.realpath(known).catch(() => null)));
-  if (!realRoots.some(known => known && inside(known, realFolder))) throw Error('This skill is linked into your skills from another folder; remove its link instead');
+  if (!realRoots.some(known => known && inside(known, realFolder)))
+    throw Error("This skill is linked into your skills from another folder; remove its link instead");
   return { skill, folder, realRoot, realFolder, folderStat };
 }
 
@@ -59,48 +93,78 @@ async function skillFolder(file: unknown, skills: Skill[], roots?: string[]) {
  * exact operation; no renderer-supplied restore path. Entries remain in Trash after the short Undo expires. */
 export class SkillTrash {
   #pending = new Map<string, Pending>();
-  constructor({ env = process.env, now = Date.now }: { env?: NodeJS.ProcessEnv; now?: () => number } = {}) { this.env = env; this.now = now; }
+  constructor({ env = process.env, now = Date.now }: { env?: NodeJS.ProcessEnv; now?: () => number } = {}) {
+    this.env = env;
+    this.now = now;
+  }
   env: NodeJS.ProcessEnv;
   now: () => number;
   async #locations(folder: string) {
-    const locations = [path.join(this.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share'), 'Trash')];
-    let mount = folder, stat = await fs.stat(mount);
+    const locations = [path.join(this.env.XDG_DATA_HOME || path.join(os.homedir(), ".local/share"), "Trash")];
+    let mount = folder,
+      stat = await fs.stat(mount);
     while (path.dirname(mount) !== mount) {
-      const parent = path.dirname(mount), next = await fs.stat(parent);
+      const parent = path.dirname(mount),
+        next = await fs.stat(parent);
       if (stat.dev !== next.dev) break;
-      mount = parent; stat = next;
+      mount = parent;
+      stat = next;
     }
     const uid = process.getuid?.();
-    if (uid !== undefined) locations.push(path.join(mount, `.Trash-${uid}`), path.join(mount, '.Trash', String(uid)));
+    if (uid !== undefined) locations.push(path.join(mount, `.Trash-${uid}`), path.join(mount, ".Trash", String(uid)));
     return [...new Set(locations)];
   }
   async #entries(locations: string[], folder: string) {
     const entries: TrashEntry[] = [];
     for (const location of locations) {
-      for (const name of (await fs.readdir(path.join(location, 'info')).catch(missing)) ?? []) {
-        if (!name.endsWith('.trashinfo')) continue;
-        const info = path.join(location, 'info', name), raw = await fs.readFile(info, 'utf8').catch(missing);
+      for (const name of (await fs.readdir(path.join(location, "info")).catch(missing)) ?? []) {
+        if (!name.endsWith(".trashinfo")) continue;
+        const info = path.join(location, "info", name),
+          raw = await fs.readFile(info, "utf8").catch(missing);
         const encoded = raw?.match(/^Path=(.*)$/m)?.[1];
         if (!encoded) continue;
-        let original; try { original = decodeURIComponent(encoded); } catch { continue; }
+        let original;
+        try {
+          original = decodeURIComponent(encoded);
+        } catch {
+          continue;
+        }
         // Per-volume Trash paths may be relative to the mount root.
-        if (!path.isAbsolute(original)) original = path.resolve(location.includes(`${path.sep}.Trash${path.sep}`) ? path.dirname(path.dirname(location)) : path.dirname(location), original);
-        if (original === folder) entries.push({ info, file: path.join(location, 'files', name.slice(0, -10)) });
+        if (!path.isAbsolute(original))
+          original = path.resolve(
+            location.includes(`${path.sep}.Trash${path.sep}`)
+              ? path.dirname(path.dirname(location))
+              : path.dirname(location),
+            original,
+          );
+        if (original === folder) entries.push({ info, file: path.join(location, "files", name.slice(0, -10)) });
       }
     }
     return entries;
   }
   async delete(file: unknown, skills: Skill[], roots?: string[]) {
     for (const [token, entry] of this.#pending) if (entry.until <= this.now()) this.#pending.delete(token);
-    const target = await skillFolder(file, skills, roots), locations = await this.#locations(target.folder);
+    const target = await skillFolder(file, skills, roots),
+      locations = await this.#locations(target.folder);
     const previous = new Set((await this.#entries(locations, target.folder)).map(entry => entry.info));
     // Check again immediately before invoking gio; the renderer cannot substitute a different folder.
     const checked = await skillFolder(file, skills, roots);
-    if (checked.realFolder !== target.realFolder || checked.folderStat.ino !== target.folderStat.ino) throw Error('Skill folder changed; refresh Customize');
-    try { await run('gio', ['trash', '--', target.folder], { env: this.env, timeout: 10000 }); }
-    catch (error) { const failure = error as { stderr?: string | Buffer; message?: string }; throw Error(`Could not move skill to Trash: ${String(failure.stderr || failure.message || 'gio failed').trim().split('\n').at(-1)!.replace(/^gio: \S+: /, '')}`); }
+    if (checked.realFolder !== target.realFolder || checked.folderStat.ino !== target.folderStat.ino)
+      throw Error("Skill folder changed; refresh Customize");
+    try {
+      await run("gio", ["trash", "--", target.folder], { env: this.env, timeout: 10000 });
+    } catch (error) {
+      const failure = error as { stderr?: string | Buffer; message?: string };
+      throw Error(
+        `Could not move skill to Trash: ${String(failure.stderr || failure.message || "gio failed")
+          .trim()
+          .split("\n")
+          .at(-1)!
+          .replace(/^gio: \S+: /, "")}`,
+      );
+    }
     const entry = (await this.#entries(locations, target.folder)).find(entry => !previous.has(entry.info));
-    if (!entry) throw Error('Skill moved to Trash, but its Undo information could not be read');
+    if (!entry) throw Error("Skill moved to Trash, but its Undo information could not be read");
     const token = randomUUID();
     // Allow transport/listing latency beyond the renderer's four-second notice.
     this.#pending.set(token, { ...entry, ...target, until: this.now() + 60000 });
@@ -108,11 +172,16 @@ export class SkillTrash {
   }
   async undo(token: string) {
     const entry = this.#pending.get(token);
-    if (!entry || entry.until <= this.now()) { this.#pending.delete(token); throw Error('Undo has expired; the skill is still in Trash'); }
-    if (await fs.lstat(entry.folder).catch(missing)) throw Error('Skill folder already exists; cannot restore over it');
-    if (await fs.realpath(path.dirname(entry.folder)) !== entry.realRoot) throw Error('Skill root changed; cannot restore');
+    if (!entry || entry.until <= this.now()) {
+      this.#pending.delete(token);
+      throw Error("Undo has expired; the skill is still in Trash");
+    }
+    if (await fs.lstat(entry.folder).catch(missing)) throw Error("Skill folder already exists; cannot restore over it");
+    if ((await fs.realpath(path.dirname(entry.folder))) !== entry.realRoot)
+      throw Error("Skill root changed; cannot restore");
     const stored = await fs.lstat(entry.file);
-    if (!stored.isDirectory() || stored.isSymbolicLink() || stored.ino !== entry.folderStat.ino) throw Error('Skill in Trash changed; cannot restore');
+    if (!stored.isDirectory() || stored.isSymbolicLink() || stored.ino !== entry.folderStat.ino)
+      throw Error("Skill in Trash changed; cannot restore");
     // Restore from the recorded freedesktop trash entry (works without a GVfs trash:// daemon).
     await fs.rename(entry.file, entry.folder);
     await fs.unlink(entry.info); // Consume only the restored item's Trash metadata.

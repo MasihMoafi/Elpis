@@ -10,9 +10,13 @@ const field = (text: string, tag: string) => new RegExp(`<${tag}>([\\s\\S]*?)</$
 
 export function workflowNotice(text: string): WorkflowNotice | null {
   if (!text.trimStart().startsWith(TAG)) return null;
-  const open = text.indexOf("<result>\n"), close = text.lastIndexOf("\n</result>");
+  const open = text.indexOf("<result>\n"),
+    close = text.lastIndexOf("\n</result>");
   return {
-    runId: field(text, "run-id"), name: field(text, "name") || "workflow", status: field(text, "status"), summary: field(text, "summary"),
+    runId: field(text, "run-id"),
+    name: field(text, "name") || "workflow",
+    status: field(text, "status"),
+    summary: field(text, "summary"),
     result: open >= 0 && close > open ? text.slice(open + "<result>\n".length, close) : null,
   };
 }

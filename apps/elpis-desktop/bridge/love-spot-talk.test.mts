@@ -1,619 +1,1248 @@
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
-import test, { type TestContext } from 'node:test';
-import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
-import { EventEmitter } from 'node:events';
-import { createLoveSpot } from './love-spot-store.cts';
-import { createLoveSpotTalk, SUBSCRIPTION_BLOCKED } from './love-spot-talk.mts';
-import { createMatildaCompanion } from './matilda-companion.mts';
-import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from '../lib/love-spot-audio.mts';
-import { splitPainting } from './love-spot-painting.cts';
-import { toModel } from './subscription-models.mts';
+import { createTestTempDir, removeTestTempDir } from "../tests/temp-root.cts";
+import test, { type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
+import { EventEmitter } from "node:events";
+import { createLoveSpot } from "./love-spot-store.cts";
+import { createLoveSpotTalk, SUBSCRIPTION_BLOCKED } from "./love-spot-talk.mts";
+import { createMatildaCompanion } from "./matilda-companion.mts";
+import { LOVE_SPOT_AUDIO, READ_ALOUD_AUDIO } from "../lib/love-spot-audio.mts";
+import { splitPainting } from "./love-spot-painting.cts";
+import { toModel } from "./subscription-models.mts";
 
 const enabledAudio = { available: true };
-type ThreadRequest = { name: string; cwd: string; model: string; provider: string; permissions: string; instructions: string; automatic: boolean };
+type ThreadRequest = {
+  name: string;
+  cwd: string;
+  model: string;
+  provider: string;
+  permissions: string;
+  instructions: string;
+  automatic: boolean;
+};
 type Attachment = { name: string; type: string; text: string; dataUrl: string };
-type Sent = { id: string; text: string; model: string; effort: string; automatic: boolean; pinned?: boolean; attachments: Attachment[] };
+type Sent = {
+  id: string;
+  text: string;
+  model: string;
+  effort: string;
+  automatic: boolean;
+  pinned?: boolean;
+  attachments: Attachment[];
+};
 type Entry = { turnId: string; item: { id: string; type: string; text: string } };
 type MockClient = EventEmitter & {
   createThread: (value: ThreadRequest) => Promise<{ thread: { id: string } & Partial<ThreadRequest> }>;
-  readThread: (id: string, options?: { cursor?: string }) => Promise<{ thread: { id: string; name: string; cwd: string }; data: Entry[]; nextCursor: string | null }>;
-  send: (id: string, value: Omit<Sent, 'id'>) => Promise<{ turn: { id: string } }>;
+  readThread: (
+    id: string,
+    options?: { cursor?: string },
+  ) => Promise<{ thread: { id: string; name: string; cwd: string }; data: Entry[]; nextCursor: string | null }>;
+  send: (id: string, value: Omit<Sent, "id">) => Promise<{ turn: { id: string } }>;
   voiceStatus: () => Promise<{ available: boolean; voice?: string }>;
   models: () => Promise<{ data: { model: string; inputModalities?: string[] }[]; nextCursor: null }>;
   interrupt: (id: string, body: { turnId: string }) => Promise<object>;
 };
 type Talk = ReturnType<typeof createLoveSpotTalk>;
-type Update = Awaited<ReturnType<Talk['read']>> & { heartReaction?: { threadId: string; itemId: string; portrait: string } };
-type SpeechEvent = Parameters<Parameters<Awaited<ReturnType<Talk['speech']>>['subscribe']>[0]>[0];
+type Update = Awaited<ReturnType<Talk["read"]>> & {
+  heartReaction?: { threadId: string; itemId: string; portrait: string };
+};
+type SpeechEvent = Parameters<Parameters<Awaited<ReturnType<Talk["speech"]>>["subscribe"]>[0]>[0];
 
-const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
-const note = (id: string, text: string, color = '#e03131', extra = {}) => ({ id, type: 'text', text, strokeColor: color, version: 1, versionNonce: 1, x: 20, y: 30, width: 240, height: 40, updated: 1, ...extra });
-async function fixture(t: TestContext, { refuseFast = false, audio = enabledAudio, companion = false, standalone = false } = {}) {
+const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=";
+const note = (id: string, text: string, color = "#e03131", extra = {}) => ({
+  id,
+  type: "text",
+  text,
+  strokeColor: color,
+  version: 1,
+  versionNonce: 1,
+  x: 20,
+  y: 30,
+  width: 240,
+  height: 40,
+  updated: 1,
+  ...extra,
+});
+async function fixture(
+  t: TestContext,
+  { refuseFast = false, audio = enabledAudio, companion = false, standalone = false } = {},
+) {
   const base = os.tmpdir();
-  const directory = createTestTempDir(path.join(base, 'love-talk-'));
-  await fs.writeFile(path.join(directory, 'scene.excalidraw'), JSON.stringify({ type: 'excalidraw', version: 2, elements: [], files: {}, appState: {} }));
-  const store = createLoveSpot({ directory, screenshots: path.join(directory, 'shots') });
-  const client = new EventEmitter() as MockClient, created: ThreadRequest[] = [], sent: Sent[] = [], entries: Entry[] = [], speeds: { id: string; enabled: boolean }[] = [];
+  const directory = createTestTempDir(path.join(base, "love-talk-"));
+  await fs.writeFile(
+    path.join(directory, "scene.excalidraw"),
+    JSON.stringify({ type: "excalidraw", version: 2, elements: [], files: {}, appState: {} }),
+  );
+  const store = createLoveSpot({ directory, screenshots: path.join(directory, "shots") });
+  const client = new EventEmitter() as MockClient,
+    created: ThreadRequest[] = [],
+    sent: Sent[] = [],
+    entries: Entry[] = [],
+    speeds: { id: string; enabled: boolean }[] = [];
   Object.assign(client, {
-    settings: async () => ({ main: { model: 'luna', provider: 'openai' } }),
-    voiceStatus: async () => ({ available: true, voice: 'juniper' }),
-    models: async () => ({ data: [{ model: 'luna', inputModalities: ['text', 'image'] }, { model: 'text', inputModalities: ['text'] }], nextCursor: null }),
-    createThread: async (value: ThreadRequest) => { created.push(value); return { thread: { id: 'chat', ...value } }; },
-    readThread: async () => ({ thread: { id: 'chat', name: 'Love Spot', cwd: directory }, data: [...entries].reverse(), nextCursor: null }),
+    settings: async () => ({ main: { model: "luna", provider: "openai" } }),
+    voiceStatus: async () => ({ available: true, voice: "juniper" }),
+    models: async () => ({
+      data: [
+        { model: "luna", inputModalities: ["text", "image"] },
+        { model: "text", inputModalities: ["text"] },
+      ],
+      nextCursor: null,
+    }),
+    createThread: async (value: ThreadRequest) => {
+      created.push(value);
+      return { thread: { id: "chat", ...value } };
+    },
+    readThread: async () => ({
+      thread: { id: "chat", name: "Love Spot", cwd: directory },
+      data: [...entries].reverse(),
+      nextCursor: null,
+    }),
     resume: async () => ({ activeTurnId: null }),
-    send: async (id: string, value: Omit<Sent, 'id'>) => { sent.push({ id, ...value }); return { turn: { id: `turn-${sent.length}` } }; },
-    setServiceTier: async (id: string, value: { enabled: boolean }) => { speeds.push({ id, ...value }); if (refuseFast) throw Error('no Fast here'); return { serviceTier: 'priority' }; },
+    send: async (id: string, value: Omit<Sent, "id">) => {
+      sent.push({ id, ...value });
+      return { turn: { id: `turn-${sent.length}` } };
+    },
+    setServiceTier: async (id: string, value: { enabled: boolean }) => {
+      speeds.push({ id, ...value });
+      if (refuseFast) throw Error("no Fast here");
+      return { serviceTier: "priority" };
+    },
   });
-  const presence = companion ? createMatildaCompanion({ store, env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent-matilda-test' } }) : undefined;
-  const talk = createLoveSpotTalk({ client: client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store, audio, companion: presence, standalone });
-  t.after(async () => { talk.close(); await store.close(); removeTestTempDir(directory); });
-  const finish = (id = 'turn-1', status = 'completed', reply = 'Here with you.') => client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status, items: [{ id: 'reply', type: 'agentMessage', text: reply }] } } } });
+  const presence = companion
+    ? createMatildaCompanion({
+        store,
+        env: { ...process.env, DBUS_SESSION_BUS_ADDRESS: "unix:path=/nonexistent-matilda-test" },
+      })
+    : undefined;
+  const talk = createLoveSpotTalk({
+    client: client as unknown as Parameters<typeof createLoveSpotTalk>[0]["client"],
+    store,
+    audio,
+    companion: presence,
+    standalone,
+  });
+  t.after(async () => {
+    talk.close();
+    await store.close();
+    removeTestTempDir(directory);
+  });
+  const finish = (id = "turn-1", status = "completed", reply = "Here with you.") =>
+    client.emit("event", {
+      type: "message",
+      data: {
+        method: "turn/completed",
+        params: { threadId: "chat", turn: { id, status, items: [{ id: "reply", type: "agentMessage", text: reply }] } },
+      },
+    });
   return { directory, store, talk, client, created, sent, finish, entries, speeds, presence };
 }
-test('Matilda sends a heart reaction only with a fresh completed kiss reply', async t => {
-  const f = await fixture(t), updates: Update[] = [];
-  await f.talk.send({ text: 'Hello' });
+test("Matilda sends a heart reaction only with a fresh completed kiss reply", async t => {
+  const f = await fixture(t),
+    updates: Update[] = [];
+  await f.talk.send({ text: "Hello" });
   await f.talk.watch(update => updates.push(update));
-  f.finish('turn-1', 'completed', '<!--matilda:kissSoft--> Hello.');
-  const reactions = () => updates.flatMap(update => update.heartReaction ? [update.heartReaction] : []);
-  assert.deepEqual(reactions(), [{ threadId: 'chat', itemId: 'reply', portrait: 'kissSoft' }]);
+  f.finish("turn-1", "completed", "<!--matilda:kissSoft--> Hello.");
+  const reactions = () => updates.flatMap(update => (update.heartReaction ? [update.heartReaction] : []));
+  assert.deepEqual(reactions(), [{ threadId: "chat", itemId: "reply", portrait: "kissSoft" }]);
 
   const reconnected: Update[] = [];
   await f.talk.watch(update => reconnected.push(update));
   assert.equal(reconnected[0]!.heartReaction, undefined);
-  f.finish('turn-1', 'completed', '<!--matilda:kissSoft--> Hello.');
-  await f.talk.send({ text: 'Show me a code example' });
-  f.finish('turn-2', 'completed', 'Example: `😘`');
-  await f.talk.send({ text: 'Again' });
-  f.finish('turn-3', 'failed', '<!--matilda:kissPuckered--> Failed.');
+  f.finish("turn-1", "completed", "<!--matilda:kissSoft--> Hello.");
+  await f.talk.send({ text: "Show me a code example" });
+  f.finish("turn-2", "completed", "Example: `😘`");
+  await f.talk.send({ text: "Again" });
+  f.finish("turn-3", "failed", "<!--matilda:kissPuckered--> Failed.");
   assert.equal(reactions().length, 1);
 });
-test('a fresh Matilda chat keeps its persona and settings, moves Love Spot forward, and leaves the board and old chat intact', async t => {
+test("a fresh Matilda chat keeps its persona and settings, moves Love Spot forward, and leaves the board and old chat intact", async t => {
   const f = await fixture(t);
   f.client.createThread = async value => {
-    const id = f.created.length ? 'chat-fresh' : 'chat';
-    f.created.push(value); return { thread: { id, ...value } };
+    const id = f.created.length ? "chat-fresh" : "chat";
+    f.created.push(value);
+    return { thread: { id, ...value } };
   };
-  await f.store.save({ elements: [note('masih-drawing', 'Keep this board note.')] });
-  await f.talk.send({ text: 'Keep this conversation.', model: 'luna', provider: 'openai', persona: 'Use concise systems design reasoning.' });
-  await assert.rejects(f.talk.startFresh({ threadId: 'chat', model: 'luna', provider: 'openai', permissions: 'ask', persona: 'Use concise systems design reasoning.' }), error => (error as { status: number }).status === 409);
-  assert.equal(await f.store.chat(), 'chat', 'an active turn keeps the current Love Spot chat');
-  f.finish('turn-1', 'completed', 'The previous reply stays in history.');
+  await f.store.save({ elements: [note("masih-drawing", "Keep this board note.")] });
+  await f.talk.send({
+    text: "Keep this conversation.",
+    model: "luna",
+    provider: "openai",
+    persona: "Use concise systems design reasoning.",
+  });
+  await assert.rejects(
+    f.talk.startFresh({
+      threadId: "chat",
+      model: "luna",
+      provider: "openai",
+      permissions: "ask",
+      persona: "Use concise systems design reasoning.",
+    }),
+    error => (error as { status: number }).status === 409,
+  );
+  assert.equal(await f.store.chat(), "chat", "an active turn keeps the current Love Spot chat");
+  f.finish("turn-1", "completed", "The previous reply stays in history.");
   await f.talk.idle();
   const board = await f.store.read();
 
-  const result = await f.talk.startFresh({ threadId: 'chat', model: 'luna', provider: 'openai', cwd: f.directory, permissions: 'ask', persona: 'Use concise systems design reasoning.' });
+  const result = await f.talk.startFresh({
+    threadId: "chat",
+    model: "luna",
+    provider: "openai",
+    cwd: f.directory,
+    permissions: "ask",
+    persona: "Use concise systems design reasoning.",
+  });
 
-  assert.equal(result.thread.id, 'chat-fresh');
-  assert.equal(result.permissions, 'ask');
-  assert.equal(await f.store.chat(), 'chat-fresh');
-  assert.equal(f.created[1]!.name, 'Love Spot');
-  assert.equal(f.created[1]!.model, 'luna');
-  assert.equal(f.created[1]!.provider, 'openai');
+  assert.equal(result.thread.id, "chat-fresh");
+  assert.equal(result.permissions, "ask");
+  assert.equal(await f.store.chat(), "chat-fresh");
+  assert.equal(f.created[1]!.name, "Love Spot");
+  assert.equal(f.created[1]!.model, "luna");
+  assert.equal(f.created[1]!.provider, "openai");
   assert.equal(f.created[1]!.cwd, f.directory);
-  assert.equal(f.created[1]!.permissions, 'ask');
+  assert.equal(f.created[1]!.permissions, "ask");
   assert.match(f.created[1]!.instructions, /Use concise systems design reasoning\./);
-  assert.equal(f.sent.length, 1, 'starting the fresh chat sends no message');
-  assert.deepEqual(await f.store.read(), board, 'starting a fresh chat leaves every board element unchanged');
+  assert.equal(f.sent.length, 1, "starting the fresh chat sends no message");
+  assert.deepEqual(await f.store.read(), board, "starting a fresh chat leaves every board element unchanged");
   /** @type {{ thread: { id: string }, entries: unknown[] }[]} */
   const snapshots: Update[] = [];
-  const stop = await f.talk.watch(value => { snapshots.push(value); });
+  const stop = await f.talk.watch(value => {
+    snapshots.push(value);
+  });
   stop();
-  const snapshot = snapshots.at(-1); assert.ok(snapshot);
-  assert.equal(snapshot.thread!.id, 'chat-fresh');
+  const snapshot = snapshots.at(-1);
+  assert.ok(snapshot);
+  assert.equal(snapshot.thread!.id, "chat-fresh");
   assert.deepEqual(snapshot.entries, []);
 });
-test('board commands attach actual action results to the normal reply without treating discussion as a command', async t => {
+test("board commands attach actual action results to the normal reply without treating discussion as a command", async t => {
   const f = await fixture(t, { companion: true, audio: LOVE_SPOT_AUDIO });
-  await f.talk.send({ text: 'Matilda, pin yourself.', model: 'text' });
-  const result = f.sent[0]!.attachments.find(a => a.name === 'Matilda action result.txt');
+  await f.talk.send({ text: "Matilda, pin yourself.", model: "text" });
+  const result = f.sent[0]!.attachments.find(a => a.name === "Matilda action result.txt");
   assert.match(result!.text, /"ok":true/);
   assert.ok(f.presence);
-  assert.equal((await f.presence.read('settings')).pinned, true);
-  f.finish(); await f.talk.idle();
-  await f.talk.send({ text: 'Could you add a pin button?', model: 'text' });
-  assert.equal(f.sent[1]!.attachments.some(a => a.name === 'Matilda action result.txt'), false);
-  f.finish('turn-2'); await f.talk.idle();
-  await f.talk.send({ text: 'play my favorite music', model: 'text' });
-  assert.match(f.sent[2]!.attachments.find(a => a.name === 'Matilda action result.txt')!.text, /"ok":false/);
+  assert.equal((await f.presence.read("settings")).pinned, true);
+  f.finish();
+  await f.talk.idle();
+  await f.talk.send({ text: "Could you add a pin button?", model: "text" });
+  assert.equal(
+    f.sent[1]!.attachments.some(a => a.name === "Matilda action result.txt"),
+    false,
+  );
+  f.finish("turn-2");
+  await f.talk.idle();
+  await f.talk.send({ text: "play my favorite music", model: "text" });
+  assert.match(f.sent[2]!.attachments.find(a => a.name === "Matilda action result.txt")!.text, /"ok":false/);
 });
 
-test('a text-only model does not disable real-time Voice while typed read-aloud stays unavailable', async t => {
+test("a text-only model does not disable real-time Voice while typed read-aloud stays unavailable", async t => {
   const f = await fixture(t, { audio: LOVE_SPOT_AUDIO });
-  assert.equal(LOVE_SPOT_AUDIO.available, true, 'real-time Voice is available');
-  assert.equal(READ_ALOUD_AUDIO.available, false, 'automatic typed read-aloud remains unavailable');
-  await f.talk.send({ text: 'Keep writing', model: 'text' });
-  f.finish('turn-1', 'completed', 'The text reply still arrives.'); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(element => element.id === 'love-reply-turn-1')?.originalText, 'The text reply still arrives.');
-  assert.deepEqual((await f.talk.read()).voice, { enabled: true, available: true, reason: '', error: '' }, 'text-only image support does not disable real-time Voice');
-  assert.match((await f.talk.conversation('Be kind.')).context, /Be kind\./, 'real-time Voice keeps its own conversation route');
+  assert.equal(LOVE_SPOT_AUDIO.available, true, "real-time Voice is available");
+  assert.equal(READ_ALOUD_AUDIO.available, false, "automatic typed read-aloud remains unavailable");
+  await f.talk.send({ text: "Keep writing", model: "text" });
+  f.finish("turn-1", "completed", "The text reply still arrives.");
+  await f.talk.idle();
+  assert.equal(
+    (await f.store.read()).scene.elements.find(element => element.id === "love-reply-turn-1")?.originalText,
+    "The text reply still arrives.",
+  );
+  assert.deepEqual(
+    (await f.talk.read()).voice,
+    { enabled: true, available: true, reason: "", error: "" },
+    "text-only image support does not disable real-time Voice",
+  );
+  assert.match(
+    (await f.talk.conversation("Be kind.")).context,
+    /Be kind\./,
+    "real-time Voice keeps its own conversation route",
+  );
 });
 
-test('Talk creates one persistent normal chat, attributes live notes by colour, includes PNG only for image models', async t => {
+test("Talk creates one persistent normal chat, attributes live notes by colour, includes PNG only for image models", async t => {
   const f = await fixture(t);
-  await f.store.save({ elements: [note('masih', 'Apricot'), note('agent', 'Blue thought', '#1971c2'), note('love-reply-saved', 'Black reply', '#000000'), note('user-black', 'Black user note', '#000000'), note('gone', 'Do not include', '#e03131', { isDeleted: true })] });
-  const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
-  await f.talk.send({ text: 'Hello', model: 'luna', revision });
-  assert.equal(f.created.length, 1); assert.equal(f.created[0]!.name, 'Love Spot'); assert.equal(f.created[0]!.cwd, f.directory);
-  assert.equal(f.created[0]!.automatic, true, 'board replies use the automatic-agent default');
-  assert.equal(f.sent[0]!.automatic, true, 'existing board conversations also use that default');
-  const notes = f.sent[0]!.attachments.find(a => a.type === 'text')!.text;
-  assert.match(notes, /Masih.*Apricot/s); assert.match(notes, /agent.*Blue thought/s); assert.doesNotMatch(notes, /Do not include/);
-  const attributed = JSON.parse(notes.split('\n')[1]!) as { text: string; author: string }[];
-  assert.equal(attributed.find(n => n.text === 'Black reply')!.author, 'agent');
-  assert.equal(attributed.find(n => n.text === 'Black user note')!.author, 'Masih');
-  assert.equal(f.sent[0]!.attachments.find(a => a.type === 'image')!.dataUrl, `data:image/png;base64,${PNG}`);
-  f.finish(); await f.talk.idle();
-  const current = await f.store.read(); await f.store.picture({ revision: current.revision, png: PNG });
-  await f.talk.send({ text: 'Again', model: 'text', revision: current.revision });
-  assert.equal(f.created.length, 1); assert.equal(f.sent[1]!.attachments.some(a => a.type === 'image'), false);
-  f.finish('turn-2'); await f.talk.idle();
-  f.talk.close(); const second = createLoveSpotTalk({ client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store: f.store, audio: enabledAudio }); t.after(() => second.close());
-  await second.read(); await second.send({ text: 'After restart', model: 'text' }); assert.equal(f.created.length, 1);
+  await f.store.save({
+    elements: [
+      note("masih", "Apricot"),
+      note("agent", "Blue thought", "#1971c2"),
+      note("love-reply-saved", "Black reply", "#000000"),
+      note("user-black", "Black user note", "#000000"),
+      note("gone", "Do not include", "#e03131", { isDeleted: true }),
+    ],
+  });
+  const { revision } = await f.store.read();
+  await f.store.picture({ revision, png: PNG });
+  await f.talk.send({ text: "Hello", model: "luna", revision });
+  assert.equal(f.created.length, 1);
+  assert.equal(f.created[0]!.name, "Love Spot");
+  assert.equal(f.created[0]!.cwd, f.directory);
+  assert.equal(f.created[0]!.automatic, true, "board replies use the automatic-agent default");
+  assert.equal(f.sent[0]!.automatic, true, "existing board conversations also use that default");
+  const notes = f.sent[0]!.attachments.find(a => a.type === "text")!.text;
+  assert.match(notes, /Masih.*Apricot/s);
+  assert.match(notes, /agent.*Blue thought/s);
+  assert.doesNotMatch(notes, /Do not include/);
+  const attributed = JSON.parse(notes.split("\n")[1]!) as { text: string; author: string }[];
+  assert.equal(attributed.find(n => n.text === "Black reply")!.author, "agent");
+  assert.equal(attributed.find(n => n.text === "Black user note")!.author, "Masih");
+  assert.equal(f.sent[0]!.attachments.find(a => a.type === "image")!.dataUrl, `data:image/png;base64,${PNG}`);
+  f.finish();
+  await f.talk.idle();
+  const current = await f.store.read();
+  await f.store.picture({ revision: current.revision, png: PNG });
+  await f.talk.send({ text: "Again", model: "text", revision: current.revision });
+  assert.equal(f.created.length, 1);
+  assert.equal(
+    f.sent[1]!.attachments.some(a => a.type === "image"),
+    false,
+  );
+  f.finish("turn-2");
+  await f.talk.idle();
+  f.talk.close();
+  const second = createLoveSpotTalk({
+    client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]["client"],
+    store: f.store,
+    audio: enabledAudio,
+  });
+  t.after(() => second.close());
+  await second.read();
+  await second.send({ text: "After restart", model: "text" });
+  assert.equal(f.created.length, 1);
 });
 // The pinned small chat sends no revision (27 Oct: "The drawing changed. Try sending again with its current picture.").
-test('the small chat sends to an image model with the current picture, or only the notes once the drawing moved on', async t => {
+test("the small chat sends to an image model with the current picture, or only the notes once the drawing moved on", async t => {
   const f = await fixture(t);
-  await f.store.save({ elements: [note('masih', 'Apricot')] });
-  const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
-  await f.talk.send({ text: 'From the small chat', model: 'luna' });
-  assert.equal(f.sent[0]!.attachments.find(a => a.type === 'image')?.dataUrl, `data:image/png;base64,${PNG}`);
-  f.finish(); await f.talk.idle();
-  await f.store.save({ elements: [note('masih', 'Apricot'), note('masih-2', 'Plum')] });
-  await f.talk.send({ text: 'After a change elsewhere', model: 'luna' });
-  assert.equal(f.sent[1]!.attachments.some(a => a.type === 'image'), false, 'an outdated picture is left out, not refused');
-  assert.match(f.sent[1]!.attachments.find(a => a.type === 'text')!.text, /Plum/);
-  f.finish('turn-2'); await f.talk.idle();
-  await assert.rejects(f.talk.send({ text: 'From the board', model: 'luna', revision: 'stale' }), /drawing changed/, 'the board still sends only its current picture');
+  await f.store.save({ elements: [note("masih", "Apricot")] });
+  const { revision } = await f.store.read();
+  await f.store.picture({ revision, png: PNG });
+  await f.talk.send({ text: "From the small chat", model: "luna" });
+  assert.equal(f.sent[0]!.attachments.find(a => a.type === "image")?.dataUrl, `data:image/png;base64,${PNG}`);
+  f.finish();
+  await f.talk.idle();
+  await f.store.save({ elements: [note("masih", "Apricot"), note("masih-2", "Plum")] });
+  await f.talk.send({ text: "After a change elsewhere", model: "luna" });
+  assert.equal(
+    f.sent[1]!.attachments.some(a => a.type === "image"),
+    false,
+    "an outdated picture is left out, not refused",
+  );
+  assert.match(f.sent[1]!.attachments.find(a => a.type === "text")!.text, /Plum/);
+  f.finish("turn-2");
+  await f.talk.idle();
+  await assert.rejects(
+    f.talk.send({ text: "From the board", model: "luna", revision: "stale" }),
+    /drawing changed/,
+    "the board still sends only its current picture",
+  );
 });
 
-test('Talk is Matilda: who she is goes with every message, and only as text she can read', async t => {
+test("Talk is Matilda: who she is goes with every message, and only as text she can read", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Hello', model: 'text', persona: 'Masih\'s partner.' });
-  assert.match(f.created[0]!.instructions, /You are Matilda/); assert.match(f.created[0]!.instructions, /```excalidraw/);
-  assert.deepEqual(f.sent[0]!.attachments.filter(a => a.name === 'Who you are.txt').map(a => [a.type, a.text]), [['text', 'Masih\'s partner.']]);
-  f.finish(); await f.talk.idle();
-  await f.talk.send({ text: 'Again', model: 'text', persona: 'A maths tutor.' });
-  assert.equal(f.sent[1]!.attachments.find(a => a.name === 'Who you are.txt')!.text, 'A maths tutor.');
-  assert.equal(f.sent[1]!.attachments[0]!.name, 'Love Spot notes.txt', 'the board notes stay first');
-  f.finish('turn-2'); await f.talk.idle();
-  await f.talk.send({ text: 'No persona sent', model: 'text' }); assert.equal(f.sent[2]!.attachments.some(a => a.name === 'Who you are.txt'), false);
+  await f.talk.send({ text: "Hello", model: "text", persona: "Masih's partner." });
+  assert.match(f.created[0]!.instructions, /You are Matilda/);
+  assert.match(f.created[0]!.instructions, /```excalidraw/);
+  assert.deepEqual(
+    f.sent[0]!.attachments.filter(a => a.name === "Who you are.txt").map(a => [a.type, a.text]),
+    [["text", "Masih's partner."]],
+  );
+  f.finish();
+  await f.talk.idle();
+  await f.talk.send({ text: "Again", model: "text", persona: "A maths tutor." });
+  assert.equal(f.sent[1]!.attachments.find(a => a.name === "Who you are.txt")!.text, "A maths tutor.");
+  assert.equal(f.sent[1]!.attachments[0]!.name, "Love Spot notes.txt", "the board notes stay first");
+  f.finish("turn-2");
+  await f.talk.idle();
+  await f.talk.send({ text: "No persona sent", model: "text" });
+  assert.equal(
+    f.sent[2]!.attachments.some(a => a.name === "Who you are.txt"),
+    false,
+  );
   // How to paint goes with every turn too, so a chat created before the painting rules changed still follows the current ones.
-  assert.deepEqual(f.sent.map(s => /roughness/.test(s.attachments.find(a => a.name === 'How to paint.txt')?.text ?? '')), [true, true, true]);
-  f.finish('turn-3'); await f.talk.idle();
-  await assert.rejects(f.talk.send({ text: 'Hi', model: 'text', persona: 'x'.repeat(4001) }), /persona/i); assert.equal(f.sent.length, 3);
+  assert.deepEqual(
+    f.sent.map(s => /roughness/.test(s.attachments.find(a => a.name === "How to paint.txt")?.text ?? "")),
+    [true, true, true],
+  );
+  f.finish("turn-3");
+  await f.talk.idle();
+  await assert.rejects(f.talk.send({ text: "Hi", model: "text", persona: "x".repeat(4001) }), /persona/i);
+  assert.equal(f.sent.length, 3);
 });
-const flower = [{ type: 'ellipse', x: 20, y: 0, width: 24, height: 24, strokeColor: '#e03131', backgroundColor: '#ffc9c9' }, { type: 'line', points: [[32, 24], [32, 80]], strokeColor: '#2f9e44' }, { type: 'text', x: 0, y: 84, text: 'for you' }];
-test('reopening a recorded painting repairs legacy arrow origins while preserving moved arrows and deletions', async t => {
+const flower = [
+  { type: "ellipse", x: 20, y: 0, width: 24, height: 24, strokeColor: "#e03131", backgroundColor: "#ffc9c9" },
+  {
+    type: "line",
+    points: [
+      [32, 24],
+      [32, 80],
+    ],
+    strokeColor: "#2f9e44",
+  },
+  { type: "text", x: 0, y: 84, text: "for you" },
+];
+test("reopening a recorded painting repairs legacy arrow origins while preserving moved arrows and deletions", async t => {
   const f = await fixture(t, { audio: LOVE_SPOT_AUDIO });
-  const source = (shapes: unknown[]) => '```excalidraw\n' + JSON.stringify(shapes) + '\n```';
-  const rectangle = { type: 'rectangle', x: 10, y: 20, width: 200, height: 60 };
-  const broken = splitPainting(source([rectangle, { type: 'arrow', points: [[0, 0], [0, 40]] }])).shapes;
-  const recorded = source([rectangle, { type: 'arrow', x: 110, y: 80, points: [[0, 0], [0, 40]] }]);
-  await f.store.chat(async () => 'chat');
-  for (const turnId of ['legacy', 'moved', 'deleted']) {
-    await f.store.reply(turnId, 'Drawing', () => true, undefined, broken);
-    if (turnId === 'legacy') {
-      f.entries.push({ turnId, item: { id: 'part-one', type: 'agentMessage', text: source([rectangle]) } }, { turnId, item: { id: 'part-two', type: 'agentMessage', text: source([{ type: 'arrow', x: 110, y: 80, points: [[0, 0], [0, 40]] }]) } });
-    } else f.entries.push({ turnId, item: { id: 'reply-' + turnId, type: 'agentMessage', text: recorded } });
+  const source = (shapes: unknown[]) => "```excalidraw\n" + JSON.stringify(shapes) + "\n```";
+  const rectangle = { type: "rectangle", x: 10, y: 20, width: 200, height: 60 };
+  const broken = splitPainting(
+    source([
+      rectangle,
+      {
+        type: "arrow",
+        points: [
+          [0, 0],
+          [0, 40],
+        ],
+      },
+    ]),
+  ).shapes;
+  const recorded = source([
+    rectangle,
+    {
+      type: "arrow",
+      x: 110,
+      y: 80,
+      points: [
+        [0, 0],
+        [0, 40],
+      ],
+    },
+  ]);
+  await f.store.chat(async () => "chat");
+  for (const turnId of ["legacy", "moved", "deleted"]) {
+    await f.store.reply(turnId, "Drawing", () => true, undefined, broken);
+    if (turnId === "legacy") {
+      f.entries.push(
+        { turnId, item: { id: "part-one", type: "agentMessage", text: source([rectangle]) } },
+        {
+          turnId,
+          item: {
+            id: "part-two",
+            type: "agentMessage",
+            text: source([
+              {
+                type: "arrow",
+                x: 110,
+                y: 80,
+                points: [
+                  [0, 0],
+                  [0, 40],
+                ],
+              },
+            ]),
+          },
+        },
+      );
+    } else f.entries.push({ turnId, item: { id: "reply-" + turnId, type: "agentMessage", text: recorded } });
   }
   const drawing = await f.store.read();
-  const moved = drawing.scene.elements.find(e => e.id === 'love-paint-moved-1');
-  const deleted = drawing.scene.elements.find(e => e.id === 'love-paint-deleted-1');
+  const moved = drawing.scene.elements.find(e => e.id === "love-paint-moved-1");
+  const deleted = drawing.scene.elements.find(e => e.id === "love-paint-deleted-1");
   assert.ok(moved && deleted);
-  await f.store.save({ ...drawing.scene, elements: [{ ...moved, x: moved.x + 13, version: 2, versionNonce: 2 }, { ...deleted, isDeleted: true, version: 2, versionNonce: 2 }] });
+  await f.store.save({
+    ...drawing.scene,
+    elements: [
+      { ...moved, x: moved.x + 13, version: 2, versionNonce: 2 },
+      { ...deleted, isDeleted: true, version: 2, versionNonce: 2 },
+    ],
+  });
   const before = await f.store.read();
   const readRecorded = f.client.readThread;
   let pages = 0;
   f.client.readThread = async (id, options) => {
     pages++;
     const value = await readRecorded(id);
-    return options?.cursor ? value : { ...value, data: [], nextCursor: 'older-diagram' };
+    return options?.cursor ? value : { ...value, data: [], nextCursor: "older-diagram" };
   };
   await f.talk.read();
-  const after = await f.store.read(), rect = after.scene.elements.find(e => e.id === 'love-paint-legacy-0'), arrow = after.scene.elements.find(e => e.id === 'love-paint-legacy-1');
+  const after = await f.store.read(),
+    rect = after.scene.elements.find(e => e.id === "love-paint-legacy-0"),
+    arrow = after.scene.elements.find(e => e.id === "love-paint-legacy-1");
   assert.ok(arrow && rect);
   assert.deepEqual([arrow.x - rect.x, arrow.y - rect.y], [100, 60]);
-  assert.equal(pages, 2, 'The original diagram can be older than the newest history page');
-  for (const id of ['love-paint-moved-1', 'love-paint-deleted-1']) assert.deepEqual(after.scene.elements.find(e => e.id === id), before.scene.elements.find(e => e.id === id));
-  await f.talk.read(); assert.deepEqual(await f.store.read(), after);
+  assert.equal(pages, 2, "The original diagram can be older than the newest history page");
+  for (const id of ["love-paint-moved-1", "love-paint-deleted-1"])
+    assert.deepEqual(
+      after.scene.elements.find(e => e.id === id),
+      before.scene.elements.find(e => e.id === id),
+    );
+  await f.talk.read();
+  assert.deepEqual(await f.store.read(), after);
 });
-test('Matilda paints: a fenced excalidraw block is drawn beneath her note, checked, grouped, and kept out of the note and the panel', async t => {
+test("Matilda paints: a fenced excalidraw block is drawn beneath her note, checked, grouped, and kept out of the note and the panel", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Hello', model: 'text' });
-  const reply = `A flower for you.\n\n\`\`\`excalidraw\n${JSON.stringify([...flower, { type: 'rocket' }, { type: 'ellipse', strokeColor: 'red; drop table' }])}\n\`\`\``;
-  f.finish('turn-1', 'completed', reply); await f.talk.idle();
-  const scene = (await f.store.read()).scene, note = scene.elements.find(e => e.id === 'love-reply-turn-1');
+  await f.talk.send({ text: "Hello", model: "text" });
+  const reply = `A flower for you.\n\n\`\`\`excalidraw\n${JSON.stringify([...flower, { type: "rocket" }, { type: "ellipse", strokeColor: "red; drop table" }])}\n\`\`\``;
+  f.finish("turn-1", "completed", reply);
+  await f.talk.idle();
+  const scene = (await f.store.read()).scene,
+    note = scene.elements.find(e => e.id === "love-reply-turn-1");
   assert.ok(note && note.originalText);
-  assert.equal(note.text, 'A flower for you.'); assert.doesNotMatch(note.originalText, /excalidraw|ellipse/);
-  const painted = scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-'));
-  assert.deepEqual(painted.map(e => e.type), ['ellipse', 'line', 'text', 'ellipse'], 'an unknown shape type is skipped; a bad colour falls back');
+  assert.equal(note.text, "A flower for you.");
+  assert.doesNotMatch(note.originalText, /excalidraw|ellipse/);
+  const painted = scene.elements.filter(e => e.id.startsWith("love-paint-turn-1-"));
+  assert.deepEqual(
+    painted.map(e => e.type),
+    ["ellipse", "line", "text", "ellipse"],
+    "an unknown shape type is skipped; a bad colour falls back",
+  );
   assert.ok(painted[0] && painted[1] && painted[3]);
-  assert.equal(painted[3].strokeColor, '#e03131'); assert.equal(painted[0].strokeColor, '#e03131'); assert.equal(painted[0].backgroundColor, '#ffc9c9');
-  assert.deepEqual(painted[1].points, [[0, 0], [0, 56]]); assert.ok(painted.every(e => e.groupIds?.[0] === 'love-paint-turn-1'), 'one group, so it moves as one');
-  assert.ok(Math.min(...painted.map(e => e.y)) >= note.y + note.height, 'beneath the note');
-  assert.doesNotMatch(JSON.stringify((await f.talk.read()).entries), /excalidraw/, 'the panel shows the note only');
+  assert.equal(painted[3].strokeColor, "#e03131");
+  assert.equal(painted[0].strokeColor, "#e03131");
+  assert.equal(painted[0].backgroundColor, "#ffc9c9");
+  assert.deepEqual(painted[1].points, [
+    [0, 0],
+    [0, 56],
+  ]);
+  assert.ok(
+    painted.every(e => e.groupIds?.[0] === "love-paint-turn-1"),
+    "one group, so it moves as one",
+  );
+  assert.ok(Math.min(...painted.map(e => e.y)) >= note.y + note.height, "beneath the note");
+  assert.doesNotMatch(JSON.stringify((await f.talk.read()).entries), /excalidraw/, "the panel shows the note only");
 });
-test('a painting without a note is still drawn once; a broken or oversized block draws what it can and never breaks the reply', async t => {
+test("a painting without a note is still drawn once; a broken or oversized block draws what it can and never breaks the reply", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Draw me something', model: 'text' });
-  f.finish('turn-1', 'completed', `\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``); f.finish('turn-1', 'completed', `\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``); await f.talk.idle();
+  await f.talk.send({ text: "Draw me something", model: "text" });
+  f.finish("turn-1", "completed", `\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``);
+  f.finish("turn-1", "completed", `\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``);
+  await f.talk.idle();
   let scene = (await f.store.read()).scene;
-  assert.equal(scene.elements.filter(e => e.type === 'text' && e.id.startsWith('love-reply-')).length, 0, 'no empty note');
-  assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-')).length, 3, 'drawn once, though the turn finished twice');
-  await f.talk.send({ text: 'Again', model: 'text' });
-  f.finish('turn-2', 'completed', 'Still here.\n\n```excalidraw\n{not json'); await f.talk.idle();
-  scene = (await f.store.read()).scene; assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-2')?.text, 'Still here.');
-  await f.talk.send({ text: 'Lots', model: 'text' });
-  f.finish('turn-3', 'completed', `Many.\n\n\`\`\`excalidraw\n${JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ type: 'rectangle', x: i, y: i })))}\n\`\`\``); await f.talk.idle();
-  scene = (await f.store.read()).scene; assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-3-')).length, 60, 'at most 60 shapes');
+  assert.equal(
+    scene.elements.filter(e => e.type === "text" && e.id.startsWith("love-reply-")).length,
+    0,
+    "no empty note",
+  );
+  assert.equal(
+    scene.elements.filter(e => e.id.startsWith("love-paint-turn-1-")).length,
+    3,
+    "drawn once, though the turn finished twice",
+  );
+  await f.talk.send({ text: "Again", model: "text" });
+  f.finish("turn-2", "completed", "Still here.\n\n```excalidraw\n{not json");
+  await f.talk.idle();
+  scene = (await f.store.read()).scene;
+  assert.equal(scene.elements.find(e => e.id === "love-reply-turn-2")?.text, "Still here.");
+  await f.talk.send({ text: "Lots", model: "text" });
+  f.finish(
+    "turn-3",
+    "completed",
+    `Many.\n\n\`\`\`excalidraw\n${JSON.stringify(Array.from({ length: 200 }, (_, i) => ({ type: "rectangle", x: i, y: i })))}\n\`\`\``,
+  );
+  await f.talk.idle();
+  scene = (await f.store.read()).scene;
+  assert.equal(scene.elements.filter(e => e.id.startsWith("love-paint-turn-3-")).length, 60, "at most 60 shapes");
 });
-test('her face sits beside every reply as one image of one file, moves with the note and the painting, and stays clear of the board', async t => {
+test("her face sits beside every reply as one image of one file, moves with the note and the painting, and stays clear of the board", async t => {
   const f = await fixture(t);
-  await f.store.save({ elements: [note('masih', 'Newest', '#e03131', { updated: 10 })] });
-  await f.talk.send({ text: 'Hi', model: 'text' }); f.finish('turn-1', 'completed', `Here.\n\n\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``); await f.talk.idle();
-  await f.talk.send({ text: 'Again', model: 'text' }); f.finish('turn-2', 'completed', 'Still here.'); f.finish('turn-2', 'completed', 'Still here.'); await f.talk.idle();
-  const { scene } = await f.store.read(), live = scene.elements.filter(e => !e.isDeleted);
-  const faces = live.filter(e => e.type === 'image'), notes = ['turn-1', 'turn-2'].map(id => live.find(e => e.id === `love-reply-${id}`));
-  assert.deepEqual(faces.map(e => e.id), ['love-face-turn-1', 'love-face-turn-2'], 'one face per reply, once, though the turn finished twice');
+  await f.store.save({ elements: [note("masih", "Newest", "#e03131", { updated: 10 })] });
+  await f.talk.send({ text: "Hi", model: "text" });
+  f.finish("turn-1", "completed", `Here.\n\n\`\`\`excalidraw\n${JSON.stringify(flower)}\n\`\`\``);
+  await f.talk.idle();
+  await f.talk.send({ text: "Again", model: "text" });
+  f.finish("turn-2", "completed", "Still here.");
+  f.finish("turn-2", "completed", "Still here.");
+  await f.talk.idle();
+  const { scene } = await f.store.read(),
+    live = scene.elements.filter(e => !e.isDeleted);
+  const faces = live.filter(e => e.type === "image"),
+    notes = ["turn-1", "turn-2"].map(id => live.find(e => e.id === `love-reply-${id}`));
+  assert.deepEqual(
+    faces.map(e => e.id),
+    ["love-face-turn-1", "love-face-turn-2"],
+    "one face per reply, once, though the turn finished twice",
+  );
   assert.ok(faces[0]?.fileId && faces[1]?.fileId && notes[0] && notes[1]);
-  assert.equal(Object.keys(scene.files).length, 1, 'one file for every face'); assert.equal(faces[0].fileId, faces[1].fileId);
-  const portraitFile = scene.files[faces[0].fileId]; assert.ok(portraitFile);
-  assert.match(portraitFile.dataURL, /^data:image\/webp;base64,/, 'a raster face, which the dark board shows the right way round');
-  assert.equal(portraitFile.mimeType, 'image/webp');
+  assert.equal(Object.keys(scene.files).length, 1, "one file for every face");
+  assert.equal(faces[0].fileId, faces[1].fileId);
+  const portraitFile = scene.files[faces[0].fileId];
+  assert.ok(portraitFile);
+  assert.match(
+    portraitFile.dataURL,
+    /^data:image\/webp;base64,/,
+    "a raster face, which the dark board shows the right way round",
+  );
+  assert.equal(portraitFile.mimeType, "image/webp");
   faces.forEach((face, i) => {
     assert.ok(notes[i] && face.groupIds && notes[i].groupIds);
-    assert.ok(face.x + face.width <= notes[i].x, 'the face is to the left of her note'); assert.ok(Math.abs(face.y - notes[i].y) <= 8, 'level with the first line');
-    assert.ok(face.groupIds.includes(`love-reply-group-turn-${i + 1}`) && notes[i].groupIds.includes(`love-reply-group-turn-${i + 1}`), 'face and note move as one');
+    assert.ok(face.x + face.width <= notes[i].x, "the face is to the left of her note");
+    assert.ok(Math.abs(face.y - notes[i].y) <= 8, "level with the first line");
+    assert.ok(
+      face.groupIds.includes(`love-reply-group-turn-${i + 1}`) &&
+        notes[i].groupIds.includes(`love-reply-group-turn-${i + 1}`),
+      "face and note move as one",
+    );
   });
   const firstNote = notes[0];
-  assert.ok(live.filter(e => e.id.startsWith('love-paint-turn-1-')).every(e => e.groupIds?.includes('love-reply-group-turn-1') && e.x >= firstNote.x), 'her painting joins the group, under the note');
+  assert.ok(
+    live
+      .filter(e => e.id.startsWith("love-paint-turn-1-"))
+      .every(e => e.groupIds?.includes("love-reply-group-turn-1") && e.x >= firstNote.x),
+    "her painting joins the group, under the note",
+  );
   const unit = (e: (typeof live)[number]) => e.groupIds?.at(-1) ?? e.id;
-  for (const a of live) for (const b of live) if (a.id < b.id && unit(a) !== unit(b)) assert.ok(a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y, `${a.id} and ${b.id} overlap`);
-  const painting = live.filter(e => e.id.startsWith('love-paint-')); await f.talk.send({ text: 'Third', model: 'text' }); f.finish('turn-3', 'completed', ''); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.filter(e => e.type === 'image').length, 2, 'an empty reply has no face'); assert.ok(painting.length);
+  for (const a of live)
+    for (const b of live)
+      if (a.id < b.id && unit(a) !== unit(b))
+        assert.ok(
+          a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y,
+          `${a.id} and ${b.id} overlap`,
+        );
+  const painting = live.filter(e => e.id.startsWith("love-paint-"));
+  await f.talk.send({ text: "Third", model: "text" });
+  f.finish("turn-3", "completed", "");
+  await f.talk.idle();
+  assert.equal(
+    (await f.store.read()).scene.elements.filter(e => e.type === "image").length,
+    2,
+    "an empty reply has no face",
+  );
+  assert.ok(painting.length);
 });
-test('replies are black with red hearts, unsigned, collision-free, idempotent and saved without a UI subscriber', async t => {
+test("replies are black with red hearts, unsigned, collision-free, idempotent and saved without a UI subscriber", async t => {
   const f = await fixture(t);
-  await f.store.save({ elements: [note('masih', 'Newest', '#e03131', { updated: 10 }), note('block', 'Obstacle', '#e03131', { x: 20, y: 100, width: 500, height: 500 })] });
-  await f.talk.send({ text: 'Hi', model: 'text' }); f.finish('turn-1', 'completed', 'Here with you. 💙'); f.finish(); await f.talk.idle();
-  const scene = (await f.store.read()).scene, reply = scene.elements.find(e => e.text === 'Here with you. ❤️');
-  assert.ok(reply); assert.equal(reply.strokeColor, '#000000'); assert.equal(scene.elements.filter(e => e.text === reply.text).length, 1);
-  for (const e of scene.elements.filter(e => e.id !== reply.id)) assert.ok(reply.x + reply.width <= e.x || e.x + e.width <= reply.x || reply.y + reply.height <= e.y || e.y + e.height <= reply.y);
+  await f.store.save({
+    elements: [
+      note("masih", "Newest", "#e03131", { updated: 10 }),
+      note("block", "Obstacle", "#e03131", { x: 20, y: 100, width: 500, height: 500 }),
+    ],
+  });
+  await f.talk.send({ text: "Hi", model: "text" });
+  f.finish("turn-1", "completed", "Here with you. 💙");
+  f.finish();
+  await f.talk.idle();
+  const scene = (await f.store.read()).scene,
+    reply = scene.elements.find(e => e.text === "Here with you. ❤️");
+  assert.ok(reply);
+  assert.equal(reply.strokeColor, "#000000");
+  assert.equal(scene.elements.filter(e => e.text === reply.text).length, 1);
+  for (const e of scene.elements.filter(e => e.id !== reply.id))
+    assert.ok(
+      reply.x + reply.width <= e.x ||
+        e.x + e.width <= reply.x ||
+        reply.y + reply.height <= e.y ||
+        e.y + e.height <= reply.y,
+    );
 });
-test('empty, failed and interrupted replies add nothing; invalid messages and stale pictures fail before send', async t => {
+test("empty, failed and interrupted replies add nothing; invalid messages and stale pictures fail before send", async t => {
   const f = await fixture(t);
-  await assert.rejects(f.talk.send({ text: '   ', model: 'text' })); assert.equal(f.created.length, 0);
-  await assert.rejects(f.talk.send({ text: 'Hi', model: 'luna', revision: 'stale' })); assert.equal(f.sent.length, 0);
-  await f.talk.send({ text: 'Hi', model: 'text' }); f.finish('turn-1', 'failed'); await f.talk.idle();
+  await assert.rejects(f.talk.send({ text: "   ", model: "text" }));
+  assert.equal(f.created.length, 0);
+  await assert.rejects(f.talk.send({ text: "Hi", model: "luna", revision: "stale" }));
+  assert.equal(f.sent.length, 0);
+  await f.talk.send({ text: "Hi", model: "text" });
+  f.finish("turn-1", "failed");
+  await f.talk.idle();
   assert.equal((await f.store.read()).scene.elements.length, 0);
-  await f.talk.send({ text: 'Hi again', model: 'text' }); f.finish('turn-2', 'interrupted'); await f.talk.idle();
+  await f.talk.send({ text: "Hi again", model: "text" });
+  f.finish("turn-2", "interrupted");
+  await f.talk.idle();
   assert.equal((await f.store.read()).scene.elements.length, 0);
 });
 
-test('completion before send returns does not leave Talk busy, including empty and failed turns', async t => {
+test("completion before send returns does not leave Talk busy, including empty and failed turns", async t => {
   const f = await fixture(t);
   let number = 0;
   f.client.send = async () => {
     const id = `fast-${++number}`;
-    f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id, status: 'completed', items: [] } } } });
+    f.client.emit("event", {
+      type: "message",
+      data: { method: "turn/completed", params: { threadId: "chat", turn: { id, status: "completed", items: [] } } },
+    });
     return { turn: { id } };
   };
-  assert.equal((await f.talk.send({ text: 'Hello', model: 'text' })).busy, false);
-  assert.equal((await f.talk.send({ text: 'Again', model: 'text' })).busy, false);
+  assert.equal((await f.talk.send({ text: "Hello", model: "text" })).busy, false);
+  assert.equal((await f.talk.send({ text: "Again", model: "text" })).busy, false);
   assert.equal((await f.store.read()).scene.elements.length, 0);
 });
 
-test('simultaneous sends are refused and a missing saved chat is reported without making a duplicate', async t => {
+test("simultaneous sends are refused and a missing saved chat is reported without making a duplicate", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Hello', model: 'text' });
-  await assert.rejects(f.talk.send({ text: 'Duplicate', model: 'text' }), /already replying/);
+  await f.talk.send({ text: "Hello", model: "text" });
+  await assert.rejects(f.talk.send({ text: "Duplicate", model: "text" }), /already replying/);
   assert.equal(f.sent.length, 1);
-  f.talk.close(); f.client.readThread = async () => { throw new Error('Chat was deleted'); };
-  const next = createLoveSpotTalk({ client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store: f.store, audio: enabledAudio }); t.after(() => next.close());
-  await assert.rejects(next.send({ text: 'Hello', model: 'text' }), /Chat was deleted/);
+  f.talk.close();
+  f.client.readThread = async () => {
+    throw new Error("Chat was deleted");
+  };
+  const next = createLoveSpotTalk({
+    client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]["client"],
+    store: f.store,
+    audio: enabledAudio,
+  });
+  t.after(() => next.close());
+  await assert.rejects(next.send({ text: "Hello", model: "text" }), /Chat was deleted/);
   assert.equal(f.created.length, 1);
 });
 
-test('a recorded user item replaces the provisional prompt and only the final answer becomes a note', async t => {
+test("a recorded user item replaces the provisional prompt and only the final answer becomes a note", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Hello', model: 'text' });
+  await f.talk.send({ text: "Hello", model: "text" });
   for (const item of [
-    { id: 'user', type: 'userMessage', content: [{ type: 'text', text: 'Hello' }] },
-    { id: 'progress', type: 'agentMessage', phase: 'commentary', text: 'Thinking aloud' },
-    { id: 'answer', type: 'agentMessage', phase: 'final_answer', text: 'The answer' },
-  ]) f.client.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: 'chat', turnId: 'turn-1', item } } });
-  f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id: 'turn-1', status: 'completed', items: [] } } } });
+    { id: "user", type: "userMessage", content: [{ type: "text", text: "Hello" }] },
+    { id: "progress", type: "agentMessage", phase: "commentary", text: "Thinking aloud" },
+    { id: "answer", type: "agentMessage", phase: "final_answer", text: "The answer" },
+  ])
+    f.client.emit("event", {
+      type: "message",
+      data: { method: "item/completed", params: { threadId: "chat", turnId: "turn-1", item } },
+    });
+  f.client.emit("event", {
+    type: "message",
+    data: {
+      method: "turn/completed",
+      params: { threadId: "chat", turn: { id: "turn-1", status: "completed", items: [] } },
+    },
+  });
   await f.talk.idle();
-  assert.equal((await f.talk.read()).entries.filter(e => e.item.type === 'userMessage').length, 1);
-  assert.deepEqual((await f.store.read()).scene.elements.filter(e => e.type === 'text').map(e => e.originalText), ['The answer']);
+  assert.equal((await f.talk.read()).entries.filter(e => e.item.type === "userMessage").length, 1);
+  assert.deepEqual(
+    (await f.store.read()).scene.elements.filter(e => e.type === "text").map(e => e.originalText),
+    ["The answer"],
+  );
 });
 
-test('without phases, only her last message becomes the note: words before a tool call are not written on the board', async t => {
+test("without phases, only her last message becomes the note: words before a tool call are not written on the board", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Draw the engine', model: 'text' });
+  await f.talk.send({ text: "Draw the engine", model: "text" });
   for (const item of [
-    { id: 'look', type: 'agentMessage', text: 'Need facts. Look quickly.' },
-    { id: 'answer', type: 'agentMessage', text: 'Here it is.' },
-  ]) f.client.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: 'chat', turnId: 'turn-1', item } } });
-  f.client.emit('event', { type: 'message', data: { method: 'turn/completed', params: { threadId: 'chat', turn: { id: 'turn-1', status: 'completed', items: [] } } } });
+    { id: "look", type: "agentMessage", text: "Need facts. Look quickly." },
+    { id: "answer", type: "agentMessage", text: "Here it is." },
+  ])
+    f.client.emit("event", {
+      type: "message",
+      data: { method: "item/completed", params: { threadId: "chat", turnId: "turn-1", item } },
+    });
+  f.client.emit("event", {
+    type: "message",
+    data: {
+      method: "turn/completed",
+      params: { threadId: "chat", turn: { id: "turn-1", status: "completed", items: [] } },
+    },
+  });
   await f.talk.idle();
-  assert.deepEqual((await f.store.read()).scene.elements.filter(e => e.type === 'text').map(e => e.originalText), ['Here it is.']);
+  assert.deepEqual(
+    (await f.store.read()).scene.elements.filter(e => e.type === "text").map(e => e.originalText),
+    ["Here it is."],
+  );
 });
 
-test('a reply started on another page stays in Talk and does not write onto the newly selected page', async t => {
+test("a reply started on another page stays in Talk and does not write onto the newly selected page", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'About the original page', model: 'text' });
-  await f.store.changePage({ action: 'new', name: 'Quiet' });
-  f.finish(); await f.talk.idle();
+  await f.talk.send({ text: "About the original page", model: "text" });
+  await f.store.changePage({ action: "new", name: "Quiet" });
+  f.finish();
+  await f.talk.idle();
   assert.deepEqual((await f.store.read()).scene.elements, []);
   const chat = await f.talk.read();
-  assert.ok(chat.entries.some(e => e.item.text === 'Here with you.'));
+  assert.ok(chat.entries.some(e => e.item.text === "Here with you."));
   assert.match(chat.error, /page changed/i);
 });
 
-for (const message of [((id: string) => `thread not loaded: ${id}`), () => 'Elpis rejected the operation (-32600). No automatic retry was made.']) test(`after Masih deletes the Love Spot chat, she starts a new one instead of failing forever (${message('x').slice(0, 24)})`, async t => {
-  const f = await fixture(t);
-  await f.talk.send({ text: 'Hello', model: 'text' }); f.finish(); await f.talk.idle();
-  f.talk.close();
-  // Deleted from the sidebar and purged at quit: thread/read answers as the engine does for an unknown thread.
-  f.client.readThread = async id => { throw new Error(message(id)); };
-  const next = createLoveSpotTalk({ client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store: f.store, audio: enabledAudio }); t.after(() => next.close());
-  assert.deepEqual((await next.read()).entries, []);
-  await next.send({ text: 'Are you still there?', model: 'text' });
-  assert.equal(f.created.length, 2);
-  assert.equal(f.sent.at(-1)!.text, 'Are you still there?');
-});
+for (const message of [
+  (id: string) => `thread not loaded: ${id}`,
+  () => "Elpis rejected the operation (-32600). No automatic retry was made.",
+])
+  test(`after Masih deletes the Love Spot chat, she starts a new one instead of failing forever (${message("x").slice(0, 24)})`, async t => {
+    const f = await fixture(t);
+    await f.talk.send({ text: "Hello", model: "text" });
+    f.finish();
+    await f.talk.idle();
+    f.talk.close();
+    // Deleted from the sidebar and purged at quit: thread/read answers as the engine does for an unknown thread.
+    f.client.readThread = async id => {
+      throw new Error(message(id));
+    };
+    const next = createLoveSpotTalk({
+      client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]["client"],
+      store: f.store,
+      audio: enabledAudio,
+    });
+    t.after(() => next.close());
+    assert.deepEqual((await next.read()).entries, []);
+    await next.send({ text: "Are you still there?", model: "text" });
+    assert.equal(f.created.length, 2);
+    assert.equal(f.sent.at(-1)!.text, "Are you still there?");
+  });
 
 // Masih, 23 Oct: "set her thinking to low so it be faster, and set her to /fast as well".
-test('Matilda thinks at low effort and her chat asks for Fast once; a model without Fast still answers', async t => {
+test("Matilda thinks at low effort and her chat asks for Fast once; a model without Fast still answers", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Hello', model: 'text' }); f.finish(); await f.talk.idle();
-  await f.talk.send({ text: 'Again', model: 'text' });
-  assert.deepEqual(f.sent.map(item => item.effort), ['low', 'low']);
-  assert.deepEqual(f.speeds, [{ id: 'chat', enabled: true }], 'Fast is asked for once, not on every message');
+  await f.talk.send({ text: "Hello", model: "text" });
+  f.finish();
+  await f.talk.idle();
+  await f.talk.send({ text: "Again", model: "text" });
+  assert.deepEqual(
+    f.sent.map(item => item.effort),
+    ["low", "low"],
+  );
+  assert.deepEqual(f.speeds, [{ id: "chat", enabled: true }], "Fast is asked for once, not on every message");
   const g = await fixture(t, { refuseFast: true });
-  await g.talk.send({ text: 'Hello', model: 'text' });
-  assert.equal(g.sent.length, 1, 'a refused Fast does not stop the message');
+  await g.talk.send({ text: "Hello", model: "text" });
+  assert.equal(g.sent.length, 1, "a refused Fast does not stop the message");
 });
 
 // Masih, 23 Oct: "I can't change her model!" A model from another connection starts her a new chat instead of being refused.
-test('a model from another connection starts Matilda a new chat; one from the same connection keeps hers', async t => {
+test("a model from another connection starts Matilda a new chat; one from the same connection keeps hers", async t => {
   const f = await fixture(t);
   // Engine threads name their connection.
-  f.client.createThread = async value => { f.created.push(value); return { thread: { id: 'chat', ...value, modelProvider: value.provider ?? 'openai' } }; };
-  await f.talk.send({ text: 'Hello', model: 'text' }); f.finish(); await f.talk.idle();
-  await f.talk.send({ text: 'Same connection', model: 'text', provider: 'openai' }); f.finish('turn-2'); await f.talk.idle();
-  assert.equal(f.created.length, 1, 'the same connection keeps her chat');
-  await f.talk.send({ text: 'Now on Claude', model: 'claude/sonnet', provider: 'anthropic' });
+  f.client.createThread = async value => {
+    f.created.push(value);
+    return { thread: { id: "chat", ...value, modelProvider: value.provider ?? "openai" } };
+  };
+  await f.talk.send({ text: "Hello", model: "text" });
+  f.finish();
+  await f.talk.idle();
+  await f.talk.send({ text: "Same connection", model: "text", provider: "openai" });
+  f.finish("turn-2");
+  await f.talk.idle();
+  assert.equal(f.created.length, 1, "the same connection keeps her chat");
+  await f.talk.send({ text: "Now on Claude", model: "claude/sonnet", provider: "anthropic" });
   assert.equal(f.created.length, 2);
-  assert.equal(f.created[1]!.provider, 'anthropic');
-  assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['Hello', 'text'], ['Same connection', 'text'], ['Now on Claude', 'claude/sonnet']]);
+  assert.equal(f.created[1]!.provider, "anthropic");
+  assert.deepEqual(
+    f.sent.map(item => [item.text, item.model]),
+    [
+      ["Hello", "text"],
+      ["Same connection", "text"],
+      ["Now on Claude", "claude/sonnet"],
+    ],
+  );
 });
 
-test('standalone Love Spot uses the chosen account and never a Claude or Gemini subscription', async t => {
+test("standalone Love Spot uses the chosen account and never a Claude or Gemini subscription", async t => {
   const f = await fixture(t, { standalone: true });
-  f.client.createThread = async value => { f.created.push(value); return { thread: { id: 'chat', ...value, modelProvider: value.provider ?? 'openai' } }; };
-  for (const model of ['claude/sonnet', 'agy/gemini-pro']) {
-    await assert.rejects(f.talk.send({ text: 'Hi', model, provider: 'openai' }), { message: SUBSCRIPTION_BLOCKED });
+  f.client.createThread = async value => {
+    f.created.push(value);
+    return { thread: { id: "chat", ...value, modelProvider: value.provider ?? "openai" } };
+  };
+  for (const model of ["claude/sonnet", "agy/gemini-pro"]) {
+    await assert.rejects(f.talk.send({ text: "Hi", model, provider: "openai" }), { message: SUBSCRIPTION_BLOCKED });
   }
-  assert.deepEqual([f.created.length, f.sent.length], [0, 0], 'a refused subscription model starts nothing');
+  assert.deepEqual([f.created.length, f.sent.length], [0, 0], "a refused subscription model starts nothing");
   // An Anthropic API key account is a normal provider; the chosen one is used, with no fallback to the default.
-  await f.talk.send({ text: 'With my key', model: 'text', provider: 'anthropic' }); f.finish(); await f.talk.idle();
-  await f.talk.send({ text: 'With OpenRouter', model: 'text', provider: 'openrouter' }); f.finish('turn-2'); await f.talk.idle();
-  assert.deepEqual(f.created.map(item => item.provider), ['anthropic', 'openrouter']);
-  assert.deepEqual(f.sent.map(item => [item.text, item.model]), [['With my key', 'text'], ['With OpenRouter', 'text']]);
+  await f.talk.send({ text: "With my key", model: "text", provider: "anthropic" });
+  f.finish();
+  await f.talk.idle();
+  await f.talk.send({ text: "With OpenRouter", model: "text", provider: "openrouter" });
+  f.finish("turn-2");
+  await f.talk.idle();
+  assert.deepEqual(
+    f.created.map(item => item.provider),
+    ["anthropic", "openrouter"],
+  );
+  assert.deepEqual(
+    f.sent.map(item => [item.text, item.model]),
+    [
+      ["With my key", "text"],
+      ["With OpenRouter", "text"],
+    ],
+  );
   // The chosen account survives a restart (spec check 6).
-  await f.talk.setMatilda({ model: 'text', provider: 'openrouter' });
-  const reopened = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, 'shots') });
+  await f.talk.setMatilda({ model: "text", provider: "openrouter" });
+  const reopened = createLoveSpot({ directory: f.directory, screenshots: path.join(f.directory, "shots") });
   t.after(() => reopened.close());
   const kept = await reopened.matildaSettings();
-  assert.deepEqual([kept.provider, kept.model], ['openrouter', 'text']);
+  assert.deepEqual([kept.provider, kept.model], ["openrouter", "text"]);
   // Love Spot inside Elpis keeps the Claude subscription route.
   const inElpis = await fixture(t);
-  await inElpis.talk.send({ text: 'Hi', model: 'claude/sonnet', provider: 'anthropic' });
+  await inElpis.talk.send({ text: "Hi", model: "claude/sonnet", provider: "anthropic" });
   assert.equal(inElpis.sent.length, 1);
 });
 
-test('the Love Spot app and Love Spot inside Elpis keep separate boards (Masih, 7 Nov)', async t => {
-  const home = createTestTempDir(path.join(os.tmpdir(), 'love-boards-'));
-  const saved = { HOME: process.env.HOME, ELPIS_HOME: process.env.ELPIS_HOME, LOVE_SPOT_APP: process.env.LOVE_SPOT_APP, EXCALIDRAW_LOCAL_DIR: process.env.EXCALIDRAW_LOCAL_DIR };
-  t.after(() => { for (const [key, value] of Object.entries(saved)) if (value === undefined) delete process.env[key]; else process.env[key] = value; removeTestTempDir(home); });
-  delete process.env.EXCALIDRAW_LOCAL_DIR; process.env.HOME = home;
+test("the Love Spot app and Love Spot inside Elpis keep separate boards (Masih, 7 Nov)", async t => {
+  const home = createTestTempDir(path.join(os.tmpdir(), "love-boards-"));
+  const saved = {
+    HOME: process.env.HOME,
+    ELPIS_HOME: process.env.ELPIS_HOME,
+    LOVE_SPOT_APP: process.env.LOVE_SPOT_APP,
+    EXCALIDRAW_LOCAL_DIR: process.env.EXCALIDRAW_LOCAL_DIR,
+  };
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    removeTestTempDir(home);
+  });
+  delete process.env.EXCALIDRAW_LOCAL_DIR;
+  process.env.HOME = home;
   const choose = async (env: Record<string, string | undefined>, provider: string) => {
-    for (const [key, value] of Object.entries(env)) if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    const store = createLoveSpot({ screenshots: path.join(home, 'shots') }); t.after(() => store.close());
+    for (const [key, value] of Object.entries(env))
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    const store = createLoveSpot({ screenshots: path.join(home, "shots") });
+    t.after(() => store.close());
     await store.matildaSettings({ provider });
   };
-  await choose({ LOVE_SPOT_APP: '1', ELPIS_HOME: path.join(home, '.local/share/love-spot') }, 'openrouter');
-  await choose({ LOVE_SPOT_APP: undefined, ELPIS_HOME: path.join(home, '.elpis-next') }, 'openai');
-  const read = async (dir: string) => JSON.parse(await fs.readFile(path.join(home, dir, '.matilda-settings.json'), 'utf8')).provider;
-  assert.equal(await read('.local/share/excalidraw-local'), 'openrouter', 'the app keeps its board where it always was');
-  assert.equal(await read('.elpis-next/love-spot'), 'openai', 'inside Elpis the board lives in the Elpis home');
+  await choose({ LOVE_SPOT_APP: "1", ELPIS_HOME: path.join(home, ".local/share/love-spot") }, "openrouter");
+  await choose({ LOVE_SPOT_APP: undefined, ELPIS_HOME: path.join(home, ".elpis-next") }, "openai");
+  const read = async (dir: string) =>
+    JSON.parse(await fs.readFile(path.join(home, dir, ".matilda-settings.json"), "utf8")).provider;
+  assert.equal(
+    await read(".local/share/excalidraw-local"),
+    "openrouter",
+    "the app keeps its board where it always was",
+  );
+  assert.equal(await read(".elpis-next/love-spot"), "openai", "inside Elpis the board lives in the Elpis home");
 });
 
-const delta = (f: Awaited<ReturnType<typeof fixture>>, text: string, itemId = 'reply', method = 'item/agentMessage/delta') => f.client.emit('event', { type: 'message', data: { method, params: { threadId: 'chat', turnId: `turn-${f.sent.length}`, itemId, delta: text } } });
-test('Matilda feeds speech and one growing board note before completion, excluding painting, commentary, tools and reasoning', async t => {
+const delta = (
+  f: Awaited<ReturnType<typeof fixture>>,
+  text: string,
+  itemId = "reply",
+  method = "item/agentMessage/delta",
+) =>
+  f.client.emit("event", {
+    type: "message",
+    data: { method, params: { threadId: "chat", turnId: `turn-${f.sent.length}`, itemId, delta: text } },
+  });
+test("Matilda feeds speech and one growing board note before completion, excluding painting, commentary, tools and reasoning", async t => {
   const f = await fixture(t);
-  await f.talk.send({ text: 'Hello', model: 'claude/sonnet', provider: 'anthropic' });
-  const events: SpeechEvent[] = [], feed = await f.talk.speech(); feed.subscribe(event => { events.push(event); });
-  f.client.emit('event', { type: 'message', data: { method: 'item/started', params: { threadId: 'chat', turnId: 'turn-1', item: { id: 'progress', type: 'agentMessage', phase: 'commentary' } } } });
-  delta(f, 'PRIVATE. ', 'progress'); delta(f, 'REASON. ', 'hidden', 'item/reasoning/textDelta'); delta(f, 'TOOL. ', 'tool', 'item/commandExecution/outputDelta');
-  for (const text of ['Hello. \n', '`', '``excalidraw\n[{"type":"ellipse"}]\n``', '`', '\nStill ', 'here. ', 'The tail']) delta(f, text);
-  assert.match(events.filter(e => e.type === 'text').map(e => e.text).join(''), /Hello\.\s+Still here\./);
+  await f.talk.send({ text: "Hello", model: "claude/sonnet", provider: "anthropic" });
+  const events: SpeechEvent[] = [],
+    feed = await f.talk.speech();
+  feed.subscribe(event => {
+    events.push(event);
+  });
+  f.client.emit("event", {
+    type: "message",
+    data: {
+      method: "item/started",
+      params: {
+        threadId: "chat",
+        turnId: "turn-1",
+        item: { id: "progress", type: "agentMessage", phase: "commentary" },
+      },
+    },
+  });
+  delta(f, "PRIVATE. ", "progress");
+  delta(f, "REASON. ", "hidden", "item/reasoning/textDelta");
+  delta(f, "TOOL. ", "tool", "item/commandExecution/outputDelta");
+  for (const text of [
+    "Hello. \n",
+    "`",
+    '``excalidraw\n[{"type":"ellipse"}]\n``',
+    "`",
+    "\nStill ",
+    "here. ",
+    "The tail",
+  ])
+    delta(f, text);
+  assert.match(
+    events
+      .filter(e => e.type === "text")
+      .map(e => e.text)
+      .join(""),
+    /Hello\.\s+Still here\./,
+  );
   assert.doesNotMatch(JSON.stringify(events), /PRIVATE|REASON|TOOL|excalidraw|ellipse/);
-  await new Promise(resolve => setTimeout(resolve, 350)); await f.talk.idle();
-  assert.match((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText ?? '', /Hello/);
-  f.finish('turn-1', 'completed', 'Hello. \n```excalidraw\n[{"type":"ellipse"}]\n```\nStill here. The tail'); await f.talk.idle();
-  assert.equal(events.filter(e => e.type === 'text').map(e => e.text).join('').trim(), 'Hello. \n\nStill here. The tail');
-  assert.equal(events.filter(e => e.type === 'done').length, 1);
-  f.finish(); await f.talk.idle();
+  await new Promise(resolve => setTimeout(resolve, 350));
+  await f.talk.idle();
+  assert.match(
+    (await f.store.read()).scene.elements.find(e => e.id === "love-reply-turn-1")?.originalText ?? "",
+    /Hello/,
+  );
+  f.finish("turn-1", "completed", 'Hello. \n```excalidraw\n[{"type":"ellipse"}]\n```\nStill here. The tail');
+  await f.talk.idle();
+  assert.equal(
+    events
+      .filter(e => e.type === "text")
+      .map(e => e.text)
+      .join("")
+      .trim(),
+    "Hello. \n\nStill here. The tail",
+  );
+  assert.equal(events.filter(e => e.type === "done").length, 1);
+  f.finish();
+  await f.talk.idle();
   const scene = (await f.store.read()).scene;
-  assert.equal(scene.elements.filter(e => e.id === 'love-reply-turn-1').length, 1);
-  assert.equal(scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText, 'Hello. \n\nStill here. The tail');
-  assert.equal(scene.elements.filter(e => e.id.startsWith('love-paint-turn-1-')).length, 1);
+  assert.equal(scene.elements.filter(e => e.id === "love-reply-turn-1").length, 1);
+  assert.equal(scene.elements.find(e => e.id === "love-reply-turn-1")?.originalText, "Hello. \n\nStill here. The tail");
+  assert.equal(scene.elements.filter(e => e.id.startsWith("love-paint-turn-1-")).length, 1);
 });
 
-test('Mute stops the feed while writing continues, persists on restart, and unmute never replays old text', async t => {
-  const f = await fixture(t); await f.talk.send({ text: 'Hello', model: 'text' });
-  const events: SpeechEvent[] = [], feed = await f.talk.speech(); feed.subscribe(event => { events.push(event); });
-  delta(f, 'First. '); delta(f, 'Old half');
-  await f.talk.setVoice({ enabled: false });
-  const count = events.filter(e => e.type === 'text').length;
-  delta(f, ' MUTED. ');
-  assert.ok(events.some(e => e.type === 'stop'));
-  assert.equal(events.filter(e => e.type === 'text').length, count);
-  assert.match(JSON.stringify((await f.talk.read()).entries), /MUTED/);
-  f.finish(); await f.talk.idle(); f.talk.close();
-  const next = createLoveSpotTalk({ client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]['client'], store: f.store, audio: enabledAudio }); t.after(() => next.close());
-  assert.equal((await next.read()).voice.enabled, false);
-  await next.send({ text: 'Again', model: 'text' });
-  delta(f, 'Before unmute. ');
-  await next.setVoice({ enabled: true });
-  const fresh: SpeechEvent[] = []; (await next.speech()).subscribe(event => { fresh.push(event); });
-  delta(f, 'New words. ');
-  assert.equal(fresh.filter(e => e.type === 'text').map(e => e.text).join(''), 'New words. ');
-});
-
-test('speech failure and interrupted turns stop voice without losing the text; unavailable ChatGPT defaults off', async t => {
-  const f = await fixture(t); f.client.voiceStatus = async () => ({ available: false });
-  const state = await f.talk.read(); assert.equal(state.voice.enabled, false); assert.match(state.voice.reason!, /ChatGPT/);
-  await f.talk.send({ text: 'Hello', model: 'text' });
-  delta(f, 'Still writing. ');
-  await assert.rejects(f.talk.speech(), /ChatGPT/);
-  f.client.voiceStatus = async () => ({ available: true }); await f.talk.setVoice({ enabled: true });
-  const events: SpeechEvent[] = [], feed = await f.talk.speech(); feed.subscribe(event => { events.push(event); });
-  delta(f, 'Heard. '); feed.fail('Speech disconnected; retry explicitly.'); delta(f, 'Not retried. ');
-  assert.match((await f.talk.read()).voice.error, /disconnected/);
-  assert.doesNotMatch(events.filter(e => e.type === 'text').map(e => e.text).join(''), /retried/);
-  f.finish('turn-1', 'completed', 'Still writing. Heard. Not retried.'); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText, 'Still writing. Heard. Not retried.');
-  await f.talk.send({ text: 'Again', model: 'text' });
-  const cancelled: SpeechEvent[] = []; (await f.talk.speech()).subscribe(event => { cancelled.push(event); });
-  delta(f, 'DROP TAIL'); f.finish('turn-2', 'interrupted', 'DROP TAIL. A cancelled sentence. '); await f.talk.idle();
-  assert.equal(cancelled.filter(e => e.type === 'text').length, 0); assert.ok(cancelled.some(e => e.type === 'stop'));
-});
-
-test('unreadable Voice preferences disable speech and report the reason without blocking Matilda writing', async t => {
+test("Mute stops the feed while writing continues, persists on restart, and unmute never replays old text", async t => {
   const f = await fixture(t);
-  await fs.writeFile(path.join(f.directory, '.voice.json'), '{');
-  await f.talk.send({ text: 'Hello', model: 'text' });
-  const state = await f.talk.read(); assert.equal(state.voice.enabled, false); assert.match(state.voice.reason!, /Voice settings/);
-  f.finish(); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-1')?.originalText, 'Here with you.');
+  await f.talk.send({ text: "Hello", model: "text" });
+  const events: SpeechEvent[] = [],
+    feed = await f.talk.speech();
+  feed.subscribe(event => {
+    events.push(event);
+  });
+  delta(f, "First. ");
+  delta(f, "Old half");
+  await f.talk.setVoice({ enabled: false });
+  const count = events.filter(e => e.type === "text").length;
+  delta(f, " MUTED. ");
+  assert.ok(events.some(e => e.type === "stop"));
+  assert.equal(events.filter(e => e.type === "text").length, count);
+  assert.match(JSON.stringify((await f.talk.read()).entries), /MUTED/);
+  f.finish();
+  await f.talk.idle();
+  f.talk.close();
+  const next = createLoveSpotTalk({
+    client: f.client as unknown as Parameters<typeof createLoveSpotTalk>[0]["client"],
+    store: f.store,
+    audio: enabledAudio,
+  });
+  t.after(() => next.close());
+  assert.equal((await next.read()).voice.enabled, false);
+  await next.send({ text: "Again", model: "text" });
+  delta(f, "Before unmute. ");
+  await next.setVoice({ enabled: true });
+  const fresh: SpeechEvent[] = [];
+  (await next.speech()).subscribe(event => {
+    fresh.push(event);
+  });
+  delta(f, "New words. ");
+  assert.equal(
+    fresh
+      .filter(e => e.type === "text")
+      .map(e => e.text)
+      .join(""),
+    "New words. ",
+  );
 });
 
-test('one speech queue preserves message order and bounds a backlog while the complete note still saves', async t => {
-  const f = await fixture(t); await f.talk.send({ text: 'Hello', model: 'text' });
-  const spoken: string[] = []; (await f.talk.speech()).subscribe(event => { if (event.type === 'text') spoken.push(event.text); });
-  delta(f, 'First tail', 'first');
-  f.client.emit('event', { type: 'message', data: { method: 'item/completed', params: { threadId: 'chat', turnId: 'turn-1', item: { id: 'first', type: 'agentMessage', text: 'First tail' } } } });
-  delta(f, 'Second. ', 'second');
-  assert.equal(spoken.join(''), 'First tail\n\nSecond. ');
-  f.finish(); await f.talk.idle();
-  await f.talk.send({ text: 'A long reply', model: 'text' });
-  const long = 'A sentence. '.repeat(300);
+test("speech failure and interrupted turns stop voice without losing the text; unavailable ChatGPT defaults off", async t => {
+  const f = await fixture(t);
+  f.client.voiceStatus = async () => ({ available: false });
+  const state = await f.talk.read();
+  assert.equal(state.voice.enabled, false);
+  assert.match(state.voice.reason!, /ChatGPT/);
+  await f.talk.send({ text: "Hello", model: "text" });
+  delta(f, "Still writing. ");
+  await assert.rejects(f.talk.speech(), /ChatGPT/);
+  f.client.voiceStatus = async () => ({ available: true });
+  await f.talk.setVoice({ enabled: true });
+  const events: SpeechEvent[] = [],
+    feed = await f.talk.speech();
+  feed.subscribe(event => {
+    events.push(event);
+  });
+  delta(f, "Heard. ");
+  feed.fail("Speech disconnected; retry explicitly.");
+  delta(f, "Not retried. ");
+  assert.match((await f.talk.read()).voice.error, /disconnected/);
+  assert.doesNotMatch(
+    events
+      .filter(e => e.type === "text")
+      .map(e => e.text)
+      .join(""),
+    /retried/,
+  );
+  f.finish("turn-1", "completed", "Still writing. Heard. Not retried.");
+  await f.talk.idle();
+  assert.equal(
+    (await f.store.read()).scene.elements.find(e => e.id === "love-reply-turn-1")?.originalText,
+    "Still writing. Heard. Not retried.",
+  );
+  await f.talk.send({ text: "Again", model: "text" });
+  const cancelled: SpeechEvent[] = [];
+  (await f.talk.speech()).subscribe(event => {
+    cancelled.push(event);
+  });
+  delta(f, "DROP TAIL");
+  f.finish("turn-2", "interrupted", "DROP TAIL. A cancelled sentence. ");
+  await f.talk.idle();
+  assert.equal(cancelled.filter(e => e.type === "text").length, 0);
+  assert.ok(cancelled.some(e => e.type === "stop"));
+});
+
+test("unreadable Voice preferences disable speech and report the reason without blocking Matilda writing", async t => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.directory, ".voice.json"), "{");
+  await f.talk.send({ text: "Hello", model: "text" });
+  const state = await f.talk.read();
+  assert.equal(state.voice.enabled, false);
+  assert.match(state.voice.reason!, /Voice settings/);
+  f.finish();
+  await f.talk.idle();
+  assert.equal(
+    (await f.store.read()).scene.elements.find(e => e.id === "love-reply-turn-1")?.originalText,
+    "Here with you.",
+  );
+});
+
+test("one speech queue preserves message order and bounds a backlog while the complete note still saves", async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: "Hello", model: "text" });
+  const spoken: string[] = [];
+  (await f.talk.speech()).subscribe(event => {
+    if (event.type === "text") spoken.push(event.text);
+  });
+  delta(f, "First tail", "first");
+  f.client.emit("event", {
+    type: "message",
+    data: {
+      method: "item/completed",
+      params: { threadId: "chat", turnId: "turn-1", item: { id: "first", type: "agentMessage", text: "First tail" } },
+    },
+  });
+  delta(f, "Second. ", "second");
+  assert.equal(spoken.join(""), "First tail\n\nSecond. ");
+  f.finish();
+  await f.talk.idle();
+  await f.talk.send({ text: "A long reply", model: "text" });
+  const long = "A sentence. ".repeat(300);
   delta(f, long);
   assert.match((await f.talk.read()).voice.error, /fell behind/);
-  f.finish('turn-2', 'completed', long); await f.talk.idle();
-  assert.equal((await f.store.read()).scene.elements.find(e => e.id === 'love-reply-turn-2')?.originalText, long.trim());
+  f.finish("turn-2", "completed", long);
+  await f.talk.idle();
+  assert.equal(
+    (await f.store.read()).scene.elements.find(e => e.id === "love-reply-turn-2")?.originalText,
+    long.trim(),
+  );
 });
 
 // 29 Oct, "love-spot, in the chat, is too slow": a chat resends its whole history, so a picture on every turn made each
 // request carry every earlier picture. The picture goes when the drawing changed since she last saw it.
-test('the board picture goes with a message only when the drawing changed since she last saw it', async t => {
+test("the board picture goes with a message only when the drawing changed since she last saw it", async t => {
   const f = await fixture(t);
-  const shape = (id: string, version = 1) => ({ ...note(id, ''), type: 'rectangle', text: undefined, version });
-  const send = async (text: string, elements: Awaited<ReturnType<typeof f.store.read>>['scene']['elements'] | undefined, small = false) => {
+  const shape = (id: string, version = 1) => ({ ...note(id, ""), type: "rectangle", text: undefined, version });
+  const send = async (
+    text: string,
+    elements: Awaited<ReturnType<typeof f.store.read>>["scene"]["elements"] | undefined,
+    small = false,
+  ) => {
     if (elements) await f.store.save({ elements });
-    const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
-    await f.talk.send({ text, model: 'luna', ...(small ? {} : { revision }) });
-    const turn = f.sent.at(-1)!; f.finish(`turn-${f.sent.length}`); await f.talk.idle();
-    return { image: turn.attachments.some(a => a.type === 'image'), notes: turn.attachments.find(a => a.type === 'text')!.text };
+    const { revision } = await f.store.read();
+    await f.store.picture({ revision, png: PNG });
+    await f.talk.send({ text, model: "luna", ...(small ? {} : { revision }) });
+    const turn = f.sent.at(-1)!;
+    f.finish(`turn-${f.sent.length}`);
+    await f.talk.idle();
+    return {
+      image: turn.attachments.some(a => a.type === "image"),
+      notes: turn.attachments.find(a => a.type === "text")!.text,
+    };
   };
-  assert.equal((await send('First', [shape('box'), note('masih', 'Apricot')])).image, true, 'she sees the board once');
+  assert.equal((await send("First", [shape("box"), note("masih", "Apricot")])).image, true, "she sees the board once");
   // Her reply (note and face) and his new words change the board, not the drawing.
-  const again = await send('Second', [shape('box'), note('masih', 'Apricot'), note('masih-2', 'Plum')]);
-  assert.equal(again.image, false); assert.match(again.notes, /Plum/); assert.match(again.notes, /as it was in the last picture/);
-  assert.equal((await send('From the small chat', undefined, true)).image, false, 'the small chat too');
-  assert.equal((await send('Moved', [shape('box', 2), note('masih', 'Apricot')])).image, true, 'a changed shape goes again');
-  const drew = await send('I drew something on the board.', [shape('box', 2), shape('circle'), note('masih', 'Apricot')]);
-  assert.equal(drew.image, true, 'a new drawing goes again'); assert.doesNotMatch(drew.notes, /as it was/);
-  await assert.rejects(f.talk.send({ text: 'Stale', model: 'luna', revision: 'stale' }), /drawing changed/, 'a stale board picture is still refused');
+  const again = await send("Second", [shape("box"), note("masih", "Apricot"), note("masih-2", "Plum")]);
+  assert.equal(again.image, false);
+  assert.match(again.notes, /Plum/);
+  assert.match(again.notes, /as it was in the last picture/);
+  assert.equal((await send("From the small chat", undefined, true)).image, false, "the small chat too");
+  assert.equal(
+    (await send("Moved", [shape("box", 2), note("masih", "Apricot")])).image,
+    true,
+    "a changed shape goes again",
+  );
+  const drew = await send("I drew something on the board.", [
+    shape("box", 2),
+    shape("circle"),
+    note("masih", "Apricot"),
+  ]);
+  assert.equal(drew.image, true, "a new drawing goes again");
+  assert.doesNotMatch(drew.notes, /as it was/);
+  await assert.rejects(
+    f.talk.send({ text: "Stale", model: "luna", revision: "stale" }),
+    /drawing changed/,
+    "a stale board picture is still refused",
+  );
 });
-test('a drawing notification waits silently until a picture is available, while written messages still work', async t => {
+test("a drawing notification waits silently until a picture is available, while written messages still work", async t => {
   const f = await fixture(t);
-  const shape = (id: string) => ({ ...note(id, ''), type: 'rectangle', text: undefined });
-  await f.store.save({ elements: [shape('box')] });
-  const waiting = await f.talk.send({ text: 'I drew something on the board.', model: 'text', drawingOnly: true });
-  assert.ok('waitingForPicture' in waiting && waiting.waitingForPicture, 'the board does not start speech for a silent wait');
-  assert.equal(f.sent.length, 0, 'a drawing alone without a picture does not prompt a reply');
-  await f.talk.send({ text: 'How are you?', model: 'text' });
-  assert.equal(f.sent.length, 1, 'normal written messages still reach Matilda');
-  f.finish(); await f.talk.idle();
-  const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
-  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision, drawingOnly: true });
-  assert.equal(f.sent.length, 2, 'a drawing goes through once its picture is available');
-  assert.ok(f.sent[1]!.attachments.some(a => a.type === 'image'));
-  f.finish('turn-2'); await f.talk.idle();
-  const current = await f.store.read(); await f.store.picture({ revision: current.revision, png: PNG });
-  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', revision: current.revision, drawingOnly: true });
-  assert.equal(f.sent.length, 2, 'a repeated drawing signal without a new picture is quiet');
-  await f.talk.send({ text: 'I drew something on the board.', model: 'text', pinned: true });
-  assert.equal(f.sent.length, 3, 'the same words typed by Masih are still delivered');
+  const shape = (id: string) => ({ ...note(id, ""), type: "rectangle", text: undefined });
+  await f.store.save({ elements: [shape("box")] });
+  const waiting = await f.talk.send({ text: "I drew something on the board.", model: "text", drawingOnly: true });
+  assert.ok(
+    "waitingForPicture" in waiting && waiting.waitingForPicture,
+    "the board does not start speech for a silent wait",
+  );
+  assert.equal(f.sent.length, 0, "a drawing alone without a picture does not prompt a reply");
+  await f.talk.send({ text: "How are you?", model: "text" });
+  assert.equal(f.sent.length, 1, "normal written messages still reach Matilda");
+  f.finish();
+  await f.talk.idle();
+  const { revision } = await f.store.read();
+  await f.store.picture({ revision, png: PNG });
+  await f.talk.send({ text: "I drew something on the board.", model: "luna", revision, drawingOnly: true });
+  assert.equal(f.sent.length, 2, "a drawing goes through once its picture is available");
+  assert.ok(f.sent[1]!.attachments.some(a => a.type === "image"));
+  f.finish("turn-2");
+  await f.talk.idle();
+  const current = await f.store.read();
+  await f.store.picture({ revision: current.revision, png: PNG });
+  await f.talk.send({
+    text: "I drew something on the board.",
+    model: "luna",
+    revision: current.revision,
+    drawingOnly: true,
+  });
+  assert.equal(f.sent.length, 2, "a repeated drawing signal without a new picture is quiet");
+  await f.talk.send({ text: "I drew something on the board.", model: "text", pinned: true });
+  assert.equal(f.sent.length, 3, "the same words typed by Masih are still delivered");
 });
-test('an image-capable subscription model receives the new board picture', async t => {
+test("an image-capable subscription model receives the new board picture", async t => {
   const f = await fixture(t);
-  f.client.models = async () => ({ data: [toModel({ slug: 'luna', visibility: 'list', input_modalities: ['text', 'image'] })], nextCursor: null });
-  await f.store.save({ elements: [{ ...note('drawing', ''), type: 'rectangle', text: undefined }] });
-  const { revision } = await f.store.read(); await f.store.picture({ revision, png: PNG });
-  await f.talk.send({ text: 'I drew something on the board.', model: 'luna', provider: 'openai', revision });
+  f.client.models = async () => ({
+    data: [toModel({ slug: "luna", visibility: "list", input_modalities: ["text", "image"] })],
+    nextCursor: null,
+  });
+  await f.store.save({ elements: [{ ...note("drawing", ""), type: "rectangle", text: undefined }] });
+  const { revision } = await f.store.read();
+  await f.store.picture({ revision, png: PNG });
+  await f.talk.send({ text: "I drew something on the board.", model: "luna", provider: "openai", revision });
   assert.equal(f.sent.length, 1);
-  assert.ok(f.sent[0]!.attachments.some(a => a.type === 'image'), 'the model sees the drawing');
+  assert.ok(
+    f.sent[0]!.attachments.some(a => a.type === "image"),
+    "the model sees the drawing",
+  );
 });
-test('a note left on one page cannot be sent as if it came from another', async t => {
+test("a note left on one page cannot be sent as if it came from another", async t => {
   const f = await fixture(t);
   const current = await f.store.read();
-  await assert.rejects(f.talk.send({ text: 'A thought from the old page', model: 'text', pageSession: 'another-page' }), /page changed/);
+  await assert.rejects(
+    f.talk.send({ text: "A thought from the old page", model: "text", pageSession: "another-page" }),
+    /page changed/,
+  );
   assert.equal(f.sent.length, 0);
-  await f.talk.send({ text: 'A thought from this page', model: 'text', pageSession: current.scene.page.session });
+  await f.talk.send({ text: "A thought from this page", model: "text", pageSession: current.scene.page.session });
   assert.equal(f.sent.length, 1);
-  assert.equal(f.sent[0]!.text, 'A thought from this page');
+  assert.equal(f.sent[0]!.text, "A thought from this page");
 });
-test('replies off stops the reply she is writing, and does nothing when she is quiet', async t => {
-  const f = await fixture(t), interrupts: { id: string; turnId: string }[] = [];
-  f.client.interrupt = async (id, body) => { interrupts.push({ id, ...body }); return {}; };
+test("replies off stops the reply she is writing, and does nothing when she is quiet", async t => {
+  const f = await fixture(t),
+    interrupts: { id: string; turnId: string }[] = [];
+  f.client.interrupt = async (id, body) => {
+    interrupts.push({ id, ...body });
+    return {};
+  };
   await f.talk.stop();
-  assert.deepEqual(interrupts, [], 'nothing to stop while she is quiet');
-  await f.talk.send({ text: 'Look at this' });
+  assert.deepEqual(interrupts, [], "nothing to stop while she is quiet");
+  await f.talk.send({ text: "Look at this" });
   assert.equal((await f.talk.read()).busy, true);
   await f.talk.stop();
-  assert.deepEqual(interrupts, [{ id: 'chat', turnId: 'turn-1' }], 'her running reply is interrupted');
+  assert.deepEqual(interrupts, [{ id: "chat", turnId: "turn-1" }], "her running reply is interrupted");
 });
-test('one Matilda setting: off refuses every message and stops her; her model is the same wherever she is asked', async t => {
-  const f = await fixture(t), interrupts: { id: string; turnId: string }[] = [];
-  f.client.interrupt = async (id, body) => { interrupts.push({ id, ...body }); return {}; };
-  await f.talk.setMatilda({ model: 'text' });
-  await f.talk.send({ text: 'From the small chat' });
-  assert.equal(f.sent.at(-1)!.model, 'text', 'a message without a model uses her one model');
-  f.finish('turn-1');
-  await f.talk.send({ text: 'From the board' });
+test("one Matilda setting: off refuses every message and stops her; her model is the same wherever she is asked", async t => {
+  const f = await fixture(t),
+    interrupts: { id: string; turnId: string }[] = [];
+  f.client.interrupt = async (id, body) => {
+    interrupts.push({ id, ...body });
+    return {};
+  };
+  await f.talk.setMatilda({ model: "text" });
+  await f.talk.send({ text: "From the small chat" });
+  assert.equal(f.sent.at(-1)!.model, "text", "a message without a model uses her one model");
+  f.finish("turn-1");
+  await f.talk.send({ text: "From the board" });
   const off = await f.talk.setMatilda({ replies: false });
   assert.equal(off.matilda.replies, false);
-  assert.deepEqual(interrupts, [{ id: 'chat', turnId: 'turn-2' }], 'turning her off stops the reply she is writing');
-  await assert.rejects(f.talk.send({ text: 'Still there?' }), /Matilda is off/);
-  assert.equal(f.sent.length, 2, 'nothing reaches her while she is off');
+  assert.deepEqual(interrupts, [{ id: "chat", turnId: "turn-2" }], "turning her off stops the reply she is writing");
+  await assert.rejects(f.talk.send({ text: "Still there?" }), /Matilda is off/);
+  assert.equal(f.sent.length, 2, "nothing reaches her while she is off");
   // 1 Nov: her pinned chat still works while she is off.
-  f.finish('turn-2');
-  await f.talk.send({ text: 'Pinned hello', pinned: true });
-  assert.equal(f.sent.length, 3, 'the pinned chat reaches her while she is off');
-  assert.equal(f.sent.at(-1)!.pinned, undefined, 'the pinned flag stays in the bridge');
-  f.finish('turn-3');
-  assert.equal((await f.talk.read()).matilda.replies, false, 'every surface reads the same setting');
+  f.finish("turn-2");
+  await f.talk.send({ text: "Pinned hello", pinned: true });
+  assert.equal(f.sent.length, 3, "the pinned chat reaches her while she is off");
+  assert.equal(f.sent.at(-1)!.pinned, undefined, "the pinned flag stays in the bridge");
+  f.finish("turn-3");
+  assert.equal((await f.talk.read()).matilda.replies, false, "every surface reads the same setting");
   await f.talk.setMatilda({ replies: true });
-  await f.talk.send({ text: 'Back again' });
+  await f.talk.send({ text: "Back again" });
   assert.equal(f.sent.length, 4);
 });

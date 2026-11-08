@@ -14,34 +14,78 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 /** Settings → Import chats, as in Cloudroom: Claude Code and Codex chats become chats of Elpis, with their history; the originals stay untouched. */
 /** `active`: the page is on screen. Settings keeps a visited page mounted while hidden, so the counts are read again each time it shows. */
 export function ImportSettings({ active = true, onImported }: { active?: boolean; onImported?: () => void }) {
-  const [listing, setListing] = useState<Listing | null>(null), [error, setError] = useState(""), [busy, setBusy] = useState(""), [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [listing, setListing] = useState<Listing | null>(null),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(""),
+    [outcome, setOutcome] = useState<Outcome | null>(null);
   const load = useCallback(async () => {
     try {
       const data = await api<Listing>("/import-chats");
       if (!Array.isArray(data.sources)) throw unreadable("the chats to import");
-      setListing(data); setError("");
-    } catch (cause) { setError(message(cause)); }
+      setListing(data);
+      setError("");
+    } catch (cause) {
+      setError(message(cause));
+    }
   }, []);
-  useEffect(() => { if (active) void load(); }, [active, load]);
+  useEffect(() => {
+    if (active) void load();
+  }, [active, load]);
   async function run(id: string, name: string) {
-    setBusy(id); setOutcome(null); setError("");
+    setBusy(id);
+    setOutcome(null);
+    setError("");
     try {
       const result = await api<{ imported: number; skipped: string[] }>("/import-chats", { source: id });
       setOutcome({ source: name, imported: result.imported, skipped: result.skipped ?? [] });
       if (result.imported) onImported?.();
-    } catch (cause) { setError(message(cause)); }
-    finally { setBusy(""); await load(); }
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setBusy("");
+      await load();
+    }
   }
-  return <>
-    <SettingsHeader title="Import chats" description="Bring your Claude Code and Codex chats over as Elpis chats. They keep their full history, and your originals stay untouched." />
-    {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
-    {listing && listing.sources.length > 0 && <SettingsGroup>
-      {listing.sources.map(source => <SettingRow key={source.id} title={source.name} description={source.chats ? `${plural(source.chats, "chat")} from the last ${listing.days} days${source.chats > listing.atATime ? `; ${listing.atATime} at a time` : ""}.` : `No chats from the last ${listing.days} days.`}>
-        <Button variant="outline" aria-label={`Import ${source.name} chats`} disabled={!!busy || !source.chats} onClick={() => void run(source.id, source.name)}>{busy === source.id ? "Importing…" : source.chats ? `Import ${Math.min(source.chats, listing.atATime)}` : "Import"}</Button>
-      </SettingRow>)}
-    </SettingsGroup>}
-    {outcome && <SettingsNotice tone={outcome.imported || !outcome.skipped.length ? "status" : "alert"}>
-      {`Imported ${plural(outcome.imported, "chat")} from ${outcome.source}.${outcome.skipped.length ? ` ${outcome.skipped.length} skipped: ${outcome.skipped[0]}` : ""}`}
-    </SettingsNotice>}
-  </>;
+  return (
+    <>
+      <SettingsHeader
+        title="Import chats"
+        description="Bring your Claude Code and Codex chats over as Elpis chats. They keep their full history, and your originals stay untouched."
+      />
+      {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
+      {listing && listing.sources.length > 0 && (
+        <SettingsGroup>
+          {listing.sources.map(source => (
+            <SettingRow
+              key={source.id}
+              title={source.name}
+              description={
+                source.chats
+                  ? `${plural(source.chats, "chat")} from the last ${listing.days} days${source.chats > listing.atATime ? `; ${listing.atATime} at a time` : ""}.`
+                  : `No chats from the last ${listing.days} days.`
+              }
+            >
+              <Button
+                variant="outline"
+                aria-label={`Import ${source.name} chats`}
+                disabled={!!busy || !source.chats}
+                onClick={() => void run(source.id, source.name)}
+              >
+                {busy === source.id
+                  ? "Importing…"
+                  : source.chats
+                    ? `Import ${Math.min(source.chats, listing.atATime)}`
+                    : "Import"}
+              </Button>
+            </SettingRow>
+          ))}
+        </SettingsGroup>
+      )}
+      {outcome && (
+        <SettingsNotice tone={outcome.imported || !outcome.skipped.length ? "status" : "alert"}>
+          {`Imported ${plural(outcome.imported, "chat")} from ${outcome.source}.${outcome.skipped.length ? ` ${outcome.skipped.length} skipped: ${outcome.skipped[0]}` : ""}`}
+        </SettingsNotice>
+      )}
+    </>
+  );
 }

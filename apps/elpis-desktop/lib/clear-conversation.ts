@@ -13,15 +13,36 @@ import type { useProjectState } from "@/lib/use-project-state";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
 
 type Inputs = {
-  composer: ReturnType<typeof useComposerState>; conversations: ReturnType<typeof useConversationList>;
-  projectState: ReturnType<typeof useProjectState>; runtime: ReturnType<typeof useRuntimeState>; loveActivity: ReturnType<typeof useLoveActivity>;
-  selectedRef: RefObject<Thread | null>; request: RefObject<number>; setError: Dispatch<SetStateAction<string>>;
-  threadModes: Record<string, PermissionMode>; permissionMode: PermissionMode;
-  openNewChat: ReturnType<typeof createChatNavigation>["openNewChat"]; loadThread: ReturnType<typeof useOpenConversation>["loadThread"];
+  composer: ReturnType<typeof useComposerState>;
+  conversations: ReturnType<typeof useConversationList>;
+  projectState: ReturnType<typeof useProjectState>;
+  runtime: ReturnType<typeof useRuntimeState>;
+  loveActivity: ReturnType<typeof useLoveActivity>;
+  selectedRef: RefObject<Thread | null>;
+  request: RefObject<number>;
+  setError: Dispatch<SetStateAction<string>>;
+  threadModes: Record<string, PermissionMode>;
+  permissionMode: PermissionMode;
+  openNewChat: ReturnType<typeof createChatNavigation>["openNewChat"];
+  loadThread: ReturnType<typeof useOpenConversation>["loadThread"];
   noteStartedMode: ReturnType<typeof createConversationSettings>["noteStartedMode"];
 };
 
-export function createClearConversation({ composer, conversations, projectState, runtime, loveActivity, selectedRef, request, setError, threadModes, permissionMode, openNewChat, loadThread, noteStartedMode }: Inputs) {
+export function createClearConversation({
+  composer,
+  conversations,
+  projectState,
+  runtime,
+  loveActivity,
+  selectedRef,
+  request,
+  setError,
+  threadModes,
+  permissionMode,
+  openNewChat,
+  loadThread,
+  noteStartedMode,
+}: Inputs) {
   const { composerRef } = composer;
   const { settingsOf, upsertThread } = conversations;
   const { setProjectId, projectChatsRef, projectId, setCwd, cwd } = projectState;
@@ -29,7 +50,10 @@ export function createClearConversation({ composer, conversations, projectState,
   return async () => {
     const previous = selectedRef.current;
     if (previous && loveActivity.isLoveChat(previous) && agentName(previous) === "Matilda") {
-      if (activeTurns[previous.id]) { setError("Love Spot is already replying. Wait for this turn."); return; }
+      if (activeTurns[previous.id]) {
+        setError("Love Spot is already replying. Wait for this turn.");
+        return;
+      }
       const originalRequest = request.current;
       const settings = { ...previous, ...settingsOf.current[previous.id] };
       try {
@@ -41,7 +65,8 @@ export function createClearConversation({ composer, conversations, projectState,
           permissions: threadModes[previous.id] ?? permissionMode,
           persona: savedPersona(),
         });
-        if (!result.thread || typeof result.thread.id !== "string") throw new Error("Matilda could not start a fresh chat.");
+        if (!result.thread || typeof result.thread.id !== "string")
+          throw new Error("Matilda could not start a fresh chat.");
         upsertThread(result.thread);
         noteStartedMode(result.thread.id, result.permissions ?? threadModes[previous.id] ?? permissionMode);
         setProjectId(projectChatsRef.current[previous.id] ?? projectId);
@@ -50,10 +75,15 @@ export function createClearConversation({ composer, conversations, projectState,
           await loadThread(result.thread);
           requestAnimationFrame(() => composerRef.current?.focus());
         }
-      } catch (cause) { setError(errorText(cause)); }
+      } catch (cause) {
+        setError(errorText(cause));
+      }
       return;
     }
-    if (previous) { setCwd(previous.cwd || cwd); setProjectId(projectChatsRef.current[previous.id] ?? projectId); }
+    if (previous) {
+      setCwd(previous.cwd || cwd);
+      setProjectId(projectChatsRef.current[previous.id] ?? projectId);
+    }
     openNewChat(`clear-${crypto.randomUUID()}`);
   };
 }

@@ -5,33 +5,87 @@ import { ListFilter, Pencil, Trash2 } from "lucide-react";
 import { ConfirmDelete } from "@/components/confirm-delete";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
-import { groupNameProblem, holdChatOrder, staysWithChatList, isDefaultView, type ChatGroup, type ChatGroups, type GroupBy, type SortBy } from "@/lib/chat-groups";
+import {
+  groupNameProblem,
+  holdChatOrder,
+  staysWithChatList,
+  isDefaultView,
+  type ChatGroup,
+  type ChatGroups,
+  type GroupBy,
+  type SortBy,
+} from "@/lib/chat-groups";
 
 /** Hold positions from pointer entry through exit, or release outside after a held click. Statuses still render
  * immediately. Explicit group/sort/drag commands may release the order. No timers or polling. */
 export function useChatListOrder<T extends { id: string }>(chats: T[]) {
-  const [held, setHeld] = useState<string[] | null>(null), inside = useRef(false), pressed = useRef(false), dragging = useRef(false);
-  const list = useRef<Element | null>(null), timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const release = () => { clearTimeout(timer.current); setHeld(null); };
+  const [held, setHeld] = useState<string[] | null>(null),
+    inside = useRef(false),
+    pressed = useRef(false),
+    dragging = useRef(false);
+  const list = useRef<Element | null>(null),
+    timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const release = () => {
+    clearTimeout(timer.current);
+    setHeld(null);
+  };
   // A real exit releases after a moment, so crossing an edge never re-sorts the rows twice in a row.
-  const leave = () => { inside.current = false; clearTimeout(timer.current); timer.current = setTimeout(() => { if (!inside.current && !pressed.current) setHeld(null); }, 300); };
+  const leave = () => {
+    inside.current = false;
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      if (!inside.current && !pressed.current) setHeld(null);
+    }, 300);
+  };
   useEffect(() => {
     if (!inside.current && !pressed.current) return;
     setHeld(previous => {
       if (!previous) return chats.map(chat => chat.id);
-      const known = new Set(previous), added = chats.filter(chat => !known.has(chat.id)).map(chat => chat.id);
+      const known = new Set(previous),
+        added = chats.filter(chat => !known.has(chat.id)).map(chat => chat.id);
       return added.length ? [...previous, ...added] : previous;
     });
   }, [chats]);
   useEffect(() => {
-    const start = () => { pressed.current = true; };
-    const end = () => { pressed.current = false; dragging.current = false; if (!inside.current) setHeld(null); };
-    const drag = () => { dragging.current = true; };
-    const cancel = () => { if (!dragging.current) end(); };
-    const blur = () => { inside.current = false; end(); };
+    const start = () => {
+      pressed.current = true;
+    };
+    const end = () => {
+      pressed.current = false;
+      dragging.current = false;
+      if (!inside.current) setHeld(null);
+    };
+    const drag = () => {
+      dragging.current = true;
+    };
+    const cancel = () => {
+      if (!dragging.current) end();
+    };
+    const blur = () => {
+      inside.current = false;
+      end();
+    };
     // Leaving through a row's tooltip or menu sends no pointerleave later: the first move onto anything else ends the hold.
     const over = (event: Event) => {
       const target = event.target as Element | null;
@@ -44,87 +98,258 @@ export function useChatListOrder<T extends { id: string }>(chats: T[]) {
     window.addEventListener("dragstart", drag, true);
     window.addEventListener("dragend", end);
     window.addEventListener("blur", blur);
-    return () => { window.removeEventListener("pointerdown", start, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", cancel); window.removeEventListener("dragstart", drag, true); window.removeEventListener("dragend", end); window.removeEventListener("blur", blur); window.removeEventListener("pointerover", over, true); clearTimeout(timer.current); };
+    return () => {
+      window.removeEventListener("pointerdown", start, true);
+      window.removeEventListener("pointerup", end, true);
+      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("dragstart", drag, true);
+      window.removeEventListener("dragend", end);
+      window.removeEventListener("blur", blur);
+      window.removeEventListener("pointerover", over, true);
+      clearTimeout(timer.current);
+    };
   }, []);
-  return { chats: holdChatOrder(chats, held), holding: held !== null, release, pointer: {
-    onPointerEnter: (event: PointerEvent) => { list.current = event.currentTarget as Element; clearTimeout(timer.current); inside.current = true; setHeld(previous => previous ?? chats.map(chat => chat.id)); },
-    onPointerLeave: (event: PointerEvent) => { if (staysWithChatList(event.relatedTarget as Element | null)) return; if (!pressed.current && !event.buttons) leave(); else inside.current = false; },
-  } };
+  return {
+    chats: holdChatOrder(chats, held),
+    holding: held !== null,
+    release,
+    pointer: {
+      onPointerEnter: (event: PointerEvent) => {
+        list.current = event.currentTarget as Element;
+        clearTimeout(timer.current);
+        inside.current = true;
+        setHeld(previous => previous ?? chats.map(chat => chat.id));
+      },
+      onPointerLeave: (event: PointerEvent) => {
+        if (staysWithChatList(event.relatedTarget as Element | null)) return;
+        if (!pressed.current && !event.buttons) leave();
+        else inside.current = false;
+      },
+    },
+  };
 }
 
-const GROUP_BY: [GroupBy, string][] = [["custom", "Custom groups"], ["none", "None"]];
-const SORT_BY: [SortBy, string][] = [["recency", "Last activity"], ["created", "Date created"], ["name", "Name"], ["manual", "Manual (drag or Alt+Up/Down)"]];
+const GROUP_BY: [GroupBy, string][] = [
+  ["custom", "Custom groups"],
+  ["none", "None"],
+];
+const SORT_BY: [SortBy, string][] = [
+  ["recency", "Last activity"],
+  ["created", "Date created"],
+  ["name", "Name"],
+  ["manual", "Manual (drag or Alt+Up/Down)"],
+];
 
 /** The sidebar's "Group and sort" button (Claude's filter button): Group by Custom groups or None, Sort by Last activity,
  * Date created or Name. The menu stays open while choosing, as Claude's does; away from the defaults the button is
  * marked and the menu offers Reset to defaults. */
-export function GroupAndSortMenu({ state, onChange }: { state: ChatGroups; onChange: (change: Partial<Pick<ChatGroups, "groupBy" | "sortBy">>) => void }) {
-  const changed = !isDefaultView(state), label = "Group and sort";
+export function GroupAndSortMenu({
+  state,
+  onChange,
+}: {
+  state: ChatGroups;
+  onChange: (change: Partial<Pick<ChatGroups, "groupBy" | "sortBy">>) => void;
+}) {
+  const changed = !isDefaultView(state),
+    label = "Group and sort";
   const current = `${GROUP_BY.find(([value]) => value === state.groupBy)?.[1]} · ${SORT_BY.find(([value]) => value === state.sortBy)?.[1]}`;
   // Match the drawing width of the sidebar's filled plus icons inside the same 16px icon box.
-  return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button variant="ghost" size="icon-xs" className="group-sort" aria-label={label} title={changed ? `${label}: ${current}` : label} data-active={changed ? "true" : undefined} />}><ListFilter size={13} viewBox="-1 -1 26 26" /></DropdownMenuTrigger>
-    <DropdownMenuContent align="end" className="w-52" aria-label={label}>
-      <DropdownMenuGroup>
-        <DropdownMenuLabel>Group by</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={state.groupBy} onValueChange={value => onChange({ groupBy: value as GroupBy })}>
-          {GROUP_BY.map(([value, name]) => <DropdownMenuRadioItem key={value} value={value}>{name}</DropdownMenuRadioItem>)}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuGroup>
-      <DropdownMenuSeparator />
-      <DropdownMenuGroup>
-        <DropdownMenuLabel>Sort by</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={state.sortBy} onValueChange={value => onChange({ sortBy: value as SortBy })}>
-          {SORT_BY.map(([value, name]) => <DropdownMenuRadioItem key={value} value={value}>{name}</DropdownMenuRadioItem>)}
-        </DropdownMenuRadioGroup>
-      </DropdownMenuGroup>
-      {changed && <><DropdownMenuSeparator /><DropdownMenuItem onClick={() => onChange({ groupBy: "none", sortBy: "recency" })}>Reset to defaults</DropdownMenuItem></>}
-    </DropdownMenuContent>
-  </DropdownMenu>;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="group-sort"
+            aria-label={label}
+            title={changed ? `${label}: ${current}` : label}
+            data-active={changed ? "true" : undefined}
+          />
+        }
+      >
+        <ListFilter size={13} viewBox="-1 -1 26 26" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52" aria-label={label}>
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Group by</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={state.groupBy}
+            onValueChange={value => onChange({ groupBy: value as GroupBy })}
+          >
+            {GROUP_BY.map(([value, name]) => (
+              <DropdownMenuRadioItem key={value} value={value}>
+                {name}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Sort by</DropdownMenuLabel>
+          <DropdownMenuRadioGroup value={state.sortBy} onValueChange={value => onChange({ sortBy: value as SortBy })}>
+            {SORT_BY.map(([value, name]) => (
+              <DropdownMenuRadioItem key={value} value={value}>
+                {name}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+        {changed && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onChange({ groupBy: "none", sortBy: "recency" })}>
+              Reset to defaults
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 /** Names a new group (`group` null) or renames one. A name must be new, in any case; `switches` says that creating it
  * shows the list by groups, as Claude's dialog does. Closed while `open` is false. */
-export function GroupNameDialog({ open, state, group, switches, onSave, onClose }: {
-  open: boolean; state: ChatGroups; group: ChatGroup | null; switches?: boolean; onSave: (name: string) => void; onClose: () => void;
+export function GroupNameDialog({
+  open,
+  state,
+  group,
+  switches,
+  onSave,
+  onClose,
+}: {
+  open: boolean;
+  state: ChatGroups;
+  group: ChatGroup | null;
+  switches?: boolean;
+  onSave: (name: string) => void;
+  onClose: () => void;
 }) {
   const [name, setName] = useState("");
-  useEffect(() => { if (open) setName(group?.name ?? ""); }, [open, group]);
-  const problem = groupNameProblem(state, name, group?.id), shown = name.trim() && problem;
-  return <AlertDialog open={open} onOpenChange={value => { if (!value) onClose(); }}>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>{group ? "Rename group" : "New group"}</AlertDialogTitle>
-        <AlertDialogDescription>{group ? "The group's chats stay in it." : switches ? "The list will switch to Custom groups to show it." : "Groups are kept on this computer."}</AlertDialogDescription>
-      </AlertDialogHeader>
-      <form aria-label={group ? "Rename group" : "New group"} className="grid gap-4" onSubmit={event => { event.preventDefault(); if (!problem) onSave(name.trim()); }}>
-        <Input aria-label="Group name" placeholder="Group name" maxLength={80} value={name} onChange={event => setName(event.target.value)} autoFocus aria-invalid={shown ? true : undefined} aria-description={shown || undefined} />
-        <AlertDialogFooter>
-          <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
-          <Button type="submit" disabled={!!problem} {...(problem ? { disabledReason: problem } : {})}>{group ? "Save" : "Create group"}</Button>
-        </AlertDialogFooter>
-      </form>
-    </AlertDialogContent>
-  </AlertDialog>;
+  useEffect(() => {
+    if (open) setName(group?.name ?? "");
+  }, [open, group]);
+  const problem = groupNameProblem(state, name, group?.id),
+    shown = name.trim() && problem;
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={value => {
+        if (!value) onClose();
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{group ? "Rename group" : "New group"}</AlertDialogTitle>
+          <AlertDialogDescription>
+            {group
+              ? "The group's chats stay in it."
+              : switches
+                ? "The list will switch to Custom groups to show it."
+                : "Groups are kept on this computer."}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <form
+          aria-label={group ? "Rename group" : "New group"}
+          className="grid gap-4"
+          onSubmit={event => {
+            event.preventDefault();
+            if (!problem) onSave(name.trim());
+          }}
+        >
+          <Input
+            aria-label="Group name"
+            placeholder="Group name"
+            maxLength={80}
+            value={name}
+            onChange={event => setName(event.target.value)}
+            autoFocus
+            aria-invalid={shown ? true : undefined}
+            aria-description={shown || undefined}
+          />
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button type="button" variant="outline" />}>Cancel</AlertDialogClose>
+            <Button type="submit" disabled={!!problem} {...(problem ? { disabledReason: problem } : {})}>
+              {group ? "Save" : "Create group"}
+            </Button>
+          </AlertDialogFooter>
+        </form>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
 }
 
 /** A group's menu, on right-click of its row and on its "…" button: Rename group and Delete group. Deleting asks first;
  * the group's chats (`count` of them listed) go back under Recents, and no chat is archived or deleted. */
-export function GroupActions({ group, state, count, area, children, onRename, onDelete }: {
-  group: ChatGroup; state: ChatGroups; count: number; area: ReactElement; children: (menu: ReactNode) => ReactNode; onRename: (name: string) => void; onDelete: () => void;
+export function GroupActions({
+  group,
+  state,
+  count,
+  area,
+  children,
+  onRename,
+  onDelete,
+}: {
+  group: ChatGroup;
+  state: ChatGroups;
+  count: number;
+  area: ReactElement;
+  children: (menu: ReactNode) => ReactNode;
+  onRename: (name: string) => void;
+  onDelete: () => void;
 }) {
-  const [renaming, setRenaming] = useState(false), [deleting, setDeleting] = useState(false);
+  const [renaming, setRenaming] = useState(false),
+    [deleting, setDeleting] = useState(false);
   const actions: MenuAction[] = [
     { id: "rename", label: "Rename group", icon: <Pencil size={14} />, run: () => setRenaming(true) },
-    { id: "delete", label: "Delete group", icon: <Trash2 size={14} />, destructive: true, run: () => setDeleting(true) },
+    {
+      id: "delete",
+      label: "Delete group",
+      icon: <Trash2 size={14} />,
+      destructive: true,
+      run: () => setDeleting(true),
+    },
   ];
-  const contents = count === 0 ? "Nothing is in it." : count === 1 ? "The 1 chat in it will no longer be grouped." : `The ${count} chats in it will no longer be grouped.`;
-  return <>
-    <RightClickMenu actions={actions} area={area} menuClassName="w-48">
-      {children(<MoreMenu actions={actions} label={`Group actions for ${group.name}`} title="Rename or delete this group" size={13} align="start" menuClassName="w-48" />)}
-    </RightClickMenu>
-    <GroupNameDialog open={renaming} state={state} group={group} onSave={name => { onRename(name); setRenaming(false); }} onClose={() => setRenaming(false)} />
-    <ConfirmDelete request={deleting ? group : null} names={[group.name]} noun="group" description={`${contents} No chat is archived or deleted.`}
-      onDelete={() => { onDelete(); }} onClose={() => setDeleting(false)} />
-  </>;
+  const contents =
+    count === 0
+      ? "Nothing is in it."
+      : count === 1
+        ? "The 1 chat in it will no longer be grouped."
+        : `The ${count} chats in it will no longer be grouped.`;
+  return (
+    <>
+      <RightClickMenu actions={actions} area={area} menuClassName="w-48">
+        {children(
+          <MoreMenu
+            actions={actions}
+            label={`Group actions for ${group.name}`}
+            title="Rename or delete this group"
+            size={13}
+            align="start"
+            menuClassName="w-48"
+          />,
+        )}
+      </RightClickMenu>
+      <GroupNameDialog
+        open={renaming}
+        state={state}
+        group={group}
+        onSave={name => {
+          onRename(name);
+          setRenaming(false);
+        }}
+        onClose={() => setRenaming(false)}
+      />
+      <ConfirmDelete
+        request={deleting ? group : null}
+        names={[group.name]}
+        noun="group"
+        description={`${contents} No chat is archived or deleted.`}
+        onDelete={() => {
+          onDelete();
+        }}
+        onClose={() => setDeleting(false)}
+      />
+    </>
+  );
 }

@@ -9,7 +9,8 @@ export function useProjectState() {
   // Workflows and Love Spot use the last project; new chats start without one.
   const [workflowProjectId, setWorkflowProjectId] = useState<string | null>(null);
   const [projectChats, setProjectChats] = useState<Record<string, string>>({});
-  const projectChatsRef = useRef(projectChats), projectChatSave = useRef(Promise.resolve());
+  const projectChatsRef = useRef(projectChats),
+    projectChatSave = useRef(Promise.resolve());
   const [projectMove, setProjectMove] = useState<Thread[] | null>(null);
   const [newProjectFor, setNewProjectFor] = useState<Thread[] | null>(null);
   const [nestTargets, setNestTargets] = useState<Thread[] | null>(null);
@@ -17,7 +18,30 @@ export function useProjectState() {
   const project = projects.find(item => item.id === projectId) ?? null;
   const workflowProject = projects.find(item => item.id === workflowProjectId) ?? null;
   const [projectEdit, setProjectEdit] = useState<Project | null | undefined>(undefined);
-  return { cwd, setCwd, projects, setProjects, projectId, setProjectId, workflowProjectId, setWorkflowProjectId,
-    projectChats, setProjectChats, projectChatsRef, projectChatSave, projectMove, setProjectMove, newProjectFor, setNewProjectFor,
-    nestTargets, setNestTargets, projectChanging, setProjectChanging, project, workflowProject, projectEdit, setProjectEdit };
+  return {
+    cwd,
+    setCwd,
+    projects,
+    setProjects,
+    projectId,
+    setProjectId,
+    workflowProjectId,
+    setWorkflowProjectId,
+    projectChats,
+    setProjectChats,
+    projectChatsRef,
+    projectChatSave,
+    projectMove,
+    setProjectMove,
+    newProjectFor,
+    setNewProjectFor,
+    nestTargets,
+    setNestTargets,
+    projectChanging,
+    setProjectChanging,
+    project,
+    workflowProject,
+    projectEdit,
+    setProjectEdit,
+  };
 }

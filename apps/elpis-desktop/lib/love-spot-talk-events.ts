@@ -14,9 +14,12 @@ export function subscribeLoveSpotTalk(onmessage: (event: MessageEvent<string>) =
     const current = new EventSource("/api/love-spot/talk/events");
     source = current;
     current.onmessage = event => {
-      if (source === current) updates.dispatchEvent(new MessageEvent("message", { data: event.data, origin: event.origin }));
+      if (source === current)
+        updates.dispatchEvent(new MessageEvent("message", { data: event.data, origin: event.origin }));
     };
-    current.onerror = () => { if (source === current) updates.dispatchEvent(new Event("error")); };
+    current.onerror = () => {
+      if (source === current) updates.dispatchEvent(new Event("error"));
+    };
   }
 
   let listening = true;

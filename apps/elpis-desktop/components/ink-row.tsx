@@ -10,36 +10,54 @@ import { useLayoutEffect, useRef, type HTMLAttributes } from "react";
 export function InkRow({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
   const row = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
-    const element = row.current; if (!element) return;
+    const element = row.current;
+    if (!element) return;
     schedule(element);
     const changes = new MutationObserver(() => schedule(element));
-    changes.observe(element, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["class", "d", "hidden"] });
+    changes.observe(element, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["class", "d", "hidden"],
+    });
     // A row first laid out later (a page shown again) is measured when it gets a size.
-    const shown = new ResizeObserver(() => schedule(element)); shown.observe(element);
-    return () => { changes.disconnect(); shown.disconnect(); pending.delete(element); };
+    const shown = new ResizeObserver(() => schedule(element));
+    shown.observe(element);
+    return () => {
+      changes.disconnect();
+      shown.disconnect();
+      pending.delete(element);
+    };
   }, []);
   return <div ref={row} className={className ? `ink-row ${className}` : "ink-row"} {...props} />;
 }
 
 type Insets = { left: number; right: number };
-const insets = new Map<string, Insets>(), pending = new Set<HTMLElement>();
+const insets = new Map<string, Insets>(),
+  pending = new Set<HTMLElement>();
 let frame = 0;
 
 function schedule(row: HTMLElement) {
   pending.add(row);
   frame ||= requestAnimationFrame(() => {
     frame = 0;
-    const rows = [...pending].filter(row => row.isConnected); pending.clear();
+    const rows = [...pending].filter(row => row.isConnected);
+    pending.clear();
     // Reads first (styles, and insets of kinds not seen before), then every write, so rows never force layout in turn.
     const plans = rows.map(row => {
       const gap = parseFloat(getComputedStyle(row).getPropertyValue("--ink-gap")) || 16;
-      const items = ([...row.children] as HTMLElement[]).filter(item => getComputedStyle(item).display !== "none" && (item.querySelector("svg") || item.textContent?.trim()));
+      const items = ([...row.children] as HTMLElement[]).filter(
+        item => getComputedStyle(item).display !== "none" && (item.querySelector("svg") || item.textContent?.trim()),
+      );
       return { gap, items, insets: items.map(insetsOf) };
     });
-    for (const { gap, items, insets: inner } of plans) items.forEach((item, index) => {
-      const previous = inner[index - 1], current = inner[index];
-      item.style.marginInlineStart = index && previous && current ? `${gap - previous.right - current.left}px` : "";
-    });
+    for (const { gap, items, insets: inner } of plans)
+      items.forEach((item, index) => {
+        const previous = inner[index - 1],
+          current = inner[index];
+        item.style.marginInlineStart = index && previous && current ? `${gap - previous.right - current.left}px` : "";
+      });
   });
 }
 
@@ -62,16 +80,21 @@ function insetsOf(item: HTMLElement): Insets {
 function inkOf(item: HTMLElement) {
   const boxes: { left: number; right: number }[] = [];
   for (const svg of item.querySelectorAll("svg")) {
-    const scale = svg.getBoundingClientRect().width / (svg.viewBox.baseVal?.width || svg.getBoundingClientRect().width || 1);
+    const scale =
+      svg.getBoundingClientRect().width / (svg.viewBox.baseVal?.width || svg.getBoundingClientRect().width || 1);
     for (const shape of svg.querySelectorAll("path, circle, rect, line, polyline, polygon, ellipse")) {
-      const rect = shape.getBoundingClientRect(), style = getComputedStyle(shape);
-      const half = style.stroke !== "none" ? parseFloat(style.strokeWidth) * scale / 2 : 0;
+      const rect = shape.getBoundingClientRect(),
+        style = getComputedStyle(shape);
+      const half = style.stroke !== "none" ? (parseFloat(style.strokeWidth) * scale) / 2 : 0;
       boxes.push({ left: rect.left - half, right: rect.right + half });
     }
   }
   const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) if (node.textContent?.trim()) {
-    const range = document.createRange(); range.selectNodeContents(node); boxes.push(range.getBoundingClientRect());
-  }
+  for (let node = walker.nextNode(); node; node = walker.nextNode())
+    if (node.textContent?.trim()) {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      boxes.push(range.getBoundingClientRect());
+    }
   return { left: Math.min(...boxes.map(box => box.left)), right: Math.max(...boxes.map(box => box.right)) };
 }

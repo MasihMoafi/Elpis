@@ -1,47 +1,65 @@
-import test, { type TestContext } from 'node:test';
-import assert from 'node:assert/strict';
-import fs from 'node:fs/promises';
-import os from 'node:os';
-import path from 'node:path';
-import { createHash } from 'node:crypto';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
-import { productionFiles, stageDesktop } from './package.mts';
+import test, { type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+import { productionFiles, stageDesktop } from "./package.mts";
 
 const run = promisify(execFile);
 const production = productionFiles;
 
-test('Mother runtime modules and instruction assets ship together', async () => {
-  const root = fileURLToPath(new URL('../bridge/router/', import.meta.url));
+test("Mother runtime modules and instruction assets ship together", async () => {
+  const root = fileURLToPath(new URL("../bridge/router/", import.meta.url));
   for (const entry of await fs.readdir(root, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
-    const file = path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join('/');
-    if (file.includes('fixtures/') || path.basename(file) === 'fixtures.mts' || file.endsWith('.test.mts') || file === 'test-support.mts') continue;
-    if (/\.(mts|md)$/.test(file) || file === 'LICENSE-dsh-superagent') assert(production.includes(`bridge/router/${file}`), `Mother runtime asset missing: ${file}`);
+    const file = path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join("/");
+    if (
+      file.includes("fixtures/") ||
+      path.basename(file) === "fixtures.mts" ||
+      file.endsWith(".test.mts") ||
+      file === "test-support.mts"
+    )
+      continue;
+    if (/\.(mts|md)$/.test(file) || file === "LICENSE-dsh-superagent")
+      assert(production.includes(`bridge/router/${file}`), `Mother runtime asset missing: ${file}`);
   }
 });
 
 // A file the app imports but the package leaves out stops the installed app at start (16 Oct: preferences.cjs, provider-keys.mts).
-test('the package holds every local file its entry points import', async () => {
-  const root = fileURLToPath(new URL('../', import.meta.url)), seen = new Set<string>(), pending = ['desktop/main.cts', 'desktop/preload.cts', 'desktop/runtime.mts', 'bridge/server.mts', 'bridge/client.mts'];
+test("the package holds every local file its entry points import", async () => {
+  const root = fileURLToPath(new URL("../", import.meta.url)),
+    seen = new Set<string>(),
+    pending = [
+      "desktop/main.cts",
+      "desktop/preload.cts",
+      "desktop/runtime.mts",
+      "bridge/server.mts",
+      "bridge/client.mts",
+    ];
   while (pending.length) {
-    const name = pending.pop()!; if (seen.has(name)) continue; seen.add(name);
-    const text = (await fs.readFile(path.join(root, name), 'utf8')).replace(/^import type .*;$/gm, '');
-    for (const [, target] of text.matchAll(/(?:require\(|from |import\()\s*['"](\.{1,2}\/[^'"]+)['"]/g)) pending.push(path.posix.normalize(path.posix.join(path.posix.dirname(name), target!)));
+    const name = pending.pop()!;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const text = (await fs.readFile(path.join(root, name), "utf8")).replace(/^import type .*;$/gm, "");
+    for (const [, target] of text.matchAll(/(?:require\(|from |import\()\s*['"](\.{1,2}\/[^'"]+)['"]/g))
+      pending.push(path.posix.normalize(path.posix.join(path.posix.dirname(name), target!)));
   }
   for (const name of seen) assert(production.includes(name), `${name} is imported but not packaged`);
 });
 
 // Files a window loads by path (a preload, a page, an icon) are not imports: Quick Entry's page and preload would be missing.
-test('the package holds every file the desktop code loads by path', async () => {
-  const root = fileURLToPath(new URL('../', import.meta.url));
-  for (const name of production.filter(file => file.startsWith('desktop/') && /\.[cm]?[jt]s$/.test(file))) {
-    const text = await fs.readFile(path.join(root, name), 'utf8');
+test("the package holds every file the desktop code loads by path", async () => {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  for (const name of production.filter(file => file.startsWith("desktop/") && /\.[cm]?[jt]s$/.test(file))) {
+    const text = await fs.readFile(path.join(root, name), "utf8");
     for (const [, target] of text.matchAll(/path\.join\(__dirname, '([^']+)'\)/g)) {
-      const file = path.posix.normalize(path.posix.join('desktop', target!));
+      const file = path.posix.normalize(path.posix.join("desktop", target!));
       // The renderer (out/) is packaged whole, and need not be built for this check.
-      if (file === 'out' || file.startsWith('out/') || (await fs.stat(path.join(root, file))).isDirectory()) continue;
+      if (file === "out" || file.startsWith("out/") || (await fs.stat(path.join(root, file))).isDirectory()) continue;
       assert(production.includes(file), `${name} loads ${file}, which is not packaged`);
     }
   }
@@ -49,15 +67,27 @@ test('the package holds every file the desktop code loads by path', async () => 
 
 // A file git does not hold is missing from a package built from a clean copy: on 17 Oct the welcome logo showed as a broken
 // picture, because the root .gitignore drops every *.svg and *.png. Generated files (bridge/resources) are built by prebuild.
-test('git holds every picture the renderer loads and every file the package ships', async t => {
-  const root = fileURLToPath(new URL('../', import.meta.url));
-  if (await run('git', ['rev-parse', '--is-inside-work-tree'], { cwd: root }).then(() => false, () => true)) return t.skip('not a git checkout (a copy made with git archive)');
-  const tracked = new Set((await run('git', ['ls-files', '-z'], { cwd: root })).stdout.split('\0'));
-  const missing = production.filter(file => !file.startsWith('bridge/resources/') && !tracked.has(file));
-  const deleted = new Set((await run('git', ['ls-files', '-z', '--deleted', 'app', 'components', 'lib'], { cwd: root })).stdout.split('\0'));
-  const sources = (await run('git', ['ls-files', '-z', 'app', 'components', 'lib'], { cwd: root })).stdout.split('\0').filter(file => /\.tsx?$/.test(file) && !deleted.has(file));
+test("git holds every picture the renderer loads and every file the package ships", async t => {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  if (
+    await run("git", ["rev-parse", "--is-inside-work-tree"], { cwd: root }).then(
+      () => false,
+      () => true,
+    )
+  )
+    return t.skip("not a git checkout (a copy made with git archive)");
+  const tracked = new Set((await run("git", ["ls-files", "-z"], { cwd: root })).stdout.split("\0"));
+  const missing = production.filter(file => !file.startsWith("bridge/resources/") && !tracked.has(file));
+  const deleted = new Set(
+    (await run("git", ["ls-files", "-z", "--deleted", "app", "components", "lib"], { cwd: root })).stdout.split("\0"),
+  );
+  const sources = (await run("git", ["ls-files", "-z", "app", "components", "lib"], { cwd: root })).stdout
+    .split("\0")
+    .filter(file => /\.tsx?$/.test(file) && !deleted.has(file));
   for (const file of sources) {
-    for (const [, url] of (await fs.readFile(path.join(root, file), 'utf8')).matchAll(/["'`](\/[\w./-]+\.(?:svg|png|jpe?g|webp|ico))["'`]/g)) {
+    for (const [, url] of (await fs.readFile(path.join(root, file), "utf8")).matchAll(
+      /["'`](\/[\w./-]+\.(?:svg|png|jpe?g|webp|ico))["'`]/g,
+    )) {
       if (!tracked.has(`public${url}`)) missing.push(`public${url} (${file})`);
     }
   }
@@ -70,28 +100,39 @@ async function put(file: string, data: string, mode?: number) {
 }
 
 async function fixture(t: TestContext) {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-package-'));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "elpis-package-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const source = path.join(root, 'source', 'apps', 'elpis-desktop');
-  const electronDist = path.join(root, 'electron-dist');
-  const node = path.join(root, 'canonical-node', 'node');
-  const wsReal = path.join(root, 'old-install', 'ws');
-  const wsDirectory = path.join(source, 'node_modules', 'ws');
-  const ptyReal = path.join(root, 'terminal-deps', 'node-pty');
-  const ptyDirectory = path.join(source, 'node_modules', 'node-pty');
+  const source = path.join(root, "source", "apps", "elpis-desktop");
+  const electronDist = path.join(root, "electron-dist");
+  const node = path.join(root, "canonical-node", "node");
+  const wsReal = path.join(root, "old-install", "ws");
+  const wsDirectory = path.join(source, "node_modules", "ws");
+  const ptyReal = path.join(root, "terminal-deps", "node-pty");
+  const ptyDirectory = path.join(source, "node_modules", "node-pty");
   for (const name of production) await put(path.join(source, name), `fixture ${name}\n`);
-  await put(path.join(source, 'out', 'index.html'), '<p>Built renderer</p>');
-  await put(path.join(source, 'out', '_next', 'static', 'app.js'), 'renderer();');
-  await put(path.join(source, 'package.json'), JSON.stringify({ name: 'elpis-desktop', desktopName: 'elpis-desktop.desktop',
-    productName: 'Elpis', version: '0.1.0', main: 'desktop/main.cts',
-    scripts: { build: 'next build' }, dependencies: { next: '16.2.6', ws: '8.18.3' } }));
-  await put(path.join(source, '.next', 'cache', 'junk'), 'not runtime');
-  await put(path.join(source, 'app', 'page.tsx'), 'not runtime');
-  await put(path.join(source, 'node_modules', 'next', 'junk'), 'not runtime');
-  await put(path.join(source, 'desktop', 'main.test.cjs'), 'not runtime');
-  await put(path.join(source, 'desktop', 'launch.sh'), '#!/bin/bash\nexit 99\n', 0o755);
-  await put(node, '#!/bin/bash\nexit 0\n', 0o755);
-  await put(path.join(electronDist, 'electron'), `#!/bin/bash
+  await put(path.join(source, "out", "index.html"), "<p>Built renderer</p>");
+  await put(path.join(source, "out", "_next", "static", "app.js"), "renderer();");
+  await put(
+    path.join(source, "package.json"),
+    JSON.stringify({
+      name: "elpis-desktop",
+      desktopName: "elpis-desktop.desktop",
+      productName: "Elpis",
+      version: "0.1.0",
+      main: "desktop/main.cts",
+      scripts: { build: "next build" },
+      dependencies: { next: "16.2.6", ws: "8.18.3" },
+    }),
+  );
+  await put(path.join(source, ".next", "cache", "junk"), "not runtime");
+  await put(path.join(source, "app", "page.tsx"), "not runtime");
+  await put(path.join(source, "node_modules", "next", "junk"), "not runtime");
+  await put(path.join(source, "desktop", "main.test.cjs"), "not runtime");
+  await put(path.join(source, "desktop", "launch.sh"), "#!/bin/bash\nexit 99\n", 0o755);
+  await put(node, "#!/bin/bash\nexit 0\n", 0o755);
+  await put(
+    path.join(electronDist, "electron"),
+    `#!/bin/bash
 set -euo pipefail
 if [[ "\${ELECTRON_RUN_AS_NODE:-}" == 1 ]]; then
   printf 'node-mode=%s\\nargument=%s\\n' "$ELECTRON_RUN_AS_NODE" "\${1:-}"
@@ -101,181 +142,299 @@ test -f "$1/out/index.html"
 test -f "$1/desktop/main.cts"
 printf 'https-proxy=%s\\nhttp-proxy-lower=%s\\nall-proxy=%s\\n' "\${HTTPS_PROXY:-}" "\${http_proxy:-}" "\${ALL_PROXY:-}"
 printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-proxy=%s\\nno-proxy-lower=%s\\nproxy-mode=%s\\n' "$1" "\${2:-}" "$ELPIS_NODE_BIN" "\${ELECTRON_RUN_AS_NODE:-}" "\${PATH%%:*}" "\${NO_PROXY:-}" "\${no_proxy:-}" "\${NODE_USE_ENV_PROXY:-}"
-`, 0o755);
-  for (const name of ['LICENSE', 'LICENSES.chromium.html', 'locales/en-US.pak', 'libEGL.so', 'chrome-sandbox']) {
-    await put(path.join(electronDist, name), `electron ${name}`, name === 'chrome-sandbox' ? 0o755 : undefined);
+`,
+    0o755,
+  );
+  for (const name of ["LICENSE", "LICENSES.chromium.html", "locales/en-US.pak", "libEGL.so", "chrome-sandbox"]) {
+    await put(path.join(electronDist, name), `electron ${name}`, name === "chrome-sandbox" ? 0o755 : undefined);
   }
-  await put(path.join(wsReal, 'package.json'), JSON.stringify({ name: 'ws', version: '8.22.0', main: 'index.js' }));
-  await put(path.join(wsReal, 'index.js'), 'module.exports = {};');
-  await put(path.join(wsReal, 'lib', 'websocket.js'), 'module.exports = {};');
-  await put(path.join(wsReal, 'LICENSE'), 'ws license');
+  await put(path.join(wsReal, "package.json"), JSON.stringify({ name: "ws", version: "8.22.0", main: "index.js" }));
+  await put(path.join(wsReal, "index.js"), "module.exports = {};");
+  await put(path.join(wsReal, "lib", "websocket.js"), "module.exports = {};");
+  await put(path.join(wsReal, "LICENSE"), "ws license");
   await fs.mkdir(path.dirname(wsDirectory), { recursive: true });
   await fs.symlink(wsReal, wsDirectory);
   // The integrated terminal's native module: only its loader, licence and Linux build are shipped.
-  await put(path.join(ptyReal, 'package.json'), JSON.stringify({ name: 'node-pty', version: '1.1.0', main: './lib/index.js' }));
-  for (const name of ['LICENSE', 'lib/index.js', 'lib/unixTerminal.js', 'build/Release/pty.node']) await put(path.join(ptyReal, name), `node-pty ${name}`);
-  for (const name of ['lib/index.test.js', 'lib/index.js.map', 'prebuilds/darwin-x64/pty.node', 'src/unix/pty.cc', 'build/Release/obj.target/pty.node']) await put(path.join(ptyReal, name), 'not runtime');
+  await put(
+    path.join(ptyReal, "package.json"),
+    JSON.stringify({ name: "node-pty", version: "1.1.0", main: "./lib/index.js" }),
+  );
+  for (const name of ["LICENSE", "lib/index.js", "lib/unixTerminal.js", "build/Release/pty.node"])
+    await put(path.join(ptyReal, name), `node-pty ${name}`);
+  for (const name of [
+    "lib/index.test.js",
+    "lib/index.js.map",
+    "prebuilds/darwin-x64/pty.node",
+    "src/unix/pty.cc",
+    "build/Release/obj.target/pty.node",
+  ])
+    await put(path.join(ptyReal, name), "not runtime");
   await fs.symlink(ptyReal, ptyDirectory);
   // Automations' calendar rules: rrule's self-contained build, its manifest and licence (not its sources or maps).
-  const rruleDirectory = path.join(source, 'node_modules', 'rrule');
-  await put(path.join(rruleDirectory, 'package.json'), JSON.stringify({ name: 'rrule', version: '2.8.1', main: 'dist/es5/rrule.js' }));
-  for (const name of ['LICENCE', 'dist/es5/rrule.js', 'dist/es5/rrule.min.js.map', 'dist/esm/index.js']) await put(path.join(rruleDirectory, name), `rrule ${name}`);
-  for (const [name, dependencies] of Object.entries({ zod: {}, 'proper-lockfile': { 'graceful-fs': '1', retry: '1', 'signal-exit': '1' }, 'graceful-fs': {}, retry: {}, 'signal-exit': {} })) {
-    await put(path.join(source, 'node_modules', name, 'package.json'), JSON.stringify({ name, version: '1.0.0', main: 'index.js', dependencies }));
-    await put(path.join(source, 'node_modules', name, 'index.js'), 'module.exports = {};');
-    await put(path.join(source, 'node_modules', name, 'LICENSE'), 'MIT fixture');
+  const rruleDirectory = path.join(source, "node_modules", "rrule");
+  await put(
+    path.join(rruleDirectory, "package.json"),
+    JSON.stringify({ name: "rrule", version: "2.8.1", main: "dist/es5/rrule.js" }),
+  );
+  for (const name of ["LICENCE", "dist/es5/rrule.js", "dist/es5/rrule.min.js.map", "dist/esm/index.js"])
+    await put(path.join(rruleDirectory, name), `rrule ${name}`);
+  for (const [name, dependencies] of Object.entries({
+    zod: {},
+    "proper-lockfile": { "graceful-fs": "1", retry: "1", "signal-exit": "1" },
+    "graceful-fs": {},
+    retry: {},
+    "signal-exit": {},
+  })) {
+    await put(
+      path.join(source, "node_modules", name, "package.json"),
+      JSON.stringify({ name, version: "1.0.0", main: "index.js", dependencies }),
+    );
+    await put(path.join(source, "node_modules", name, "index.js"), "module.exports = {};");
+    await put(path.join(source, "node_modules", name, "LICENSE"), "MIT fixture");
   }
-  return { root, source, electronDist, wsDirectory, ptyDirectory, rruleDirectory, node, destination: path.join(root, 'staged') };
+  return {
+    root,
+    source,
+    electronDist,
+    wsDirectory,
+    ptyDirectory,
+    rruleDirectory,
+    node,
+    destination: path.join(root, "staged"),
+  };
 }
 
-async function inventory(directory: string, relative = ''): Promise<string[]> {
+async function inventory(directory: string, relative = ""): Promise<string[]> {
   const files: string[] = [];
   for (const entry of await fs.readdir(path.join(directory, relative), { withFileTypes: true })) {
     const name = path.join(relative, entry.name);
     assert.equal(entry.isSymbolicLink(), false, `package must not depend on a symlink: ${name}`);
-    if (entry.isDirectory()) files.push(...await inventory(directory, name));
+    if (entry.isDirectory()) files.push(...(await inventory(directory, name)));
     else files.push(name);
   }
   return files.sort();
 }
 
-test('production package runs after its source and dependency installations move', async t => {
+test("production package runs after its source and dependency installations move", async t => {
   const options = await fixture(t);
   const result = stageDesktop(options);
   const all = await inventory(options.destination);
   for (const name of production) assert(all.includes(`app/${name}`), name);
-  assert(all.includes('runtime/electron/LICENSES.chromium.html'));
-  assert(all.includes('runtime/electron/locales/en-US.pak'));
-  assert(all.includes('app/node_modules/ws/LICENSE'));
-  for (const name of ['package.json', 'LICENSE', 'lib/index.js', 'lib/unixTerminal.js', 'build/Release/pty.node']) assert(all.includes(`app/node_modules/node-pty/${name}`), name);
-  assert.deepEqual(all.filter(name => name.startsWith('app/node_modules/node-pty/')).length, 5, 'node-pty ships without its tests, maps, sources or other platforms');
+  assert(all.includes("runtime/electron/LICENSES.chromium.html"));
+  assert(all.includes("runtime/electron/locales/en-US.pak"));
+  assert(all.includes("app/node_modules/ws/LICENSE"));
+  for (const name of ["package.json", "LICENSE", "lib/index.js", "lib/unixTerminal.js", "build/Release/pty.node"])
+    assert(all.includes(`app/node_modules/node-pty/${name}`), name);
+  assert.deepEqual(
+    all.filter(name => name.startsWith("app/node_modules/node-pty/")).length,
+    5,
+    "node-pty ships without its tests, maps, sources or other platforms",
+  );
   assert(!all.some(name => /(^|\/)(\.next|tests?|next)(\/|$)|\.test\./.test(name)));
-  assert(!all.includes('app/desktop/launch.sh'));
-  const identity = JSON.parse(await fs.readFile(path.join(options.destination, 'app/package.json'), 'utf8'));
-  assert.equal(identity.name, 'elpis-desktop');
-  assert.equal(identity.desktopName, 'elpis-desktop.desktop', 'the window is matched to its launcher entry and icon');
-  assert.equal(identity.main, 'desktop/main.cts');
-  assert.equal(identity.type, 'module');
-  assert.deepEqual(identity.dependencies, { ws: '8.22.0', 'node-pty': '1.1.0', rrule: '2.8.1', zod: '1.0.0', 'proper-lockfile': '1.0.0', 'graceful-fs': '1.0.0', retry: '1.0.0', 'signal-exit': '1.0.0' });
-  assert.deepEqual(all.filter(name => name.startsWith('app/node_modules/rrule/')), ['app/node_modules/rrule/LICENCE', 'app/node_modules/rrule/dist/es5/rrule.js', 'app/node_modules/rrule/package.json'], 'rrule ships its build alone');
+  assert(!all.includes("app/desktop/launch.sh"));
+  const identity = JSON.parse(await fs.readFile(path.join(options.destination, "app/package.json"), "utf8"));
+  assert.equal(identity.name, "elpis-desktop");
+  assert.equal(identity.desktopName, "elpis-desktop.desktop", "the window is matched to its launcher entry and icon");
+  assert.equal(identity.main, "desktop/main.cts");
+  assert.equal(identity.type, "module");
+  assert.deepEqual(identity.dependencies, {
+    ws: "8.22.0",
+    "node-pty": "1.1.0",
+    rrule: "2.8.1",
+    zod: "1.0.0",
+    "proper-lockfile": "1.0.0",
+    "graceful-fs": "1.0.0",
+    retry: "1.0.0",
+    "signal-exit": "1.0.0",
+  });
+  assert.deepEqual(
+    all.filter(name => name.startsWith("app/node_modules/rrule/")),
+    [
+      "app/node_modules/rrule/LICENCE",
+      "app/node_modules/rrule/dist/es5/rrule.js",
+      "app/node_modules/rrule/package.json",
+    ],
+    "rrule ships its build alone",
+  );
   assert.equal(identity.scripts, undefined);
-  const manifest = JSON.parse(await fs.readFile(result.manifest, 'utf8'));
-  assert(manifest.externalRequirements.some((requirement: string) => requirement.startsWith('Node.js')));
+  const manifest = JSON.parse(await fs.readFile(result.manifest, "utf8"));
+  assert(manifest.externalRequirements.some((requirement: string) => requirement.startsWith("Node.js")));
   assert.equal(manifest.fileCount, all.length - 1);
   let bytes = 0;
   for (const file of manifest.files) {
     const contents = await fs.readFile(path.join(options.destination, file.path));
-    assert.equal(createHash('sha256').update(contents).digest('hex'), file.sha256, file.path);
+    assert.equal(createHash("sha256").update(contents).digest("hex"), file.sha256, file.path);
     assert.equal(contents.length, file.bytes);
     bytes += contents.length;
   }
   assert.equal(bytes, manifest.payloadBytes);
   // A copy of the app carries no path from the machine that built it.
-  assert.ok(!JSON.stringify(manifest).includes(options.source), 'the manifest names no source folder');
-  assert.ok(!JSON.stringify(manifest).includes(os.homedir()), 'the manifest names no home folder');
+  assert.ok(!JSON.stringify(manifest).includes(options.source), "the manifest names no source folder");
+  assert.ok(!JSON.stringify(manifest).includes(os.homedir()), "the manifest names no home folder");
   assert.equal(result.totalBytes, bytes + (await fs.stat(result.manifest)).size);
   await fs.rename(options.source, `${options.source}-moved`);
-  await fs.rename(path.join(options.root, 'old-install'), path.join(options.root, 'old-install-moved'));
+  await fs.rename(path.join(options.root, "old-install"), path.join(options.root, "old-install-moved"));
   await fs.rename(options.electronDist, `${options.electronDist}-moved`);
-  const entry = path.join(options.root, 'app menu', 'elpis-app');
+  const entry = path.join(options.root, "app menu", "elpis-app");
   await fs.mkdir(path.dirname(entry));
-  await fs.symlink(path.join(options.destination, 'launch'), entry);
-  const launched = await run(entry, ['argument with spaces'], {
-    env: { PATH: '/usr/bin:/bin', ELPIS_NODE_BIN: options.node, HTTPS_PROXY: 'http://proxy.invalid:1234', NO_PROXY: 'example.test',
-      ELECTRON_RUN_AS_NODE: '1' },
+  await fs.symlink(path.join(options.destination, "launch"), entry);
+  const launched = await run(entry, ["argument with spaces"], {
+    env: {
+      PATH: "/usr/bin:/bin",
+      ELPIS_NODE_BIN: options.node,
+      HTTPS_PROXY: "http://proxy.invalid:1234",
+      NO_PROXY: "example.test",
+      ELECTRON_RUN_AS_NODE: "1",
+    },
   });
-  const fields = Object.fromEntries(launched.stdout.trim().split('\n').map(line => {
-    const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)];
-  }));
-  assert.equal(fields.app, path.join(options.destination, 'app'));
-  assert.equal(fields.argument, 'argument with spaces');
-  assert.equal(fields['node-bin'], options.node);
-  assert.equal(fields['node-mode'], '');
-  assert.equal(fields['path-first'], path.dirname(options.node));
-  assert.equal(fields['proxy-mode'], '1');
-  assert.equal(fields['no-proxy'], 'example.test,localhost,127.0.0.1,::1');
-  assert.equal(fields['no-proxy-lower'], fields['no-proxy']);
+  const fields = Object.fromEntries(
+    launched.stdout
+      .trim()
+      .split("\n")
+      .map(line => {
+        const at = line.indexOf("=");
+        return [line.slice(0, at), line.slice(at + 1)];
+      }),
+  );
+  assert.equal(fields.app, path.join(options.destination, "app"));
+  assert.equal(fields.argument, "argument with spaces");
+  assert.equal(fields["node-bin"], options.node);
+  assert.equal(fields["node-mode"], "");
+  assert.equal(fields["path-first"], path.dirname(options.node));
+  assert.equal(fields["proxy-mode"], "1");
+  assert.equal(fields["no-proxy"], "example.test,localhost,127.0.0.1,::1");
+  assert.equal(fields["no-proxy-lower"], fields["no-proxy"]);
   // Started from the dock, the app has no shell proxy; GNOME's system proxy (set by the VPN app) stands in for it, in
   // the form Masih's terminal uses, so the app and a terminal `elpis` share one bridge (Masih, 19 Oct: the terminal
   // refused the app's bridge over differing proxy variables).
-  const gnome = path.join(options.root, 'gnome-bin');
-  await put(path.join(gnome, 'gsettings'), `#!/bin/bash
+  const gnome = path.join(options.root, "gnome-bin");
+  await put(
+    path.join(gnome, "gsettings"),
+    `#!/bin/bash
 case "$*" in
   "get org.gnome.system.proxy mode") echo "'manual'" ;;
   "get org.gnome.system.proxy ignore-hosts") echo "['localhost', '127.0.0.0/8', '::1']" ;;
   *" host") echo "'127.0.0.1'" ;;
   *" port") echo 10808 ;;
 esac
-`, 0o755);
-  const viaGnome = await run(path.join(options.destination, 'launch'), [], { env: { PATH: `${gnome}:/usr/bin:/bin`, ELPIS_NODE_BIN: options.node } });
-  const proxied = Object.fromEntries(viaGnome.stdout.trim().split('\n').map(line => { const at = line.indexOf('='); return [line.slice(0, at), line.slice(at + 1)]; }));
-  assert.deepEqual([proxied['https-proxy'], proxied['http-proxy-lower'], proxied['all-proxy'], proxied['proxy-mode']],
-    ['http://127.0.0.1:10808/', 'http://127.0.0.1:10808/', 'socks://127.0.0.1:10808/', '1']);
-  assert.equal(proxied['no-proxy'], 'localhost,127.0.0.0/8,::1,127.0.0.1');
-  await put(path.join(gnome, 'gsettings'), `#!/bin/bash\n[[ "$*" == "get org.gnome.system.proxy mode" ]] && echo "'none'"\n`, 0o755);
-  const direct = await run(path.join(options.destination, 'launch'), [], { env: { PATH: `${gnome}:/usr/bin:/bin`, ELPIS_NODE_BIN: options.node } });
-  assert.match(direct.stdout, /^https-proxy=$/m, 'with the system proxy off, the app connects directly');
-  const inherited = await run(path.join(options.destination, 'launch'), [], { env: { PATH: `${path.dirname(options.node)}:/usr/bin:/bin` } });
+`,
+    0o755,
+  );
+  const viaGnome = await run(path.join(options.destination, "launch"), [], {
+    env: { PATH: `${gnome}:/usr/bin:/bin`, ELPIS_NODE_BIN: options.node },
+  });
+  const proxied = Object.fromEntries(
+    viaGnome.stdout
+      .trim()
+      .split("\n")
+      .map(line => {
+        const at = line.indexOf("=");
+        return [line.slice(0, at), line.slice(at + 1)];
+      }),
+  );
+  assert.deepEqual(
+    [proxied["https-proxy"], proxied["http-proxy-lower"], proxied["all-proxy"], proxied["proxy-mode"]],
+    ["http://127.0.0.1:10808/", "http://127.0.0.1:10808/", "socks://127.0.0.1:10808/", "1"],
+  );
+  assert.equal(proxied["no-proxy"], "localhost,127.0.0.0/8,::1,127.0.0.1");
+  await put(
+    path.join(gnome, "gsettings"),
+    `#!/bin/bash\n[[ "$*" == "get org.gnome.system.proxy mode" ]] && echo "'none'"\n`,
+    0o755,
+  );
+  const direct = await run(path.join(options.destination, "launch"), [], {
+    env: { PATH: `${gnome}:/usr/bin:/bin`, ELPIS_NODE_BIN: options.node },
+  });
+  assert.match(direct.stdout, /^https-proxy=$/m, "with the system proxy off, the app connects directly");
+  const inherited = await run(path.join(options.destination, "launch"), [], {
+    env: { PATH: `${path.dirname(options.node)}:/usr/bin:/bin` },
+  });
   assert(inherited.stdout.includes(`node-bin=${options.node}\n`));
-  await assert.rejects(run(path.join(options.destination, 'launch'), [], { env: { PATH: '/usr/bin:/bin', ELPIS_NODE_BIN: '/missing/node' } }), /Elpis requires Node\.js/);
+  await assert.rejects(
+    run(path.join(options.destination, "launch"), [], {
+      env: { PATH: "/usr/bin:/bin", ELPIS_NODE_BIN: "/missing/node" },
+    }),
+    /Elpis requires Node\.js/,
+  );
 });
 
-test('an installation can ship a renderer built elsewhere and share Electron with the one before it', async t => {
+test("an installation can ship a renderer built elsewhere and share Electron with the one before it", async t => {
   const options = await fixture(t);
-  const built = path.join(options.root, 'actions-renderer');
-  await put(path.join(built, 'index.html'), '<p>Built on GitHub</p>');
-  await put(path.join(built, '.commit'), 'abc123\n');
+  const built = path.join(options.root, "actions-renderer");
+  await put(path.join(built, "index.html"), "<p>Built on GitHub</p>");
+  await put(path.join(built, ".commit"), "abc123\n");
   stageDesktop({ ...options, outDirectory: built, linkRuntime: true });
-  assert.equal(await fs.readFile(path.join(options.destination, 'app/out/index.html'), 'utf8'), '<p>Built on GitHub</p>');
-  assert.equal(await fs.readFile(path.join(options.destination, 'app/out/.commit'), 'utf8'), 'abc123\n');
-  await assert.rejects(fs.access(path.join(options.destination, 'app/out/_next/static/app.js')), 'the source checkout\'s own out/ is not mixed in');
-  const [from, to] = await Promise.all([fs.stat(path.join(options.electronDist, 'electron')), fs.stat(path.join(options.destination, 'runtime/electron/electron'))]);
-  assert.equal(to.ino, from.ino, 'Electron is linked, not copied');
+  assert.equal(
+    await fs.readFile(path.join(options.destination, "app/out/index.html"), "utf8"),
+    "<p>Built on GitHub</p>",
+  );
+  assert.equal(await fs.readFile(path.join(options.destination, "app/out/.commit"), "utf8"), "abc123\n");
+  await assert.rejects(
+    fs.access(path.join(options.destination, "app/out/_next/static/app.js")),
+    "the source checkout's own out/ is not mixed in",
+  );
+  const [from, to] = await Promise.all([
+    fs.stat(path.join(options.electronDist, "electron")),
+    fs.stat(path.join(options.destination, "runtime/electron/electron")),
+  ]);
+  assert.equal(to.ino, from.ino, "Electron is linked, not copied");
   assert.equal(to.mode & 0o777, 0o755);
-  const app = await fs.stat(path.join(options.destination, 'app/desktop/main.cts'));
-  assert.equal(app.nlink, 1, 'the app itself is still copied');
+  const app = await fs.stat(path.join(options.destination, "app/desktop/main.cts"));
+  assert.equal(app.nlink, 1, "the app itself is still copied");
 });
 
-test('packager refuses an existing destination and preserves its contents', async t => {
+test("packager refuses an existing destination and preserves its contents", async t => {
   const options = await fixture(t);
-  await put(path.join(options.destination, 'keep'), 'existing installation');
+  await put(path.join(options.destination, "keep"), "existing installation");
   assert.throws(() => stageDesktop(options), /destination.*exist/i);
-  assert.equal(await fs.readFile(path.join(options.destination, 'keep'), 'utf8'), 'existing installation');
+  assert.equal(await fs.readFile(path.join(options.destination, "keep"), "utf8"), "existing installation");
 });
 
-test('missing renderer or Electron licenses cannot produce an installation', async t => {
-  for (const missing of ['out/index.html', 'LICENSES.chromium.html']) {
+test("missing renderer or Electron licenses cannot produce an installation", async t => {
+  for (const missing of ["out/index.html", "LICENSES.chromium.html"]) {
     const options = await fixture(t);
-    const file = missing.startsWith('out/') ? path.join(options.source, missing) : path.join(options.electronDist, missing);
+    const file = missing.startsWith("out/")
+      ? path.join(options.source, missing)
+      : path.join(options.electronDist, missing);
     await fs.rename(file, `${file}-missing`);
     assert.throws(() => stageDesktop(options), /index\.html|LICENSES\.chromium\.html/);
-    await assert.rejects(fs.stat(options.destination), { code: 'ENOENT' });
+    await assert.rejects(fs.stat(options.destination), { code: "ENOENT" });
   }
 });
 
-test('packager rejects source links instead of depending on another installation', async t => {
+test("packager rejects source links instead of depending on another installation", async t => {
   const options = await fixture(t);
-  await fs.symlink(path.join(options.source, 'app/page.tsx'), path.join(options.source, 'out/leaked-source'));
+  await fs.symlink(path.join(options.source, "app/page.tsx"), path.join(options.source, "out/leaked-source"));
   assert.throws(() => stageDesktop(options), /symlink|symbolic link/i);
-  await assert.rejects(fs.stat(options.destination), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(options.destination), { code: "ENOENT" });
 });
 
-test('packager rejects a destination inside its inputs', async t => {
+test("packager rejects a destination inside its inputs", async t => {
   const options = await fixture(t);
-  options.destination = path.join(options.electronDist, 'nested');
+  options.destination = path.join(options.electronDist, "nested");
   assert.throws(() => stageDesktop(options), /inside|overlap/i);
-  await assert.rejects(fs.stat(options.destination), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(options.destination), { code: "ENOENT" });
 });
 
-test('command-line packaging emits its receipt without launching the desktop', async t => {
+test("command-line packaging emits its receipt without launching the desktop", async t => {
   const options = await fixture(t);
-  const result = await run(process.execPath, [fileURLToPath(new URL('./package.mts', import.meta.url)),
-    '--source', options.source, '--destination', options.destination,
-    '--electron-dist', options.electronDist, '--ws-directory', options.wsDirectory, '--pty-directory', options.ptyDirectory]);
+  const result = await run(process.execPath, [
+    fileURLToPath(new URL("./package.mts", import.meta.url)),
+    "--source",
+    options.source,
+    "--destination",
+    options.destination,
+    "--electron-dist",
+    options.electronDist,
+    "--ws-directory",
+    options.wsDirectory,
+    "--pty-directory",
+    options.ptyDirectory,
+  ]);
   const receipt = JSON.parse(result.stdout);
   assert.equal(receipt.destination, options.destination);
-  assert.equal(receipt.launcher, path.join(options.destination, 'launch'));
+  assert.equal(receipt.launcher, path.join(options.destination, "launch"));
   assert(receipt.totalBytes > 0);
-  assert.equal(receipt.wsVersion, '8.22.0');
-  assert.equal(result.stderr, '');
+  assert.equal(receipt.wsVersion, "8.22.0");
+  assert.equal(result.stderr, "");
 });

@@ -1,121 +1,187 @@
-'use strict';
-const { preloadPath }: typeof import('./preload-path.cts') = require('./preload-path.cts');
-const test = require('node:test');
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const vm = require('node:vm');
+"use strict";
+const { preloadPath }: typeof import("./preload-path.cts") = require("./preload-path.cts");
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const vm = require("node:vm");
 
 function preload(invoke: (channel: string, target: string) => Promise<unknown>) {
-  let api: { openFile: (target: string) => Promise<unknown>; openFolder: (target: string) => Promise<unknown> } | undefined;
-  const electron = { contextBridge: { exposeInMainWorld: (_name: string, value: typeof api) => { api = value; } },
-    ipcRenderer: { sendSync: () => ({}), invoke, on: () => {}, removeListener: () => {} } };
-  vm.runInNewContext(fs.readFileSync(preloadPath('preload'), 'utf8'), { require: () => electron });
+  let api:
+    { openFile: (target: string) => Promise<unknown>; openFolder: (target: string) => Promise<unknown> } | undefined;
+  const electron = {
+    contextBridge: {
+      exposeInMainWorld: (_name: string, value: typeof api) => {
+        api = value;
+      },
+    },
+    ipcRenderer: { sendSync: () => ({}), invoke, on: () => {}, removeListener: () => {} },
+  };
+  vm.runInNewContext(fs.readFileSync(preloadPath("preload"), "utf8"), { require: () => electron });
   return api!;
 }
 
-function setup(openPath: (target: string) => Promise<string> = async () => '') {
-  const { registerFiles }: typeof import('./files.cts') = require('./files.cts');
-  const handlers = new Map<string, (event: unknown, target: unknown) => Promise<{ error?: string; opened?: boolean }>>();
-  const mainFrame = { url: 'http://127.0.0.1:45001/' };
+function setup(openPath: (target: string) => Promise<string> = async () => "") {
+  const { registerFiles }: typeof import("./files.cts") = require("./files.cts");
+  const handlers = new Map<
+    string,
+    (event: unknown, target: unknown) => Promise<{ error?: string; opened?: boolean }>
+  >();
+  const mainFrame = { url: "http://127.0.0.1:45001/" };
   const sent: unknown[][] = [];
   const webContents = { mainFrame, send: (...args: unknown[]) => sent.push(args) };
   const event = { sender: webContents, senderFrame: mainFrame };
-  const dispose = registerFiles({ host: { webContents }, origin: 'http://127.0.0.1:45001',
-    ipcMain: { handle: (name: string, handler: (event: unknown, target: unknown) => Promise<{ error?: string; opened?: boolean }>) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) },
-    shell: { openPath } } as unknown as Parameters<typeof registerFiles>[0]);
-  return { handlers, event, webContents, sent, dispose, open: async (target: unknown, sender: unknown = event) => {
-    const result = await handlers.get('elpis:file:open')!(sender, target);
-    if (result.error) throw Error(result.error);
-    return result;
-  } };
+  const dispose = registerFiles({
+    host: { webContents },
+    origin: "http://127.0.0.1:45001",
+    ipcMain: {
+      handle: (
+        name: string,
+        handler: (event: unknown, target: unknown) => Promise<{ error?: string; opened?: boolean }>,
+      ) => handlers.set(name, handler),
+      removeHandler: (name: string) => handlers.delete(name),
+    },
+    shell: { openPath },
+  } as unknown as Parameters<typeof registerFiles>[0]);
+  return {
+    handlers,
+    event,
+    webContents,
+    sent,
+    dispose,
+    open: async (target: unknown, sender: unknown = event) => {
+      const result = await handlers.get("elpis:file:open")!(sender, target);
+      if (result.error) throw Error(result.error);
+      return result;
+    },
+  };
 }
 
-test('the app preload offers a narrow local-file API and reports a native failure', async () => {
+test("the app preload offers a narrow local-file API and reports a native failure", async () => {
   let call: unknown[] | undefined;
-  const api = preload(async (...args: [string, string]) => { call = args; throw Error('No application can open this file.'); });
-  assert.equal(typeof api.openFile, 'function');
-  await assert.rejects(api.openFile('/tmp/report.md:12'), /No application can open this file/);
-  assert.deepEqual(call, ['elpis:file:open', '/tmp/report.md:12']);
-  await assert.rejects(preload(async () => ({ error: 'This file is unavailable.' })).openFile('/tmp/report.md'), /unavailable/);
-  await assert.rejects(preload(async () => undefined).openFile('/tmp/report.md'), /Could not open/);
+  const api = preload(async (...args: [string, string]) => {
+    call = args;
+    throw Error("No application can open this file.");
+  });
+  assert.equal(typeof api.openFile, "function");
+  await assert.rejects(api.openFile("/tmp/report.md:12"), /No application can open this file/);
+  assert.deepEqual(call, ["elpis:file:open", "/tmp/report.md:12"]);
+  await assert.rejects(
+    preload(async () => ({ error: "This file is unavailable." })).openFile("/tmp/report.md"),
+    /unavailable/,
+  );
+  await assert.rejects(preload(async () => undefined).openFile("/tmp/report.md"), /Could not open/);
 });
 
-test('a clicked local file reaches the Files pane with its line; only the explicit external action uses OS association', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-file-link-'));
-  const file = path.join(root, 'گزارش with spaces.md');
-  fs.writeFileSync(file, 'fixture');
+test("a clicked local file reaches the Files pane with its line; only the explicit external action uses OS association", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-file-link-"));
+  const file = path.join(root, "گزارش with spaces.md");
+  fs.writeFileSync(file, "fixture");
   const opened: string[] = [];
-  const context = setup(async (target: string) => { opened.push(target); return ''; });
+  const context = setup(async (target: string) => {
+    opened.push(target);
+    return "";
+  });
   const api = preload((channel: string, target: string) => {
-    assert.equal(channel, 'elpis:file:open');
+    assert.equal(channel, "elpis:file:open");
     return context.open(target);
   });
   await api.openFile(`${encodeURI(file)}:12`);
   assert.deepEqual(opened, []);
-  assert.deepEqual(context.sent, [['elpis:file:requested', { path: fs.realpathSync(file), line: 12 }]]);
-  const external = await context.handlers.get('elpis:file:external')!(context.event, file);
+  assert.deepEqual(context.sent, [["elpis:file:requested", { path: fs.realpathSync(file), line: 12 }]]);
+  const external = await context.handlers.get("elpis:file:external")!(context.event, file);
   assert.equal(external.opened, true);
   assert.deepEqual(opened, [fs.realpathSync(file)]);
   context.dispose();
   assert.equal(context.handlers.size, 0);
 });
 
-test('missing files, folders and OS association failures reject without silently succeeding', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-file-error-'));
-  const file = path.join(root, 'report.md'); fs.writeFileSync(file, 'fixture');
+test("missing files, folders and OS association failures reject without silently succeeding", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-file-error-"));
+  const file = path.join(root, "report.md");
+  fs.writeFileSync(file, "fixture");
   let calls = 0;
-  const context = setup(async () => { calls++; return 'No application is associated with this file.'; });
-  await assert.rejects(context.open(path.join(root, 'missing.md')), /unavailable|existing local file/i);
+  const context = setup(async () => {
+    calls++;
+    return "No application is associated with this file.";
+  });
+  await assert.rejects(context.open(path.join(root, "missing.md")), /unavailable|existing local file/i);
   await assert.rejects(context.open(root), /regular file|existing local file|unavailable/i);
   assert.equal(calls, 0);
-  const failure = await context.handlers.get('elpis:file:external')!(context.event, file);
+  const failure = await context.handlers.get("elpis:file:external")!(context.event, file);
   assert.match(failure.error, /No application is associated/);
   assert.equal(calls, 1);
   context.dispose();
 });
 
-test('only absolute file paths with well-formed optional line numbers are accepted', async () => {
+test("only absolute file paths with well-formed optional line numbers are accepted", async () => {
   let calls = 0;
-  const context = setup(async () => { calls++; return ''; });
-  for (const target of [null, {}, '', 'relative.md', 'https://example.com/a.md', 'file:///tmp/a.md',
-    '//example.com/a.md', '/%2Fexample.com/a.md', '/tmp/a%00.md', '/tmp/a\n.md', '/tmp/%ZZ.md',
-    '/tmp/a.md:0', '/tmp/a.md:999999999999999999999', `/${'x'.repeat(4096)}`]) {
-    await assert.rejects(context.open(target), /absolute|valid|line|path/i, typeof target === 'string' ? target : target === null ? 'null' : '[object Object]');
+  const context = setup(async () => {
+    calls++;
+    return "";
+  });
+  for (const target of [
+    null,
+    {},
+    "",
+    "relative.md",
+    "https://example.com/a.md",
+    "file:///tmp/a.md",
+    "//example.com/a.md",
+    "/%2Fexample.com/a.md",
+    "/tmp/a%00.md",
+    "/tmp/a\n.md",
+    "/tmp/%ZZ.md",
+    "/tmp/a.md:0",
+    "/tmp/a.md:999999999999999999999",
+    `/${"x".repeat(4096)}`,
+  ]) {
+    await assert.rejects(
+      context.open(target),
+      /absolute|valid|line|path/i,
+      typeof target === "string" ? target : target === null ? "null" : "[object Object]",
+    );
   }
   assert.equal(calls, 0);
   context.dispose();
 });
 
-test('websites, subframes and a navigated app frame cannot open local files', async () => {
+test("websites, subframes and a navigated app frame cannot open local files", async () => {
   let calls = 0;
-  const context = setup(async () => { calls++; return ''; });
+  const context = setup(async () => {
+    calls++;
+    return "";
+  });
   const { webContents } = context;
   for (const event of [
     { sender: {}, senderFrame: webContents.mainFrame },
     { sender: webContents, senderFrame: { url: webContents.mainFrame.url } },
-    { sender: {}, senderFrame: { url: 'https://example.com' } },
-  ]) await assert.rejects(context.open('/tmp/file.md', event), /application frame/);
-  webContents.mainFrame.url = 'https://example.com/';
-  await assert.rejects(context.open('/tmp/file.md'), /application frame/);
-  webContents.mainFrame.url = 'not a URL';
-  await assert.rejects(context.open('/tmp/file.md'), /application frame/);
+    { sender: {}, senderFrame: { url: "https://example.com" } },
+  ])
+    await assert.rejects(context.open("/tmp/file.md", event), /application frame/);
+  webContents.mainFrame.url = "https://example.com/";
+  await assert.rejects(context.open("/tmp/file.md"), /application frame/);
+  webContents.mainFrame.url = "not a URL";
+  await assert.rejects(context.open("/tmp/file.md"), /application frame/);
   assert.equal(calls, 0);
   context.dispose();
 });
 
-test('a project folder opens in the file manager; files, missing and relative paths are refused', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-folder-open-'));
-  const file = path.join(root, 'notes.md');
-  fs.writeFileSync(file, 'fixture');
+test("a project folder opens in the file manager; files, missing and relative paths are refused", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-folder-open-"));
+  const file = path.join(root, "notes.md");
+  fs.writeFileSync(file, "fixture");
   const opened: string[] = [];
-  const { handlers, event } = setup(async (target: string) => { opened.push(target); return ''; });
+  const { handlers, event } = setup(async (target: string) => {
+    opened.push(target);
+    return "";
+  });
   const api = preload((channel: string, target: string) => handlers.get(channel)!(event, target));
   await api.openFolder(root);
   assert.deepEqual(opened, [fs.realpathSync(root)]);
   await assert.rejects(api.openFolder(file), /folder is unavailable/);
-  await assert.rejects(api.openFolder(path.join(root, 'missing')), /folder is unavailable/);
-  await assert.rejects(api.openFolder('relative/path'), /absolute local folder/);
+  await assert.rejects(api.openFolder(path.join(root, "missing")), /folder is unavailable/);
+  await assert.rejects(api.openFolder("relative/path"), /absolute local folder/);
   assert.equal(opened.length, 1);
 });

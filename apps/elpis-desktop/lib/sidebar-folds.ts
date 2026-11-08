@@ -9,8 +9,12 @@ export const FOLDS_KEY = "elpis-sidebar-folds-v1";
 /** Workflows starts folded (Masih, 24 Oct: "workflow only be closed, collapsed, it's okay if it's there"). */
 export const defaultFolds = (): SidebarFolds => ({ sections: { workflows: true }, projects: {} });
 
-const flags = (value: unknown) => Object.fromEntries(Object.entries(value && typeof value === "object" && !Array.isArray(value) ? value : {})
-  .filter((entry): entry is [string, boolean] => !!entry[0] && typeof entry[1] === "boolean"));
+const flags = (value: unknown) =>
+  Object.fromEntries(
+    Object.entries(value && typeof value === "object" && !Array.isArray(value) ? value : {}).filter(
+      (entry): entry is [string, boolean] => !!entry[0] && typeof entry[1] === "boolean",
+    ),
+  );
 
 /** What was saved, over the defaults; an unreadable value gives the defaults. */
 export function readFolds(storage: Storage): SidebarFolds {
@@ -19,10 +23,17 @@ export function readFolds(storage: Storage): SidebarFolds {
     const saved = JSON.parse(storage.getItem(FOLDS_KEY) || "null");
     if (!saved || typeof saved !== "object") return fallback;
     return { sections: { ...fallback.sections, ...flags(saved.sections) }, projects: flags(saved.projects) };
-  } catch { return fallback; }
+  } catch {
+    return fallback;
+  }
 }
 
 /** False when the store refused it; the fold still applies for this session. */
 export function writeFolds(state: SidebarFolds, storage: Storage): boolean {
-  try { storage.setItem(FOLDS_KEY, JSON.stringify(state)); return true; } catch { return false; }
+  try {
+    storage.setItem(FOLDS_KEY, JSON.stringify(state));
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -10,19 +10,28 @@ type Shot = { id: string; name: string; dataURL: string };
  * row open together in the order they were taken (Masih, 31 Oct). Screenshots already waiting when the window starts do not
  * pop up. */
 export function useScreenshotPopup(ready: boolean, open: (ids: string[]) => void) {
-  const opener = useRef(open); opener.current = open;
+  const opener = useRef(open);
+  opener.current = open;
   const waiting = useRef<string[]>([]); // newest first, as the tray lists them
-  useEffect(() => window.elpisDesktop?.screenshotPopup?.onOpen(id => {
-    const ids = waiting.current.includes(id) ? [...waiting.current].reverse() : [id];
-    opener.current(ids);
-  }), []);
+  useEffect(
+    () =>
+      window.elpisDesktop?.screenshotPopup?.onOpen(id => {
+        const ids = waiting.current.includes(id) ? [...waiting.current].reverse() : [id];
+        opener.current(ids);
+      }),
+    [],
+  );
   useEffect(() => {
     if (!ready || !window.elpisDesktop?.screenshotPopup) return;
     let known: Set<string> | null = null;
     const taken = new Set<string>();
     return subscribeLoveSpotEvents(event => {
       let data: { type?: string; screenshots?: Shot[] };
-      try { data = JSON.parse(event.data); } catch { return; }
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
       if (data.type !== "screenshots" || !Array.isArray(data.screenshots)) return;
       const fresh = known ? data.screenshots.filter(shot => !known!.has(shot.id)) : [];
       known = new Set([...(known ?? []), ...data.screenshots.map(shot => shot.id)]);

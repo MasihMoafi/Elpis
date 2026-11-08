@@ -9,8 +9,20 @@ const writers = (tasks: { kind: string }[]) => tasks.filter(task => task.kind ==
 
 /** The body of POST /api/workflows/run. It asks for worktree isolation when the project is a git repository and the part
  * has more than one writing agent (one has no one to clash with); otherwise `isolation` is left out. */
-export function runPayload<T extends { kind: string }>(rootThreadId: string, name: string, tasks: T[], maxConcurrency: number, repository: boolean) {
-  return { rootThreadId, name, tasks, maxConcurrency, ...(repository && writers(tasks) > 1 ? { isolation: "worktree" as const } : {}) };
+export function runPayload<T extends { kind: string }>(
+  rootThreadId: string,
+  name: string,
+  tasks: T[],
+  maxConcurrency: number,
+  repository: boolean,
+) {
+  return {
+    rootThreadId,
+    name,
+    tasks,
+    maxConcurrency,
+    ...(repository && writers(tasks) > 1 ? { isolation: "worktree" as const } : {}),
+  };
 }
 /** Whether a run part could use isolation, so the repository need only be asked about then. */
 export const wantsIsolation = (tasks: { kind: string }[]) => writers(tasks) > 1;
@@ -20,14 +32,25 @@ export type ListedGraph = { id: string; error?: string | null; tasks: { id: stri
 /** What stopped the merge. `clash`: `agent`'s work clashed, with the checked-out branch (`into`, at the end of the run) or,
  * with `into` null, among the work it builds on. `blocked`: the project has uncommitted changes in files the merge
  * would change (no agent). `kept` is the engine's own line saying where the worktrees were kept. */
-export type MergeStop = { kind: "clash" | "blocked"; agent: string | null; files: string[]; into: string | null; kept: string | null };
+export type MergeStop = {
+  kind: "clash" | "blocked";
+  agent: string | null;
+  files: string[];
+  into: string | null;
+  kept: string | null;
+};
 
-const names = (list: string) => list.split(", ").map(file => file.trim()).filter(Boolean);
+const names = (list: string) =>
+  list
+    .split(", ")
+    .map(file => file.trim())
+    .filter(Boolean);
 
 /** The merge stops a graph reports, read from the engine's texts: a task that failed because the work it builds on
  * clashes (its `failureReason`), and the graph's `error` when the final merge clashed or was blocked. */
 export function mergeStops(graph: ListedGraph): MergeStop[] {
-  const error = graph.error ?? "", kept = error.match(/Kept (?:for inspection|worktrees with work): .+$/)?.[0] ?? null;
+  const error = graph.error ?? "",
+    kept = error.match(/Kept (?:for inspection|worktrees with work): .+$/)?.[0] ?? null;
   const stops: MergeStop[] = [];
   for (const task of graph.tasks) {
     const files = task.failureReason?.match(/whose results clash in: (.+?); the conflicted worktree is kept at /)?.[1];
@@ -35,8 +58,11 @@ export function mergeStops(graph: ListedGraph): MergeStop[] {
   }
   // The branch is elpis/<graph id>/<task id>; the checked-out branch is named after "clashes with".
   const merged = error.match(/Not merged: elpis\/[^/\s]+\/(\S+) clashes with (\S+) in (.+?); \2 is untouched\./);
-  if (merged?.[1] && merged[2] && merged[3]) stops.push({ kind: "clash", agent: merged[1], files: names(merged[3]), into: merged[2], kept });
-  const blocked = error.match(/Not merged: .+? has uncommitted changes in files the merge would change: (.+?); nothing was merged\./);
+  if (merged?.[1] && merged[2] && merged[3])
+    stops.push({ kind: "clash", agent: merged[1], files: names(merged[3]), into: merged[2], kept });
+  const blocked = error.match(
+    /Not merged: .+? has uncommitted changes in files the merge would change: (.+?); nothing was merged\./,
+  );
   if (blocked?.[1]) stops.push({ kind: "blocked", agent: null, files: names(blocked[1]), into: null, kept });
   return stops;
 }
@@ -50,10 +76,11 @@ export function filesText(files: string[], most = 8) {
  * work was kept. `who` is the name of the agent. */
 export function stopText(stop: MergeStop, who: string) {
   const files = filesText(stop.files);
-  const sentence = stop.kind === "blocked"
-    ? `Merge stopped: your project has uncommitted changes in ${files}, which the merge would change. Nothing was merged.`
-    : stop.into
-      ? `Merge stopped: “${who}” clashes with ${stop.into} in ${files}. ${stop.into} is untouched.`
-      : `Merge stopped: the work “${who}” builds on clashes in ${files}. Your branch is untouched.`;
+  const sentence =
+    stop.kind === "blocked"
+      ? `Merge stopped: your project has uncommitted changes in ${files}, which the merge would change. Nothing was merged.`
+      : stop.into
+        ? `Merge stopped: “${who}” clashes with ${stop.into} in ${files}. ${stop.into} is untouched.`
+        : `Merge stopped: the work “${who}” builds on clashes in ${files}. Your branch is untouched.`;
   return stop.kept ? `${sentence} ${stop.kept}` : sentence;
 }

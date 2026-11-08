@@ -13,15 +13,30 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "next-pane", group: "Navigation", label: "Focus next split view", keys: ["Ctrl+Alt+]"] },
   { id: "previous-pane", group: "Navigation", label: "Focus previous split view", keys: ["Ctrl+Alt+["] },
   { id: "open-split", group: "Navigation", label: "Open session in split view", keys: ["Alt+click"] },
-  { id: "rename", group: "Chat", label: "Rename chat (F2 on a focused chat in the sidebar)", keys: ["Ctrl+Alt+R", "F2"] },
+  {
+    id: "rename",
+    group: "Chat",
+    label: "Rename chat (F2 on a focused chat in the sidebar)",
+    keys: ["Ctrl+Alt+R", "F2"],
+  },
   { id: "archive", group: "Chat", label: "Archive chat", keys: ["Ctrl+Shift+A"] },
   { id: "pin", group: "Chat", label: "Toggle pin", keys: ["Ctrl+Alt+P"] },
   { id: "chat-to-top", group: "Chat", label: "Move the selected chat to the top of its list", keys: ["Ctrl+["] },
   { id: "chat-to-bottom", group: "Chat", label: "Move the selected chat to the bottom of its list", keys: ["Ctrl+]"] },
   // Handled by the sidebar's chat list (app/page.tsx), where the row has focus.
   { id: "delete", group: "Chat", label: "Delete the selected chats in the sidebar", keys: ["D"] },
-  { id: "select-chats", group: "Chat", label: "Select several chats in the sidebar (Esc clears)", keys: ["Ctrl+click", "Shift+click"] },
-  { id: "undo-delete", group: "Chat", label: "Bring back the last deleted chat (outside text fields)", keys: ["Ctrl+Z"] },
+  {
+    id: "select-chats",
+    group: "Chat",
+    label: "Select several chats in the sidebar (Esc clears)",
+    keys: ["Ctrl+click", "Shift+click"],
+  },
+  {
+    id: "undo-delete",
+    group: "Chat",
+    label: "Bring back the last deleted chat (outside text fields)",
+    keys: ["Ctrl+Z"],
+  },
   { id: "command-menu", group: "Navigation", label: "Command menu", keys: ["Ctrl+K"] },
   { id: "go-loveSpot", group: "Navigation", label: "Open Love Spot", keys: ["Ctrl+L"] },
   { id: "go-mother", group: "Navigation", label: "Open Elpis", keys: ["Ctrl+E"] },
@@ -34,11 +49,21 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "go-to-chat", group: "Navigation", label: "Go to chat 1–9", keys: ["Alt+1…9"] },
   { id: "list-chat", group: "Navigation", label: "Previous or next chat in the sidebar", keys: ["↑", "↓"] },
   // Handled by the message box (app/page.tsx), as in Claude Code.
-  { id: "cycle-mode", group: "Chat", label: "Cycle Ask for approval, Approve for me and Plan mode (in the message box)", keys: ["Shift+Tab"] },
+  {
+    id: "cycle-mode",
+    group: "Chat",
+    label: "Cycle Ask for approval, Approve for me and Plan mode (in the message box)",
+    keys: ["Shift+Tab"],
+  },
   // Handled by the message box and the chat (app/page.tsx, lib/prompt-history.ts), as in Claude.
   { id: "stop", group: "Chat", label: "Stop the response", keys: ["Esc"] },
   { id: "edit-last", group: "Chat", label: "Edit your last message (in an empty message box)", keys: ["Esc Esc"] },
-  { id: "prompt-history", group: "Chat", label: "Step through the messages you sent (in the message box)", keys: ["↑", "↓"] },
+  {
+    id: "prompt-history",
+    group: "Chat",
+    label: "Step through the messages you sent (in the message box)",
+    keys: ["↑", "↓"],
+  },
   { id: "search-history", group: "Chat", label: "Search the messages you sent (in the message box)", keys: ["Ctrl+R"] },
   { id: "new-tab", group: "Chat", label: "New chat tab", keys: ["Ctrl+T"] },
   { id: "close-tab", group: "Chat", label: "Close chat tab", keys: ["Ctrl+W"] },
@@ -60,25 +85,62 @@ export const SHORTCUTS: Shortcut[] = [
 // These actions run through shortcutFor. The other entries document native window controls,
 // mouse gestures or keys whose meaning depends on focus in the composer/sidebar.
 const APP_BINDINGS = new Set([
-  "new-chat", "side-chat", "rename", "archive", "pin", "chat-to-top", "chat-to-bottom", "undo-delete", "command-menu", "search",
-  "previous-chat", "next-chat", "new-tab", "close-tab", "next-tab", "previous-tab", "back", "forward",
-  "terminal", "full-view", "files", "sidebar", "copy-folder", "settings", "shortcuts", "theme",
-  "go-loveSpot", "go-mother", "go-canvas", "go-customize", "go-observability",
+  "new-chat",
+  "side-chat",
+  "rename",
+  "archive",
+  "pin",
+  "chat-to-top",
+  "chat-to-bottom",
+  "undo-delete",
+  "command-menu",
+  "search",
+  "previous-chat",
+  "next-chat",
+  "new-tab",
+  "close-tab",
+  "next-tab",
+  "previous-tab",
+  "back",
+  "forward",
+  "terminal",
+  "full-view",
+  "files",
+  "sidebar",
+  "copy-folder",
+  "settings",
+  "shortcuts",
+  "theme",
+  "go-loveSpot",
+  "go-mother",
+  "go-canvas",
+  "go-customize",
+  "go-observability",
 ]);
 export const canCustomizeShortcut = (id: string) => APP_BINDINGS.has(id);
 
 export function shortcutBindings(preferences: Pick<Preferences, "shortcutBindings">): Record<string, string> {
   try {
     const value: unknown = JSON.parse(preferences.shortcutBindings);
-    if (value && typeof value === "object" && !Array.isArray(value)) return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-      .filter((entry): entry is [string, string] => APP_BINDINGS.has(entry[0]) && typeof entry[1] === "string" && entry[1].length < 100));
-  } catch { /* Invalid saved bindings keep their defaults. */ }
+    if (value && typeof value === "object" && !Array.isArray(value))
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).filter(
+          (entry): entry is [string, string] =>
+            APP_BINDINGS.has(entry[0]) && typeof entry[1] === "string" && entry[1].length < 100,
+        ),
+      );
+  } catch {
+    /* Invalid saved bindings keep their defaults. */
+  }
   return {};
 }
 
 export function configuredShortcuts(preferences: Pick<Preferences, "shortcutBindings">): Shortcut[] {
   const bindings = shortcutBindings(preferences);
-  return SHORTCUTS.map(item => { const binding = bindings[item.id]; return Object.hasOwn(bindings, item.id) ? { ...item, keys: binding ? [binding] : [] } : item; });
+  return SHORTCUTS.map(item => {
+    const binding = bindings[item.id];
+    return Object.hasOwn(bindings, item.id) ? { ...item, keys: binding ? [binding] : [] } : item;
+  });
 }
 
 type KeyPress = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey"> &
@@ -86,24 +148,66 @@ type KeyPress = Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shi
 /** Stable physical punctuation names keep Ctrl+Shift+[ independent of the keyboard's shifted character. */
 export function keyCombination(event: KeyPress): string | null {
   if (/^(Control|Alt|Shift|Meta)(Left|Right)$/.test(event.code)) return null;
-  const punctuation: Record<string, string> = { BracketLeft: "[", BracketRight: "]", Backquote: "`", Semicolon: ";", Quote: "'", Slash: "/", Backslash: "\\", Comma: ",", Period: ".", Minus: "-", Equal: "=" };
-  const key = punctuation[event.code] ?? (event.code.startsWith("Key") ? event.code.slice(3) : event.code.startsWith("Digit") ? event.code.slice(5)
-    : event.code.startsWith("Arrow") ? event.code.slice(5) : event.code === "Space" ? "Space" : event.key.length === 1 ? event.key.toUpperCase() : event.code);
-  return [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Super", key].filter(Boolean).join("+");
+  const punctuation: Record<string, string> = {
+    BracketLeft: "[",
+    BracketRight: "]",
+    Backquote: "`",
+    Semicolon: ";",
+    Quote: "'",
+    Slash: "/",
+    Backslash: "\\",
+    Comma: ",",
+    Period: ".",
+    Minus: "-",
+    Equal: "=",
+  };
+  const key =
+    punctuation[event.code] ??
+    (event.code.startsWith("Key")
+      ? event.code.slice(3)
+      : event.code.startsWith("Digit")
+        ? event.code.slice(5)
+        : event.code.startsWith("Arrow")
+          ? event.code.slice(5)
+          : event.code === "Space"
+            ? "Space"
+            : event.key.length === 1
+              ? event.key.toUpperCase()
+              : event.code);
+  return [event.ctrlKey && "Ctrl", event.altKey && "Alt", event.shiftKey && "Shift", event.metaKey && "Super", key]
+    .filter(Boolean)
+    .join("+");
 }
 
 /** Editing shortcuts belong to the focused text field, even with custom app bindings. */
-export function isNativeTextShortcut(event: KeyPress, { platform = typeof navigator === "undefined" ? "" : navigator.platform, editable = true }: { platform?: string; editable?: boolean } = {}): boolean {
+export function isNativeTextShortcut(
+  event: KeyPress,
+  {
+    platform = typeof navigator === "undefined" ? "" : navigator.platform,
+    editable = true,
+  }: { platform?: string; editable?: boolean } = {},
+): boolean {
   const mac = isMacPlatform(platform);
   const nativeModifier = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
   if (!nativeModifier || event.altKey) return false;
   if (historyShortcut(event, platform)) return editable;
-  return !event.shiftKey && (shortcutLetter(event, "a") || shortcutLetter(event, "c") || (editable && (shortcutLetter(event, "v") || shortcutLetter(event, "x"))));
+  return (
+    !event.shiftKey &&
+    (shortcutLetter(event, "a") ||
+      shortcutLetter(event, "c") ||
+      (editable && (shortcutLetter(event, "v") || shortcutLetter(event, "x"))))
+  );
 }
 
 /** Search accepts a key combination without consuming ordinary text editing keys. */
 export function shortcutSearchKey(event: KeyPress): string | null {
-  if (event.isComposing || !(event.ctrlKey || event.metaKey || event.altKey) || event.key === "Tab" || isNativeTextShortcut(event)) return null;
+  if (
+    event.isComposing ||
+    !(event.ctrlKey || event.metaKey || event.altKey) ||
+    event.key === "Tab" ||
+    isNativeTextShortcut(event)
+  )
+    return null;
   return keyCombination(event);
 }
 
@@ -114,10 +218,20 @@ export function shortcutInScope(id: string, view: string, inSidebar: boolean, in
   return id !== "undo-delete" || (!inOtherSurface && (inSidebar || view === "chat"));
 }
 
-const normalized = (keys: string) => keys.replace(/Super|Command|Cmd/g, "Ctrl")
-  .replace("←", "Left").replace("→", "Right").toLowerCase().split("+").sort().join("+");
+const normalized = (keys: string) =>
+  keys
+    .replace(/Super|Command|Cmd/g, "Ctrl")
+    .replace("←", "Left")
+    .replace("→", "Right")
+    .toLowerCase()
+    .split("+")
+    .sort()
+    .join("+");
 /** The key shown beside a command's name: the one chosen in Settings → Keyboard shortcuts, else the default; none when turned off. */
-export function shortcutHint(id: string, preferences: Pick<Preferences, "shortcutBindings"> = readPreferences()): string | undefined {
+export function shortcutHint(
+  id: string,
+  preferences: Pick<Preferences, "shortcutBindings"> = readPreferences(),
+): string | undefined {
   return configuredShortcuts(preferences).find(item => item.id === id)?.keys[0];
 }
 /** A control's native tooltip follows the same saved binding as menus, including no key when disabled. */
@@ -125,16 +239,27 @@ export function shortcutTitle(label: string, id: string, preferences: Pick<Prefe
   const hint = shortcutHint(id, preferences);
   return hint ? `${label} (${hint})` : label;
 }
-export function shortcutConflict(id: string, binding: string, preferences: Pick<Preferences, "shortcutBindings">): string | undefined {
-  return configuredShortcuts(preferences).find(item => item.id !== id && item.keys.some(key => normalized(key) === normalized(binding)))?.label;
+export function shortcutConflict(
+  id: string,
+  binding: string,
+  preferences: Pick<Preferences, "shortcutBindings">,
+): string | undefined {
+  return configuredShortcuts(preferences).find(
+    item => item.id !== id && item.keys.some(key => normalized(key) === normalized(binding)),
+  )?.label;
 }
 
 /** Which app shortcut a key event triggers. Undo and copy-folder retain their text-field behavior. */
-export function shortcutFor(event: KeyPress, typing: boolean, textContext: "editable" | "read-only" | "none" = typing ? "editable" : "none"): { id: string; index?: number } | null {
+export function shortcutFor(
+  event: KeyPress,
+  typing: boolean,
+  textContext: "editable" | "read-only" | "none" = typing ? "editable" : "none",
+): { id: string; index?: number } | null {
   if (event.defaultPrevented || event.isComposing) return null;
   if (textContext !== "none" && isNativeTextShortcut(event, { editable: textContext === "editable" })) return null;
   if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !/^F\d+$/.test(event.code)) return null;
-  const bindings = shortcutBindings(readPreferences()), pressed = keyCombination(event);
+  const bindings = shortcutBindings(readPreferences()),
+    pressed = keyCombination(event);
   for (const [id, binding] of Object.entries(bindings)) {
     if (binding && pressed && normalized(binding) === normalized(pressed)) {
       return typing && (id === "undo-delete" || id === "copy-folder") ? null : { id };
@@ -145,7 +270,8 @@ export function shortcutFor(event: KeyPress, typing: boolean, textContext: "edit
 }
 
 function defaultShortcutFor(event: KeyPress, typing: boolean): { id: string; index?: number } | null {
-  const ctrl = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
+  const ctrl = event.ctrlKey || event.metaKey,
+    key = event.key.toLowerCase();
   if (ctrl && !event.altKey && !event.shiftKey) {
     if (key === "n") return { id: "new-chat" };
     if (key === ";") return { id: "side-chat" };
@@ -185,7 +311,9 @@ function defaultShortcutFor(event: KeyPress, typing: boolean): { id: string; ind
     if (key === "r") return { id: "rename" };
     if (key === "p") return { id: "pin" };
   }
-  if (event.altKey && !ctrl && !event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) return { id: event.key === "ArrowLeft" ? "back" : "forward" };
-  if (event.altKey && !ctrl && !event.shiftKey && /^Digit[1-9]$/.test(event.code)) return { id: "go-to-chat", index: Number(event.code.slice(5)) - 1 };
+  if (event.altKey && !ctrl && !event.shiftKey && (event.key === "ArrowLeft" || event.key === "ArrowRight"))
+    return { id: event.key === "ArrowLeft" ? "back" : "forward" };
+  if (event.altKey && !ctrl && !event.shiftKey && /^Digit[1-9]$/.test(event.code))
+    return { id: "go-to-chat", index: Number(event.code.slice(5)) - 1 };
   return null;
 }

@@ -2,4 +2,5 @@
 
 /** An Error's message, else the fallback, else the value itself.
  * @param {unknown} cause @param {string} [fallback] @returns {string} */
-export const errorText = (cause: unknown, fallback?: string) => cause instanceof Error ? cause.message : fallback ?? String(cause);
+export const errorText = (cause: unknown, fallback?: string) =>
+  cause instanceof Error ? cause.message : (fallback ?? String(cause));

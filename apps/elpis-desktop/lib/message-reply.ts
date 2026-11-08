@@ -4,10 +4,22 @@ export type MessageReply = { reference: string; speaker: string; text: string; i
 export const messageDomId = (reference: string) => `message-${encodeURIComponent(reference)}`;
 export function replyAttachment(entry: Entry, speaker: string, selected?: string, imageName?: string): Attachment {
   const author = speaker.replace(/[\x00-\x1f]/g, " ").slice(0, 80) || "Elpis";
-  const whole = entry.item.type === "agentMessage" ? entry.item.text || "" : (entry.item.content || []).map(part => part.type === "text" ? part.text || "" : `[${part.type} attachment]`).join("\n");
+  const whole =
+    entry.item.type === "agentMessage"
+      ? entry.item.text || ""
+      : (entry.item.content || [])
+          .map(part => (part.type === "text" ? part.text || "" : `[${part.type} attachment]`))
+          .join("\n");
   const text = (selected ?? whole).trim();
-  const quote = text.length > 24000 ? `${text.slice(0, 24000)}\n[Excerpt; open the original message for the rest.]` : text;
-  return { id: `reply-${crypto.randomUUID()}`, name: `Reply to ${author}`, type: "text", mimeType: "text/plain", text: `Replying to ${author}\nMessage: ${JSON.stringify([entry.turnId, entry.item.id])}\n\n${imageName ? `Image: ${JSON.stringify(imageName)}` : quote}` };
+  const quote =
+    text.length > 24000 ? `${text.slice(0, 24000)}\n[Excerpt; open the original message for the rest.]` : text;
+  return {
+    id: `reply-${crypto.randomUUID()}`,
+    name: `Reply to ${author}`,
+    type: "text",
+    mimeType: "text/plain",
+    text: `Replying to ${author}\nMessage: ${JSON.stringify([entry.turnId, entry.item.id])}\n\n${imageName ? `Image: ${JSON.stringify(imageName)}` : quote}`,
+  };
 }
 /** The reply owns its picture; replacing it must preserve the user's other files. */
 export function withoutReplyAttachments(parts: Attachment[]): Attachment[] {
@@ -20,12 +32,21 @@ export function readReply(part: Pick<Attachment, "name" | "type"> & { text?: str
   if (!match || part.name !== `Reply to ${match[1]}`) return null;
   const [, speaker, reference, text] = match;
   if (speaker === undefined || reference === undefined || text === undefined) return null;
-  try { const ids: unknown = JSON.parse(reference); if (!Array.isArray(ids) || ids.length !== 2 || ids.some(id => typeof id !== "string" || !id || id.length > 500)) return null; } catch { return null; }
+  try {
+    const ids: unknown = JSON.parse(reference);
+    if (!Array.isArray(ids) || ids.length !== 2 || ids.some(id => typeof id !== "string" || !id || id.length > 500))
+      return null;
+  } catch {
+    return null;
+  }
   if (text.startsWith('Image: "')) {
     try {
       const name: unknown = JSON.parse(text.slice(7));
-      if (typeof name === "string" && name && name.length <= 500) return { speaker, reference, text: name, image: { name } };
-    } catch { /* A plain text quote may itself start with Image:. */ }
+      if (typeof name === "string" && name && name.length <= 500)
+        return { speaker, reference, text: name, image: { name } };
+    } catch {
+      /* A plain text quote may itself start with Image:. */
+    }
   }
   return { speaker, reference, text };
 }

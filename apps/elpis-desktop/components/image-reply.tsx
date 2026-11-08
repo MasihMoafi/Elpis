@@ -5,8 +5,19 @@ import { Reply } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export type ReplyImage = { src: string; name: string };
-const ImageReply = createContext<{ onReply?: ((image: ReplyImage) => void) | undefined; reference?: string | undefined }>({});
-export function ImageReplyProvider({ onReply, reference, children }: { onReply?: (image: ReplyImage) => void; reference?: string; children: ReactNode }) {
+const ImageReply = createContext<{
+  onReply?: ((image: ReplyImage) => void) | undefined;
+  reference?: string | undefined;
+}>({});
+export function ImageReplyProvider({
+  onReply,
+  reference,
+  children,
+}: {
+  onReply?: (image: ReplyImage) => void;
+  reference?: string;
+  children: ReactNode;
+}) {
   return <ImageReply.Provider value={{ onReply, reference }}>{children}</ImageReply.Provider>;
 }
 
@@ -14,7 +25,9 @@ function transparentTail(image: HTMLImageElement) {
   try {
     const url = new URL(image.currentSrc || image.src, window.location.href);
     if (url.origin !== window.location.origin && url.protocol !== "data:") return 0;
-  } catch { return 0; }
+  } catch {
+    return 0;
+  }
 
   const scale = Math.min(1, 512 / image.naturalWidth, 512 / image.naturalHeight);
   const canvas = document.createElement("canvas");
@@ -40,7 +53,12 @@ function transparentTail(image: HTMLImageElement) {
 }
 
 /** One action for Markdown pictures, uploaded images and viewed-image thumbnails. */
-export function ReplyableImage({ src, name, children, compact = false }: ReplyImage & { children: ReactNode; compact?: boolean }) {
+export function ReplyableImage({
+  src,
+  name,
+  children,
+  compact = false,
+}: ReplyImage & { children: ReactNode; compact?: boolean }) {
   const { onReply: reply, reference } = useContext(ImageReply);
   const root = useRef<HTMLSpanElement>(null);
   const enabled = Boolean(reply);
@@ -54,9 +72,15 @@ export function ReplyableImage({ src, name, children, compact = false }: ReplyIm
       if (!image.complete || !image.naturalWidth || !image.naturalHeight || restore) return;
       const style = getComputedStyle(image);
       const background = style.backgroundColor.match(/[\d.]+/g);
-      const clearBackground = style.backgroundColor === "transparent" || background?.length === 4 && Number(background[3]) === 0;
-      if (style.backgroundImage !== "none" || !clearBackground
-        || Number.parseFloat(style.borderTopWidth) || Number.parseFloat(style.borderBottomWidth)) return;
+      const clearBackground =
+        style.backgroundColor === "transparent" || (background?.length === 4 && Number(background[3]) === 0);
+      if (
+        style.backgroundImage !== "none" ||
+        !clearBackground ||
+        Number.parseFloat(style.borderTopWidth) ||
+        Number.parseFloat(style.borderBottomWidth)
+      )
+        return;
       const ratio = transparentTail(image);
       if (!ratio) return;
       const originalMarginBottom = image.style.marginBottom;
@@ -86,8 +110,34 @@ export function ReplyableImage({ src, name, children, compact = false }: ReplyIm
     };
   }, [src, enabled]);
   if (!reply) return children;
-  return <span ref={root} data-image-reference={reference} tabIndex={-1} className={compact ? "group relative inline-flex shrink-0" : "inline-flex max-w-full flex-col items-start gap-1"} onClick={event => event.stopPropagation()}>
-    {children}
-    <Button type="button" variant={compact ? "secondary" : "ghost"} size={compact ? "icon-xs" : "sm"} className={compact ? "absolute -right-2 -top-2 size-4 opacity-0 group-hover:opacity-100 focus-visible:opacity-100" : undefined} aria-label={`Reply to image: ${name}`} onClick={event => { event.preventDefault(); event.stopPropagation(); reply({ src, name }); }}><Reply size={14} aria-hidden="true" />{!compact && "Reply"}</Button>
-  </span>;
+  return (
+    <span
+      ref={root}
+      data-image-reference={reference}
+      tabIndex={-1}
+      className={compact ? "group relative inline-flex shrink-0" : "inline-flex max-w-full flex-col items-start gap-1"}
+      onClick={event => event.stopPropagation()}
+    >
+      {children}
+      <Button
+        type="button"
+        variant={compact ? "secondary" : "ghost"}
+        size={compact ? "icon-xs" : "sm"}
+        className={
+          compact
+            ? "absolute -right-2 -top-2 size-4 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            : undefined
+        }
+        aria-label={`Reply to image: ${name}`}
+        onClick={event => {
+          event.preventDefault();
+          event.stopPropagation();
+          reply({ src, name });
+        }}
+      >
+        <Reply size={14} aria-hidden="true" />
+        {!compact && "Reply"}
+      </Button>
+    </span>
+  );
 }

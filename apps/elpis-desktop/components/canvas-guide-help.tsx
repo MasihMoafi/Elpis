@@ -11,11 +11,16 @@ export function CanvasGuideHelp({ children, onOpen }: { children: ReactNode; onO
   useEffect(() => {
     const element = root.current;
     if (!element) return;
-    const find = () => setHelp(element.querySelector('.canvas-guide'));
+    const find = () => setHelp(element.querySelector(".canvas-guide"));
     find();
     const observer = new MutationObserver(find);
     observer.observe(element, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
-  return <div ref={root} className="contents">{children}{help && createPortal(<AgentsGuideLink onOpen={onOpen} />, help)}</div>;
+  return (
+    <div ref={root} className="contents">
+      {children}
+      {help && createPortal(<AgentsGuideLink onOpen={onOpen} />, help)}
+    </div>
+  );
 }

@@ -1,66 +1,136 @@
-import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
-import test, { type TestContext } from 'node:test';
-import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createLoveAgents } from './love-agents.mts';
+import { createTestTempDir, removeTestTempDir } from "../tests/temp-root.cts";
+import test, { type TestContext } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createLoveAgents } from "./love-agents.mts";
 type Interview = { messages: { role: string; text: string }[]; proposal?: string; error?: string; busy?: boolean };
-type Card = { id: string; type: string; version: number; isDeleted?: boolean; customData: { loveAgent: { preset: string; name: string; prompt: string; task: string; model: string; provider: string; status?: string; interview: Interview } } };
+type Card = {
+  id: string;
+  type: string;
+  version: number;
+  isDeleted?: boolean;
+  customData: {
+    loveAgent: {
+      preset: string;
+      name: string;
+      prompt: string;
+      task: string;
+      model: string;
+      provider: string;
+      status?: string;
+      interview: Interview;
+    };
+  };
+};
 type LogEntry = { method: string; params: { _meta: { systemPrompt: { append: string } }; prompt: { text: string }[] } };
 
-const fake = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts', import.meta.url));
-const card: Card = { id: 'a', type: 'rectangle', version: 1, customData: { loveAgent: { preset: 'researcher', name: 'Researcher', prompt: 'ROLE_SEED: careful researcher', task: '', model: 'gpt-6-luna', provider: 'test', interview: { messages: [] } } } };
-function fixture(t: TestContext, answer: string | { question?: string; task?: string } = { question: 'Which claim should I investigate?' }) {
-  const base = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(base, { recursive: true });
-  const dir = createTestTempDir(path.join(base, 'interview-')), log = path.join(dir, 'acp.jsonl');
+const fake = fileURLToPath(new URL("../../../tools/elpis-claude/test/fake-acp-agent.mts", import.meta.url));
+const card: Card = {
+  id: "a",
+  type: "rectangle",
+  version: 1,
+  customData: {
+    loveAgent: {
+      preset: "researcher",
+      name: "Researcher",
+      prompt: "ROLE_SEED: careful researcher",
+      task: "",
+      model: "gpt-6-luna",
+      provider: "test",
+      interview: { messages: [] },
+    },
+  },
+};
+function fixture(
+  t: TestContext,
+  answer: string | { question?: string; task?: string } = { question: "Which claim should I investigate?" },
+) {
+  const base = path.join(os.homedir(), ".cache/elpis-tests");
+  fs.mkdirSync(base, { recursive: true });
+  const dir = createTestTempDir(path.join(base, "interview-")),
+    log = path.join(dir, "acp.jsonl");
   const scene = { elements: [structuredClone(card)], files: {}, appState: {} };
   let spawned = 0;
   const store = { read: async () => ({ scene }), save: async (s: Partial<typeof scene>) => Object.assign(scene, s) };
-  const runner = createLoveAgents(store as unknown as Parameters<typeof createLoveAgents>[0], { timeoutMs: 3000, nodeSpec: (node: { name: string; prompt: string }) => { spawned++; return { name: node.name, command: process.execPath, args: [fake], instructions: node.prompt, env: { FAKE_ACP_LOG: log, FAKE_ACP_ANSWER: typeof answer === 'string' ? answer : JSON.stringify(answer) } }; } } as unknown as NonNullable<Parameters<typeof createLoveAgents>[1]>);
-  t.after(async () => { await runner.close?.(); removeTestTempDir(dir); });
-  return { runner, scene, dir, spawned: () => spawned, agent: () => scene.elements[0]!.customData.loveAgent, log: () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line) as LogEntry) : [] };
+  const runner = createLoveAgents(
+    store as unknown as Parameters<typeof createLoveAgents>[0],
+    {
+      timeoutMs: 3000,
+      nodeSpec: (node: { name: string; prompt: string }) => {
+        spawned++;
+        return {
+          name: node.name,
+          command: process.execPath,
+          args: [fake],
+          instructions: node.prompt,
+          env: { FAKE_ACP_LOG: log, FAKE_ACP_ANSWER: typeof answer === "string" ? answer : JSON.stringify(answer) },
+        };
+      },
+    } as unknown as NonNullable<Parameters<typeof createLoveAgents>[1]>,
+  );
+  t.after(async () => {
+    await runner.close?.();
+    removeTestTempDir(dir);
+  });
+  return {
+    runner,
+    scene,
+    dir,
+    spawned: () => spawned,
+    agent: () => scene.elements[0]!.customData.loveAgent,
+    log: () =>
+      fs.existsSync(log)
+        ? fs
+            .readFileSync(log, "utf8")
+            .trim()
+            .split("\n")
+            .map(line => JSON.parse(line) as LogEntry)
+        : [],
+  };
 }
-test('first question is from the role ACP agent and persists once without a task run', async t => {
+test("first question is from the role ACP agent and persists once without a task run", async t => {
   const f = fixture(t);
-  await f.runner.interview({ id: 'a', cwd: f.dir });
-  assert.deepEqual(f.agent().interview.messages, [{ role: 'assistant', text: 'Which claim should I investigate?' }]);
-  assert.equal(f.agent().task, '');
-  assert.match(f.log().find(e => e.method === 'session/new')!.params._meta.systemPrompt.append, /ROLE_SEED/);
-  await f.runner.interview({ id: 'a', cwd: f.dir });
-  assert.equal(f.spawned(), 1, 'reopening does not ask again');
-  await assert.rejects(f.runner.run({ id: 'a', cwd: f.dir }), /task before running/);
+  await f.runner.interview({ id: "a", cwd: f.dir });
+  assert.deepEqual(f.agent().interview.messages, [{ role: "assistant", text: "Which claim should I investigate?" }]);
+  assert.equal(f.agent().task, "");
+  assert.match(f.log().find(e => e.method === "session/new")!.params._meta.systemPrompt.append, /ROLE_SEED/);
+  await f.runner.interview({ id: "a", cwd: f.dir });
+  assert.equal(f.spawned(), 1, "reopening does not ask again");
+  await assert.rejects(f.runner.run({ id: "a", cwd: f.dir }), /task before running/);
 });
-test('an answer reaches ACP and the proposal stays unaccepted', async t => {
-  const f = fixture(t, { task: 'Check ANSWER_SEED using primary sources.' });
-  f.agent().interview.messages = [{ role: 'assistant', text: 'What claim?' }];
-  await f.runner.interview({ id: 'a', message: 'ANSWER_SEED', cwd: f.dir });
-  assert.match(f.log().find(e => e.method === 'session/prompt')!.params.prompt[0]!.text, /ANSWER_SEED/);
-  assert.equal(f.agent().interview.proposal, 'Check ANSWER_SEED using primary sources.');
-  assert.equal(f.agent().task, '');
+test("an answer reaches ACP and the proposal stays unaccepted", async t => {
+  const f = fixture(t, { task: "Check ANSWER_SEED using primary sources." });
+  f.agent().interview.messages = [{ role: "assistant", text: "What claim?" }];
+  await f.runner.interview({ id: "a", message: "ANSWER_SEED", cwd: f.dir });
+  assert.match(f.log().find(e => e.method === "session/prompt")!.params.prompt[0]!.text, /ANSWER_SEED/);
+  assert.equal(f.agent().interview.proposal, "Check ANSWER_SEED using primary sources.");
+  assert.equal(f.agent().task, "");
   assert.equal(f.agent().interview.messages.length, 2);
-  await f.runner.run({ id: 'a', cwd: f.dir, confirm: true });
-  assert.equal(f.agent().task, 'Check ANSWER_SEED using primary sources.');
-  assert.equal(f.agent().status, 'completed');
+  await f.runner.run({ id: "a", cwd: f.dir, confirm: true });
+  assert.equal(f.agent().task, "Check ANSWER_SEED using primary sources.");
+  assert.equal(f.agent().status, "completed");
 });
-test('malformed answer is visible, retains the reply, and does not invent a question', async t => {
-  const f = fixture(t, 'not JSON');
-  f.agent().interview.messages = [{ role: 'assistant', text: 'What claim?' }];
-  await assert.rejects(f.runner.interview({ id: 'a', message: 'RETAIN_SEED', cwd: f.dir }), /interview reply/);
-  assert.equal(f.agent().interview.messages.at(-1)!.text, 'RETAIN_SEED');
-  assert.match(f.agent().interview.error ?? '', /interview reply/);
+test("malformed answer is visible, retains the reply, and does not invent a question", async t => {
+  const f = fixture(t, "not JSON");
+  f.agent().interview.messages = [{ role: "assistant", text: "What claim?" }];
+  await assert.rejects(f.runner.interview({ id: "a", message: "RETAIN_SEED", cwd: f.dir }), /interview reply/);
+  assert.equal(f.agent().interview.messages.at(-1)!.text, "RETAIN_SEED");
+  assert.match(f.agent().interview.error ?? "", /interview reply/);
   assert.equal(f.agent().interview.busy, false);
 });
-test('overlapping interviews on one card refuse a duplicate', async t => {
+test("overlapping interviews on one card refuse a duplicate", async t => {
   const f = fixture(t);
-  const first = f.runner.interview({ id: 'a', cwd: f.dir });
-  await assert.rejects(f.runner.interview({ id: 'a', cwd: f.dir }), /already/);
-  await first; assert.equal(f.spawned(), 1);
+  const first = f.runner.interview({ id: "a", cwd: f.dir });
+  await assert.rejects(f.runner.interview({ id: "a", cwd: f.dir }), /already/);
+  await first;
+  assert.equal(f.spawned(), 1);
 });
-test('a late answer never restores a deleted card', async t => {
+test("a late answer never restores a deleted card", async t => {
   const f = fixture(t);
-  const first = f.runner.interview({ id: 'a', cwd: f.dir });
+  const first = f.runner.interview({ id: "a", cwd: f.dir });
   const deadline = Date.now() + 2000;
   while (!f.spawned() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 10));
   assert.ok(f.spawned());
@@ -69,16 +139,29 @@ test('a late answer never restores a deleted card', async t => {
   assert.equal(f.scene.elements[0]!.isDeleted, true);
   assert.deepEqual(f.agent().interview.messages, []);
 });
-test('invalid inputs and an unasked answer never spawn an agent', async t => {
+test("invalid inputs and an unasked answer never spawn an agent", async t => {
   const f = fixture(t);
-  for (const input of [{ id: 'missing' }, { id: 'a', message: '' }, { id: 'a', message: 'x'.repeat(16001) }, { id: 'a', cwd: 'relative' }, { id: 'a', message: 'no prior question' }]) await assert.rejects(f.runner.interview(input));
+  for (const input of [
+    { id: "missing" },
+    { id: "a", message: "" },
+    { id: "a", message: "x".repeat(16001) },
+    { id: "a", cwd: "relative" },
+    { id: "a", message: "no prior question" },
+  ])
+    await assert.rejects(f.runner.interview(input));
   assert.equal(f.spawned(), 0);
 });
-test('a persisted interrupted interview recovers without duplicating the user answer', async t => {
-  const f = fixture(t, { task: 'Check the retained claim.' });
-  f.agent().interview = { messages: [{ role: 'assistant', text: 'What claim?' }, { role: 'user', text: 'RECOVERY_SEED' }], busy: true };
-  await f.runner.interview({ id: 'a', cwd: f.dir });
+test("a persisted interrupted interview recovers without duplicating the user answer", async t => {
+  const f = fixture(t, { task: "Check the retained claim." });
+  f.agent().interview = {
+    messages: [
+      { role: "assistant", text: "What claim?" },
+      { role: "user", text: "RECOVERY_SEED" },
+    ],
+    busy: true,
+  };
+  await f.runner.interview({ id: "a", cwd: f.dir });
   assert.equal(f.agent().interview.messages.length, 2);
-  assert.equal(f.agent().interview.proposal, 'Check the retained claim.');
+  assert.equal(f.agent().interview.proposal, "Check the retained claim.");
   assert.equal(f.agent().interview.busy, false);
 });

@@ -17,34 +17,86 @@ const RESERVED_TEXT = "This shortcut is reserved for common actions. Try a diffe
 
 /** Claude's shortcut recorder: focus it and press the new combination. A key without a modifier (other than F1–F24)
  * or a common action's combination is refused before anything is registered. */
-export function ShortcutRecorder({ label, shortcut, disabled, onRecord, onRefuse, reserved = RESERVED }: { label: string; shortcut: string; disabled?: boolean; onRecord: (accelerator: string) => void; onRefuse: (text: string) => void; reserved?: readonly string[] }) {
+export function ShortcutRecorder({
+  label,
+  shortcut,
+  disabled,
+  onRecord,
+  onRefuse,
+  reserved = RESERVED,
+}: {
+  label: string;
+  shortcut: string;
+  disabled?: boolean;
+  onRecord: (accelerator: string) => void;
+  onRefuse: (text: string) => void;
+  reserved?: readonly string[];
+}) {
   function keyDown(event: KeyboardEvent) {
     // Tab leaves; a plain arrow, Home or End (never a valid shortcut) moves to the next control, as everywhere (lib/arrow-keys.ts).
     const plainKey = !(event.altKey || event.ctrlKey || event.metaKey || event.shiftKey);
-    if ((event.key === "Tab" && plainKey) || (plainKey && /^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(event.key)) || event.nativeEvent.isComposing) return;
-    event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation();
+    if (
+      (event.key === "Tab" && plainKey) ||
+      (plainKey && /^(Arrow(Up|Down|Left|Right)|Home|End)$/.test(event.key)) ||
+      event.nativeEvent.isComposing
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.nativeEvent.stopImmediatePropagation();
     const accelerator = keyCombination(event);
     if (!accelerator) return;
     const plain = !accelerator.includes("+") && !/^F([1-9]|1[0-9]|2[0-4])$/.test(accelerator);
-    if (plain || reserved.includes(accelerator)) { onRefuse(RESERVED_TEXT); return; }
+    if (plain || reserved.includes(accelerator)) {
+      onRefuse(RESERVED_TEXT);
+      return;
+    }
     onRecord(accelerator);
   }
   // The hint swaps in while the button has focus (CSS), so the component needs no state.
-  return <Button variant="outline" className="group/recorder min-w-[120px]" aria-label={label} title="Click, then press the new shortcut" disabled={disabled} onKeyDown={keyDown}>
-    <span className="hidden text-muted-foreground group-focus/recorder:inline">Press the new keys…</span>
-    <span className="contents group-focus/recorder:hidden">{shortcut ? shortcut.split("+").map((key, index) => <kbd key={`${key}:${index}`} className="kbd">{key}</kbd>) : <span className="text-muted-foreground">Set shortcut</span>}</span>
-  </Button>;
+  return (
+    <Button
+      variant="outline"
+      className="group/recorder min-w-[120px]"
+      aria-label={label}
+      title="Click, then press the new shortcut"
+      disabled={disabled}
+      onKeyDown={keyDown}
+    >
+      <span className="hidden text-muted-foreground group-focus/recorder:inline">Press the new keys…</span>
+      <span className="contents group-focus/recorder:hidden">
+        {shortcut ? (
+          shortcut.split("+").map((key, index) => (
+            <kbd key={`${key}:${index}`} className="kbd">
+              {key}
+            </kbd>
+          ))
+        ) : (
+          <span className="text-muted-foreground">Set shortcut</span>
+        )}
+      </span>
+    </Button>
+  );
 }
 
 /** Claude's Desktop app → System settings that Elpis has: the Quick Entry shortcut and the tray. Desktop app only. */
-export function SystemSettings({ preferences, save }: { preferences: Preferences; save: (patch: Partial<Preferences>) => void }) {
+export function SystemSettings({
+  preferences,
+  save,
+}: {
+  preferences: Preferences;
+  save: (patch: Partial<Preferences>) => void;
+}) {
   const [quick, setQuick] = useState<DesktopQuickEntry>();
   const [status, setStatus] = useState<QuickEntryStatus | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     const desktop = window.elpisDesktop?.quickEntry;
     setQuick(desktop);
-    desktop?.status().then(setStatus).catch(cause => setError(message(cause)));
+    desktop
+      ?.status()
+      .then(setStatus)
+      .catch(cause => setError(message(cause)));
   }, []);
   if (!quick) return null;
   async function change(accelerator: string) {
@@ -53,19 +105,50 @@ export function SystemSettings({ preferences, save }: { preferences: Preferences
       const { shortcut } = await quick!.setShortcut(accelerator);
       save({ quickEntryShortcut: shortcut });
       setStatus(await quick!.status());
-    } catch (cause) { setError(message(cause)); }
+    } catch (cause) {
+      setError(message(cause));
+    }
   }
   const unsupported = status?.supported === false;
-  const problem = error || (unsupported ? "" : status?.problem ?? "");
-  const description = problem ? <span className="text-destructive" role="alert">{problem}</span>
-    : unsupported ? <span role="status">{status?.reason}</span> : "Quickly open Elpis from anywhere.";
-  return <SettingsGroup title="System">
-    <SettingRow title="Quick Entry keyboard shortcut" description={description}>
-      <ShortcutRecorder label="Quick Entry keyboard shortcut" shortcut={preferences.quickEntryShortcut} disabled={!status || unsupported} onRecord={accelerator => void change(accelerator)} onRefuse={setError} />
-      {preferences.quickEntryShortcut && !unsupported && <Button variant="ghost" size="icon-sm" aria-label="Turn off the Quick Entry shortcut" title="No shortcut" onClick={() => void change("")}><X /></Button>}
-    </SettingRow>
-    <SettingRow title="Close to tray" description="Keep Elpis running in the system tray when you close the window.">
-      <Switch aria-label="Close to tray" checked={preferences.closeToTray} onCheckedChange={closeToTray => save({ closeToTray })} />
-    </SettingRow>
-  </SettingsGroup>;
+  const problem = error || (unsupported ? "" : (status?.problem ?? ""));
+  const description = problem ? (
+    <span className="text-destructive" role="alert">
+      {problem}
+    </span>
+  ) : unsupported ? (
+    <span role="status">{status?.reason}</span>
+  ) : (
+    "Quickly open Elpis from anywhere."
+  );
+  return (
+    <SettingsGroup title="System">
+      <SettingRow title="Quick Entry keyboard shortcut" description={description}>
+        <ShortcutRecorder
+          label="Quick Entry keyboard shortcut"
+          shortcut={preferences.quickEntryShortcut}
+          disabled={!status || unsupported}
+          onRecord={accelerator => void change(accelerator)}
+          onRefuse={setError}
+        />
+        {preferences.quickEntryShortcut && !unsupported && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Turn off the Quick Entry shortcut"
+            title="No shortcut"
+            onClick={() => void change("")}
+          >
+            <X />
+          </Button>
+        )}
+      </SettingRow>
+      <SettingRow title="Close to tray" description="Keep Elpis running in the system tray when you close the window.">
+        <Switch
+          aria-label="Close to tray"
+          checked={preferences.closeToTray}
+          onCheckedChange={closeToTray => save({ closeToTray })}
+        />
+      </SettingRow>
+    </SettingsGroup>
+  );
 }

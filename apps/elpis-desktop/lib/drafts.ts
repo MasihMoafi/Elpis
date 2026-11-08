@@ -5,8 +5,11 @@ const prefix = "elpis-draft-v1:";
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
 export function readDraft(id: string, storage?: DraftStorage): string {
-  try { return (storage ?? window.elpisDesktop?.storage ?? window.sessionStorage).getItem(prefix + id) ?? ""; }
-  catch { return ""; }
+  try {
+    return (storage ?? window.elpisDesktop?.storage ?? window.sessionStorage).getItem(prefix + id) ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export function writeDraft(id: string, text: string, storage?: DraftStorage): boolean {
@@ -15,5 +18,7 @@ export function writeDraft(id: string, text: string, storage?: DraftStorage): bo
     if (text) target.setItem(prefix + id, text);
     else target.removeItem(prefix + id);
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }

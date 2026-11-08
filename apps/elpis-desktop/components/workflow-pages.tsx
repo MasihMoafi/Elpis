@@ -14,26 +14,130 @@ import type { View, WorkflowReplay } from "@/lib/workspace-types";
 
 type Props = {
   pages: ReturnType<typeof useWorkspacePagesState>;
-  sidebarModel: ReturnType<typeof useSidebarThreads>; projectState: ReturnType<typeof useProjectState>; runtime: ReturnType<typeof useRuntimeState>;
-  threads: Thread[]; models: Model[]; workflowFolder: string | undefined; workflowSandbox: string | undefined; dark: boolean;
-  show: (view: View) => void; openById: (id: string) => void; keepWorkflowTab: ReturnType<typeof createChatNavigation>["keepWorkflowTab"];
-  selectProject: ReturnType<typeof createProjectActions>["selectProject"]; addProject: ReturnType<typeof createProjectActions>["addProject"]; workIn: ReturnType<typeof createProjectActions>["workIn"];
+  sidebarModel: ReturnType<typeof useSidebarThreads>;
+  projectState: ReturnType<typeof useProjectState>;
+  runtime: ReturnType<typeof useRuntimeState>;
+  threads: Thread[];
+  models: Model[];
+  workflowFolder: string | undefined;
+  workflowSandbox: string | undefined;
+  dark: boolean;
+  show: (view: View) => void;
+  openById: (id: string) => void;
+  keepWorkflowTab: ReturnType<typeof createChatNavigation>["keepWorkflowTab"];
+  selectProject: ReturnType<typeof createProjectActions>["selectProject"];
+  addProject: ReturnType<typeof createProjectActions>["addProject"];
+  workIn: ReturnType<typeof createProjectActions>["workIn"];
   finishReplay: (replay: WorkflowReplay, result: { threadId?: string; error?: string }) => void;
 };
 
-export function WorkflowPages({ pages, sidebarModel, projectState, runtime, threads, models, workflowFolder, workflowSandbox, dark, show, openById, keepWorkflowTab, selectProject, addProject, workIn, finishReplay }: Props) {
-  const { view, workflowTab, setWorkflowTab, recordedWorkflow, setRecordedWorkflow, workflowPrefill, setWorkflowPrefill } = pages;
+export function WorkflowPages({
+  pages,
+  sidebarModel,
+  projectState,
+  runtime,
+  threads,
+  models,
+  workflowFolder,
+  workflowSandbox,
+  dark,
+  show,
+  openById,
+  keepWorkflowTab,
+  selectProject,
+  addProject,
+  workIn,
+  finishReplay,
+}: Props) {
+  const {
+    view,
+    workflowTab,
+    setWorkflowTab,
+    recordedWorkflow,
+    setRecordedWorkflow,
+    workflowPrefill,
+    setWorkflowPrefill,
+  } = pages;
   const { workflowCatalog } = sidebarModel;
   const { projects, workflowProject, projectChanging } = projectState;
   const { ready, connected, replays } = runtime;
-  return <>
+  return (
+    <>
       {/* 6 Nov, Masih: "automation is kind of a workflow, isn't it? couldn't we have merged those?" Workflows has two views:
           the board and its Scheduled automations (components/automations-view.tsx). The board stays mounted, so its draft
           survives a look at the schedule. */}
-      {view === "canvas" && <ViewBoundary label="Workflows"><div className="contents" hidden={workflowTab !== "board"}><CanvasGuideHelp onOpen={() => show("agentsGuide")}><AgentsCanvas threads={threads} key={recordedWorkflow?.id ?? "draft"} {...(recordedWorkflow ? { recordedRun: recordedWorkflow } : {})} onLeaveRecordedRun={() => setRecordedWorkflow(undefined)} onOpenRecordedRun={run => setRecordedWorkflow(run)} ready={ready && connected} workflowCatalog={workflowCatalog} models={models} {...(workflowFolder !== undefined ? { cwd: workflowFolder } : {})} dark={dark} onOpenChat={id => { show("chat"); void openById(id); }} onRunStarted={keepWorkflowTab} onSchedule={workflow => { setWorkflowPrefill(workflow); setWorkflowTab("scheduled"); }}
-        projectMenu={<ProjectMenu variant="chip" projects={projects} selected={workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }} allowNone={!!workflowProject} noneLabel="Use sandbox" disabled={!ready || projectChanging} onSelect={selectProject} onAdd={() => void addProject()} />} onUseFolder={workIn} /></CanvasGuideHelp></div>
-        {workflowTab === "scheduled" && <AutomationsView projects={projects} prefill={workflowPrefill} onPrefillUsed={() => setWorkflowPrefill(null)} onOpenChat={id => { show("chat"); void openById(id); }} />}</ViewBoundary>}
-      {replays.map(replay => <div key={replay.token} hidden aria-hidden="true"><AgentsCanvas threads={threads} workflowCatalog={workflowCatalog} models={models} {...(replay.cwd != null ? { cwd: replay.cwd } : {})} dark={dark} ready={ready && connected}
-        onOpenChat={id => { show("chat"); void openById(id); }} scheduled={{ board: replay.board, onDone: result => finishReplay(replay, result) }} /></div>)}
-  </>;
+      {view === "canvas" && (
+        <ViewBoundary label="Workflows">
+          <div className="contents" hidden={workflowTab !== "board"}>
+            <CanvasGuideHelp onOpen={() => show("agentsGuide")}>
+              <AgentsCanvas
+                threads={threads}
+                key={recordedWorkflow?.id ?? "draft"}
+                {...(recordedWorkflow ? { recordedRun: recordedWorkflow } : {})}
+                onLeaveRecordedRun={() => setRecordedWorkflow(undefined)}
+                onOpenRecordedRun={run => setRecordedWorkflow(run)}
+                ready={ready && connected}
+                workflowCatalog={workflowCatalog}
+                models={models}
+                {...(workflowFolder !== undefined ? { cwd: workflowFolder } : {})}
+                dark={dark}
+                onOpenChat={id => {
+                  show("chat");
+                  void openById(id);
+                }}
+                onRunStarted={keepWorkflowTab}
+                onSchedule={workflow => {
+                  setWorkflowPrefill(workflow);
+                  setWorkflowTab("scheduled");
+                }}
+                projectMenu={
+                  <ProjectMenu
+                    variant="chip"
+                    projects={projects}
+                    selected={
+                      workflowProject ?? { id: "workflow-sandbox", name: "Sandbox", cwd: workflowSandbox ?? "" }
+                    }
+                    allowNone={!!workflowProject}
+                    noneLabel="Use sandbox"
+                    disabled={!ready || projectChanging}
+                    onSelect={selectProject}
+                    onAdd={() => void addProject()}
+                  />
+                }
+                onUseFolder={workIn}
+              />
+            </CanvasGuideHelp>
+          </div>
+          {workflowTab === "scheduled" && (
+            <AutomationsView
+              projects={projects}
+              prefill={workflowPrefill}
+              onPrefillUsed={() => setWorkflowPrefill(null)}
+              onOpenChat={id => {
+                show("chat");
+                void openById(id);
+              }}
+            />
+          )}
+        </ViewBoundary>
+      )}
+      {replays.map(replay => (
+        <div key={replay.token} hidden aria-hidden="true">
+          <AgentsCanvas
+            threads={threads}
+            workflowCatalog={workflowCatalog}
+            models={models}
+            {...(replay.cwd != null ? { cwd: replay.cwd } : {})}
+            dark={dark}
+            ready={ready && connected}
+            onOpenChat={id => {
+              show("chat");
+              void openById(id);
+            }}
+            scheduled={{ board: replay.board, onDone: result => finishReplay(replay, result) }}
+          />
+        </div>
+      ))}
+    </>
+  );
 }

@@ -22,7 +22,11 @@ export function visit(history: History, place: Place): History {
 }
 
 /** One step back (-1) or forward (1), skipping places that can no longer be shown; null when there is none. */
-export function step(history: History, delta: -1 | 1, usable: (place: Place) => boolean): { history: History; place: Place } | null {
+export function step(
+  history: History,
+  delta: -1 | 1,
+  usable: (place: Place) => boolean,
+): { history: History; place: Place } | null {
   for (let index = history.index + delta; index >= 0 && index < history.places.length; index += delta) {
     const place = history.places[index];
     if (place && usable(place)) return { history: { ...history, index }, place };
@@ -34,8 +38,14 @@ export function step(history: History, delta: -1 | 1, usable: (place: Place) => 
  * moves along it, returning the place to show. */
 export function useNavHistory(ready: boolean, place: Place) {
   const [history, setHistory] = useState<History>(() => startHistory({ view: "chat", threadId: null }));
-  const historyRef = useRef(history), seeded = useRef(false);
-  const commit = (next: History) => { if (next !== historyRef.current) { historyRef.current = next; setHistory(next); } };
+  const historyRef = useRef(history),
+    seeded = useRef(false);
+  const commit = (next: History) => {
+    if (next !== historyRef.current) {
+      historyRef.current = next;
+      setHistory(next);
+    }
+  };
   useEffect(() => {
     if (!ready) return;
     commit(seeded.current ? visit(historyRef.current, place) : startHistory(place));

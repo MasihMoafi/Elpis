@@ -8,15 +8,22 @@
  * (components/ui/select.tsx stops it opening on the arrows). A tab or a radio is one choice of a set, so reaching it with an arrow
  * also selects it (Masih, 22 Oct: "make it change just by the stroke of the keyboards"), as in ChatGPT; the sidebar's pages and chats
  * do the same (app/page.tsx sidebarKeys). */
-export const ARROW_CONTROL = 'button, a[href], summary, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="switch"], [role="treeitem"], [role="radio"]:not(input), [role="checkbox"]:not(input)';
+export const ARROW_CONTROL =
+  'button, a[href], summary, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="switch"], [role="treeitem"], [role="radio"]:not(input), [role="checkbox"]:not(input)';
 const OWN_KEYS = '[role="combobox"]:not([aria-haspopup="listbox"]), [role="slider"], [role="spinbutton"]';
 const SKIP = '.xterm, .excalidraw, .react-flow, .cm-editor, [data-arrows="off"]';
-const LANDMARK = 'dialog, [role="dialog"], [role="alertdialog"], [role="region"], [role="menu"], [role="listbox"], [role="toolbar"], [role="tablist"], [role="radiogroup"], [role="tree"], nav, aside, main, header, footer, form, section[aria-label]';
+const LANDMARK =
+  'dialog, [role="dialog"], [role="alertdialog"], [role="region"], [role="menu"], [role="listbox"], [role="toolbar"], [role="tablist"], [role="radiogroup"], [role="tree"], nav, aside, main, header, footer, form, section[aria-label]';
 const STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1, Home: 0, End: 0 };
 
 /** Whether a control can take focus from the arrows: shown, enabled, and outside the zones that keep their own keys. */
 export function arrowUsable(element: Element): element is HTMLElement {
-  if (!(element instanceof HTMLElement) || element.closest(SKIP) || element.closest('[inert], [hidden], [aria-hidden="true"]')) return false;
+  if (
+    !(element instanceof HTMLElement) ||
+    element.closest(SKIP) ||
+    element.closest('[inert], [hidden], [aria-hidden="true"]')
+  )
+    return false;
   if ((element as HTMLButtonElement).disabled || element.getAttribute("aria-disabled") === "true") return false;
   const box = element.getBoundingClientRect();
   return box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== "hidden";
@@ -26,7 +33,10 @@ export function arrowUsable(element: Element): element is HTMLElement {
 export function arrowGroup(control: HTMLElement): HTMLElement[] | null {
   // A tab list is one group, however its tabs are wrapped (Settings wraps each section's tabs in a box of its own, which stopped the arrows at every section's end).
   const tabs = control.closest('[role="tablist"]');
-  if (tabs) { const items = [...tabs.querySelectorAll(ARROW_CONTROL)].filter(arrowUsable); if (items.length > 1 && items.includes(control)) return items; }
+  if (tabs) {
+    const items = [...tabs.querySelectorAll(ARROW_CONTROL)].filter(arrowUsable);
+    if (items.length > 1 && items.includes(control)) return items;
+  }
   const limit = control.parentElement?.closest(LANDMARK) ?? control.ownerDocument.body;
   for (let at = control.parentElement; at; at = at.parentElement) {
     const items = [...at.querySelectorAll(ARROW_CONTROL)].filter(arrowUsable);
@@ -38,13 +48,26 @@ export function arrowGroup(control: HTMLElement): HTMLElement[] | null {
 
 /** The document's keydown listener (components/arrow-keys.tsx installs it once). */
 export function onArrowKey(event: KeyboardEvent) {
-  if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !(event.key in STEP)) return;
+  if (
+    event.defaultPrevented ||
+    event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey ||
+    !(event.key in STEP)
+  )
+    return;
   const control = event.target instanceof HTMLElement ? event.target : null;
   if (!control || !control.matches(ARROW_CONTROL) || control.matches(OWN_KEYS) || !arrowUsable(control)) return;
   const items = arrowGroup(control);
   if (!items) return;
   const at = items.indexOf(control);
-  const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : Math.max(0, Math.min(items.length - 1, at + (STEP[event.key] ?? 0)));
+  const next =
+    event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? items.length - 1
+        : Math.max(0, Math.min(items.length - 1, at + (STEP[event.key] ?? 0)));
   const target = items[next];
   if (next === at || !target) return;
   event.preventDefault();

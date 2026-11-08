@@ -5,7 +5,15 @@
 export type ReadingStep = "s" | "m" | "l";
 export type InterfaceFont = "sans" | "serif";
 export type ChatFont = "default" | "sans" | "serif" | "mono" | "system";
-export type Reading = { transcriptSize: ReadingStep; transcriptWidth: ReadingStep; interfaceFont: InterfaceFont; codeFont: string; chatFont: ChatFont; interfaceSize: ReadingStep; codeSize: ReadingStep };
+export type Reading = {
+  transcriptSize: ReadingStep;
+  transcriptWidth: ReadingStep;
+  interfaceFont: InterfaceFont;
+  codeFont: string;
+  chatFont: ChatFont;
+  interfaceSize: ReadingStep;
+  codeSize: ReadingStep;
+};
 
 export const SANS = 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
 export const SERIF = 'ui-serif, "Iowan Old Style", "Source Serif 4", Georgia, "DejaVu Serif", serif';
@@ -23,13 +31,15 @@ export function codeFontProblem(name: string): string | null {
   return ONE_NAME.test(wanted) ? null : "Use one font name: letters, digits, spaces, hyphens, underscores and dots.";
 }
 
-const step = (value: unknown, fallback: ReadingStep): ReadingStep => value === "s" || value === "m" || value === "l" ? value : fallback;
+const step = (value: unknown, fallback: ReadingStep): ReadingStep =>
+  value === "s" || value === "m" || value === "l" ? value : fallback;
 /** The CSS variables for these choices; a value that is not one of the choices, or a refused font name, is the default. */
 export function readingStyle(choices: { [K in keyof Reading]?: unknown }): Record<string, string> {
-  const code = typeof choices.codeFont === "string" && !codeFontProblem(choices.codeFont) ? choices.codeFont.trim() : "";
+  const code =
+    typeof choices.codeFont === "string" && !codeFontProblem(choices.codeFont) ? choices.codeFont.trim() : "";
   return {
-    "--interface-size": ({ s: "14px", m: "16px", l: "18px" })[step(choices.interfaceSize, "m")],
-    "--code-size": ({ s: "12px", m: "13px", l: "16px" })[step(choices.codeSize, "m")],
+    "--interface-size": { s: "14px", m: "16px", l: "18px" }[step(choices.interfaceSize, "m")],
+    "--code-size": { s: "12px", m: "13px", l: "16px" }[step(choices.codeSize, "m")],
     "--transcript-size": SIZES[step(choices.transcriptSize, "m")],
     "--transcript-width": WIDTHS[step(choices.transcriptWidth, "s")],
     "--ui-font": SANS,

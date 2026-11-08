@@ -7,47 +7,149 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchField } from "@/components/ui/search-field";
 import { OptionSelect } from "@/components/ui/option-select";
-import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
-import { api, choiceById, connectionOrder, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxTrigger,
+} from "@/components/ui/combobox";
+import {
+  api,
+  choiceById,
+  connectionOrder,
+  modelLabel,
+  modelName,
+  subscriptionOf,
+  type ProviderChoice,
+  type Model,
+} from "@/lib/api";
 import { providerLogin } from "@/lib/provider-login";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { errorText } from "@/lib/error-text.mts";
-type Choice = { key: string; model: string; choiceId: string; label: string; providerLabel: string; description?: string | undefined };
+type Choice = {
+  key: string;
+  model: string;
+  choiceId: string;
+  label: string;
+  providerLabel: string;
+  description?: string | undefined;
+};
 /** Where each built-in API provider issues keys, as the terminal's /provider names them. */
-const KEY_PAGES: Record<string, string> = { openrouter: "openrouter.ai/keys", anthropic: "console.anthropic.com/settings/keys", "google-gemini": "aistudio.google.com/apikey" };
+const KEY_PAGES: Record<string, string> = {
+  openrouter: "openrouter.ai/keys",
+  anthropic: "console.anthropic.com/settings/keys",
+  "google-gemini": "aistudio.google.com/apikey",
+};
 
 /** The terminal's "paste the key" step, in the picker: saved where Elpis keeps provider keys, never shown again. */
-export function ProviderKeyForm({ provider, label, onSaved }: { provider: string; label: string; onSaved: () => void }) {
-  const [key, setKey] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+export function ProviderKeyForm({
+  provider,
+  label,
+  onSaved,
+}: {
+  provider: string;
+  label: string;
+  onSaved: () => void;
+}) {
+  const [key, setKey] = useState(""),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
   async function save(event: React.FormEvent) {
-    event.preventDefault(); event.stopPropagation(); setBusy(true); setError("");
-    try { await providerLogin.saveBuiltInKey(provider, key); setKey(""); onSaved(); }
-    catch (cause) { setError(errorText(cause)); }
-    finally { setBusy(false); }
+    event.preventDefault();
+    event.stopPropagation();
+    setBusy(true);
+    setError("");
+    try {
+      await providerLogin.saveBuiltInKey(provider, key);
+      setKey("");
+      onSaved();
+    } catch (cause) {
+      setError(errorText(cause));
+    } finally {
+      setBusy(false);
+    }
   }
-  return <form className="provider-key-form" aria-label={`${label} API key`} onSubmit={event => { void save(event); }} onKeyDown={event => event.stopPropagation()}>
-    <p><strong>{label} needs an API key.</strong> {KEY_PAGES[provider] && <>Get one at {KEY_PAGES[provider]}. </>}It is saved on this computer, readable by you alone, and never shown again.</p>
-    <div className="provider-key-row"><Input type="password" aria-label={`${label} API key`} placeholder="Paste the key" value={key} maxLength={8192} autoComplete="off" spellCheck={false} onChange={event => setKey(event.target.value)} />
-      <Button type="submit" size="sm" disabled={busy || !key.trim()}>{busy ? "Saving…" : "Save key"}</Button></div>
-    {error && <p role="alert" className="text-destructive">{error}</p>}
-  </form>;
+  return (
+    <form
+      className="provider-key-form"
+      aria-label={`${label} API key`}
+      onSubmit={event => {
+        void save(event);
+      }}
+      onKeyDown={event => event.stopPropagation()}
+    >
+      <p>
+        <strong>{label} needs an API key.</strong> {KEY_PAGES[provider] && <>Get one at {KEY_PAGES[provider]}. </>}It is
+        saved on this computer, readable by you alone, and never shown again.
+      </p>
+      <div className="provider-key-row">
+        <Input
+          type="password"
+          aria-label={`${label} API key`}
+          placeholder="Paste the key"
+          value={key}
+          maxLength={8192}
+          autoComplete="off"
+          spellCheck={false}
+          onChange={event => setKey(event.target.value)}
+        />
+        <Button type="submit" size="sm" disabled={busy || !key.trim()}>
+          {busy ? "Saving…" : "Save key"}
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-destructive">
+          {error}
+        </p>
+      )}
+    </form>
+  );
 }
 
 /** A connection's model-list failure in plain words: no error codes or request ids, and a network
  *  failure is just "could not reach" (4 Nov). An actionable message such as a missing address stays. */
 export function plainCatalogError(error: string, label = "this connection") {
   const message = error.replace(/\s*\((?:ELPIS_[A-Z_]+|request)\b[^)]*\)\s*$/, "").trim();
-  return /timed out|timeout|network|fetch|ECONN|ENOTFOUND|socket|unavailable/i.test(message) || !message ? `Could not reach ${label}. Try again in a moment.` : message;
+  return /timed out|timeout|network|fetch|ECONN|ENOTFOUND|socket|unavailable/i.test(message) || !message
+    ? `Could not reach ${label}. Try again in a moment.`
+    : message;
 }
 
 /** Cloudroom's searchable model/provider pattern, backed by Elpis's own catalog. */
-export function ModelPicker({ choices, models, model, choiceId, defaultModel, disabled, allowCustom = true, onChange, onConfigure, onKeySaved }: {
-  choices: ProviderChoice[]; models: Model[]; model: string; choiceId: string; defaultModel?: string | null; disabled: boolean; allowCustom?: boolean;
-  onChange: (choice: { model: string; choiceId: string }) => void; onConfigure?: () => void; onKeySaved?: () => void;
+export function ModelPicker({
+  choices,
+  models,
+  model,
+  choiceId,
+  defaultModel,
+  disabled,
+  allowCustom = true,
+  onChange,
+  onConfigure,
+  onKeySaved,
+}: {
+  choices: ProviderChoice[];
+  models: Model[];
+  model: string;
+  choiceId: string;
+  defaultModel?: string | null;
+  disabled: boolean;
+  allowCustom?: boolean;
+  onChange: (choice: { model: string; choiceId: string }) => void;
+  onConfigure?: () => void;
+  onKeySaved?: () => void;
 }) {
-  const [open, setOpen] = useState(false), [query, setQuery] = useState(""), [chosenTab, setTab] = useState("all");
-  const [customProvider, setCustomProvider] = useState(""), [customModel, setCustomModel] = useState("");
-  const [catalogs, setCatalogs] = useState<Record<string, { version: string; data: Model[]; loaded: boolean; loading: boolean; error: string }>>({});
+  const [open, setOpen] = useState(false),
+    [query, setQuery] = useState(""),
+    [chosenTab, setTab] = useState("all");
+  const [customProvider, setCustomProvider] = useState(""),
+    [customModel, setCustomModel] = useState("");
+  const [catalogs, setCatalogs] = useState<
+    Record<string, { version: string; data: Model[]; loaded: boolean; loading: boolean; error: string }>
+  >({});
   const [retry, setRetry] = useState(0);
   const [keysSaved, setKeysSaved] = useState<string[]>([]);
   // Every open lists the models live: the engine's list (shared) and each connection's own.
@@ -64,30 +166,78 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   const needsKey = !!activeConnection?.needsKey && !keysSaved.includes(activeConnection.id);
   // The open tab's connection lists live; the All tab lists every connection that needs no key (5 Nov: since the ChatGPT
   // default took its own list on 2 Nov, All showed only the Claude models until its OpenAI tab had been opened once).
-  const targets = activeConnection ? [activeConnection] : tab === "all" ? choices.filter(choice => !!choice.provider && !choice.needsKey) : [];
-  const targetKey = targets.map(choice => `${choice.id}\u0000${choice.provider}\u0000${choice.catalogVersion ?? ""}`).join("\u0001");
-  const catalogsRef = useRef(catalogs); catalogsRef.current = catalogs;
+  const targets = activeConnection
+    ? [activeConnection]
+    : tab === "all"
+      ? choices.filter(choice => !!choice.provider && !choice.needsKey)
+      : [];
+  const targetKey = targets
+    .map(choice => `${choice.id}\u0000${choice.provider}\u0000${choice.catalogVersion ?? ""}`)
+    .join("\u0001");
+  const catalogsRef = useRef(catalogs);
+  catalogsRef.current = catalogs;
   useEffect(() => {
     if (!open || disabled) return;
     let disposed = false;
     for (const choice of targets) {
-      const { id, provider } = choice, version = choice.catalogVersion ?? "", known = catalogsRef.current[id];
+      const { id, provider } = choice,
+        version = choice.catalogVersion ?? "",
+        known = catalogsRef.current[id];
       if (!provider || (known?.version === version && known.loaded)) continue;
       // The last list stays shown while the fresh one loads, so the chosen model keeps its name and keys still work.
-      setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.version === version ? previous[id].data : [], loaded: false, loading: true, error: "" } }));
+      setCatalogs(previous => ({
+        ...previous,
+        [id]: {
+          version,
+          data: previous[id]?.version === version ? previous[id].data : [],
+          loaded: false,
+          loading: true,
+          error: "",
+        },
+      }));
       api<{ data: Model[] }>(`/models?provider=${encodeURIComponent(provider)}&refresh=true`)
         .then(result => {
           if (!Array.isArray(result.data)) throw new Error("This connection returned an invalid model list.");
-          if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: result.data, loaded: true, loading: false, error: "" } }));
+          if (!disposed)
+            setCatalogs(previous => ({
+              ...previous,
+              [id]: { version, data: result.data, loaded: true, loading: false, error: "" },
+            }));
         })
-        .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: errorText(cause) } })); });
+        .catch(cause => {
+          if (!disposed)
+            setCatalogs(previous => ({
+              ...previous,
+              [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: errorText(cause) },
+            }));
+        });
     }
-    return () => { disposed = true; };
+    return () => {
+      disposed = true;
+    };
   }, [open, disabled, targetKey, retry]); // targets are keyed by targetKey; reuse successful catalogs only for the same saved configuration.
   // A subscription's models (claude/…, agy/…) belong to its own connection, never to another's live list (5 Nov: OpenAI's
   // live list, now loaded in All, carried the engine's Claude subscription models). A connection's own saved models stay.
-  const own = (choice: ProviderChoice, item: Model) => { const subscription = subscriptionOf(item.model); return !subscription || subscription.prefix === choice.id; };
-  const available: Choice[] = [...new Map(choices.flatMap(choice => (catalogFor(choice)?.data.filter(item => own(choice, item)) ?? choice.models).map(item => ({ key: `${choice.id}:${item.model}`, model: item.model, choiceId: choice.id, label: modelName(item.displayName || item.model), providerLabel: choice.label, description: item.description }))).map(item => [item.key, item])).values()];
+  const own = (choice: ProviderChoice, item: Model) => {
+    const subscription = subscriptionOf(item.model);
+    return !subscription || subscription.prefix === choice.id;
+  };
+  const available: Choice[] = [
+    ...new Map(
+      choices
+        .flatMap(choice =>
+          (catalogFor(choice)?.data.filter(item => own(choice, item)) ?? choice.models).map(item => ({
+            key: `${choice.id}:${item.model}`,
+            model: item.model,
+            choiceId: choice.id,
+            label: modelName(item.displayName || item.model),
+            providerLabel: choice.label,
+            description: item.description,
+          })),
+        )
+        .map(item => [item.key, item]),
+    ).values(),
+  ];
   const currentModel = model || defaultModel || "";
   const connection = choiceById(choices, choiceId);
   const current = available.find(item => item.model === currentModel && item.choiceId === connection?.id) ?? null;
@@ -96,25 +246,180 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   const rows = tab === "all" ? available : available.filter(item => item.choiceId === tab);
   const groups = connectionOrder(choices);
   const configured = choices.filter(choice => !!choice.provider);
-  const choose = (choice: { model: string; choiceId: string }) => { onChange(choice); setOpen(false); setQuery(""); };
-  return <Combobox items={rows} value={current} inputValue={query} onInputValueChange={setQuery} open={open}
-    onOpenChange={next => { setOpen(next); if (next) { setQuery(""); setTab(choices.length === 1 ? choices[0]?.id ?? "all" : "all"); setCatalogs(previous => Object.fromEntries(Object.entries(previous).map(([key, value]) => [key, { ...value, loaded: false }]))); void refreshModelCatalog(); } }}
-    itemToStringLabel={(item: Choice) => `${item.label} ${item.providerLabel} ${item.model}`} itemToStringValue={(item: Choice) => item.key}
-    onValueChange={item => { if (item) choose(item); }}>
-    <ComboboxTrigger role="combobox" aria-label="Model" disabled={disabled} data-value={model} title={[currentLabel, currentProvider].filter(Boolean).join(" · ")} className="model-picker-trigger model-select"><span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>{currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}<ChevronDown size={16} /></ComboboxTrigger>
-    <ComboboxContent className="model-picker-content">
-      <SearchField variant="bare"><ComboboxInput aria-label="Search models" placeholder="Search models…" autoFocus /></SearchField>
-      <Tabs.Root value={tab} onValueChange={setTab}>
-        <Tabs.List className="model-provider-tabs" aria-label="Model providers"><Tabs.Tab value="all">All</Tabs.Tab>{groups.length > 1 && groups.map(group => <Tabs.Tab key={group.id} value={group.id}>{group.label}</Tabs.Tab>)}</Tabs.List>
-        <Tabs.Panel value={tab}>
-          {/* A failed refresh keeps the last list without a word; only an empty menu says it is still trying (4 Nov). */}
-          {engine.error && !engine.models.length ? <div className="p-3 text-sm text-muted-foreground"><p role="status" title={engine.error}>Models are not available yet. Elpis keeps trying.</p><Button className="mt-2" type="button" variant="outline" size="sm" disabled={engine.loading} onClick={() => void refreshModelCatalog()}>Try again</Button></div>
-            : engine.loading && !engine.error && <p role="status" className="px-4 pt-2 text-sm text-muted-foreground">Refreshing models…</p>}
-          {needsKey && activeConnection?.provider ? <ProviderKeyForm provider={activeConnection.provider} label={activeConnection.label} onSaved={() => { setKeysSaved(saved => [...saved, activeConnection.id]); setRetry(value => value + 1); onKeySaved?.(); }} /> : catalog?.loading ? <p role="status" className="p-4 text-sm text-muted-foreground">Loading models from {activeConnection?.label}…</p> : catalog?.error ? <div className="p-3 text-sm text-muted-foreground"><p role="status" title={catalog.error}>{plainCatalogError(catalog.error, activeConnection?.label)}</p><div className="mt-2 flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>Try again</Button>{onConfigure && <Button type="button" variant="outline" size="sm" onClick={() => { setOpen(false); onConfigure(); }}>Manage connections</Button>}</div></div> : <ComboboxEmpty>{tab !== "all" && !rows.length ? "This connection has not reported a model list." : "No matching models."}</ComboboxEmpty>}
-          <ComboboxList>{(item: Choice) => <ComboboxItem key={item.key} value={item} data-value={item.model}><span className="model-option-name">{item.label}{item.description && <small title={item.description}>{item.description}</small>}</span><span className="model-option-provider">{item.providerLabel}</span></ComboboxItem>}</ComboboxList>
-        </Tabs.Panel>
-      </Tabs.Root>
-      {allowCustom && configured.length > 0 && <details className="model-custom"><DisclosureSummary>Advanced: use an unlisted model</DisclosureSummary><div className="grid gap-2 pt-2"><OptionSelect aria-label="Provider" value={customProvider} onChange={e => setCustomProvider(e.target.value)}><option value="">Choose connection</option>{configured.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</OptionSelect><Input aria-label="Model ID" placeholder="Model name supplied by this connection" value={customModel} maxLength={200} onChange={e => setCustomModel(e.target.value)} /><Button type="button" size="sm" disabled={!customProvider || !customModel.trim()} onClick={() => choose({ model: customModel.trim(), choiceId: customProvider })}>Use model</Button></div></details>}
-    </ComboboxContent>
-  </Combobox>;
+  const choose = (choice: { model: string; choiceId: string }) => {
+    onChange(choice);
+    setOpen(false);
+    setQuery("");
+  };
+  return (
+    <Combobox
+      items={rows}
+      value={current}
+      inputValue={query}
+      onInputValueChange={setQuery}
+      open={open}
+      onOpenChange={next => {
+        setOpen(next);
+        if (next) {
+          setQuery("");
+          setTab(choices.length === 1 ? (choices[0]?.id ?? "all") : "all");
+          setCatalogs(previous =>
+            Object.fromEntries(Object.entries(previous).map(([key, value]) => [key, { ...value, loaded: false }])),
+          );
+          void refreshModelCatalog();
+        }
+      }}
+      itemToStringLabel={(item: Choice) => `${item.label} ${item.providerLabel} ${item.model}`}
+      itemToStringValue={(item: Choice) => item.key}
+      onValueChange={item => {
+        if (item) choose(item);
+      }}
+    >
+      <ComboboxTrigger
+        role="combobox"
+        aria-label="Model"
+        disabled={disabled}
+        data-value={model}
+        title={[currentLabel, currentProvider].filter(Boolean).join(" · ")}
+        className="model-picker-trigger model-select"
+      >
+        <span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>
+        {currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}
+        <ChevronDown size={16} />
+      </ComboboxTrigger>
+      <ComboboxContent className="model-picker-content">
+        <SearchField variant="bare">
+          <ComboboxInput aria-label="Search models" placeholder="Search models…" autoFocus />
+        </SearchField>
+        <Tabs.Root value={tab} onValueChange={setTab}>
+          <Tabs.List className="model-provider-tabs" aria-label="Model providers">
+            <Tabs.Tab value="all">All</Tabs.Tab>
+            {groups.length > 1 &&
+              groups.map(group => (
+                <Tabs.Tab key={group.id} value={group.id}>
+                  {group.label}
+                </Tabs.Tab>
+              ))}
+          </Tabs.List>
+          <Tabs.Panel value={tab}>
+            {/* A failed refresh keeps the last list without a word; only an empty menu says it is still trying (4 Nov). */}
+            {engine.error && !engine.models.length ? (
+              <div className="p-3 text-sm text-muted-foreground">
+                <p role="status" title={engine.error}>
+                  Models are not available yet. Elpis keeps trying.
+                </p>
+                <Button
+                  className="mt-2"
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={engine.loading}
+                  onClick={() => void refreshModelCatalog()}
+                >
+                  Try again
+                </Button>
+              </div>
+            ) : (
+              engine.loading &&
+              !engine.error && (
+                <p role="status" className="px-4 pt-2 text-sm text-muted-foreground">
+                  Refreshing models…
+                </p>
+              )
+            )}
+            {needsKey && activeConnection?.provider ? (
+              <ProviderKeyForm
+                provider={activeConnection.provider}
+                label={activeConnection.label}
+                onSaved={() => {
+                  setKeysSaved(saved => [...saved, activeConnection.id]);
+                  setRetry(value => value + 1);
+                  onKeySaved?.();
+                }}
+              />
+            ) : catalog?.loading ? (
+              <p role="status" className="p-4 text-sm text-muted-foreground">
+                Loading models from {activeConnection?.label}…
+              </p>
+            ) : catalog?.error ? (
+              <div className="p-3 text-sm text-muted-foreground">
+                <p role="status" title={catalog.error}>
+                  {plainCatalogError(catalog.error, activeConnection?.label)}
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => setRetry(value => value + 1)}>
+                    Try again
+                  </Button>
+                  {onConfigure && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setOpen(false);
+                        onConfigure();
+                      }}
+                    >
+                      Manage connections
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <ComboboxEmpty>
+                {tab !== "all" && !rows.length
+                  ? "This connection has not reported a model list."
+                  : "No matching models."}
+              </ComboboxEmpty>
+            )}
+            <ComboboxList>
+              {(item: Choice) => (
+                <ComboboxItem key={item.key} value={item} data-value={item.model}>
+                  <span className="model-option-name">
+                    {item.label}
+                    {item.description && <small title={item.description}>{item.description}</small>}
+                  </span>
+                  <span className="model-option-provider">{item.providerLabel}</span>
+                </ComboboxItem>
+              )}
+            </ComboboxList>
+          </Tabs.Panel>
+        </Tabs.Root>
+        {allowCustom && configured.length > 0 && (
+          <details className="model-custom">
+            <DisclosureSummary>Advanced: use an unlisted model</DisclosureSummary>
+            <div className="grid gap-2 pt-2">
+              <OptionSelect
+                aria-label="Provider"
+                value={customProvider}
+                onChange={e => setCustomProvider(e.target.value)}
+              >
+                <option value="">Choose connection</option>
+                {configured.map(provider => (
+                  <option key={provider.id} value={provider.id}>
+                    {provider.label}
+                  </option>
+                ))}
+              </OptionSelect>
+              <Input
+                aria-label="Model ID"
+                placeholder="Model name supplied by this connection"
+                value={customModel}
+                maxLength={200}
+                onChange={e => setCustomModel(e.target.value)}
+              />
+              <Button
+                type="button"
+                size="sm"
+                disabled={!customProvider || !customModel.trim()}
+                onClick={() => choose({ model: customModel.trim(), choiceId: customProvider })}
+              >
+                Use model
+              </Button>
+            </div>
+          </details>
+        )}
+      </ComboboxContent>
+    </Combobox>
+  );
 }

@@ -14,7 +14,9 @@ export function projectFolderOf(cwd: string) {
 }
 
 /** What archiving, deleting or unarchiving a chat did to its worktree. */
-export type WorktreeOutcome = { path: string; branch: string } & ({ kept: true; changes: number } | { removed: true } | { restored: true });
+export type WorktreeOutcome = { path: string; branch: string } & (
+  { kept: true; changes: number } | { removed: true } | { restored: true }
+);
 
 /** The notice after a chat is archived or deleted, only when its worktree stays on disk; Claude words the archive case
  * "Session archived with uncommitted changes. The worktree is still on disk. Unarchive the session to keep working in it." */

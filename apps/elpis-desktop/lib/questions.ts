@@ -7,10 +7,16 @@ export type Question = NonNullable<Approval["params"]["questions"]>[number];
 export const OTHER_ANSWER = "None of the above";
 const NOTE = "user_note: ";
 
-export type QuestionState = { choice: number | "other" | null; other: string; answered: boolean; otherOffered: boolean };
+export type QuestionState = {
+  choice: number | "other" | null;
+  other: string;
+  answered: boolean;
+  otherOffered: boolean;
+};
 /** What a draft answer means for its question: which option is chosen, the "Other" text, and whether it is answered. */
 export function questionState(question: Question, answer?: string[]): QuestionState {
-  const options = question.options ?? [], otherOffered = options.length > 0 && question.isOther === true;
+  const options = question.options ?? [],
+    otherOffered = options.length > 0 && question.isOther === true;
   const index = answer?.[0] === undefined ? -1 : options.findIndex(option => option.label === answer[0]);
   if (index >= 0) return { choice: index, other: "", answered: true, otherOffered };
   if (otherOffered && answer?.[0] === OTHER_ANSWER) {

@@ -14,7 +14,8 @@ onmessage = ({ data }: MessageEvent<HighlightRequest>) => {
   const walk = (nodes: ElementContent[], classes = "") => {
     for (const node of nodes) {
       if (node.type === "text") {
-        if (classes && node.value.length) ranges.push({ from: offset, to: offset + node.value.length, className: classes });
+        if (classes && node.value.length)
+          ranges.push({ from: offset, to: offset + node.value.length, className: classes });
         offset += node.value.length;
       } else if (node.type === "element") {
         const names = node.properties.className;
@@ -22,6 +23,10 @@ onmessage = ({ data }: MessageEvent<HighlightRequest>) => {
       }
     }
   };
-  try { walk(lowlight.highlight(data.language, data.text.slice(0, 16_384)).children as ElementContent[]); } catch { /* Unknown languages stay plain. */ }
+  try {
+    walk(lowlight.highlight(data.language, data.text.slice(0, 16_384)).children as ElementContent[]);
+  } catch {
+    /* Unknown languages stay plain. */
+  }
   postMessage({ id: data.id, ranges } satisfies HighlightReply);
 };

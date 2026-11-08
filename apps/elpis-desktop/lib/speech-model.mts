@@ -5,5 +5,7 @@ export function speechPcmRate(model: string) {
 
 /** Other PCM-only models need a known sample format before this player can offer them. */
 export function speechModelUnavailable(model: string) {
-  return /^(?:heygen\/|google\/.*tts)/i.test(model) && !speechPcmRate(model) ? 'This model returns PCM audio, which is unavailable here.' : null;
+  return /^(?:heygen\/|google\/.*tts)/i.test(model) && !speechPcmRate(model)
+    ? "This model returns PCM audio, which is unavailable here."
+    : null;
 }

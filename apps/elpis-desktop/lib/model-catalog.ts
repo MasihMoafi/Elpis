@@ -21,33 +21,56 @@ let failures = 0;
 /** Seconds between quiet retries after a failure; the last one repeats. */
 export const RETRY_DELAYS_MS = [2_000, 5_000, 15_000, 30_000, 60_000];
 const listeners = new Set<() => void>();
-const publish = (next: Partial<ModelCatalogState>) => { state = { ...state, ...next }; for (const listener of listeners) listener(); };
+const publish = (next: Partial<ModelCatalogState>) => {
+  state = { ...state, ...next };
+  for (const listener of listeners) listener();
+};
 
 /** Reads the live list; the newest request wins, and a failure keeps the last list and retries. */
-export async function refreshModelCatalog(fetchList: ListReader = readList, delays: readonly number[] = RETRY_DELAYS_MS): Promise<void> {
+export async function refreshModelCatalog(
+  fetchList: ListReader = readList,
+  delays: readonly number[] = RETRY_DELAYS_MS,
+): Promise<void> {
   const id = ++latest;
-  if (retry) { clearTimeout(retry); retry = undefined; }
+  if (retry) {
+    clearTimeout(retry);
+    retry = undefined;
+  }
   publish({ loading: true });
   try {
     const result = await fetchList("/models?refresh=true");
     if (!Array.isArray(result?.data)) throw new Error("The model catalogue did not return a model list.");
-    if (id === latest) { failures = 0; publish({ models: result.data as Model[], loading: false, error: "" }); }
+    if (id === latest) {
+      failures = 0;
+      publish({ models: result.data as Model[], loading: false, error: "" });
+    }
   } catch (cause) {
     if (id !== latest) return;
     publish({ loading: false, error: errorText(cause) });
     const delay = delays[Math.min(failures++, delays.length - 1)];
     if (delay !== undefined) {
-      retry = setTimeout(() => { retry = undefined; void refreshModelCatalog(fetchList, delays); }, delay);
+      retry = setTimeout(() => {
+        retry = undefined;
+        void refreshModelCatalog(fetchList, delays);
+      }, delay);
       (retry as { unref?: () => void }).unref?.();
     }
   }
 }
 
 export const modelCatalogSnapshot = () => state;
-export function subscribeModelCatalog(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; }
+export function subscribeModelCatalog(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
 /** The shared list, its loading state and its last error. */
 export function useModelCatalog(): ModelCatalogState {
   const [snapshot, setSnapshot] = useState(state);
-  useEffect(() => { setSnapshot(state); return subscribeModelCatalog(() => setSnapshot(state)); }, []);
+  useEffect(() => {
+    setSnapshot(state);
+    return subscribeModelCatalog(() => setSnapshot(state));
+  }, []);
   return snapshot;
 }
