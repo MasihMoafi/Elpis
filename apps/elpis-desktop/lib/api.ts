@@ -210,7 +210,7 @@ export type ProviderChoice = { id: string; label: string; provider?: string; mod
 /** Engine providers the model list leaves out: the local gpt-oss servers and Amazon Bedrock. */
 const UNLISTED = new Set(["ollama", "lmstudio", "amazon-bedrock", "amazon-bedrock-runtime"]);
 /** Where each connection sits in every list, by what Masih has: the OpenAI and subscription connections, then OpenRouter, then API-key providers; any other after them, by name. */
-const ORDER = ["openai", "claude/", "agy/", "openrouter", "anthropic", "anthropic-credits", "google-gemini"];
+const ORDER = ["claude/", "openai", "agy/", "openrouter", "anthropic", "anthropic-credits", "google-gemini"];
 const rank = (id: string) => { const index = ORDER.indexOf(id); return index < 0 ? ORDER.length : index; };
 /** Connections in list order. */
 export const connectionOrder = <T extends { id: string; label: string }>(items: readonly T[]) => [...items].sort((a, b) => rank(a.id) - rank(b.id) || a.label.localeCompare(b.label));

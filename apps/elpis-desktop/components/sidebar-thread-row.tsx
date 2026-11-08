@@ -6,7 +6,6 @@ import { ThreadActions } from "@/components/thread-actions";
 import { Button } from "@/components/ui/button";
 import { agentState, attentionLine, stateLabels } from "@/lib/agents";
 import { isAgent, isAgentRun, title, type Thread } from "@/lib/api";
-import { ElpisMarkIcon } from "@/components/elpis-icons";
 import { errorText } from "@/lib/error-text.mts";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
@@ -76,9 +75,9 @@ export function createSidebarThreadRow({ model, runtime, loveActivity, attention
         else { setExpanded(previous => ({ ...previous, [expandId]: true })); if (!checkedChildren.current.has(thread.id)) void loadChildren(thread.id, undefined, false); }
       }}><ChevronRight size={14} className={open ? "rotate-90" : undefined} /></Button>}
       {!canExpandAgents && depth > 0 && <span aria-hidden="true" className="size-6 shrink-0" />}
-      <span className="conversation-state-slot">{state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state === "idle" ? thread.motherAgent ? <ElpisMarkIcon size={16} aria-hidden="true" /> : <span className="thread-dot" data-state={state} aria-hidden="true" /> : <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}</span>
+      <span className="conversation-state-slot">{state === "unread" ? <button data-slot="thread-dot" className="thread-dot conversation-status" data-state={state} aria-label="Unread response. Mark as read" title="Unread response. Mark as read" onClick={() => markRead(thread.id)} /> : state === "idle" ? <span className="thread-dot" data-state={state} aria-hidden="true" /> : <span className="thread-dot conversation-status" role="img" data-state={state} aria-label={stateLabels[state]} title={stateLabels[state]} />}</span>
       <button data-slot="chat-row" className="thread-link" onPointerEnter={() => prefetchThread(thread)} onFocus={() => prefetchThread(thread)} onMouseDown={event => { if (event.shiftKey || event.button === 1) event.preventDefault(); }} onAuxClick={event => { if (event.button === 1 && desktop) { event.preventDefault(); openInNewTab(thread); } }} onClick={event => clickRow(thread, event)} title={name}>
-        <>{thread.motherAgent ? <span className="thread-title">Elpis</span> : isAgent(thread) || workflowSteps.has(thread.id) || run ? <AgentIdentity compact id={thread.id} {...(colourSlot !== undefined ? { colourSlot } : {})} name={name} nameClassName="thread-title" {...(rowModel !== undefined ? { model: rowModel } : {})} {...(provider !== undefined ? { provider } : {})} {...(role !== undefined ? { role } : {})} /> : <span className="thread-title" title={name}>{name}</span>}</>
+        <>{isAgent(thread) || workflowSteps.has(thread.id) || run ? <AgentIdentity compact id={thread.id} {...(colourSlot !== undefined ? { colourSlot } : {})} name={name} nameClassName="thread-title" {...(rowModel !== undefined ? { model: rowModel } : {})} {...(provider !== undefined ? { provider } : {})} {...(role !== undefined ? { role } : {})} /> : <span className="thread-title" title={name}>{name}</span>}</>
         {parentLabel && <span className="text-xs text-muted-foreground" title={parentLabel}>{parentLabel}</span>}
         {subtitle && <span className="thread-subtitle" title={subtitle}>{subtitle}</span>}
         {originLabel(origin, name) && !inOrigin && <span className="thread-nickname thread-origin" data-origin={origin}>{origin}</span>}

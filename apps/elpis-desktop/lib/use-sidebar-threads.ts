@@ -31,7 +31,7 @@ type Inputs = {
 };
 
 export function useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins: manualPins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen }: Inputs) {
-  const pins = [...manualPins, ...threads.filter(thread => thread.motherAgent).map(thread => thread.id)];
+  const pins = manualPins;
   const searchTerm = search.searchTerm;
   const loveChatCharacter = useLoveChatCharacters(threads, selected, preferences);
   const { catalog: workflowCatalog, runs: workflowRuns, roots: workflowRoots, steps: workflowSteps, sidebarTitle: workflowTitle } = useWorkflowSidebar(ready && connected, threads, hidden,
@@ -105,7 +105,7 @@ export function useSidebarThreads({ ready, connected, threads, hidden, selected,
     { id: "delete", label: agentRuns.length > 100 ? "Delete 100 Agent runs…" : "Delete Agent run history…", destructive: true, run: () => { setDeleteRunHistory(true); setDeleteTargets(agentRuns.slice(0, 100)); } },
   ];
   // The engine's search matches letter case exactly; a listed chat's title and first message match in any case here.
-  const filtered = searchedThreads.filter(t => isTreeChat(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
+  const filtered = searchedThreads.filter(t => !t.motherAgent && isTreeChat(t) && (matchedOnServer.has(t.id) || `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`.toLowerCase().includes(searchTerm.toLowerCase())));
   // Search results are one flat list of every matching chat, as in the ChatGPT app: a hit is never hidden in its parent.
   const isOrphan = (thread: Thread) => !searchTerm && !sidebarParent(thread) && !Object.hasOwn(chatGroups.parents ?? {}, thread.id) && !!agentParentId(thread) && !ordinaryIds.has(agentParentId(thread)!);
   const roots = filtered.filter(t => !isOrphan(t) && (!!searchTerm || !sidebarParent(t))).filter(t => searchTerm || (ownChat(t) ? !projectChats[t.id] || pins.includes(t.id) : originOf(t) === "Workflows"));

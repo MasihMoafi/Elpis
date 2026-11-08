@@ -35,7 +35,7 @@ test('the list leaves out the local gpt-oss servers and Bedrock, and keeps the o
 test('every list orders connections as Masih owns them and lists neither Amazon entry (R35)', () => {
   const ids = ['google-gemini', 'amazon-bedrock', 'anthropic', 'team', 'openrouter', 'openai', 'amazon-bedrock-runtime', 'claude/', 'agy/'];
   const listed = connectionOrder(ids.filter(isListedProvider).map(id => ({ id, label: providerLabel(null, id, []) })));
-  assert.deepEqual(listed.map(item => item.id), ['openai', 'claude/', 'agy/', 'openrouter', 'anthropic', 'google-gemini', 'team']);
+  assert.deepEqual(listed.map(item => item.id), ['claude/', 'openai', 'agy/', 'openrouter', 'anthropic', 'google-gemini', 'team']);
 });
 
 test('provider choices stay distinct without exposing internal keys as ordinary labels', () => {

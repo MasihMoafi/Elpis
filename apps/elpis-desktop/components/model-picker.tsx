@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { SearchField } from "@/components/ui/search-field";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/components/ui/combobox";
-import { api, choiceById, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
+import { api, choiceById, connectionOrder, modelLabel, modelName, subscriptionOf, type ProviderChoice, type Model } from "@/lib/api";
 import { providerLogin } from "@/lib/provider-login";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { errorText } from "@/lib/error-text.mts";
@@ -94,7 +94,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
   const currentLabel = current?.label || modelLabel(currentModel, models);
   const currentProvider = current?.providerLabel || subscriptionOf(currentModel)?.label || connection?.label;
   const rows = tab === "all" ? available : available.filter(item => item.choiceId === tab);
-  const groups = choices;
+  const groups = connectionOrder(choices);
   const configured = choices.filter(choice => !!choice.provider);
   const choose = (choice: { model: string; choiceId: string }) => { onChange(choice); setOpen(false); setQuery(""); };
   return <Combobox items={rows} value={current} inputValue={query} onInputValueChange={setQuery} open={open}

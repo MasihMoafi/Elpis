@@ -71,13 +71,11 @@ export function ModelChoice({ label, value, models, provider, catalogStatus, dis
   </div>;
 }
 
-/** Subscriptions come first. Their models are named by prefix (claude/…), so they need no configured connection. */
-export function subscriptionOptions(models: Model[], valueOf: (item: (typeof SUBSCRIPTIONS)[number]) => string = item => item.id) {
-  return SUBSCRIPTIONS.filter(item => models.some(model => model.model.startsWith(item.prefix))).map(item => <option key={item.id} value={valueOf(item)}>{item.label}</option>);
-}
-export function providerOptions(current: string, providers: ElpisSettings["providers"] = []) {
-  const listed = providers.filter(item => item.id === current || isListedProvider(item.id)).map(item => ({ id: item.id, label: providerLabel(null, item.id, providers) }));
-  return <>{current && !providers.some(item => item.id === current) && <option value={current}>{current}</option>}{connectionOrder(listed).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</>;
+/** Connections in one order. Subscriptions are named by model prefix (claude/…), so they need no configured connection. */
+export function providerOptions(current: string, providers: ElpisSettings["providers"] = [], subscribed?: { models: Model[]; valueOf: (item: (typeof SUBSCRIPTIONS)[number]) => string }) {
+  const listed = providers.filter(item => item.id === current || isListedProvider(item.id)).map(item => ({ id: item.id, label: providerLabel(null, item.id, providers), value: item.id }));
+  const subscriptions = subscribed ? SUBSCRIPTIONS.filter(item => subscribed.models.some(model => model.model.startsWith(item.prefix))).map(item => ({ id: item.prefix, label: item.label, value: subscribed.valueOf(item) })) : [];
+  return <>{current && !providers.some(item => item.id === current) && <option value={current}>{current}</option>}{connectionOrder([...subscriptions, ...listed]).map(item => <option key={item.id} value={item.value}>{item.label}</option>)}</>;
 }
 
 /** The main model (what new chats start with, here and in the TUI) and the background model Smart Prune falls back to. */
@@ -122,7 +120,7 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
       <ModelChoice label={title} value={current.model} models={offered} provider={subscription?.label ?? catalogs.connectionLabel(current.provider)} catalogStatus={subscription ? undefined : catalogs.catalogStatus(current.provider)} disabled={saver.pending !== null} inheritLabel={which === "main" ? undefined : "Default background model"} onChange={model => update("model", model)} />
     </SettingRow>
     <SettingRow title={`${name} provider`} description={pinned ? "Pinned by your requirements." : PAIRS[which].provider}>
-      <OptionSelect aria-label={`${name} provider`} className="settings-choice" value={subscription?.prefix ?? current.provider ?? ""} onChange={event => chooseProvider(event.target.value)} disabled={saver.pending !== null || Boolean(pinned)}><option value="">Use default</option>{which === "main" && subscriptionOptions(models, item => item.prefix)}{providerOptions(draft.provider ?? saved.provider ?? "", value.providers)}</OptionSelect>
+      <OptionSelect aria-label={`${name} provider`} className="settings-choice" value={subscription?.prefix ?? current.provider ?? ""} onChange={event => chooseProvider(event.target.value)} disabled={saver.pending !== null || Boolean(pinned)}><option value="">Use default</option>{providerOptions(draft.provider ?? saved.provider ?? "", value.providers, which === "main" ? { models, valueOf: item => item.prefix } : undefined)}</OptionSelect>
     </SettingRow>
     <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
       <Button disabled={saver.pending !== null || !Object.keys(draft).length || (which === "main" && !current.model)} onClick={() => void saver.run("save", async () => { await saveSettings("/settings", { version: value.version, [which]: draft }); setDraft({}); }, `${name} model saved. Applies to new conversations.`)}>{saver.pending === "save" ? "Saving…" : `Save ${name.toLowerCase()} model`}</Button>
