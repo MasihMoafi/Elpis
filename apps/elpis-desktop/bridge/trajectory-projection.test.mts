@@ -1,6 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { project } from './trajectory-projection.mts';
+import { project, projectFile } from './trajectory-projection.mts';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const line = (timestamp: string, type: string, payload: unknown) => JSON.stringify({ timestamp, type, payload });
 const usage = (input: number, cached: number, output: number) => ({ usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, reasoning_output_tokens: 5, total_tokens: input + output } });
@@ -25,6 +30,31 @@ const rollout = () => [
   t('10:01:02.000', 'token_usage_record', usage(10400, 1000, 10)),
   t('10:01:03.000', 'compacted', { message: 'Summary of the chat' }),
 ].join('\n');
+
+test('streamed trajectory preserves mixed usage accounting, UTF-8, source positions and malformed-tail handling', async context => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-trajectory-stream-'));
+  context.after(() => fs.rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'rollout.jsonl');
+  for (const text of ['', rollout(), `${rollout()}\n{broken\n${rollout()}`, `${line('2026-11-05T09:00:00Z', 'world_state', { full: true, state: { padding: 'متن🙂'.repeat(14000) } })}\n${rollout()}`]) {
+    await fs.writeFile(file, text);
+    assert.deepEqual(await projectFile(file), project(text));
+  }
+});
+
+test('projecting 200 MiB of historical state has file-independent input memory', async context => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-trajectory-memory-'));
+  context.after(() => fs.rm(root, { recursive: true, force: true }));
+  const file = path.join(root, 'rollout.jsonl'), handle = await fs.open(file, 'w');
+  const row = Buffer.from(line('2026-11-05T09:00:00Z', 'world_state', { full: true, state: { padding: 'x'.repeat(262144) } }) + '\n');
+  for (let bytes = 0; bytes < 200 * 1024 * 1024; bytes += row.length) await handle.write(row);
+  await handle.close();
+  const script = `import { projectFile } from ${JSON.stringify(new URL('./trajectory-projection.mts', import.meta.url).href)}; const document = await projectFile(process.argv[1]); console.log(JSON.stringify({turns:document.turns.length,rssKiB:process.resourceUsage().maxRSS}));`;
+  const { stdout } = await promisify(execFile)(process.execPath, ['--input-type=module', '-e', script, file], { timeout: 15000 });
+  const result: { turns: number; rssKiB: number } = JSON.parse(stdout);
+  context.diagnostic(JSON.stringify(result));
+  assert.equal(result.turns, 0);
+  assert.ok(result.rssKiB < 160 * 1024, `peak RSS ${result.rssKiB} KiB grew with the rollout`);
+});
 
 test('turns, steps and records follow the rollout', () => {
   const doc = project(rollout());

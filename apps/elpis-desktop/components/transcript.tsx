@@ -22,7 +22,7 @@ import { pauseBefore, turnTime } from "@/lib/turn-time";
  * folds into "Worked for …". `renderItem` draws one message or activity in full; `mediaOf` is where the bridge serves
  * an item's recorded pictures (lib/api.ts `mediaUrl`). */
 type Draw = { renderItem: (entry: Entry) => ReactNode; mediaOf?: ((entry: Entry) => string | undefined) | undefined; wrapItem?: ((entry: Entry, node: ReactNode) => ReactNode) | undefined };
-type ObserveTurn = (element: HTMLElement, show: () => void) => () => void;
+type ObserveTurn = (element: HTMLElement, show: (visible: boolean) => boolean) => () => void;
 export const WorkingPlacement = createContext<HTMLElement | null>(null);
 function WorkingStatus({ children }: { children: ReactNode }) {
   const host = useContext(WorkingPlacement);
@@ -32,7 +32,8 @@ function WorkingStatus({ children }: { children: ReactNode }) {
 
 export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { entries: Entry[]; activeTurnId: string | null; onViewChanges?: () => void } & Draw) {
   const viewport = useRef<HTMLElement | null>(null);
-  const targets = useRef(new Map<Element, () => void>());
+  const targets = useRef(new Map<Element, (visible: boolean) => boolean>());
+  const shown = useRef(new Set<Element>());
   const frame = useRef(0);
   const schedule = useCallback(() => {
     if (frame.current) return;
@@ -48,31 +49,36 @@ export function Transcript({ entries, activeTurnId, onViewChanges, ...draw }: { 
         const turn = turns[middle];
         if (turn && turn.getBoundingClientRect().bottom < top) low = middle + 1; else high = middle;
       }
+      const visible = new Set<Element>();
       for (let index = low; index < turns.length; index++) {
         const turn = turns[index];
         if (!turn || turn.getBoundingClientRect().top > bottom) break;
-        const show = targets.current.get(turn);
-        targets.current.delete(turn); show?.();
+        if (targets.current.has(turn)) visible.add(turn);
       }
+      for (const turn of shown.current) if (!visible.has(turn) && targets.current.get(turn)?.(false)) visible.add(turn);
+      for (const turn of visible) if (!shown.current.has(turn)) targets.current.get(turn)?.(true);
+      shown.current = visible;
     });
   }, []);
   const observe = useCallback<ObserveTurn>((element, show) => {
     viewport.current = element.closest<HTMLElement>(".chat-scroll");
-    if (!viewport.current) { show(); return () => {}; }
+    if (!viewport.current) { show(true); return () => {}; }
     targets.current.set(element, show); schedule();
-    return () => { targets.current.delete(element); };
+    return () => { targets.current.delete(element); shown.current.delete(element); };
   }, [schedule]);
   useEffect(() => {
     const root = viewport.current;
     if (!root) return;
     // Visibility checks run only when the viewport or its content moves or changes size.
     root.addEventListener("scroll", schedule, { passive: true });
+    root.addEventListener("focusout", schedule);
+    document.addEventListener("selectionchange", schedule);
     const resize = new ResizeObserver(schedule);
     resize.observe(root); if (root.firstElementChild) resize.observe(root.firstElementChild);
     schedule();
-    return () => { root.removeEventListener("scroll", schedule); resize.disconnect(); cancelAnimationFrame(frame.current); frame.current = 0; };
+    return () => { root.removeEventListener("scroll", schedule); root.removeEventListener("focusout", schedule); document.removeEventListener("selectionchange", schedule); resize.disconnect(); cancelAnimationFrame(frame.current); frame.current = 0; };
   }, [entries.length, schedule]);
-  useEffect(() => () => { targets.current.clear(); viewport.current = null; }, []);
+  useEffect(() => () => { targets.current.clear(); shown.current.clear(); viewport.current = null; }, []);
   const wrapped = { ...draw, renderItem: (entry: Entry) => draw.wrapItem ? draw.wrapItem(entry, draw.renderItem(entry)) : draw.renderItem(entry) };
   const turns = turnsOf(entries);
   return <>{turns.map((turn, index) => {
@@ -116,25 +122,33 @@ function createdFiles(entries: Entry[]): string[] {
 
 function Turn({ turn, active, defer, observe, onViewChanges, renderItem, mediaOf, wrapItem }: { turn: TurnEntries; active: boolean; defer: boolean; observe: ObserveTurn; onViewChanges?: () => void } & Draw) {
   const [workOpen, setWorkOpen] = useState(false);
-  const [visited, setVisited] = useState(!defer || active);
+  const [shown, setShown] = useState(!defer || active);
+  const height = useRef(320);
   const section = useRef<HTMLElement>(null);
   const focusTarget = useRef<string | null>(null);
-  const materialized = visited || active || !defer;
+  const materialized = shown || active || !defer;
   useEffect(() => {
     const element = section.current;
-    if (materialized) { if (!visited) setVisited(true); return; }
-    if (!element) return;
-    // Keep visited turns mounted so scrolling never discards selections or edit drafts.
-    return observe(element, () => setVisited(true));
-  }, [materialized, observe, visited]);
+    if (!element || !defer) return;
+    return observe(element, visible => {
+      if (!visible) {
+        // Explicitly opened work, edits, keyboard focus and a selection remain mounted.
+        const selection = window.getSelection();
+        if (element.contains(document.activeElement) || element.querySelector('textarea,input,[contenteditable="true"],details[open]') ||
+            selection && !selection.isCollapsed && Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index)).some(range => range.intersectsNode(element))) return true;
+        height.current = element.getBoundingClientRect().height;
+      }
+      setShown(visible); return visible;
+    });
+  }, [defer, observe]);
   useLayoutEffect(() => {
     if (!materialized || !focusTarget.current) return;
     const target = document.getElementById(focusTarget.current);
     focusTarget.current = null;
     target?.focus({ preventScroll: true }); target?.scrollIntoView({ block: "center" });
   }, [materialized]);
-  if (!materialized) return <section ref={section} className="turn" aria-label="Turn" data-prompt={turn.entries.some(entry => entry.item.type === "userMessage") ? "" : undefined} style={{ height: 320 }}>
-    {turn.entries.filter(entry => entry.item.type === "userMessage" || isReply(entry.item)).map(entry => <div key={entryKey(entry)} id={messageDomId(entryKey(entry))} tabIndex={-1} onFocus={event => { focusTarget.current = event.currentTarget.id; setVisited(true); }}>
+  if (!materialized) return <section ref={section} className="turn" aria-label="Turn" data-prompt={turn.entries.some(entry => entry.item.type === "userMessage") ? "" : undefined} style={{ height: height.current }}>
+    {turn.entries.filter(entry => entry.item.type === "userMessage" || isReply(entry.item)).map(entry => <div key={entryKey(entry)} id={messageDomId(entryKey(entry))} tabIndex={-1} onFocus={event => { focusTarget.current = event.currentTarget.id; setShown(true); }}>
       {entry.item.type === "userMessage" && <span hidden className="message user">{entry.item.content?.filter(part => part.type === "text").map(part => part.text).join("\n")}</span>}
     </div>)}
   </section>;

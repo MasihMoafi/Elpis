@@ -97,15 +97,15 @@ test('large UTF-8 text and HTML use a read-only preview beyond the editor limit'
     const result = await readFile(root, name);
     assert.ok('content' in result);
     assert.equal(result.preview, 'text');
-    assert.equal(result.content, content, 'UTF-8 and source blocks are retained exactly for paging');
+    assert.ok(result.content && Buffer.byteLength(result.content) <= 32768, 'only the first UTF-8 page crosses the bridge');
+    assert.ok(content.startsWith(result.content));
     assert.equal(result.tooLarge, undefined);
     assert.equal(result.size, Buffer.byteLength(content));
   }
   await fs.writeFile(path.join(root, 'huge.txt'), '');
   await fs.truncate(path.join(root, 'huge.txt'), 31 * 1024 * 1024);
   const huge = await readFile(root, 'huge.txt');
-  assert.equal(huge.tooLarge, true); assert.equal('content' in huge ? huge.content : undefined, undefined);
-  assert.equal(huge.limit, 30 * 1024 * 1024);
+  assert.equal(huge.binary, true); assert.equal(huge.content, undefined);
 });
 
 test('says so for a binary file and refuses what lies outside the project', async t => {

@@ -1105,12 +1105,25 @@ impl RolloutRecorder {
     pub async fn load_rollout_items(
         path: &Path,
     ) -> std::io::Result<(Vec<RolloutItem>, Option<ThreadId>, usize)> {
-        trace!("Resuming rollout from {path:?}");
-        compression::read_rollout_lines(path, |reader| {
-            let mut items: Vec<RolloutItem> = Vec::new();
+        Self::fold_rollout_items(path, Vec::new(), |items, item| items.push(item)).await
+    }
+
+    /// Processes records one at a time, retaining only the consumer's accumulator.
+    pub(crate) async fn fold_rollout_items<S, F>(
+        path: &Path,
+        mut state: S,
+        mut fold: F,
+    ) -> std::io::Result<(S, Option<ThreadId>, usize)>
+    where
+        S: Send + 'static,
+        F: FnMut(&mut S, RolloutItem) + Send + 'static,
+    {
+        trace!("Reading rollout from {path:?}");
+        compression::read_rollout_lines(path, move |reader| {
             let mut thread_id: Option<ThreadId> = None;
             let mut parse_errors = 0usize;
             let mut saw_non_empty_line = false;
+            let mut item_count = 0usize;
             for line in reader {
                 let line = line?;
                 if line.trim().is_empty() {
@@ -1120,7 +1133,10 @@ impl RolloutRecorder {
                 let mut value: Value = match serde_json::from_str(&line) {
                     Ok(value) => value,
                     Err(e) => {
-                        warn!("failed to parse line as JSON: {line:?}, error: {e}");
+                        warn!(
+                            line_bytes = line.len(),
+                            "failed to parse rollout line as JSON: {e}"
+                        );
                         parse_errors = parse_errors.saturating_add(1);
                         continue;
                     }
@@ -1153,7 +1169,8 @@ impl RolloutRecorder {
                 {
                     thread_id = Some(session_meta_line.meta.id);
                 }
-                items.push(item);
+                fold(&mut state, item);
+                item_count += 1;
             }
             if !saw_non_empty_line {
                 return Err(IoError::other("empty session file"));
@@ -1161,11 +1178,11 @@ impl RolloutRecorder {
 
             tracing::debug!(
                 "Resumed rollout with {} items, thread ID: {:?}, parse errors: {}",
-                items.len(),
+                item_count,
                 thread_id,
                 parse_errors,
             );
-            Ok((items, thread_id, parse_errors))
+            Ok((state, thread_id, parse_errors))
         })
         .await
     }

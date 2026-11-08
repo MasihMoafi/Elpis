@@ -15,6 +15,7 @@ import { linkFilePaths, parseHref, resolveRef } from "@/lib/file-refs";
 import { fileAssetUrl, fileScope, useHost } from "@/lib/files-pane";
 import { ReplyableImage } from "@/components/image-reply";
 import { ExcalidrawDiagram } from "@/components/excalidraw-diagram";
+import { markdownPage, type MarkdownPosition } from "@/lib/markdown-page";
 
 /** Copies text and reports the result next to the button. */
 export function CopyButton({ text, label }: { text: () => string; label: string }) {
@@ -38,11 +39,11 @@ function languageOf(node: unknown) {
 }
 
 /** A code block: coloured by its language (rehype-highlight), named on its bar, with a button that copies the source. */
-function CodeBlock({ language, source, ...props }: React.ComponentProps<"pre"> & { language?: string | undefined; source?: string | undefined }) {
+function CodeBlock({ language, source, copyText, ...props }: React.ComponentProps<"pre"> & { language?: string | undefined; source?: string | undefined; copyText?: (() => string | undefined) | undefined }) {
   const ref = useRef<HTMLPreElement>(null);
   const diagram = language === "excalidraw";
   return <div className="code-block">
-    <div className={diagram ? "mb-1 flex items-center justify-end gap-1 text-muted-foreground" : "code-block-bar"} role={diagram ? "group" : undefined} aria-label={diagram ? "Diagram actions" : undefined}>{language && <span className="code-block-language">{diagram ? "Diagram" : language}</span>}<CopyButton label={diagram ? "Copy diagram code" : "Copy code"} text={() => source ?? (ref.current?.innerText ?? "").replace(/\n$/, "")} /></div>
+    <div className={diagram ? "mb-1 flex items-center justify-end gap-1 text-muted-foreground" : "code-block-bar"} role={diagram ? "group" : undefined} aria-label={diagram ? "Diagram actions" : undefined}>{language && <span className="code-block-language">{diagram ? "Diagram" : language}</span>}<CopyButton label={diagram ? "Copy diagram code" : "Copy code"} text={() => copyText?.() ?? source ?? (ref.current?.innerText ?? "").replace(/\n$/, "")} /></div>
     {diagram ? <ExcalidrawDiagram source={source ?? ""} /> : <pre ref={ref} {...props} />}
   </div>;
 }
@@ -89,9 +90,12 @@ const urlTransform = (url: string) => url.startsWith("file:///") ? url : default
 const PLUGINS = [remarkGfm, remarkMath, linkFilePaths];
 const noImage = ({ alt }: React.ComponentProps<"img">) => alt ? <span>{alt}</span> : null;
 
-export const MarkdownText = memo(function MarkdownText({ text, file, allowImages = true }: { text: string; file?: { cwd: string; path: string }; allowImages?: boolean }) {
+type MarkdownProps = { text: string; file?: { cwd: string; path: string }; allowImages?: boolean };
+function MarkdownBody({ text, file, allowImages = true, copyCode }: MarkdownProps & { copyCode?: ((rendered: string, offset: number) => string | undefined) | undefined }) {
+  const source = useMemo(() => dollarMath(text), [text]);
   const rendered = useMemo<Components>(() => {
-    const base: Components = allowImages ? components : { ...components, img: noImage };
+    let base: Components = allowImages ? components : { ...components, img: noImage };
+    if (copyCode) base = { ...base, pre: ({ node, ...props }) => <CodeBlock language={languageOf(node)} source={languageOf(node) === "excalidraw" ? codeText(node) : undefined} copyText={() => copyCode(source, node?.position?.start.offset ?? -1)} {...props} /> };
     if (!file) return base;
     const abs = resolveRef({ path: file.path }, file.cwd).abs, folder = abs.slice(0, abs.lastIndexOf("/")) || "/";
     return { ...base,
@@ -107,6 +111,28 @@ export const MarkdownText = memo(function MarkdownText({ text, file, allowImages
         return found?.inside ? <img src={fileAssetUrl(file.cwd, found.rel)} alt={alt ?? ""} loading="lazy" /> : <span className="file-image-unavailable">{alt || "Image"} (image unavailable)</span>;
       },
     };
-  }, [file?.cwd, file?.path, allowImages]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={rendered} urlTransform={urlTransform}>{dollarMath(text)}</Markdown></div>;
+  }, [file?.cwd, file?.path, allowImages, copyCode, source]); // eslint-disable-line react-hooks/exhaustive-deps
+  return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={rendered} urlTransform={urlTransform}>{source}</Markdown></div>;
+}
+
+function LongMarkdown(props: MarkdownProps) {
+  const [parts, setParts] = useState<MarkdownPosition[]>([{ start: 0, fence: null }]);
+  const host = useRef<HTMLDivElement>(null);
+  const page = markdownPage(props.text, parts.at(-1)!);
+  const move = (next: boolean) => {
+    setParts(previous => next && page.next ? [...previous, page.next] : previous.slice(0, Math.max(1, previous.length - 1)));
+    requestAnimationFrame(() => host.current?.scrollIntoView({ block: "start" }));
+  };
+  return <div ref={host}>
+    <MarkdownBody {...props} text={page.source} copyCode={page.codeSource} />
+    <nav className="join my-2" aria-label="Message parts">
+      <Button variant="ghost" size="sm" disabled={parts.length === 1} onClick={() => move(false)}>Previous part</Button>
+      <span className="px-2 py-1 text-muted-foreground">Part {parts.length}</span>
+      <Button variant="ghost" size="sm" disabled={!page.next} onClick={() => move(true)}>Next part</Button>
+    </nav>
+  </div>;
+}
+
+export const MarkdownText = memo(function MarkdownText(props: MarkdownProps) {
+  return props.text.length > 32000 ? <LongMarkdown key={props.text.slice(0, 64)} {...props} /> : <MarkdownBody {...props} />;
 });

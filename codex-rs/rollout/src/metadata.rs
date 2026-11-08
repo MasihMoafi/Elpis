@@ -140,23 +140,53 @@ pub async fn extract_metadata_from_rollout(
     rollout_path: &Path,
     default_provider: &str,
 ) -> anyhow::Result<ExtractionOutcome> {
-    let (items, _thread_id, parse_errors) =
-        RolloutRecorder::load_rollout_items(rollout_path).await?;
-    if items.is_empty() {
+    // Normal files stop at their header. Damaged legacy files can have responses
+    // before metadata; preserve the first-metadata fallback without collecting history.
+    let first_meta = match crate::read_session_meta_line(rollout_path).await {
+        Ok(meta) => Some(meta),
+        Err(_) => {
+            RolloutRecorder::fold_rollout_items(rollout_path, None, |first, item| {
+                if first.is_none()
+                    && let RolloutItem::SessionMeta(meta) = item
+                {
+                    *first = Some(meta);
+                }
+            })
+            .await?
+            .0
+        }
+    };
+    let builder = first_meta
+        .as_ref()
+        .and_then(|meta| builder_from_session_meta(meta, rollout_path))
+        .or_else(|| builder_from_items(&[], rollout_path))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "rollout missing metadata builder: {}",
+                rollout_path.display()
+            )
+        })?;
+    let provider = default_provider.to_string();
+    let ((mut metadata, memory_mode, item_count), _, parse_errors) =
+        RolloutRecorder::fold_rollout_items(
+            rollout_path,
+            (builder.build(default_provider), None, 0usize),
+            move |(metadata, memory_mode, count), item| {
+                apply_rollout_item(metadata, &item, &provider);
+                if let RolloutItem::SessionMeta(meta) = &item
+                    && meta.meta.memory_mode.is_some()
+                {
+                    *memory_mode = meta.meta.memory_mode.clone();
+                }
+                *count += 1;
+            },
+        )
+        .await?;
+    if item_count == 0 {
         return Err(anyhow::anyhow!(
             "empty session file: {}",
             rollout_path.display()
         ));
-    }
-    let builder = builder_from_items(items.as_slice(), rollout_path).ok_or_else(|| {
-        anyhow::anyhow!(
-            "rollout missing metadata builder: {}",
-            rollout_path.display()
-        )
-    })?;
-    let mut metadata = builder.build(default_provider);
-    for item in &items {
-        apply_rollout_item(&mut metadata, item, default_provider);
     }
     if let Some(updated_at) = file_modified_time_utc(rollout_path).await {
         metadata.updated_at = updated_at;
@@ -164,20 +194,7 @@ pub async fn extract_metadata_from_rollout(
     }
     Ok(ExtractionOutcome {
         metadata,
-        memory_mode: items.iter().rev().find_map(|item| match item {
-            RolloutItem::SessionMeta(meta_line) => meta_line.meta.memory_mode.clone(),
-            RolloutItem::ResponseItem(_)
-            | RolloutItem::InterAgentCommunication(_)
-            | RolloutItem::InterAgentCommunicationMetadata { .. }
-            | RolloutItem::Compacted(_)
-            | RolloutItem::TurnContext(_)
-            | RolloutItem::WorldState(_)
-            | RolloutItem::RealtimeItem(_)
-            | RolloutItem::TokenUsageRecord(_)
-            | RolloutItem::RetainedContext(_)
-            | RolloutItem::SecurityRiskScore(_)
-            | RolloutItem::EventMsg(_) => None,
-        }),
+        memory_mode,
         parse_errors,
     })
 }

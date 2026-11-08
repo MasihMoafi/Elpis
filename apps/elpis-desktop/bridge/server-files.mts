@@ -1,4 +1,3 @@
-import fs from 'node:fs/promises';
 import { BridgeError, object } from './validate.mts';
 import { ATTACHMENT_BODY_LIMIT, PDF_BODY_LIMIT, extractPdf } from './attachments.mts';
 import { devServerRequest } from './dev-servers.mts';
@@ -21,8 +20,8 @@ export async function handleFileRoutes(state: import('./server-http.mts').Server
     if ([...url.searchParams.keys()].some(key => key !== 'thread') || url.searchParams.getAll('thread').length !== 1) throw new BridgeError('Open a chat to see its trajectory.', 400);
     const thread = await client.readThreadMetadata(url.searchParams.get('thread'));
     if (typeof thread.path !== 'string' || !thread.path) throw new BridgeError('This chat has no recorded history yet.', 404);
-    const { project } = await import('./trajectory-projection.mts');
-    json(response, 200, project(await fs.readFile(thread.path, 'utf8'))); return true;
+    const { projectFile } = await import('./trajectory-projection.mts');
+    json(response, 200, await projectFile(thread.path)); return true;
   }
   if (url.pathname === '/api/improvements/source') {
     const store = await improvements();
@@ -62,7 +61,14 @@ export async function handleFileRoutes(state: import('./server-http.mts').Server
     response.writeHead(200, { 'Content-Type': asset.mimeType, 'Content-Length': asset.bytes.length, 'Content-Disposition': `inline; filename*=UTF-8''${filename}`, 'Cache-Control': 'no-store' });
     response.end(asset.bytes); return true;
   }
-  if (url.pathname === '/api/file' && method === 'GET') { json(response, 200, await readFile(cwdOf(url, 'path'), url.searchParams.get('path') ?? '')); return true; }
+  if (url.pathname === '/api/file' && method === 'GET') {
+    const cwd = cwdOf(url, 'path', 'page', 'line', 'mtimeMs');
+    const page = url.searchParams.has('page') ? Number(url.searchParams.get('page')) : undefined;
+    const mtimeMs = url.searchParams.has('mtimeMs') ? Number(url.searchParams.get('mtimeMs')) : undefined;
+    const line = url.searchParams.has('line') ? Number(url.searchParams.get('line')) : undefined;
+    if (mtimeMs !== undefined && !Number.isFinite(mtimeMs)) throw new BridgeError('Invalid file modification time.');
+    json(response, 200, await readFile(cwd, url.searchParams.get('path') ?? '', { page, line, mtimeMs })); return true;
+  }
   if (url.pathname === '/api/file' && method === 'POST') {
     const edit = /** @type {{ cwd?: unknown, path?: unknown, content?: unknown, mtimeMs?: unknown }} */ (object(await body(request, 3 * 1024 * 1024), ['cwd', 'path', 'content', 'mtimeMs']));
     json(response, 200, await writeFile(edit.cwd, edit.path, edit.content, edit.mtimeMs)); return true;

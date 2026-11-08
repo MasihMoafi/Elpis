@@ -1,3 +1,8 @@
+import fs from 'node:fs/promises';
+import readline from 'node:readline';
+import zlib from 'node:zlib';
+import { Readable } from 'node:stream';
+
 type Usage = { input: number; cacheRead: number; cacheWrite: number; output: number; reasoning: number };
 type Metrics = { timingRecorded: boolean; stepStartTime: number | null; firstTokenTime: number | null; completedTime: number | null; usageProvided: boolean; outputTokens: number };
 type Cell = { index: number; kind: string; text: string; timeSeconds: number | null; sourceSeq?: number | undefined; inputDetail?: string | undefined; outputDetail?: string | undefined; thinkingDetail?: string | undefined; systemPromptDetail?: string | undefined; opensTurn?: boolean | undefined; callId?: string | undefined; toolName?: string | undefined; startedAt?: number | undefined; result?: string | undefined; isError?: boolean | undefined; assistantMetrics?: Metrics | undefined; input?: number | undefined; cacheRead?: number | undefined; cacheWrite?: number | undefined; output?: number | undefined; think?: number | undefined };
@@ -11,6 +16,7 @@ type Row = { timestamp?: unknown; type?: string; payload?: Payload | null };
 const CACHE_DROP_POINTS = 20;
 const IDLE_REPORT_MS = 300_000;
 const PRUNE_PREFIX = 'elpis.context-prune.v1:';
+const USAGE_RECORD = '"type":"token_usage_record"';
 const str = (value: unknown) => typeof value === 'string' ? value : undefined;
 const integer = (value: unknown): number | undefined => typeof value === 'number' && Number.isInteger(value) ? value : undefined;
 const present = <T extends Record<string, unknown>>(entries: T): T => Object.fromEntries(Object.entries(entries).filter(([, value]) => value !== undefined)) as T;
@@ -66,9 +72,9 @@ class Builder {
   pendingText: string[]; pendingReasoning: string[]; pendingTools: Cell[]; pendingCalls: Map<string, Cell>; placedCalls: Map<string, Cell>;
   cumulative: Usage; changes: string[]; worldSeen: boolean; model?: string | undefined; pendingSeq?: number | undefined; systemPrompt?: [number, string] | undefined;
   turnStarted?: number | undefined; stepStarted?: number | undefined; ttft?: number | undefined; previousHit?: number | undefined; previousEnd?: number | undefined;
-  constructor(text: string) {
+  constructor(usesUsage: boolean) {
     this.doc = { version: 1, threadId: '', turns: [], requestNumbers: [] };
-    this.usesUsage = text.includes('"type":"token_usage_record"');
+    this.usesUsage = usesUsage;
     this.turn = 0; this.step = 0; this.count = 0;
     this.pendingText = []; this.pendingReasoning = []; this.pendingTools = [];
     this.pendingCalls = new Map(); this.placedCalls = new Map();
@@ -251,7 +257,7 @@ class Builder {
 }
 
 export function project(text: string) {
-  const builder = new Builder(text);
+  const builder = new Builder(text.includes(USAGE_RECORD));
   // As in Rust: a line that is not JSON ends the projection there, marked truncated.
   for (const [seq, line] of text.split('\n').entries()) {
     if (!line.trim()) continue;
@@ -260,4 +266,54 @@ export function project(text: string) {
     builder.line(seq, row as Row);
   }
   return builder.finish();
+}
+
+/** Project a stable file prefix without keeping the rollout string or its split lines.
+ * Usage format is detected in a bounded first pass so mixed older logs keep their accounting. */
+export async function projectFile(file: string) {
+  const handle = await fs.open(file, 'r');
+  try {
+    const size = (await handle.stat()).size;
+    if (!size) return project('');
+    const input = () => {
+      // Each pass has its own cursor. Destroying an iterator must not close the
+      // shared descriptor or switch to a replacement file between the passes.
+      const source = Readable.from((async function* () {
+        for (let offset = 0; offset < size;) {
+          const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, size - offset));
+          const { bytesRead } = await handle.read(chunk, 0, chunk.length, offset);
+          if (!bytesRead) break;
+          offset += bytesRead;
+          yield chunk.subarray(0, bytesRead);
+        }
+      })(), { objectMode: false });
+      if (!file.endsWith('.zst')) return source;
+      const decoded = source.pipe(zlib.createZstdDecompress());
+      source.on('error', error => decoded.destroy(error));
+      decoded.once('close', () => source.destroy());
+      return decoded;
+    };
+    let usesUsage = false, suffix = '';
+    const detection = input();
+    try {
+      for await (const raw of detection) {
+        const text = suffix + (Buffer.isBuffer(raw) ? raw.toString('utf8') : String(raw));
+        if (text.includes(USAGE_RECORD)) { usesUsage = true; break; }
+        suffix = text.slice(-(USAGE_RECORD.length - 1));
+      }
+    } finally { detection.destroy(); }
+    const builder = new Builder(usesUsage), stream = input();
+    const lines = readline.createInterface({ input: stream, crlfDelay: Infinity });
+    let seq = 0;
+    try {
+      for await (const line of lines) {
+        const index = seq++;
+        if (!line.trim()) continue;
+        let row;
+        try { row = JSON.parse(line); } catch { builder.doc.truncated = true; break; }
+        builder.line(index, row as Row);
+      }
+    } finally { lines.close(); stream.destroy(); }
+    return builder.finish();
+  } finally { await handle.close(); }
 }

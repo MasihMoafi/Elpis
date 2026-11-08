@@ -11,6 +11,7 @@ import type { ElpisChatHistory } from './router/sources/elpis-chat-history.mts';
 import type { RpcResponse } from './client-wire.mts';
 import type { ElicitationParams } from '../lib/approvals.ts';
 import type { restoredTokenUsage, rolloutShares, rolloutTurnModels, smartPruneSnapshot, tokenUsageSnapshot } from './elpis-features.mts';
+import { BoundedCache } from './bounded-cache.mts';
 
 type PendingRpc = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; method: string; reading: boolean };
 export type ApprovalParams = ElicitationParams & { threadId?: unknown; turnId?: unknown; permissions?: unknown; questions?: { id: string }[] | undefined; availableDecisions?: unknown[] | undefined; [key: string]: unknown };
@@ -90,10 +91,10 @@ export class ClientState {
   closed = false;
   ready = false;
   attaching = new Map<unknown, Promise<{ thread: RpcResponse<'thread/read'>['thread']; followingLive?: boolean }>>();
-  context = new Map<unknown, { tokenUsage?: ReturnType<typeof tokenUsageSnapshot>; smartPrune?: ReturnType<typeof smartPruneSnapshot> }>();
-  restored = new Map<unknown, Cached<Awaited<ReturnType<typeof restoredTokenUsage>>>>();
-  shares = new Map<unknown, Cached<Awaited<ReturnType<typeof rolloutShares>>>>();
-  turnModels = new Map<unknown, Cached<Awaited<ReturnType<typeof rolloutTurnModels>>>>();
+  context: Map<unknown, { tokenUsage?: ReturnType<typeof tokenUsageSnapshot>; smartPrune?: ReturnType<typeof smartPruneSnapshot> }> = new BoundedCache(64);
+  restored: Map<unknown, Cached<Awaited<ReturnType<typeof restoredTokenUsage>>>> = new BoundedCache(16);
+  shares: Map<unknown, Cached<Awaited<ReturnType<typeof rolloutShares>>>> = new BoundedCache(16);
+  turnModels: Map<unknown, Cached<Awaited<ReturnType<typeof rolloutTurnModels>>>> = new BoundedCache(16);
   liveTurnModels = new Map<string, string>();
   side = new Set<unknown>();
   sideChats = new Map<unknown, { turnId: string | null | undefined; starting: boolean; pending: Promise<unknown> | null; closing: boolean }>();

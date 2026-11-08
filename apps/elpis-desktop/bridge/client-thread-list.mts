@@ -245,6 +245,26 @@ export function internal_forgetSubscription(this: DesktopClient, clientState: Cl
     }
   }
 
+/** Once background work is idle, release this client's subscription so the engine's
+ * existing idle-unload path can discard its history and tool servers. */
+export async function internal_releaseIdle(this: DesktopClient, clientState: ClientState, id: unknown) {
+    const retained = () => clientState.closed || clientState.disposed || id === clientState.opened || !clientState.owned.has(id)
+      || clientState.attaching.has(id) || clientState.mutating.has(id) || clientState.side.has(id) || clientState.interviewThreads.has(id)
+      || [...clientState.approvals.values()].some(approval => approval.ownerThreadId === id || approval.params.threadId === id);
+    if (retained()) return;
+    const { thread } = await internal_rpc(this, clientState, 'thread/read', { threadId: id, includeTurns: false }).catch(() => ({ thread: undefined }));
+    if (!thread || thread.status?.type !== 'idle' || retained()) return;
+    // Forget before sending: a simultaneous reopen must attach again, in order after this unsubscribe.
+    internal_forgetSubscription.call(this, clientState, id);
+    try {
+      await internal_rpc(this, clientState, 'thread/unsubscribe', { threadId: id });
+      if (!clientState.owned.has(id)) {
+        clientState.context.delete(id);
+        if (typeof thread.path === 'string') { clientState.restored.delete(thread.path); clientState.shares.delete(thread.path); clientState.turnModels.delete(thread.path); }
+      }
+    } catch { if (!clientState.closed && !clientState.disposed) clientState.owned.add(id); }
+  }
+
 /** Read current native metadata without resuming a chat or loading its conversation. */
 export async function impl_readThreadMetadata(this: DesktopClient, clientState: ClientState, id?: unknown) {
     threadId(id);
@@ -267,7 +287,7 @@ export async function impl_readThread(this: DesktopClient, clientState: ClientSt
       const turns = interviewTurns(saved.thread?.turns ?? []);
       const entries = turns.flatMap(turn => turn.items.map(item => ({ turnId: turn.id, item }))).reverse();
       const end = start + (options.limit ?? 30);
-      return { thread, data: await internal_withTurnModels(clientState, thread.path, entries.slice(start, end)), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null };
+      return { thread, data: await internal_withTurnModels(clientState, thread.path, entries.slice(start, end), !!options.cursor), nextCursor: end < entries.length ? `${WHOLE_TURNS}${end}` : null };
     }
     const items = await internal_itemsPage.call(this, clientState, { threadId: id, cursor: options.cursor, limit: options.limit ?? 30, sortDirection: 'desc' });
     // A missed renderer event must not leave its Stop/Working state behind the saved
@@ -276,7 +296,7 @@ export async function impl_readThread(this: DesktopClient, clientState: ClientSt
       this.emit('event', { type: 'message', data: { method: 'thread/status/changed', params: { threadId: id, status: thread.status } } });
     }
     const data = clientState.chatHistory.merge(thread.id, items);
-    return { thread, ...items, data: await internal_withTurnModels(clientState, thread.path, data) };
+    return { thread, ...items, data: await internal_withTurnModels(clientState, thread.path, data, !!options.cursor) };
   }
 
 export async function impl_readPrompts(this: DesktopClient, _clientState: ClientState, id?: unknown) {

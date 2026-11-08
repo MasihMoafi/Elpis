@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { replacementEligibility } from '../lib/turn-replacement.ts';
 import { archivedSession } from './client-protocol.mts';
 import { modeOf } from './client-permissions.mts';
-import { internal_attach, internal_decorate, internal_forgetSubscription, internal_itemsPage } from './client-thread-list.mts';
+import { internal_attach, internal_decorate, internal_forgetSubscription, internal_itemsPage, internal_releaseIdle } from './client-thread-list.mts';
 import { internal_chatModel } from './client-context.mts';
 import { internal_mutate } from './client-mutation.mts';
 import { internal_rpc } from './client-rpc.mts';
@@ -187,11 +187,7 @@ export async function impl_resume(this: DesktopClient, clientState: ClientState,
    * servers; a chat that is working, changing or awaiting an answer stays followed. */
 async function internal_releaseLeft(this: DesktopClient, clientState: ClientState, opened: unknown) {
     for (const id of [...clientState.owned]) {
-      if (id === opened || clientState.attaching.has(id) || clientState.mutating.has(id) || [...clientState.approvals.values()].some(approval => approval.ownerThreadId === id || approval.params.threadId === id)) continue;
-      const { thread } = await internal_rpc(this, clientState, 'thread/read', { threadId: id, includeTurns: false }).catch(() => ({ thread: undefined }));
-      if (!thread || thread.status?.type === 'active' || !clientState.owned.has(id) || clientState.mutating.has(id)) continue;
-      internal_forgetSubscription.call(this, clientState, id);
-      await internal_rpc(this, clientState, 'thread/unsubscribe', { threadId: id }).catch(() => {});
+      if (id !== opened) await internal_releaseIdle.call(this, clientState, id);
     }
   }
 

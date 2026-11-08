@@ -1113,8 +1113,8 @@ test('new roots send, steer and interrupt through typed protocol without overrid
   client.close(); assert.equal(socket.closed, true);
 });
 
-test('opening a chat lets Elpis unload the idle chats left behind, never a working one (A47)', async () => {
-  const { client, socket } = fixture(); await client.initialize(); await client.models();
+test('opening a chat and finishing background work release idle chats, keeping selected and working chats (A47)', async t => {
+  const { client, socket, threads } = fixture(); t.after(() => client.close()); await client.initialize(); await client.models();
   const released = () => socket.sent.filter(row => row.method === 'thread/unsubscribe').map(row => required(row.params).threadId);
   const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setTimeout(resolve, 5)); };
   await client.createThread({ model: MODEL });
@@ -1126,6 +1126,16 @@ test('opening a chat lets Elpis unload the idle chats left behind, never a worki
   await client.send(CREATED, { text: 'Work', model: MODEL });
   await client.resume(ROOT, {}); await settle();
   assert.deepEqual(released(), [CREATED, ROOT]);
+  const completed = (id: string) => socket.emit('message', JSON.stringify({ method: 'turn/completed', params: { threadId: id, turn: { id: 'new-turn', status: 'completed', items: [] } } }));
+  completed(ROOT); await settle();
+  assert.deepEqual(released(), [CREATED, ROOT], 'the selected idle chat stays followed');
+  completed(CREATED); await settle();
+  assert.deepEqual(released(), [CREATED, ROOT], 'an old completion cannot release a chat that is working again');
+  required(threads.get(CREATED)).status = { type: 'idle' };
+  completed(CREATED); await settle();
+  assert.deepEqual(released(), [CREATED, ROOT, CREATED], 'background completion releases history without requiring another chat switch');
+  const reopened = await client.resume(CREATED, {});
+  assert.equal(reopened.thread.id, CREATED, 'the released chat can be resumed from its durable history');
 });
 
 test('a message to a chat the app wrongly thinks busy is delivered, not refused as unavailable (A58)', async () => {

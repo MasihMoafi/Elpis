@@ -56,7 +56,10 @@
     "rrule": "2.8.1",
     "tailwind-merge": "3.6.0",
     "ws": "8.18.3",
-    "zod": "4.4.3"
+    "zod": "4.4.3",
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15"
   },
   "devDependencies": {
     "@agentclientprotocol/sdk": "1.7.0",

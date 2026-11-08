@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateA
 import { api, type Entry, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
 import { mergeHistoryWithLive } from "@/lib/live-events";
+import { TranscriptCache } from './transcript-cache.mts';
 
 export function useTranscriptHistory(selected: Thread | null, loading: boolean, entries: Entry[], setEntries: Dispatch<SetStateAction<Entry[]>>) {
   const [itemCursor, setItemCursor] = useState<string | null>(null);
@@ -13,12 +14,13 @@ export function useTranscriptHistory(selected: Thread | null, loading: boolean, 
   const heldEarlier = useRef(new Map<string, Entry[]>());
   const [heldCount, setHeldCount] = useState(0);
   /** Reopening a chat draws its last read transcript at once while it rereads. */
-  const transcripts = useRef(new Map<string, { entries: Entry[]; cursor: string | null }>());
+  const transcripts = useRef(new TranscriptCache());
+  useEffect(() => { heldEarlier.current.clear(); }, [selected?.id]);
   useEffect(() => { if (selected && !loading) transcripts.current.set(selected.id, { entries, cursor: itemCursor }); }, [selected, loading, entries, itemCursor]);
   // A hover reads recent history so a click can show it immediately.
   const prefetching = useRef(new Map<string, Promise<void>>());
   const prefetchThread = useCallback((thread: Thread) => {
-    if (transcripts.current.has(thread.id) || prefetching.current.has(thread.id)) return;
+    if (transcripts.current.has(thread.id) || prefetching.current.size) return;
     prefetching.current.set(thread.id, api<{ data: Entry[]; nextCursor: string | null }>(historyPath(thread.id))
       .then(result => { if (Array.isArray(result.data) && !transcripts.current.has(thread.id)) transcripts.current.set(thread.id, { entries: inReadingOrder(result), cursor: result.nextCursor }); })
       .catch(() => {}) // The click reads it again and reports a failure.

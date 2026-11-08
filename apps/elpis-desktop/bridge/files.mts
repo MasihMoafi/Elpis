@@ -3,6 +3,7 @@ import path from 'node:path';
 import { BridgeError } from './validate.mts';
 import { projectDirectory, skipped } from './folders.mts';
 import { ATTACHMENT_LIMITS, imageMime } from './attachments.mts';
+import { BoundedCache } from './bounded-cache.mts';
 
 const MAX_DEPTH = 4;
 const MAX_ENTRIES = 2000;
@@ -40,6 +41,7 @@ export async function listFiles(cwd: unknown) {
 // The Files pane (components/files-pane.tsx): a tree of one folder at a time, a viewer and editor of one file, a
 // search of the contents. Every path is checked to lie inside the project folder after links are followed.
 const MAX_VIEW = 512 * 1024;
+const TEXT_PAGE = 32 * 1024;
 const MAX_PREVIEW = ATTACHMENT_LIMITS.fileBytes;
 const MAX_DIRECTORY = 5000;
 const MAX_SEARCHED = 256 * 1024;
@@ -109,16 +111,73 @@ const assetMime = (real: string, bytes: Buffer) => previewType(real) === 'pdf'
   : imageMime(bytes) === IMAGE_TYPES[path.extname(real).toLowerCase()] ? imageMime(bytes) : null;
 
 /** Read-only metadata for documents/pictures, or text for the source editor. The asset route rechecks path and type. */
-export async function readFile(cwd: unknown, target: unknown) {
-  const { real, rel, info } = await inside(cwd, target, 'file');
-  const preview = previewType(real), limit = MAX_PREVIEW;
-  if (info.size > limit) return { path: rel, tooLarge: true, size: info.size, limit };
-  const bytes = await fs.readFile(real).catch(() => { throw new BridgeError('This file cannot be read.'); });
-  if (bytes.length > limit) return { path: rel, tooLarge: true, size: bytes.length, limit };
-  if (preview) return assetMime(real, bytes) ? { path: rel, preview, size: bytes.length } : { path: rel, binary: true, size: bytes.length };
-  const content = bytes.toString('utf8');
-  if (bytes.subarray(0, 8000).includes(0) || !Buffer.from(content).equals(bytes)) return { path: rel, binary: true, size: info.size };
-  return { path: rel, ...(bytes.length > MAX_VIEW ? { preview: 'text' } : {}), content, size: bytes.length, mtimeMs: info.mtimeMs };
+export type FileRead = { path: string; size: number; preview?: 'pdf' | 'image' | 'text'; tooLarge?: boolean; limit?: number; binary?: boolean; content?: string; mtimeMs?: number; page?: number; pages?: number; firstLine?: number };
+
+/** Find a requested region without keeping its prefix. Each disk read and newline scan is one small page. */
+const fileRegions = new BoundedCache<string, { key: string; pages: BoundedCache<number, { line: number }> }>(16);
+async function fileRegion(handle: fs.FileHandle, real: string, info: { size: number; mtimeMs: number; ino: number }, wantedPage: number, wantedLine?: number) {
+  if (wantedPage === 0 && (!wantedLine || wantedLine === 1)) return { page: 0, firstLine: 1 };
+  const key = `${info.ino}:${info.size}:${info.mtimeMs}`, known = fileRegions.get(real);
+  const regionIndex = known?.key === key ? known : { key, pages: new BoundedCache<number, { line: number }>(128) };
+  fileRegions.set(real, regionIndex);
+  const exact = wantedLine === undefined ? regionIndex.pages.get(wantedPage) : undefined;
+  if (exact) return { page: wantedPage, firstLine: exact.line };
+  const buffer = Buffer.alloc(TEXT_PAGE);
+  let line = 1, start = 0;
+  for (const [page, point] of regionIndex.pages) if (page * TEXT_PAGE > start && page * TEXT_PAGE < info.size && (wantedLine === undefined ? page < wantedPage : point.line < wantedLine)) { start = page * TEXT_PAGE; line = point.line; }
+  for (let offset = start; offset < info.size; offset += TEXT_PAGE) {
+    const page = offset / TEXT_PAGE, firstLine = line;
+    regionIndex.pages.set(page, { line });
+    if (wantedLine === undefined && page === wantedPage) return { page, firstLine };
+    const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, info.size - offset), offset);
+    if (!bytesRead) break;
+    for (let index = 0; index < bytesRead; index++) if (buffer[index] === 10) {
+      line++;
+      if (wantedLine !== undefined && line === wantedLine) return index + 1 === TEXT_PAGE && offset + bytesRead < info.size ? { page: page + 1, firstLine: line } : { page, firstLine };
+    }
+    if (offset + bytesRead < info.size) regionIndex.pages.set(page + 1, { line });
+    if (wantedLine !== undefined && offset + bytesRead >= info.size) return { page, firstLine };
+  }
+  return { page: 0, firstLine: 1 };
+}
+
+export async function readFile(cwd: unknown, target: unknown, options: { page?: number | undefined; line?: number | undefined; mtimeMs?: number | undefined } = {}): Promise<FileRead> {
+  const { real, rel } = await inside(cwd, target, 'file');
+  const handle = await fs.open(real, 'r').catch(() => { throw new BridgeError('This file cannot be read.'); });
+  try {
+    const info = await handle.stat(), preview = previewType(real), limit = MAX_PREVIEW;
+    if (preview && info.size > limit) return { path: rel, tooLarge: true, size: info.size, limit };
+    if (options.mtimeMs !== undefined && options.mtimeMs !== info.mtimeMs) throw new BridgeError('This file changed on disk. Reopen it before reading another page.', 409);
+    const paged = info.size > MAX_VIEW || options.page !== undefined;
+    const pages = Math.max(1, Math.ceil(info.size / TEXT_PAGE));
+    const requestedPage = options.page ?? 0;
+    if (!Number.isSafeInteger(requestedPage) || requestedPage < 0 || requestedPage >= pages) throw new BridgeError('Invalid file page.');
+    if (options.line !== undefined && (!Number.isSafeInteger(options.line) || options.line < 1)) throw new BridgeError('Invalid file line.');
+    if (options.line !== undefined && options.page !== undefined) throw new BridgeError('Choose a file page or a line.');
+    const { page, firstLine } = paged && !preview ? await fileRegion(handle, real, info, requestedPage, options.line) : { page: 0, firstLine: 1 };
+    const start = paged ? Math.max(0, page * TEXT_PAGE - 3) : 0;
+    const end = paged ? Math.min(info.size, (page + 1) * TEXT_PAGE) : info.size;
+    if (start > 0) {
+      const head = Buffer.alloc(8000);
+      const { bytesRead } = await handle.read(head, 0, head.length, 0);
+      if (head.subarray(0, bytesRead).includes(0)) return { path: rel, binary: true, size: info.size };
+    }
+    // Three preceding bytes recover a code point crossing the page boundary. End on the same
+    // code point on both pages, so concatenating pages reproduces the original UTF-8 exactly.
+    const buffer = Buffer.alloc(preview ? Math.min(info.size, 8000) : end - start + (end < info.size ? 1 : 0));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, preview ? 0 : start);
+    let from = paged && !preview ? page * TEXT_PAGE - start : 0, to = Math.min(bytesRead, end - start);
+    const continuation = (byte: number | undefined) => byte !== undefined && (byte & 0xc0) === 0x80;
+    while (from > 0 && continuation(buffer[from])) from--;
+    if (end < info.size) while (to > from && continuation(buffer[to])) to--;
+    const bytes = buffer.subarray(from, to);
+    if (preview) return assetMime(real, bytes) ? { path: rel, preview, size: info.size } : { path: rel, binary: true, size: info.size };
+    const content = bytes.toString('utf8');
+    if (bytes.subarray(0, 8000).includes(0) || !Buffer.from(content).equals(bytes)) return { path: rel, binary: true, size: info.size };
+    const after = await handle.stat();
+    if (after.mtimeMs !== info.mtimeMs || after.size !== info.size) throw new BridgeError('This file changed on disk. Reopen it before reading another page.', 409);
+    return { path: rel, ...(paged ? { preview: 'text' as const, page, pages, firstLine } : {}), content, size: info.size, mtimeMs: info.mtimeMs };
+  } finally { await handle.close(); }
 }
 
 /** An authenticated preview response can contain no active HTML, SVG, script or arbitrary file bytes. */
