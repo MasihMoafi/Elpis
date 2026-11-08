@@ -133,7 +133,8 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   const voice = useRef({ seen: new Map<string, number>(), stopped: new Set<string>(), live: null as { id: string; speech: LiveSpeech } | null, suppress: false });
   const [voiceError, setVoiceError] = useState(""), toldUnavailable = useRef(false);
   const stopSpeech = useCallback(() => {
-    const state = voice.current; if (state.live) speechRef.current?.stop();
+    const state = voice.current, active = speechRef.current?.active;
+    if (state.live || active && state.seen.has(active)) speechRef.current?.stop();
     state.live = null; state.suppress = true;
     for (const id of state.seen.keys()) state.stopped.add(id);
   }, []);
