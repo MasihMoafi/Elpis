@@ -29,7 +29,7 @@ function load<T = Element>(relative: string, react: object = React): Record<stri
     const code = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ES2022 } }).outputText;
     const localRequire = (id: string) => {
       // Hooks of the rendered component and its shared save hook use the fixture's hook slots.
-      if (id === 'react' && (absolute === path.resolve(root, relative) || absolute === path.resolve(root, 'components/settings/use-saver.ts'))) return react;
+      if (id === 'react' && (absolute === path.resolve(root, relative) || absolute === path.resolve(root, 'components/settings/use-saver.ts') || absolute === path.resolve(root, 'components/settings/model-catalog.tsx') || absolute === path.resolve(root, 'components/settings/memory-settings.tsx'))) return react;
       if (!id.startsWith('@/') && !id.startsWith('.')) return require(id);
       const base = id.startsWith('@/') ? path.join(root, id.slice(2)) : path.resolve(path.dirname(absolute), id);
       for (const extension of ['', '.tsx', '.ts', '.js']) { try { readFileSync(base + extension); return compiled(base + extension); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'EISDIR') throw error; } }

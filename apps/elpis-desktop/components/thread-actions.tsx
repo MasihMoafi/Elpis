@@ -1,50 +1,22 @@
 "use client";
 
-import {
-  cloneElement,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { message } from "./delete-chats-dialog";
+export { message } from "./delete-chats-dialog";
+import { DeleteChatsDialog } from "./delete-chats-dialog";
+export { DeleteChatsDialog } from "./delete-chats-dialog";
+import { cloneElement, useEffect, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
-import {
-  Bookmark,
-  BookmarkMinus,
-  CircleCheck,
-  Columns2,
-  Eye,
-  EyeOff,
-  FolderInput,
-  FolderPlus,
-  Palette,
-  Pencil,
-  SquareArrowOutUpRight,
-  Trash2,
-} from "lucide-react";
+import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Palette, Pencil, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
-import { ConfirmDelete } from "@/components/confirm-delete";
+
 import { shortcutHint } from "@/lib/shortcuts";
-import { isAgent, title, type Thread } from "@/lib/api";
+import { title, type Thread } from "@/lib/api";
 import { useConversationColour } from "@/components/conversation-colour";
 import { WORKFLOW_COLOURS, type WorkflowColour } from "@/lib/workflow-identity";
 import type { ChatGroup } from "@/lib/chat-groups";
-import { errorText } from "@/lib/error-text.mts";
-
-const message = (e: unknown) => errorText(e);
 
 type Props = {
   onMoveToProject?: (threads: Thread[]) => void;
@@ -443,81 +415,5 @@ export function ThreadActions({
         <DeleteChatsDialog threads={deleting} onDelete={onDelete} onClose={() => setDeleting(null)} />
       )}
     </>
-  );
-}
-
-/** Confirms deleting chats as one decision: one chat by name, several by count. Once confirmation is off
- * ("Don’t show me this again", Settings → General) it deletes at once and opens only to show a failure.
- * `onDelete` deletes each chat for good; `trash` instead deletes them all as one step Ctrl+Z undoes (the sidebar's). */
-export function DeleteChatsDialog({
-  threads,
-  onDelete,
-  trash,
-  onClose,
-  alwaysConfirm,
-}: {
-  threads: Thread[] | null;
-  onDelete?: (thread: Thread) => Promise<void>;
-  trash?: (threads: Thread[]) => Promise<void>;
-  onClose: () => void;
-  /** Bulk deletes ask even when confirmation is off. */ alwaysConfirm?: boolean;
-}) {
-  const deleted = useRef(new Set<string>());
-  const previous = useRef<Thread[] | null>(null);
-  if (previous.current !== threads) {
-    previous.current = threads;
-    deleted.current.clear();
-  }
-  const only = threads?.length === 1 ? threads[0] : null;
-  return (
-    <ConfirmDelete
-      request={threads}
-      names={threads?.map(title) ?? []}
-      noun="chat"
-      {...(alwaysConfirm === undefined ? {} : { alwaysConfirm })}
-      onClose={onClose}
-      description={
-        trash ? (
-          <>
-            {only
-              ? isAgent(only)
-                ? "This deletes this agent's chat from Elpis."
-                : "This deletes the conversation and all of its agents from Elpis."
-              : "This deletes these conversations and all of their agents from Elpis."}{" "}
-            Chats continued from these agents are deleted too. Ctrl+Z brings {only ? "it" : "them"} back until you quit
-            Elpis.
-          </>
-        ) : (
-          <>
-            {only
-              ? isAgent(only)
-                ? "This permanently deletes this agent's chat from Elpis."
-                : "This permanently deletes the conversation and all of its agents from Elpis."
-              : "This permanently deletes these conversations and all of their agents from Elpis."}{" "}
-            Chats continued from these agents are deleted too. This cannot be undone.
-          </>
-        )
-      }
-      onDelete={async items => {
-        if (trash) {
-          await trash(items);
-          return;
-        }
-        const queue = items.filter(thread => !deleted.current.has(thread.id));
-        await Promise.all(
-          Array.from({ length: Math.min(4, queue.length) }, async () => {
-            for (let thread = queue.shift(); thread; thread = queue.shift()) {
-              try {
-                await onDelete!(thread);
-              } catch (e) {
-                queue.length = 0;
-                throw Error(items.length > 1 ? `Could not delete “${title(thread)}”: ${message(e)}` : message(e));
-              }
-              deleted.current.add(thread.id);
-            }
-          }),
-        );
-      }}
-    />
   );
 }

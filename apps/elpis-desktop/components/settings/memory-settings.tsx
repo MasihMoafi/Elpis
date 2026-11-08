@@ -1,0 +1,436 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, effortsOf, type Model } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { OptionSelect } from "@/components/ui/option-select";
+import { Switch } from "@/components/ui/switch";
+import {
+  AlertDialog,
+  AlertDialogClose,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { SaveFeedback, SettingRow, SettingsActions, SettingsGroup } from "@/components/settings/rows";
+import { useSaver } from "@/components/settings/use-saver";
+import { editable, reloadSettings, saveSettings, type ElpisSettings, type Memory } from "@/lib/settings-store";
+import { shown, reloaded, useProviderCatalogs, ModelChoice, providerOptions } from "./model-catalog";
+
+/** Smart Prune: whether it is on, and which model and effort prune. */
+export function PrunerSettings({ value, models }: { value: ElpisSettings; models: Model[] }) {
+  const override = value.smartPrune.explicitOverride;
+  const saved = {
+    mode: override.model ? ("explicit" as const) : ("background" as const),
+    model: override.model ?? "",
+    provider: override.provider ?? "",
+    reasoningEffort: override.reasoningEffort ?? "",
+  };
+  const [draft, setDraft] = useState<typeof saved | null>(null);
+  const saver = useSaver();
+  const current = draft ?? saved;
+  const providerFor = (choice: typeof saved) =>
+    choice.mode === "explicit" ? choice.provider : (value.background.provider ?? value.main.provider);
+  const catalogs = useProviderCatalogs(value, models, [providerFor(current)]);
+  const effortsFor = (choice: typeof saved) =>
+    effortsOf(
+      choice.mode === "explicit" ? choice.model : (value.background.model ?? value.main.model),
+      catalogs.forProvider(providerFor(choice)),
+    );
+  const efforts = effortsFor(current);
+  const validEffort = !current.reasoningEffort || efforts.includes(current.reasoningEffort);
+  const changed =
+    current.reasoningEffort !== saved.reasoningEffort ||
+    current.mode !== saved.mode ||
+    (current.mode === "explicit" && (current.model.trim() !== saved.model || current.provider !== saved.provider));
+  const update = (patch: Partial<typeof saved>) => {
+    const next = { ...current, ...patch };
+    if (
+      (next.mode !== current.mode || next.model !== current.model || next.provider !== current.provider) &&
+      !effortsFor(next).includes(next.reasoningEffort)
+    )
+      next.reasoningEffort = "";
+    setDraft(next);
+    saver.clear();
+  };
+  const reload = () =>
+    void saver.run(
+      "reload",
+      async () => {
+        await reloadSettings();
+        setDraft(null);
+      },
+      reloaded.text,
+    );
+  const editableOverride = override.available === true && typeof override.version === "string";
+  return (
+    <SettingsGroup title="Smart Prune" description="Optimizes fresh tool results before the main model reads them.">
+      <SettingRow
+        title="Automatic pruning"
+        description={
+          <>
+            Saved as <code className="settings-code">features.automatic_context_pruning</code>; off unless turned on.
+            Applies to new conversations.
+          </>
+        }
+      >
+        {editable(value) ? (
+          <Switch
+            aria-label="Automatic pruning"
+            checked={value.smartPrune.enabled ?? false}
+            disabled={saver.pending !== null}
+            onCheckedChange={next =>
+              void saver.run(
+                "pruning",
+                () => saveSettings("/settings", { version: value.version, options: { automaticPruning: next } }),
+                next
+                  ? "Smart Prune on. Applies to new conversations."
+                  : "Smart Prune off. Applies to new conversations.",
+              )
+            }
+          />
+        ) : (
+          <span className="text-sm">{shown(value.smartPrune.enabled ?? false)}</span>
+        )}
+      </SettingRow>
+      {editableOverride ? (
+        <>
+          <SettingRow
+            title="Pruning model selection"
+            scope="this device"
+            description="Applies to the next pruning attempt."
+          >
+            <OptionSelect
+              aria-label="Pruning model selection"
+              className="settings-choice"
+              value={current.mode}
+              onChange={event => update({ mode: event.target.value as "background" | "explicit" })}
+              disabled={saver.pending !== null}
+            >
+              <option value="background">Use background model</option>
+              <option value="explicit">Choose model and provider</option>
+            </OptionSelect>
+          </SettingRow>
+          {current.mode === "explicit" && (
+            <>
+              <SettingRow title="Pruning provider" scope="this device">
+                <OptionSelect
+                  aria-label="Pruning provider"
+                  className="settings-choice"
+                  value={current.provider}
+                  onChange={event => update({ provider: event.target.value })}
+                  disabled={saver.pending !== null}
+                >
+                  <option value="" disabled>
+                    Select provider
+                  </option>
+                  {providerOptions(current.provider, value.providers)}
+                </OptionSelect>
+              </SettingRow>
+              <SettingRow
+                title="Pruning model"
+                scope="this device"
+                description="Choose a model supported by the selected provider."
+              >
+                <ModelChoice
+                  label="Pruning model"
+                  value={current.model || null}
+                  models={catalogs.forProvider(current.provider || null)}
+                  provider={catalogs.connectionLabel(current.provider || null)}
+                  catalogStatus={catalogs.catalogStatus(current.provider || null)}
+                  disabled={saver.pending !== null}
+                  inheritLabel="Choose a pruning model"
+                  onChange={model => update({ model: model ?? "" })}
+                />
+              </SettingRow>
+            </>
+          )}
+          <SettingRow
+            title="Pruning effort"
+            scope="this device"
+            description={
+              validEffort
+                ? "Default uses Low. Applies to the next pruning attempt."
+                : "The saved effort is unavailable for this model. Choose Default or a supported effort."
+            }
+          >
+            <OptionSelect
+              aria-label="Pruning effort"
+              className="settings-choice"
+              value={current.reasoningEffort}
+              onChange={event => update({ reasoningEffort: event.target.value })}
+              disabled={saver.pending !== null}
+            >
+              <option value="">Default (Low)</option>
+              {efforts.map(effort => (
+                <option key={effort} value={effort}>
+                  {effort.charAt(0).toUpperCase() + effort.slice(1)}
+                </option>
+              ))}
+            </OptionSelect>
+          </SettingRow>
+          <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
+            <Button
+              disabled={
+                saver.pending !== null ||
+                !changed ||
+                !validEffort ||
+                (current.mode === "explicit" && (!current.model.trim() || !current.provider))
+              }
+              onClick={() =>
+                void saver.run(
+                  "save",
+                  async () => {
+                    await saveSettings("/pruner", {
+                      version: override.version,
+                      model: current.mode === "explicit" ? current.model.trim() : null,
+                      provider: current.mode === "explicit" ? current.provider : null,
+                      reasoningEffort: current.reasoningEffort || null,
+                    });
+                    setDraft(null);
+                  },
+                  "Pruning model saved. Applies to the next pruning attempt.",
+                )
+              }
+            >
+              {saver.pending === "save" ? "Saving…" : "Save pruning model"}
+            </Button>
+          </SettingsActions>
+        </>
+      ) : (
+        <SettingRow title="Pruning model" description={override.reason ?? "Pruning model settings are unavailable."} />
+      )}
+    </SettingsGroup>
+  );
+}
+
+export const SWITCHES: { key: "enabled" | "generate" | "use" | "allowExternal"; title: string; description: string }[] =
+  [
+    {
+      key: "enabled",
+      title: "Memories",
+      description:
+        "Let Elpis keep memories from chats and use them to personalize later chats. Off: nothing is saved or used.",
+    },
+    { key: "generate", title: "Generate memories", description: "Create memories from new chats." },
+    { key: "use", title: "Use memories", description: "Give new chats the memories Elpis has saved." },
+    {
+      key: "allowExternal",
+      title: "Allow memories from tool-assisted chats",
+      description: "Generate memories from chats that used MCP tools or web search.",
+    },
+  ];
+
+// Unset values follow Elpis's defaults: memories off; generate, use and tool-assisted chats on once memories are on.
+// Memories is the master switch: while it is off the other options are not shown, so no page says "on" for what is off.
+export function switchValue(memory: Memory, key: (typeof SWITCHES)[number]["key"]) {
+  if (key === "enabled") return memory.enabled ?? false;
+  if (key === "allowExternal") return !(memory.skipExternalContext ?? false);
+  return memory[key] ?? true;
+}
+
+/** Memories: switches apply at once; model choices are saved together; deleting asks first. */
+export function MemorySettings({
+  value,
+  models,
+  active = true,
+}: {
+  value: ElpisSettings;
+  models: Model[];
+  active?: boolean;
+}) {
+  const [draft, setDraft] = useState<Partial<Pick<Memory, "extractionModel" | "consolidationModel">>>({});
+  const [confirming, setConfirming] = useState(false);
+  const [savedFiles, setSavedFiles] = useState<number | "unavailable" | null>(null);
+  const countRequest = useRef(0);
+  const countAbort = useRef<AbortController | null>(null);
+  const countActive = useRef(false);
+  const refreshCount = useCallback(async () => {
+    if (!countActive.current) return;
+    const request = ++countRequest.current;
+    countAbort.current?.abort();
+    const controller = new AbortController();
+    countAbort.current = controller;
+    setSavedFiles(null);
+    try {
+      const data = await api<{ count: unknown }>("/memories/count", undefined, controller.signal);
+      if (typeof data?.count !== "number" || !Number.isSafeInteger(data.count) || data.count < 0)
+        throw Error("Invalid memory file count");
+      if (countRequest.current === request) setSavedFiles(data.count);
+    } catch {
+      if (countRequest.current === request) setSavedFiles("unavailable");
+    } finally {
+      if (countAbort.current === controller) countAbort.current = null;
+    }
+  }, []);
+  useEffect(() => {
+    countActive.current = active;
+    if (active) void refreshCount();
+    return () => {
+      countActive.current = false;
+      countRequest.current++;
+      countAbort.current?.abort();
+    };
+  }, [active, refreshCount]);
+  const saver = useSaver();
+  const catalogs = useProviderCatalogs(value, models, []);
+  const memory = { ...value.memory, ...draft };
+  const changed = Object.keys(draft).length > 0;
+  const reload = () =>
+    void saver.run(
+      "reload",
+      async () => {
+        await reloadSettings();
+        setDraft({});
+      },
+      reloaded.text,
+    );
+  const toggle = (key: (typeof SWITCHES)[number]["key"], next: boolean) =>
+    void saver.run(
+      key,
+      () =>
+        saveSettings("/settings", {
+          version: value.version,
+          memory: key === "allowExternal" ? { skipExternalContext: !next } : { [key]: next },
+        }),
+      "Saved. Applies to new conversations.",
+    );
+  const on = switchValue(value.memory, "enabled");
+  const savedFilesRow = (
+    <SettingRow title="Saved memory files">
+      <span role="status" className="text-sm">
+        {savedFiles === null ? "Loading…" : savedFiles === "unavailable" ? "Unavailable" : savedFiles}
+      </span>
+    </SettingRow>
+  );
+  if (!editable(value))
+    return (
+      <SettingsGroup title="Memories">
+        <SettingRow title="Memories" description={value.memory.enabled === false ? value.write.reason : undefined}>
+          <span className="text-sm">{shown(value.memory.enabled ?? null)}</span>
+        </SettingRow>
+        {savedFilesRow}
+        {value.memory.enabled !== false && (
+          <>
+            <SettingRow title="Generate memories">
+              <span className="text-sm">{shown(value.memory.generate)}</span>
+            </SettingRow>
+            <SettingRow title="Use memories">
+              <span className="text-sm">{shown(value.memory.use)}</span>
+            </SettingRow>
+            <SettingRow title="Extraction model">
+              <span className="text-sm">{shown(value.memory.extractionModel)}</span>
+            </SettingRow>
+            <SettingRow title="Consolidation model" description={value.write.reason}>
+              <span className="text-sm">{shown(value.memory.consolidationModel)}</span>
+            </SettingRow>
+          </>
+        )}
+      </SettingsGroup>
+    );
+  return (
+    <SettingsGroup
+      title="Memories"
+      description={`Memory models use their conversation’s provider. Default provider: ${catalogs.connectionLabel(value.main.provider)}.`}
+    >
+      {SWITCHES.filter(item => item.key === "enabled" || on).map(item => (
+        <SettingRow key={item.key} title={item.title} description={item.description}>
+          <Switch
+            aria-label={item.title}
+            checked={switchValue(value.memory, item.key)}
+            disabled={saver.pending !== null}
+            onCheckedChange={next => toggle(item.key, next)}
+          />
+        </SettingRow>
+      ))}
+      {savedFilesRow}
+      {on &&
+        (["extractionModel", "consolidationModel"] as const).map(key => (
+          <SettingRow
+            key={key}
+            title={key === "extractionModel" ? "Memory extraction model" : "Memory consolidation model"}
+            description={
+              key === "extractionModel" ? "Summarizes each chat into memories." : "Merges memories into the saved set."
+            }
+          >
+            <ModelChoice
+              label={key === "extractionModel" ? "Memory extraction model" : "Memory consolidation model"}
+              value={memory[key]}
+              models={catalogs.mainModels}
+              provider={catalogs.connectionLabel(value.main.provider)}
+              disabled={saver.pending !== null}
+              inheritLabel="Default conversation model"
+              onChange={model => {
+                saver.clear();
+                setDraft(old => {
+                  const patch = { ...old };
+                  if (model === value.memory[key]) delete patch[key];
+                  else patch[key] = model;
+                  return patch;
+                });
+              }}
+            />
+          </SettingRow>
+        ))}
+      <SettingRow title="Delete memories" description="Remove every memory Elpis has saved. Chats are not deleted.">
+        <Button variant="destructive" disabled={saver.pending !== null} onClick={() => setConfirming(true)}>
+          Delete
+        </Button>
+      </SettingRow>
+      <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
+        <Button
+          disabled={saver.pending !== null || !changed}
+          onClick={() =>
+            void saver.run(
+              "models",
+              async () => {
+                await saveSettings("/settings", { version: value.version, memory: draft });
+                setDraft({});
+              },
+              "Memory models saved. Applies to new conversations.",
+            )
+          }
+        >
+          {saver.pending === "models" ? "Saving…" : "Save memory models"}
+        </Button>
+      </SettingsActions>
+      <AlertDialog open={confirming} onOpenChange={setConfirming}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete all memories?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Elpis removes its saved memories and their files. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogClose render={<Button variant="outline" />}>Cancel</AlertDialogClose>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirming(false);
+                void saver.run(
+                  "reset",
+                  async () => {
+                    countRequest.current++;
+                    countAbort.current?.abort();
+                    setSavedFiles(null);
+                    try {
+                      await api("/memories/reset", {});
+                    } finally {
+                      await refreshCount();
+                    }
+                  },
+                  "Memories deleted.",
+                );
+              }}
+            >
+              Delete memories
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </SettingsGroup>
+  );
+}
