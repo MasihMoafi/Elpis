@@ -42,6 +42,7 @@ export interface RuntimeAdapter {
   readonly runtime: Runtime
   open(options: OpenOptions): Promise<WorkerSession>
   read(threadId: string): Promise<WorkerSession>
+  archive?(threadId: string): Promise<void>
   send(threadId: string, id: string, text: string, activeTurn: string | null, includedIds?: readonly string[]): Promise<string>
   stop(threadId: string, turnId: string): Promise<void>
   background(threadId: string): Promise<{ jobs: { id: string; label: string }[]; children: { id: string }[] }>
@@ -127,6 +128,11 @@ export class AppServerAdapter implements RuntimeAdapter {
       const failure = error instanceof Error ? error : new Error(String(object(error).message ?? error))
       throw Object.assign(failure, { creationUnknown: creating && (typeof object(error).code !== 'number' || !!object(error).connectionClosed) })
     }
+  }
+  async archive(threadId: string): Promise<void> {
+    const conn = await this.connection(threadId)
+    await conn.call('thread/archive', { threadId })
+    this.connections.delete(threadId)
   }
   async read(threadId: string): Promise<WorkerSession> {
     const conn = await this.connection(threadId)

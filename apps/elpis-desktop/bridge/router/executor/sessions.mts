@@ -145,6 +145,11 @@ export class Sessions implements Context {
     const stored = this.options.store.session(id)
     const model = role === 'worker' ? this.options.store.settings().executor.model : this.options.store.settings().eval.model
     const record: SessionRecord = stored === undefined ? { runtime: runtimeOf(model), threadId: null, creating: false, model, messages: [] } satisfies SessionRecord : RecordSchema.parse(stored)
+    // The router follows the model setting. Its durable state is the ticket store, so a new session loses nothing.
+    if (role === 'orchestrator' && record.threadId && !record.creating && JSON.stringify(record.model) !== JSON.stringify(model)) {
+      await this.adapter(record.runtime).archive?.(record.threadId).catch(() => {})
+      record.threadId = null; record.messages = []
+    }
     if (!record.threadId && !record.creating) { record.model = model; record.runtime = runtimeOf(model) }
     const adapter = this.adapter(record.runtime)
     const tools = this.options.tools?.(id)

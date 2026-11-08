@@ -57,6 +57,21 @@ test('a fresh install starts Elpis and its pinned chat without any setting', asy
   } finally { await elpis.close(); client.close(); rmSync(h.home, { recursive: true, force: true }) }
 })
 
+test('changing the router model replaces its session and the sidebar never lists it', async () => {
+  const h = fixture({ fresh: true }), { client, workers } = h, elpis = h.create()
+  try {
+    await client.initialize(); await elpis.start()
+    const first = workers.calls.filter(call => call.method === 'thread/start').length
+    await elpis.save({ version: elpis.snapshot().version, roles: roles('router-saved') })
+    const starts = workers.calls.filter(call => call.method === 'thread/start')
+    assert.equal(starts.length, first + 1)
+    assert.ok(workers.calls.some(call => call.method === 'thread/archive'))
+    const main = (elpis as unknown as { app: { workers: { sessions: { nativeId(id: string): string } }; masterId: string } }).app
+    const id = main.workers.sessions.nativeId(main.masterId)
+    assert.deepEqual(await elpis.list([{ id } as never], {}), [])
+  } finally { await elpis.close(); client.close(); rmSync(h.home, { recursive: true, force: true }) }
+})
+
 test('real bridge chat storage stays offline until enabled, then routes persisted input and reopens one Elpis chat', async () => {
   const h = fixture(), { home, workers, calls, client, create } = h
   let mother = create()
