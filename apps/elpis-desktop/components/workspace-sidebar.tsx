@@ -20,7 +20,7 @@ import type { useRuntimeState } from "@/lib/use-runtime-state";
 import type { useSidebarSearch } from "@/lib/use-sidebar-search";
 import type { useSidebarKeys } from "@/lib/use-workspace-navigation";
 import type { useWorkspacePagesState } from "@/lib/use-workspace-pages-state";
-import type { NAV_PAGES } from "@/lib/workspace-navigation-pages";
+import { shownPageShortcut, type NAV_PAGES } from "@/lib/workspace-navigation-pages";
 import type { View } from "@/lib/workspace-types";
 
 type Props = {
@@ -43,7 +43,7 @@ export function WorkspaceSidebar({ sidebar, sidebarKeys, appearance, pages, pref
       <div className="brand"><Button type="button" variant="ghost" size="logo" className="brand-home" aria-label="Elpis home" onClick={() => show("chat")}><BrandWordmark dark={dark} width={73} height={36} /></Button><Button className="sidebar-toggle" variant="ghost" size="icon-sm" aria-label="Close sidebar" title={shortcutTitle("Close sidebar", "sidebar", preferences)} onClick={() => showSidebar(false)}><PanelLeft size={16} /></Button></div>
       <nav className="nav-list" aria-label="Workspace">
         <Button data-slot="nav-row" className="new-chat" variant="ghost" aria-label="New chat" data-shortcut={shortcutHint("new-chat", preferences)} aria-current={view === "chat" && !selected ? "page" : undefined} disabled={projectChanging} onClick={newChat}><NewChatIcon size={16} />New chat</Button>
-        {arrangedPages.map(page => <ReorderItem key={page.id} reorder={pageReorder} itemId={page.id} render={<Button data-slot="nav-row" variant="ghost" data-nav-page={page.id} className={page.id === "loveSpot" ? "accent-scope" : undefined} aria-label={page.name} data-shortcut={shortcutHint(`go-${page.id}`, preferences)} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)} title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}>
+        {arrangedPages.map(page => <ReorderItem key={page.id} reorder={pageReorder} itemId={page.id} render={<Button data-slot="nav-row" variant="ghost" data-nav-page={page.id} className={page.id === "loveSpot" ? "accent-scope" : undefined} aria-label={page.name} data-shortcut={shortcutHint(shownPageShortcut(page.id) ?? "", preferences)} aria-current={view === page.id ? "page" : undefined} onClick={() => show(page.id)} title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}>
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
       </nav>
       <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search.search} onChange={e => search.setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); search.setSearch(""); focusComposer(); } }} />

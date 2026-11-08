@@ -12,5 +12,7 @@ export const NAV_PAGES = [
   { id: "observability", name: "Observability", Icon: Activity },
   { id: "customize", name: "Customize", Icon: Blocks },
 ] as const;
+/** The shortcut whose key a sidebar row shows. Customize keeps its key without a label (Masih, 8 Nov). */
+export const shownPageShortcut = (id: string) => id === "customize" ? undefined : `go-${id}`;
 /** Every page's name, for its heading and the command menu: the sidebar pages, the guide and Settings. */
 export const PAGE_NAMES: Record<Exclude<View, "chat">, string> = { ...Object.fromEntries(NAV_PAGES.map(page => [page.id, page.name])) as Record<typeof NAV_PAGES[number]["id"], string>, agentsGuide: "Guide to managing agents", settings: "Settings" };
