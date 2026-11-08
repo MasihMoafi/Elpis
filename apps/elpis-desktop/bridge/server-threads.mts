@@ -111,7 +111,8 @@ export async function handleThreadRoutes(state: import('./server-http.mts').Serv
       const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
       if (['send', 'steer'].includes(operation) && state.mother.owns(id)) { json(response, 200, await state.mother.send(id, input)); return true; }
       await prepareLoveSpotTurn(loveSpot, id, operation, input);
-      json(response, 200, await state.mother.mutate(id, operation, () => client[operation](id, input))); return true;
+      const result = await state.mother.mutate(id, operation, () => client[operation](id, input));
+      json(response, 200, operation === 'resume' ? state.mother.resumed(id, result as { thread?: { id: string } }) : result); return true;
     }
     throw new BridgeError('Method is not allowed', 405);
   }

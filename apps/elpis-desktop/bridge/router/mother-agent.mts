@@ -59,6 +59,10 @@ export class MotherAgent {
     const model = this.app?.store.settings().eval.model ?? readSettings(this.options.home).eval.model ?? this.roles?.dispatch ?? config.roles.dispatch
     return { ...thread, name: 'Elpis', motherAgent: true, ...(model ? { model: model.model, modelProvider: model.provider } : {}) }
   }
+  /** Reopening the chat reports the model it was created with; Elpis's chat shows the model that routes it now. */
+  resumed<T extends { thread?: { id: string } }>(id: string, live: T): T {
+    return live.thread && this.owns(id) ? { ...live, thread: this.decorate(live.thread) } : live
+  }
   /** Native lists omit chats without a native preview; Elpis owns her history in the bridge. */
   async list(threads: ListedThread[], query: ThreadListOptions, excluded: (id: string) => boolean = () => false): Promise<ListedThread[]> {
     const id = this.file.read().threadId

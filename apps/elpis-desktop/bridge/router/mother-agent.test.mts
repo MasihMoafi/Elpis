@@ -163,6 +163,7 @@ test('a fresh install starts Elpis and its pinned chat without any setting', asy
     await client.initialize(); await elpis.start()
     const on = elpis.snapshot()
     assert.equal(on.enabled, true); assert.equal(on.error, undefined); assert.ok(on.threadId); assert.ok(h.adapterStarts > 0)
+    assert.equal((elpis.resumed(on.threadId!, { thread: { id: on.threadId! } }).thread as { model?: string }).model, 'chosen-main')
   } finally { await elpis.close(); client.close(); rmSync(h.home, { recursive: true, force: true }) }
 })
 
