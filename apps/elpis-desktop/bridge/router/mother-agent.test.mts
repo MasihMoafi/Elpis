@@ -27,7 +27,7 @@ function fixture({ fresh = false } = {}) {
       case 'configRequirements/read': result = { requirements: null }; break
       case 'pruner/read': result = {}; break
       case 'experimentalFeature/list': result = { data: [] }; break
-      case 'model/list': result = { data: ['chosen-background', 'router-saved', 'worker-saved'].map(model => ({ id: model, model, displayName: model, supportedReasoningEfforts: [] })) }; break
+      case 'model/list': result = { data: ['chosen-main', 'chosen-background', 'router-saved', 'worker-saved'].map(model => ({ id: model, model, displayName: model, supportedReasoningEfforts: [] })) }; break
       case 'thread/start': created = true; result = { thread: { id: CHAT, name, status: { type: 'idle' } }, model: request.params.model, modelProvider: 'openai' }; break
       case 'thread/name/set': name = String(request.params.name); result = {}; break
       case 'thread/list': result = { data: [] }; break
@@ -70,7 +70,7 @@ test('real bridge chat storage stays offline until enabled, then routes persiste
     assert.equal(mother.decorate({ id: CHAT }).motherAgent, true)
     assert.equal((await mother.list([], {}))[0]?.id, CHAT, 'A Elpis chat without native turns still appears in the sidebar')
     assert.deepEqual(await mother.list([], { archived: true }), [])
-    assert.equal(calls.find(call => call.method === 'thread/start')?.params.model, 'chosen-background')
+    assert.equal(calls.find(call => call.method === 'thread/start')?.params.model, 'chosen-main')
     await assert.rejects(mother.save({ version: off.version, enabled: false }), /changed elsewhere/)
     const sent = await mother.send(CHAT, { text: 'Inspect this project' })
     assert.equal(sent.routed, true)
@@ -84,7 +84,7 @@ test('real bridge chat storage stays offline until enabled, then routes persiste
     assert.equal(routed.success, true)
     const ticketId = (routed.value as { results: { ticket: { ticket_id: string } }[] }).results[0]!.ticket.ticket_id
     await waitFor(() => assert.equal(workers.calls.filter(call => call.method === 'thread/start').length, 2))
-    assert.equal(workers.calls.find(call => call.method === 'thread/start')?.params.model, 'chosen-background')
+    assert.equal(workers.calls.find(call => call.method === 'thread/start')?.params.model, 'chosen-main')
     assert.equal(calls.some(call => call.method === 'turn/start'), false, 'Input must not run another native turn in the source chat')
     await mother.close(); mother = create(); await mother.start()
     const worker = [...workers.threads.keys()][1]!

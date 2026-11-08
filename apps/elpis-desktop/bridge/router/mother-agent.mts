@@ -86,7 +86,8 @@ export class MotherAgent {
     if (this.closed || !config.enabled || this.active || !this.options.client.connected) return
     await this.stop()
     const { client, home } = this.options, settings = await client.settings()
-    const inherited = settings.background.model ? settings.background : settings.main
+    // The router decides what every worker does, so it follows the main model, never the cheap background one.
+    const inherited = settings.main
     const fallback: RoleModel = { provider: inherited.provider ?? settings.main.provider ?? '', model: inherited.model ?? '' }
     const saved = readSettings(home)
     this.roles = { dispatch: saved.eval.model ?? config.roles.dispatch ?? fallback, worker: saved.executor.model ?? config.roles.worker ?? fallback }
