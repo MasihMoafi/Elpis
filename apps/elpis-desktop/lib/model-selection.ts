@@ -12,7 +12,7 @@ export function modelSelection({ models, providerSettings, selected, choiceId, m
   const pending = selected ? nextTurn[selected.id] : undefined;
   const turnModel = selected ? pending?.model ?? selected.model ?? "" : model;
   const selectedChoice = selected ? choiceOf({ ...selected, model: turnModel }, choices) : null;
-  const chatChoices = selected ? choices.filter(choice => !choice.provider || choice.provider === selected.modelProvider) : choices;
+  const chatChoices = selected && !selected.motherAgent ? choices.filter(choice => !choice.provider || choice.provider === selected.modelProvider) : choices;
   const modelChoices = selectedChoice?.provider && !chatChoices.some(choice => choice.id === selectedChoice.id) ? [selectedChoice, ...chatChoices] : chatChoices;
   const dictationProvider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
   const turnEfforts = effortsOf(turnModel || providerSettings?.main.model, models);

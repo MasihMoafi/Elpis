@@ -110,6 +110,7 @@ export async function handleThreadRoutes(state: import('./server-http.mts').Serv
     if (operation && method === 'POST') {
       const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
       if (['send', 'steer'].includes(operation) && state.mother.owns(id)) { json(response, 200, await state.mother.send(id, input)); return true; }
+      if (operation === 'setEffort' && state.mother.owns(id)) { await state.mother.chooseRouter(input as { effort?: unknown }); json(response, 200, {}); return true; }
       await prepareLoveSpotTurn(loveSpot, id, operation, input);
       const result = await state.mother.mutate(id, operation, () => client[operation](id, input));
       json(response, 200, operation === 'resume' ? state.mother.resumed(id, result as { thread?: { id: string } }) : result); return true;

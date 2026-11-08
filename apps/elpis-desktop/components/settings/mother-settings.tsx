@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, effortsOf, subscriptionOf, type Model } from "@/lib/api";
+import { api, effortsOf, SUBSCRIPTIONS, type Model } from "@/lib/api";
 import { errorText } from "@/lib/error-text.mts";
 import type { ElpisSettings } from "@/lib/settings-store";
 import type { MotherSettings } from "../../bridge/router/settings.mts";
@@ -18,11 +18,12 @@ function RoleChoice({ role, label, value, settings, models, disabled, onChange }
   const inherited = settings.background.model ? settings.background : settings.main;
   const provider = value?.provider ?? inherited.provider ?? settings.main.provider ?? "";
   const catalogs = useProviderCatalogs(settings, models, [provider]);
-  const offered = [...catalogs.forProvider(provider), ...models.filter(model => subscriptionOf(model.model))];
+  const subscription = SUBSCRIPTIONS.find(item => item.id === provider);
+  const offered = subscription ? models.filter(model => model.model.startsWith(subscription.prefix)) : catalogs.forProvider(provider);
   const efforts = effortsOf(value?.model ?? inherited.model, offered);
   return <>
     <SettingRow title={`${label} provider`} description={role === "dispatch" ? "Routes goals and replies in the Elpis chat." : "Used when Elpis starts a new worker session."}>
-      <OptionSelect aria-label={`${label} provider`} className="settings-choice" value={value?.provider ?? ""} disabled={disabled} onChange={event => onChange(event.target.value ? { provider: event.target.value, model: value?.model ?? inherited.model ?? "" } : null)}>
+      <OptionSelect aria-label={`${label} provider`} className="settings-choice" value={value?.provider ?? ""} disabled={disabled} onChange={event => { const next = SUBSCRIPTIONS.find(item => item.id === event.target.value); onChange(event.target.value ? { provider: event.target.value, model: next ? models.find(model => model.model.startsWith(next.prefix))?.model ?? "" : "" } : null); }}>
         <option value="">Use background model (then main)</option>{subscriptionOptions(models)}{providerOptions(provider, settings.providers)}
       </OptionSelect>
     </SettingRow>

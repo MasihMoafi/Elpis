@@ -57,7 +57,18 @@ export class MotherAgent {
     const config = this.file.read()
     if (config.threadId !== thread.id) return thread
     const model = this.app?.store.settings().eval.model ?? readSettings(this.options.home).eval.model ?? this.roles?.dispatch ?? config.roles.dispatch
-    return { ...thread, name: 'Elpis', motherAgent: true, ...(model ? { model: model.model, modelProvider: model.provider } : {}) }
+    return { ...thread, name: 'Elpis', motherAgent: true, ...(model ? { model: model.model, modelProvider: model.provider, ...(model.reasoningEffort ? { reasoningEffort: model.reasoningEffort } : {}) } : {}) }
+  }
+  /** The Elpis chat works like any other chat: its model and effort choices become the router's own. */
+  async chooseRouter(choice: { model?: unknown; effort?: unknown }): Promise<void> {
+    const current = this.snapshot(), dispatch = current.roles.dispatch
+    const model = typeof choice.model === 'string' && choice.model ? choice.model : dispatch?.model
+    if (!model) return
+    const reasoningEffort = typeof choice.effort === 'string' && choice.effort ? choice.effort : dispatch?.reasoningEffort
+    if (model === dispatch?.model && reasoningEffort === dispatch?.reasoningEffort) return
+    const subscription = model.startsWith('claude/') ? 'claude' : model.startsWith('agy/') ? 'gemini' : null
+    const provider = subscription ?? (dispatch && !['claude', 'gemini'].includes(dispatch.provider) ? dispatch.provider : 'openai')
+    await this.save({ version: current.version, roles: { ...current.roles, dispatch: { provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) } } })
   }
   /** Reopening the chat reports the model it was created with; Elpis's chat shows the model that routes it now. */
   resumed<T extends { thread?: { id: string } }>(id: string, live: T): T {
@@ -167,10 +178,11 @@ export class MotherAgent {
   async send(id: string, raw: unknown) {
     if (this.closed || !this.file.read().enabled) throw new BridgeError('Turn Elpis on in Settings → Configuration to send a goal.', 409)
     if (!this.owns(id)) throw new BridgeError('This is not the Elpis chat', 409)
+    const input = object(raw, ['text', 'model', 'effort', 'mode', 'attachments', 'mentions', 'expectedTurnId']) as Record<string, unknown>
+    await this.chooseRouter(input)
     await this.start()
     const app = this.app
     if (!app) throw new BridgeError(this.error ?? 'Elpis is unavailable', 503)
-    const input = object(raw, ['text', 'model', 'effort', 'mode', 'attachments', 'mentions', 'expectedTurnId']) as Record<string, unknown>
     const content = attachmentInput(input.text, input.attachments, input.mentions)
     const message = content.flatMap(block => block.type === 'text' ? [block.text] : block.type === 'mention' ? [`${block.name}: ${block.path}`] : []).join('\n') || '[Image attachment]'
     const entry = await this.options.client.appendUser(id, { id: randomUUID(), text: message, content })
