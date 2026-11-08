@@ -116,6 +116,15 @@ test('OBSRM: empty, partial, repeated and long legacy orders load through the re
   }
 });
 
+test('each Love Spot chat keeps its character: the newest takes the current one, older ones were Matilda', () => {
+  browser(); const { assignCharacters } = loader()('lib/use-love-chat-characters.ts');
+  const chats = [{ id: 'first', createdAt: 1 }, { id: 'second', createdAt: 2 }];
+  const assigned = assignCharacters(chats, {}, 'palette-gold');
+  assert.deepEqual(assigned, { first: 'elpis', second: 'palette-gold' });
+  assert.equal(assignCharacters(chats, assigned, 'palette-rose'), null);
+  assert.equal(assignCharacters([...chats, { id: 'third', createdAt: 3 }], assigned, 'palette-rose').third, 'palette-rose');
+});
+
 test('page and theme shortcuts work from the message box and leave the browser and terminal their own keys', () => {
   browser(); const shortcuts = loader()('lib/shortcuts.ts');
   const ctrl = { ctrlKey: true };

@@ -7,7 +7,7 @@ import { isAgent, isAgentRun, title, type Thread } from "@/lib/api";
 import { groupSections, prioritizeChats, sidebarParents, sortChats, type ChatGroups } from "@/lib/chat-groups";
 import { errorText } from "@/lib/error-text.mts";
 import { chatOrigin } from "@/lib/love-activity";
-import { useCompanionName } from "@/lib/theme-characters";
+import { LOVE_SPOT_CHAT, useLoveChatCharacters } from "@/lib/use-love-chat-characters";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import { rankBySearch } from "@/lib/search-rank";
 import type { useConversationList } from "@/lib/use-conversation-list";
@@ -30,12 +30,10 @@ type Inputs = {
   checkedChildren: RefObject<Set<string>>; agentRunsOpen: boolean;
 };
 
-const LOVE_SPOT_CHAT = "Love Spot";
-
 export function useSidebarThreads({ ready, connected, threads, hidden, selected, chatGroups, loveActivity, expanded, setExpanded, recordedWorkflow, loadChildren, search, attention, waitingIds, pins: manualPins, projectChats, releaseChatOrder, searchInput, setError, setDeleteRunHistory, setDeleteTargets, hiddenPages, preferences, collapsedSections, collapsedProjects, checkedChildren, agentRunsOpen }: Inputs) {
   const pins = [...manualPins, ...threads.filter(thread => thread.motherAgent).map(thread => thread.id)];
   const searchTerm = search.searchTerm;
-  const companion = useCompanionName();
+  const loveChatCharacter = useLoveChatCharacters(threads, selected, preferences);
   const { catalog: workflowCatalog, runs: workflowRuns, roots: workflowRoots, steps: workflowSteps, sidebarTitle: workflowTitle } = useWorkflowSidebar(ready && connected, threads, hidden,
     ended => setExpanded(previous => ({ ...previous, ...Object.fromEntries(ended.map(run => [`workflow:${run.id}`, false])) })));
   const selectedWorkflow = selected ? workflowRoots.get(selected.id) : undefined;
@@ -146,7 +144,6 @@ export function useSidebarThreads({ ready, connected, threads, hidden, selected,
     for (const thread of threads) if ((isAgent(thread) || isAgentRun(thread)) && !checkedChildren.current.has(thread.id)
       && (inlineAgents.has(thread.id) || (preferences.showAgentRuns && agentRunsOpen))) void loadChildren(thread.id, undefined, false);
   });
-  // A Love Spot chat carries the app's default name until its character is known; show who it is with.
-  const sidebarTitle = (thread: Thread) => { const name = workflowTitle(thread); return name === LOVE_SPOT_CHAT ? companion : name; };
+  const sidebarTitle = (thread: Thread) => { const name = workflowTitle(thread); return name === LOVE_SPOT_CHAT ? loveChatCharacter(thread) : name; };
   return { workflowCatalog, workflowRuns, workflowRoots, workflowSteps, sidebarTitle, selectedWorkflow, sidebarThreads, nativeParents, treeParents, sidebarParent, originOf, branchOpen, workflowOpen, workflowChild, searchedThreads, unreadIds, sidebarState, needsYou, ownChat, chatListOrder, ordinaryThreads, ordinaryIds, displayParentIds, agentRuns, agentParents, runActions, filtered, roots, unlinked, pinnedChats, grouped, loveChats, workflowChats, recentChats, ordered, ordinaryUnread, topLevelAgentRuns };
 }

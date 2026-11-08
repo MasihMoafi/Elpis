@@ -75,6 +75,9 @@ export function GeneralSettings() {
     </SettingsGroup>
     <SettingsGroup>
       <DefaultFolder folder={preferences.defaultFolder} onSave={defaultFolder => save({ defaultFolder })} />
+      <SettingRow title="Change the theme with the Love Spot chat" description="Opening a Love Spot chat switches to its character and theme. Off keeps the theme you chose.">
+        <Switch aria-label="Change the theme with the Love Spot chat" checked={preferences.themeFollowsLoveChat} onCheckedChange={themeFollowsLoveChat => save({ themeFollowsLoveChat })} />
+      </SettingRow>
       <SettingRow title="Prevent sleep while Elpis is working" description="Keep this computer awake during running turns. Sleep resumes when all turns finish.">
         <Switch aria-label="Prevent sleep while Elpis is working" checked={preferences.preventSleep} onCheckedChange={preventSleep => save({ preventSleep })} />
       </SettingRow>

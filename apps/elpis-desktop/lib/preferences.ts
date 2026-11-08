@@ -46,6 +46,10 @@ export type Preferences = {
   customThemes: string;
   /** Selected Appearance palette id, or "elpis" for the built-in palette. */
   selectedPalette: string;
+  /** JSON encoded map from Love Spot chat id to the palette id of the character it was started with. */
+  loveChatCharacters: string;
+  /** Opening a Love Spot chat switches to that chat's character and theme. */
+  themeFollowsLoveChat: boolean;
   /** The sidebar's page order (lib/nav-order.ts): page ids joined by commas; pages not listed keep their place at the end. */
   navOrder: string;
   /** Pages left out of the sidebar and the command menu: ids joined by commas. Empty here; the packaged app seeds "experimentLab,canvas" (desktop/preferences.cjs) until those pages work, and their code and tests stay. */
@@ -63,7 +67,7 @@ export type Preferences = {
   shortcutBindings: string;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
-  speakMatildaReplies: true, softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: false, sidebarWorkflows: false, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
+  loveChatCharacters: "{}", themeFollowsLoveChat: true, speakMatildaReplies: true, softWrap: true, defaultFolder: "", sendShortcut: "enter", followUp: "steer", showContextUsage: true, showAgentRuns: false, sidebarWorkflows: false, confirmClose: false, closeToTray: false, quickEntryShortcut: "Ctrl+Alt+Space", confirmDeleteChats: true,
   turnNotifications: "unfocused", inputNotifications: true, notificationSound: false,
   transcriptSize: "m", transcriptWidth: "s", interfaceFont: "sans", codeFont: "", interfaceSize: "m", codeSize: "m", cornerStyle: "cut", preventSleep: false, chatFont: "default", accent: "amber", customThemes: "[]", selectedPalette: "elpis", navOrder: "", hiddenPages: "", profileName: "", profileAsked: true, settingsSectionOrder: "", settingsPageOrder: "", settingsPageGroups: "{}", shortcutBindings: "{}",
 };
