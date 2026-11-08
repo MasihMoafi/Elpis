@@ -37,7 +37,7 @@ test('real engine and Claude adapter goal set/get/clear through authenticated de
     ELPIS_ENGINE_BIN: process.env.ELPIS_GOAL_ENGINE, ACP_ADAPTER: path.join(repo, 'tools/elpis-claude/test/fake-acp-agent.mts'),
     ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'adapter.log'), ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
     OPENAI_API_KEY: 'local-protocol-fixture', FAKE_ACP_LOG: path.join(root, 'acp.jsonl'), FAKE_ACP_MODELS: 'sonnet', FAKE_ACP_RELEASE: release };
-  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mjs')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
+  const bridge = spawn(process.execPath, [path.join(repo, 'tools/elpis-claude/acp-bridge.mts')], { env, cwd: project, detached: true, stdio: ['ignore', log.fd, log.fd] });
   t.after(async () => { if (bridge.exitCode === null && bridge.signalCode === null) { const ended = once(bridge, 'exit'); bridge.kill('SIGTERM'); await ended; } try { if (bridge.pid) process.kill(-bridge.pid, 'SIGKILL'); } catch {} await log.close(); });
   await until(async () => { try { await fs.stat(socketPath); return true; } catch { return false; } }, 'isolated bridge socket');
   const client = await DesktopClient.connect({ socketPath, appHome: root });
@@ -109,7 +109,7 @@ test('native Claude reports loaded project instructions and excludes unrelated f
   await fs.mkdir(project); await fs.mkdir(config);
   const projectFile = path.join(project, 'CLAUDE.md'), unrelated = path.join(project, 'NOT-LOADED.md');
   await fs.writeFile(projectFile, 'Project instructions for the context manifest.'); await fs.writeFile(unrelated, 'This unrelated file must be excluded.');
-  const adapter = process.env.ELPIS_CONTEXT_ADAPTER ?? path.join(repo, 'tools/elpis-claude/context-agent.mjs');
+  const adapter = process.env.ELPIS_CONTEXT_ADAPTER ?? path.join(repo, 'tools/elpis-claude/context-agent.mts');
   const child = spawn(process.execPath, [adapter], { cwd: project, env: { PATH: process.env.PATH, HOME: root, CLAUDE_CONFIG_DIR: config, TMPDIR: root,
     CLAUDE_CODE_EXECUTABLE: process.env.ELPIS_GOAL_CLAUDE, ANTHROPIC_API_KEY: 'local-context-test', ANTHROPIC_BASE_URL: 'http://127.0.0.1:9' }, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
   let errors = ''; child.stderr.on('data', chunk => { errors += chunk; });

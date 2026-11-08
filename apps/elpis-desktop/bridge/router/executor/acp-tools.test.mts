@@ -15,7 +15,7 @@ import { ToolRuntime } from './tool-runtime.mts'
 import { tool } from '../app/tools/tool.mts'
 
 const tools = new URL('../../../../../tools/elpis-claude/', import.meta.url)
-const connectAppServer: (options: { url: string; name: string }) => Connection = (await import(new URL('app-server-connection.mjs', tools).href)).connectAppServer
+const connectAppServer: (options: { url: string; name: string }) => Connection = (await import(new URL('app-server-connection.mts', tools).href)).connectAppServer
 async function wait(check: () => Promise<boolean>, description: string) {
   const end = Date.now() + 8000
   while (!await check()) { assert.ok(Date.now() < end, description); await delay(10) }
@@ -25,7 +25,7 @@ for (const native of [false, true]) test(`${native ? 'Native-to-Claude switch' :
   const root = await mkdtemp(join(tmpdir(), 'mother-acp-')), log = join(root, 'bridge.log'), trace = join(root, 'acp.jsonl')
   const config = join(root, 'config.json')
   await writeFile(config, JSON.stringify({ config: { features: { multi_agent: false }, mcp_servers: {} } }))
-  const child = spawn(process.execPath, [fileURLToPath(new URL('acp-bridge.mjs', tools))], { cwd: root, stdio: ['pipe', 'ignore', 'pipe'], env: {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('acp-bridge.mts', tools))], { cwd: root, stdio: ['pipe', 'ignore', 'pipe'], env: {
     PATH: process.env.PATH, HOME: root, ELPIS_HOME: join(root, 'elpis'), CODEX_HOME: join(root, 'elpis'), CODEX_AUTH_HOME: join(root, 'elpis'), XDG_RUNTIME_DIR: root,
     ELPIS_ENGINE_BIN: fileURLToPath(new URL('test/fake-app-server.mts', tools)), ACP_ADAPTER: fileURLToPath(new URL('test/fake-acp-agent.mts', tools)),
     ACP_BRIDGE_LOG: log, ACP_BRIDGE_STORE: join(root, 'sessions.json'), ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1', PORT: '0',

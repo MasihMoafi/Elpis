@@ -67,7 +67,7 @@ NODE
 cp -a "$R/codex-rs/prompts" "$NEW/codex-rs/"
 cp -a "$OLD/tools/elpis-claude" "$NEW/tools/"
 while IFS= read -r -d '' file; do
-    case "$file" in *.test.mjs|*-e2e.mjs|*/probe.mjs|*/install-local.sh|*/elpis-wrapper|*/.gitignore) continue ;; esac
+    case "$file" in *.test.mjs|*.test.mts|*-e2e.mjs|*-e2e.mts|*/probe.mts|*/install-local.sh|*/elpis-wrapper|*/.gitignore) continue ;; esac
     mkdir -p "$(dirname "$NEW/$file")"
     cp -a "$R/$file" "$NEW/$file"
 done < <(git -C "$R" ls-files -z tools/elpis-claude)

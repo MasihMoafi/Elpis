@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
  * to DesktopClient's Unix transport when the worker sandbox hides the shared daemon directory. */
 export async function ledgerBridge(root: string, binary: string, env: NodeJS.ProcessEnv) {
   const log = path.join(root, 'provider.log'), socketPath = path.join(root, 'bridge.sock');
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mjs', import.meta.url))], { cwd: root, detached: true,
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mts', import.meta.url))], { cwd: root, detached: true,
     env: { ...env, ELPIS_ENGINE_BIN: binary, PORT: '0', ACP_BRIDGE_LOG: log }, stdio: ['ignore', 'ignore', 'pipe'] });
   let errors = '';
   let server: net.Server | undefined;

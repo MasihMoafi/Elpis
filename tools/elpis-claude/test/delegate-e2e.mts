@@ -13,7 +13,7 @@ const pass = (msg: string) => console.log(`PASS ${msg}`);
 const client = new Client({ name: "delegate-e2e", version: "0.1.0" });
 await client.connect(new StdioClientTransport({
   command: process.execPath,
-  args: [join(here, "elpis-agents-mcp.mjs")],
+  args: [join(here, "elpis-agents-mcp.mts")],
   env: { ...process.env, ELPIS_AGENTS_LOG: "/tmp/acp-bridge/delegate-e2e.log" },
 }));
 const cwd = mkdtempSync(join(tmpdir(), "delegate-e2e-"));
@@ -68,7 +68,7 @@ for (const s of scenarios) {
     const ask = async (args: Record<string, unknown>) => {
       const c = new Client({ name: "delegate-e2e-resume", version: "0.1.0" });
       const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
-      await c.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, "elpis-agents-mcp.mjs")], env }));
+      await c.connect(new StdioClientTransport({ command: process.execPath, args: [join(here, "elpis-agents-mcp.mts")], env }));
       const r = await c.callTool({ name: "delegate", arguments: args });
       await c.close();
       return textOf(r.content);

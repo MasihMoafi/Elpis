@@ -95,7 +95,7 @@ async function main() {
     console.log(`OBSERVED ${JSON.stringify(observation)}`);
   };
   const disconnects = () => (fs.readFileSync(log, 'utf8').match(/tui disconnected/g) ?? []).length;
-  const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
+  const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], {
     cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home,
       PORT: '0', ELPIS_ENGINE_BIN: engineShim, ENGINE_FAULT_REAL: binary, ENGINE_FAULT_CONTROL: faultControl,
       ACP_ADAPTER: path.join(__dirname, 'permissions-bridge.test.cjs'), AGY_BIN: agyShim,
@@ -176,7 +176,7 @@ async function main() {
     }
     // The parent chat's elpis-agents server, as the bridge configures it for that chat's session.
     async function delegateServer(parentThreadId) {
-      const proc = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/elpis-agents-mcp.mjs')], {
+      const proc = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/elpis-agents-mcp.mts')], {
         cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, ELPIS_ENGINE_BIN: binary, ELPIS_BRIDGE_URL: url,
           ELPIS_PARENT_THREAD: parentThreadId, ELPIS_AGENTS_LOG: path.join(root, 'agents.log') }, stdio: ['pipe', 'pipe', 'ignore'],
       });

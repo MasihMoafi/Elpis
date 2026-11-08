@@ -13,7 +13,7 @@ import path from "node:path";
 import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { startToken } from "../shared-runtime.mjs";
+import { startToken } from "../shared-runtime.mts";
 import mockProvider from "../../../scripts/lib/mock-provider.js";
 import WebSocket from "ws";
 
@@ -73,7 +73,7 @@ async function fixture(t: TestContext, { directMode = null, locks = false }: { d
   if (directMode === "nonproxy" || directMode === "mixed") nextEnv.AGY_DEFAULT_MODEL = "changed-fixture";
   if (directMode === "reverse") for (const name of proxyNames) nextEnv[name] = /^no_proxy$/i.test(name) ? "localhost,127.0.0.1,::1,example.invalid" : "http://127.0.0.1:9";
   const launchResult = async (dir: string, launchEnv: NodeJS.ProcessEnv = env) => {
-    const child = spawn(process.execPath, [path.join(dir, "shared-runtime.mjs"), path.join(dir, "acp-bridge.mjs")], { env: launchEnv, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [path.join(dir, "shared-runtime.mts"), path.join(dir, "acp-bridge.mts")], { env: launchEnv, stdio: ["ignore", "pipe", "pipe"] });
     let out = "", err = ""; child.stdout.on("data", (d) => { out += d; }); child.stderr.on("data", (d) => { err += d; });
     await once(child, "exit");
     return { code: child.exitCode, out, err };
@@ -184,7 +184,7 @@ for (const mode of ["symlink", "public", "wrong-target"]) {
     const key = createHash("sha256").update(fs.realpathSync(home)).digest("hex").slice(0, 16);
     const runtime = path.join(root, "elpis-bridge", key);
     fs.mkdirSync(runtime, { recursive: true, mode: 0o700 });
-    const target = path.join(next.dir, "acp-bridge.mjs"), marker = path.join(runtime, "successor-direct");
+    const target = path.join(next.dir, "acp-bridge.mts"), marker = path.join(runtime, "successor-direct");
     fs.writeFileSync(path.join(runtime, "successor"), target, { mode: 0o600 });
     if (mode === "symlink") {
       const file = path.join(root, "marker-target");
@@ -195,7 +195,7 @@ for (const mode of ["symlink", "public", "wrong-target"]) {
       if (mode === "public") fs.chmodSync(marker, 0o644);
     }
     const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, XDG_RUNTIME_DIR: root, ELPIS_ENGINE_BIN: old.engine };
-    const child = spawn(process.execPath, [path.join(next.dir, "shared-runtime.mjs"), target], { env, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [path.join(next.dir, "shared-runtime.mts"), target], { env, stdio: ["ignore", "pipe", "pipe"] });
     let stderr = ""; child.stderr.on("data", data => { stderr += data; });
     await once(child, "exit");
     assert.notEqual(child.exitCode, 0);

@@ -1,5 +1,5 @@
 // A lock every process on this machine sees: a directory beside the file. Two bridges share the chat store while one
-// hands over to the other (handover.mjs), so each read-modify-write of it holds this lock.
+// hands over to the other (handover.mts), so each read-modify-write of it holds this lock.
 import { mkdir, rmdir, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 

@@ -53,7 +53,7 @@ async function main() {
     assert(!output.includes('dangerously-bypass'), output);
     console.log('PASS headless wrapper uses the shared Full access policy without Bypass');
   } finally {
-    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mjs');
+    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mts');
     for (const home of [root, standaloneHome]) {
       const stateFile = runtimeDir(home).state;
       if (fs.existsSync(stateFile)) {

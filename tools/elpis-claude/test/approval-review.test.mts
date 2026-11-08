@@ -17,7 +17,8 @@ type Message = {
   method?: string;
   error?: unknown;
   result?: { outcome?: { optionId?: string } };
-  params?: { reason?: string; delta?: string; modeId?: string; tokenUsage?: { last?: { totalTokens?: number }; modelContextWindow?: number } };
+  params?: { reason?: string; delta?: string; modeId?: string; tokenUsage?: { last?: { totalTokens?: number }; modelContextWindow?: number };
+    mcpServers?: { name: string }[]; _meta?: { claudeCode?: { options?: { tools?: string[]; env?: Record<string, string> } }; systemPrompt?: { append?: string } } };
 };
 type Trace = Message & { role?: string; selection?: { allowed?: boolean } };
 
@@ -63,12 +64,13 @@ if (role) {
     let result = {};
     if (role === "engine") {
       if (process.env.APPROVAL_READ_ONLY === "1" && msg.method === "config/read") result = { config: { approval_policy: "never", default_permissions: ":read-only" } };
-      // Full access is what a new chat gets by default (apps/elpis-desktop bridge/client.mjs createThread).
+      // Full access is what a new chat gets by default (apps/elpis-desktop bridge/client.mts createThread).
       if (msg.method === "thread/resume") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] }, model: "gpt-test", ...(process.env.APPROVAL_FULL === "1"
         ? { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, activePermissionProfile: { id: ":danger-full-access" } }
         : { approvalPolicy: "on-request", approvalsReviewer: process.env.APPROVAL_REVIEWER, sandbox: { type: "workspaceWrite" } }) };
       if (process.env.APPROVAL_READ_ONLY === "1" && msg.method === "thread/resume") Object.assign(result, { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "readOnly" }, activePermissionProfile: { id: ":read-only" } });
       if (msg.method === "thread/read") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] } };
+      if (process.env.APPROVAL_MOTHER === "1" && msg.method === "thread/elpisInstructions/read") result = { developerInstructions: "engine fallback instructions" };
       if (msg.method === "thread/turns/list") result = { data: [], nextCursor: null };
       if (msg.method === "thread/approval/review") {
         if (process.env.APPROVAL_DECISION === "error") { send({ id: msg.id, error: { code: -32603, message: "review fixture unavailable" } }); return; }
@@ -89,7 +91,7 @@ if (role) {
     send({ id: msg.id, result });
   });
 } else {
-  for (const label of ["full", "approved", "denied", "error", "malformed", "plan", "manual", "agy-full", "agy-approved", "agy-denied", "agy-error", "agy-read-only"]) {
+  for (const label of ["full", "approved", "denied", "error", "malformed", "plan", "manual", "mother", "agy-full", "agy-approved", "agy-denied", "agy-error", "agy-read-only"]) {
     const agy = label.startsWith("agy-"), scenario = label.replace(/^agy-/, "");
     test(`bridged permission review: ${label}`, { timeout: 15000 }, async t => {
       const root = createTestTempDir(path.join(os.tmpdir(), "elpis-approval-"));
@@ -103,12 +105,13 @@ if (role) {
       };
       const engine = wrapper("engine.mjs", "engine"), adapter = wrapper("adapter.mjs", "acp");
       const agyBin = wrapper("agy.mjs", "agy");
-      const child = spawn(process.execPath, [process.env.APPROVAL_TEST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
+      const child = spawn(process.execPath, [process.env.APPROVAL_TEST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mts", import.meta.url))], {
         cwd: root, stdio: ["ignore", "ignore", "pipe"],
         env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
           ELPIS_ENGINE_BIN: engine, ACP_ADAPTER: adapter, ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: log,
           ELPIS_NO_AGY: agy ? "" : "1", AGY_BIN: agyBin, AGY_DEFAULT_MODEL: "fixture", ACP_BRIDGE_NO_AGENTS: "1", PORT: "0", APPROVAL_TRACE: trace,
           APPROVAL_REVIEWER: scenario === "manual" ? "user" : "auto_review", APPROVAL_PLAN: scenario === "plan" ? "1" : "0", APPROVAL_FULL: scenario === "full" ? "1" : "0",
+          APPROVAL_MOTHER: scenario === "mother" ? "1" : "0", GH_TOKEN: "fixture-gh-token", GITHUB_TOKEN: "fixture-github-token",
           APPROVAL_READ_ONLY: scenario === "read-only" ? "1" : "0",
           APPROVAL_DECISION: scenario === "malformed" ? "unexpected" : scenario },
       });
@@ -140,12 +143,30 @@ if (role) {
       });
       const call = (method: string, params: object) => new Promise<Message>(resolve => { const id = ++seq; pending.set(id, resolve); connection.send(JSON.stringify({ id, method, params })); });
       await call("initialize", { clientInfo: { name: "approval_fixture", version: "1" }, capabilities: { experimentalApi: true } });
-      assert.ifError((await call("thread/resume", { threadId: "chat", excludeTurns: true })).error);
-      assert.ifError((await call("turn/start", { threadId: "chat", input: [{ type: "text", text: "Do the fixture" }] })).error);
+      const config = scenario === "mother" ? {
+        "mcp_servers.elpis_mother": { command: "fixture-mother", args: [], env: {} },
+        "shell_environment_policy.set": { ELPIS_MOTHER_ROLE: "orchestrator", MOTHER_TEST_VALUE: "kept" },
+      } : undefined;
+      assert.ifError((await call("thread/resume", { threadId: "chat", excludeTurns: true, ...(config ? { config } : {}) })).error);
+      const collaborationMode = scenario === "mother" ? { settings: { developer_instructions: "Mother-owned instructions" } } : undefined;
+      assert.ifError((await call("turn/start", { threadId: "chat", input: [{ type: "text", text: "Do the fixture" }], ...(collaborationMode ? { collaborationMode } : {}) })).error);
       const records = (): Trace[] => fs.readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).map(line => JSON.parse(line));
       await until(() => records().some(row => agy ? row.role === "agy" && row.selection : row.role === "acp" && row.id === "permission" && row.result), "permission result");
       if (agy) await until(() => seen.some(row => row.method === "thread/tokenUsage/updated" && row.params?.tokenUsage?.last?.totalTokens === 238336), "Gemini context usage");
       const rows = records(), review = rows.filter(row => row.method === "thread/approval/review");
+      if (scenario === "mother") {
+        const session = rows.find(row => row.role === "acp" && row.method === "session/new");
+        assert.ok(session, "Mother session reached the provider adapter");
+        const params = session.params;
+        assert.ok(params?.mcpServers);
+        const options = params._meta?.claudeCode?.options, prompt = params._meta?.systemPrompt?.append;
+        assert.ok(options && prompt !== undefined);
+        assert.deepEqual(params.mcpServers.map(server => server.name), ["elpis_mother"]);
+        assert.deepEqual(options.tools, []);
+        assert.deepEqual(options.env, { ELPIS_MOTHER_ROLE: "orchestrator", MOTHER_TEST_VALUE: "kept", GH_TOKEN: "", GITHUB_TOKEN: "" });
+        assert.match(prompt, /Mother-owned instructions/);
+        assert.doesNotMatch(prompt, /engine fallback instructions/);
+      }
       const asks = seen.filter(row => row.method === "item/commandExecution/requestApproval");
       assert.equal(review.length, ["plan", "manual", "full", "read-only"].includes(scenario) ? 0 : 1);
       assert.equal(asks.length, ["approved", "denied", "full", "read-only"].includes(scenario) ? 0 : 1, "Full access and scoped never-ask modes never ask the person");

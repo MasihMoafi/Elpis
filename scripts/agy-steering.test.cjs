@@ -1,7 +1,7 @@
 'use strict';
 // Real ACP adapter, isolated home, fake agy process. No account or provider requests.
 // This fixture proves queue retention and serial follow-up delivery, not native agy steering.
-// Usage: node scripts/agy-steering.test.cjs [absolute/agy-acp.mjs]
+// Usage: node scripts/agy-steering.test.cjs [absolute/agy-acp.mts]
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -59,7 +59,7 @@ if (process.argv.includes('--fake-agy')) {
     });
   }
 } else {
-  const adapter = process.argv[2] || path.resolve(__dirname, '../tools/elpis-claude/agy-acp.mjs');
+  const adapter = process.argv[2] || path.resolve(__dirname, '../tools/elpis-claude/agy-acp.mts');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-agy-steering-'));
   const home = path.join(root, 'home'), cwd = path.join(root, 'work');
   fs.mkdirSync(home); fs.mkdirSync(cwd);

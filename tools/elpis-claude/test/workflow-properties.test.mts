@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { WorkflowRunner } from "../workflow-runner.mjs";
+import { WorkflowRunner } from "../workflow-runner.mts";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 import { forAll, gen } from "./property.mts";
 

@@ -10,7 +10,7 @@ export const MAX_BRIDGE_MESSAGE_BYTES = 100 * 1024 * 1024;
 /** The Elpis home the runtime uses: its config, sessions and logs. */
 export const elpisHome = (env = process.env) => path.resolve(env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'));
 
-// Mirrors shared-runtime.mjs's path derivation, but never creates directories or starts a runtime.
+// Mirrors shared-runtime.mts's path derivation, but never creates directories or starts a runtime.
 export function existingSocket(explicit?: string, env: NodeJS.ProcessEnv = process.env) {
   const provided = explicit || env.ELPIS_APP_BRIDGE_SOCKET || env.ELPIS_BRIDGE_SOCKET;
   let candidates;

@@ -6,7 +6,7 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { once } from "node:events";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
-import { ClaudeAccounts } from "../claude-accounts.mjs";
+import { ClaudeAccounts } from "../claude-accounts.mts";
 
 function fixture(t: TestContext) {
   const root = createTestTempDir(path.join(os.tmpdir(), "elpis-claude-accounts-"));

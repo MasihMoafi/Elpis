@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { environmentDigest } from "../shared-runtime.mjs";
+import { environmentDigest } from "../shared-runtime.mts";
 
 // The desktop launcher adds the loopback hosts to NO_PROXY; a terminal started from the
 // user's shell has them in another order or not at all. Both must reach the same bridge.

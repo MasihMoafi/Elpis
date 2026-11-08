@@ -21,7 +21,7 @@ export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL(
   const engine = path.join(root, 'engine');
   await fs.writeFile(engine, `#!/bin/sh\nexec '${process.execPath}' '${fileURLToPath(new URL('./love-interview-engine.mts', import.meta.url))}' "$@"\n`, { mode: 0o700 });
   const env = { ...process.env, HOME: root, ELPIS_HOME: path.join(root, 'elpis'), CODEX_HOME: path.join(root, 'codex'), TMPDIR: root, XDG_RUNTIME_DIR: root, XDG_CONFIG_HOME: path.join(root, '.config'), XDG_CACHE_HOME: path.join(root, '.cache'), XDG_STATE_HOME: path.join(root, '.local/state'), XDG_DATA_HOME: path.join(root, '.local/share'), ELPIS_APP_BRIDGE_SOCKET: '', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_SHARED_BRIDGE: '1', ELPIS_ENGINE_BIN: engine, ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1', ACP_BRIDGE_LOG: path.join(root, 'bridge.log'), INTERVIEW_CONTROL: controlFile, INTERVIEW_REQUESTS: requestsFile };
-  const bridge = spawn(process.execPath, [path.join(toolsDirectory, 'acp-bridge.mjs')], { env, stdio: ['pipe', 'ignore', 'pipe'] });
+  const bridge = spawn(process.execPath, [path.join(toolsDirectory, 'acp-bridge.mts')], { env, stdio: ['pipe', 'ignore', 'pipe'] });
   let stderr = ''; bridge.stderr.on('data', data => { stderr += data; });
   const until = async (check: () => boolean | undefined) => { for (const deadline = Date.now() + 10000; Date.now() < deadline;) { if (check()) return; if (bridge.exitCode !== null) throw new Error(stderr); await new Promise(r => setTimeout(r, 20)); } throw new Error(`Interview bridge timed out: ${stderr}`); };
   const stop = async () => {
@@ -41,7 +41,7 @@ export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL(
   const card = { id: 'writer', type: 'rectangle', x: 0, y: 0, width: 220, height: 170, version: 1, versionNonce: 1, customData: { loveAgent: { preset: 'writer', name: 'Writer', prompt: 'You are a careful writer.', task: '', model: 'gpt-6-luna', provider: 'openai', interview: { messages: [] } } } };
   if (seed) await store.save({ elements: [card], files: {}, appState: {} });
   const nodeSpec = (node: { name: string; model: string; prompt: string }) => ({ name: node.name, command: process.execPath,
-    args: [path.join(toolsDirectory, 'elpis-acp-agent.mjs'), '--model', node.model],
+    args: [path.join(toolsDirectory, 'elpis-acp-agent.mts'), '--model', node.model],
     env: { ELPIS_HOME: path.join(root, 'elpis'), ELPIS_APP_BRIDGE_SOCKET: socketPath },
     instructions: node.prompt, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true });
   const runner = createLoveAgents(store, { nodeSpec, timeoutMs: 5000 });

@@ -106,12 +106,12 @@ export function loveNodeSpec(node: Pick<Agent, 'name' | 'prompt' | 'model' | 'pr
       if (isSignedOut(state)) throw new BridgeError(SIGNED_OUT_MESSAGE, 409);
     }
     if (fs.existsSync(path.join(state, 'claude-accounts.json'))) {
-      const { ClaudeAccounts } = require(present(path.join(tools, 'claude-accounts.mjs')));
+      const { ClaudeAccounts } = require(present(path.join(tools, 'claude-accounts.mts')));
       accountEnv = new ClaudeAccounts({ home: os.homedir(), dir: state, defaultConfigDir: env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude') }).environment();
     }
   }
   const { engine, tools } = installation(env);
-  return { ...base, command: nodeBin, args: [present(env.ELPIS_ACP_AGENT || path.join(tools, 'elpis-acp-agent.mjs')), ...(node.model ? ['--model', node.model] : []), ...(node.provider && !/^(claude|agy)\//.test(node.model) ? ['--provider', node.provider] : [])],
+  return { ...base, command: nodeBin, args: [present(env.ELPIS_ACP_AGENT || path.join(tools, 'elpis-acp-agent.mts')), ...(node.model ? ['--model', node.model] : []), ...(node.provider && !/^(claude|agy)\//.test(node.model) ? ['--provider', node.provider] : [])],
     env: { ...accountEnv, ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: `Love Spot · ${node.name}` } }, elpis: true };
 }
 

@@ -57,8 +57,8 @@ const savedBoard = custom ? { name: `Live ${plan}`, maxAgents: 12, mother: { bri
   }) } : null;
 const engineDirectory = path.dirname(realpathSync(engine));
 const bridgeScript = [
-  ...(path.basename(engineDirectory) === 'bin' && path.basename(path.dirname(engineDirectory)) === 'package' ? [path.resolve(engineDirectory, '../../tools/elpis-claude/acp-bridge.mjs')] : []),
-  path.join(engineDirectory, 'tools/elpis-claude/acp-bridge.mjs'),
+  ...(path.basename(engineDirectory) === 'bin' && path.basename(path.dirname(engineDirectory)) === 'package' ? [path.resolve(engineDirectory, '../../tools/elpis-claude/acp-bridge.mts')] : []),
+  path.join(engineDirectory, 'tools/elpis-claude/acp-bridge.mts'),
 ].find(candidate => existsSync(candidate));
 assert(bridgeScript, `No installed provider bridge for ${engine}`);
 const appRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -86,7 +86,7 @@ if (plan === 'clash') await fs.writeFile(path.join(project, 'shared/result.txt')
 git('add', 'README.md', ...chosen.folders.map(folder => `${folder}/README.md`), ...(plan === 'clash' ? ['shared/result.txt'] : []));
 git('commit', '-q', '-m', 'Throwaway project for the canvas live check');
 
-// The provider bridge as the packaged app starts it (shared-runtime.mjs), on this run's socket, with its own store.
+// The provider bridge as the packaged app starts it (shared-runtime.mts), on this run's socket, with its own store.
 const socketPath = path.join(runtimeDir, 'bridge.sock'), bridgeLog = path.join(root, 'bridge.log');
 const log = await fs.open(bridgeLog, 'a');
 const bridge = spawn(process.execPath, [bridgeScript], { cwd: process.env.HOME, stdio: ['ignore', log.fd, log.fd],

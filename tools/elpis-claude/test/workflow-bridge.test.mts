@@ -112,7 +112,7 @@ if (process.argv.includes("app-server")) {
       ELPIS_SHARED_BRIDGE: "1", ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine, ELPIS_NO_AGY: "1",
       ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mts"), FAKE_ACP_LOG: acpLog, FAKE_ACP_MODELS: "default,haiku", ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"),
       ELPIS_WORKFLOW_RETRY_MS: "20" };
-    const bridge = spawn(process.execPath, [path.join(source, "acp-bridge.mjs")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
+    const bridge = spawn(process.execPath, [path.join(source, "acp-bridge.mts")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
     let stderr = "";
     bridge.stderr.on("data", (d) => { stderr += d; });
     const mcps: Client[] = [];
@@ -142,7 +142,7 @@ if (process.argv.includes("app-server")) {
     const tool = async (parentEnv: Record<string, string>) => {
       const c = new Client({ name: "wf-chat", version: "1" });
       const toolEnv = Object.fromEntries(Object.entries({ ...env, ELPIS_BRIDGE_URL: `ws+unix://${socketPath}:/`, ELPIS_AGENT_TOOLS: "0", ELPIS_WORKFLOW_TOOL: "1", ELPIS_AGENTS_LOG: path.join(root, "agents.log"), ...parentEnv }).filter((entry): entry is [string, string] => entry[1] !== undefined));
-      await c.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(source, "elpis-agents-mcp.mjs")], env: toolEnv }));
+      await c.connect(new StdioClientTransport({ command: process.execPath, args: [path.join(source, "elpis-agents-mcp.mts")], env: toolEnv }));
       mcps.push(c);
       return c;
     };

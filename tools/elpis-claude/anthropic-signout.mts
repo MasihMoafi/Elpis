@@ -19,7 +19,7 @@ export function isSignedOut(dir: string) {
 }
 
 // Written to a private temporary file and renamed into place, so a reader never sees half a file.
-export function setSignedOut(dir: string, signedOut: boolean) {
+export function setSignedOut(dir: string, signedOut: unknown) {
   if (typeof signedOut !== "boolean") throw Object.assign(new Error("signedOut must be true or false"), { code: -32602 });
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const temporary = join(dir, `.${FILE}.${randomBytes(6).toString("hex")}`);

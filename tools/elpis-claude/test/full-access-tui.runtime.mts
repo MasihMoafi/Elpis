@@ -39,7 +39,7 @@ test('installed TUI follows shared defaults and keeps its own Ask choice across 
   const searchPath = process.env.PATH;
   assert.ok(searchPath !== undefined);
   const env = { PATH: searchPath, HOME: root, ELPIS_HOME: home, CODEX_HOME: home, ELPIS_ENGINE_BIN: engine, TERM: 'xterm-256color', ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1' };
-  const started = await run(process.execPath, [path.join(tools, 'shared-runtime.mjs'), path.join(tools, 'acp-bridge.mjs')], { env, timeout: 30000 });
+  const started = await run(process.execPath, [path.join(tools, 'shared-runtime.mts'), path.join(tools, 'acp-bridge.mts')], { env, timeout: 30000 });
   const endpoint = started.stdout.trim().split('\n')[0];
   assert.ok(endpoint);
   const hash = createHash('sha256').update(home).digest('hex').slice(0, 16);

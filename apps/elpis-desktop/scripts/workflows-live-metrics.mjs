@@ -155,7 +155,7 @@ try {
   const mean = key => samples.reduce((sum, sample) => sum + sample[key], 0) / samples.length;
   const firstRunRequest = requests.find(row => row.path === '/api/workflows/run')?.at ?? Date.now();
   const calls = Object.fromEntries([...new Set(requests.map(row => `${row.method} ${row.path}`))].sort().map(key => [key, requests.filter(row => `${row.method} ${row.path}` === key && row.at >= firstRunRequest).length]));
-  const result = { conditions: { commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path.resolve(appRoot, '../..'), encoding: 'utf8' }).trim(), startedAt, agents: count, viewport: '1440x900', view: 'Flat', warmupSeconds: 3, samples: 10, intervalSeconds: 1, agent: 'fake-acp-agent.mjs held in session/prompt', networkModelCalls: 0 },
+  const result = { conditions: { commit: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: path.resolve(appRoot, '../..'), encoding: 'utf8' }).trim(), startedAt, agents: count, viewport: '1440x900', view: 'Flat', warmupSeconds: 3, samples: 10, intervalSeconds: 1, agent: 'fake-acp-agent.mts held in session/prompt', networkModelCalls: 0 },
     timing: { openWorkflowsMs, firstAgentVisibleMs }, meanCpuPercent: mean('cpuPercent'), meanRendererCpuPercent: mean('rendererCpuPercent'), meanPssMiB: mean('pssMiB'), maxPssMiB: Math.max(...samples.map(sample => sample.pssMiB)), meanRendererPssMiB: mean('rendererPssMiB'), meanProcesses: mean('processes'),
     interactionFrames: { count: frameGaps.length, medianMs: percentile(.5), p95Ms: percentile(.95), maxMs: Math.max(...frameGaps) }, calls, startedProcesses, samples, runtimeRequests: runtime.requests };
   if (output) { await fsp.mkdir(path.dirname(output), { recursive: true }); await fsp.writeFile(output, `${JSON.stringify(result, null, 2)}\n`); }

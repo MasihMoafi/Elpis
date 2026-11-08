@@ -44,7 +44,7 @@ const usageAddress = usageServer.address(); assert.ok(usageAddress && typeof usa
 const usageEnv = process.env.E2E_REAL_USAGE ? {} : { ELPIS_CLAUDE_USAGE_URL: `http://127.0.0.1:${usageAddress.port}/usage`, NO_PROXY: "127.0.0.1,localhost", no_proxy: "127.0.0.1,localhost" };
 // The bridge's own store (Claude sessions and the default Claude pick) lives in a test folder.
 const storeEnv = { ACP_BRIDGE_STORE: process.env.ACP_BRIDGE_STORE ?? join(mkdtempSync(join(tmpdir(), "elpis-e2e-store-")), "sessions.json") };
-const bridge = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], {
+const bridge = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mts")], {
   env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: process.env.ACP_BRIDGE_LOG ?? "/tmp/acp-bridge/e2e.log" },
   stdio: "ignore",
 });
@@ -228,7 +228,7 @@ for (const s of scenarios) {
       wf(storePath, JSON.stringify(st, null, 1));
       console.log("(saved Claude session link broken on purpose)");
     }
-    const b2 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port + 1), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: "/tmp/acp-bridge/e2e.log" }, stdio: "ignore" });
+    const b2 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mts")], { env: { ...process.env, ...usageEnv, ...storeEnv, PORT: String(port + 1), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: "/tmp/acp-bridge/e2e.log" }, stdio: "ignore" });
     await new Promise((r) => setTimeout(r, 800));
     const ws2 = new WebSocket(`ws://127.0.0.1:${port + 1}`);
     await new Promise<void>((r) => ws2.on("open", r));
@@ -361,7 +361,7 @@ for (const s of scenarios) {
     // are those the transcript gives, and they add up to the context Claude reports.
     const { readFileSync } = await import("node:fs");
     const { homedir } = await import("node:os");
-    const { transcriptTokens } = await import(join(here, "context-split.mjs"));
+    const { transcriptTokens } = await import(join(here, "context-split.mts"));
     const st = await call("thread/start", { cwd: dir, approvalPolicy: "never", sandbox: "danger-full-access" });
     const tid = st.result?.thread?.id;
     await call("thread/settings/update", { threadId: tid, model: process.env.E2E_MODEL ?? "claude/opus", effort: "low" });
@@ -721,7 +721,7 @@ for (const s of scenarios) {
     const { readFileSync } = await import("node:fs");
     const home = mkdtempSync(join(tmpdir(), "elpis-e2e-home-"));
     const logPath = join(home, "bridge.log");
-    const b3 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mjs")], { env: { ...process.env, ...usageEnv, ...storeEnv, ELPIS_HOME: home, PORT: String(port + 2), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: logPath }, stdio: "ignore" });
+    const b3 = spawn("node", [process.env.E2E_BRIDGE ?? join(here, "acp-bridge.mts")], { env: { ...process.env, ...usageEnv, ...storeEnv, ELPIS_HOME: home, PORT: String(port + 2), NODE_USE_ENV_PROXY: "1", ACP_BRIDGE_LOG: logPath }, stdio: "ignore" });
     await new Promise((r) => setTimeout(r, 800));
     const ws3 = new WebSocket(`ws://127.0.0.1:${port + 2}`);
     await new Promise<void>((r, j) => { ws3.on("open", r); ws3.on("error", j); });
@@ -837,7 +837,7 @@ for (const s of scenarios) {
   } else if (s === "agy-model") {
     // A bare Antigravity family id, as a delegating agent may write it, runs as its medium version.
     const { spawn } = await import("node:child_process");
-    const agy = spawn(process.execPath, [new URL("../agy-acp.mjs", import.meta.url).pathname], { stdio: ["pipe", "pipe", "inherit"] });
+    const agy = spawn(process.execPath, [new URL("../agy-acp.mts", import.meta.url).pathname], { stdio: ["pipe", "pipe", "inherit"] });
     let buf = ""; const waiting = new Map<number, (reply: Reply<object>) => void>(); let n = 0;
     agy.stdout.on("data", (d) => { buf += d; for (let i; (i = buf.indexOf("\n")) >= 0;) { const l = buf.slice(0, i); buf = buf.slice(i + 1); try { const m = JSON.parse(l); waiting.get(m.id)?.(m); } catch {} } });
     type AcpResults = { initialize: object; "session/new": { sessionId: string }; "session/set_config_option": { configOptions?: { currentValue: string }[] } };

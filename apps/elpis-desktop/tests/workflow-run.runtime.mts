@@ -80,7 +80,7 @@ await once(mock.stdout, 'data');
 let bridge: ReturnType<typeof spawn> | null = null;
 async function startBridge() {
   try { fs.rmSync(socketPath, { force: true }); } catch {}
-  bridge = spawn(process.execPath, [path.join(tools, 'acp-bridge.mjs')], { env, cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  bridge = spawn(process.execPath, [path.join(tools, 'acp-bridge.mts')], { env, cwd: root, detached: true, stdio: ['ignore', 'ignore', 'pipe'] });
   let err = ''; assert.ok(bridge.stderr); bridge.stderr.on('data', (d) => { err += d; });
   for (let i = 0; i < 200 && !fs.existsSync(socketPath); i++) await pause(50);
   assert.ok(fs.existsSync(socketPath), `the bridge did not start: ${err}`);
@@ -242,7 +242,7 @@ test('workflows run to the end from a chat whose person asked, with the Subagent
 });
 
 test('an update hands a running workflow to the newer runtime, which takes it within 5 s and finishes it (WR3)', { timeout: 240_000 }, async () => {
-  // Two installed bundles of this runtime, started the way the app and the terminals start it (shared-runtime.mjs): the
+  // Two installed bundles of this runtime, started the way the app and the terminals start it (shared-runtime.mts): the
   // second one's launch is an update, and the first hands over (startDrain releases its runs).
   const bundle = (name: string) => {
     const dir = path.join(root, name); fs.mkdirSync(dir);
@@ -257,7 +257,7 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
   const { ELPIS_SHARED_BRIDGE, ELPIS_BRIDGE_SOCKET, ...base } = env;
   const env2 = { ...base, ELPIS_HOME: home2, CODEX_HOME: home2, XDG_RUNTIME_DIR: run2, ACP_BRIDGE_LOG: path.join(root, 'bridge2.log') };
   const launch = async (dir: string) => {
-    const child = spawn(process.execPath, [path.join(dir, 'shared-runtime.mjs'), path.join(dir, 'acp-bridge.mjs')], { env: env2, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, [path.join(dir, 'shared-runtime.mts'), path.join(dir, 'acp-bridge.mts')], { env: env2, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', err = ''; child.stdout.on('data', (d) => { out += d; }); child.stderr.on('data', (d) => { err += d; });
     await once(child, 'exit');
     assert.equal(child.exitCode, 0, err);

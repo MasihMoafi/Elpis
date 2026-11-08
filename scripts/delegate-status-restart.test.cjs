@@ -55,7 +55,7 @@ async function main() {
 
   const servers = [];
   async function server() {
-    const proc = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/elpis-agents-mcp.mjs')], {
+    const proc = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/elpis-agents-mcp.mts')], {
       env: { ...process.env, ELPIS_BRIDGE_URL: `ws://127.0.0.1:${bridge.address().port}`,
         ELPIS_PARENT_THREAD: 'parent-chat' }, stdio: ['pipe', 'pipe', 'pipe'],
     });

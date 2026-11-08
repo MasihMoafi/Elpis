@@ -53,7 +53,7 @@ const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check: () => boolean | Promise<boolean>, label: string, timeout = 20000) { const deadline = Date.now() + timeout; while (Date.now() < deadline) { if (await check()) return; await pause(200); } throw Error(`Timed out: ${label}`); }
 const log = await fs.open(path.join(root, 'bridge.log'), 'a');
-const bridge = spawn(process.execPath, [fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mjs', import.meta.url))], { cwd: project, env, stdio: ['ignore', log.fd, log.fd] });
+const bridge = spawn(process.execPath, [fileURLToPath(new URL('../../../tools/elpis-claude/acp-bridge.mts', import.meta.url))], { cwd: project, env, stdio: ['ignore', log.fd, log.fd] });
 let app: Awaited<ReturnType<typeof startDesktopServer>> | undefined, client: DesktopClient | undefined, browser: Browser | undefined, page: Page | undefined, threadId: string | undefined, terminal = false;
 const evidence: Evidence = { root, engine, model: 'gpt-6-luna', checks: [] };
 try {

@@ -13,7 +13,7 @@ import { createTestTempDir, removeTestTempDir } from '../tests/temp-root.cts';
 // the end-to-end case uses the real Elpis ACP agent on a scripted app-server.
 const TOOLS = fileURLToPath(new URL('../../../tools/elpis-claude/', import.meta.url));
 const FAKE_AGENT = path.join(TOOLS, 'test/fake-acp-agent.mts'), FAKE_ENGINE = path.join(TOOLS, 'test/fake-app-server.mts');
-const ELPIS_AGENT = path.join(TOOLS, 'elpis-acp-agent.mjs');
+const ELPIS_AGENT = path.join(TOOLS, 'elpis-acp-agent.mts');
 // A live Elpis session's bridge must not reach these agents: the scripted app-server answers, never a real model.
 for (const name of ['ELPIS_BRIDGE_SOCKET', 'ELPIS_APP_BRIDGE_SOCKET', 'ELPIS_BRIDGE_URL', 'ELPIS_SHARED_BRIDGE']) delete process.env[name];
 type LogEntry = { method: string; params: { prompt: { text: string }[]; input: { text: string }[]; _meta: unknown; cwd: string; model: string; modelProvider: string; developerInstructions: string; threadId: string; name: string }; permission: unknown; engineHome: string };
@@ -130,22 +130,22 @@ for (const packaged of [false, true]) test(`each card finds its ACP agent in a $
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   // An installation as desktop/runtime.mts finds it: the engine with its tools/elpis-claude folder beside it.
   const engine = path.join(dir, packaged ? 'version/package/bin/codex' : 'version/elpis-next'), tools = path.join(dir, 'version/tools/elpis-claude');
-  for (const file of [engine, path.join(tools, 'elpis-acp-agent.mjs'), path.join(tools, 'agy-acp.mjs'), path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js')]) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, ''); }
+  for (const file of [engine, path.join(tools, 'elpis-acp-agent.mts'), path.join(tools, 'agy-acp.mts'), path.join(tools, 'node_modules/@agentclientprotocol/claude-agent-acp/dist/index.js')]) { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, ''); }
   fs.symlinkSync(engine, path.join(dir, 'elpis-next'));
   const home = path.join(dir, 'home'); fs.mkdirSync(home);
   const env = { ELPIS_HOME: home, ELPIS_ENGINE_BIN: path.join(dir, 'elpis-next'), ELPIS_NODE_BIN: '/usr/bin/node', CLAUDE_CODE_EXECUTABLE: '/opt/claude' };
   const profile = { ELPIS_HOME: home, ELPIS_APP_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_SOCKET: undefined, ELPIS_BRIDGE_URL: undefined };
   const node = (model: string, provider = 'openai') => ({ name: 'Ada', prompt: 'Be precise', model, provider });
-  assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
-  for (const model of ['claude/opus', 'agy/gemini-3.8-flash-high']) assert.deepEqual(loveNodeSpec(node(model), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mjs'), '--model', model], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
+  assert.deepEqual(loveNodeSpec(node('gpt-6-luna'), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mts'), '--model', 'gpt-6-luna', '--provider', 'openai'], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
+  for (const model of ['claude/opus', 'agy/gemini-3.8-flash-high']) assert.deepEqual(loveNodeSpec(node(model), env), { name: 'Ada', instructions: 'Be precise', command: '/usr/bin/node', args: [path.join(tools, 'elpis-acp-agent.mts'), '--model', model], env: { ELPIS_ENGINE_BIN: engine, ...profile }, meta: { elpis: { name: 'Love Spot · Ada' } }, elpis: true });
   fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ fx: { command: 'fx', args: ['acp'] } }));
   assert.deepEqual(loveNodeSpec(node('openai/gpt-5', 'fx'), env), { name: 'Ada', instructions: 'Be precise', instructionsInPrompt: true, command: 'fx', args: ['acp'], env: profile, model: 'openai/gpt-5' });
   assert.deepEqual(loveNodeSpec(node('', 'fx'), env).model, undefined, 'without a model the agent keeps its own');
   fs.writeFileSync(path.join(home, 'acp-agents.json'), JSON.stringify({ fx: { command: ['fx'] } }));
   assert.throws(() => loveNodeSpec(node('m', 'fx'), env), /acp-agents\.json/);
   fs.rmSync(path.join(home, 'acp-agents.json'));
-  fs.rmSync(path.join(tools, 'elpis-acp-agent.mjs'));
-  assert.throws(() => loveNodeSpec(node('gpt-6-luna'), env), error => (error as { status: number }).status === 503 && /elpis-acp-agent\.mjs/.test((error as Error).message));
+  fs.rmSync(path.join(tools, 'elpis-acp-agent.mts'));
+  assert.throws(() => loveNodeSpec(node('gpt-6-luna'), env), error => (error as { status: number }).status === 503 && /elpis-acp-agent\.mts/.test((error as Error).message));
 });
 
 test('end to end: two Elpis ACP agents hand off through Love Spot on a scripted app-server', { timeout: 30000 }, async t => {

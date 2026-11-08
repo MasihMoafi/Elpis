@@ -20,7 +20,7 @@ if (process.env.ELPIS_POLICY_FIXTURE) {
   const engine = path.join(root, 'engine.mjs');
   await fs.writeFile(engine, `#!${process.execPath}\nprocess.env.ELPIS_POLICY_FIXTURE='1'; await import(${JSON.stringify(import.meta.url)});\n`, { mode: 0o755 });
   const invoke = async (config: object = {}, args: string[] = [], requirements: object = {}) => {
-    const result = await run(process.execPath, [new URL('../exec-policy.mjs', import.meta.url).pathname, 'exec', ...args], { env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, ELPIS_ENGINE_BIN: engine, POLICY_CONFIG: JSON.stringify(config), POLICY_REQUIREMENTS: JSON.stringify(requirements) } });
+    const result = await run(process.execPath, [new URL('../exec-policy.mts', import.meta.url).pathname, 'exec', ...args], { env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, ELPIS_ENGINE_BIN: engine, POLICY_CONFIG: JSON.stringify(config), POLICY_REQUIREMENTS: JSON.stringify(requirements) } });
     return JSON.parse(result.stdout);
   };
   const setting = (args: string[], key: string) => args.find(arg => arg.startsWith(`${key}=`));

@@ -122,7 +122,7 @@ if (process.argv.includes("app-server")) {
     await new Promise<void>((resolve) => usage.listen(0, "127.0.0.1", resolve));
     const usageAddress = usage.address(); assert.ok(usageAddress && typeof usageAddress !== "string");
     const log = path.join(root, "bridge.log");
-    const child = spawn(process.execPath, [process.env.ELPIS_SIGNOUT_TEST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
+    const child = spawn(process.execPath, [process.env.ELPIS_SIGNOUT_TEST_BRIDGE ?? fileURLToPath(new URL("../acp-bridge.mts", import.meta.url))], {
       cwd: root, stdio: ["ignore", "ignore", "pipe"],
       env: { PATH: `${path.join(root, "bin")}:${process.env.PATH}`, HOME: userHome, ELPIS_HOME: elpisHome, CODEX_HOME: elpisHome, CODEX_AUTH_HOME: elpisHome,
         XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_LOG: log, ...(defaultStore ? {} : { ACP_BRIDGE_STORE: path.join(state, "sessions.json") }),
@@ -184,7 +184,7 @@ if (process.argv.includes("app-server")) {
 
   test("switching accounts changes the actual ACP login, usage and identity, retains history, and refuses active-turn switches", async (t) => {
     const fx = await setup(t), tui = await fx.connect("tui"), desktop = await fx.connect("desktop");
-    const { ClaudeAccounts } = await import("../claude-accounts.mjs");
+    const { ClaudeAccounts } = await import("../claude-accounts.mts");
     const accounts = new ClaudeAccounts({ home: path.join(fx.root, "home"), dir: fx.state });
     const second = accounts.add(), configDir = accounts.configDir(second.id);
     fs.writeFileSync(path.join(configDir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "second-local-token", subscriptionType: "pro" } }));

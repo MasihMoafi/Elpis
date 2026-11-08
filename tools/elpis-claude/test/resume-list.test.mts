@@ -114,7 +114,7 @@ if (process.argv.includes("app-server")) {
     const engine = path.join(root, "engine");
     fs.writeFileSync(engine, `#!${process.execPath}\nimport ${JSON.stringify(self)};\n`, { mode: 0o755 });
     const log = path.join(root, "bridge.log");
-    const child = spawn(process.execPath, [process.env.ELPIS_RESUME_TEST_ADAPTER ?? fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url))], {
+    const child = spawn(process.execPath, [process.env.ELPIS_RESUME_TEST_ADAPTER ?? fileURLToPath(new URL("../acp-bridge.mts", import.meta.url))], {
       cwd: root, stdio: ["ignore", "ignore", "pipe"],
       env: { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root,
         XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_STORE: path.join(root, "sessions.json"),

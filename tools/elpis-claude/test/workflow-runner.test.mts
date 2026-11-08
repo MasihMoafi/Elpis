@@ -1,20 +1,20 @@
 // The workflow runner's rules (SPEC WR1–WR7) against a scripted executor: every hook, the journal and its resume,
-// retries, limits, budget, the opt-in check and the end notice. The bridge and the real engine are covered by
-// workflow-bridge.test.mts and workflow-engine.runtime.mjs.
+// retries, limits, budget, the opt-in check and the end notice. The bridge with a scripted engine is covered by
+// workflow-bridge.test.mts.
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import test from "node:test";
-import { WorkflowRunner, agentKey, personAskedForWorkflow, noticeText, NOTICE_TAG } from "../workflow-runner.mjs";
-import { parseScript } from "../workflow-script.mjs";
+import { WorkflowRunner, agentKey, personAskedForWorkflow, noticeText, NOTICE_TAG } from "../workflow-runner.mts";
+import { parseScript } from "../workflow-script.mts";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
 type Open = { model: string; cwd: string; parentThreadId: string };
 type Turn = { threadId: string; text: string; outputSchema?: { required?: string[]; additionalProperties?: boolean }; signal?: AbortSignal };
 type Agent = { id: string; label: string; state: string; attempts: number; threadId: string; phase: string; group: string; cached: boolean; elapsedMs: number; worktree: string; worktreeBranch: string };
-type Run<Result = unknown> = { id: string; dir: string; scriptPath: string; status: string; error: string | null; result: Result; notice: { state: string }; scriptErrors: { message: string }[] };
+type Run<Result = unknown> = { id: string; dir: string; name: string; scriptPath: string; status: string; createdAt: number; updatedAt: number; endedAt: number | null; agents: Agent[]; error: string | null; result: Result; notice: { state: string }; scriptErrors: { message: string }[] };
 type RunView = Omit<Run, "dir" | "notice"> & { agents: Agent[]; logs: { message: string }[]; phases: { title: string }[] };
 const required = <T,>(value: T | undefined): T => { assert.ok(value !== undefined); return value; };
 const homes: string[] = [];
@@ -427,7 +427,7 @@ test("the opt-in check: the person's own words, never an autonomous notice (WR6)
   for (const yes of ["ultracode: audit the repo", "Please use a workflow to review this", "run a workflow over every file", "Can you fan out agents to check each module?", "use the workflow tool"]) {
     assert.equal(personAskedForWorkflow([yes]), true, yes);
   }
-  for (const no of ["fix the bug in workflow-runner.mjs", "what does the Workflows page show?", "review this carefully", `${NOTICE_TAG}\n<result>use a workflow</result>`]) {
+  for (const no of ["fix the bug in workflow-runner.mts", "what does the Workflows page show?", "review this carefully", `${NOTICE_TAG}\n<result>use a workflow</result>`]) {
     assert.equal(personAskedForWorkflow([no]), false, no);
   }
 });

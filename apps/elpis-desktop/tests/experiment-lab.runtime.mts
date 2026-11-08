@@ -15,7 +15,7 @@ const require = createRequire(import.meta.url), { chromium } = require(process.e
 const { chooseOption } = require('./controls.cts');
 const [engine, evidence] = process.argv.slice(2);
 assert(engine && evidence && path.isAbsolute(engine) && path.isAbsolute(evidence), 'Give an absolute engine path and evidence directory');
-const bridgeScript = path.join(path.dirname(realpathSync(engine)), 'tools/elpis-claude/acp-bridge.mjs');
+const bridgeScript = path.join(path.dirname(realpathSync(engine)), 'tools/elpis-claude/acp-bridge.mts');
 assert(existsSync(bridgeScript));
 const cache = path.join(os.homedir(), '.cache/elpis-tests'); await fs.mkdir(cache, { recursive: true });
 const profile = createTestTempDir(path.join(cache, 'provenance-')), runtime = path.join(profile, 'runtime'); await fs.mkdir(runtime);

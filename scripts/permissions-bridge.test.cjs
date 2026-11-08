@@ -137,7 +137,7 @@ async function main() {
   async function launch() {
     const log = path.join(root, `bridge-${clients.length + 1}.log`);
     const socket = path.join(root, `bridge-${clients.length + 1}.sock`);
-    const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], {
+    const bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], {
       cwd, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home,
         PORT: '0', ...(shared ? { ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socket } : {}), ELPIS_ENGINE_BIN: binary, ACP_ADAPTER: __filename, ...(agy ? { AGY_BIN: agyBinary } : { ELPIS_NO_AGY: '1' }), ACP_BRIDGE_NO_AGENTS: '1',
         ACP_BRIDGE_LOG: log, ACP_BRIDGE_STORE: path.join(home, 'sessions.json'),

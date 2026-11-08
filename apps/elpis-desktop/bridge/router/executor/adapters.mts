@@ -300,7 +300,7 @@ export class GeminiAdapter extends AppServerAdapter {
   }
 }
 export async function runtimeAdapters(options: { url: string; codexBin?: string }): Promise<RuntimeAdapter[]> {
-  const module = new URL('../../resources/app-server-connection.mjs', import.meta.url)
+  const module = new URL('../../resources/app-server-connection.mts', import.meta.url)
   const { connectAppServer }: { connectAppServer: (options: { url?: string | undefined; engineBin?: string | undefined; name: string }) => Connection } =
     await import(module.href)
   const bridge = (): Connection => connectAppServer({ url: options.url, engineBin: undefined, name: 'elpis-agents' })

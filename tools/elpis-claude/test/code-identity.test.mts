@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { codeIdentity } from '../shared-runtime.mjs';
+import { codeIdentity } from '../shared-runtime.mts';
 
 test('bridge identity changes when TypeScript runtime code changes', t => {
   const engine = process.env.ELPIS_ENGINE_BIN;

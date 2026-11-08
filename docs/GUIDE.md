@@ -20,7 +20,7 @@ Confirmed product requirements. Implementation state belongs in [ES.md](../ES.md
 
 **R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search comes from an MCP server the user registers. Voice capture and transcription belong to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
 
-**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mjs`](../tools/elpis-claude/acp-bridge.mjs). Authentication and provider selection stay explicit. `elpis claude` separately starts Claude Code through a loopback Smart Prune proxy. [`claude-accounts.mjs`](../tools/elpis-claude/claude-accounts.mjs) switches accounts.
+**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mts`](../tools/elpis-claude/acp-bridge.mts). Authentication and provider selection stay explicit. `elpis claude` separately starts Claude Code through a loopback Smart Prune proxy. [`claude-accounts.mts`](../tools/elpis-claude/claude-accounts.mts) switches accounts.
 
 **R12. Deterministic multi-agent orchestration** — [Work-graph contract](WORK_GRAPHS.md).
 

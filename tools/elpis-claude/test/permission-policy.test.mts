@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { defaultPermissionMode, defaultPermissionSettings, permissionAllowed, permissionMode, permissionSettings, permissionSettingsAllowed } from '../permission-policy.mjs';
+import { defaultPermissionMode, defaultPermissionSettings, permissionAllowed, permissionMode, permissionSettings, permissionSettingsAllowed } from '../permission-policy.mts';
 import { PermissionChoices } from '../permission-choices.mts';
 import { forAll } from './property.mts';
 

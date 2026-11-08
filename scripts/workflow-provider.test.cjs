@@ -39,7 +39,7 @@ async function main() {
     ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socket, ACP_BRIDGE_STORE: store, AGY_BIN: agy,
     ACP_BRIDGE_LOG: path.join(root, 'bridge.log'), CLAUDE_CODE_OAUTH_TOKEN: '', NO_PROXY: 'localhost,127.0.0.1,::1' };
   delete env.ELPIS_NO_AGY;
-  const bridge = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], { env, stdio: ['ignore', 'ignore', 'pipe'] });
+  const bridge = spawn(process.execPath, [path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], { env, stdio: ['ignore', 'ignore', 'pipe'] });
   let errors = ''; bridge.stderr.on('data', data => { errors += data; });
   const clients = [];
   async function client() {

@@ -13,8 +13,8 @@ type Reply = { protocolVersion?: number; sessionId?: string; configOptions?: Con
 type Control = { steer: (message: string, options?: { isCurrent?: () => boolean }) => Promise<{ delivery: string }> };
 type Options = { cwd?: string; signal?: AbortSignal; timeoutMs?: number; graceMs?: number; onUpdate?: (update: Update) => void; onPermission?: (request: Permission) => string | null | undefined | Promise<string | null | undefined>; onSession?: (id: string) => void; onSpawn?: (child: import('node:child_process').ChildProcessWithoutNullStreams) => void; onControl?: (control: Control) => void };
 // Elpis agents reach each other only over ACP (Agent Client Protocol v1, https://agentclientprotocol.com): every agent
-// node is an ACP agent process (the Elpis ACP agent, tools/elpis-claude/elpis-acp-agent.mjs, per model;
-// claude-agent-acp; agy-acp.mjs; or a configured command such as `fx acp`), and this module is the ACP client that
+// node is an ACP agent process (the Elpis ACP agent, tools/elpis-claude/elpis-acp-agent.mts, per model;
+// claude-agent-acp; agy-acp.mts; or a configured command such as `fx acp`), and this module is the ACP client that
 // runs one node and hands its final answer to the next node's session/prompt. No dependencies: the desktop app has no
 // ACP SDK, so the client is the few JSON-RPC calls below, tested against agents built on the official SDK.
 

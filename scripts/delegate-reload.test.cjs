@@ -149,7 +149,7 @@ async function main() {
   });
   async function start() {
     const listeningAt = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').length : 0;
-    bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mjs')], { cwd, env: {
+    bridge = spawn(process.execPath, [bridgePath ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], { cwd, env: {
       PATH: process.env.PATH, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home,
       XDG_CONFIG_HOME: home, XDG_CACHE_HOME: home, XDG_DATA_HOME: home, XDG_STATE_HOME: home, TMPDIR: root,
       ELPIS_ENGINE_BIN: engineShim, DELEGATE_RELOAD_REAL_ENGINE: binary, DELEGATE_RELOAD_EARLY: path.join(root, 'early'),

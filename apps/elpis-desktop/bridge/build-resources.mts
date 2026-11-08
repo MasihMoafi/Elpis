@@ -15,8 +15,9 @@ if (!bridgeOnly) {
 }
 const resources = new URL('./resources/', import.meta.url);
 await fs.mkdir(resources, { recursive: true });
-await fs.copyFile(new URL('../../../tools/elpis-claude/permission-policy.mjs', import.meta.url), new URL('./permission-policy.mjs', resources));
-await fs.copyFile(new URL('../../../tools/elpis-claude/app-server-connection.mjs', import.meta.url), new URL('./app-server-connection.mjs', resources));
+for (const name of ['permission-policy.mts', 'app-server-connection.mts', 'bridge-wire.mts']) {
+  await fs.copyFile(new URL(`../../../tools/elpis-claude/${name}`, import.meta.url), new URL(name, resources));
+}
 await fs.copyFile(new URL('../../../tools/elpis-claude/workflow-concurrency.mts', import.meta.url), new URL('./workflow-concurrency.mts', resources));
 await fs.copyFile(new URL('../../../codex-rs/core/src/prompts/rag.md', import.meta.url), new URL('./rag.md', resources));
 await fs.copyFile(new URL('../../../codex-rs/skills/src/assets/personal/SKILL.md', import.meta.url), new URL('./personal.md', resources));

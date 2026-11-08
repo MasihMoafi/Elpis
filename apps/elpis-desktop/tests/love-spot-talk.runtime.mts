@@ -22,7 +22,7 @@ const voiceArgs = JSON.parse(process.env.LOVE_DOCK_VOICE_ARGS || '[]');
 assert.ok(process.argv[2], 'Provide an absolute Elpis executable');
 assert.ok(process.env.HOME, 'HOME is required');
 const engine = realpathSync(process.argv[2]);
-const bridgeScript = path.join(path.dirname(engine), 'tools/elpis-claude/acp-bridge.mjs');
+const bridgeScript = path.join(path.dirname(engine), 'tools/elpis-claude/acp-bridge.mts');
 assert.ok(existsSync(bridgeScript));
 const cache = path.join(process.env.HOME, '.cache/elpis-tests'); await fs.mkdir(cache, { recursive: true });
 const root = await fs.mkdtemp(path.join(cache, 'love-talk-live-')), home = path.join(root, 'home'), elpisHome = path.join(home, '.elpis-next');

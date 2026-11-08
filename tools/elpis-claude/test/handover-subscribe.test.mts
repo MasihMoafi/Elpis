@@ -7,8 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import WebSocket, { WebSocketServer } from "ws";
-import { drainProxy } from "../handover.mjs";
-import { startToken } from "../shared-runtime.mjs";
+import { drainProxy } from "../handover.mts";
+import { startToken } from "../shared-runtime.mts";
 
 type Request = { id?: number; method: string; params?: { threadId?: string } };
 type Response = { id: number; result?: { followingLive?: boolean; thread: { id: string } }; error?: { message: string } };

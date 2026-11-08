@@ -11,10 +11,10 @@ import test from "node:test";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
-import { bridgeExecutor } from "../workflow-agents.mjs";
+import { bridgeExecutor } from "../workflow-agents.mts";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
-const BRIDGE = fileURLToPath(new URL("../acp-bridge.mjs", import.meta.url));
+const BRIDGE = fileURLToPath(new URL("../acp-bridge.mts", import.meta.url));
 const ENGINE = fileURLToPath(new URL("./fake-app-server.mts", import.meta.url));
 const SERVERS = { shadcn: { command: "shadcn-mcp" }, blender: { command: "blender-mcp" }, whispertype: { command: "whispertype-mcp" } };
 const ALL_OFF = { "mcp_servers.shadcn.enabled": false, "mcp_servers.blender.enabled": false, "mcp_servers.whispertype.enabled": false };
@@ -82,7 +82,7 @@ test("with ELPIS_WORKFLOW_USER_MCP=1 a workflow agent's chat starts and reopens 
   assert.equal(elpis.sent("config/read").length, 0);
 });
 
-// Through the real shared bridge: an agent's connection gets a private engine (shared-runtime.mjs, EngineProxy), so
+// Through the real shared bridge: an agent's connection gets a private engine (shared-runtime.mts, EngineProxy), so
 // its chat and that chat's MCP servers end with that engine, without waiting for the engine's idle unload.
 test("a workflow agent's engine ends when the agent is done; a chat's engine and chat stay", { timeout: 30_000 }, async (t) => {
   const root = createTestTempDir(path.join(os.tmpdir(), "wf-agents-"));
