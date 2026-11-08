@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { createTestTempDir, removeTestTempDir } from './temp-root.cts';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -20,7 +21,6 @@ const prepareGate = gate.prepareGate as (options: GateOptions) => Promise<Manife
 const mergeGate = gate.mergeGate as (options: GateOptions) => Promise<{ files: ResultFile[] }>;
 const required = <T,>(items: T[], index = 0): T => { const value = items[index]; assert.ok(value); return value; };
 
-
 const tap = ({ tests = 1, pass = 1, fail = 0, cancelled = 0, skipped = 0, todo = 0 } = {}) =>
   Object.entries({ tests, pass, fail, cancelled, skipped, todo }).map(([key, value]) => `# ${key} ${value}`).join('\n');
 
@@ -33,15 +33,16 @@ test('real UI results require positive passes and no skipped, pending or cancell
 });
 
 async function fixture(t: import('node:test').TestContext, code?: string) {
-  const base = path.join(os.homedir(), '.cache/elpis-tests');
+  const base = os.tmpdir();
   await fs.mkdir(base, { recursive: true });
-  const repo = await fs.mkdtemp(path.join(base, 'renderer-gate-test-'));
-  t.after(() => execFileSync('gio', ['trash', repo]));
+  const repo = createTestTempDir(path.join(base, 'renderer-gate-test-'));
+  t.after(() => removeTestTempDir(repo));
   const root = path.join(repo, 'apps/elpis-desktop');
   const identity = { name: 'elpis-desktop', productName: 'Fixture Elpis', desktopName: 'fixture.desktop', version: '0.1.0', main: 'desktop/main.cts', private: true };
   const git = (args: string[]) => execFileSync('git', args, { cwd: repo, encoding: 'utf8' }).trim();
   const inventory = { fast: [], bridge: [], desktop: ['desktop/state.test.cjs'], ui: ['tests/kept.test.cjs'], 'opt-in': [] };
   await fs.mkdir(path.join(root, 'tests'), { recursive: true });
+  await fs.symlink(new URL('../node_modules', import.meta.url).pathname, path.join(root, 'node_modules'));
   await fs.mkdir(path.join(root, 'desktop'));
   await fs.writeFile(path.join(root, 'desktop/main.cts'), 'module.exports = "original app";');
   await fs.writeFile(path.join(root, 'desktop/state.cts'), "module.exports={read(values){if(Object.keys(values).some(key=>!['theme','projectChats'].includes(key)))throw Error('saved workspace');return values;}};");
@@ -165,7 +166,7 @@ test('shards execute only their slice, including an empty slice; the merged rece
 test('the prepare, shard and merge CLI commands preserve the downloaded renderer and per-file evidence', async t => {
   const f = await fixture(t);
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const name of ['renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
+  for (const name of ['renderer-evidence-pins.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
     const source = await fs.readFile(new URL(`../scripts/${name}`, import.meta.url), 'utf8');
     await fs.writeFile(path.join(f.root, 'scripts', name), source.replace(baselineCommit, f.baseline));
   }
@@ -295,7 +296,7 @@ test('a failed regression still records later checks without accepting the rende
 
 test('private screenshot peers retain discoverable Unix socket names', async t => {
   const f = await fixture(t, `const{test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs/promises');const os=require('node:os');const path=require('node:path');const net=require('node:net');const{randomUUID}=require('node:crypto');
-test('screenshot peer discovery and connection',async()=>{const directory=path.join(os.tmpdir(),'elpis-shots-'+process.getuid()+'-0123456789abcdef');await fs.mkdir(directory,{recursive:true});const socket=path.join(directory,randomUUID()+'.sock');const server=net.createServer(client=>client.end('shared'));
+test('screenshot peer discovery and connection',async()=>{const directory=path.join(process.platform==='linux'?'/tmp':os.tmpdir(),'elpis-shots-'+process.getuid()+'-0123456789abcdef');await fs.mkdir(directory,{recursive:true});const socket=path.join(directory,randomUUID()+'.sock');const server=net.createServer(client=>client.end('shared'));
 try{await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(socket,resolve)});assert.ok((await fs.readdir(directory)).includes(path.basename(socket)),'Unix socket filename was truncated');assert.equal(await new Promise((resolve,reject)=>{let data='';const client=net.createConnection(socket);client.on('data',chunk=>data+=chunk);client.on('end',()=>resolve(data));client.on('error',reject)}),'shared');}finally{await new Promise(resolve=>server.close(resolve));}});`);
   await runGate(f);
 });
@@ -359,14 +360,14 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   const identity = JSON.parse(await fs.readFile(path.join(f.root, 'package.json'), 'utf8'));
   await fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ ...identity, name: 'elpis-desktop' }));
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const file of ['install-desktop.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
+  for (const file of ['renderer-evidence-pins.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'install-desktop.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));
   }
   // The installer trims old versions with the repository's shared prune script (1 Nov).
   await fs.mkdir(path.join(f.root, '../../scripts'), { recursive: true });
   await fs.copyFile(fileURLToPath(new URL('../../../scripts/prune-versions.mts', import.meta.url)), path.join(f.root, '../../scripts/prune-versions.mts'));
   // The isolated repository has its own immutable checkpoint; production keeps the deployed checkpoint.
-  const helper = path.join(f.root, 'scripts/renderer-artifact-gate.mts');
+  const helper = path.join(f.root, 'scripts/renderer-evidence-pins.mts');
   await fs.writeFile(helper, (await fs.readFile(helper, 'utf8')).replace(baselineCommit, f.baseline));
   await fs.writeFile(path.join(f.root, 'desktop/package.mts'), `import fs from "node:fs";import path from "node:path";
 fs.writeFileSync(process.env.PACKAGING_MARKER,"called");
@@ -423,5 +424,3 @@ if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.s
   if (mode === 'transient-identity') assert.match(result.stderr, /Packaged desktop identity differs/);
   assert.equal(await fs.readlink(selected), mode === 'valid' ? path.join(path.dirname(path.dirname(previous)), `candidate-${commit.slice(0, 9)}/launch`) : previous);
 });
-
-

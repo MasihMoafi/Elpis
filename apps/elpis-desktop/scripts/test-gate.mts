@@ -4,11 +4,54 @@ import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
+import ts from 'typescript';
 import { heldByAncestor, missingPlaywright, passRecord, records } from './gate-guards.mts';
 
 export const root = fileURLToPath(new URL('../', import.meta.url));
 export const tiers = ['fast', 'bridge', 'desktop', 'ui', 'opt-in'];
 const ignored = new Set(['node_modules', '.next', 'out', '.tmp', '.git']);
+function inspectTests(source: string, filename: string): { runner: boolean; registered: boolean } {
+  const tree = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
+  const names = new Set<string>(), namespaces = new Set<string>();
+  let runner = false;
+  const nodeTest = (node: ts.Node | undefined) => !!node && ts.isStringLiteral(node) && node.text === 'node:test';
+  for (const statement of tree.statements) {
+    if (ts.isImportDeclaration(statement) && nodeTest(statement.moduleSpecifier) && !statement.importClause?.isTypeOnly) {
+      runner = true;
+      const clause = statement.importClause;
+      if (clause?.name) names.add(clause.name.text);
+      const bindings = clause?.namedBindings;
+      if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+      if (bindings && ts.isNamedImports(bindings)) for (const binding of bindings.elements) {
+        if (!binding.isTypeOnly && ['test', 'it'].includes(binding.propertyName?.text ?? binding.name.text)) names.add(binding.name.text);
+      }
+    }
+    if (ts.isVariableStatement(statement)) for (const declaration of statement.declarationList.declarations) {
+      const call = declaration.initializer;
+      if (!call || !ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || call.expression.text !== 'require' || !nodeTest(call.arguments[0])) continue;
+      runner = true;
+      if (ts.isIdentifier(declaration.name)) { names.add(declaration.name.text); namespaces.add(declaration.name.text); }
+      if (ts.isObjectBindingPattern(declaration.name)) for (const binding of declaration.name.elements) {
+        if (ts.isIdentifier(binding.name) && ['test', 'it'].includes(binding.propertyName?.getText(tree) ?? binding.name.text)) names.add(binding.name.text);
+      }
+    }
+  }
+  let registered = false;
+  const registration = (target: ts.Expression): boolean => {
+    if (ts.isIdentifier(target)) return names.has(target.text);
+    if (!ts.isPropertyAccessExpression(target)) return false;
+    if (['skip', 'todo', 'only'].includes(target.name.text)) return registration(target.expression);
+    return ts.isIdentifier(target.expression) && namespaces.has(target.expression.text) && ['test', 'it'].includes(target.name.text);
+  };
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      if (registration(node.expression)) registered = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(tree);
+  return { runner, registered };
+}
 export async function discoverTests(directory = root, relative = ''): Promise<string[]> {
   const found: string[] = [];
   for (const entry of await fs.readdir(path.join(directory, relative), { withFileTypes: true })) {
@@ -16,8 +59,10 @@ export async function discoverTests(directory = root, relative = ''): Promise<st
     if (entry.isDirectory() && !ignored.has(entry.name)) found.push(...await discoverTests(directory, file));
     else if (entry.isFile()) {
       const namedTest = /\.(?:test|spec|runtime)\.[cm]?[jt]sx?$/.test(entry.name) || file === 'tests/runtime.mts';
-      const legacyTest = !namedTest && /\.[cm]?[jt]sx?$/.test(entry.name) && /(?:from\s*['"]node:test['"]|require\(['"]node:test['"]\))/.test(await fs.readFile(path.join(directory, file), 'utf8'));
-      if (namedTest || legacyTest) found.push(file);
+      if (!/\.[cm]?[jt]sx?$/.test(entry.name)) continue;
+      const source = await fs.readFile(path.join(directory, file), 'utf8');
+      const { runner, registered } = inspectTests(source, file);
+      if (runner ? registered : namedTest) found.push(file);
     }
   }
   return found.sort();

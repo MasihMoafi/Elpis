@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { speechChunks, type DesktopClient } from './client.mts';
+import { speechChunks } from './speech-chunks.mts';
+import type { DesktopClient } from './client.mts';
 import type { ServerResponse } from 'node:http';
 import { BridgeError, object, text, threadId } from './validate.mts';
 

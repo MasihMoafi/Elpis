@@ -3,7 +3,7 @@ import { NOT_A_REPOSITORY, changedFiles, currentBranch, discardFile, fileDiff, r
 import { recordedChanges } from './recorded-changes.mts';
 
 import { internal_attach, internal_itemsPage } from './client-thread-list.mts';
-import { internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 

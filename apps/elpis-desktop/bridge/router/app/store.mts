@@ -1,16 +1,15 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/store.ts.
 /** SQLite persistence for domain aggregates, key-value state, settings history, and the channel outbox. */
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
-import { chmodSync, existsSync, mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { key, threadKey, type ChannelRef, type Decision, type OutboundMessage, type ReplyStatus, type Repositories, type Thread, type ThreadFact,
-  type ThreadFacts, type Ticket, type Trigger, type TriggerDisposition } from '../core/index.mts'
-import { KV, type Family, type Key } from '../sources/kv.mts'
-import { SettingsSchema, type Settings, type SettingsOrigin, type SettingsSave } from '../policy.mts'
-import { OLDEST_SCHEMA, SCHEMA_VERSION, migrateTo11, tooOld } from './migration.mts'
-import { Versions } from './versions.mts'
-import { storeReads } from './store-read.mts'
-import { migrateElpisLayout } from './elpis-migration.mts'
+import { DatabaseSync, type SQLInputValue } from 'node:sqlite';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { key, threadKey, type ChannelRef, type Decision, type OutboundMessage, type ReplyStatus, type Repositories, type Thread, type ThreadFact, type ThreadFacts, type Ticket, type Trigger, type TriggerDisposition } from '../core/index.mts';
+import { KV, type Family, type Key } from '../sources/kv.mts';
+import { SettingsSchema, type Settings, type SettingsOrigin, type SettingsSave } from '../policy.mts';
+import { OLDEST_SCHEMA, SCHEMA_VERSION, migrateTo11, tooOld } from './migration.mts';
+import { Versions } from './versions.mts';
+import { storeReads } from './store-read.mts';
+import { migrateElpisLayout } from './elpis-migration.mts';
 
 /** A Trigger's position on its thread timeline, ordered by timestamp and then `id` as tie-breaker. */
 export interface TimelinePlace { at: string; id: string }
@@ -26,7 +25,7 @@ export interface SettingsVersion {
   policyVersion: string; policyChanged: boolean; notified: string[]; settings: Settings
 }
 /** Read the current snapshot for the disabled desktop settings view, without acquiring a writer lock or migrating. */
-export function storedSettings(file: string): Settings | undefined {
+export function storedSettingsVersion(file: string): Pick<SettingsVersion, 'settings' | 'revision'> | undefined {
   if (!existsSync(file)) return undefined
   const db = new DatabaseSync(file, { readOnly: true })
   try {
@@ -34,9 +33,12 @@ export function storedSettings(file: string): Settings | undefined {
     if (!db.prepare("SELECT 1 FROM pragma_table_info('kv') WHERE name='key'").get()) return undefined
     const row = db.prepare("SELECT v.value FROM kv p JOIN kv v ON v.key = ? || json_extract(p.value, '$') WHERE p.key = ?")
       .get(KV.settings.version.prefix, KV.settings.revision)
-    return row ? SettingsSchema.parse((JSON.parse(String(row.value)) as SettingsVersion).settings) : undefined
+    if (!row) return undefined
+    const version = JSON.parse(String(row.value)) as SettingsVersion
+    return { settings: SettingsSchema.parse(version.settings), revision: version.revision }
   } finally { db.close() }
 }
+export function storedSettings(file: string): Settings | undefined { return storedSettingsVersion(file)?.settings }
 /**
  * Generated columns and partial indexes defining active working sets so passes scan only active rows.
  * Older databases missing a column get it added on open and populated by SQLite from stored JSON rows.

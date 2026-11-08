@@ -1,10 +1,10 @@
-import { it } from 'node:test'
+import { it } from 'node:test';
 import assert from 'node:assert/strict'
-import { RuntimeBackground } from './runtime-background.mts'
-import { ElpisAdapter } from './adapters.mts'
-import { killJobs, stopBackground, untilQuiet } from './background.mts'
-import type { Agent, Context } from './runtime.mts'
-import { FakeServer } from './fixtures.test.mts'
+import { RuntimeBackground } from './runtime-background.mts';
+import { ElpisAdapter } from './adapters.mts';
+import { killJobs, stopBackground, untilQuiet } from './background.mts';
+import type { Agent, Context } from './runtime.mts';
+import { FakeServer } from './fixtures.mts';
 
 it('keeps an idle worker busy for its terminals and stops its descendants without touching another worker', async t => {
   // Runtime waits normally have an open app-server socket; keep the fake boundary alive while a wait is pending.

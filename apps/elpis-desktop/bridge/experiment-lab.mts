@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { BridgeError, object, text, threadId } from './client.mts';
+import { BridgeError, object, text, threadId } from './validate.mts';
 
 type Stage = { id: string; title: string; instruction: string; kind: string; dependsOn: string[] };
 type Request = { pattern: string; task: string; expected: string; repetitions: number; stopWhen: string; stages: Stage[] };

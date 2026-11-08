@@ -1,11 +1,11 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), tests/runtime.spec.ts, followups.spec.ts and tools.spec.ts.
-import { test } from 'node:test'
+import { test } from 'node:test';
 import assert from 'node:assert/strict'
-import { waitFor } from './executor/fixtures.test.mts'
-import { fixture } from './fixtures/app.mts'
-import { savePrompts } from './app/prompts.mts'
-import { z } from 'zod'
-import { SettingsSchema } from './policy.mts'
+import { waitFor } from './executor/fixtures.mts';
+import { fixture } from './fixtures/app.mts';
+import { savePrompts } from './app/prompts.mts';
+import { z } from 'zod';
+import { SettingsSchema } from './policy.mts';
 
 test('routes through native tools, delivers the complete goal, and recovers a worker and one reply after lost acknowledgement', async () => {
   const h = fixture()

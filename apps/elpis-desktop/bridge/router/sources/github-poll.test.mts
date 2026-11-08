@@ -1,27 +1,27 @@
-import type { SetupProblem } from '../infra/setup.mts'
+import type { SetupProblem } from '../infra/setup.mts';
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), tests/sources.spec.ts.
-import { afterEach, describe, it } from 'node:test'
-import { expect } from 'expect'
-import { vi } from '../test-support.mts'
-import { Engine, key, type Assessor, type Executor, type Thread, type Ticket, type Trigger } from '../core/index.mts'
-import { testChatKind as feishuKind, feishuTrigger } from '../fixtures/chat-kind.mts'
-import { commentTrigger, githubAddress, githubChannel, issueTrigger, type GithubComment, type GithubIssue } from './github-trigger.mts'
-import { claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from './github-pull.mts'
-import { ciCounts, ciFact, ciSummary } from './github-read.mts'
-import type { SourceHost } from './host.mts'
-import { startGithub, githubKind, pollFailure, pollRound } from './github.mts'
-import { pollThreads as pollGithubThreads } from './github.mts'
-import { SourceRegistry } from './registry.mts'
-import { cursorAt, POLL_HORIZON_MS } from './poll.mts'
-import { Store } from '../app/store.mts'
-import { Commands, commandError } from '../infra/commands.mts'
-import { HealthBoard } from '../infra/health.mts'
-import { testDeployment } from '../fixtures/deployment.mts'
-import { SettingsSchema, settingsPolicy } from '../policy.mts'
-import { sourceContext as sourceContextOf, type SourceContextDeps } from '../source-context.mts'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { afterEach, describe, it } from 'node:test';
+import { expect } from 'expect';
+import { vi } from '../test-support.mts';
+import { Engine, key, type Assessor, type Executor, type Thread, type Ticket, type Trigger } from '../core/index.mts';
+import { testChatKind as feishuKind, feishuTrigger } from '../fixtures/chat-kind.mts';
+import { commentTrigger, githubAddress, githubChannel, issueTrigger, type GithubComment, type GithubIssue } from './github-trigger.mts';
+import { claimPull, observePull, pullEndNotices, pullOf, ticketBranch, type Pull } from './github-pull.mts';
+import { ciCounts, ciFact, ciSummary } from './github-read.mts';
+import type { SourceHost } from './host.mts';
+import { startGithub, watchGithub, githubKind, pollFailure, pollRound } from './github.mts';
+import { pollThreads as pollGithubThreads } from './github.mts';
+import { SourceRegistry } from './registry.mts';
+import { cursorAt, POLL_HORIZON_MS } from './poll.mts';
+import { Store } from '../app/store.mts';
+import { Commands, commandError } from '../infra/commands.mts';
+import { HealthBoard } from '../infra/health.mts';
+import { testDeployment } from '../fixtures/deployment.mts';
+import { SettingsSchema, settingsPolicy } from '../policy.mts';
+import { sourceContext as sourceContextOf, type SourceContextDeps } from '../source-context.mts';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const pollStops = new Set<() => Promise<void>>()
 function startTestGithub(host: SourceHost) { const stop = startGithub(host); pollStops.add(stop); return stop }
@@ -361,10 +361,15 @@ describe('github source', () => {
     expect(h.receive.mock.calls.map(([trigger]) => trigger.meta.number)).toEqual([13])
     // The cursor moved together with the Issue it does not cover yet.
     expect(Date.parse(h.store.get<string>('github-since')!)).toBeGreaterThan(Date.parse('2026-09-08T00:00:00.000Z'))
-    expect(h.store.get('github-retry')).toEqual({ 12: { since: '2026-09-08T00:00:00.000Z', pr: false, attempts: 1, failedAt: expect.any(String) } })
+    expect(h.store.get('github-retry')).toEqual({ 12: { since: '2026-09-08T00:00:00.000Z', pr: false, attempts: 1, failedAt: expect.any(String), nextAt: expect.any(Number) } })
     expect(h.store.threads.get('github:12')!.meta.pollError).toContain('Bad Gateway')
     Object.assign(routes, { notifications: [], 'issues/12': issue(12, { created_at: '2026-08-01T00:00:00Z' }),
       'issues/12/comments': [mention(2, 12, '2026-09-08T02:00:00Z')] })
+    await pollRound(h)
+    expect(h.receive.mock.calls.map(([trigger]) => trigger.meta.number)).toEqual([13])
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const retryDue = h.store.get<Record<string, { nextAt: number }>>('github-retry')!['12']!.nextAt
+    await vi.advanceTimersByTimeAsync(retryDue - Date.now() + 1)
     await pollRound(h)
     expect(h.receive.mock.calls.map(([trigger]) => trigger.meta.number)).toEqual([13, 12])
     expect(h.store.get('github-retry')).toEqual({})
@@ -438,7 +443,7 @@ describe('github source', () => {
     const first = h.store.get<Record<string, { failedAt: string; attempts: number }>>('github-retry')![16]!
     expect(first).toMatchObject({ attempts: 1, failedAt: expect.any(String) })
     // However many reads failed, a day of failures has not passed: the read is retried, and the round still fails.
-    h.store.set('github-retry', { 16: { ...first, attempts: 99 } })
+    h.store.set('github-retry', { 16: { ...first, attempts: 99, nextAt: 0 } })
     github(h, { notifications: [] })
     await expect(pollRound(h)).rejects.toThrow('#16')
     // A day after the first failed read, it is dropped: its Thread keeps the error, the health names it, and the round does not
@@ -826,6 +831,31 @@ describe('observing the GitHub repository', () => {
     })
     return calls
   }
+  it('consumes tied-timestamp comment pages and retains the cursor when a later page fails', async () => {
+    const h = host()
+    observe(h, { observeComments: true })
+    const initial = { since: at(0), started: { comments: at(0) } }
+    h.store.set('github-stream:comments', initial)
+    const comments = Array.from({ length: 101 }, (_, index) => ({ id: index + 1, body: `Comment ${index + 1}`, user: { login: 'alice', type: 'User' },
+      created_at: at(1), updated_at: at(1), issue_url: 'https://api.github.com/repos/acme/widgets/issues/7', html_url: `https://github.com/acme/widgets/issues/7#issuecomment-${index + 1}` }))
+    let failLater = true
+    vi.spyOn(h.commands, 'run').mockImplementation(async (_program, args) => {
+      if (!args[1]!.startsWith('repos/acme/widgets/issues/comments?')) return 'HTTP/2.0 200 OK\r\n\r\n[]'
+      if (args.includes('--paginate')) {
+        if (failLater) throw refused(502, 'Page two failed')
+        return JSON.stringify([comments.slice(0, 100), comments.slice(100)])
+      }
+      return `HTTP/2.0 200 OK\r\nETag: "page-one"\r\nLink: <https://api.github.com/repos/acme/widgets/issues/comments?page=2>; rel="next"\r\n\r\n${JSON.stringify(comments.slice(0, 100))}`
+    })
+    await expect(pollRound(h)).rejects.toThrow('Page two failed')
+    expect(h.store.get('github-stream:comments')).toEqual(initial)
+    failLater = false
+    await pollRound(h)
+    expect(new Set(h.receive.mock.calls.map(([trigger]) => trigger.id)).size).toBe(101)
+    expect(h.store.get('github-stream:comments')).toEqual({ since: cursorAt(at(1)), started: initial.started })
+    await pollRound(h)
+    expect(new Set(h.receive.mock.calls.map(([trigger]) => trigger.id)).size).toBe(101)
+  })
   it('takes in the new Issues and PRs from when it started observing them, and asks again with the ETag while nothing is newer',
     async () => {
     const h = host()
@@ -1017,4 +1047,24 @@ describe('observing the GitHub repository', () => {
     expect(h.receive.mock.calls[0]![0].text).toContain('Read github/commits/bbb2222/checks for every check.')
     h.store.close()
   })
+})
+
+it('backs off failed rounds, honors rate-limit cooldown and resets after recovery', async t => {
+  const h = host(), controller = new AbortController(), waits: number[] = []
+  vi.spyOn(h.commands, 'withSignal').mockReturnValue(h.commands)
+  t.mock.timers.enable({ apis: ['Date'], now: 1000000 })
+  let round = 0
+  vi.spyOn(h.commands, 'run').mockImplementation(async () => {
+    round++
+    if (round === 1) throw commandError({ code: 1, stderr: 'gh: Rate limited (HTTP 429)', stdout: 'HTTP/2.0 429\r\nRetry-After: 600\r\n\r\n{}' })
+    if (round !== 3) throw refused(503, 'Unavailable')
+    return 'HTTP/2.0 200 OK\r\nX-Poll-Interval: 60\r\n\r\n[]'
+  })
+  const schedule = globalThis.setTimeout
+  t.mock.method(globalThis, 'setTimeout', (callback: () => void, ms: number) => {
+    waits.push(ms)
+    return schedule(() => { if (waits.length === 4) controller.abort(); callback() }, 0)
+  })
+  try { await watchGithub(h, controller.signal) } finally { controller.abort() }
+  expect(waits).toEqual([600000, 240000, 60000, 120000])
 })

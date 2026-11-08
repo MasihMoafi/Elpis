@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { elpisHome } from './client.mts';
+import { elpisHome } from './client-paths.mts';
 
 const template = fileURLToPath(new URL('./resources/personal.md', import.meta.url));
 const exists = (file: string) => fs.access(file).then(() => true, error => { if (error.code === 'ENOENT') return false; throw error; });

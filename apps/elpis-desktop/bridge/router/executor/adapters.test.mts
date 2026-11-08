@@ -1,9 +1,17 @@
-import { it } from 'node:test'
+import { it } from 'node:test';
 import assert from 'node:assert/strict'
-import { ElpisAdapter, CodexAdapter, ClaudeAdapter, GeminiAdapter, object } from './adapters.mts'
+import { ElpisAdapter, CodexAdapter, ClaudeAdapter, GeminiAdapter, object } from './adapters.mts';
 
-import { FakeServer, deferred, waitFor } from './fixtures.test.mts'
-import { z } from 'zod'
+import { FakeServer, deferred, waitFor } from './fixtures.mts';
+import { z } from 'zod';
+
+it('the readiness helper observes delayed work and bounds a condition that never arrives', async () => {
+  let ready = false
+  const timer = setTimeout(() => { ready = true }, 25)
+  try { await waitFor(() => assert.ok(ready, 'delayed filesystem or process work')) }
+  finally { clearTimeout(timer) }
+  await assert.rejects(waitFor(() => assert.fail('never ready'), 30), /never ready/)
+})
 
 for (const [Adapter, provider, model, expected] of [
   [ElpisAdapter, 'openai', 'gpt-worker', 'gpt-worker'], [CodexAdapter, 'codex', 'gpt-worker', 'gpt-worker'],

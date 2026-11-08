@@ -1,12 +1,12 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/links.ts.
 /** Source message link resolution and candidate card assembly for the main Session. */
-import type { Candidate, Ticket, Trigger } from '../core/index.mts'
-import type { Commands } from '../infra/commands.mts'
-import type { SourceRegistry } from '../sources/registry.mts'
-import { triggerMessage } from '../executor/dsh.mts'
-import { relatedTickets, ticketCard, triggerCard } from './cards.mts'
-import type { Store } from './store.mts'
-import type { TextCache } from './cache.mts'
+import type { Candidate, Ticket, Trigger } from '../core/index.mts';
+import type { Commands } from '../infra/commands.mts';
+import type { SourceRegistry } from '../sources/registry.mts';
+import { triggerMessage } from '../executor/messages.mts';
+import { relatedTickets, ticketCard, triggerCard } from './cards.mts';
+import type { Store } from './store.mts';
+import type { TextCache } from './cache.mts';
 
 export interface LinkHost {
   readonly store: Pick<Store, 'settings' | 'triggers' | 'threads' | 'tickets'>

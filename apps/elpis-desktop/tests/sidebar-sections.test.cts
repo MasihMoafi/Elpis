@@ -4,6 +4,21 @@ const assert = require('node:assert/strict');
 const { fixture, CWD } = require('./parity-fixture.cts');
 const { chooseTheme, leaveSettings, openSettings } = require('./controls.cts');
 
+async function settledSidebar(page: import('playwright-core').Page) {
+  await page.waitForFunction(() => {
+    const element = document.querySelector<HTMLElement>('.thread-list');
+    if (!element) return false;
+    const geometry = JSON.stringify([element.clientHeight, element.scrollHeight, element.scrollTop,
+      ...[...element.querySelectorAll('.thread-row, .section-label-row, .sidebar-group-row, .thread-more')].map(row => {
+        const box = row.getBoundingClientRect(); return [box.top, box.bottom];
+      })]);
+    const previous = Reflect.get(element, '__settledGeometry') as { geometry: string; frames: number } | undefined;
+    const frames = previous?.geometry === geometry ? previous.frames + 1 : 0;
+    Reflect.set(element, '__settledGeometry', { geometry, frames });
+    return frames >= 3;
+  }, undefined, { polling: 'raf' });
+}
+
 const chat = (id: string, name: string) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const threads = Array.from({ length: 16 }, (_, index) => chat(`chat-${String.fromCharCode(97 + index)}`, `${String.fromCharCode(65 + index)} chat`));
 const routes: Record<string, (_body: unknown, url: URL) => object> = { '/api/threads': (_body, url) => ({ data: url.searchParams.get('archived') === 'true' ? [] : threads, nextCursor: null }) };
@@ -69,13 +84,13 @@ test('long sidebar lists keep every visible chat row and heading whole at rest, 
     await page.locator(`.thread-row[data-thread-id="${grandchild.id}"]`).waitFor();
     for (const height of [674, 534]) {
       await page.setViewportSize({ width: 820, height });
-      await page.waitForTimeout(350);
+      await settledSidebar(page);
       if (height === 674 && process.env.SIDEBAR_FIT_SHOT) await page.screenshot({ path: process.env.SIDEBAR_FIT_SHOT });
       await checkRows(`expanded at ${height}px`);
       const maxScroll = await list.evaluate((element: HTMLElement) => Math.max(0, element.scrollHeight - element.clientHeight));
       for (const [position, scrollTop] of [['middle', Math.round(maxScroll / 2)], ['end', maxScroll]] as [string, number][]) {
         await list.evaluate((element: HTMLElement, top: number) => { element.scrollTop = top; }, scrollTop);
-        await page.waitForTimeout(400);
+        await settledSidebar(page);
         await checkRows(`${position} at ${height}px`);
       }
       if (height === 534) {
@@ -107,15 +122,15 @@ test('long sidebar lists keep every visible chat row and heading whole at rest, 
       if (height === 674) {
         await openSettings(page);
         await leaveSettings(page);
-        await page.waitForTimeout(350);
+        await settledSidebar(page);
         await checkRows('after Settings roundtrip');
         await chooseTheme(page, 'dark');
-        await page.waitForTimeout(350);
+        await settledSidebar(page);
         await checkRows('after theme change');
       }
       const last = list.locator('.thread-row').last();
       await last.scrollIntoViewIfNeeded();
-      await page.waitForTimeout(250);
+      await settledSidebar(page);
       const lastGeometry = await last.evaluate((row: HTMLElement) => {
         const list = row.closest<HTMLElement>('.thread-list');
         if (!list) throw new Error('Thread list is missing');

@@ -1,6 +1,6 @@
 import type { MotherRuntime } from './mother-runtime.mts';
 
-import { BridgeError } from '../client.mts';
+import { BridgeError } from '../validate.mts';
 import { mergeWorkflowReview, checkWorkflowReview, workflowCandidateChanged } from '../workflow-worktrees.mts';
 import type { ReadyReview, WorkflowRecord } from './types.mts';
 

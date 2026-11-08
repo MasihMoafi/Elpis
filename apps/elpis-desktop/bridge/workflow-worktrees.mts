@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './client.mts';
+import { BridgeError } from './validate.mts';
 
 type Review = { path: string; source: string; base: string; branch: string; commit: string };
 type Task = { id: string; title: string; dependsOn: string[]; writeScopes: string[]; status?: string; result?: { candidateCommit?: string } | null };

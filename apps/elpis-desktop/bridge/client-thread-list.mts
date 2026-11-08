@@ -5,9 +5,10 @@ import { interviewTurns, legacyInterview } from './love-interview.mts';
 import { recordedMedia } from './attachments.mts';
 import { rolloutAgentModel } from './elpis-features.mts';
 import fs from 'node:fs/promises';
+import path from 'node:path';
 
-import { internal_browserOptions, internal_rpc } from './client-connection.mts';
-import { internal_withTurnModels } from './client-context.mts';
+import { internal_browserOptions, internal_rpc } from './client-rpc.mts';
+import { internal_withTurnModels } from './client-rollout-cache.mts';
 import voiceHandoff from './voice-handoff.cts';
 import type { DesktopClient } from './client.mts';
 import type { ArchiveOptions } from './client-archive-history.mts';
@@ -49,11 +50,17 @@ const notImportMarker = (entry: unknown) => {
   return !(value?.item?.type === 'agentMessage' && value.item.text === IMPORT_MARKER);
 };
 
+type ThreadSource = string | { subAgent?: { other?: unknown; thread_spawn?: { agent_path?: unknown } } };
+export const subAgentSource = (source: ThreadSource | undefined) => typeof source === 'object' ? source?.subAgent : undefined;
+
 export type ThreadListOptions = { cursor?: unknown; limit?: unknown; ancestorThreadId?: unknown; archived?: unknown; searchTerm?: unknown; includeAgentRuns?: unknown };
-export type ListedThread = { id: string; parentThreadId?: string | null | undefined; source?: { subAgent?: { other?: unknown } } | undefined; status?: { type?: string } | undefined; [key: string]: unknown };
+export type ListedThread = { id: string; parentThreadId?: string | null | undefined; source?: ThreadSource | undefined; status?: { type?: string } | undefined; [key: string]: unknown };
 export type EngineItem = Parameters<typeof interviewTurns>[0][number]['items'][number] & { path?: string };
-export type EngineTurn = Omit<Parameters<typeof interviewTurns>[0][number], 'id' | 'items'> & { id: string; items: EngineItem[] };
-export type DecoratedInput = { id: string; cwd?: string | undefined; path?: string | undefined; name?: string | null | undefined; preview?: string | null | undefined; model?: string | null | undefined; modelProvider?: string | undefined; reasoningEffort?: string | null | undefined; turns?: EngineTurn[] | undefined; parentThreadId?: string | null | undefined; source?: { subAgent?: { other?: unknown; thread_spawn?: { agent_path?: unknown } } } | undefined; status?: { type?: string } | undefined; canAcceptDirectInput?: boolean | null | undefined; workflowTaskTitle?: string | undefined; [key: string]: unknown };
+export type EngineTurn = Omit<Parameters<typeof interviewTurns>[0][number], 'id' | 'items'> & { id: string; status?: string; items: EngineItem[] };
+export type DecoratedInput = { id: string; archived?: boolean | undefined; cwd?: string | undefined; path?: string | null | undefined; name?: string | null | undefined; preview?: string | null | undefined; model?: string | null | undefined; modelProvider?: string | undefined; reasoningEffort?: string | null | undefined; turns?: EngineTurn[] | undefined; parentThreadId?: string | null | undefined; source?: ThreadSource | undefined; status?: { type?: string } | undefined; canAcceptDirectInput?: boolean | null | undefined; workflowTaskTitle?: string | undefined; [key: string]: unknown };
+
+const isArchivedThread = (thread: Pick<DecoratedInput, 'archived' | 'path'>) => thread.archived === true ||
+  (typeof thread.path === 'string' && path.basename(path.dirname(thread.path)) === 'archived_sessions');
 
 /** A thread's status, corrected by its newest turn: "active" whose newest turn has ended is idle. No turn yet (a
  * bridged chat's first turn is listed only once it ends) or an unreadable list keeps the status as listed. */
@@ -66,7 +73,7 @@ export function settledStatus<T>(status: T, newestTurns: unknown): T | { type: s
 
 async function internal_loadWorkflowTitles(this: DesktopClient, clientState: ClientState, threads: ListedThread[]) {
     const candidates = threads.flatMap(thread => {
-      const source = thread.source?.subAgent?.other;
+      const source = subAgentSource(thread.source)?.other;
       const match = typeof source === 'string' && /^work_graph:([0-9a-f-]{36}):(.+)$/.exec(source);
       if (!match || clientState.workflowTitles.has(thread.id)) return [];
       return [{thread,source,graphId:match[1]!,taskId:match[2]!,rootThreadId:thread.parentThreadId}];
@@ -78,7 +85,7 @@ async function internal_loadWorkflowTitles(this: DesktopClient, clientState: Cli
     const missing = candidates.filter(row => !validParent(row)).slice(0,16);
     await Promise.all(missing.map(async row => {
       const read = await internal_rpc(this, clientState, 'thread/read',{threadId:row.thread.id,includeTurns:false}).catch(()=>null);
-      if (read?.thread?.id === row.thread.id && read.thread.source?.subAgent?.other === row.source) row.rootThreadId=read.thread.parentThreadId;
+      if (read?.thread?.id === row.thread.id && subAgentSource(read.thread.source)?.other === row.source) row.rootThreadId=read.thread.parentThreadId;
     }));
     const linked = candidates.filter(validParent);
     // Cap distinct parents for a large list page; verified metadata is reused.
@@ -92,7 +99,7 @@ async function internal_loadWorkflowTitles(this: DesktopClient, clientState: Cli
       for (const row of linked.filter(row=>row.rootThreadId===rootThreadId)) {
         const graph = result?.data?.find((graph: { id?: unknown }) => graph.id===row.graphId);
         const task = graph?.tasks?.find((task: { id?: unknown; assignedThreadId?: unknown }) => task.id===row.taskId && task.assignedThreadId===row.thread.id);
-        if (typeof task?.title==='string' && task.title.trim()) clientState.workflowTitles.set(row.thread.id,{source:row.source,title:task.title.trim(),rootThreadId});
+        if (typeof rootThreadId === 'string' && typeof task?.title==='string' && task.title.trim()) clientState.workflowTitles.set(row.thread.id,{source:row.source,title:task.title.trim(),rootThreadId});
       }
     }));
   }
@@ -114,12 +121,12 @@ export function internal_decorate<T>(this: DesktopClient, clientState: ClientSta
     if (parentThreadId) thread = { ...thread, parentThreadId };
     clientState.known.add(thread.id);
     const recorded = clientState.workflowTitles.get(thread.id);
-    if (recorded?.source===thread.source?.subAgent?.other && recorded && (!thread.parentThreadId || thread.parentThreadId===recorded.rootThreadId)) {
+    if (recorded?.source===subAgentSource(thread.source)?.other && recorded && (!thread.parentThreadId || thread.parentThreadId===recorded.rootThreadId)) {
       thread.workflowTaskTitle=recorded.title; thread.parentThreadId ??= recorded.rootThreadId;
     }
     const background = isAgentRun(thread);
     const parentOwned = background || thread.canAcceptDirectInput === false
-      || (thread.canAcceptDirectInput == null && typeof thread.source?.subAgent?.thread_spawn?.agent_path === 'string');
+      || (thread.canAcceptDirectInput == null && typeof subAgentSource(thread.source)?.thread_spawn?.agent_path === 'string');
     return { ...thread, desktopAccess: { writable: !parentOwned, mode: parentOwned ? 'continue' : 'direct',
       canContinue: parentOwned && ['idle', 'notLoaded'].includes(thread.status?.type as string), reason: parentOwned ? AGENT_RUN_NOTICE : null } };
   }
@@ -154,7 +161,7 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
       for (const id of new Set([...await clientState.rewindHistory.currentIds(), ...await clientState.versions.listed()])) {
         if (result.data.some((thread: { id: string }) => thread.id === id)) continue;
         const { thread } = await internal_rpc(this, clientState, 'thread/read', { threadId: id, includeTurns: false }).catch(() => ({ thread: undefined }));
-        if (!thread || thread.path?.includes('/archived_sessions/')) continue;
+        if (!thread || isArchivedThread(thread)) continue;
         if (searchTerm && !`${thread.name ?? ''} ${thread.preview ?? ''}`.toLowerCase().includes(searchTerm.trim().toLowerCase())) continue;
         result.data.unshift(thread);
       }
@@ -171,13 +178,13 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
     if (options.ancestorThreadId && !options.cursor && !options.archived) for (const id of clientState.spawnLinks.madeBy(options.ancestorThreadId)) {
       if (result.data.some((thread: { id: string }) => thread.id === id)) continue;
       const { thread } = await internal_rpc(this, clientState, 'thread/read', { threadId: id, includeTurns: false }).catch(() => ({ thread: undefined }));
-      if (thread && thread.id === id && !thread.path?.includes('/archived_sessions/')) result.data.push(thread);
+      if (thread && thread.id === id && !isArchivedThread(thread)) result.data.push(thread);
     }
     await internal_loadWorkflowTitles.call(this, clientState, result.data);
     await internal_settleWorking.call(this, clientState, result.data);
     await Promise.all(result.data.map((thread: DecoratedInput) => recordedAgentModel(thread)));
     // Auto-review's reviewer works in threads of its own; they are not the user's chats.
-    const data = result.data.filter((thread: ListedThread) => thread.source?.subAgent?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map((thread: ListedThread) => internal_decorate.call(this, clientState, thread));
+    const data = result.data.filter((thread: ListedThread) => subAgentSource(thread.source)?.other !== 'guardian' && (includeAgentRuns || !isAgentRun(thread))).map((thread: ListedThread) => internal_decorate.call(this, clientState, thread));
     // Follow working agents live: only subscribers receive their items, approvals and deltas.
     if (!options.archived) for (const thread of data) if (thread.status?.type === 'active' && !clientState.owned.has(thread.id) && !clientState.endedNodes.has(thread.id)) void internal_attach.call(this, clientState, thread.id, thread).catch(() => {});
     return { ...result, data };
@@ -198,10 +205,11 @@ export async function impl_listArchivedThreads(this: DesktopClient, clientState:
 
 /** Rejoins without model, policy, history or workspace changes. Desktop MCP follows cold resumes;
    * the engine preserves the configuration of threads still loaded by another client. */
-export function internal_attach(this: DesktopClient, clientState: ClientState, id: unknown, knownThread: unknown = null) {
+export function internal_attach(this: DesktopClient, clientState: ClientState, id: unknown, knownThread: unknown = null): Promise<import('./client-wire.mts').RpcResponse<'thread/read'> | null> {
     id = threadId(id);
     if (clientState.owned.has(id) && !clientState.attaching.has(id)) return Promise.resolve(null);
-    if (clientState.attaching.has(id)) return clientState.attaching.get(id);
+    const existing = clientState.attaching.get(id);
+    if (existing) return existing;
     clientState.owned.add(id);
     const attempt = (async () => {
       const thread = (knownThread as DecoratedInput | null) ?? (await internal_rpc(this, clientState, 'thread/read', { threadId: id, includeTurns: false })).thread;
@@ -245,7 +253,7 @@ export async function impl_readThreadMetadata(this: DesktopClient, clientState: 
     await internal_loadWorkflowTitles.call(this, clientState, [thread]);
     await internal_settleWorking.call(this, clientState, [thread]);
     await recordedAgentModel(thread);
-    return internal_decorate.call(this, clientState, thread);
+    return internal_decorate.call(this, clientState, { ...thread, archived: isArchivedThread(thread) || !!await clientState.archiveHistory.read(threadId(id)) });
   }
 
 export async function impl_readThread(this: DesktopClient, clientState: ClientState, id?: unknown, input: unknown = {}) {

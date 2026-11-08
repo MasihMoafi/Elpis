@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from '../client.mts';
+import { BridgeError } from '../validate.mts';
 import type { HistoryRun } from './types.mts';
 import { ended } from './status.mts';
 

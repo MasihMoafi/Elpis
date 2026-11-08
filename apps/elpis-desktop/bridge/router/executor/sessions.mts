@@ -1,22 +1,22 @@
 // Ported from dsh-superagent (MIT), src/app/sessions.ts (worker delivery and persistence)
-import { z } from 'zod'
-import type { SubprocessRuntime } from '../infra/types.mts'
-import type { Jobs, Subagents } from './background.mts'
-import { object, runtimeOf, type OpenOptions, type Runtime, type RuntimeAdapter, type ToolBinding, type WorkerSession } from './adapters.mts'
-import type { Agent, Context, RuntimeEvents } from './runtime.mts'
-import type { ExecutorStore } from './store.mts'
-import { RoleModelSchema } from './settings.mts'
-import { initializeRoleModel } from './role-models.mts'
-import type { Effects } from './effects.mts'
-import { RuntimeBackground } from './runtime-background.mts'
-import { key, liveTicket } from '../core/index.mts'
-import { KV } from '../sources/kv.mts'
-import type { Tool } from '../app/tools/tool.mts'
-import type { Prompts, PromptVersion } from '../app/prompts.mts'
-import type { TranscriptEvent } from '../app/host.mts'
-import { RetryHealth } from '../app/retry-health.mts'
-import type { HealthEntry } from '../infra/health.mts'
-import { ToolRuntime } from './tool-runtime.mts'
+import { z } from 'zod';
+import type { SubprocessRuntime } from '../infra/types.mts';
+import type { Jobs, Subagents } from './background.mts';
+import { object, runtimeOf, type OpenOptions, type Runtime, type RuntimeAdapter, type ToolBinding, type WorkerSession } from './adapters.mts';
+import type { Agent, Context, RuntimeEvents } from './runtime.mts';
+import type { ExecutorStore } from './store.mts';
+import { RoleModelSchema } from './settings.mts';
+import { initializeRoleModel } from './role-models.mts';
+import type { Effects } from './effects.mts';
+import { RuntimeBackground } from './runtime-background.mts';
+import { key, liveTicket } from '../core/index.mts';
+import { KV } from '../sources/kv.mts';
+import type { Tool } from '../app/tools/tool.mts';
+import type { Prompts, PromptVersion } from '../app/prompts.mts';
+import type { TranscriptEvent } from '../app/host.mts';
+import { RetryHealth } from '../app/retry-health.mts';
+import type { HealthEntry } from '../infra/health.mts';
+import { ToolRuntime } from './tool-runtime.mts';
 
 const MessageSchema = z.object({ id: z.string(), text: z.string(), mode: z.enum(['queue', 'steer', 'inject']), state: z.enum(['queued', 'sending', 'sent']), read: z.boolean().default(false), accepted: z.boolean().default(false) })
 const RecordSchema = z.object({ runtime: z.enum(['elpis', 'codex', 'claude', 'gemini']), threadId: z.string().nullable(), creating: z.boolean().default(false), model: RoleModelSchema.nullable(), messages: z.array(MessageSchema).default([]), resultId: z.string().optional() })
@@ -37,7 +37,7 @@ export interface SessionOptions {
   relay?: (id: string, text: string) => Promise<void>
   tools?: (sessionId: string) => Tool[]
   prompts?: Prompts
-  environment?: (sessionId: string) => Record<string, string>
+  environment?: (sessionId: string) => Record<string, string | undefined>
   onError?: (error: unknown) => void
 }
 class WorkerAgent implements Agent {

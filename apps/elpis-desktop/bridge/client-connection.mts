@@ -1,12 +1,14 @@
+import { internal_rpc } from './client-rpc.mts';
+export { internal_browserOptions, internal_rpc } from './client-rpc.mts'
+import { readDesktopMessage } from './client-wire.mts';
 import { BridgeError, threadId } from './validate.mts';
 import { randomUUID } from 'node:crypto';
 import { smartPruneSnapshot, tokenUsageSnapshot } from './elpis-features.mts';
-import { ACCOUNT_NOTIFICATIONS, APPROVALS, ARCHIVED_SESSION, DOWNLOADS, EXPLAINED, LISTED, NOTIFICATIONS, SIDE_RPCS, readRpc } from './client-protocol.mts';
+import { ACCOUNT_NOTIFICATIONS, APPROVALS, ARCHIVED_SESSION, EXPLAINED, LISTED, NOTIFICATIONS, SIDE_RPCS } from './client-protocol.mts';
 import { modeOf } from './client-permissions.mts';
 import { internal_decorate, internal_forget, internal_learnSpawn } from './client-thread-list.mts';
 import type { DesktopClient } from './client.mts';
-import type { ClientSocket, ClientState } from './client-state.mts';
-import type { DecoratedInput, EngineItem } from './client-thread-list.mts';
+import type { ApprovalParams, ClientSocket, ClientState } from './client-state.mts';
 
 export function internal_bind(this: DesktopClient, clientState: ClientState, socket: ClientSocket) {
     socket.on('message', data => { if (socket === clientState.socket) internal_receive.call(this, clientState, data); });
@@ -25,11 +27,6 @@ export function impl_connected(this: DesktopClient, clientState: ClientState) { 
 export function impl_connectionError(this: DesktopClient, clientState: ClientState) { return this.connected ? null : clientState.connectionError; }
 
 export function impl_hasLocalActivity(this: DesktopClient, clientState: ClientState) { return clientState.mutating.size > 0 || clientState.workflowRuns.busy(); }
-
-export function internal_browserOptions(this: DesktopClient, clientState: ClientState, id: string) {
-    const config = clientState.browserConfig ? (clientState.browserConfig.forSession ? clientState.browserConfig.forSession(id) : clientState.browserConfig) : {};
-    return Object.keys(config).length ? { config } : {};
-  }
 
 export function impl_pendingApprovals(this: DesktopClient, clientState: ClientState) { return [...clientState.approvals.values()].map(({ wireId: _wireId, ...visible }) => visible); }
 
@@ -94,63 +91,11 @@ export async function impl_sideRpc(this: DesktopClient, clientState: ClientState
     return result;
   }
 
-type ConfigRead = { config?: { model_provider?: string; model_providers?: Record<string, Record<string, unknown>>; realtime?: { voice?: string }; features?: { multi_agent?: boolean }; mcp_servers?: Record<string, { env?: Record<string, unknown> }>; [key: string]: unknown } };
-type ConfigRequirements = { requirements?: { modelProvider?: string | null; modelProviders?: Record<string, Record<string, unknown>>; featureRequirements?: Record<string, unknown> } | null };
-type ThreadResponse = { thread: DecoratedInput; followingLive?: boolean };
-type ResumedThread = ThreadResponse & { model: string; modelProvider: string; serviceTier: string | null };
-type ContextFiles = { files: { name: string; path: string; group: string; estimatedTokens: number; included: boolean; reason: string; selectable: boolean }[]; note?: string };
-type ThreadPage = { data: DecoratedInput[]; nextCursor?: string | null };
-type TurnPage = { data: { id: string; status?: string }[]; nextCursor?: string | null };
-type ItemPage = { data: { turnId: string; item: EngineItem }[]; nextCursor: string | null; backwardsCursor?: string | null };
-type RpcResponses = {
-  'config/read': ConfigRead;
-  'configRequirements/read': ConfigRequirements;
-  'thread/read': ThreadResponse;
-  'thread/start': ThreadResponse;
-  'thread/resume': ResumedThread;
-  'thread/subscribe': ThreadResponse;
-  'thread/fork': ThreadResponse;
-  'thread/unarchive': ThreadResponse;
-  'thread/list': ThreadPage;
-  'thread/turns/list': TurnPage;
-  'thread/items/list': ItemPage;
-  'turn/start': { turn: { id: string } };
-  'review/start': { turn: { id: string }; reviewThreadId: string };
-  'turn/settings/update': { status: string };
-  'thread/goal/get': { goal: unknown };
-  'thread/contextFiles/list': ContextFiles;
-  'thread/contextFiles/set': ContextFiles;
-  'thread/register': ThreadResponse;
-  'externalAgentConfig/detect': { items: { itemType?: string; details?: { sessions?: { path?: unknown; cwd?: unknown; title?: unknown }[] } }[] };
-  'externalAgentConfig/import': { importId: string };
-  'externalAgentConfig/import/readHistories': { data: { importId: string; successes: unknown[]; failures: { message?: unknown }[] }[] };
-  'experimentalFeature/list': { data: { stage: string; name: string; displayName?: string; description?: string; enabled: boolean }[]; nextCursor?: string | null };
-  'account/login/start': { authUrl?: string; loginId?: string };
-  'workGraph/list': { data: { id: string; name: string; status: string; tasks: { id: string; kind: string; title: string; status: string; dependencies: string[]; assignedThreadId: string | null; provider: string | null; model: string | null; result: unknown; evidence: string[]; failureReason: string | null }[]; startedAt?: number; createdAt?: number; error: string | null }[] };
-  'account/read': { account?: { type?: string } | null };
-  'thread/realtime/listVoices': { voices: { v1: string[]; defaultV1: string } };
-  'claudeAccounts/read': { activeId: string; accounts: { id?: unknown; authenticated?: unknown; duplicate?: unknown }[] };
-  'claudeAccounts/write': { activeId: string; accounts: { id?: unknown; authenticated?: unknown; duplicate?: unknown }[] };
-  'claudeSubscription/write': { signedOut?: boolean };
-};
-type RpcResponse<M extends string> = M extends keyof RpcResponses ? RpcResponses[M] : unknown;
-
-export function internal_rpc<M extends string>(client: DesktopClient, clientState: ClientState, method: M, params?: unknown): Promise<RpcResponse<M>> {
-    if (clientState.closed) return Promise.reject(new BridgeError('Elpis is disconnected', 503));
-    const id = `desktop-${randomUUID()}`, reading = readRpc(method, params);
-    return new Promise<RpcResponse<M>>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        clientState.pending.delete(id); reject(new BridgeError(reading ? 'Elpis timed out while reading. Reload the view to try again.' : 'Elpis request timed out; its outcome is unknown. Refresh before retrying.', 504));
-      }, DOWNLOADS.has(method) ? Math.max(client.timeoutMs, 600000) : client.timeoutMs);
-      clientState.pending.set(id, { resolve, reject, timer, method, reading });
-      try { clientState.socket.send(JSON.stringify({ id, method, params })); }
-      catch { clearTimeout(timer); clientState.pending.delete(id); reject(new BridgeError('Could not send request to Elpis', 503)); }
-    });
-  }
-
 function internal_receive(this: DesktopClient, clientState: ClientState, raw: unknown) {
-    let message;
-    try { message = JSON.parse(String(raw)); } catch { return; }
+    let value: unknown;
+    try { value = JSON.parse(String(raw)); } catch { return; }
+    const message = readDesktopMessage(value);
+    if (!message) return;
     if (message.id !== undefined && !message.method) {
       const pending = clientState.pending.get(message.id);
       if (!pending) return;
@@ -166,20 +111,23 @@ function internal_receive(this: DesktopClient, clientState: ClientState, raw: un
         error.code = message.error.code; error.engineMessage = typeof message.error.message === 'string' ? message.error.message : '';
         pending.reject(error);
       }
+      else if (!Object.hasOwn(message, 'result')) pending.reject(new BridgeError(`Elpis returned a malformed result for ${pending.method}`, 502));
       else pending.resolve(message.result);
       return;
     }
+    if (!message.method) return;
     const id = message.params?.threadId ?? message.params?.thread?.id;
     if (id && ['turn/started', 'turn/completed', 'thread/status/changed'].includes(message.method)) clientState.turnRevisions.set(id, (clientState.turnRevisions.get(id) ?? 0) + 1);
     if (message.id !== undefined) {
-      if (clientState.owned.has(id)) internal_admitApproval.call(this, clientState, message, {ownerThreadId:id});
+      const request = { ...message, id: message.id, method: message.method };
+      if (clientState.owned.has(id)) internal_admitApproval.call(this, clientState, request, {ownerThreadId:id});
       else if (!clientState.checkingApprovals.has(message.id)) {
         const check = {};
         clientState.checkingApprovals.set(message.id, check);
         void internal_approvalOwner.call(this, clientState, id).then(owner => {
           if (clientState.checkingApprovals.get(message.id) !== check) return;
           clientState.checkingApprovals.delete(message.id);
-          if (owner && clientState.owned.has(owner.ownerThreadId) && !clientState.closed) internal_admitApproval.call(this, clientState, message, owner);
+          if (owner && clientState.owned.has(owner.ownerThreadId) && !clientState.closed) internal_admitApproval.call(this, clientState, request, owner);
         }).catch(() => {
           if (clientState.checkingApprovals.get(message.id) === check) clientState.checkingApprovals.delete(message.id);
           // Without verified ancestry this may belong to another client's work.
@@ -230,7 +178,7 @@ function internal_receive(this: DesktopClient, clientState: ClientState, raw: un
     }
     // Chat-level news (a chat started, renamed, or changed state) is listed anyway; item streams stay scoped.
     const tracked = clientState.known.has(id) || clientState.owned.has(id) || LISTED.has(message.method);
-    if (message.method === 'thread/deleted' && tracked) internal_forget.call(this, clientState, id);
+    if (id && message.method === 'thread/deleted' && tracked) internal_forget.call(this, clientState, id);
     if (NOTIFICATIONS.has(message.method) && tracked) {
       if (message.method === 'thread/tokenUsage/updated' || message.method === 'thread/smartPrune/updated') {
         const key = message.method === 'thread/tokenUsage/updated' ? 'tokenUsage' : 'smartPrune';
@@ -264,14 +212,14 @@ async function internal_approvalOwner(this: DesktopClient, clientState: ClientSt
     return null;
   }
 
-function internal_admitApproval(this: DesktopClient, clientState: ClientState, message: { id: unknown; method: string; params?: { threadId?: unknown } }, owner: { ownerThreadId: unknown; thread?: unknown }) {
+function internal_admitApproval(this: DesktopClient, clientState: ClientState, message: { id: unknown; method: string; params?: ApprovalParams }, owner: { ownerThreadId: unknown; thread?: unknown }) {
     if ([...clientState.approvals.values()].some(pending => pending.wireId === message.id)) return;
     if (!APPROVALS.has(message.method)) {
       clientState.socket.send(JSON.stringify({id:message.id,error:{code:-32601,message:'This desktop client does not support this approval type'}}));
       this.emit('event', {type:'unsupportedApproval',data:{method:message.method,threadId:message.params?.threadId}});
       return;
     }
-    const approval = {id:randomUUID(),wireId:message.id,method:message.method,params:message.params,supported:true,...owner};
+    const approval = {id:randomUUID(),wireId:message.id,method:message.method,params:message.params ?? {},supported:true,...owner};
     clientState.approvals.set(approval.id,approval);
     const {wireId: _wireId,...visible} = approval;
     this.emit('event',{type:'approval',data:visible});

@@ -18,9 +18,9 @@ import { startToken } from "../shared-runtime.mts";
 const self = fileURLToPath(import.meta.url);
 const source = fileURLToPath(new URL("..", import.meta.url));
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
-type Trace = { method?: string; params?: { text?: string }; engine?: number };
+type Trace = { held?: boolean; method?: string; params?: { text?: string }; engine?: number };
 type Frame = { id?: number | string; method?: string; params?: { turn?: { id: string } }; result?: { thread?: { turns?: { items?: { text?: string }[] }[] }; data?: { id?: string }[] } };
-type EngineRequest = { id?: number | string; method?: string; params?: { stream?: boolean; delay?: number; statusOnly?: boolean } };
+type EngineRequest = { id?: number | string; method?: string; params?: { stream?: boolean; hold?: boolean; delay?: number; statusOnly?: boolean } };
 type Identity = { pid: number; token: string };
 type CapturedChild = ChildProcessByStdio<null, Readable, Readable> & { output: string; errors: string };
 
@@ -60,11 +60,21 @@ if (process.argv.includes("--elpis-local-bridge")) {
       send({ method: "turn/started", params: { threadId: "chat", turn: { id: "running" } } });
       if (params.stream) { const timer = setInterval(() => { for (const peer of subscribers) if (peer.readyState === 1) peer.send(JSON.stringify({ method: "item/agentMessage/delta", params: { threadId: "chat", turnId: "running", itemId: "answer", delta: "word " } })); }, 200); setTimeout(() => clearInterval(timer), params.delay); }
       if (params.stream) setTimeout(() => { for (const peer of subscribers) if (peer.readyState === 1) peer.send(JSON.stringify({ method: "turn/completed", params: { threadId: "chat", turn: { id: "running" } } })); }, params.delay);
-      else setTimeout(() => send(marked.unsubscribed
+      else {
+      const complete = () => send(marked.unsubscribed
         ? { method: "thread/closed", params: { threadId: "chat" } }
         : params.statusOnly
         ? { method: "thread/status/changed", params: { threadId: "chat", status: { type: "idle" } } }
-        : { method: "turn/completed", params: { threadId: "chat", turn: { id: "running" } } }), params.delay);
+        : { method: "turn/completed", params: { threadId: "chat", turn: { id: "running" } } });
+        if (params.hold) {
+          const release = process.env.IDLE_RELEASE; assert.ok(release);
+          const watcher = fs.watch(path.dirname(release), () => {
+            if (!fs.existsSync(release)) return;
+            watcher.close(); complete();
+          });
+          trace({ held: true });
+        } else setTimeout(complete, params.delay);
+      }
     }
     if (msg.method === "thread/unsubscribe") marked.unsubscribed = true;
     if (msg.method === "fixture/plan") send({ method: "turn/plan/updated", params: { threadId: "chat", turnId: "saved-turn", plan: [{ step: "preserved plan", status: "completed" }] } });
@@ -100,7 +110,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root,
       XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_NO_AGY: "1", ACP_BRIDGE_NO_AGENTS: "1",
       ACP_BRIDGE_STORE: path.join(root, "chats.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"),
-      IDLE_TRACE: path.join(root, "trace"), ELPIS_ENGINE_BIN: path.join(root, "engine"), ...extra };
+      IDLE_TRACE: path.join(root, "trace"), IDLE_RELEASE: path.join(root, "release"), ELPIS_ENGINE_BIN: path.join(root, "engine"), ...extra };
     fs.writeFileSync(env.IDLE_TRACE, "");
     fs.writeFileSync(env.ELPIS_ENGINE_BIN, `#!${process.execPath}\nimport ${JSON.stringify(self)};\n`, { mode: 0o755 });
     const saved = { chat: { providerHistory: true, turns: [{ id: "saved-turn", startedAt: 1, items: [{ type: "agentMessage", text: "preserve this answer" }] }] } };
@@ -204,18 +214,22 @@ if (process.argv.includes("--elpis-local-bridge")) {
 
   for (const statusOnly of [false, true]) test(`detached native/background work survives until ${statusOnly ? "idle status" : "completion"}`, async t => {
     const f = await setup(t); const child = await f.start(); const c = await f.connect();
-    await c.call("fixture/turn", { delay: 900, statusOnly });
-    c.ws.close(); await once(c.ws, "close"); await pause(450);
+    await c.call("fixture/turn", { hold: true, statusOnly });
+    await until(() => f.records().some(record => record.held), "fixture work is held");
+    c.ws.close(); await once(c.ws, "close");
     assert.equal(child.exitCode, null, "running work keeps bridge alive after idle grace");
+    fs.writeFileSync(path.join(f.root, "release"), "release");
     await until(() => child.exitCode === 0, "work completion releases idle bridge", 1800);
   });
 
   test("an unsubscribed native turn releases engineTurns on the engine's thread/closed broadcast", async t => {
     const f = await setup(t); const child = await f.start(); const c = await f.connect();
-    await c.call("fixture/turn", { delay: 900 });
+    await c.call("fixture/turn", { hold: true });
+    await until(() => f.records().some(record => record.held), "fixture work is held");
     await c.call("thread/unsubscribe", { threadId: "chat" });
-    c.ws.close(); await once(c.ws, "close"); await pause(450);
+    c.ws.close(); await once(c.ws, "close");
     assert.equal(child.exitCode, null, "unsubscribed background work still runs");
+    fs.writeFileSync(path.join(f.root, "release"), "release");
     await until(() => child.exitCode === 0, "thread/closed clears the otherwise stranded engineTurns entry", 1800);
   });
 
@@ -233,7 +247,9 @@ if (process.argv.includes("--elpis-local-bridge")) {
     const joined = await f.launch(f.first, { HTTP_PROXY: "http://127.0.0.1:2" });
     assert.equal(joined.exitCode, 0, joined.errors);
     assert.equal(statePid(), before, "a bridge in use is joined, not stopped");
-    c.ws.close(); await once(c.ws, "close"); await pause(300);
+    const bridgeLog = path.join(f.root, 'bridge.log'), offset = fs.statSync(bridgeLog).size;
+    c.ws.close(); await once(c.ws, "close");
+    await until(() => fs.readFileSync(bridgeLog, 'utf8').slice(offset).includes('tui disconnected'), 'bridge observes the client disconnect');
     const replaced = await f.launch(f.first, { HTTP_PROXY: "http://127.0.0.1:3" });
     assert.equal(replaced.exitCode, 0, replaced.errors);
     assert.notEqual(statePid(), before, "an idle bridge restarts with this launch's proxy settings");

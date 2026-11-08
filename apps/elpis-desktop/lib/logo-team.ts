@@ -1,4 +1,5 @@
-import { agent, graphOf, type AgentData, type CanvasGraph } from "./canvas";
+import { agent, graphOf } from "./canvas-graph";
+import type { AgentData, CanvasGraph } from './canvas-types';
 
 /** "Logo" (28 Oct, Masih: "we should expand the workflows; the /logo workflow"): the logo skill (p/skills/logo/SKILL.md) in one
  * agent. 29 Oct, Masih: "four agents is too extra for this, one mother and one child (the image generator which is a tool-call for

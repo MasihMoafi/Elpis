@@ -1,3 +1,7 @@
+import { createConnectionRequests } from './bridge-connection-requests.mts';
+import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
+import { createConnectionAccess } from './bridge-connection-access.mts';
+import { createThreadState } from './bridge-thread-state.mts';
 import { installClientWire } from "./bridge-client-wire.mts";
 import { createProviderEdits } from "./bridge-edits.mts";
 import { createUsageTracker } from "./bridge-usage.mts";
@@ -12,20 +16,20 @@ import { wireObject } from "./bridge-wire.mts";
 import { createHelperPermissions } from "./bridge-helper-permissions.mts";
 import { createProviderTurn } from "./bridge-turn.mts";
 import { createLaneBuilder } from "./bridge-lane.mts";
-import { createThreadList,processAlive } from "./bridge-thread-list.mts";
-import type { ThreadListRequest } from "./bridge-thread-list.mts";
+import { createThreadList, processAlive } from "./bridge-thread-list.mts";
+
 import { createProviderQueue } from "./bridge-queue.mts";
 import { createProviderHistory } from "./bridge-history.mts";
-import { inputSummary,clipTurn,jsonIn } from "./bridge-transcript.mts";
-import { Acp,lineReader } from "./bridge-acp.mts";
-import type { BridgeError,RequestId,BridgeClient,BridgeMessage,NoticeParams,ResumeResult,HelperScope,ProviderOwner,StartPick,LiveSession,BridgeContext,PromptInput,McpConfig,TranscriptTurn,ContextFile,ForkLink,SavedSession,SavedHelper,Store,ProviderAgent,EngineThread,AccessSettings,BridgeResponses,ChildThread,Steer,HistoryRequest,HistoryOptions,ThreadParams,ThreadRequest,GlobalRequest,ProviderTurn,Ceiling } from "./bridge-types.mts";
+import { inputSummary, clipTurn, jsonIn } from "./bridge-transcript.mts";
+import { Acp, lineReader } from "./bridge-acp.mts";
+import type { BridgeError, RequestId, BridgeClient, BridgeMessage, NoticeParams, ResumeResult, HelperScope, ProviderOwner, StartPick, BridgeContext, PromptInput, TranscriptTurn, SavedSession, SavedHelper, Store, ProviderAgent, EngineThread, BridgeResponses, ChildThread, ThreadParams, ThreadRequest, GlobalRequest, ProviderTurn, Ceiling } from "./bridge-types.mts";
 import type WebSocket from "ws";
 import { createEngine } from "./shared-runtime.mts";
-import { drainProxy,trackRequests,handoverMessage } from "./handover.mts";
+import { drainProxy, trackRequests, handoverMessage } from "./handover.mts";
 import { setSignedOut } from "./anthropic-signout.mts";
 import { recordedClaudeEnd } from "./claude-turn-record.mts";
 import { execFile } from "node:child_process";
-import { join,basename } from "node:path";
+import { join, basename } from "node:path";
 import { randomUUID } from "node:crypto";
 import { acpErrorInfo } from './acp-errors.mts';
 import type { BridgeEnvironment } from "./bridge-server.mts";
@@ -38,6 +42,7 @@ export function attachBridgeConnection(socket: WebSocket, environment: BridgeEnv
 
 function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log, now, REVIEW_RULES, REVIEW_FORMAT, STRUCTURED_MODEL, STRUCTURED_SYSTEM, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, AUTONOMOUS_ORIGINS, REPLY_UPDATES, engineAgentsConfig, mcpServersFor, appMcpConfig, acpServersFrom, deletingThreads, archivingThreads, deletedThreads, loadStore, loadStoreSnapshot, updateStore, storeChain, STATE_DIR, claudeAccounts, claudeSignedOut, AGENTS, agentOf, signedOutModel, refuseSignedOut, acpErrorMessage, RECONNECT_MS, connectionDropped, RECONNECT_NOTE, readJson, nameModel, announceLimits, addSubscriptionLimits, smartPruneProxy, recordAccounts, clients, helperThreads, helperConns, workflowToolConns, relayed, chatAccess, TOOL_APPROVALS, automaticThreads, blockedAutomaticThreads, explicitChatChoices, helperScope, pendingHelpers, AUTHORITY, UNSANDBOXED, fullFor, lowest, helperCeiling, ceilingOf, providerOwners, subscriptions, BusyMap, forwarded, startingProviders, contexts, sendClient, viewers, relayToTui, settleRelay, cancelRelays, flushApprovals, decorateThread, stopping, checkIdle, workflows, chatBack, clearIdle }: BridgeEnvironment) {
   const ws = socket as BridgeClient;
+  const { openingReplies, pendingModelList, pendingResume, resumeOptions, pendingNativeRoutes, pendingConfigRead, pendingStart, openingMcp, openingEnvironment, pendingTurnsList, pendingItemsList, pendingThreadList, pendingChildList, pendingArchive, pendingHelperMark, pendingLimitsRead, permissionWrites, permissionRefreshes, forkParent, reconnects, pendingMirrors, pendingAdopt } = createConnectionRequests(BusyMap);
   if (stopping) { ws.close(1012, "Session backend is stopping"); return; }
   clients.add(ws);
   clearIdle();
@@ -45,7 +50,6 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   ws.sendWire = ws.send.bind(ws);
   const noteRequest = trackRequests(ws);
   const handover = drainProxy(ws, log);
-  const openingReplies = new Set<RequestId>();
   installClientWire({ ws, openingReplies, deletedThreads, providerOwners, forwarded, subscriptions, sendClient, viewers, flushApprovals, decorateThread });
   const toOthers = (msg: BridgeMessage) => { const line = JSON.stringify(msg); for (const c of clients) if (c !== ws && c.readyState === 1) c.send(line); };
   const shareHelper = (msg: BridgeMessage) => { if (msg?.method === "thread/status/changed" && typeof msg.params?.threadId === "string" && helperThreads.has(msg.params.threadId)) toOthers(msg); };
@@ -78,13 +82,9 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     checkIdle();
   };
   const engine = createEngine();
-  engine.stdin.on("error", (e) => log(`engine input: ${e.message}`)); // a stopped helper's engine
-  const threadCwd = new Map<string, string>();
-  const threadSeen = new Map<string, EngineThread>(); // thread id -> the engine's last Thread object for it
-  // Claude's subagents as Elpis child threads (what Left/Right and /subagents list): thread id ->
-  // { thread, lane } while this connection drew it. Finished ones are also in the store, under
-  // their own id with `parentThreadId`, so a resumed chat lists and replays them.
-  const childThreads = new Map<string, ChildThread>();
+  engine.stdin.on("error", (e) => log(`engine input: ${e.message}`));
+  const { threadCwd, threadSeen, childThreads, childIds, threadPolicy, smartPrune, threadSandbox, pendingDelegation, pendingHelperTurns, sessions, threadMcp, threadEnvironment, acps, claudeModel, pendingSteers, claudeEffort, resumeResults, materializedProviders } = createThreadState();
+
   const childThread = (c: ChildThread) => ({ ...c.thread, status: c.lane && !c.lane.done ? { type: "active", activeFlags: [] } : { type: "idle" }, updatedAt: Math.floor(now() / 1000) });
   async function storedChildren(rootIds: Set<string> | null) {
     await storeChain();
@@ -92,11 +92,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     for (const [id, value] of Object.entries(await loadStore())) { const saved = value as SavedSession; if (saved?.thread && (!rootIds || rootIds.has(saved.rootThreadId as string))) out.set(id, { thread: saved.thread, rootThreadId: saved.rootThreadId, turns: saved.turns ?? [] }); }
     for (const [id, c] of childThreads) if (!rootIds || rootIds.has(c.rootThreadId)) out.set(id, { thread: childThread(c), rootThreadId: c.rootThreadId, turns: c.lane.done ? out.get(id)?.turns ?? [] : [c.lane.turn()] });
     return out;
-  }
-  // What the TUI asks about a child thread (thread/read when it lists or opens one) is answered
-  // here; the engine has never heard of it. Nobody types into a subagent's thread, so a
-  // thread/resume is refused and the TUI falls back to thread/read.
-  const childIds = new Set<string>(); // every child thread id the bridge answers for
+  } // every child thread id the bridge answers for
   loadStore().then((st) => { for (const [id, saved] of Object.entries(st)) if ((saved as SavedSession)?.parentThreadId) childIds.add(id); });
   async function answerChild(msg: { method: string; id: RequestId; params: { threadId: string; includeTurns?: boolean } }) {
     const { threadId, includeTurns } = msg.params;
@@ -105,20 +101,6 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     if (!c) return toTui({ id: msg.id, error: { code: -32600, message: `thread not found: ${threadId}` } });
     toTui({ id: msg.id, result: { thread: { ...c.thread, turns: includeTurns ? c.turns : [] } } });
   }
-  const threadPolicy = new Map<string, string>();
-  const smartPrune = new Map<string, boolean>(); // thread id -> its Smart Prune switch, as the engine reports it
-  const threadSandbox = new Map<string, Ceiling>();
-  const pendingDelegation = new Map<RequestId, SavedHelper & { requested: string; ceiling: Ceiling; sandbox: Ceiling }>(); // thread/start id -> the chat that delegated it
-  const pendingHelperTurns = new Map<RequestId, string>(); // native turn/start id -> helper awaiting its acknowledgement
-  const sessions = new Map<string, LiveSession>();
-  const threadMcp = new Map<string, McpConfig>(); // thread -> the app's `mcp_servers.*` overrides for it (A37)
-  const threadEnvironment = new Map<string, Record<string, string>>(); // Managed shell overrides, scoped to this conversation.
-  const acps = new Map<string, Acp>();
-  const claudeModel = new Map<string, string>();
-  const pendingSteers = new Map<string, Map<string, Steer>>();       // threadId → client message id → undelivered steer
-  const claudeEffort = new Map<string, string>();
-  const resumeResults = new Map<string, ResumeResult>();
-  const materializedProviders = new Set<string>();
   const context: BridgeContext = {
     failed: false,
     claudeBusy: () => [...activeTurns.keys()].some((tid: string) => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
@@ -216,51 +198,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     startingProviders.set(key, { ready, resolve: () => { clearTimeout(timer); release(); } });
   }
   const connectionId = randomUUID();
-  const sessionModel = new Map<string, string>();
-  const threadCollab = new Map<string, string>();
-  // thread id -> its permission profile and approvals reviewer, as the engine last confirmed
-  // them; with the approval policy and Plan they pick Claude's own mode (claudeModeOf).
-  const threadAccess = new Map<string, { profile: string | undefined; reviewer: string | undefined }>();
-  const noteAccess = (threadId: string, s: AccessSettings | null | undefined) => {
-    if (!threadId || !s) return;
-    const cached = resumeResults.get(threadId);
-    if (cached) {
-      for (const k of ["approvalPolicy", "approvalsReviewer", "activePermissionProfile", "cwd", "collaborationMode", "serviceTier", "disabledPluginIds"]) if (s[k] !== undefined) cached[k] = s[k];
-      if (s.sandboxPolicy) cached.sandbox = s.sandboxPolicy;
-    }
-    if (s.approvalPolicy) threadPolicy.set(threadId, s.approvalPolicy);
-    const sandbox = (s.sandboxPolicy ?? s.sandbox)?.type;
-    const profile = s.permissions ?? s.activePermissionProfile?.id
-      ?? (sandbox && (({ readOnly: ":read-only", dangerFullAccess: ":danger-full-access" } as Record<string, string>)[sandbox] ?? ":workspace"));
-    const prev = threadAccess.get(threadId);
-    const access = { profile: profile ?? prev?.profile, reviewer: s.approvalsReviewer ?? prev?.reviewer };
-    threadAccess.set(threadId, access);
-    chatAccess.set(threadId, { policy: threadPolicy.get(threadId), profile: access.profile });
-    if (threadPolicy.get(threadId) === 'never') for (const [id, relay] of relayed) {
-      if (relay.origin === ws && relay.toolPermission && relay.message.params.threadId === threadId)
-        settleRelay(id, { result: { decision: fullFor(threadId) ? 'accept' : 'decline' } });
-    }
-    for (const confirm of confirmations.get(threadId) ?? []) confirm(access.profile);
-  };
-  // The Claude Code mode a chat's turn runs in: Codex's permission modes, mapped to Claude's own.
-  // Ask uses Accept edits, Approve for me uses Auto. Full access keeps normal
-  // provider checks and answers their permission hook; only Bypass selects the
-  // provider's bypass mode. A read-only helper that may not ask plans.
-  const MODE_NAMES = { default: "Manual", acceptEdits: "Accept edits", plan: "Plan mode", auto: "Auto", bypassPermissions: "Bypass permissions" };
-  const claudeModeOf = (threadId: string, agentKey: string, ask: boolean) =>
-    threadCollab.get(threadId) === "plan" ? "plan" : accessModeOf(threadId, agentKey, ask);
-  // The mode of the chat's permission mode alone, which a Plan turn returns to once its plan is
-  // approved.
-  const accessModeOf = (threadId: string, agentKey: string, ask: boolean) => {
-    const { profile, reviewer } = threadAccess.get(threadId) ?? {};
-    const readOnly = (!explicitChatChoices.has(threadId) && threadSandbox.get(threadId) === "read-only") || !!profile?.includes("read-only");
-    // Never asking is an approval policy, not permission to leave a restricted profile.
-    // Unknown/custom profiles stay restricted unless the engine explicitly names Full Access.
-    if (!ask) return readOnly ? "plan" : profile === ':bypass-permissions' ? "bypassPermissions" : "default";
-    if (agentKey !== "claude" || readOnly) return "default";
-    return reviewer === "auto_review" ? "auto" : "acceptEdits";
-  };
-  const sessionMode = new Map<string, string>();
+  const { sessionModel, threadCollab, threadAccess, noteAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode } = createConnectionAccess({ resumeResults, threadPolicy, chatAccess, relayed, ws, settleRelay, fullFor, explicitChatChoices, threadSandbox, confirmations: () => confirmations });
   const { tokenSums, ctxChars, devChars, addChars, transcriptOf, lastContext, lastTurnUsage, sendUsage } = createUsageTracker({ sessions, threadCwd, claudeAccounts, notify });
   async function recoverClaudeTurn(threadId: string) {
     const running = activeTurns.get(threadId);
@@ -301,27 +239,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     return a;
   };
   const catalogFor = createProviderCatalog({ readJson, ensureAcp, now, log });
-  const pendingModelList = new Set<RequestId>();
-  const pendingResume = new BusyMap<RequestId, string | undefined>();
-  const resumeOptions = new Map<RequestId, { excludeTurns?: boolean; initialTurnsPage?: HistoryOptions }>();
-  const pendingNativeRoutes = new Map<RequestId, { threadId: string; model: string; effort?: string | null }>();
-  // A Claude model picked as the default ("enter default") lives in the bridge's store, not in
-  // config.toml, which plain Elpis also reads. New chats, rewinds and the next start follow it.
-  const pendingConfigRead = new Set<RequestId>();
-  const pendingStart = new BusyMap<RequestId, StartPick>();
-  const openingMcp = new Map<RequestId, McpConfig>(); // thread/start or /fork request id -> the app's MCP overrides
-  const openingEnvironment = new Map<RequestId, Record<string, string>>();
-  let engineDefault = null; // asked once, after the TUI has initialized the engine
-  const pendingTurnsList = new Map<RequestId, HistoryRequest>();
-  const pendingItemsList = new Map<RequestId, HistoryRequest>();
-  // Claude-only chats reach the engine as injected history, which never sets a thread's
-  // preview, and thread/list leaves out threads without one, so /resume could not find them.
-  // The bridge adds them, previewed by their first message, where they fall in the list's order.
-  const pendingThreadList = new Map<RequestId, ThreadListRequest>();
-  const pendingChildList = new Map<RequestId, string | null>(); // thread/loaded/list (null) or thread/list of a chat's descendants (its id)
-  const pendingArchive = new Map<RequestId, string | undefined>(); // thread/archive id -> thread id
-  const pendingHelperMark = new Set<RequestId>(); // thread/list and thread/read answers: helpers get their chat, bridged chats their model
-  const pendingLimitsRead = new Set<RequestId>(); // account/rateLimits/read answers gain the subscriptions' limits
+  let engineDefault = null; // account/rateLimits/read answers gain the subscriptions' limits
   // A helper started with the delegate tool is an engine thread the engine does not know as a
   // child; the bridge's record (_delegations) gives it its parent wherever the TUI reads threads.
   // The engine knows only the model it started a bridged chat with; this connection (from the
@@ -393,8 +311,6 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     });
     engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   }); }
-  const permissionWrites = new Map<RequestId, { threadId?: string; settings: { permissions?: string; inherit?: boolean; automatic?: boolean }; ephemeral?: boolean }>();
-  const permissionRefreshes = new Set<RequestId>();
   let handleMessage: (data: WebSocket.RawData | string, recovered?: boolean) => void;
   const textOf = (content: PromptInput[] | undefined) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
   async function elpisInstructions(threadId: string, developerInstructions?: string | null) {
@@ -437,10 +353,6 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
       toTui({ id: msg.id, result: { ...result, files: [...result.files, ...files.filter(file => { if (seen.has(file.path)) return false; seen.add(file.path); return true; })], ...(note ? { note } : {}) } });
     } catch (error) { toTui({ id: msg.id, error: { code: -32603, message: (error as BridgeError).message ?? 'Could not read context files.' } }); }
   }
-  // A fork of a Claude chat (/fork, /side, /btw) starts a fresh Claude session; the parent's
-  // Claude turns up to the fork point live only in the store, under the parent, so the fork
-  // inherits them. The link is kept in memory, and in the store for forks that outlive the chat.
-  const forkParent = new Map<string, ForkLink>();
   // The Ledger's Subagents switch is the engine's `features.multi_agent`, written with
   // config/batchWrite. Asking the engine each Claude turn (~10 ms) follows the switch,
   // /experimental and hand edits alike, as GPT turns do.
@@ -453,18 +365,12 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     const tools = engineAgentsConfig(await subagentsAllowed(params.cwd), !helper);
     if (Object.keys(tools).length) params.config = { ...params.config, ...tools };
   };
-  const activeTurns = new BusyMap<string, ProviderTurn>(); // thread id -> its running Claude or Antigravity turn
-  const reconnects = new Map<string, NodeJS.Timeout>(); // thread id -> the timer of its retry after a dropped connection
-  const pendingMirrors = new Map<string, Promise<void>>(); // native history copies do not own the provider's turn status
+  const activeTurns = new BusyMap<string, ProviderTurn>(); // native history copies do not own the provider's turn status
   const engineTurns = new BusyMap<string, string>(); // thread id -> its running engine turn
   const { unlistedClaudeThreads, missingThreadUntil } = createThreadList({ engineCall, activeTurns, ownModel, storeChain, loadStore, now, log });
   const { claudeTurnsOf, providerHistory, resumeHistory, listProviderHistory, priorTranscript } = createProviderHistory({ forkParent, engineCall, resumeResults, activeTurns, childIds, storedChildren, threadSeen, providerOwners, forwarded, ws, toTui, storeChain, loadStore, textOf, log });
   const { authorityOf, stopIfReduced, confirmations, ownHelpers, releaseHelpers, failHelper, enforceHelper, restrictHelper, openHelper, boundAccess, adoptHelper } = createHelperPermissions({ threadAccess, threadPolicy, UNSANDBOXED, AUTHORITY, accessModeOf, activeTurns, notify, engineCall, log, helperScope, engineTurns, helperConns, ws, context, engine, threadSandbox, claudeModel, lowest, isBridged, claimEngineHelper, explicitChatChoices, updateStore });
-  const withPermissions = createClientPermissions({ automaticThreads, blockedAutomaticThreads, boundAccess, ceilingOf, claudeModel, engineCall, explicitChatChoices, handleMessage: data => handleMessage(data), helperConns, helperScope, loadStoreSnapshot, permissionChoices, permissionRefreshes, permissionWrites, providerOwners, toTui, updateStore, ws });
-  // Reopening a helper (by a fresh delegate server, or by the TUI from the agents page) bounds its
-  // permissions by its ceiling before the engine loads it, so the reopened thread and what the
-  // TUI shows are already within it.
-  const pendingAdopt = new Map<RequestId, SavedHelper & { ceiling: Ceiling; stored: Ceiling | undefined }>(); // thread/resume id -> the helper it reopens
+  const withPermissions = createClientPermissions({ automaticThreads, blockedAutomaticThreads, boundAccess, ceilingOf, claudeModel, engineCall, explicitChatChoices, handleMessage: data => handleMessage(data), helperConns, helperScope, loadStoreSnapshot, permissionChoices, permissionRefreshes, permissionWrites, providerOwners, toTui, updateStore, ws }); // thread/resume id -> the helper it reopens
   async function resumeThread(msg: ThreadRequest) {
     const tid = msg.params?.threadId;
     await storeChain();
@@ -532,7 +438,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   const { queues, goals, queueOf, runNext, queueRequest, goalRequest } = createProviderQueue({ activeTurns, deletingThreads, archivingThreads, deletedThreads, pendingSteers, claudeTurn, notify, toTui, storeChain, loadStore, updateStore, now });
 
   // A new chat on a Claude model: the engine keeps its own model, the TUI is told Claude.
-  async function startThread(msg: { id: RequestId; params?: { elpisParentThreadId?: string; elpisRequestedScope?: string; permissions?: string; sandbox?: Ceiling; elpisWorkflow?: { runId?: string; agentId?: string | null }; approvalPolicy?: string; parentThreadId?: string; model?: string | null; config?: Record<string, unknown> & { model_reasoning_effort?: string | null }; cwd?: string } }) {
+  async function startThread(msg: { id: RequestId; params?: { elpisParentThreadId?: string; elpisRequestedScope?: string; permissions?: string; sandbox?: Ceiling; elpisWorkflow?: { runId?: string; agentId?: string | null }; approvalPolicy?: AskForApproval; parentThreadId?: string; model?: string | null; config?: Record<string, unknown> & { model_reasoning_effort?: string | null }; cwd?: string } }) {
     const p = msg.params ?? {};
     const helper = !!p.elpisParentThreadId;
     if (p.elpisParentThreadId) {
@@ -727,7 +633,6 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   });
   } };
 }
-
 
 export type ClientRouterDependencies = NonNullable<ReturnType<typeof createConnectionState>>["router"];
 export type EngineMessageDependencies = NonNullable<ReturnType<typeof createConnectionState>>["engineMessages"];

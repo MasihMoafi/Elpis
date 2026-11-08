@@ -17,7 +17,8 @@ import { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from './client-pa
 import { ClientState } from './client-state.mts';
 import type { ClientSocket, ClientStateOptions } from './client-state.mts';
 import { ArchiveHistory } from './client-archive-history.mts';
-import { internal_bind, internal_reconnect, internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
+import { internal_bind, internal_reconnect } from './client-connection.mts';
 import { internal_forgetSubscription } from './client-thread-list.mts';
 import { internal_releaseNode } from './client-rewind.mts';
 import { internal_workflowEnded } from './client-workflows.mts';

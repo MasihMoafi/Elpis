@@ -1,15 +1,15 @@
 // Ported from dsh-superagent (MIT), tests/sources.spec.ts, tests/registry.spec.ts and tests/admission-context.spec.ts
-import { test } from 'node:test'
+import { test } from 'node:test';
 import assert from 'node:assert/strict'
-import { Commands, CliError } from '../infra/commands.mts'
-import { testDeployment } from '../infra/fixtures.test.mts'
-import { SourceRegistry } from './registry.mts'
-import { githubKind } from './github.mts'
-import { githubAddress, issueTrigger, CommentSchema, commentTrigger } from './github-trigger.mts'
-import { sendGithub } from './github-channel.mts'
-import { readGithub, pullChecks } from './github-read.mts'
-import { admissionContext, threadWindow } from './admission-context.mts'
-import type { OutboundMessage } from '../core/index.mts'
+import { Commands, CliError } from '../infra/commands.mts';
+import { testDeployment } from '../infra/fixtures.mts';
+import { SourceRegistry } from './registry.mts';
+import { githubKind } from './github.mts';
+import { githubAddress, issueTrigger, CommentSchema, commentTrigger } from './github-trigger.mts';
+import { sendGithub } from './github-channel.mts';
+import { readGithub, pullChecks } from './github-read.mts';
+import { admissionContext, threadWindow } from './admission-context.mts';
+import type { OutboundMessage } from '../core/index.mts';
 
 test('registry enforces source scope and preserves missing kinds', () => {
   const registry = new SourceRegistry(() => ({ sources: { github: { enabled: false, config: {} }, retired: { enabled: true, config: {} } }, policy: { sources: {} } }))

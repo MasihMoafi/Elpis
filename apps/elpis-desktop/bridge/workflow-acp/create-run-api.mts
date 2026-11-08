@@ -5,7 +5,7 @@ import type { createReview } from './create-review.mts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BridgeError, text } from '../client.mts';
+import { BridgeError, text } from '../validate.mts';
 import { agentParentId } from '../../lib/agent-runs.mts';
 import type { SteerMessage, WorkflowRecord, WorkflowParams, StartedRun, Root, WorkflowOptions } from './types.mts';
 import { acquireLock } from './locks.mts';

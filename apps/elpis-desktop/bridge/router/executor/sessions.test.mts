@@ -1,24 +1,23 @@
 // Ported from dsh-superagent (MIT), tests/delivery.spec.ts and tests/role-models.spec.ts
-import { it } from 'node:test'
+import { it } from 'node:test';
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Sessions, type SessionOptions } from './sessions.mts'
-import { ExecutorStore } from './store.mts'
-import { ElpisAdapter } from './adapters.mts'
-import { SettingsSchema } from './settings.mts'
-import { FakeServer, waitFor } from './fixtures.test.mts'
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Sessions, type SessionOptions } from './sessions.mts';
+import { ExecutorStore } from './store.mts';
+import { ElpisAdapter } from './adapters.mts';
+import { SettingsSchema } from './settings.mts';
+import { FakeServer, waitFor } from './fixtures.mts';
 
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), 'router-sessions-')), server = new FakeServer()
-  let settings = SettingsSchema.parse({})
-  const store = new ExecutorStore(home, () => settings)
+  let store = new ExecutorStore(home)
   const options = (): SessionOptions => ({ store, adapters: [new ElpisAdapter(server.connect)], subprocess: { spawn: () => { throw new Error('No subprocess expected') } } })
   let sessions = new Sessions(options())
-  return { server, store, get sessions() { return sessions },
-    configure: (value: unknown) => { settings = SettingsSchema.parse(value) },
-    restart: () => { sessions.dispose(); sessions = new Sessions(options()); return sessions },
+  return { server, get store() { return store }, get sessions() { return sessions },
+    configure: (value: unknown) => { store.saveSettings(SettingsSchema.parse(value)) },
+    restart: () => { sessions.dispose(); store.close(); store = new ExecutorStore(home); sessions = new Sessions(options()); return sessions },
     stop: () => { sessions.dispose(); store.close(); rmSync(home, { recursive: true, force: true }) } }
 }
 it('seeds each new role model without changing global defaults and keeps manual selections on resume', async t => {
@@ -33,7 +32,9 @@ it('seeds each new role model without changing global defaults and keeps manual 
   h.server.threads.get(threadId)!.model = 'manual-selection'
   h.configure({ executor: { model: { provider: 'other', model: 'replacement' } } })
   h.restart(); await h.sessions.ensure('worker-one', '/project', 'One', 'worker')
-  assert.equal(h.server.calls.filter(call => call.method === 'thread/start').length, 2)
+  await h.sessions.ensure('worker-two', '/project', 'Two', 'worker')
+  assert.equal(h.server.calls.findLast(call => call.method === 'thread/start')?.params.model, 'replacement')
+  assert.equal(h.server.calls.filter(call => call.method === 'thread/start').length, 3)
   assert.equal(h.server.threads.get(threadId)!.model, 'manual-selection')
 })
 

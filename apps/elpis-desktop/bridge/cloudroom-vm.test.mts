@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { createCloudroomVm, CloudroomError } from './cloudroom-vm.mts';
 import { createWorkflowRuns } from './workflow-acp.mts';
 
-const TEST_ROOT = path.join(os.homedir(), '.cache/elpis-tests'); fs.mkdirSync(TEST_ROOT, { recursive: true });
+const TEST_ROOT = os.tmpdir();
 const FAKE_ACP = fileURLToPath(new URL('../../../tools/elpis-claude/test/fake-acp-agent.mts', import.meta.url));
 const TOKEN = `core-${randomBytes(24).toString('hex')}`;
 const SANDBOX = randomBytes(32).toString('hex');

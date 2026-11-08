@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { timingSafeEqual } from 'node:crypto';
-import { BridgeError, MAX_BRIDGE_MESSAGE_BYTES } from './client.mts';
+import { BridgeError } from './validate.mts';
+import { MAX_BRIDGE_MESSAGE_BYTES } from './client-paths.mts';
 import { AttachmentError } from './attachments.mts';
 
 export type PageQuery = {

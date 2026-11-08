@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
-import { BridgeError, elpisHome, object, text } from './client.mts';
+import { BridgeError, object, text } from './validate.mts';
+import { elpisHome } from './client-paths.mts';
 import { runtimeTools } from './runtime-paths.mts';
 import { BRIDGE_ENDPOINT_KEYS } from './profile-env.mts';
 import { handoffText, runAcpNode } from './acp-nodes.mts';
@@ -237,4 +238,3 @@ export function createLoveAgents(store: Store, { timeoutMs = 300000, nodeSpec = 
     },
   };
 }
-

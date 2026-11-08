@@ -16,7 +16,9 @@ if (!bridgeOnly) {
 const resources = new URL('./resources/', import.meta.url);
 await fs.mkdir(resources, { recursive: true });
 for (const name of ['permission-policy.mts', 'app-server-connection.mts', 'bridge-wire.mts']) {
-  await fs.copyFile(new URL(`../../../tools/elpis-claude/${name}`, import.meta.url), new URL(name, resources));
+  const source = await fs.readFile(new URL(`../../../tools/elpis-claude/${name}`, import.meta.url), 'utf8');
+  // The shared permission contract keeps the native generated type as its owner.
+  await fs.writeFile(new URL(name, resources), source.replace("from '../../codex-rs/", "from '../../../../codex-rs/"));
 }
 await fs.copyFile(new URL('../../../tools/elpis-claude/workflow-concurrency.mts', import.meta.url), new URL('./workflow-concurrency.mts', resources));
 await fs.copyFile(new URL('../../../codex-rs/core/src/prompts/rag.md', import.meta.url), new URL('./rag.md', resources));
@@ -26,4 +28,3 @@ if (!bridgeOnly) await fs.rm(new URL('../public/trajectory/', import.meta.url), 
 if (!bridgeOnly) await fs.cp(new URL('../../elpis-trajectory/dist/', import.meta.url), new URL('../public/trajectory/', import.meta.url), { recursive: true });
 // Excalidraw's bundled fonts stay local, including during whole-drawing PNG export.
 if (!bridgeOnly) await fs.cp(new URL('../node_modules/@excalidraw/excalidraw/dist/prod/fonts/', import.meta.url), new URL('../public/love-spot-assets/fonts/', import.meta.url), { recursive: true });
-

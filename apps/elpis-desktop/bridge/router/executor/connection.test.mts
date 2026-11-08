@@ -1,12 +1,12 @@
-import { it } from 'node:test'
+import { it } from 'node:test';
 import assert from 'node:assert/strict'
-import { once, type EventEmitter } from 'node:events'
-import { createRequire } from 'node:module'
-import type { AddressInfo } from 'node:net'
-import { runtimeAdapters, object } from './adapters.mts'
-import { FakeServer } from './fixtures.test.mts'
-import { tool } from '../app/tools/tool.mts'
-import { z } from 'zod'
+import { once, type EventEmitter } from 'node:events';
+import { createRequire } from 'node:module';
+import type { AddressInfo } from 'node:net';
+import { runtimeAdapters, object } from './adapters.mts';
+import { FakeServer } from './fixtures.mts';
+import { tool } from '../app/tools/tool.mts';
+import { z } from 'zod';
 
 type Socket = EventEmitter & { send(data: string): void }
 type Server = EventEmitter & { address(): AddressInfo | string | null; close(done: (error?: Error) => void): void }

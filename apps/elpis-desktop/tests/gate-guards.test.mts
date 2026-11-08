@@ -6,9 +6,28 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { heldByAncestor, missingPlaywright, passRecord, requirePass } from '../scripts/gate-guards.mts';
+import { discoverTests } from '../scripts/test-gate.mts';
 
 const tiers = ['fast', 'bridge', 'desktop', 'ui'];
 const passed = (name: string) => ({ name, code: 0 });
+
+test('test discovery counts registrations and excludes hook-only helpers', async t => {
+  const dir = createTestTempDir(path.join(os.tmpdir(), 'test-discovery-'));
+  t.after(() => removeTestTempDir(dir));
+  const fixtures = {
+    'support.mts': "import { afterEach } from 'node:test'; afterEach(() => {}); export const helper = 1;",
+    'helper.test.mts': "import { beforeEach } from 'node:test'; beforeEach(() => {});",
+    'behavior.mts': "import { test as scenario } from 'node:test'; scenario('real case', () => {});",
+    'common.cts': "const { it: scenario } = require('node:test'); scenario('real case', () => {});",
+    'default.cts': "const scenario = require('node:test'); scenario('real case', () => {});",
+    'comment.mts': "// import { test } from 'node:test'; test('not registered', () => {});",
+    'hook-namespace.mts': "import test from 'node:test'; test.before(() => {});",
+    'namespace.mts': "import * as runner from 'node:test'; runner.test.skip('registered', () => {});",
+    'program.test.mts': "// This executable assertion program does not use 'node:test'.\nimport assert from 'node:assert/strict'; assert.equal(1, 1);",
+  };
+  await Promise.all(Object.entries(fixtures).map(([name, source]) => fs.writeFile(path.join(dir, name), source)));
+  assert.deepEqual(await discoverTests(dir), ['behavior.mts', 'common.cts', 'default.cts', 'namespace.mts', 'program.test.mts']);
+});
 
 test('a UI run under a parent that already holds the UI lock is refused (it would wait on itself for ever)', () => {
   const locks = [{ pid: 10, path: '/tmp/elpis-desktop-ui.lock' }, { pid: 50, path: '/tmp/other.lock' }];
@@ -49,7 +68,7 @@ test('installing needs a recorded pass for the exact commit', async t => {
 });
 
 test('the gate records only the clean commit present before its tests run', async () => {
-  const fixtures = path.join(os.homedir(), '.cache/elpis-tests');
+  const fixtures = os.tmpdir();
   await fs.mkdir(fixtures, { recursive: true });
   for (const scenario of ['clean', 'commit', 'dirty-start', 'dirty-end', 'resource-failure', 'renderer-failure', 'fast-only', 'desktop-only']) {
     const dir = createTestTempDir(path.join(fixtures, 'gate-state-'));
@@ -60,6 +79,7 @@ test('the gate records only the clean commit present before its tests run', asyn
       await fs.mkdir(home);
       // This fixture builds no app; its lifecycle checks must not wait on workstation build locks.
       await fs.writeFile(path.join(root, 'bin/flock'), '#!/bin/sh\nshift\nexec "$@"\n', { mode: 0o755 });
+      await fs.symlink(new URL('../node_modules', import.meta.url).pathname, path.join(root, 'node_modules'));
       const scripts = new URL('../scripts/', import.meta.url);
       for (const file of ['test-gate.mts', 'gate-guards.mts']) await fs.copyFile(new URL(file, scripts), path.join(root, 'scripts', file));
       await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify({ fast: ['tests/state.test.mjs'], bridge: ['bridge/idle.test.mjs'], desktop: ['desktop/idle.test.mjs'], ui: ['ui/idle.test.mjs'], 'opt-in': [] }));

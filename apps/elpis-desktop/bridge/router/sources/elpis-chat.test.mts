@@ -1,17 +1,16 @@
 // Ported from dsh-superagent (MIT), tests/sources.spec.ts (shape)
-import { test } from 'node:test'
+import { test } from 'node:test';
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { RouterStore } from '../infra/store.mts'
-import { Commands } from '../infra/commands.mts'
-import { testDeployment } from '../infra/fixtures.test.mts'
-import { Engine, type Trigger } from '../core/index.mts'
-import { SourceRegistry } from './registry.mts'
-import type { SourceContext } from './host.mts'
-import { createElpisChatKind, pollElpisChat, elpisChatTriggerId, startElpisChat,
-  type ElpisChatMessage, type ElpisChatTransport } from './elpis-chat.mts'
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { RouterStore } from '../infra/store.mts';
+import { Commands } from '../infra/commands.mts';
+import { testDeployment } from '../infra/fixtures.mts';
+import { Engine, type Trigger } from '../core/index.mts';
+import { SourceRegistry } from './registry.mts';
+import type { SourceContext } from './host.mts';
+import { createElpisChatKind, pollElpisChat, elpisChatTriggerId, startElpisChat, type ElpisChatMessage, type ElpisChatTransport } from './elpis-chat.mts';
 
 const CHAT = '00000000-0000-0000-0000-000000000001'
 const message = (id: string, role: ElpisChatMessage['role'] = 'user'): ElpisChatMessage =>

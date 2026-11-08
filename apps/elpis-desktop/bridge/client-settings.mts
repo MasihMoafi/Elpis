@@ -5,7 +5,7 @@ import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provid
 
 import { internal_effort } from './client-rewind.mts';
 import { internal_modelList } from './client-models.mts';
-import { internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 import type { CustomizePage } from './customize-page.mts';

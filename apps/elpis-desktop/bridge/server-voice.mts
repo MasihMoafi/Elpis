@@ -1,4 +1,5 @@
-import { elpisHome, object } from './client.mts';
+import { object } from './validate.mts';
+import { elpisHome } from './client-paths.mts';
 import { recordVoiceCall } from './voice.mts';
 import { body, json } from './server-http.mts';
 

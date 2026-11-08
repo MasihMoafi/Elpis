@@ -1,20 +1,20 @@
-import { test } from 'node:test'
+import { test } from 'node:test';
 import assert from 'node:assert/strict'
-import { EventEmitter } from 'node:events'
-import { mkdtempSync, rmSync, existsSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { DesktopClient } from '../client.mts'
-import { MotherAgent } from './mother-agent.mts'
-import { ElpisAdapter } from './executor/adapters.mts'
-import { FakeServer, waitFor } from './executor/fixtures.test.mts'
+import { EventEmitter } from 'node:events';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DesktopClient } from '../client.mts';
+import { MotherAgent } from './mother-agent.mts';
+import { ElpisAdapter } from './executor/adapters.mts';
+import { FakeServer, waitFor } from './executor/fixtures.mts';
 
 const CHAT = '00000000-0000-0000-0000-000000000001'
 
-test('real bridge chat storage stays offline until enabled, then routes persisted input and reopens one Mother chat', async () => {
+function fixture() {
   const home = mkdtempSync(join(tmpdir(), 'mother-bridge-')), workers = new FakeServer()
   const calls: { method: string; params: Record<string, unknown> }[] = []
-  let adapterStarts = 0, created = false, name = ''
+  let adapterStarts = 0, created = false, name = '', configured = true, archived = false
   const socket = Object.assign(new EventEmitter(), { close() {}, send(raw: string) {
     const request = JSON.parse(raw) as { id?: string; method: string; params: Record<string, unknown> }
     if (!request.id) return
@@ -22,14 +22,19 @@ test('real bridge chat storage stays offline until enabled, then routes persiste
     let result: object
     switch (request.method) {
       case 'initialize': result = {}; break
-      case 'config/read': result = { config: { model: 'chosen-main', model_provider: 'openai', background_model: 'chosen-background', background_provider: 'openai' }, layers: [{ name: { type: 'user', file: join(home, 'config.toml') }, version: 'v1' }] }; break
+      case 'config/read': result = { config: { model: configured ? 'chosen-main' : null, model_provider: 'openai', background_model: configured ? 'chosen-background' : null, background_provider: 'openai' }, layers: [{ name: { type: 'user', file: join(home, 'config.toml') }, version: 'v1' }] }; break
       case 'configRequirements/read': result = { requirements: null }; break
       case 'pruner/read': result = {}; break
       case 'experimentalFeature/list': result = { data: [] }; break
-      case 'model/list': result = { data: [{ id: 'chosen-background', model: 'chosen-background', displayName: 'Chosen', supportedReasoningEfforts: [] }] }; break
+      case 'model/list': result = { data: ['chosen-background', 'router-saved', 'worker-saved'].map(model => ({ id: model, model, displayName: model, supportedReasoningEfforts: [] })) }; break
       case 'thread/start': created = true; result = { thread: { id: CHAT, name, status: { type: 'idle' } }, model: request.params.model, modelProvider: 'openai' }; break
       case 'thread/name/set': name = String(request.params.name); result = {}; break
-      case 'thread/read': assert.ok(created); result = { thread: { id: CHAT, name, status: { type: 'idle' } } }; break
+      case 'thread/list': result = { data: [] }; break
+      case 'thread/archive': archived = true; result = {}; break
+      case 'thread/unarchive': archived = false; result = { thread: { id: CHAT } }; break
+      case 'thread/resume': result = { thread: { id: CHAT, name, path: join(home, archived ? 'archived_sessions' : 'sessions', `${CHAT}.jsonl`), status: { type: 'idle' } } }; break
+      case 'thread/delete': created = false; result = {}; break
+      case 'thread/read': if (!created) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: 'thread not found' } }))); return } result = { thread: { id: CHAT, name, path: join(home, archived ? 'archived_sessions' : 'sessions', `${CHAT}.jsonl`), status: { type: 'idle' } } }; break
       case 'thread/items/list': result = { data: [], nextCursor: null }; break
       case 'thread/unsubscribe': result = {}; break
       default: throw new Error(`Unexpected RPC ${request.method}`)
@@ -38,14 +43,19 @@ test('real bridge chat storage stays offline until enabled, then routes persiste
   } })
   const client = new DesktopClient(socket, { home, appHome: home, githubConnector: { instructions: async () => '' } })
   const create = () => new MotherAgent({ client, home, adapters: async () => { adapterStarts++; return [new ElpisAdapter(workers.connect)] } })
+  return { home, workers, calls, socket, client, create, get name() { return name }, get adapterStarts() { return adapterStarts }, unsetDefaults() { configured = false }, archiveExternally() { archived = true } }
+}
+
+test('real bridge chat storage stays offline until enabled, then routes persisted input and reopens one Mother chat', async () => {
+  const h = fixture(), { home, workers, calls, client, create } = h
   let mother = create()
   try {
     await client.initialize(); await mother.start()
     const off = mother.snapshot()
-    assert.equal(off.enabled, false); assert.equal(off.threadId, null); assert.equal(adapterStarts, 0)
+    assert.equal(off.enabled, false); assert.equal(off.threadId, null); assert.equal(h.adapterStarts, 0)
     assert.equal(existsSync(join(home, 'router', 'orchestrator.sqlite')), false)
     const on = await mother.save({ version: off.version, enabled: true })
-    assert.equal(on.error, undefined); assert.equal(on.threadId, CHAT); assert.equal(name, 'Mother agent')
+    assert.equal(on.error, undefined); assert.equal(on.threadId, CHAT); assert.equal(h.name, 'Mother agent')
     assert.equal(mother.decorate({ id: CHAT }).motherAgent, true)
     assert.equal((await mother.list([], {}))[0]?.id, CHAT, 'A Mother chat without native turns still appears in the sidebar')
     assert.deepEqual(await mother.list([], { archived: true }), [])
@@ -83,4 +93,65 @@ test('real bridge chat storage stays offline until enabled, then routes persiste
     await assert.rejects(mother.send(CHAT, { text: 'Do more' }), /Turn Mother agent on/)
   } finally { await mother.close(); client.close(); rmSync(home, { recursive: true, force: true }) }
   assert.equal(workers.connections.size, 0)
+})
+
+const roles = (suffix: string) => ({ dispatch: { provider: 'openai', model: `router-${suffix}` }, worker: { provider: 'openai', model: `worker-${suffix}` } })
+
+test('persisted explicit role models start a fresh Mother without global defaults', async () => {
+  const h = fixture()
+  let mother = h.create()
+  try {
+    await h.client.initialize()
+    await mother.save({ version: mother.snapshot().version, roles: roles('saved') })
+    await mother.close(); h.unsetDefaults(); mother = h.create()
+    const on = await mother.save({ version: mother.snapshot().version, enabled: true })
+    assert.equal(on.error, undefined)
+    assert.equal(h.calls.find(call => call.method === 'thread/start')?.params.model, 'router-saved')
+    assert.equal(h.workers.calls.find(call => call.method === 'thread/start')?.params.model, 'router-saved')
+  } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
+})
+
+test('two Mother settings windows cannot overwrite role models with a stale version', async () => {
+  const h = fixture(), mother = h.create()
+  try {
+    const original = mother.snapshot()
+    const saved = await mother.save({ version: original.version, roles: roles('first') })
+    assert.notEqual(saved.version, original.version)
+    await assert.rejects(mother.save({ version: original.version, roles: roles('stale'), enabled: true }), /changed elsewhere/)
+    assert.deepEqual(mother.snapshot().roles, roles('first'))
+    assert.equal(mother.snapshot().enabled, false)
+    await mother.save({ version: saved.version, roles: roles('new') })
+    assert.deepEqual(mother.snapshot().roles, roles('new'))
+  } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
+})
+
+test('the bound Mother chat respects archive, trash exclusions, undo and permanent deletion', async () => {
+  const h = fixture()
+  let mother = h.create()
+  try {
+    await h.client.initialize()
+    await mother.save({ version: mother.snapshot().version, enabled: true })
+    assert.ok(h.workers.connections.size > 0)
+    h.archiveExternally()
+    assert.deepEqual(await mother.list([], {}), [], 'Native archive paths exclude a chat archived by another client')
+    await mother.close(); mother = h.create(); await mother.start()
+    assert.equal(h.workers.connections.size, 0, 'An externally archived Mother must stay stopped after restart')
+    await mother.mutate(CHAT, 'unarchiveThread', () => h.client.unarchiveThread(CHAT, {}))
+    assert.equal((await mother.list([], {}))[0]?.id, CHAT)
+    await assert.rejects(mother.mutate(CHAT, 'archiveThread', async () => { throw new Error('Archive unavailable') }), /Archive unavailable/)
+    assert.ok(h.workers.connections.size > 0, 'A failed archive must leave Mother running')
+    await mother.mutate(CHAT, 'archiveThread', () => h.client.archiveThread(CHAT, {}))
+    assert.equal(h.workers.connections.size, 0)
+    assert.deepEqual(await mother.list([], {}), [])
+    await mother.mutate(CHAT, 'unarchiveThread', () => h.client.unarchiveThread(CHAT, {}))
+    assert.ok(h.workers.connections.size > 0)
+    assert.equal((await mother.list([], {}))[0]?.id, CHAT)
+    assert.deepEqual(await mother.list([], {}, id => id === CHAT), [])
+    await mother.mutate(CHAT, 'deleteThread', () => h.client.deleteThread(CHAT, {}))
+    assert.equal(mother.snapshot().threadId, null)
+    await mother.start()
+    assert.equal(mother.snapshot().error, undefined)
+    assert.equal(mother.snapshot().threadId, CHAT)
+    assert.equal(h.calls.filter(call => call.method === 'thread/start').length, 2)
+  } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
 })

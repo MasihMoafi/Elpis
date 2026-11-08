@@ -1,3 +1,4 @@
+import { subAgentSource } from './client-thread-list.mts';
 import { BridgeError, object, text, threadId } from './validate.mts';
 import { MOTHER_MODEL, WORKFLOW_PRESETS, workflowPreset } from './workflow-presets.mts';
 import { agentOutput } from './agent-output.mts';
@@ -8,7 +9,7 @@ import { internal_current, internal_effort } from './client-rewind.mts';
 import { internal_decorate } from './client-thread-list.mts';
 import { internal_model, internal_providerModel } from './client-context.mts';
 import { internal_mutate } from './client-mutation.mts';
-import { internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 
@@ -28,7 +29,7 @@ export type FinishedWorkflow = {
 async function internal_workflowRecords(this: DesktopClient, clientState: ClientState) {
     const saved = await clientState.workflowRuns.list();
     const threads = (await this.listThreads({ limit: 100, includeAgentRuns: true })).data ?? [];
-    const roots = new Set(threads.filter(thread => typeof thread.source?.subAgent?.other === 'string' && thread.source.subAgent.other.startsWith('work_graph:')).map((thread: { parentThreadId?: unknown }) => thread.parentThreadId).filter(Boolean));
+    const roots = new Set(threads.filter(thread => { const other = subAgentSource(thread.source)?.other; return typeof other === 'string' && other.startsWith('work_graph:'); }).map((thread: { parentThreadId?: unknown }) => thread.parentThreadId).filter(Boolean));
     const native = [];
     for (const rootThreadId of roots) {
       const listed = await internal_rpc(this, clientState, 'workGraph/list', { rootThreadId });

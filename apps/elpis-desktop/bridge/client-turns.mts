@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto';
 import { archivedSession } from './client-protocol.mts';
 import { collaborationMode, modeOf, permissionMode, permissionSetting, reviewTarget } from './client-permissions.mts';
 import { internal_attach, internal_decorate } from './client-thread-list.mts';
-import { internal_browserOptions, internal_rpc } from './client-connection.mts';
+import { internal_browserOptions, internal_rpc } from './client-rpc.mts';
 import { internal_chatModel } from './client-context.mts';
 import { internal_current, internal_effort, internal_startTurn } from './client-rewind.mts';
 import { internal_mutate } from './client-mutation.mts';

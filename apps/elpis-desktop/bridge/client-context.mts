@@ -1,11 +1,12 @@
+export { internal_withTurnModels } from './client-rollout-cache.mts'
 import { BridgeError, object, text, threadId } from './validate.mts';
-import { CONTEXT_SWITCH_KEYS, cacheUse, contextLedger, contextSwitchesSnapshot, restoredTokenUsage, rolloutShares, rolloutTurnModels } from './elpis-features.mts';
+import { CONTEXT_SWITCH_KEYS, cacheUse, contextLedger, contextSwitchesSnapshot, restoredTokenUsage, rolloutShares } from './elpis-features.mts';
 import fs from 'node:fs';
 import path from 'node:path';
 import { sessionContextFiles } from './session-context.mts';
 import { internal_decorate } from './client-thread-list.mts';
 import { internal_mutate } from './client-mutation.mts';
-import { internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 
@@ -97,19 +98,6 @@ async function internal_savedShares(this: DesktopClient, clientState: ClientStat
     const value = await rolloutShares(file);
     clientState.shares.set(file, { key, value });
     return value;
-  }
-
-export async function internal_withTurnModels<T extends { turnId: string | undefined }>(clientState: ClientState, file: unknown, entries: T[]): Promise<T[]> {
-    if (!Array.isArray(entries) || !entries.length) return entries;
-    const stat = typeof file === 'string' ? await fs.promises.stat(file).catch(() => null) : null;
-    if (!stat?.isFile()) return entries;
-    const key = `${stat.size}:${stat.mtimeMs}`, cached = clientState.turnModels.get(file);
-    const models = cached?.key === key ? cached.value : await rolloutTurnModels(file);
-    if (cached?.key !== key) clientState.turnModels.set(file, { key, value: models });
-    return entries.map(entry => {
-      const model = models.get(entry.turnId);
-      return model ? { ...entry, model } : entry;
-    });
   }
 
 async function internal_restoredUsage(this: DesktopClient, clientState: ClientState, file: unknown) {

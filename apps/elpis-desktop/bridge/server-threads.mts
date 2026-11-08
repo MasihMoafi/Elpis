@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { BridgeError, object } from './client.mts';
+import { BridgeError, object } from './validate.mts';
 import { ATTACHMENT_BODY_LIMIT } from './attachments.mts';
 import { smartPruneDetail } from './smart-prune.mts';
 import { body, json, pageQuery } from './server-http.mts';
@@ -61,7 +61,7 @@ export async function handleThreadRoutes(state: import('./server-http.mts').Serv
     if (method === 'GET') {
       const query = pageQuery(url, true), listed = await (query.archived && client.listArchivedThreads ? client.listArchivedThreads(query) : client.listThreads(query));
       // A chat waiting to be deleted is archived, but it is not an archived chat.
-      const data = await state.mother.list(query.archived ? listed.data.filter((item: { id: string }) => !trash.has(item.id)) : listed.data, query);
+      const data = await state.mother.list(query.archived ? listed.data.filter((item: { id: string }) => !trash.has(item.id)) : listed.data, query, trash.has);
       json(response, 200, { ...listed, data });
       return true;
     }
@@ -111,7 +111,7 @@ export async function handleThreadRoutes(state: import('./server-http.mts').Serv
       const input = await body(request, ['send', 'steer'].includes(operation) ? ATTACHMENT_BODY_LIMIT : 65536);
       if (['send', 'steer'].includes(operation) && state.mother.owns(id)) { json(response, 200, await state.mother.send(id, input)); return true; }
       await prepareLoveSpotTurn(loveSpot, id, operation, input);
-      json(response, 200, await client[operation](id, input)); return true;
+      json(response, 200, await state.mother.mutate(id, operation, () => client[operation](id, input))); return true;
     }
     throw new BridgeError('Method is not allowed', 405);
   }

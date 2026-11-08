@@ -8,7 +8,7 @@ import type { createReplanning } from './create-replanning.mts';
 import type { createReview } from './create-review.mts';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from '../client.mts';
+import { BridgeError } from '../validate.mts';
 import { workflowWorktrees } from '../workflow-worktrees.mts';
 import type { StoredTask, WorkflowRecord, Root, WorkflowOptions } from './types.mts';
 import { ended, settled } from './status.mts';

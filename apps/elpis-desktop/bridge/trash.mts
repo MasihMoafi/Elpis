@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './client.mts';
+import { BridgeError } from './validate.mts';
 
 type TrashEntry = { ids: string[]; archived: string[]; earlier?: boolean };
 type TrashClient = {

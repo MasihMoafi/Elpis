@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { BridgeError } from './client.mts';
+import { BridgeError } from './validate.mts';
 import { childEnv } from './tools.mts';
 
 type Input = { name: string; answer: string; file?: string };

@@ -1,9 +1,8 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/cards.ts.
 /** Compact, bounded model-facing projections of triggers, tickets, threads, and decisions; full texts stay behind readable resources. */
-import { latestReport, reasonText, threadKey, ticketStage, type Decision, type Mandate, type Thread, type Ticket, type TicketInput,
-  type Trigger, type TriggerDisposition } from '../core/index.mts'
-import { pullOf } from '../sources/github-pull.mts'
-import { batchLine, inputResource } from '../executor/dsh.mts'
+import { latestReport, reasonText, threadKey, ticketStage, type Decision, type Mandate, type Thread, type Ticket, type TicketInput, type Trigger, type TriggerDisposition } from '../core/index.mts';
+import { pullOf } from '../sources/github-pull.mts';
+import { batchLine, inputResource } from '../executor/messages.mts';
 
 /** Collapses whitespace and truncates text for display previews while keeping code, angle brackets, and links intact for model readers. */
 export function preview(text: string): string { return text.replace(/\s+/g, ' ').slice(0, 160) }

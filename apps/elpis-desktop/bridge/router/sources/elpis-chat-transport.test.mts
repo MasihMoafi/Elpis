@@ -1,20 +1,20 @@
 // Ported from dsh-superagent (MIT), tests/sources.spec.ts (shape)
-import { test } from 'node:test'
+import { test } from 'node:test';
 import assert from 'node:assert/strict'
-import { EventEmitter } from 'node:events'
-import { mkdtempSync, mkdirSync, rmSync, statSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
-import { DesktopClient } from '../../client.mts'
-import { ElpisChatHistory } from './elpis-chat-history.mts'
-import { createElpisChatTransport } from './elpis-chat-transport.mts'
-import { mergeLiveItem } from '../../../lib/live-events.ts'
-import type { Entry } from '../../../lib/api.ts'
-import { chatContext } from './elpis-chat-read.mts'
-import { issueTrigger } from './github-trigger.mts'
-import { Commands } from '../infra/commands.mts'
-import { testDeployment } from '../infra/fixtures.test.mts'
+import { EventEmitter } from 'node:events';
+import { mkdtempSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { DesktopClient } from '../../client.mts';
+import { ElpisChatHistory } from './elpis-chat-history.mts';
+import { createElpisChatTransport } from './elpis-chat-transport.mts';
+import { mergeLiveItem } from '../../../lib/live-events.ts';
+import type { Entry } from '../../../lib/api.ts';
+import { chatContext } from './elpis-chat-read.mts';
+import { issueTrigger } from './github-trigger.mts';
+import { Commands } from '../infra/commands.mts';
+import { testDeployment } from '../infra/fixtures.mts';
 
 const CHAT = '00000000-0000-0000-0000-000000000001'
 const user = (id: string) => ({ turnId: 'turn', item: { id, type: 'userMessage', content: [{ type: 'text', text: `user ${id}` }] }, startedAtMs: 1794009600000 })

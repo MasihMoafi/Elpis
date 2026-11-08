@@ -1,4 +1,4 @@
-import { BridgeError, threadId } from './client.mts';
+import { BridgeError, threadId } from './validate.mts';
 import type { DesktopClient } from './client.mts';
 
 type SideClient = Pick<DesktopClient, 'settings' | 'sideRpc' | 'on' | 'off'>;

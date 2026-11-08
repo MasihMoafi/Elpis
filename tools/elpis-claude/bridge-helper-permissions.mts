@@ -1,9 +1,10 @@
-import type { EngineCall,BridgeClient,BridgeContext,BridgeResponses,Ceiling,HelperScope,NoticeParams,ProviderTurn,RequestId,SavedHelper,Store } from "./bridge-types.mts";
+import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
+import type { EngineCall, BridgeClient, BridgeContext, Ceiling, HelperScope, NoticeParams, ProviderTurn, RequestId, SavedHelper, Store } from "./bridge-types.mts";
 
 type Mode = "plan" | "bypassPermissions" | "default" | "auto" | "acceptEdits";
 type Dependencies = {
   threadAccess: Map<string, { profile: string | undefined; reviewer: string | undefined }>;
-  threadPolicy: Map<string, string>;
+  threadPolicy: Map<string, AskForApproval>;
   UNSANDBOXED: string[];
   AUTHORITY: Record<Mode, number>;
   accessModeOf: (threadId: string, agent: string, ask: boolean) => Mode;

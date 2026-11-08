@@ -57,7 +57,13 @@ type DesktopServerOptions = {
 export async function startDesktopServer(rawOptions: Record<string, unknown> = {}) {
   const options = rawOptions as DesktopServerOptions;
   const client = options.client ?? await DesktopClient.connect({ ...(options.socketPath ? { socketPath: options.socketPath } : {}), ...(options.elpisHome ? { home: options.elpisHome } : {}) });
-  const trash = await createTrash({ client, file: options.trashFile });
+  const mother = new MotherAgent({ client, home: options.elpisHome ?? elpisHome(), ...(options.socketPath ? { socketPath: options.socketPath } : {}) });
+  const trash = await createTrash({ client: {
+    listThreads: query => client.listThreads(query),
+    archiveThread: (id, body) => mother.mutate(id, 'archiveThread', () => client.archiveThread(id, body)),
+    unarchiveThread: (id, body) => mother.mutate(id, 'unarchiveThread', () => client.unarchiveThread(id, body)),
+    deleteThread: (id, body) => mother.mutate(id, 'deleteThread', () => client.deleteThread(id, body)),
+  }, file: options.trashFile });
   // The last session's deleted chats go for good once the runtime is reachable, which may be after the window opened.
   const purge = () => trash.purge().catch(() => {});
   if (client.connected === false) client.on('event', function connected(value: { type?: string; data?: { connected?: boolean } }) { if (value.type === 'connection' && value.data?.connected) { client.off('event', connected); void purge(); } });
@@ -99,7 +105,6 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   const tools = options.tools ?? createTools({ environment: () => client.ragEnvironment() });
   const diagnose = requestDiagnostics(options.elpisHome ?? elpisHome());
   const settingsFiles = createSettingsFiles(options.elpisHome ?? elpisHome());
-  const mother = new MotherAgent({ client, home: options.elpisHome ?? elpisHome(), ...(options.socketPath ? { socketPath: options.socketPath } : {}) });
   const motherConnection = (value: { type: string; data?: { connected?: boolean } }) => { if (value.type === 'connection' && value.data?.connected) void mother.start(); };
   client.on('event', motherConnection);
   void mother.start();

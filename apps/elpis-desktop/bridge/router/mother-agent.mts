@@ -1,20 +1,22 @@
 /** Desktop lifecycle and the opt-in Mother chat. One controller serializes settings changes and startup. */
-import { attachmentInput } from '../attachments.mts'
-import { randomUUID } from 'node:crypto'
-import type { DesktopClient } from '../client.mts'
-import { BridgeError, object } from '../validate.mts'
-import { existingSocket } from '../client-paths.mts'
-import { profileEnvironment } from '../profile-env.mts'
-import { MotherApp } from './app.mts'
-import { MotherSettingsFile, type MotherSettings } from './settings.mts'
-import { runtimeAdapters, type RuntimeAdapter } from './executor/adapters.mts'
-import { readSettings, type RoleModel } from './executor/settings.mts'
-import { createElpisChatTransport } from './sources/elpis-chat-transport.mts'
-import { modelCatalog } from './model.mts'
-import { subprocess } from './subprocess.mts'
-import type { ListedThread, ThreadListOptions } from '../client-thread-list.mts'
-import { handleMotherHttp } from './app/http.mts'
-import type { IncomingMessage, ServerResponse } from 'node:http'
+import { attachmentInput } from '../attachments.mts';
+import { createHash, randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import type { DesktopClient } from '../client.mts';
+import { BridgeError, object } from '../validate.mts';
+import { existingSocket } from '../client-paths.mts';
+import { profileEnvironment } from '../profile-env.mts';
+import { MotherApp } from './app.mts';
+import { MotherChangeSchema, MotherSettingsFile, type MotherSettings } from './settings.mts';
+import { storedSettingsVersion } from './app/store.mts';
+import { runtimeAdapters, type RuntimeAdapter } from './executor/adapters.mts';
+import { readSettings, type RoleModel } from './executor/settings.mts';
+import { createElpisChatTransport } from './sources/elpis-chat-transport.mts';
+import { modelCatalog } from './model.mts';
+import { subprocess } from './subprocess.mts';
+import type { ListedThread, ThreadListOptions } from '../client-thread-list.mts';
+import { handleMotherHttp } from './app/http.mts';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 
 interface Options { client: DesktopClient; home: string; socketPath?: string; adapters?: () => Promise<RuntimeAdapter[]> }
 export class MotherAgent {
@@ -31,7 +33,9 @@ export class MotherAgent {
     const next = this.queue.then(work); this.queue = next.catch(() => {}); return next
   }
   snapshot(): MotherSettings { const snapshot = this.file.snapshot(), settings = this.app?.store.settings() ?? readSettings(this.options.home)
-    return { ...snapshot, ...(settings ? { roles: { dispatch: settings.eval.model, worker: settings.executor.model } } : {}),
+    const revision = this.app?.store.settingsHistory(1)[0]?.revision ?? storedSettingsVersion(join(this.options.home, 'router', 'orchestrator.sqlite'))?.revision ?? 0
+    const version = createHash('sha256').update(JSON.stringify([snapshot.version, revision])).digest('hex')
+    return { ...snapshot, version, ...(settings ? { roles: { dispatch: settings.eval.model, worker: settings.executor.model } } : {}),
       ...(this.error ? { error: this.error } : {}), ...(this.app ? { health: this.app.health } : {}) } }
   owns(id: string): boolean { return this.file.read().threadId === id }
   decorate<T extends { id: string }>(thread: T): T & { motherAgent?: boolean } {
@@ -41,12 +45,12 @@ export class MotherAgent {
     return { ...thread, name: 'Mother agent', motherAgent: true, ...(model ? { model: model.model, modelProvider: model.provider } : {}) }
   }
   /** Native lists omit chats without a native preview; Mother owns her history in the bridge. */
-  async list(threads: ListedThread[], query: ThreadListOptions): Promise<ListedThread[]> {
+  async list(threads: ListedThread[], query: ThreadListOptions, excluded: (id: string) => boolean = () => false): Promise<ListedThread[]> {
     const id = this.file.read().threadId
-    const rows = threads.map(thread => this.decorate(thread))
-    if (!id || query.archived || query.cursor || query.ancestorThreadId || rows.some(thread => thread.id === id)) return rows
+    const rows = threads.filter(thread => !excluded(thread.id)).map(thread => this.decorate(thread))
+    if (!id || excluded(id) || query.archived || query.cursor || query.ancestorThreadId || rows.some(thread => thread.id === id)) return rows
     if (typeof query.searchTerm === 'string' && !'mother agent'.includes(query.searchTerm.toLowerCase())) return rows
-    try { rows.unshift(this.decorate(await this.options.client.readThreadMetadata(id))) }
+    try { const thread = await this.options.client.readThreadMetadata(id); if (!thread.archived) rows.unshift(this.decorate(thread)) }
     catch { /* A deleted or unavailable Mother chat remains visible as a startup error in Settings. */ }
     return rows
   }
@@ -57,13 +61,19 @@ export class MotherAgent {
   save(input: unknown): Promise<MotherSettings> {
     return this.serialized(async () => {
       if (this.closed) throw new BridgeError('Mother agent is stopping', 409)
-      this.file.change(input)
-      if (input && typeof input === 'object' && 'roles' in input) {
+      const data = MotherChangeSchema.parse(input)
+      if (data.version !== this.snapshot().version) throw new BridgeError('Mother agent settings changed elsewhere. Reload before saving.', 409)
+      const before = this.file.read(), roles = data.roles
+      if (roles) {
         const app = this.passive()
-        const config = this.file.read(), current = app.store.settings()
-        app.store.saveSettings({ ...current, eval: { ...current.eval, model: config.roles.dispatch }, executor: { ...current.executor, model: config.roles.worker } })
-        this.file.write({ ...config, roles: { dispatch: null, worker: null } })
-      }
+        app.store.atomic(() => {
+          const current = app.store.settings()
+          const settings = { ...current, eval: { ...current.eval, model: roles.dispatch }, executor: { ...current.executor, model: roles.worker } }
+          for (const block of ['eval', 'executor'] as const) app.store.saveSettings(settings,
+            { source: 'panel', block, policyVersion: '', policyChanged: false, notified: [] })
+          this.file.write({ ...before, enabled: data.enabled ?? before.enabled, roles: { dispatch: null, worker: null } })
+        })
+      } else this.file.write({ ...before, enabled: data.enabled ?? before.enabled })
       await this.stop()
       this.error = undefined
       try { await this.reconcile() } catch (error) { this.error = error instanceof Error ? error.message : 'Mother agent could not start' }
@@ -78,8 +88,9 @@ export class MotherAgent {
     const { client, home } = this.options, settings = await client.settings()
     const inherited = settings.background.model ? settings.background : settings.main
     const fallback: RoleModel = { provider: inherited.provider ?? settings.main.provider ?? '', model: inherited.model ?? '' }
-    if ((!config.roles.dispatch || !config.roles.worker) && (!fallback.provider || !fallback.model)) throw new Error('Choose a model in Settings → Configuration before enabling Mother agent.')
-    this.roles = { dispatch: config.roles.dispatch ?? fallback, worker: config.roles.worker ?? fallback }
+    const saved = readSettings(home)
+    this.roles = { dispatch: saved.eval.model ?? config.roles.dispatch ?? fallback, worker: saved.executor.model ?? config.roles.worker ?? fallback }
+    if (Object.values(this.roles).some(role => !role.provider || !role.model)) throw new Error('Choose a model in Settings → Configuration before enabling Mother agent.')
     if (!config.threadId) {
       if (config.creating) throw new Error('Mother chat creation was interrupted. Bind the existing chat in router/mother.json before enabling it again.')
       await client.models()
@@ -89,7 +100,7 @@ export class MotherAgent {
     }
     const threadId = config.threadId
     if (!threadId) throw new Error('Mother agent has no chat')
-    await client.readThreadMetadata(threadId)
+    if ((await client.readThreadMetadata(threadId)).archived) return
     await client.renameThread(threadId, { name: 'Mother agent' })
     const adapters = await (this.options.adapters?.() ?? runtimeAdapters({ url: `ws+unix://${existingSocket(this.options.socketPath, profileEnvironment(home))}:/` }))
     let app: MotherApp | undefined
@@ -104,6 +115,27 @@ export class MotherAgent {
       if (config.roles.dispatch || config.roles.worker) this.file.write({ ...config, roles: { dispatch: null, worker: null } })
       await app.start(); this.app = app; this.active = true; this.error = undefined
     } catch (error) { if (app) await app.close(); else for (const adapter of adapters) adapter.close(); throw error }
+  }
+  /** Sidebar lifecycle stops sessions while retaining tickets, receipts and work history. */
+  mutate<T>(id: string, operation: string, work: () => Promise<T>): Promise<T> {
+    return this.serialized(async () => {
+      const owned = this.owns(id), lifecycle = ['archiveThread', 'unarchiveThread', 'deleteThread'].includes(operation)
+      if (owned && lifecycle) await this.stop()
+      let result: T
+      try { result = await work() }
+      catch (error) {
+        if (owned && lifecycle) {
+          try { await this.reconcile() }
+          catch (restart) { this.error = restart instanceof Error ? restart.message : 'Mother agent could not restart' }
+        }
+        throw error
+      }
+      if (owned && operation === 'deleteThread' && !(result && typeof result === 'object' && 'archived' in result && result.archived)) {
+        this.file.write({ ...this.file.read(), threadId: null, creating: false })
+      }
+      if (owned && operation === 'unarchiveThread') await this.reconcile()
+      return result
+    })
   }
   async send(id: string, raw: unknown) {
     if (this.closed || !this.file.read().enabled) throw new BridgeError('Turn Mother agent on in Settings → Configuration to send a goal.', 409)

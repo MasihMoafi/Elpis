@@ -1,12 +1,12 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/notices.ts.
 /** Formats background notices and steering relays delivered to the main Session via the effect queue. */
-import { randomUUID } from 'node:crypto'
-import { followupOwners, key, liveTicket, type DomainEvent, type Ticket, type WorkerReport } from '../core/index.mts'
-import { triggerMessage } from '../executor/dsh.mts'
-import type { SourceRegistry } from '../sources/registry.mts'
-import { repliedTo } from './links.mts'
-import type { Store } from './store.mts'
-import { ticketCard } from './cards.mts'
+import { randomUUID } from 'node:crypto';
+import { followupOwners, key, liveTicket, type DomainEvent, type Ticket, type WorkerReport } from '../core/index.mts';
+import { triggerMessage } from '../executor/messages.mts';
+import type { SourceRegistry } from '../sources/registry.mts';
+import { repliedTo } from './links.mts';
+import type { Store } from './store.mts';
+import { ticketCard } from './cards.mts';
 
 /**
  * A background notice tuple for the main Session: `[name, value, summary]`, where `name` is the coalescing key in

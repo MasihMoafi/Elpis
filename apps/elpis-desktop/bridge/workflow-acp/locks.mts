@@ -1,5 +1,5 @@
 import fs from 'node:fs/promises';
-import { BridgeError } from '../client.mts';
+import { BridgeError } from '../validate.mts';
 
 export const alive = (pid: number) => { if (!Number.isSafeInteger(pid) || pid < 1) return false; try { process.kill(pid, 0); return true; } catch { return false; } };
 

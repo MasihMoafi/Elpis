@@ -1,6 +1,7 @@
-import { wireEnvelope,wireId,wireObject } from "./bridge-wire.mts";
-import { isTranscriptItem,isTranscriptTurn } from "./bridge-transcript.mts";
-import type { AccessSettings,EngineThread,RequestId } from "./bridge-types.mts";
+import { wireEnvelope, wireId, wireObject } from "./bridge-wire.mts";
+import { isTranscriptItem, isTranscriptTurn } from "./bridge-transcript.mts";
+import { isApprovalPolicy } from './approval-policy.mts';
+import type { AccessSettings, EngineThread, RequestId } from "./bridge-types.mts";
 
 const string = (v: unknown): v is string => typeof v === "string";
 const number = (v: unknown) => typeof v === "number" && Number.isFinite(v);
@@ -20,7 +21,8 @@ export function isEngineThread(v: unknown): v is EngineThread {
     && optional(v.ephemeral, x => typeof x === "boolean");
 }
 const access = (v: unknown): v is AccessSettings => wireObject(v)
-  && [v.approvalPolicy, v.approvalsReviewer, v.permissions].every(x => optional(x, string))
+  && optional(v.approvalPolicy, isApprovalPolicy)
+  && [v.approvalsReviewer, v.permissions].every(x => optional(x, string))
   && [v.activePermissionProfile, v.sandboxPolicy, v.sandbox].every(x => optional(x, y => nullable(y, z => wireObject(z) && optional(z.id, string) && optional(z.type, string))));
 type EventTurn = { id: string; status?: string; [key: string]: unknown };
 const turn = (v: unknown): v is EventTurn => wireObject(v) && string(v.id) && optional(v.status, string);
@@ -68,7 +70,7 @@ export function validEngineReply(method: string, value: unknown): boolean {
       && y.every(layer => wireObject(layer) && optional(layer.config, config))));
     case "configRequirements/read": return optional(value.requirements, x => nullable(x, wireObject));
     case "thread/read": case "thread/resume": case "thread/revert": return optional(value.thread, isEngineThread)
-      && optional(value.approvalPolicy, string) && optional(value.activePermissionProfile, x => nullable(x, y => wireObject(y) && optional(y.id, string)))
+      && optional(value.approvalPolicy, isApprovalPolicy) && optional(value.activePermissionProfile, x => nullable(x, y => wireObject(y) && optional(y.id, string)))
       && optional(value.turnsBackwardsCursor, x => nullable(x, string));
     case "thread/loaded/list": return optional(value.data, strings);
     case "thread/turns/list": return page(value, isTranscriptTurn);

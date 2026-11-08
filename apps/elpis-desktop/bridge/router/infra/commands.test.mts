@@ -1,10 +1,10 @@
 // Ported from dsh-superagent (MIT), tests/commands.spec.ts
-import { describe, it } from 'node:test'
-import { expect } from 'expect'
-import { spyOn } from 'jest-mock'
-import { z } from 'zod'
-import { CliError, Commands, commandError } from './commands.mts'
-import { testDeployment } from './fixtures.test.mts'
+import { describe, it } from 'node:test';
+import { expect } from 'expect';
+import { spyOn } from 'jest-mock';
+import { z } from 'zod';
+import { CliError, Commands, commandError } from './commands.mts';
+import { testDeployment } from './fixtures.mts';
 const deployment = testDeployment({ github: { ...testDeployment().github, cli: '/path/agent-gh' } })
 const REPOSITORY = deployment.repository
 describe('account-isolated operations', () => {
@@ -21,11 +21,8 @@ describe('account-isolated operations', () => {
       expect(output).not.toContain('GH_TOKEN=')
     } finally { delete process.env.GH_TOKEN }
   })
-  it('refuses Feishu commands when the deployment has no Feishu bot', async () => {
-    await expect(new Commands(() => testDeployment({ feishu: undefined }), {}, new AbortController().signal).lark(['im', '+chat-list'])).rejects.toThrow('The Feishu Source has no working bot CLI')
-  })
 })
-it('reports Feishu failures with their code and without command arguments', () => {
+it('reports structured CLI failures with their code and without command arguments', () => {
   const membership = commandError({stderr:'[page 1] fetching...\n'+JSON.stringify({error:{code:232011,message:'operator is not in the chat'}})})
   expect(membership).toMatchObject({ message: 'operator is not in the chat (232011)', code: 232011 })
   expect(commandError({stderr:JSON.stringify({error:{code:999,message:'scope missing'}})}).message).toBe('scope missing (999)')
@@ -63,15 +60,7 @@ describe('GitHub calls', () => {
     await expect(value.pages(z.looseObject({ id: z.number() }), 'issues/12/comments')).rejects.toThrow()
   })
 })
-it('says how to add the bot to a chat when Feishu answers that it is not a member, and keeps the code', async () => {
-  const commands = new Commands(() => deployment, {}, new AbortController().signal)
-  const membership = JSON.stringify({ error: { code: 232011, message: 'operator is not in the chat' } })
-  const run = spyOn(commands, 'run').mockRejectedValueOnce(commandError({ stderr: membership, code: 1 }))
-  const hint = 'The Feishu bot is not a member of the chat. Add the bot in the chat settings, then retry.'
-  await expect(commands.lark(['im', '+chat-members-list'])).rejects.toMatchObject({ message: hint, code: 232011, exitCode: 1 })
-  run.mockResolvedValueOnce(JSON.stringify({ ok: false, error: { code: 232011, message: 'operator is not in the chat' } }))
-  await expect(commands.lark(['im', '+chat-members-list'])).rejects.toMatchObject({ message: hint, code: 232011 })
-})
+
 it('names only the program and how it ended when a command prints no diagnostics, never its arguments', async () => {
   const commands = new Commands(() => deployment, {}, new AbortController().signal)
   const secret = 'secret reply text'
@@ -97,9 +86,7 @@ it('reports failures as CliError with the code the CLI names and the exit status
   const running = new Commands(() => deployment, {}, controller.signal).run('sleep', ['5'])
   controller.abort()
   await expect(running).rejects.toMatchObject({ name: 'AbortError' })
-  const commands = new Commands(() => deployment, {}, new AbortController().signal)
-  spyOn(commands, 'run').mockResolvedValue(JSON.stringify({ ok: false, error: { code: 231003, message: 'message not found' } }))
-  await expect(commands.lark(['im', '+messages-reply'])).rejects.toMatchObject({ message: 'message not found (231003)', code: 231003 })
+
 })
 
 it('stops a running command when the signal of its work aborts, or the lifetime, and leaves the other work running', async () => {

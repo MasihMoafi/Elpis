@@ -1,8 +1,9 @@
-import { wireId,wireObject } from "./bridge-wire.mts";
+import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
+import { wireId, wireObject } from "./bridge-wire.mts";
 import { createHelperPermissions } from "./bridge-helper-permissions.mts";
-import type { EngineCall,BridgeError,RequestId,BridgeClient,BridgeMessage,ProviderOwner,BridgeResponses,Ceiling } from "./bridge-types.mts";
+import type { EngineCall, BridgeError, RequestId, BridgeClient, BridgeMessage, ProviderOwner, Ceiling } from "./bridge-types.mts";
 import type WebSocket from "ws";
-import { defaultPermissionMode,defaultPermissionSettings,permissionSettingsAllowed,permissionSettings,permissionMode } from './permission-policy.mts';
+import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed, permissionSettings, permissionMode } from './permission-policy.mts';
 import type { BridgeEnvironment } from "./bridge-server.mts";
 
 type Dependencies = Pick<BridgeEnvironment, "automaticThreads" | "blockedAutomaticThreads" | "ceilingOf" | "explicitChatChoices" | "helperConns" | "helperScope" | "loadStoreSnapshot" | "permissionChoices" | "providerOwners" | "updateStore"> & {
@@ -22,7 +23,7 @@ export function createClientPermissions({ automaticThreads, blockedAutomaticThre
   // not a user choice. Only the chat menu (settings/update), or an explicitly marked
   // new-chat choice, detaches a chat from Settings > Default permissions.
   async function withPermissions(data: WebSocket.RawData | string) {
-    type PermissionParams = { threadId?: string | null; elpisPermissionSource?: string | null; elpisParentThreadId?: string | null; ephemeral?: boolean | null; model?: string | null; sandbox?: string | null; permissions?: string | null; approvalPolicy?: string | null; cwd?: string | null; edits?: { keyPath: string }[] | null; [key: string]: unknown };
+    type PermissionParams = { threadId?: string | null; elpisPermissionSource?: string | null; elpisParentThreadId?: string | null; ephemeral?: boolean | null; model?: string | null; sandbox?: string | null; permissions?: string | null; approvalPolicy?: AskForApproval | null; cwd?: string | null; edits?: { keyPath: string }[] | null; [key: string]: unknown };
     const isPermissionMessage = (value: unknown): value is { id: RequestId; method: string; params: PermissionParams } => {
       if (!wireObject(value) || !wireId(value.id) || typeof value.method !== 'string' || !wireObject(value.params)) return false;
       const p = value.params;

@@ -7,7 +7,7 @@ import { modeOf } from './client-permissions.mts';
 import { internal_attach, internal_decorate, internal_forgetSubscription, internal_itemsPage } from './client-thread-list.mts';
 import { internal_chatModel } from './client-context.mts';
 import { internal_mutate } from './client-mutation.mts';
-import { internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 import type { MessageVersions } from './message-versions.mts';

@@ -26,7 +26,7 @@ type Reply<T> = { id?: number | string; result?: T; error?: TestError };
 type Trace = { method?: string; start?: string; finish?: string; connection?: string; params?: { itemsView?: string; limit?: number; parentThreadId?: string; elpisParentThreadId?: string } };
 type HistoryRow = { startedAt?: number; startedAtMs?: number; items?: { type: string }[]; [key: string]: unknown };
 type SavedRow = { model?: string; turns?: { items: { type: string; content?: { type: string; text: string }[]; review?: string }[] }[]; parentThreadId?: string };
-type Fixture = { threads: Record<string, { thread?: object; hang?: boolean; delay?: number; error?: TestError }>; pages?: Record<string, unknown>; turns?: HistoryRow[]; items?: HistoryRow[]; delay?: number; historyError?: string; errorCursor?: string; turnsError?: TestError; itemsError?: TestError };
+type Fixture = { approvalPolicy?: unknown; threads: Record<string, { thread?: object; hang?: boolean; delay?: number; error?: TestError }>; pages?: Record<string, unknown>; turns?: HistoryRow[]; items?: HistoryRow[]; delay?: number; historyError?: string; errorCursor?: string; turnsError?: TestError; itemsError?: TestError };
 type Request = { id?: string | number; method?: string; params?: { threadId?: string; excludeTurns?: boolean; includeTurns?: boolean; cursor?: string; sortDirection?: string; limit?: number; itemsView?: string } };
 
 const resultOf = <T,>(reply: Reply<T>): T => { assert.ok(reply.result !== undefined, JSON.stringify(reply.error)); return reply.result; };
@@ -48,7 +48,7 @@ if (process.argv.includes("app-server")) {
     if (msg.method === "thread/resume") {
       assert.ok(p.threadId !== undefined);
       const row = fixture().threads[p.threadId]; assert.ok(row);
-      result = { thread: { ...row.thread, turns: p.excludeTurns ? [] : (fixture().turns ?? []) }, approvalPolicy: "on-request", model: "gpt-5.5" };
+      result = { thread: { ...row.thread, turns: p.excludeTurns ? [] : (fixture().turns ?? []) }, approvalPolicy: fixture().approvalPolicy ?? "on-request", model: "gpt-5.5" };
     }
     if (["thread/turns/list", "thread/items/list"].includes(msg.method ?? "")) {
       // As the engine answers before a thread's first recorded message (no state row yet).
@@ -166,6 +166,24 @@ if (process.argv.includes("app-server")) {
     cwd: "/fixture/work", source: "cli", modelProvider: "openai", preview: "", ...extra });
   const saved = (text: string, extra: object = {}) => ({ model: "claude/haiku", turns: [{ items: [{ type: "userMessage", content: [{ type: "text", text }] }] }], ...extra });
   const list = { sortKey: "updated_at", sourceKinds: ["cli", "vscode"], limit: 25 };
+
+  test("native granular approval policies retain provider routing and validate internal replies", async t => {
+    const { readClientRequest } = await import('../bridge-client-protocol.mts');
+    const { validEngineReply, isEngineMessage } = await import('../bridge-engine-protocol.mts');
+    const policy = { granular: { sandbox_approval: true, rules: false, skill_approval: true, request_permissions: false, mcp_elicitations: true } } satisfies import('../../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts').AskForApproval;
+    for (const approvalPolicy of ['untrusted', 'on-request', 'never', policy]) {
+      assert.ok(readClientRequest({ id: 1, method: 'thread/resume', params: { threadId: 'chat', approvalPolicy } }));
+      assert.ok(validEngineReply('thread/resume', { thread: { id: 'chat' }, approvalPolicy }));
+      assert.ok(isEngineMessage({ id: 1, result: { thread: { id: 'chat' }, approvalPolicy } }));
+    }
+    for (const approvalPolicy of [{ granular: {} }, { granular: { ...policy.granular, rules: 'yes' } }, 'unknown']) {
+      assert.equal(readClientRequest({ id: 1, method: 'thread/resume', params: { threadId: 'chat', approvalPolicy } }), null);
+      assert.equal(validEngineReply('thread/resume', { thread: { id: 'chat' }, approvalPolicy }), false);
+    }
+    const f = await setup(t, { approvalPolicy: policy, threads: { chat: { thread: thread('chat', 1) } } }, { chat: saved('Provider history') });
+    const response = resultOf(await f.call('thread/resume', { threadId: 'chat', approvalPolicy: policy }));
+    assert.ok(JSON.stringify(response.thread.turns).includes('Provider history'), 'the provider route must merge its durable chat history');
+  });
 
   test("lightweight provider resume excludes history and independently pages summary turns", async t => {
     const turns = Array.from({length:12},(_,i)=>({id:`stored-${i}`,startedAt:i+2,status:"completed",items:[{id:`u-${i}`,type:"userMessage",content:[{type:"text",text:`User ${i}`}]},{id:`tool-${i}`,type:"commandExecution",aggregatedOutput:"x".repeat(700000)},{id:`a-${i}`,type:"agentMessage",text:`Answer ${i}`}]}));

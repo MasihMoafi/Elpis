@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { BridgeError } from './client.mts';
+import { BridgeError } from './validate.mts';
 
 const FILE_NAME = 'provider-keys.json';
 const MAX_FILE_BYTES = 16_384;

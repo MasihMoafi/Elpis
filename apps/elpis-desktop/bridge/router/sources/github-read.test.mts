@@ -1,11 +1,11 @@
 // Ported from dsh-superagent (MIT), tests/github-read.spec.ts
-import { afterEach, it } from 'node:test'
-import { expect } from 'expect'
-import { ModuleMocker } from 'jest-mock'
+import { afterEach, it } from 'node:test';
+import { expect } from 'expect';
+import { ModuleMocker } from 'jest-mock';
 const mocks = new ModuleMocker(globalThis)
-import { Commands } from '../infra/commands.mts'
-import { testDeployment } from '../infra/fixtures.test.mts'
-import { readGithub, pullChecks } from './github-read.mts'
+import { Commands } from '../infra/commands.mts';
+import { testDeployment } from '../infra/fixtures.mts';
+import { readGithub, pullChecks } from './github-read.mts';
 
 const commands = new Commands(() => testDeployment(), {}, new AbortController().signal)
 afterEach(() => mocks.restoreAllMocks())

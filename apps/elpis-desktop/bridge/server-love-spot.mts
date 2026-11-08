@@ -1,4 +1,4 @@
-import { BridgeError, object, text } from './client.mts';
+import { BridgeError, object, text } from './validate.mts';
 import { PORTRAIT_ATTACHMENT_NAME, PORTRAIT_INSTRUCTIONS } from './matilda-face.cts';
 import { body, json } from './server-http.mts';
 

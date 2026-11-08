@@ -6,7 +6,7 @@ type Environment = { chatgpt?: boolean; geminiKey?: string | null; openrouterKey
 type GeminiResponse = { error?: { details?: { reason?: string }[] }; candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
 type McpResponse = { id?: number; error?: unknown; result: { isError?: boolean; content: { type: string; text: string }[] } };
 
-import { BridgeError } from './client.mts';
+import { BridgeError } from './validate.mts';
 import { childEnv } from './tools.mts';
 
 const MAX_AUDIO = 8 * 1024 * 1024;

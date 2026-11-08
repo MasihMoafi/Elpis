@@ -5,7 +5,7 @@ import path from 'node:path';
 import { providerModels } from './provider-models.mts';
 import { savedProviderKey } from './provider-keys.mts';
 import { subscriptionModels } from "./subscription-models.mts";
-import { internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
 

@@ -1,16 +1,17 @@
+import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
 // Protocol permission presets shared by the desktop and the provider runtime.
 export const PROFILES: Record<string, string> = { 'read-only': ':read-only', 'workspace-write': ':workspace', 'danger-full-access': ':danger-full-access', 'bypass-permissions': ':bypass-permissions' };
-export const PERMISSION_PRESETS: Record<string, { approval: string; reviewer: string; sandbox: string }> = {
+export const PERMISSION_PRESETS: Record<string, { approval: AskForApproval; reviewer: string; sandbox: string }> = {
   ask: { approval: 'on-request', reviewer: 'user', sandbox: 'workspace-write' },
   auto: { approval: 'on-request', reviewer: 'auto_review', sandbox: 'workspace-write' },
   full: { approval: 'never', reviewer: 'user', sandbox: 'danger-full-access' },
 };
-type Settings = { approvalPolicy?: string | undefined; approvalsReviewer?: string | undefined; permissions?: string | undefined; activePermissionProfile?: { id?: string } | null; sandboxPolicy?: { type?: string } | null; sandbox?: { type?: string } | string | null };
+type Settings = { approvalPolicy?: AskForApproval | undefined; approvalsReviewer?: string | undefined; permissions?: string | undefined; activePermissionProfile?: { id?: string } | null; sandboxPolicy?: { type?: string } | null; sandbox?: { type?: string } | string | null };
 type Requirements = { allowedApprovalPolicies?: unknown; allowedSandboxModes?: unknown; allowedPermissionProfiles?: unknown; allowedApprovalsReviewers?: unknown; allowedWebSearchModes?: unknown };
 type Config = { [key: string]: unknown };
 type ConfigRead = { config?: Config; layers?: { config?: Config }[] | null };
 
-export function permissionSettings(mode: string) {
+export function permissionSettings(mode: string): { approvalPolicy: AskForApproval; approvalsReviewer: string; permissions: string | undefined } | null {
   if (mode === 'bypass') return { approvalPolicy: 'never', approvalsReviewer: 'user', permissions: ':bypass-permissions' };
   const preset = PERMISSION_PRESETS[mode];
   return preset ? { approvalPolicy: preset.approval, approvalsReviewer: preset.reviewer, permissions: PROFILES[preset.sandbox] } : null;
@@ -53,7 +54,7 @@ export function defaultPermissionMode(read: ConfigRead | null | undefined) {
 }
 export function defaultPermissionSettings(read: ConfigRead | null | undefined, automatic = false) {
   const config = read?.config ?? {};
-  const settings = permissionSettings(defaultPermissionMode(read)) ?? { approvalPolicy: config.approval_policy as string | undefined, approvalsReviewer: (config.approvals_reviewer ?? 'user') as string,
+  const settings = permissionSettings(defaultPermissionMode(read)) ?? { approvalPolicy: config.approval_policy as AskForApproval | undefined, approvalsReviewer: (config.approvals_reviewer ?? 'user') as string,
     permissions: configuredProfile(read) };
-  return automatic ? { ...settings, approvalPolicy: 'never', permissions: settings.permissions === ':bypass-permissions' ? ':danger-full-access' : settings.permissions } : settings;
+  return automatic ? { ...settings, approvalPolicy: 'never' as const, permissions: settings.permissions === ':bypass-permissions' ? ':danger-full-access' : settings.permissions } : settings;
 }

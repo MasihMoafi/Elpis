@@ -1,24 +1,25 @@
+import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
+import { createHostLifecycle } from './bridge-host-lifecycle.mts';
+import { createProviderCatalog } from './bridge-provider-catalog.mts';
 import { attachBridgeConnection } from "./bridge-connection.mts";
 import { createBridgeStore } from "./bridge-store.mts";
 import { wireObject } from "./bridge-wire.mts";
 import { writeJson } from "./bridge-json.mts";
-import type { RequestId,BridgeClient,BridgeMessage,HelperScope,ProviderOwner,RelayReply,Relay,BridgeContext,McpConfig,SavedHelper,ClaudeWindow,AgyBucket,AgyGroup,RateLimit,ProviderAgent,EngineThread,Catalog,Ceiling } from "./bridge-types.mts";
+import type { RequestId, BridgeClient, BridgeMessage, HelperScope, ProviderOwner, RelayReply, Relay, BridgeContext, McpConfig, SavedHelper, EngineThread, Ceiling } from "./bridge-types.mts";
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
-import { createBridgeServer,bridgeUrl,stopBridgeListener,shutdownRuntime,createDrainServer,drainFile,probe,startToken,allowEngines } from "./shared-runtime.mts";
-import { closeWhenQuiet } from "./handover.mts";
-import { isSignedOut,SIGNED_OUT_MESSAGE } from "./anthropic-signout.mts";
+import { createBridgeServer, bridgeUrl } from "./shared-runtime.mts";
+
 import { ClaudeAccounts } from "./claude-accounts.mts";
-import { WorkflowRunner,noticeText } from "./workflow-runner.mts";
+import { WorkflowRunner, noticeText } from "./workflow-runner.mts";
 import { bridgeExecutor } from "./workflow-agents.mts";
 import { connectAppServer } from "./app-server-connection.mts";
-import { execFile,spawn } from "node:child_process";
-import { existsSync,readFileSync,renameSync,rmSync,writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { appendLog } from "./log-redaction.mts";
-import { join,dirname } from "node:path";
+import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { PermissionChoices } from './permission-choices.mts';
-
 
 const HOME = process.env.HOME as string;
 const permissionChoices = new PermissionChoices(process.env.ELPIS_HOME || join(HOME, '.elpis-next'));
@@ -117,110 +118,7 @@ const deletedThreads = new Set<string>();
 const { loadStore, loadStoreSnapshot, updateStore, storeChain } = createBridgeStore(STORE, deletedThreads, log);
 const STATE_DIR = STORE.slice(0, STORE.lastIndexOf("/"));
 const claudeAccounts = new ClaudeAccounts({ home: HOME, dir: STATE_DIR, defaultConfigDir: process.env.CLAUDE_CONFIG_DIR ?? join(HOME, ".claude"), claudeBin: process.env.CLAUDE_CODE_EXECUTABLE ?? join(HOME, ".local/bin/claude") });
-const CATALOG = `${STATE_DIR}/catalog.json`;
-// Elpis's own sign-out of the Claude subscription (anthropic-signout.mts), read whenever it matters, so
-// the terminal and the desktop follow it at once. While it is on, Claude's models, usage and turns are
-// gone from Elpis; Claude Code's own login (~/.claude) is never touched.
-const claudeSignedOut = () => isSignedOut(STATE_DIR);
-// The subscriptions Elpis reaches through ACP, each by a model-id prefix. Antigravity (Gemini on
-// the Google sign-in) runs through agy-acp.mts and is offered only when `agy` is installed.
-const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
-const AGENTS: [ProviderAgent, ...ProviderAgent[]] = [
-  { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, get env() { return { CLAUDE_CODE_EXECUTABLE: CLAUDE, ...claudeAccounts.environment() }; }, catalogFile: CATALOG, signedOut: claudeSignedOut, limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
-  ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
-    ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mts", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
-    : []),
-];
-const agentOf = (model: unknown) => (typeof model === "string" ? AGENTS.find((a) => model.startsWith(a.prefix)) : undefined);
-// Whether a model (or agent) is one Elpis has signed out of, and the error that refuses its turn.
-const signedOutModel = (model: unknown) => agentOf(model)?.signedOut?.() === true;
-const refuseSignedOut = (agent: ProviderAgent | undefined) => { if (agent?.signedOut?.()) throw Object.assign(new Error(SIGNED_OUT_MESSAGE), { signedOut: true }); };
-const acpErrorMessage = (e: { signedOut?: boolean; message?: string } | null | undefined, agent = AGENTS[0]) => (e?.signedOut ? e.message : `${agent.speaker} (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
-// A dropped or timed-out connection is no error to show: the chat retries on its own (any message retries at once).
-const RECONNECT_MS = Number(process.env.ELPIS_RECONNECT_MS) || 180_000;
-const connectionDropped = (e: { message?: string } | null | undefined) => /API Error/.test(e?.message ?? "") && /connection|timed? ?out|ECONN|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|socket hang up|fetch failed|network/i.test((e as { message: string }).message);
-const RECONNECT_NOTE = `Connection lost. Retrying in ${RECONNECT_MS >= 60_000 ? `${RECONNECT_MS / 60_000} minutes` : `${RECONNECT_MS / 1000} seconds`}; send a message to retry now.`;
-async function readJson(path: string): Promise<Catalog | null> { try { const { readFile } = await import("node:fs/promises"); return JSON.parse(await readFile(path, "utf8")) as Catalog; } catch { return null; } }
-
-async function claudeLimits() {
-  const { readFile } = await import("node:fs/promises");
-  const creds = claudeAccounts.credentials();
-  if (!creds?.accessToken) throw new Error("Sign in to the selected Claude account in Models & accounts.");
-  const r = await fetch(process.env.ELPIS_CLAUDE_USAGE_URL ?? "https://api.anthropic.com/api/oauth/usage", {
-    headers: { Authorization: `Bearer ${creds.accessToken}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!r.ok) throw new Error(`Claude usage request failed (HTTP ${r.status})`);
-  const u = await r.json() as { five_hour?: ClaudeWindow | null; seven_day?: ClaudeWindow | null };
-  const win = (w: ClaudeWindow | null | undefined, mins: number) => w ? { usedPercent: Math.round(w.utilization ?? 0), windowDurationMins: mins, resetsAt: w.resets_at ? Math.floor(Date.parse(w.resets_at) / 1000) : null } : null;
-  return { limitId: "claude", limitName: "Claude", normalModelSlug: null, primary: win(u.five_hour, 300), secondary: win(u.seven_day, 10080), credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null };
-}
-
-// Antigravity's own /usage answer: each model group has a 5-hour and a weekly limit.
-async function agyLimits() {
-  const out = await new Promise<string>((resolve, reject) => execFile(AGY_BIN, ["--print", "/usage", "--output-format", "json"], { cwd: HOME, timeout: 30_000 }, (err, stdout) => (err ? reject(err) : resolve(stdout))));
-  const groups = (JSON.parse(out) as { command?: { data?: { groups?: AgyGroup[] } } }).command?.data?.groups ?? [];
-  const win = (b: AgyBucket | undefined, mins: number) => b ? { usedPercent: Math.round((1 - (b.remaining_fraction ?? 1)) * 100), windowDurationMins: mins, resetsAt: b.reset_time ? Math.floor(Date.parse(b.reset_time) / 1000) : null } : null;
-  return groups.map((g) => ({
-    limitId: `antigravity-${g.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, limitName: `Antigravity ${g.name}`, normalModelSlug: null,
-    primary: win(g.buckets?.find((b) => b.window === "5h"), 300), secondary: win(g.buckets?.find((b) => b.window === "weekly"), 10080),
-    credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null,
-  }));
-}
-
-// Anthropic refuses (HTTP 429) when asked after every turn, so each subscription is asked at
-// most once a minute, and its last answer stays when a request fails.
-function everyMinute<T>(fetchLimits: () => Promise<T>, what: string) {
-  const c: { at: number; value: T | null; inFlight: Promise<T> | null } = { at: 0, value: null, inFlight: null };
-  return () => {
-    if (Date.now() - c.at < 60_000) return c.value ? Promise.resolve(c.value) : Promise.reject(new Error(`${what} unavailable (retrying in a minute)`));
-    c.inFlight ??= fetchLimits()
-      .then((v) => { c.value = v; return v; })
-      .catch((e) => { if (c.value) return c.value; throw e; })
-      .finally(() => { c.at = Date.now(); c.inFlight = null; });
-    return c.inFlight;
-  };
-}
-const claudeLimitCaches = new Map<string, () => Promise<RateLimit>>();
-const claudeLimitsCached = () => {
-  const id = claudeAccounts.activeId();
-  let cache = claudeLimitCaches.get(id);
-  if (!cache) { cache = everyMinute(claudeLimits, "Claude usage"); claudeLimitCaches.set(id, cache); }
-  return cache();
-};
-const agyLimitsCached = everyMinute(agyLimits, "Antigravity usage");
-
-// The TUI applies a resumed or started thread's collaboration mode after its model, so a bridged
-// chat must name its own model there too, or the engine's default replaces it on screen.
-function nameModel(result: { thread: object; collaborationMode?: { settings?: object } | null }, model: string, effort: string | null | undefined) {
-  Object.assign(result, { model, reasoningEffort: effort ?? null });
-  Object.assign(result.thread, { model, reasoningEffort: effort ?? null });
-  const settings = result.collaborationMode?.settings;
-  if (settings) Object.assign(settings, { model, reasoning_effort: effort ?? null });
-}
-
-// A subscription's limits as account/rateLimits/updated notifications, so /usage has them as soon
-// as its chat opens or a turn ends.
-function announceLimits(agent: ProviderAgent | undefined, send: (method: string, params: { rateLimits: RateLimit }) => void) {
-  agent?.limits().then((all) => {
-    for (const rateLimits of all) {
-      log(`${rateLimits.limitName} limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`);
-      send("account/rateLimits/updated", { rateLimits });
-    }
-  }).catch((e) => log(`${agent.key} limits: ${e.message}`));
-}
-
-// /usage reads every account's limits at once, but the engine only knows OpenAI's, so a Claude
-// chat showed the GPT plan. Each subscription answers within 5 s or is left out; without a
-// ChatGPT sign-in the engine refuses, and the subscriptions' limits answer instead.
-async function addSubscriptionLimits(answer: { result?: Record<string, unknown> | null; error?: unknown }) {
-  const within = (limits: Promise<RateLimit[]>) => Promise.race([limits, new Promise<RateLimit[]>((resolve) => setTimeout(resolve, 5000, []))]).catch(() => []);
-  const limits = (await Promise.all(AGENTS.map((agent) => within(agent.limits())))).flat();
-  if (!limits.length) return;
-  const byId = Object.fromEntries(limits.map((one) => [one.limitId, one]));
-  if (answer.result) answer.result.rateLimitsByLimitId = { ...(wireObject(answer.result.rateLimitsByLimitId) ? answer.result.rateLimitsByLimitId : {}), ...byId };
-  else { delete answer.error; answer.result = { rateLimits: limits[0] as RateLimit, rateLimitsByLimitId: byId }; }
-}
+const { AGENTS, agentOf, signedOutModel, refuseSignedOut, acpErrorMessage, RECONNECT_MS, connectionDropped, RECONNECT_NOTE, readJson, nameModel, announceLimits, addSubscriptionLimits, claudeSignedOut } = createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claudeAccounts, log });
 
 // Smart Prune for Claude chats: the proxy `elpis claude` runs (`elpis claude --serve`), started
 // once and shared. It shrinks large tool results before Anthropic sees them; a Claude chat's
@@ -256,7 +154,6 @@ async function recordAccounts() {
 }
 recordAccounts().catch((e) => log(`accounts: ${e.message}`));
 
-
 const wss = createBridgeServer();
 wss.on("listening", () => { const address = wss.address() as import("node:net").AddressInfo | string; log(`LISTENING ${typeof address === "string" ? address : address.port}`); checkIdle(); });
 
@@ -270,7 +167,7 @@ const helperThreads = new Set<string>();
 const helperConns = new WeakSet<BridgeClient>();
 const workflowToolConns = new WeakSet<BridgeClient>(); // a chat's workflow tool: its launches need the person's request (WR6)
 const relayed = new Map<RequestId, Relay>(); // id sent to the TUI -> answers the helper's request
-const chatAccess = new Map<string, { policy: string | undefined; profile: string | undefined }>(); // confirmed approval policy and profile for automatic tool decisions
+const chatAccess = new Map<string, { policy: AskForApproval | undefined; profile: string | undefined }>(); // confirmed approval policy and profile for automatic tool decisions
 const TOOL_APPROVALS = new Set(['item/commandExecution/requestApproval', 'item/fileChange/requestApproval']);
 const automaticThreads = new Set<string>(), blockedAutomaticThreads = new Set<string>();
 const explicitChatChoices = new Set<string>();
@@ -346,89 +243,8 @@ function decorateThread(thread: { id?: string } | null | undefined) {
   if (!thread?.id) return;
   providerOwners.get(thread.id)?.decorate(thread as EngineThread);
 }
-let idleTimer: NodeJS.Timeout | undefined, stopping = false;
-async function stopBridge(successor?: string) {
-  if (stopping) return;
-  stopping = true;
-  clearTimeout(idleTimer);
-  workflows.close(); // its runs stay running: the next runtime resumes them from their journals
-  if (draining) { draining.server.close(); try { if (JSON.parse(readFileSync(drainFile(), "utf8")).pid === process.pid) rmSync(drainFile(), { force: true }); } catch {} }
-  stopBridgeListener();
-  await storeChain();
-  for (const c of contexts) c.close();
-  await shutdownRuntime();
-  // Started only now, so the new bridge never meets this one's engines or unsaved chats.
-  if (successor) spawn(process.execPath, [join(dirname(successor), "shared-runtime.mts"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
-  process.exit(0);
-}
-// A newer installation takes over while chats work (handover.mts): this bridge gives it bridge.sock at once and keeps
-// only the chats working now, which the newer bridge reaches through this drain socket until each is done.
-type DrainState = { threads: Set<string>; held: Set<string>; released: Set<string>; server: ReturnType<typeof createDrainServer>; exiting?: NodeJS.Timeout | null };
-let draining: DrainState | null = null;
-function busyThreads() { const ids = new Set<string>(); for (const c of contexts) for (const id of c.busyThreads()) ids.add(id); return ids; }
-// `threads` are the chats working now (released one by one); `held` are the idle chats this bridge's engines have
-// locked for writing. Both are served here until this bridge ends, so the newer engine never meets their lock.
-function writeDrain() {
-  const file = drainFile();
-  const active = draining as NonNullable<typeof draining>;
-  writeFileSync(`${file}.tmp`, JSON.stringify({ pid: process.pid, token: startToken(process.pid), sock: active.server.sock, threads: [...new Set([...active.threads, ...active.held])] }), { mode: 0o600 });
-  renameSync(`${file}.tmp`, file);
-}
-async function startDrain(successor: string) {
-  if (stopping || draining) return;
-  const launchSuccessor = () => spawn(process.execPath, [join(dirname(successor), "shared-runtime.mts"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
-  workflows.release(); // the newer runtime resumes the runs from their journals
-  if (![...contexts].some((c) => c.busy())) return void stopBridge(successor);
-  const server = createDrainServer();
-  server.wss.on("connection", (socket) => { const ws = socket as BridgeClient; ws.drainShadow = true; wss.emit("connection", ws); });
-  const held = new Set((await Promise.all([...contexts].map((c) => c.loadedThreads()))).flat());
-  draining = { threads: busyThreads(), held, released: new Set(), server };
-  const started = Date.now();
-  await server.listening;
-  writeDrain();
-  log(`handing over to ${successor} while ${draining.threads.size} chats work`);
-  await stopBridgeListener(); allowEngines();
-  launchSuccessor();
-  for (let i = 0; i < 300 && !(await probe(process.env.ELPIS_BRIDGE_SOCKET as string)).ok; i++) await new Promise((r) => setTimeout(r, 100));
-  log(`the newer bridge answers after ${Date.now() - started} ms; moving the clients`);
-  // The delegate tool's connections never reconnect: they stay until their chats are done.
-  for (const ws of clients) if (!ws.drainShadow && !helperConns.has(ws)) closeWhenQuiet(ws, "Session backend changed");
-  checkDrain();
-}
-function checkDrain() {
-  if (!draining || stopping) return;
-  const now = busyThreads();
-  // Work a remaining delegate connection started meanwhile stays here too.
-  for (const id of now) if (!draining.released.has(id)) draining.threads.add(id);
-  let changed = false;
-  for (const id of [...draining.threads]) {
-    if (now.has(id)) continue;
-    draining.threads.delete(id);
-    if (draining.held.has(id)) continue; // its engine still locks it: it stays here until this bridge ends
-    draining.released.add(id); changed = true;
-    log(`handing over: chat ${id} is done here`);
-    for (const ws of clients) if (ws.drainShadow) sendClient(ws, { method: "bridge/released", params: { threadId: id } });
-  }
-  if (changed) writeDrain();
-  // Its last events get a second to reach the newer bridge before this one exits.
-  if (!draining.threads.size && ![...contexts].some((c) => c.busy()) && !draining.exiting) {
-    draining.exiting = setTimeout(() => { (draining as DrainState).exiting = null; if (!(draining as DrainState).threads.size && ![...contexts].some((c) => c.busy())) void stopBridge(); else checkDrain(); }, 1000);
-  }
-}
-function checkIdle() {
-  if (stopping) return;
-  checkDrain();
-  for (const c of [...contexts]) c.releaseIfUnused();
-  clearTimeout(idleTimer);
-  // A running workflow, or a notice still due, keeps the runtime (WR3).
-  const working = () => clients.size || [...contexts].some((c) => c.busy()) || workflows.busy() || noticesDue.size;
-  if (!process.env.ELPIS_SHARED_BRIDGE || working()) return;
-  idleTimer = setTimeout(async () => {
-    if (working()) return;
-    await stopBridge();
-  }, 30_000);
-}
-for (const signal of ["SIGTERM", "SIGINT"]) process.once(signal, () => stopBridge());
+const runtime = createHostLifecycle({ HOME, wss, clients, contexts, helperConns, sendClient, storeChain, log, workflows: () => workflows, noticesDue: () => noticesDue.size });
+const { checkIdle, clearIdle, startDrain } = runtime;
 
 // Workflows that run until they finish (SPEC WR1–WR8). The runner lives here, in the long-lived runtime: a run
 // continues after its chat's turn, its window or the app ends, and the next runtime resumes it from its journal.
@@ -451,13 +267,13 @@ workflows.on("updated", (change) => {
 const noticesDue = new Set<string>();
 const errorText = (e: unknown) => (e as { message?: string } | null | undefined)?.message ?? JSON.stringify(e);
 async function deliverNotice(run: NonNullable<ReturnType<WorkflowRunner["pending"]>>) {
-  if (!run.parentThreadId || run.notice?.state !== "pending" || noticesDue.has(run.id) || stopping) return;
+  if (!run.parentThreadId || run.notice?.state !== "pending" || noticesDue.has(run.id) || runtime.stopping) return;
   noticesDue.add(run.id);
   const threadId = run.parentThreadId;
   const later = (why: string) => { workflows.markNotice(run.id, { state: "pending", waiting: why }); log(`workflow ${run.id}: notice waits until chat ${threadId} is back (${why})`); };
   let conn: ReturnType<typeof connectAppServer> | null = null;
   try {
-    while (!stopping) {
+    while (!runtime.stopping) {
       if (!conn || conn.closed) {
         conn = connectAppServer({ url: bridgeUrl(wss), name: "elpis-workflow-runner" });
         await conn.ready;
@@ -498,18 +314,17 @@ function chatBack(threadId: string) {
 }
 workflows.on("ended", (run) => { void deliverNotice(run); });
 // After a restart, and while a handed-over runtime lets its runs go: runs nobody owns continue here.
-const recoverWorkflows = () => { if (!stopping && !draining) { try { workflows.recover(); } catch (e) { log(`workflow recovery: ${(e as Error).message}`); } } };
+const recoverWorkflows = () => { if (!runtime.stopping && !runtime.draining) { try { workflows.recover(); } catch (e) { log(`workflow recovery: ${(e as Error).message}`); } } };
 wss.on("listening", recoverWorkflows);
 setInterval(recoverWorkflows, 5000).unref();
 // A newer installation that joined this bridge left its bridge's path here (shared-runtime.mts). This bridge starts
 // that one and hands it every connection (startDrain); the open terminals and the desktop app reconnect to it.
 const successorFile = process.env.ELPIS_SHARED_BRIDGE && process.env.ELPIS_BRIDGE_SOCKET && join(dirname(process.env.ELPIS_BRIDGE_SOCKET), "successor");
 if (successorFile) setInterval(() => {
-  if (stopping || draining) return;
+  if (runtime.stopping || runtime.draining) return;
   let successor; try { successor = readFileSync(successorFile, "utf8").trim(); } catch { return; }
   if (successor) void startDrain(successor);
 }, 2000).unref();
-const clearIdle = () => clearTimeout(idleTimer);
 export type BridgeEnvironment = {
   HOME: typeof HOME;
   permissionChoices: typeof permissionChoices;
@@ -591,6 +406,6 @@ export type BridgeEnvironment = {
 
 export function startBridge() {
   wss.on("connection", socket => attachBridgeConnection(socket, {
-    HOME, permissionChoices, log, now, REVIEW_RULES, REVIEW_FORMAT, STRUCTURED_MODEL, STRUCTURED_SYSTEM, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, AUTONOMOUS_ORIGINS, REPLY_UPDATES, engineAgentsConfig, mcpServersFor, appMcpConfig, acpServersFrom, deletingThreads, archivingThreads, deletedThreads, loadStore, loadStoreSnapshot, updateStore, storeChain, STATE_DIR, claudeAccounts, claudeSignedOut, AGENTS, agentOf, signedOutModel, refuseSignedOut, acpErrorMessage, RECONNECT_MS, connectionDropped, RECONNECT_NOTE, readJson, nameModel, announceLimits, addSubscriptionLimits, smartPruneProxy, recordAccounts, clients, helperThreads, helperConns, workflowToolConns, relayed, chatAccess, TOOL_APPROVALS, automaticThreads, blockedAutomaticThreads, explicitChatChoices, helperScope, pendingHelpers, AUTHORITY, UNSANDBOXED, fullFor, lowest, helperCeiling, ceilingOf, providerOwners, subscriptions, BusyMap, forwarded, startingProviders, contexts, sendClient, viewers, relayToTui, settleRelay, cancelRelays, flushApprovals, decorateThread, stopping, checkIdle, workflows, chatBack, clearIdle
+    HOME, permissionChoices, log, now, REVIEW_RULES, REVIEW_FORMAT, STRUCTURED_MODEL, STRUCTURED_SYSTEM, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, AUTONOMOUS_ORIGINS, REPLY_UPDATES, engineAgentsConfig, mcpServersFor, appMcpConfig, acpServersFrom, deletingThreads, archivingThreads, deletedThreads, loadStore, loadStoreSnapshot, updateStore, storeChain, STATE_DIR, claudeAccounts, claudeSignedOut, AGENTS, agentOf, signedOutModel, refuseSignedOut, acpErrorMessage, RECONNECT_MS, connectionDropped, RECONNECT_NOTE, readJson, nameModel, announceLimits, addSubscriptionLimits, smartPruneProxy, recordAccounts, clients, helperThreads, helperConns, workflowToolConns, relayed, chatAccess, TOOL_APPROVALS, automaticThreads, blockedAutomaticThreads, explicitChatChoices, helperScope, pendingHelpers, AUTHORITY, UNSANDBOXED, fullFor, lowest, helperCeiling, ceilingOf, providerOwners, subscriptions, BusyMap, forwarded, startingProviders, contexts, sendClient, viewers, relayToTui, settleRelay, cancelRelays, flushApprovals, decorateThread, stopping: runtime.stopping, checkIdle, workflows, chatBack, clearIdle
   }));
 }

@@ -1,7 +1,7 @@
 import type { Page } from 'playwright-core';
 import type { LoveSpotFixture, LoveSpotOptions, Scene } from './love-spot-test-types.mts';
 
-type BoardWindow = typeof window & { __boardEvents: { scene?: Scene }[] };
+type BoardWindow = typeof window & { __boardEvents: { scene?: Scene & { page?: { name: string; session?: string } } }[] };
 
 const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
@@ -20,12 +20,8 @@ async function startText(page: Page, text: string) {
   await page.keyboard.type(text);
 }
 
-test('a competing edit of the same note cannot replace the active verdict', async () => {
-  const f = await loveSpotFixture();
-  let release: (() => void) | undefined, held: Scene | undefined, releaseFinal: (() => void) | undefined;
-  let finalHeld = false, mineId: string | undefined, remoteVersion = 0, finalVersion: number | undefined;
-  const staleAfterFinal: number[] = [], finalGate = new Promise<void>(resolve => { releaseFinal = resolve; });
-  await f.page.evaluate(() => {
+async function recordBoardEvents(page: Page) {
+  await page.evaluate(() => {
     (window as BoardWindow).__boardEvents = [];
     const Source = window.EventSource;
     window.EventSource = class extends Source {
@@ -37,6 +33,14 @@ test('a competing edit of the same note cannot replace the active verdict', asyn
       }
     };
   });
+}
+
+test('a competing edit of the same note cannot replace the active verdict', async () => {
+  const f = await loveSpotFixture();
+  let release: (() => void) | undefined, held: Scene | undefined, releaseFinal: (() => void) | undefined;
+  let finalHeld = false, mineId: string | undefined, remoteVersion = 0, finalVersion: number | undefined;
+  const staleAfterFinal: number[] = [], finalGate = new Promise<void>(resolve => { releaseFinal = resolve; });
+  await recordBoardEvents(f.page);
   try {
     await f.page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await f.open(f.page); await startText(f.page, 'Agent asks for a verdict'); await f.page.keyboard.press('Escape');
@@ -135,7 +139,7 @@ test('failed saves retain text and recover an interrupted edit after reload', as
     await f.page.reload(); await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
     await f.page.unroute('**/api/love-spot'); await f.open(f.page);
     await f.waitFor(s => s.elements.some(e => e.text === 'This verdict must survive' && !e.isDeleted), 'journal did not restore interrupted text');
-    await f.page.waitForTimeout(500);
+    assert.equal(await f.page.evaluate(() => window.__elpisFlushLoveSpot?.()), true);
     assert.equal((await f.scene()).elements.filter(e => e.text === 'This verdict must survive' && !e.isDeleted).length, 1, 'recovery duplicated text');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -158,11 +162,13 @@ test('navigation and window close flush the final keystroke', async () => {
 test('a remote page switch defers until the edit ends and flushes to the original page', async () => {
   const f = await loveSpotFixture();
   try {
+    await recordBoardEvents(f.page);
     await f.open(f.page); const other = await f.newPage(); await f.open(other);
     await startText(f.page, 'Keep this page verdict');
     await other.getByRole('button', { name: 'New page', exact: true }).click();
     await f.waitFor(s => s.page?.name === 'Page 2', 'other window did not switch pages');
-    await f.page.waitForTimeout(250);
+    const switched = await f.scene();
+    await f.page.waitForFunction(session => (window as BoardWindow).__boardEvents.some(event => event.scene?.page?.session === session), (switched.page as { session?: string } | undefined)?.session);
     assert.equal(await f.page.locator('textarea.excalidraw-wysiwyg').inputValue(), 'Keep this page verdict');
     await f.page.keyboard.type(' with final words'); await f.page.keyboard.press('Control+s');
     await f.page.getByRole('status', { name: 'Drawing save status' }).filter({ hasText: 'Saved' }).waitFor();

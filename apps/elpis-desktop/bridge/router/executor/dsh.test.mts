@@ -1,23 +1,24 @@
 // Ported from dsh-superagent (MIT), tests/runtime-concurrency.spec.ts and tests/runtime.spec.ts
-import { it } from 'node:test'
+import { it } from 'node:test';
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Engine, latestAssignment, type Ticket, type Trigger } from '../core/index.mts'
-import { HealthBoard } from '../infra/health.mts'
-import { DshExecutor, WorkerSlots, mandateInstructions, ticketExecution, triggerMessage, inputMessage, transient, type ExecutorHost } from './dsh.mts'
-import { Effects, Later } from './effects.mts'
-import { ExecutorStore } from './store.mts'
-import { Sessions } from './sessions.mts'
-import { SettingsSchema, type Settings } from './settings.mts'
-import { ElpisAdapter } from './adapters.mts'
-import { FakeServer, deferred, waitFor } from './fixtures.test.mts'
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Engine, latestAssignment, type Ticket, type Trigger } from '../core/index.mts';
+import { HealthBoard } from '../infra/health.mts';
+import { DshExecutor, WorkerSlots, mandateInstructions, ticketExecution, triggerMessage, inputMessage, transient, type ExecutorHost } from './dsh.mts';
+import { Effects, Later } from './effects.mts';
+import { ExecutorStore } from './store.mts';
+import { Sessions } from './sessions.mts';
+import { SettingsSchema, type Settings } from './settings.mts';
+import { ElpisAdapter } from './adapters.mts';
+import { FakeServer, deferred, waitFor } from './fixtures.mts';
 
 async function fixture() {
   const home = mkdtempSync(join(tmpdir(), 'router-executor-')), server = new FakeServer()
   let settings = SettingsSchema.parse({}), clock = Date.now(), paused = false, closing = false
-  const store = new ExecutorStore(home, () => settings), board = new HealthBoard(), effects = new Effects(store, board, () => clock)
+  const store = new ExecutorStore(home), board = new HealthBoard(), effects = new Effects(store, board, () => clock)
+  store.saveSettings(settings)
   const subprocess: ExecutorHost['context']['subprocess'] = { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: {} }) }
   const sessions = new Sessions({ store, subprocess, adapters: [new ElpisAdapter(server.connect)] })
   const relays: string[] = []
@@ -47,7 +48,7 @@ async function fixture() {
     closing = true; await executor.shutdown(); executor.dispose(); sessions.dispose(); lifetime.abort(); await effects.drain(); store.close(); rmSync(home, { recursive: true, force: true })
   }
   return { home, server, store, effects, sessions, engine, executor, host, relays, trigger, accept, stop,
-    configure: (change: Partial<Settings['executor']>) => { settings = { ...settings, executor: { ...settings.executor, ...change } } },
+    configure: (change: Partial<Settings['executor']>) => { settings = store.saveSettings({ ...store.settings(), executor: { ...store.settings().executor, ...change } }) },
     pause: (value: boolean) => { paused = value }, advance: (ms = 6000) => { clock += ms } }
 }
 it('holds one slot per running or starting ticket and gives a person one extra slot', () => {

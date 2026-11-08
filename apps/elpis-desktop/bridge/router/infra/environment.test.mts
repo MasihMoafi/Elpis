@@ -1,17 +1,16 @@
 // Ported from dsh-superagent (MIT), tests/environment.spec.ts
-import { execFile, spawn } from 'node:child_process'
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { promisify } from 'node:util'
-import { afterEach, beforeEach, describe, it } from 'node:test'
-import { expect } from 'expect'
-import type { SubprocessRuntime } from './types.mts'
+import { execFile, spawn } from 'node:child_process';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
+import { afterEach, beforeEach, describe, it } from 'node:test';
+import { expect } from 'expect';
+import type { SubprocessRuntime } from './types.mts';
 const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i
-import { GIT_LOCATION, agentVariables, credentialHelper, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment }
-  from './environment.mts'
-import { CliError } from './commands.mts'
-import { testDeployment, gitEnv } from './fixtures.test.mts'
+import { GIT_LOCATION, agentVariables, credentialHelper, runAsWorker, verifyDirectory, withoutDirectory, workerBin, workerGitConfig, writeEnvironment } from './environment.mts';
+import { CliError } from './commands.mts';
+import { testDeployment, gitEnv } from './fixtures.mts';
 
 const exec = promisify(execFile)
 let dir: string
@@ -38,12 +37,13 @@ describe('worker shims', () => {
     await expect(exec(join(bin, 'lark-cli'), ['im', '+chat-list'])).rejects.toMatchObject({ code: 1, stderr: 'lark-cli is unavailable: this installation has no Feishu bot.\n' })
     await expect(exec(join(bin, 'personal-gh'), [])).rejects.toMatchObject({ code: 1, stderr: 'personal-gh is blocked in this installation; use gh, which acts as agent-bot.\n' })
   })
-  it('keep `gh` and `lark-cli` working, and shim no `git`, when the blocked commands name the commands workers need', async () => {
+  it('keep `gh` working, deny `lark-cli`, and shim no `git`, when the blocked commands name the commands workers need', async () => {
     const gh = program(join(dir, 'gh-agent'), 'echo gh "$@"'), lark = program(join(dir, 'lark-bot'), 'echo lark "$@"')
     const base = testDeployment()
     await writeEnvironment(testDeployment({ stateDir: dir, github: { ...base.github, cli: gh }, feishu: { ...base.feishu!, cli: lark } }), ['gh', 'git', 'lark-cli'])
     const bin = workerBin(dir)
-    expect([(await exec(join(bin, 'gh'), ['api', 'user'])).stdout, (await exec(join(bin, 'lark-cli'), ['im'])).stdout]).toEqual(['gh api user\n', 'lark im\n'])
+    expect((await exec(join(bin, 'gh'), ['api', 'user'])).stdout).toBe('gh api user\n')
+    await expect(exec(join(bin, 'lark-cli'), ['im'])).rejects.toThrow('no Feishu bot')
     expect(readdirSync(bin)).not.toContain('git')
   })
   it('replace only what dsh-superagent wrote and refuse anything else in its places', async () => {

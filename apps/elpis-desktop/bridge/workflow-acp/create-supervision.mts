@@ -1,7 +1,7 @@
 import type { MotherRuntime } from './mother-runtime.mts';
 
 import { randomUUID } from 'node:crypto';
-import { BridgeError } from '../client.mts';
+import { BridgeError } from '../validate.mts';
 import type { StoredTask, WorkflowRecord, Root, CheckpointContext } from './types.mts';
 
 export function createSupervision({ supervision, checkpoints, motherRoute, motherOf, save, askMother, handed, timeoutMs, progress, controls, permission }: MotherRuntime & {

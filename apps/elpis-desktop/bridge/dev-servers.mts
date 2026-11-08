@@ -5,7 +5,7 @@ import http from 'node:http';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
-import { BridgeError, object } from './client.mts';
+import { BridgeError, object } from './validate.mts';
 import { projectDirectory } from './folders.mts';
 import { childEnv } from './tools.mts';
 

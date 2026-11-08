@@ -5,10 +5,10 @@ export interface Deployment {
   github: { cli: string; login: string; noreply: string }
   feishu?: { cli: string; appId: string; brand: 'feishu' | 'lark'; botId: string; name: string } | undefined
 }
-export type Health = { state: 'starting' | 'ready' | 'paused' | 'error'; detail: string; at?: string; code?: 'setupPending' | 'sourceOff' | 'feishuCliUnset' | 'feishuBotMissing' | 'pollFailures'; values?: Record<string, string> }
+export type { Health, HealthCode } from './health-contract.mts'
 export interface SubprocessOutputReader { readFrom(offset: number): { text: string } }
 export interface SubprocessRuntime {
-  spawn(options: { argv: string[]; cwd: string; graceMs: number; signal: AbortSignal; env?: Record<string, string>; stdio: { stdin: 'ignore'; stdout: { maxBytes: number }; stderr: { maxBytes: number } } }): {
+  spawn(options: { argv: string[]; cwd: string; graceMs: number; signal: AbortSignal; env?: Record<string, string | undefined>; stdio: { stdin: 'ignore'; stdout: { maxBytes: number }; stderr: { maxBytes: number } } }): {
     done: Promise<{ exitCode: number | null }>
     collected: { stdout?: SubprocessOutputReader; stderr?: SubprocessOutputReader }
   }

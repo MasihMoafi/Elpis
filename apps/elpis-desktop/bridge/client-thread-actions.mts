@@ -7,13 +7,14 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { PERMISSIONS, modeOf, permissionMode, permissionSetting } from './client-permissions.mts';
 import { SOURCE_KINDS, internal_decorate, internal_forget, internal_itemsPage } from './client-thread-list.mts';
-import { internal_browserOptions, internal_rpc } from './client-connection.mts';
+import { internal_browserOptions, internal_rpc } from './client-rpc.mts';
 import { internal_current } from './client-rewind.mts';
 import { internal_folderOf } from './client-changes.mts';
 import { internal_mutate } from './client-mutation.mts';
 import { internal_providerModel } from './client-context.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
+import { rpcResult } from './client-wire.mts';
 
 /** Adds a router result or decision request without running the chat's model. */
 export async function impl_appendAssistant(this: DesktopClient, clientState: ClientState, id: string, reply: import('./router/sources/elpis-chat-history.mts').ChatMessage): Promise<'sent'> {
@@ -153,7 +154,7 @@ export async function impl_sendSideChat(this: DesktopClient, clientState: Client
     chat.starting = true;
     try {
       chat.pending = this.sideRpc('turn/start', { threadId: id, input: [{ type: 'text', text: prompt, text_elements: [] }] });
-      const result = await chat.pending;
+      const result = rpcResult('turn/start', await chat.pending);
       // Completion can arrive before the acknowledgement; do not revive an already completed turn.
       if (chat.starting) chat.turnId = result.turn?.id;
       return result;
@@ -175,7 +176,7 @@ export async function impl_closeSideChat(this: DesktopClient, clientState: Clien
 /** The Claude Code chats the engine would import: its own detection (the last 30 days, up to 50, none already imported). */
 export async function impl_externalSessions(this: DesktopClient, clientState: ClientState) {
     const result = await internal_rpc(this, clientState, 'externalAgentConfig/detect', { includeHome: true, source: 'claude' });
-    return (result.items ?? []).filter((item: { itemType?: unknown }) => item.itemType === 'SESSIONS').flatMap((item: { details?: { sessions?: { path?: unknown; cwd?: unknown; title?: unknown }[] } }) => (item.details?.sessions ?? []).map(({ path, cwd, title }) => ({ path, cwd, title })));
+    return (result.items ?? []).filter(item => item.itemType === 'SESSIONS').flatMap(item => (item.details?.sessions ?? []).map(({ path, cwd, title }) => ({ path, cwd, title })));
   }
 
 /** Registers a Codex rollout already copied into Elpis's sessions folder, so it lists, opens and forks like a chat Elpis made. */

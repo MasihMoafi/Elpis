@@ -14,3 +14,8 @@ website/assets/demo-state.mjs
 website/candidates/persistent-logo/demo.mjs
 website/candidates/persistent-logo/fixture.mjs
 website/prototypes/app.js
+codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-errors.mjs
+codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-transport.mjs
+codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-cache.mjs
+codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-outline.mjs
+codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-fetch.mjs

@@ -5,6 +5,7 @@ import { connectAppServer } from './app-server-connection.mts';
 import { defaultPermissionMode, defaultPermissionSettings, permissionSettingsAllowed } from './permission-policy.mts';
 import { PermissionChoices } from './permission-choices.mts';
 import path from 'node:path';
+import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
 
 const bin = process.env.ELPIS_ENGINE_BIN;
 if (!bin) throw new Error('ELPIS_ENGINE_BIN must name the native engine');
@@ -18,7 +19,7 @@ try {
   const read = await conn.call('config/read', { includeLayers: true });
   const requirements = (await conn.call('configRequirements/read', {})).requirements ?? {};
   const resume = args.indexOf('resume'), id = resume >= 0 ? args.slice(resume + 1).find(value => /^[\da-f-]{36}$/i.test(value)) : null;
-  const choice: { inherit?: boolean; automatic?: boolean; approvalPolicy?: string; approvalsReviewer?: string; permissions?: string } | null = id ? await new PermissionChoices(process.env.ELPIS_HOME || path.join(process.env.HOME as string, '.elpis-next')).read(id) : null;
+  const choice: { inherit?: boolean; automatic?: boolean; approvalPolicy?: AskForApproval; approvalsReviewer?: string; permissions?: string } | null = id ? await new PermissionChoices(process.env.ELPIS_HOME || path.join(process.env.HOME as string, '.elpis-next')).read(id) : null;
   const automatic = !!(process.env.CODEX_THREAD_ID || process.env.ELPIS_PARENT_THREAD || choice?.automatic);
   const settings = choice && !choice.inherit && !choice.automatic ? choice : defaultPermissionSettings(read, automatic);
   const combined = flags.some(arg => /^(?:--full-auto|--yolo|--dangerously-bypass-approvals-and-sandbox)$/.test(arg));

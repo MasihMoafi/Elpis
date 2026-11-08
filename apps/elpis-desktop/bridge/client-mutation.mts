@@ -5,7 +5,7 @@ export async function internal_mutate<T>(clientState: ClientState, id: unknown, 
     threadId(id);
     if (clientState.mutating.has(id)) {
       if (!wait) throw new BridgeError('Another operation on this conversation is pending', 409);
-      await new Promise(resolve => {
+      await new Promise<void>(resolve => {
         const waiting = clientState.mutationWaiters.get(id) ?? [];
         waiting.push(resolve); clientState.mutationWaiters.set(id, waiting);
       });

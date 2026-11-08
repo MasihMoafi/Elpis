@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { BridgeError } from './client.mts';
+import { BridgeError } from './validate.mts';
 
 const MAX_DEPTH = 2;
 const MAX_ENTRIES = 400;

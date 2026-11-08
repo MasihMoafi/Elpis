@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { MotherApp } from '../app.mts'
-import { ElpisAdapter } from '../executor/adapters.mts'
-import { FakeServer } from '../executor/fixtures.test.mts'
-import { SettingsSchema } from '../policy.mts'
-import type { ElpisChatMessage } from '../sources/elpis-chat.mts'
-import { elpisChatTriggerId } from '../sources/elpis-chat.mts'
-import type { MotherAppOptions } from '../app.mts'
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { MotherApp } from '../app.mts';
+import { ElpisAdapter } from '../executor/adapters.mts';
+import { FakeServer } from '../executor/fixtures.mts';
+import { SettingsSchema } from '../policy.mts';
+import type { ElpisChatMessage } from '../sources/elpis-chat.mts';
+import { elpisChatTriggerId } from '../sources/elpis-chat.mts';
+import type { MotherAppOptions } from '../app.mts';
 
 export function fixture(options: Pick<Partial<MotherAppOptions>, 'settings' | 'subprocess'> = {}) {
   const home = mkdtempSync(join(tmpdir(), 'mother-parity-')), server = new FakeServer(), replies = new Map<string, string>()

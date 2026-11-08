@@ -1,15 +1,15 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/prompts.ts.
 /** Manages versioned role prompts, behavioral policies, and operational skills independently of access settings. */
-import { z } from 'zod'
-import { UserError, key } from '../core/index.mts'
-import { policyVersion, type Settings, type SettingsOrigin } from '../policy.mts'
-import { masterPrompt, workerPrompt, sharedPrompt, guides, mainAdmissionPolicy, handoffPolicy, teamDefaults, sourceSkills, cliNotes } from './context.mts'
-import { environmentLines, type Variable } from '../executor/execution-environment.mts'
-import { promptsNotice } from './notices.mts'
-import type { Sessions } from '../executor/sessions.mts'
-import type { Store } from './store.mts'
-import { Versions } from './versions.mts'
-import { KV } from '../sources/kv.mts'
+import { z } from 'zod';
+import { UserError, key } from '../core/index.mts';
+import { policyVersion, type Settings, type SettingsOrigin } from '../policy.mts';
+import { masterPrompt, workerPrompt, sharedPrompt, guides, mainAdmissionPolicy, handoffPolicy, teamDefaults, sourceSkills, cliNotes } from './context.mts';
+import { environmentLines, type Variable } from '../executor/execution-environment.mts';
+import { promptsNotice } from './notices.mts';
+import type { Sessions } from '../executor/sessions.mts';
+import type { Store } from './store.mts';
+import { Versions } from './versions.mts';
+import { KV } from '../sources/kv.mts';
 
 /** Prompt sections the team writes; the built-in parts follow dsh-superagent's text until the team overrides them. */
 export const TEAM_SECTIONS = ['communication', 'scope', 'delivery'] as const
@@ -51,7 +51,7 @@ const BOTH: readonly Role[] = ['orchestrator', 'worker'], MAIN: readonly Role[] 
 let parts: Readonly<Record<PartKey, BuiltInPart>> | undefined
 /**
  * The built-in parts of both roles' prompts, the two Source skills, and the templates of the generated parts, whose data the
- * system fills in, by the key an override names them by. Built on first use, as the texts it reads are imported in a cycle.
+ * system fills in, by the key an override names them by. Cached on first use.
  */
 export const builtInParts = (): Readonly<Record<PartKey, BuiltInPart>> => parts ??= {
   'runtime/shared': { roles: BOTH, text: sharedPrompt }, 'runtime/orchestrator': { roles: MAIN, text: masterPrompt },

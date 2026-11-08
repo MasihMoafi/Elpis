@@ -1,20 +1,20 @@
-import { it } from 'node:test'
+import { it } from 'node:test';
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Engine, latestAssignment, type Trigger, type Ticket } from '../core/index.mts'
-import { ExecutorService } from './service.mts'
-import { ExecutorStore } from './store.mts'
-import { ElpisAdapter } from './adapters.mts'
-import { SettingsSchema } from './settings.mts'
-import { FakeServer } from './fixtures.test.mts'
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Engine, latestAssignment, type Trigger, type Ticket } from '../core/index.mts';
+import { ExecutorService } from './service.mts';
+import { ExecutorStore } from './store.mts';
+import { ElpisAdapter } from './adapters.mts';
+
+import { FakeServer } from './fixtures.mts';
 
 it('reopens SQLite, resumes the same worker after restart, delivers a pending correction once and relays reports', async () => {
   const home = mkdtempSync(join(tmpdir(), 'router-restart-')), server = new FakeServer()
   let store: ExecutorStore | undefined, service: ExecutorService | undefined
   const create = () => {
-    const repo = new ExecutorStore(home, () => SettingsSchema.parse({}))
+    const repo = new ExecutorStore(home)
     const engine: Engine = new Engine({ repo, scope: { scope: () => ({ listened: true, observed: true }) },
       policy: () => ({ version: 'v1', paused: false, evalTimeoutMs: 60_000, gate: () => ({ admissible: true, strength: 'explicit', basis: { via: 'listed' } }), revalidate: () => true, admitsInferred: () => true }),
       assessor: { request: () => {} }, executor: { start: (...args) => workers.executor.start(...args), stop: (...args) => workers.executor.stop(...args), deliver: (...args) => workers.executor.deliver(...args) },

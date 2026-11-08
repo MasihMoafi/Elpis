@@ -1,4 +1,4 @@
-import { speechChunks } from './client.mts';
+import { speechChunks } from './speech-chunks.mts';
 
 /** Incremental prose only. Ambiguous fence prefixes stay private, even across a timer flush. */
 export function createSentenceBuffer(emit: (text: string) => void) {

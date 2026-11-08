@@ -1,39 +1,39 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/runtime.ts.
 /** Composition root. All domain commands, receipts, versions and side effects share one profile database. */
-import { join } from 'node:path'
-import { Engine, key, type Ticket, type Trigger } from './core/index.mts'
-import { ExecutorStore } from './executor/store.mts'
-import { ExecutorService } from './executor/service.mts'
-import { ticketOfSession, sourceTrigger } from './executor/dsh.mts'
-import type { RuntimeAdapter } from './executor/adapters.mts'
-import { environmentOf, ticketEnvironment } from './executor/execution-environment.mts'
-import { SettingsSchema, settingsPolicy, type Settings as SettingsValue } from './policy.mts'
-import { Commands } from './infra/commands.mts'
-import { HealthBoard } from './infra/health.mts'
-import type { SubprocessRuntime } from './infra/types.mts'
-import { SourceRegistry } from './sources/registry.mts'
-import { createElpisChatKind, watchElpisChat, pollElpisChat, type ElpisChatTransport } from './sources/elpis-chat.mts'
-import { githubKind, watchGithub } from './sources/github.mts'
-import { pullEndNotices } from './sources/github-pull.mts'
-import type { SourceContext, SourceHost } from './sources/host.mts'
-import { sourceContext } from './source-context.mts'
-import { Outbox } from './outbox.mts'
-import { machineOf, type Machine } from './deployment.mts'
-import { MasterAssessor } from './app/assessment.mts'
-import { Prompts } from './app/prompts.mts'
-import { TextCache } from './app/cache.mts'
-import { Settings } from './app/settings.mts'
-import { Setup } from './app/setup.mts'
-import { Passes } from './app/passes.mts'
-import { candidateCard, repliedTo, sourceLink, type LinkHost } from './app/links.mts'
-import { eventNotice, followupNotice } from './app/notices.mts'
-import { mainTools, type MainToolsHost } from './app/tools/main.mts'
-import { executorTools, type ExecutorToolsHost } from './app/tools/executor.mts'
-import type { ResourceHost } from './app/resources.mts'
-import { evalsHealth } from './app/views/overview.mts'
-import type { HttpHost } from './app/http.mts'
-import type { AppContext, ModelCatalog } from './app/host.mts'
-import { KV } from './sources/kv.mts'
+import { join } from 'node:path';
+import { Engine, key, type Ticket, type Trigger } from './core/index.mts';
+import { ExecutorStore } from './executor/store.mts';
+import { ExecutorService } from './executor/service.mts';
+import { ticketOfSession, sourceTrigger } from './executor/messages.mts';
+import type { RuntimeAdapter } from './executor/adapters.mts';
+import { environmentOf, ticketEnvironment } from './executor/execution-environment.mts';
+import { SettingsSchema, settingsPolicy, type Settings as SettingsValue } from './policy.mts';
+import { Commands } from './infra/commands.mts';
+import { HealthBoard } from './infra/health.mts';
+import type { SubprocessRuntime } from './infra/types.mts';
+import { SourceRegistry } from './sources/registry.mts';
+import { createElpisChatKind, watchElpisChat, pollElpisChat, type ElpisChatTransport } from './sources/elpis-chat.mts';
+import { githubKind, watchGithub } from './sources/github.mts';
+import { pullEndNotices } from './sources/github-pull.mts';
+import type { SourceContext, SourceHost } from './sources/host.mts';
+import { sourceContext } from './source-context.mts';
+import { Outbox } from './outbox.mts';
+import { machineOf, type Machine } from './deployment.mts';
+import { MasterAssessor } from './app/assessment.mts';
+import { Prompts } from './app/prompts.mts';
+import { TextCache } from './app/cache.mts';
+import { Settings } from './app/settings.mts';
+import { Setup } from './app/setup.mts';
+import { Passes } from './app/passes.mts';
+import { candidateCard, repliedTo, sourceLink, type LinkHost } from './app/links.mts';
+import { eventNotice, followupNotice } from './app/notices.mts';
+import { mainTools, type MainToolsHost } from './app/tools/main.mts';
+import { executorTools, type ExecutorToolsHost } from './app/tools/executor.mts';
+import type { ResourceHost } from './app/resources.mts';
+import { evalsHealth } from './app/views/overview.mts';
+import type { HttpHost } from './app/http.mts';
+import type { AppContext, ModelCatalog } from './app/host.mts';
+import { KV } from './sources/kv.mts';
 
 export interface MotherAppOptions {
   home: string; threadId: string; settings: () => SettingsValue; adapters: RuntimeAdapter[]; subprocess: SubprocessRuntime

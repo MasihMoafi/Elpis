@@ -1,3 +1,4 @@
+export { speechChunks } from './speech-chunks.mts'
 import { BUILT_IN_KEY_PROVIDERS, configHome, providerDefinition } from './provider-settings.mts';
 import { BridgeError, object, text, threadId } from './validate.mts';
 import fs from 'node:fs';
@@ -5,25 +6,9 @@ import path from 'node:path';
 import { savedProviderKey } from './provider-keys.mts';
 import { internal_attach } from './client-thread-list.mts';
 import { internal_modelList } from './client-models.mts';
-import { internal_rpc } from './client-connection.mts';
+import { internal_rpc } from './client-rpc.mts';
 import type { DesktopClient } from './client.mts';
 import type { ClientState } from './client-state.mts';
-
-/** The engine estimates ceil(UTF-8 bytes / 4). Keep every append below 900 tokens, without splitting a scalar. */
-export function speechChunks(value: string) {
-  const chunks = []; let chunk = '', bytes = 0, boundary = 0;
-  for (const scalar of value) {
-    const size = Buffer.byteLength(scalar, 'utf8');
-    if (bytes + size > 3596) {
-      const end = boundary > chunk.length / 2 ? boundary : chunk.length;
-      chunks.push(chunk.slice(0, end)); chunk = chunk.slice(end); bytes = Buffer.byteLength(chunk, 'utf8'); boundary = 0;
-    }
-    chunk += scalar; bytes += size;
-    if (/\s/u.test(scalar)) boundary = chunk.length;
-  }
-  if (chunk) chunks.push(chunk);
-  return chunks;
-}
 
 // Private subprocess configuration. HTTP responses expose only the selected route, never this object.
   /** Whether voice can start, the voices it can speak in and the one chosen. Elpis's calls use realtime V3, which speaks the

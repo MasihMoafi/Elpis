@@ -1,23 +1,22 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/resources.ts.
 /** Serves paginated context resources to orchestrator_read so large bodies stay out of model prompts until requested. */
 type SessionId = string
-import { UserError, key, latestReport, reached, runningAssignment, threadKey, type Ticket, type Trigger } from '../core/index.mts'
-import { batchOf, inputMessage, triggerMessage, workerSessionId } from '../executor/dsh.mts'
-import { readGithub } from '../sources/github-read.mts'
-import { chatRead } from '../sources/elpis-chat-read.mts'
-import type { ElpisChatTransport } from '../sources/elpis-chat.mts'
-import { ASSIGNMENTS, INPUTS, assignmentLine, decisionCard, decisionDetails, inputLine, newestPage, preview, textPage, threadCard, ticketCard,
-  ticketDetails, triggerCard, type TicketThread } from './cards.mts'
-import { threadTitle } from './views/records.mts'
-import { transcriptEntry } from './context.mts'
-import { builtInParts, defaultPrompts } from './prompts.mts'
-import type { AppContext as Context } from './host.mts'
-import type { Commands } from '../infra/commands.mts'
-import type { PromptVersion, Prompts } from './prompts.mts'
-import type { Sessions } from '../executor/sessions.mts'
-import type { Settings } from './settings.mts'
-import type { Store } from './store.mts'
-import type { TextCache } from './cache.mts'
+import { UserError, key, latestReport, reached, runningAssignment, threadKey, type Ticket, type Trigger } from '../core/index.mts';
+import { batchOf, inputMessage, triggerMessage, workerSessionId } from '../executor/messages.mts';
+import { readGithub } from '../sources/github-read.mts';
+import { chatRead } from '../sources/elpis-chat-read.mts';
+import type { ElpisChatTransport } from '../sources/elpis-chat.mts';
+import { ASSIGNMENTS, INPUTS, assignmentLine, decisionCard, decisionDetails, inputLine, newestPage, preview, textPage, threadCard, ticketCard, ticketDetails, triggerCard, type TicketThread } from './cards.mts';
+import { threadTitle } from './views/records.mts';
+import { transcriptEntry } from './context.mts';
+import { builtInParts, defaultPrompts } from './prompts.mts';
+import type { AppContext as Context } from './host.mts';
+import type { Commands } from '../infra/commands.mts';
+import type { PromptVersion, Prompts } from './prompts.mts';
+import type { Sessions } from '../executor/sessions.mts';
+import type { Settings } from './settings.mts';
+import type { Store } from './store.mts';
+import type { TextCache } from './cache.mts';
 
 export { RESOURCES, resourceGrammar } from './resource-names.mts'
 

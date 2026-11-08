@@ -1,15 +1,16 @@
 /** Composition of the executor's ports; the router application supplies its one Engine and policy. */
-import type { EngineForExecutor, WorkerReport } from '../core/index.mts'
-import type { SubprocessRuntime } from '../infra/types.mts'
-import { HealthBoard } from '../infra/health.mts'
-import type { RuntimeAdapter } from './adapters.mts'
-import { DshExecutor, mandateInstructions, ticketOfSession, type ExecutorHost } from './dsh.mts'
-import { Effects } from './effects.mts'
-import { reportRelay } from '../app/notices.mts'
-import { Sessions } from './sessions.mts'
-import type { ExecutorStore } from './store.mts'
-import type { Tool } from '../app/tools/tool.mts'
-import type { Prompts } from '../app/prompts.mts'
+import type { EngineForExecutor, WorkerReport } from '../core/index.mts';
+import type { SubprocessRuntime } from '../infra/types.mts';
+import { HealthBoard } from '../infra/health.mts';
+import type { RuntimeAdapter } from './adapters.mts';
+import { mandateInstructions, ticketOfSession } from './messages.mts';
+import { DshExecutor, type ExecutorHost } from './dsh.mts';
+import { Effects } from './effects.mts';
+import { reportRelay } from '../app/notices.mts';
+import { Sessions } from './sessions.mts';
+import type { ExecutorStore } from './store.mts';
+import type { Tool } from '../app/tools/tool.mts';
+import type { Prompts } from '../app/prompts.mts';
 
 interface Options {
   store: ExecutorStore
@@ -28,8 +29,8 @@ interface Options {
   relay?: (id: string, text: string) => Promise<void>
   tools?: (sessionId: string) => Tool[]
   prompts?: Prompts
-  sessionEnvironment?: (sessionId: string) => Record<string, string>
-  processEnvironment?: () => Record<string, string>
+  sessionEnvironment?: (sessionId: string) => Record<string, string | undefined>
+  processEnvironment?: () => Record<string, string | undefined>
 }
 export class ExecutorService {
   readonly executor: DshExecutor

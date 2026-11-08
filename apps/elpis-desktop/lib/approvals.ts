@@ -96,7 +96,8 @@ export function elicitationResponse(params: ElicitationParams, body: unknown) {
   return {action:body.action, content:body.action === "accept" && form ? body.content : null, _meta:meta};
 }
 
-export function grantedPermissions(permissions: RequestPermissionProfile) {
+export function grantedPermissions(permissions: unknown) {
+  if (!record(permissions)) throw Error("Invalid permission request");
   return Object.fromEntries(Object.entries(permissions).filter(([, value]) => value != null));
 }
 const sameJson = (a: unknown, b: unknown): boolean => {
@@ -104,7 +105,7 @@ const sameJson = (a: unknown, b: unknown): boolean => {
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v,i) => sameJson(v,b[i]));
   return a === b;
 };
-export function permissionsResponse(requested: RequestPermissionProfile, body: unknown) {
+export function permissionsResponse(requested: unknown, body: unknown) {
   if (!record(body) || Object.keys(body).some(key => !["permissions","scope","strictAutoReview"].includes(key)) || !record(body.permissions)) throw Error("Unsupported permissions response");
   if (body.scope !== "turn" && body.scope !== "session") throw Error("Unsupported permission scope");
   if (body.strictAutoReview !== undefined && (typeof body.strictAutoReview !== "boolean" || body.scope !== "turn")) throw Error("Strict auto review requires turn scope");

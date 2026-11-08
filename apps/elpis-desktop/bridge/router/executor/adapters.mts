@@ -1,8 +1,9 @@
-import type { RoleModel } from './settings.mts'
-import { z } from 'zod'
-import type { Tool } from '../app/tools/tool.mts'
-import type { TranscriptEvent } from '../app/host.mts'
-import type { McpRuntime } from './tool-runtime.mts'
+import type { RoleModel } from './settings.mts';
+import { z } from 'zod';
+import { WORKER_ENV_EXCLUDE } from '../infra/git-environment.mts';
+import type { Tool } from '../app/tools/tool.mts';
+import type { TranscriptEvent } from '../app/host.mts';
+import type { McpRuntime } from './tool-runtime.mts';
 
 export type Runtime = 'elpis' | 'codex' | 'claude' | 'gemini'
 export interface Connection {
@@ -16,10 +17,10 @@ export interface Connection {
   close(): void
 }
 export const object = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
-const shellConfig = (values: Record<string, string>) => ({ 'shell_environment_policy.inherit': 'all',
+const shellConfig = (values: Record<string, string | undefined>) => ({ 'shell_environment_policy.inherit': 'all',
   'shell_environment_policy.ignore_default_excludes': false,
-  'shell_environment_policy.exclude': ['*KEY*', '*PASSWORD*', '*SECRET*', '*TOKEN*', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_AUTHOR_*', 'GIT_COMMITTER_*'],
-  'shell_environment_policy.set': values })
+  'shell_environment_policy.exclude': ['*KEY*', '*PASSWORD*', '*SECRET*', '*TOKEN*', ...WORKER_ENV_EXCLUDE],
+  'shell_environment_policy.set': Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined)) })
 const string = (value: unknown): string | undefined => typeof value === 'string' && value ? value : undefined
 const managedInstructions = 'This is a managed Mother session. Its current role instructions are supplied at each turn in collaboration mode developer instructions.'
 /** Main work stays in the domain queue; workers keep native coding tools without independent goals or interactive prompts. */
@@ -35,8 +36,8 @@ export function runtimeOf(model: RoleModel | null): Runtime {
   return model?.provider === 'codex' ? 'codex' : 'elpis'
 }
 export interface WorkerSession { threadId: string; activeTurn: string | null; model: string | null; messages: { id: string; text: string }[]; result?: { id: string; text: string }; transcript?: TranscriptEvent[] }
-export interface ToolBinding { tools(): Tool[]; instructions(): string; authorize(): void; signal: AbortSignal; environment?(): Record<string, string>; mcp?(): Promise<McpRuntime> }
-export interface OpenOptions { cwd: string; name: string; model: RoleModel | null; parentThreadId?: string; instructions?: string; tools?: Tool[]; role?: 'orchestrator' | 'worker'; environment?: Record<string, string>; mcp?: McpRuntime }
+export interface ToolBinding { tools(): Tool[]; instructions(): string; authorize(): void; signal: AbortSignal; environment?(): Record<string, string | undefined>; mcp?(): Promise<McpRuntime> }
+export interface OpenOptions { cwd: string; name: string; model: RoleModel | null; parentThreadId?: string; instructions?: string; tools?: Tool[]; role?: 'orchestrator' | 'worker'; environment?: Record<string, string | undefined>; mcp?: McpRuntime }
 export interface RuntimeAdapter {
   readonly runtime: Runtime
   open(options: OpenOptions): Promise<WorkerSession>
@@ -47,7 +48,7 @@ export interface RuntimeAdapter {
   killJob(threadId: string, processId: string): Promise<void>
   subscribe(threadId: string, listener: (message: unknown) => void): () => void
   bind?(threadId: string, binding: ToolBinding): void
-  configure?(threadId: string, mcp: McpRuntime, environment?: Record<string, string>): Promise<void>
+  configure?(threadId: string, mcp: McpRuntime, environment?: Record<string, string | undefined>): Promise<void>
   drain?(): Promise<void>
   close(): void
 }
@@ -199,7 +200,7 @@ export class AppServerAdapter implements RuntimeAdapter {
     return turn
   }
   async stop(threadId: string, turnId: string): Promise<void> { const conn = await this.connection(threadId); await conn.call('turn/interrupt', { threadId, turnId }) }
-  async configure(threadId: string, mcp: McpRuntime, environment?: Record<string, string>): Promise<void> {
+  async configure(threadId: string, mcp: McpRuntime, environment?: Record<string, string | undefined>): Promise<void> {
     if (this.runtime === 'gemini') throw new Error('The Antigravity adapter does not expose Mother tools. Choose Elpis, Codex or Claude for this role.')
     const conn = await this.connection(threadId)
     await conn.call('thread/resume', { threadId, excludeTurns: true, config: { 'mcp_servers.elpis_mother': mcp,

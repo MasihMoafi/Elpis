@@ -1,4 +1,5 @@
-import type { BridgeClient,BridgeContext,BridgeError,BridgeMessage,HelperScope,NoticeParams,ProviderOwner,ProviderTurn,QueueEntry,RequestId,SavedSession,Steer,Store,ThreadRequest } from "./bridge-types.mts";
+import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
+import type { BridgeClient, BridgeContext, BridgeError, BridgeMessage, HelperScope, NoticeParams, ProviderOwner, ProviderTurn, QueueEntry, RequestId, SavedSession, Steer, Store, ThreadRequest } from "./bridge-types.mts";
 
 type Dependencies = {
   pendingSteers: Map<string, Map<string, Steer>>; activeTurns: Map<string, ProviderTurn>;
@@ -9,7 +10,7 @@ type Dependencies = {
   toTui: (message: BridgeMessage) => void; notify: (method: string, params: NoticeParams) => void;
   claudeModel: Map<string, string>; pendingArchive: Map<RequestId, string | undefined>;
   queueOf: (threadId: string) => QueueEntry[]; pendingHelpers: Set<{ parentThreadId: string }>;
-  providerOwners: Map<string, ProviderOwner>; chatAccess: Map<string, { policy: string | undefined; profile: string | undefined }>;
+  providerOwners: Map<string, ProviderOwner>; chatAccess: Map<string, { policy: AskForApproval | undefined; profile: string | undefined }>;
   helperScope: Map<string, HelperScope>; helperThreads: Set<string>; subscriptions: Map<BridgeClient, Set<string>>;
 };
 

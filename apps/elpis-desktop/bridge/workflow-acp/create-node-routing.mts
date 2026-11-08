@@ -2,7 +2,7 @@ import type { ModelRoute } from './types.mts';
 import type { createRunProgress } from './create-run-progress.mts';
 import type { createRunStorage } from './create-run-storage.mts';
 import { randomUUID } from 'node:crypto';
-import { BridgeError } from '../client.mts';
+import { BridgeError } from '../validate.mts';
 import { runAcpNode, handoffText } from '../acp-nodes.mts';
 import { workflowRoute, quotaFailure } from '../workflow-models.mts';
 import type { RouteAttempt, StoredTask, Mother, WorkflowRecord, NodeInput, NodeOptions, RequestedRoute, WorkflowOptions } from './types.mts';

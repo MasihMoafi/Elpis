@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { BridgeError, object } from './client.mts';
+import { BridgeError, object } from './validate.mts';
 import { attachmentInput } from './attachments.mts';
 import { verifyImprovement } from './improve-check.mts';
 import { durableSourceCheckout } from './improve-source.mts';

@@ -1,6 +1,7 @@
-import { wireEnvelope,wireId,wireObject } from "./bridge-wire.mts";
+import { wireEnvelope, wireId, wireObject } from "./bridge-wire.mts";
 import { isPromptInput } from "./bridge-transcript.mts";
-import type { GlobalParams,GlobalRequest,ThreadRequest } from "./bridge-types.mts";
+import { isApprovalPolicy } from './approval-policy.mts';
+import type { GlobalParams, GlobalRequest, ThreadRequest } from "./bridge-types.mts";
 
 const string = (v: unknown): v is string => typeof v === "string";
 const bool = (v: unknown) => typeof v === "boolean";
@@ -12,12 +13,13 @@ const strings = (v: unknown) => array(v, string);
 const historyOptions = (v: unknown) => wireObject(v) && optional(v.limit, x => nullable(x, number))
   && [v.sortDirection, v.itemsView].every(x => optional(x, y => nullable(y, string))) && optional(v.cursor, string) && optional(v.turnId, string);
 const params = (v: unknown): v is GlobalParams => wireObject(v)
-  && [v.threadId, v.approvalPolicy, v.approvalsReviewer, v.permissions, v.rootThreadId, v.action, v.id, v.code,
+  && [v.threadId, v.approvalsReviewer, v.permissions, v.rootThreadId, v.action, v.id, v.code,
     v.scriptPath, v.resumeFromRunId, v.sortDirection, v.itemsView, v.cursor, v.turnId, v.beforeTurnId, v.lastTurnId,
     v.queuedSubmissionId, v.objective, v.status, v.instructions, v.ancestorThreadId, v.sortKey, v.searchTerm,
     v.elpisParentThreadId, v.elpisRequestedScope, v.parentThreadId].every(x => optional(x, string))
   && [v.model, v.effort, v.script, v.clientUserMessageId].every(x => optional(x, y => nullable(y, string)))
   && [v.excludeTurns, v.includeTurns, v.archived].every(x => optional(x, bool))
+  && optional(v.approvalPolicy, isApprovalPolicy)
   && optional(v.limit, number) && [v.budget, v.tokenBudget].every(x => optional(x, y => nullable(y, number)))
   && optional(v.cwd, x => string(x) || strings(x)) && optional(v.input, x => array(x, isPromptInput))
   && [v.queuedSubmissionIds, v.clientUserMessageIds, v.sourceKinds, v.modelProviders].every(x => optional(x, strings))

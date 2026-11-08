@@ -4,21 +4,21 @@
  * Variables read by workers avoid `KEY|PASSWORD|SECRET|TOKEN` in their names because DSH strips credential-shaped variables from child environments.
  * Provides default-path guardrails rather than an OS-level security boundary, as workers run under the operator's OS user.
  */
-import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { realpathSync } from 'node:fs'
-import { delimiter, join, resolve } from 'node:path'
-import type { SubprocessOutputReader, SubprocessRuntime, Deployment } from './types.mts'
-import { SetupError } from './setup.mts'
-import { CliError } from './commands.mts'
-import { GH_DIRECT_ARGS, GH_UNSET } from './github-env.mts'
+import { lstat, mkdir, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
+import { realpathSync } from 'node:fs';
+import { delimiter, join, resolve } from 'node:path';
+import type { SubprocessOutputReader, SubprocessRuntime, Deployment } from './types.mts';
+import { SetupError } from './setup.mts';
+import { CliError } from './commands.mts';
+import { GH_DIRECT_ARGS, GH_UNSET } from './github-env.mts';
 
 const MARKER = '# Written by dsh-superagent on every start; edits are lost.'
 /** Markers of files written under the project's earlier names (`dsh-tag`, `dsh-go`, `dsh-freelancer`), which `dsh-superagent` owns and replaces too. */
 const LEGACY_MARKERS = ['dsh-tag', 'dsh-go', 'dsh-freelancer'].map(name => `# Written by ${name} on every start; edits are lost.`)
 /** Commands workers need, which `blockedCommands` cannot block: the shims and git. */
 export const WORKER_COMMANDS: readonly string[] = ['gh', 'git', 'lark-cli']
-export const workerBin = (stateDir: string): string => join(stateDir, 'worker-bin')
-export const workerGitConfig = (stateDir: string): string => join(stateDir, 'worker-gitconfig')
+import { workerBin, workerGitConfig } from './git-environment.mts';
+export { workerBin, workerGitConfig, agentVariables, GIT_LOCATION } from './git-environment.mts'
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
 const gitQuote = (value: string): string => `"${value.replace(/[\\"]/g, char => `\\${char}`)}"`
 export const credentialHelper = (cli: string): string => cli ? `!env ${GH_DIRECT_ARGS.join(' ')} ${shellQuote(cli)} auth git-credential` : '!false'
@@ -29,33 +29,6 @@ export function sameDirectory(a: string, b: string): boolean {
 }
 export function withoutDirectory(path: string, dir: string): string {
   return path.split(delimiter).filter(entry => !sameDirectory(entry, dir)).join(delimiter)
-}
-
-/**
- * The variables that tell git which repository, work tree and index to act on. A host started inside git, such as by
- * `git rebase --exec`, passes them on, and a git started below it would act on that repository. GIT_CEILING_DIRECTORIES is
- * kept: it names no repository, and it stops git's search for one where the operator chose.
- */
-export const GIT_LOCATION: readonly string[] = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_PREFIX', 'GIT_COMMON_DIR', 'GIT_OBJECT_DIRECTORY',
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_NAMESPACE']
-
-/**
- * Returns environment variable overrides that strip ambient GitHub tokens, interactive prompts, the repository the host's own
- * environment may name, and operator git identity/config overrides.
- */
-export function agentVariables(stateDir: string): Record<string, string | undefined> {
-  return {
-    GH_TOKEN: undefined, GITHUB_TOKEN: undefined,
-    // A worker's git finds the repository from its directory, never from the host's environment.
-    ...Object.fromEntries(GIT_LOCATION.map(name => [name, undefined])),
-    GIT_CONFIG_GLOBAL: workerGitConfig(stateDir), GIT_CONFIG_NOSYSTEM: '1',
-    // Clear environment git config overrides; configuration passed through the environment would otherwise reach every git command the agent runs.
-    GIT_CONFIG_COUNT: undefined, GIT_CONFIG_PARAMETERS: undefined,
-    // When the credential helper has no answer, git must fail rather than prompt; `GIT_ASKPASS: ''` also overrides `core.askPass` and `SSH_ASKPASS`.
-    GIT_ASKPASS: '', SSH_ASKPASS: undefined, GIT_TERMINAL_PROMPT: '0',
-    // Clear operator commit identity variables; prompts specify commit identity and operator env vars would override what a worker sets.
-    GIT_AUTHOR_NAME: undefined, GIT_COMMITTER_NAME: undefined, GIT_AUTHOR_EMAIL: undefined, GIT_COMMITTER_EMAIL: undefined,
-  }
 }
 
 /** True when a regular file starts with the dsh-superagent marker in its first two lines; a symbolic link, directory, or other non-regular file never counts as written by dsh-superagent. */
@@ -78,7 +51,7 @@ async function own(file: string, text: string, mode = 0o644): Promise<void> {
  * Each shim strips the shim directory from PATH before exec so wrapper scripts resolving `gh` or `lark-cli` by name reach the real binary.
  */
 export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' | 'repository' | 'github' | 'feishu'>, blockedCommands: readonly string[]): Promise<void> {
-  const { stateDir, github, feishu } = deployment
+  const { stateDir, github } = deployment
   const dir = workerBin(stateDir)
   await mkdir(dir, { recursive: true })
   const before = await readdir(dir)
@@ -96,10 +69,9 @@ export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' |
     'for entry in $PATH; do [ "$entry" = "$self" ] || rest="${rest:+$rest:}$entry"; done',
     'set +f', 'unset IFS', 'PATH=$rest', 'export PATH',
   ].join('\n')
-  const run = (program: string): string => `${withoutShims}\nexec ${shellQuote(program)} "$@"`
   const fail = (message: string): string => `echo ${shellQuote(message)} >&2\nexit 1`
   await shim('gh', github.cli ? `${withoutShims}\nunset ${GH_UNSET.join(' ')}\nexec ${shellQuote(github.cli)} "$@"` : fail('GitHub is not configured; select its repository in the Mother settings.'))
-  await shim('lark-cli', feishu ? run(feishu.cli) : fail('lark-cli is unavailable: this installation has no Feishu bot.'))
+  await shim('lark-cli', fail('lark-cli is unavailable: this installation has no Feishu bot.'))
   for (const name of new Set(blockedCommands.filter(name => !WORKER_COMMANDS.includes(name)))) {
     await shim(name, fail(`${name} is blocked in this installation; use gh, which acts as ${github.login}.`))
   }
@@ -116,17 +88,8 @@ export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' |
   ].join('\n') + '\n')
 }
 
-/** Applies environment overrides and prepends worker shims to `process.env.PATH`, returning a restore callback. */
-export function applyEnvironment(variables: Record<string, string | undefined>, stateDir: string, path: string): () => void {
-  const values = { ...variables, PATH: [workerBin(stateDir), path].join(delimiter) }
-  const previous = Object.fromEntries(Object.keys(values).map(name => [name, process.env[name]]))
-  const apply = (env: Record<string, string | undefined>): void => { for (const [name, value] of Object.entries(env)) { if (value === undefined) delete process.env[name]; else process.env[name] = value } }
-  apply(values)
-  return () => { apply(previous) }
-}
-
 /** Spawns a command through the DSH subprocess runtime, which strips credential-shaped environment variables. */
-export async function runAsWorker(subprocess: SubprocessRuntime, argv: string[], cwd: string, signal: AbortSignal, env?: Record<string, string>): Promise<string> {
+export async function runAsWorker(subprocess: SubprocessRuntime, argv: string[], cwd: string, signal: AbortSignal, env?: Record<string, string | undefined>): Promise<string> {
   const handle = subprocess.spawn({ argv, cwd, graceMs: 2000, signal, ...env ? { env } : {}, stdio: { stdin: 'ignore', stdout: { maxBytes: 1 << 20 }, stderr: { maxBytes: 1 << 16 } } })
   const { exitCode } = await handle.done
   const read = (reader: SubprocessOutputReader | undefined): string => reader?.readFrom(0).text ?? ''

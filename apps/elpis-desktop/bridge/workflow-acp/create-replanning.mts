@@ -3,7 +3,7 @@ import type { MotherRuntime } from './mother-runtime.mts';
 import type { createRunProgress } from './create-run-progress.mts';
 
 import { randomUUID } from 'node:crypto';
-import { BridgeError } from '../client.mts';
+import { BridgeError } from '../validate.mts';
 import { checkPlan } from '../canvas-plan.mts';
 import type { StoredTask, WorkflowRecord, Root } from './types.mts';
 import { ended } from './status.mts';

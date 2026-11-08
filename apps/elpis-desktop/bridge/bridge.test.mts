@@ -464,7 +464,11 @@ function fixture({ prunerSupported = false, omitWorkflowParentInList = false, re
       }
       case 'turn/interrupt': required(threads.get(request.params.threadId)).status = { type: 'idle' }; result = {}; break;
       case 'thread/unsubscribe': result = { status: 'unsubscribed' }; break;
-      case 'workGraph/list': result = {data:workflowRecords.filter(graph => graph.rootThreadId === request.params.rootThreadId)}; break;
+      case 'workGraph/list': result = { data: workflowRecords.filter(graph => graph.rootThreadId === request.params.rootThreadId).map(graph => ({
+        maxConcurrency: 1, eventCount: 0, worktreeReport: null, error: null, ...graph, name: graph.name ?? graph.id, status: graph.status ?? 'completed',
+        tasks: graph.tasks.map(task => ({ kind: 'implement', dependencies: [], provider: null, model: null, result: null, evidence: [], failureReason: null,
+          ...task, title: task.title ?? task.id, status: task.status ?? 'completed', assignedThreadId: task.assignedThreadId ?? null })),
+      })) }; break;
       case 'workGraph/runWithProviders':
       case 'workGraph/run': result = {graphId:'graph-1',threadId:request.params.rootThreadId,turnId:'workflow-turn'}; break;
       default: throw new Error(`Unexpected protocol method ${request.method}`);
@@ -2035,7 +2039,6 @@ test('an annotation waits for a pending chat operation and is sent once', async 
   assert.equal(f.socket.sent.filter(row => row.method === 'turn/start').length, 1);
 });
 
-
 test('Claude MCP import previews safely, rejects stale and duplicate entries, and writes without reload', async () => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), 'elpis-claude-mcp-'));
   const configPath = path.join(home, 'config.toml');
@@ -2149,6 +2152,7 @@ test('context exposes actual scoped events without resuming and strips audit pat
     contextAttribution: { systemInstructions: 20, developerMessages: 'not a number', toolResults: 0, estimatedTotal: 100, auditPath: '/private/audit', secret: 'PRIVATE AUDIT' }, secret: 'PRIVATE AUDIT' } });
   emit('thread/smartPrune/updated', { threadId: ROOT, smartPrune: { enabled: true, approxSavedTokens: 50, optimizerRequests: 2, latestAttempt: { status: 'failed', modelSlug: 'optimizer-model', failureReason: 'Failed to connect', auditPath: '/private/audit' } } });
   const result = await client.context(ROOT);
+  assert.ok(result.tokenUsage?.total && result.tokenUsage.last && result.smartPrune?.latestAttempt);
   assert.equal(result.tokenUsage.total.cachedInputTokens, 800);
   assert.equal(result.tokenUsage.total.cacheWriteInputTokens, 75);
   assert.equal(result.tokenUsage.last.inputTokens, 100, 'Latest input remains separate from cumulative usage');
@@ -2189,6 +2193,7 @@ test('the context ledger measures the latest request and reconciles the estimate
   // A replay after resume carries no shares; the last known ones stay, scaled to the new measured total.
   emit('thread/tokenUsage/updated', { threadId: ROOT, tokenUsage: usage({ totalTokens: 50000 }, 200000) });
   const result = await client.context(ROOT);
+  assert.ok(result.tokenUsage?.contextAttribution);
   assert.equal(result.tokenUsage.contextAttribution.toolResults, 27000);
   assert.equal(result.ledger.used, 50000);
   assert.equal(required(result.ledger.categories.find(row => row.id === 'toolResults')).tokens, 26471);
@@ -2269,7 +2274,6 @@ test('an old chat shows the last usage its rollout recorded, plain or compressed
   assert.equal(live.ledger.used, 41000); assert.equal(live.availability.tokenUsage, 'live');
   client.close();
 });
-
 
 test('encrypted reasoning weighs what the model is sent, as the engine counts it (A225, A260)', async () => {
   const { sizedItem } = await import('./elpis-features.mts');
@@ -2365,6 +2369,7 @@ test('an old chat shows category shares estimated from its saved transcript, unt
   const opened = await client.context(ROOT);
   assert.ok('basis' in opened.ledger); assert.equal(opened.ledger.basis, 'transcript'); assert.equal(opened.ledger.used, 2000);
   assert.equal(required(opened.ledger.categories.find(row => row.id === 'toolResults')).tokens, 1000);
+  assert.ok(opened.tokenUsage);
   assert.equal(opened.tokenUsage.contextAttribution, null, 'the usage itself still says no shares were reported');
   // The ledger's Compact session, as the terminal's /compact: not while the chat is in the middle of a turn.
   assert.deepEqual(opened.compact, { available: true });
@@ -2415,7 +2420,6 @@ test('the ledger switches write the keys the TUI ledger writes: Smart Prune and 
   client.close();
 });
 
-
 test('the main model is saved where the TUI reads it: model and model_provider in config.toml', async () => {
   const {client,socket}=fixture(); await client.initialize();
   await client.saveSettings({version:'user-version',main:{model:'gpt-6-luna',provider:'openai'}});
@@ -2448,7 +2452,6 @@ test('maintenance edits are narrow, preserve unknowns, and reject stale versions
   assert.equal(configRead.config.model,MODEL);
   client.close();
 });
-
 
 test('settings pages read and write only listed native options, respecting managed policy', async () => {
   const { client, socket, configRead, requirementsRead } = fixture(); await client.initialize();
@@ -3085,7 +3088,6 @@ test('A101 archived view sorts all pages by actual archive date and keeps why ea
   assert.equal(required(second.data[0]).id, ROOT);
   assert.equal(required(second.data[0]).archiveReason, 'Archived by you.');
 });
-
 
 test('A101 archive order spans native pages, survives restart, and keeps pagination stable after restore', async t => {
   const archiveDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'a101-archive-pages-'));

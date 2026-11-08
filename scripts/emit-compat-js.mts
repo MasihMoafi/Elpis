@@ -10,6 +10,8 @@ const targets = [
   ['packaging/obsidian/love-spot/main.cts', 'packaging/obsidian/love-spot/main.js'],
   ['codex-rs/responses-api-proxy/npm/bin/codex-responses-api-proxy.mts', 'codex-rs/responses-api-proxy/npm/bin/codex-responses-api-proxy.js'],
   ['codex-rs/skills/assets-src/openai-docs/fetch-codex-manual.mts', 'codex-rs/skills/src/assets/samples/openai-docs/scripts/fetch-codex-manual.mjs'],
+  ...['manual-errors', 'manual-transport', 'manual-cache', 'manual-outline', 'manual-fetch'].map(name =>
+    [`codex-rs/skills/assets-src/openai-docs/${name}.mts`, `codex-rs/skills/src/assets/samples/openai-docs/scripts/${name}.mjs`] as const),
   ['codex-rs/skills/assets-src/openai-docs/resolve-latest-model-info.cts', 'codex-rs/skills/src/assets/samples/openai-docs/scripts/resolve-latest-model-info.cjs'],
 ] as const;
 
@@ -22,7 +24,7 @@ for (const [source, output] of targets) {
     return line.replace(/[ \t]+$/, '') + trailing;
   }).join('\n');
   const shebang = stripped.match(/^#![^\n]*\n/)?.[0] ?? '';
-  const generated = shebang + header + stripped.slice(shebang.length);
+  const generated = shebang + header + stripped.slice(shebang.length).replace(/(\b(?:from|import)\s*(?:\(\s*)?['"][^'"\n]+)\.mts(['"])/g, '$1.mjs$2');
   const destination = path.join(root, output);
   if (process.argv.includes('--check')) {
     if (readFileSync(destination, 'utf8') !== generated) {
