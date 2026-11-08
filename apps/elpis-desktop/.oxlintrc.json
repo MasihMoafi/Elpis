@@ -39,7 +39,7 @@
   "overrides": [
     {
       // As in DSH: test doubles keep async signatures without awaiting, and tests may throw non-Errors on purpose.
-      "files": ["**/*.test.*", "tests/**"],
+      "files": ["**/*.test.*", "**/*.fixtures.*", "tests/**"],
       "rules": { "typescript/require-await": "off", "typescript/only-throw-error": "off" }
     }
   ]
