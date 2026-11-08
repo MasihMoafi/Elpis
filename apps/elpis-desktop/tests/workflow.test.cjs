@@ -151,9 +151,10 @@ for (const layout of [
  { name:'side panel', width:1130, height:760, colorScheme:'dark', running:true, panel:true },
  { name:'narrow chat', width:600, height:844, colorScheme:'light' },
 ]) test(`chat notices never move the composer: ${layout.name}`,async()=>{
- const f=await fixture({...layout,staticDir:process.env.ELPIS_NOTICE_RENDERER});
+ const f=await fixture({...layout,width:Math.max(900,layout.width),staticDir:process.env.ELPIS_NOTICE_RENDERER});
  try{
   await f.open('chat-a');
+  await f.page.setViewportSize({width:layout.width,height:layout.height});
   if(layout.panel)await f.page.getByRole('button',{name:'Show side panel',exact:true}).click();
   await f.composer.fill('Keep typing here');
   await f.page.evaluate(async()=>{await document.fonts.ready;await new Promise(requestAnimationFrame);});
