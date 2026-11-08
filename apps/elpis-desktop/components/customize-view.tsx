@@ -118,7 +118,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
     if (!open) { setError("Folders open in the Elpis desktop app."); return; }
     try { await open(folder); } catch (cause) { setError(message(cause)); }
   };
-  const skills = data?.skills.data ?? [], plugins = data?.plugins.data ?? [], connectors = data?.connectors.data ?? [];
+  const skills = [...(data?.skills.data ?? [])].sort((a, b) => a.name.localeCompare(b.name)), plugins = data?.plugins.data ?? [], connectors = data?.connectors.data ?? [];
   const own = skills.find(skill => skill.scope === "user");
 
   return <div className="customize" aria-label="Customize">
@@ -141,7 +141,7 @@ export function CustomizeView({ cwd, onCreateSkill, onOpenSettings, onConnectGit
         onKeyDown={event => { if (event.key === "Delete" && event.target === event.currentTarget && !savingSkill && !event.repeat) { event.preventDefault(); event.stopPropagation(); requestDelete(skill); } }}>
         <span className="customize-text"><span className="customize-name"><FileRefLink target={{ path: skill.path }}>{skill.name}</FileRefLink></span>{skill.description && <Description text={skill.description} />}</span>
         {skill.deletable ? <span className="customize-badge">{SCOPE[skill.scope]}</span>
-          : <Tooltip content={skillOrigin(skill)} detail={<span className="break-all">{skillProtection(skill)}</span>}><span className="customize-badge">{skill.plugin ? `From ${skill.plugin.split("@")[0]}` : SCOPE[skill.scope]}</span></Tooltip>}
+          : !skill.plugin && <Tooltip content={skillOrigin(skill)} detail={<span className="break-all">{skillProtection(skill)}</span>}><span className="customize-badge">{SCOPE[skill.scope]}</span></Tooltip>}
         <Switch aria-label={`Use ${skill.name}`} checked={flipped[skill.path] ?? skill.enabled} onCheckedChange={enabled => void setSkill(skill, enabled)} />
         <span className="flex size-6 shrink-0 items-center justify-center">{skill.deletable && <Button variant="ghost" size="icon-xs" aria-label={`Delete ${skill.name}`} title="Delete (Delete key)" disabled={savingSkill} onClick={() => requestDelete(skill)}><Trash2 size={14} /></Button>}</span>
       </li>)}</ul>
