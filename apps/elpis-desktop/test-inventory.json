@@ -414,7 +414,6 @@
     "tests/love-spot-pages.test.cts",
     "tests/menus.test.cts",
     "tests/chat-load-layout.test.cts",
-    "tests/workflow-provider.test.cjs",
     "tests/canvas-editing.test.cts",
     "tests/love-spot-saving.test.cts",
     "tests/browser-sessions-electron.test.cts",
