@@ -44,7 +44,7 @@ export function createSidebarThreadRow({ model, runtime, loveActivity, attention
   function threadRow(thread: Thread, depth = 0, inOrigin = false, recordedRun?: WorkflowRun) {
     const run = recordedRun ?? workflowRoots.get(thread.id), identity = run ? workflowCatalog.identities[run.id] : undefined, name = identity?.name ?? sidebarTitle(thread);
     const expandId = run ? `workflow:${run.id}` : thread.id, open = run ? workflowOpen(run) : branchOpen(thread.id);
-    const state = run ? run.status === "running" || threads.some(child => workflowChild(child, run) && child.status?.type === "active") ? "working" : run.status === "failed" ? "error" : workflowRoots.get(thread.id)?.id === run.id && unreadIds.has(thread.id) ? "unread" : "idle" : agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = !!thread.motherAgent || pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
+    const state = run ? run.status === "running" || threads.some(child => workflowChild(child, run) && child.status?.type === "active") ? "working" : run.status === "failed" ? "error" : workflowRoots.get(thread.id)?.id === run.id && unreadIds.has(thread.id) ? "unread" : "idle" : agentState(thread, waitingIds, isAgentRun(thread) ? new Set() : new Set(attention.unread)), pinned = pins.includes(thread.id), bookmarked = bookmarks.includes(thread.id);
     const origin = workflowSteps.has(thread.id) ? null : chatOrigin(thread, loveActivity.threads);
     const runParent = find(thread.parentThreadId);
     const parentLabel = isAgentRun(thread) && thread.parentThreadId && !workflowSteps.has(thread.id) ? `from ${runParent ? title(runParent) : "parent conversation"}` : null;
@@ -55,7 +55,7 @@ export function createSidebarThreadRow({ model, runtime, loveActivity, attention
     const selection = marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined;
     const colourSlot = agentColours.get(thread.id), role = run ? runSummary(run) : undefined;
     const rowModel = run ? null : thread.model, provider = run ? null : thread.modelProvider;
-    return <ThreadActions key={thread.id} thread={{ ...thread, name }} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={(thread, name) => renameDisplayedThread(thread, name, identity?.id)} onArchive={archiveChats} pinned={pinned} {...(!thread.motherAgent ? { onPin: togglePin } : {})} {...(hasTerminal ? { onOpenInTui: openInTui } : {})} {...(!pane ? { onOpenSplit: openSplit } : {})} {...(windowAvailable ? { onOpenWindow: openSessionWindow } : {})}
+    return <ThreadActions key={thread.id} thread={{ ...thread, name }} onRequestDelete={() => deleteChats(marked.includes(thread.id) ? marked : [thread.id])} onRename={(thread, name) => renameDisplayedThread(thread, name, identity?.id)} onArchive={archiveChats} pinned={pinned} onPin={togglePin} {...(hasTerminal ? { onOpenInTui: openInTui } : {})} {...(!pane ? { onOpenSplit: openSplit } : {})} {...(windowAvailable ? { onOpenWindow: openSessionWindow } : {})}
       bookmarked={bookmarked} onBookmark={toggleBookmark}
       {...(identity ? { renameDescription: "The workflow name is saved on this device." } : {})}
       {...organizationActions(thread)}

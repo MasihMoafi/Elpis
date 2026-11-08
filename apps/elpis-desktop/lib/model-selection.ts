@@ -1,4 +1,4 @@
-import { chatProvider, choiceById, choiceOf, effortsOf, providerChoices, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+import { subscriptionOf, chatProvider, choiceById, choiceOf, effortsOf, providerChoices, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { fastServiceTier } from "@/lib/service-tier.mts";
 import type { NextTurn } from "@/lib/workspace-types";
 
@@ -12,7 +12,7 @@ export function modelSelection({ models, providerSettings, selected, choiceId, m
   const pending = selected ? nextTurn[selected.id] : undefined;
   const turnModel = selected ? pending?.model ?? selected.model ?? "" : model;
   const selectedChoice = selected ? choiceOf({ ...selected, model: turnModel }, choices) : null;
-  const chatChoices = selected && !selected.motherAgent ? choices.filter(choice => !choice.provider || choice.provider === selected.modelProvider) : choices;
+  const chatChoices = selected && !subscriptionOf(selected.model) ? choices.filter(choice => !choice.provider || choice.provider === selected.modelProvider) : choices;
   const modelChoices = selectedChoice?.provider && !chatChoices.some(choice => choice.id === selectedChoice.id) ? [selectedChoice, ...chatChoices] : chatChoices;
   const dictationProvider = chatProvider(turnModel, selected ? selected.modelProvider : newChoice?.provider, providerSettings?.main.provider);
   const turnEfforts = effortsOf(turnModel || providerSettings?.main.model, models);

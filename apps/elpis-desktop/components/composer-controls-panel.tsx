@@ -47,13 +47,13 @@ export function ComposerControls({ selected, selectedModel, settings, commands, 
   const { attachments, attaching } = attachmentsState;
   const { projectChanging } = projectState;
   const defaultModel = selected ? null : providerSettings?.main.model;
-  return <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging || !!selected?.motherAgent} attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
+  return <div className="composer-controls"><div className="model-controls"><PlusMenu disabled={!ready || !connected || busy || projectChanging} attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count} slashDisabled={!!text} plan={planMode} returnFocus={composerRef}
                 fast={{ ...(!fastAvailable ? { unavailable: "Not offered for this model" } : {}), on: fastAvailable && fastOn, disabled: !fastAvailable || !ready || !connected || busy || projectChanging || readOnlyRun, onChange: () => void chooseFast(fastOn ? "off" : "on") }}
                 onAttach={pickFiles} onMention={() => { setShellMode(false); startMention(); }} onSlash={() => { setShellMode(false); startSlash(); }} onPlan={setPlan} onShell={() => { setShellMode(true); slash.close(); mention.close(); promptKeys.cancel(); focusComposer(); }} />
               {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
-              {!selected?.motherAgent && <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} {...(settingsSnapshot?.managed ? { managed: settingsSnapshot.managed } : {})} onChange={choosePermissions} />}
+              {<PermissionsMenu mode={permissionMode} disabled={permissionsLocked} {...(settingsSnapshot?.managed ? { managed: settingsSnapshot.managed } : {})} onChange={choosePermissions} />}
             </div><div className="composer-right">
-              {!selected?.motherAgent && <ContextUsage {...(selected ? { threadId: selected.id } : {})} />}
+              {<ContextUsage {...(selected ? { threadId: selected.id } : {})} />}
               <ModelPicker choices={modelChoices} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} {...(defaultModel !== undefined ? { defaultModel } : {})}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) { setOverride(selected.id, { model: choice.model }); setFailedTurns(previous => without(previous, selected.id)); } else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
@@ -62,9 +62,9 @@ export function ComposerControls({ selected, selectedModel, settings, commands, 
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
                 {turnEfforts.map(value => <option key={value} value={value}>{value}</option>)}
               </OptionSelect>}
-              {!selected?.motherAgent && <Button type="button" variant="ghost" size="icon-sm" className="fast-toggle" data-unavailable={fastAvailable ? undefined : ""} aria-label="Fast mode" aria-pressed={fastAvailable && fastOn} title={!fastAvailable ? "Fast is not offered for this model. GPT models have it; Claude's Fast bills extra usage, so it stays off." : fastOn ? "Fast is on. Turn off Fast." : "Turn on Fast. Applies from the next model request, including during this turn."} disabled={!fastAvailable || !ready || !connected || busy || projectChanging || readOnlyRun} onClick={() => void chooseFast(fastOn ? "off" : "on")}><Zap size={16} fill={fastAvailable && fastOn ? "currentColor" : "none"} aria-hidden="true" /></Button>}
+              {<Button type="button" variant="ghost" size="icon-sm" className="fast-toggle" data-unavailable={fastAvailable ? undefined : ""} aria-label="Fast mode" aria-pressed={fastAvailable && fastOn} title={!fastAvailable ? "Fast is not offered for this model. GPT models have it; Claude's Fast bills extra usage, so it stays off." : fastOn ? "Fast is on. Turn off Fast." : "Turn on Fast. Applies from the next model request, including during this turn."} disabled={!fastAvailable || !ready || !connected || busy || projectChanging || readOnlyRun} onClick={() => void chooseFast(fastOn ? "off" : "on")}><Zap size={16} fill={fastAvailable && fastOn ? "currentColor" : "none"} aria-hidden="true" /></Button>}
               <div className="composer-actions">
-              {ready && selected && !selected.motherAgent && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} persistent={selectedLoveChat} {...(loveSpotAudioReason !== undefined ? { unavailableReason: loveSpotAudioReason } : {})} onBusy={setVoiceBusy} />}
+              {ready && selected && <Voice key={`voice:${selected.id}`} threadId={selected.id} disabled={!connected || projectChanging || dictating} persistent={selectedLoveChat} {...(loveSpotAudioReason !== undefined ? { unavailableReason: loveSpotAudioReason } : {})} onBusy={setVoiceBusy} />}
               {ready && <Dictation key={selected?.id || newDraftKey.current} provider={dictationProvider} disabled={!ready || !connected || busy || projectChanging || voiceBusy} onBusy={setDictating}
                 selection={() => ({ text: textRef.current, start: composerRef.current?.selectionStart ?? textRef.current.length, end: composerRef.current?.selectionEnd ?? textRef.current.length })}
                 onTranscript={(selection, transcript) => {

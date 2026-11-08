@@ -56,7 +56,7 @@ export function WorkspaceComposerInput({ session, options, composer, attachments
   }
   /** The "+" menu's Slash commands: a "/" in an empty box, which opens the command list. */
   function startSlash() { editDraft("/"); setCaret(1); focusComposer(); }
-  const composerPlaceholder = selected?.motherAgent ? "Give Elpis a goal…" : shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something";
+  const composerPlaceholder = shellMode ? "Run a shell command…" : continues ? `Message ${title(selected!)}…` : selected && activeTurn ? followUpHint(preferences) : selected ? "Ask for a follow-up" : "Ask Elpis to build, fix or explain something";
   const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""].filter(Boolean).join("\n");
   const { onComposerChange, onComposerPaste, onComposerKeyDown } = createComposerHandlers({ composer, attachmentsState, runtime, preferences, promptKeys, mention, slash, turnEfforts, activeTurn, continues, editDraft, stepEffort, cycleMode, sendShell, send });
   return <ComposerForm composer={composer} attachmentsState={attachmentsState} drafts={drafts} selectedRef={selectedRef} newDraftKey={newDraftKey} slash={slash} mention={mention} promptKeys={promptKeys} send={send} onComposerChange={onComposerChange} onComposerPaste={onComposerPaste} onComposerKeyDown={onComposerKeyDown} composerPlaceholder={composerPlaceholder} composerNotice={composerNotice} busy={busy} projectChanging={projectChanging} focusComposer={focusComposer}>
