@@ -62,6 +62,18 @@ export async function rolloutAgentModel(file: unknown, threadId: string, limit =
   }
   return latest;
 }
+function lineTurnModel(line: string): { turnId: string; model: string } | null {
+  if (!line.includes('"turn_context"')) return null;
+  let row;
+  try {
+    row = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  const turnId = string(row?.payload?.turn_id),
+    model = string(row?.payload?.model);
+  return row?.type === "turn_context" && turnId && model?.trim() ? { turnId, model } : null;
+}
 /** The model recorded for each saved turn. Old or imported rows without a model stay absent. */
 export async function rolloutTurnModels(file: unknown, limit = 1 << 28, wanted?: ReadonlySet<string>, older = false) {
   const models = new Map<string, string>();
@@ -71,17 +83,8 @@ export async function rolloutTurnModels(file: unknown, limit = 1 << 28, wanted?:
       // Older pages may precede the recent suffix. Seek their labels without retaining
       // intervening messages; opening a chat still has a fixed recent-read budget.
       for await (const line of reverseRolloutLines(file, older ? Infinity : Math.min(limit, 8 * 1024 * 1024))) {
-        if (!line.includes('"turn_context"')) continue;
-        let row;
-        try {
-          row = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        const turnId = string(row?.payload?.turn_id),
-          model = string(row?.payload?.model);
-        if (row?.type === "turn_context" && turnId && wanted.has(turnId) && !models.has(turnId) && model?.trim())
-          models.set(turnId, model);
+        const found = lineTurnModel(line);
+        if (found && wanted.has(found.turnId) && !models.has(found.turnId)) models.set(found.turnId, found.model);
         if (models.size === wanted.size) break;
       }
       return models;
@@ -89,17 +92,8 @@ export async function rolloutTurnModels(file: unknown, limit = 1 << 28, wanted?:
     const input = await rolloutInput(file, limit);
     if (!input) return models;
     for await (const line of readline.createInterface({ input, crlfDelay: Infinity })) {
-      if (!line.includes('"turn_context"')) continue;
-      let row;
-      try {
-        row = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const turnId = string(row?.payload?.turn_id),
-        model = string(row?.payload?.model);
-      if (row?.type === "turn_context" && turnId && (!wanted || wanted.has(turnId)) && model?.trim())
-        models.set(turnId, model);
+      const found = lineTurnModel(line);
+      if (found && (!wanted || wanted.has(found.turnId))) models.set(found.turnId, found.model);
     }
   } catch {
     /* An unreadable transcript has no model labels. */
