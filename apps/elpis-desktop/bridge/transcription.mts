@@ -89,6 +89,31 @@ export function transcriptionStatus(config: Config | null, provider?: string, en
 }
 
 /** These processes belong only to this dictation request, including WhisperType's whisper-cli child. */
+/** Ends a child-process wait once: on the first result, on cancellation, or at the deadline, always stopping the child. */
+function settleChild<T>(
+  child: ChildProcess,
+  signal: AbortSignal,
+  ms: number,
+  timedOut: string,
+  resolve: (value: T) => void,
+  reject: (error: Error) => void,
+) {
+  let done = false;
+  const finish = (error: Error | null, value?: T) => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    signal.removeEventListener("abort", abort);
+    stop(child);
+    if (error) reject(error);
+    else resolve(value!);
+  };
+  const abort = () => finish(cancelled());
+  const timer = setTimeout(() => finish(new BridgeError(timedOut, 504)), ms);
+  signal.addEventListener("abort", abort, { once: true });
+  return { finish, settled: () => done };
+}
+
 function stop(child: ChildProcess) {
   try {
     if (process.platform !== "win32") {
@@ -132,22 +157,14 @@ export function normalizeAudio(audio: Buffer, mime: string, signal: AbortSignal)
     );
     const chunks: Buffer[] = [];
     let length = 0;
-    let done = false;
-    const finish = (error: Error | null, value?: Buffer) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      stop(child);
-      if (error) reject(error);
-      else resolve(value!);
-    };
-    const abort = () => finish(cancelled());
-    const timer = setTimeout(
-      () => finish(new BridgeError("Audio processing timed out. Try a shorter recording.", 504)),
+    const { finish } = settleChild<Buffer>(
+      child,
+      signal,
       30000,
+      "Audio processing timed out. Try a shorter recording.",
+      resolve,
+      reject,
     );
-    signal.addEventListener("abort", abort, { once: true });
     child.on("error", () => finish(new BridgeError("Audio processing needs ffmpeg installed locally.", 503)));
     child.stdin.on("error", () => {});
     child.stdout.on("data", chunk => {
@@ -204,22 +221,14 @@ export function transcribeMcp(
     child.stdout.setEncoding("utf8");
     let pending = "";
     let size = 0;
-    let done = false;
-    const finish = (error: Error | null, value?: string) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      signal.removeEventListener("abort", abort);
-      stop(child);
-      if (error) reject(error);
-      else resolve(value!);
-    };
-    const abort = () => finish(cancelled());
-    const timer = setTimeout(
-      () => finish(new BridgeError("WhisperType timed out. Try a shorter recording.", 504)),
+    const { finish, settled } = settleChild<string>(
+      child,
+      signal,
       180000,
+      "WhisperType timed out. Try a shorter recording.",
+      resolve,
+      reject,
     );
-    signal.addEventListener("abort", abort, { once: true });
     const send = (message: object) => child.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
     child.on("error", () => finish(new BridgeError("WhisperType could not start. Check its MCP command.", 503)));
     child.on("exit", () => finish(new BridgeError("WhisperType stopped before returning a transcript.", 502)));
@@ -229,7 +238,7 @@ export function transcribeMcp(
       if (size > 1024 * 1024) return finish(new BridgeError("WhisperType returned too much output.", 502));
       pending += chunk;
       let newline;
-      while (!done && (newline = pending.indexOf("\n")) >= 0) {
+      while (!settled() && (newline = pending.indexOf("\n")) >= 0) {
         const line = pending.slice(0, newline);
         pending = pending.slice(newline + 1);
         let message: McpResponse;

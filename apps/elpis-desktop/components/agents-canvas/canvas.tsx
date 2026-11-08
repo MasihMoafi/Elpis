@@ -41,8 +41,8 @@ function Canvas(props: Props) {
       data-recorded={recordedRun ? true : undefined}
       data-panel={panelOpen ? "open" : "closed"}
     >
-      <CanvasHeader {...view} />
-      <CanvasBoard {...view} />
+      <CanvasHeader view={view} />
+      <CanvasBoard view={view} />
       {!panelOpen ? null : sourceId ? (
         <WorkflowSources id={sourceId} onBack={() => setSourceId(null)} />
       ) : selected ? (

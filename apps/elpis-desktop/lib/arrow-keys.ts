@@ -7,7 +7,7 @@
  * A closed drop-down list is an ordinary button here, as in Claude Code's /config: Enter and Space open it
  * (components/ui/select.tsx stops it opening on the arrows). A tab or a radio is one choice of a set, so reaching it with an arrow
  * also selects it (Masih, 22 Oct: "make it change just by the stroke of the keyboards"), as in ChatGPT; the sidebar's pages and chats
- * do the same (app/page.tsx sidebarKeys). */
+ * do the same (components/workspace-shell.tsx sidebarKeys). */
 export const ARROW_CONTROL =
   'button, a[href], summary, [role="tab"], [role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"], [role="switch"], [role="treeitem"], [role="radio"]:not(input), [role="checkbox"]:not(input)';
 const OWN_KEYS = '[role="combobox"]:not([aria-haspopup="listbox"]), [role="slider"], [role="spinbutton"]';

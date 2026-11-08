@@ -18,235 +18,28 @@ import { CanvasMenu } from "./menu";
 import { AgentDashboard } from "./dashboard";
 import { CanvasToolbar } from "./canvas-toolbar";
 
-export function CanvasBoard({
-  board,
-  lasso,
-  suppressContext,
-  cutter,
-  setStroke,
-  setMenu,
-  boxDrag,
-  selection,
-  pointer,
-  cutCrossed,
-  setSelectionBox,
-  setSelection,
-  checkpoint,
-  setGraph,
-  setLasso,
-  addAgent,
-  iso,
-  identity,
-  graph,
-  split,
-  states,
-  setDashboardId,
-  renameAgent,
-  editFlow,
-  dark,
-  isoController,
-  modelLabel,
-  validConnection,
-  insertWire,
-  connectionCancelled,
-  reconnect,
-  renamingFrame,
-  setRenamingFrame,
-  focusBoard,
-  setText,
-  beginDrag,
-  moveIso,
-  nodeDrag,
-  finishDrag,
-  setInsertWire,
-  insertionAt,
-  connect,
-  openAdder,
-  nodes,
-  onNodeContextMenu,
-  onPaneContextMenu,
-  onEdgeClick,
-  edges,
-  onNodesChange,
-  onEdgesChange,
-  alongsideDrag,
-  onConnectEnd,
-  connectFrom,
-  onNodeClick,
-  reconnecting,
-  minimap,
-  stroke,
-  selectionBox,
-  run,
-  recordedRun,
-  savedRecord,
-  telemetry,
-  historicalNotice,
-  notice,
-  capturedLog,
-  log,
-  addNote,
-  tidy,
-  patternCommand,
-  patternNumber,
-  setPatternCommand,
-  finding,
-  setFinding,
-  setFindIndex,
-  found,
-  findIndex,
-  findAgent,
-  runTargets,
-  setRunTargets,
-  scope,
-  ready,
-  offlineReasonId,
-  start,
-  adding,
-  room,
-  limit,
-  catalog,
-  providers,
-  setAdding,
-  addAgents,
-  letElpis,
-  menu,
-  menuView,
-  dashboard,
-  own,
-  clashes,
-  inputsNeeded,
-  titleOf,
-  onOpenChat,
-  showPanel,
-  flowEdit,
-  saveFlow,
-  setFlowEdit,
-  deleted,
-  undo,
-  planning,
-  undoLoad,
-  setUndoLoad,
-  flow,
-}: Pick<
-  CanvasController,
-  | "board"
-  | "lasso"
-  | "suppressContext"
-  | "cutter"
-  | "setStroke"
-  | "setMenu"
-  | "boxDrag"
-  | "selection"
-  | "pointer"
-  | "cutCrossed"
-  | "setSelectionBox"
-  | "setSelection"
-  | "checkpoint"
-  | "setGraph"
-  | "setLasso"
-  | "addAgent"
-  | "iso"
-  | "identity"
-  | "graph"
-  | "split"
-  | "states"
-  | "setDashboardId"
-  | "renameAgent"
-  | "editFlow"
-  | "dark"
-  | "isoController"
-  | "modelLabel"
-  | "validConnection"
-  | "insertWire"
-  | "connectionCancelled"
-  | "reconnect"
-  | "renamingFrame"
-  | "setRenamingFrame"
-  | "focusBoard"
-  | "setText"
-  | "beginDrag"
-  | "moveIso"
-  | "nodeDrag"
-  | "finishDrag"
-  | "setInsertWire"
-  | "insertionAt"
-  | "connect"
-  | "openAdder"
-  | "nodes"
-  | "onNodeContextMenu"
-  | "onPaneContextMenu"
-  | "onEdgeClick"
-  | "edges"
-  | "onNodesChange"
-  | "onEdgesChange"
-  | "alongsideDrag"
-  | "onConnectEnd"
-  | "connectFrom"
-  | "onNodeClick"
-  | "reconnecting"
-  | "minimap"
-  | "stroke"
-  | "selectionBox"
-  | "run"
-  | "recordedRun"
-  | "savedRecord"
-  | "telemetry"
-  | "historicalNotice"
-  | "notice"
-  | "capturedLog"
-  | "log"
-  | "addNote"
-  | "tidy"
-  | "patternCommand"
-  | "patternNumber"
-  | "setPatternCommand"
-  | "finding"
-  | "setFinding"
-  | "setFindIndex"
-  | "found"
-  | "findIndex"
-  | "findAgent"
-  | "runTargets"
-  | "setRunTargets"
-  | "scope"
-  | "ready"
-  | "offlineReasonId"
-  | "start"
-  | "adding"
-  | "room"
-  | "limit"
-  | "catalog"
-  | "providers"
-  | "setAdding"
-  | "addAgents"
-  | "letElpis"
-  | "menu"
-  | "menuView"
-  | "dashboard"
-  | "own"
-  | "clashes"
-  | "inputsNeeded"
-  | "titleOf"
-  | "onOpenChat"
-  | "showPanel"
-  | "flowEdit"
-  | "saveFlow"
-  | "setFlowEdit"
-  | "deleted"
-  | "undo"
-  | "planning"
-  | "undoLoad"
-  | "setUndoLoad"
-  | "flow"
->) {
+export function CanvasBoard({ view }: { view: CanvasController }) {
+  const {
+    setMenu,
+    patternCommand,
+    found,
+    findIndex,
+    runTargets,
+    start,
+    adding,
+    menu,
+    menuView,
+    dashboard,
+    flowEdit,
+    undoLoad,
+  } = view;
   return (
     <div
       className="canvas-board"
-      ref={board}
-      data-tool={lasso ? "lasso" : undefined}
+      ref={view.board}
+      data-tool={view.lasso ? "lasso" : undefined}
       onContextMenuCapture={event => {
-        if (suppressContext.current || event.ctrlKey) {
+        if (view.suppressContext.current || event.ctrlKey) {
           event.preventDefault();
           event.stopPropagation();
         }
@@ -262,9 +55,9 @@ export function CanvasBoard({
         )
           return;
         if (event.button === 2 && (event.ctrlKey || event.metaKey)) {
-          suppressContext.current = true;
-          cutter.current = { points: [{ x: event.clientX, y: event.clientY }], ids: new Set() };
-          setStroke(cutter.current.points);
+          view.suppressContext.current = true;
+          view.cutter.current = { points: [{ x: event.clientX, y: event.clientY }], ids: new Set() };
+          view.setStroke(view.cutter.current.points);
           setMenu(null);
           event.currentTarget.setPointerCapture(event.pointerId);
           event.preventDefault();
@@ -279,14 +72,14 @@ export function CanvasBoard({
               ".iso-node, .iso-port, .iso-label, .iso-link, .iso-hud, .iso-flow-label, .canvas-frame-title, .canvas-note",
             ));
         if (!empty) return;
-        boxDrag.current = {
+        view.boxDrag.current = {
           x: event.clientX,
           y: event.clientY,
-          previous: [...selection],
-          base: event.shiftKey || event.ctrlKey || event.metaKey || event.altKey ? [...selection] : [],
+          previous: [...view.selection],
+          base: event.shiftKey || event.ctrlKey || event.metaKey || event.altKey ? [...view.selection] : [],
           subtract: event.altKey,
           moved: false,
-          lasso,
+          lasso: view.lasso,
           points: [{ x: event.clientX, y: event.clientY }],
         };
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -295,17 +88,17 @@ export function CanvasBoard({
         if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
       }}
       onPointerMove={event => {
-        pointer.current = { x: event.clientX, y: event.clientY };
-        const cut = cutter.current;
+        view.pointer.current = { x: event.clientX, y: event.clientY };
+        const cut = view.cutter.current;
         if (cut?.cancelled) return;
         if (cut) {
           const point = { x: event.clientX, y: event.clientY };
-          cutCrossed(cut.points.at(-1)!, point);
+          view.cutCrossed(cut.points.at(-1)!, point);
           cut.points = [...cut.points, point];
-          setStroke(cut.points);
+          view.setStroke(cut.points);
           return;
         }
-        const start = boxDrag.current;
+        const start = view.boxDrag.current;
         if (!start || (!start.moved && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 5)) return;
         start.moved = true;
         const bounds = event.currentTarget.getBoundingClientRect(),
@@ -316,9 +109,9 @@ export function CanvasBoard({
           crossing = event.clientX < start.x;
         if (start.lasso) {
           start.points = [...start.points, { x: event.clientX, y: event.clientY }];
-          setStroke(start.points);
+          view.setStroke(start.points);
         } else
-          setSelectionBox({
+          view.setSelectionBox({
             x: left - bounds.left,
             y: top - bounds.top,
             width: right - left,
@@ -339,53 +132,53 @@ export function CanvasBoard({
                 : box.left >= left && box.right <= right && box.top >= top && box.bottom <= bottom;
           })
           .map(node => node.dataset.id!);
-        setSelection(
+        view.setSelection(
           start.subtract ? start.base.filter(id => !picked.includes(id)) : [...new Set([...start.base, ...picked])],
         );
       }}
       onPointerUp={event => {
-        const cut = cutter.current;
+        const cut = view.cutter.current;
         if (cut) {
-          cutter.current = null;
-          setStroke(null);
+          view.cutter.current = null;
+          view.setStroke(null);
           if (!cut.cancelled && cut.ids.size) {
-            checkpoint();
-            setGraph(current => ({ ...current, edges: current.edges.filter(edge => !cut.ids.has(edge.id)) }));
+            view.checkpoint();
+            view.setGraph(current => ({ ...current, edges: current.edges.filter(edge => !cut.ids.has(edge.id)) }));
           }
           if (event.currentTarget.hasPointerCapture(event.pointerId))
             event.currentTarget.releasePointerCapture(event.pointerId);
           setTimeout(() => {
-            suppressContext.current = false;
+            view.suppressContext.current = false;
           }, 300);
           return;
         }
-        const start = boxDrag.current;
+        const start = view.boxDrag.current;
         if (!start) return;
-        boxDrag.current = null;
-        setSelectionBox(null);
-        setStroke(null);
-        setLasso(false);
+        view.boxDrag.current = null;
+        view.setSelectionBox(null);
+        view.setStroke(null);
+        view.setLasso(false);
         if (!start.moved) {
-          setSelection(start.base);
+          view.setSelection(start.base);
           setMenu(null);
         }
         if (event.currentTarget.hasPointerCapture(event.pointerId))
           event.currentTarget.releasePointerCapture(event.pointerId);
       }}
       onPointerCancel={() => {
-        if (boxDrag.current) setSelection(boxDrag.current.previous);
-        boxDrag.current = null;
-        cutter.current = null;
-        setSelectionBox(null);
-        setStroke(null);
-        setLasso(false);
-        suppressContext.current = false;
+        if (view.boxDrag.current) view.setSelection(view.boxDrag.current.previous);
+        view.boxDrag.current = null;
+        view.cutter.current = null;
+        view.setSelectionBox(null);
+        view.setStroke(null);
+        view.setLasso(false);
+        view.suppressContext.current = false;
       }}
       onLostPointerCapture={() => {
-        boxDrag.current = null;
-        cutter.current = null;
-        setSelectionBox(null);
-        setStroke(null);
+        view.boxDrag.current = null;
+        view.cutter.current = null;
+        view.setSelectionBox(null);
+        view.setStroke(null);
       }}
       // A double-click on empty board, whichever layer React Flow put under the pointer, creates an agent there.
       onDoubleClick={event => {
@@ -396,96 +189,101 @@ export function CanvasBoard({
             ".react-flow__node, .react-flow__edge, .react-flow__panel, .react-flow__controls, .react-flow__minimap",
           )
         )
-          addAgent({ x: event.clientX, y: event.clientY });
+          view.addAgent({ x: event.clientX, y: event.clientY });
       }}
     >
-      {iso ? (
+      {view.iso ? (
         <IsoBoard
-          workflowIdentity={identity}
-          graph={graph}
-          father={split.father}
-          states={states}
-          selected={selection}
-          onSelect={setSelection}
-          onOpen={setDashboardId}
-          onRename={renameAgent}
+          workflowIdentity={view.identity}
+          graph={view.graph}
+          father={view.split.father}
+          states={view.states}
+          selected={view.selection}
+          onSelect={view.setSelection}
+          onOpen={view.setDashboardId}
+          onRename={view.renameAgent}
           onWireClick={(event, edge) => {
-            if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]);
-            editFlow(event, edge);
+            if (edge.source !== MOTHER && edge.source !== FATHER) view.setSelection([edge.id]);
+            view.editFlow(event, edge);
           }}
-          dark={dark}
-          controller={isoController}
-          modelLabel={modelLabel}
-          canConnect={validConnection}
-          inserting={insertWire}
+          dark={view.dark}
+          controller={view.isoController}
+          modelLabel={view.modelLabel}
+          canConnect={view.validConnection}
+          inserting={view.insertWire}
           onReconnect={(edge, source, target) => {
-            connectionCancelled.current = false;
-            reconnect(edge, source, target);
+            view.connectionCancelled.current = false;
+            view.reconnect(edge, source, target);
           }}
-          renamingFrame={renamingFrame}
+          renamingFrame={view.renamingFrame}
           onFrameName={(id, title) => {
             if (title) {
-              checkpoint();
-              setGraph(current => ({
+              view.checkpoint();
+              view.setGraph(current => ({
                 ...current,
                 frames: current.frames?.map(frame => (frame.id === id ? { ...frame, title } : frame)),
               }));
             }
-            setRenamingFrame(null);
-            focusBoard();
+            view.setRenamingFrame(null);
+            view.focusBoard();
           }}
-          onNoteText={setText}
-          onMoveStart={beginDrag}
-          onMove={moveIso}
+          onNoteText={view.setText}
+          onMoveStart={view.beginDrag}
+          onMove={view.moveIso}
           onMoveEnd={(shift, cancel) => {
-            if (cancel && nodeDrag.current) nodeDrag.current.cancelled = true;
-            finishDrag(shift);
+            if (cancel && view.nodeDrag.current) view.nodeDrag.current.cancelled = true;
+            view.finishDrag(shift);
           }}
-          onMovePreview={id => setInsertWire(nodeDrag.current?.extract ? null : (insertionAt(id)?.id ?? null))}
-          onConnect={connect}
-          onAdd={(at, id, end) => addAgent(at, id ? { id, as: end === "source" ? "target" : "source" } : undefined)}
-          onCommand={(at, id, end) => openAdder(at, { id, as: end === "source" ? "target" : "source" })}
+          onMovePreview={id =>
+            view.setInsertWire(view.nodeDrag.current?.extract ? null : (view.insertionAt(id)?.id ?? null))
+          }
+          onConnect={view.connect}
+          onAdd={(at, id, end) =>
+            view.addAgent(at, id ? { id, as: end === "source" ? "target" : "source" } : undefined)
+          }
+          onCommand={(at, id, end) => view.openAdder(at, { id, as: end === "source" ? "target" : "source" })}
           onNodeMenu={(event, id) => {
-            const node = nodes.find(node => node.id === id);
-            if (node) onNodeContextMenu(event, node);
+            const node = view.nodes.find(node => node.id === id);
+            if (node) view.onNodeContextMenu(event, node);
           }}
-          onBoardMenu={onPaneContextMenu}
-          onWireMenu={onEdgeClick}
+          onBoardMenu={view.onPaneContextMenu}
+          onWireMenu={view.onEdgeClick}
         />
       ) : (
         <ReactFlow
           tabIndex={0}
           aria-label="Workflow board"
-          nodes={nodes}
-          edges={edges}
+          nodes={view.nodes}
+          edges={view.edges}
           nodeTypes={NODE_TYPES}
           edgeTypes={EDGE_TYPES}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
+          onNodesChange={view.onNodesChange}
+          onEdgesChange={view.onEdgesChange}
           onConnect={({ source, target }) => {
-            if (!connectionCancelled.current) connect(source, target, alongsideDrag.current ? "alongside" : undefined);
+            if (!view.connectionCancelled.current)
+              view.connect(source, target, view.alongsideDrag.current ? "alongside" : undefined);
           }}
-          onConnectEnd={onConnectEnd}
+          onConnectEnd={view.onConnectEnd}
           onConnectStart={event => {
-            connectionCancelled.current = false;
-            alongsideDrag.current = "altKey" in event && event.altKey;
+            view.connectionCancelled.current = false;
+            view.alongsideDrag.current = "altKey" in event && event.altKey;
             const spot = "touches" in event ? event.touches[0] : event;
-            connectFrom.current = spot ? { x: spot.clientX, y: spot.clientY } : null;
+            view.connectFrom.current = spot ? { x: spot.clientX, y: spot.clientY } : null;
           }}
           connectOnClick={false}
           onNodeDoubleClick={(_, node) => {
-            if (node.type === "agent") setDashboardId(node.id);
+            if (node.type === "agent") view.setDashboardId(node.id);
           }}
           onEdgeClick={(event, edge) => {
-            if (edge.source !== MOTHER && edge.source !== FATHER) setSelection([edge.id]);
-            editFlow(event, { id: edge.id, source: edge.source, target: edge.target });
+            if (edge.source !== MOTHER && edge.source !== FATHER) view.setSelection([edge.id]);
+            view.editFlow(event, { id: edge.id, source: edge.source, target: edge.target });
           }}
           onEdgeContextMenu={(event, edge) => {
             event.preventDefault();
-            onEdgeClick(event, edge);
+            view.onEdgeClick(event, edge);
           }}
-          onNodeContextMenu={onNodeContextMenu}
-          onPaneContextMenu={onPaneContextMenu}
+          onNodeContextMenu={view.onNodeContextMenu}
+          onPaneContextMenu={view.onPaneContextMenu}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
           nodeDragThreshold={5}
           nodeClickDistance={5}
@@ -499,34 +297,37 @@ export function CanvasBoard({
           snapToGrid
           snapGrid={[20, 20]}
           connectionRadius={32}
-          onNodeClick={onNodeClick}
-          onNodeDragStart={(event, node) => beginDrag(node.id, event.altKey)}
-          onNodeDrag={(_, node) => setInsertWire(nodeDrag.current?.extract ? null : (insertionAt(node.id)?.id ?? null))}
-          onNodeDragStop={(event, _, moved) => finishDrag(event.shiftKey, moved)}
+          onNodeClick={view.onNodeClick}
+          onNodeDragStart={(event, node) => view.beginDrag(node.id, event.altKey)}
+          onNodeDrag={(_, node) =>
+            view.setInsertWire(view.nodeDrag.current?.extract ? null : (view.insertionAt(node.id)?.id ?? null))
+          }
+          onNodeDragStop={(event, _, moved) => view.finishDrag(event.shiftKey, moved)}
           onReconnectStart={(_, edge) => {
-            connectionCancelled.current = false;
-            reconnecting.current = edge.id;
+            view.connectionCancelled.current = false;
+            view.reconnecting.current = edge.id;
           }}
-          onReconnect={(edge, connection) => reconnect(edge as CanvasEdge, connection.source, connection.target)}
+          onReconnect={(edge, connection) => view.reconnect(edge as CanvasEdge, connection.source, connection.target)}
           onReconnectEnd={() => {
-            reconnecting.current = null;
+            view.reconnecting.current = null;
           }}
           isValidConnection={connection =>
-            validConnection(
+            view.validConnection(
               connection.source,
               connection.target,
-              reconnecting.current,
-              alongsideDrag.current || graph.edges.find(edge => edge.id === reconnecting.current)?.kind === "alongside",
+              view.reconnecting.current,
+              view.alongsideDrag.current ||
+                view.graph.edges.find(edge => edge.id === view.reconnecting.current)?.kind === "alongside",
             )
           }
           disableKeyboardA11y
           onPaneClick={() => {
-            setSelection([]);
+            view.setSelection([]);
             setMenu(null);
           }}
           deleteKeyCode={null}
           zoomOnDoubleClick={false}
-          colorMode={dark ? "dark" : "light"}
+          colorMode={view.dark ? "dark" : "light"}
           fitView
           fitViewOptions={FIT}
           minZoom={FIT.minZoom}
@@ -534,60 +335,66 @@ export function CanvasBoard({
         >
           <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
           <Controls showInteractive={false} fitViewOptions={OVERVIEW} />
-          {minimap && <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />}
+          {view.minimap && <MiniMap pannable zoomable className="canvas-minimap" style={{ width: 150, height: 100 }} />}
         </ReactFlow>
       )}
-      {stroke && (
+      {view.stroke && (
         <svg className="canvas-stroke" aria-hidden="true">
           <polyline
-            data-tool={cutter.current ? "cut" : "lasso"}
-            points={stroke
+            data-tool={view.cutter.current ? "cut" : "lasso"}
+            points={view.stroke
               .map(point => {
-                const box = board.current!.getBoundingClientRect();
+                const box = view.board.current!.getBoundingClientRect();
                 return `${point.x - box.left},${point.y - box.top}`;
               })
               .join(" ")}
           />
         </svg>
       )}
-      {lasso && (
+      {view.lasso && (
         <span className="canvas-gesture-hint" role="status">
           Lasso · drag to select · Shift adds · Alt subtracts · Esc cancels
         </span>
       )}
-      {insertWire && (
+      {view.insertWire && (
         <span className="canvas-gesture-hint" role="status">
           Shift-drop to insert on the highlighted wire · Esc cancels
         </span>
       )}
-      {selectionBox && (
+      {view.selectionBox && (
         <div
           aria-hidden="true"
-          className={`canvas-selection absolute pointer-events-none z-10 border ${selectionBox.crossing ? "border-dashed border-success bg-success/12" : "border-solid border-primary bg-primary/10"}`}
-          style={{ left: selectionBox.x, top: selectionBox.y, width: selectionBox.width, height: selectionBox.height }}
+          className={`canvas-selection absolute pointer-events-none z-10 border ${view.selectionBox.crossing ? "border-dashed border-success bg-success/12" : "border-solid border-primary bg-primary/10"}`}
+          style={{
+            left: view.selectionBox.x,
+            top: view.selectionBox.y,
+            width: view.selectionBox.width,
+            height: view.selectionBox.height,
+          }}
         />
       )}
-      {run &&
-        (recordedRun ? (
-          <details className="canvas-log-panel" aria-label={over(run) ? "Previous attempt" : "Run record"}>
+      {view.run &&
+        (view.recordedRun ? (
+          <details className="canvas-log-panel" aria-label={over(view.run) ? "Previous attempt" : "Run record"}>
             <DisclosureSummary>
-              {over(run) ? "Previous attempt" : "Run record"} · {run.status} ·{" "}
-              {savedRecord?.tasks?.filter(task => ["succeeded", "completed"].includes(task.status ?? "")).length ?? 0}/
-              {savedRecord?.tasks?.length ?? 0} tasks complete
+              {over(view.run) ? "Previous attempt" : "Run record"} · {view.run.status} ·{" "}
+              {view.savedRecord?.tasks?.filter(task => ["succeeded", "completed"].includes(task.status ?? "")).length ??
+                0}
+              /{view.savedRecord?.tasks?.length ?? 0} tasks complete
             </DisclosureSummary>
-            {telemetry}
-            {historicalNotice && <p className="text-destructive">{notice}</p>}
-            {capturedLog}
+            {view.telemetry}
+            {view.historicalNotice && <p className="text-destructive">{view.notice}</p>}
+            {view.capturedLog}
           </details>
         ) : (
           <section className="canvas-log-panel" aria-label="Run capture">
-            <p className="hud-menu-title">Run log · {log.length} events</p>
-            {capturedLog}
+            <p className="hud-menu-title">Run log · {view.log.length} events</p>
+            {view.capturedLog}
           </section>
         ))}
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
-      <CanvasToolbar addAgent={addAgent} addNote={addNote} openAdder={openAdder} tidy={tidy} />
-      {graph.template === "recursive" && (
+      <CanvasToolbar addAgent={view.addAgent} addNote={view.addNote} openAdder={view.openAdder} tidy={view.tidy} />
+      {view.graph.template === "recursive" && (
         <label className="canvas-round-limit">
           Round limit{" "}
           <Input
@@ -596,9 +403,9 @@ export function CanvasBoard({
             aria-label="Round limit"
             min={1}
             max={100}
-            value={graph.roundLimit ?? ""}
+            value={view.graph.roundLimit ?? ""}
             onChange={event =>
-              setGraph(current => ({
+              view.setGraph(current => ({
                 ...current,
                 roundLimit: event.target.value ? Number(event.target.value) : undefined,
               }))
@@ -612,7 +419,7 @@ export function CanvasBoard({
           aria-label="Workflow command"
           onSubmit={event => {
             event.preventDefault();
-            patternNumber(patternCommand);
+            view.patternNumber(patternCommand);
           }}
         >
           <span className="text-xs">{PATTERNS.map((name, index) => `${index + 1} ${name}`).join(" · ")}</span>
@@ -623,21 +430,21 @@ export function CanvasBoard({
             value={patternCommand}
             placeholder="Pattern number · Esc cancels"
             onChange={event => {
-              setPatternCommand(event.target.value);
-              if (/^\d$/.test(event.target.value)) patternNumber(event.target.value);
+              view.setPatternCommand(event.target.value);
+              if (/^\d$/.test(event.target.value)) view.patternNumber(event.target.value);
             }}
             onKeyDown={event => {
               if (event.key === "Escape") {
                 event.preventDefault();
                 event.stopPropagation();
-                setPatternCommand(null);
-                board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+                view.setPatternCommand(null);
+                view.board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
               }
             }}
           />
         </form>
       )}
-      {finding !== null && (
+      {view.finding !== null && (
         <div
           className="quick-add hud-menu canvas-search"
           role="dialog"
@@ -645,18 +452,18 @@ export function CanvasBoard({
           onKeyDown={event => {
             if (event.key === "Escape") {
               event.stopPropagation();
-              setFinding(null);
-              focusBoard();
+              view.setFinding(null);
+              view.focusBoard();
             } else if (["ArrowDown", "ArrowUp"].includes(event.key)) {
               event.preventDefault();
-              setFindIndex(
+              view.setFindIndex(
                 index =>
                   (index + (event.key === "ArrowDown" ? 1 : -1) + Math.max(1, found.length)) %
                   Math.max(1, found.length),
               );
             } else if (event.key === "Enter" && found[findIndex]) {
               event.preventDefault();
-              findAgent(found[findIndex].id);
+              view.findAgent(found[findIndex].id);
             }
           }}
         >
@@ -666,10 +473,10 @@ export function CanvasBoard({
           <Input
             autoFocus
             aria-label="Find agents"
-            value={finding}
+            value={view.finding}
             onChange={event => {
-              setFinding(event.target.value);
-              setFindIndex(0);
+              view.setFinding(event.target.value);
+              view.setFindIndex(0);
             }}
           />
           <div className="quick-add-list" role="listbox" aria-label="Matching agents">
@@ -678,7 +485,7 @@ export function CanvasBoard({
                 role="option"
                 aria-selected={index === findIndex}
                 key={node.id}
-                onClick={() => findAgent(node.id)}
+                onClick={() => view.findAgent(node.id)}
               >
                 {node.data.title}
                 {node.data.muted ? " · muted" : ""}
@@ -696,8 +503,8 @@ export function CanvasBoard({
           onKeyDown={event => {
             if (event.key === "Escape") {
               event.stopPropagation();
-              setRunTargets(null);
-              focusBoard();
+              view.setRunTargets(null);
+              view.focusBoard();
             }
           }}
         >
@@ -706,7 +513,7 @@ export function CanvasBoard({
           </p>
           <p className="quick-add-note">Selected targets and their required ancestors, each with its check:</p>
           <ul className="quick-add-list">
-            {scope.map(node => (
+            {view.scope.map(node => (
               <li key={node.id}>
                 {node.type === "agent" ? node.data.title : ""} ·{" "}
                 {runTargets.includes(node.id) ? "target" : "required ancestor"}
@@ -716,12 +523,12 @@ export function CanvasBoard({
           <Button
             autoFocus
             size="sm"
-            aria-describedby={!ready ? offlineReasonId : undefined}
-            disabled={!ready}
+            aria-describedby={!view.ready ? view.offlineReasonId : undefined}
+            disabled={!view.ready}
             onClick={() => {
               const targets = runTargets;
-              setRunTargets(null);
-              focusBoard();
+              view.setRunTargets(null);
+              view.focusBoard();
               void start(targets);
             }}
           >
@@ -731,8 +538,8 @@ export function CanvasBoard({
             variant="ghost"
             size="sm"
             onClick={() => {
-              setRunTargets(null);
-              focusBoard();
+              view.setRunTargets(null);
+              view.focusBoard();
             }}
           >
             Cancel <kbd>Esc</kbd>
@@ -742,14 +549,14 @@ export function CanvasBoard({
       {adding && (
         <CommandBar
           adding={adding}
-          room={room}
-          limit={limit}
-          catalog={catalog}
-          providers={providers}
-          onClose={() => setAdding(null)}
+          room={view.room}
+          limit={view.limit}
+          catalog={view.catalog}
+          providers={view.providers}
+          onClose={() => view.setAdding(null)}
           onAgents={command => {
-            checkpoint();
-            addAgents(
+            view.checkpoint();
+            view.addAgents(
               Math.max(1, command.count ?? 1),
               {
                 model: command.model?.model ?? null,
@@ -759,16 +566,16 @@ export function CanvasBoard({
               adding,
               command.tasks,
             );
-            setAdding(null);
+            view.setAdding(null);
           }}
           onNote={text => {
-            checkpoint();
-            addNote(adding.at, text);
-            setAdding(null);
+            view.checkpoint();
+            view.addNote(adding.at, text);
+            view.setAdding(null);
           }}
           onAsk={text => {
-            setAdding(null);
-            void letElpis(text);
+            view.setAdding(null);
+            void view.letElpis(text);
           }}
         />
       )}
@@ -776,24 +583,24 @@ export function CanvasBoard({
       {dashboard && (
         <AgentDashboard
           node={dashboard}
-          own={own.get(dashboard.id) ?? ""}
-          status={states[dashboard.id]?.status ?? "idle"}
-          check={states[checkOf(dashboard.id)]?.status ?? "idle"}
-          clash={clashes[dashboard.id]}
-          chat={states[dashboard.id]?.chat ?? null}
-          modelLabel={modelLabel(dashboard.data)}
-          ready={ready}
-          waitsFor={inputsNeeded(dashboard.id)}
-          feeds={graph.edges
+          own={view.own.get(dashboard.id) ?? ""}
+          status={view.states[dashboard.id]?.status ?? "idle"}
+          check={view.states[checkOf(dashboard.id)]?.status ?? "idle"}
+          clash={view.clashes[dashboard.id]}
+          chat={view.states[dashboard.id]?.chat ?? null}
+          modelLabel={view.modelLabel(dashboard.data)}
+          ready={view.ready}
+          waitsFor={view.inputsNeeded(dashboard.id)}
+          feeds={view.graph.edges
             .filter(edge => waits(edge) && edge.source === dashboard.id)
-            .map(edge => titleOf(edge.target))}
-          onOpenChat={onOpenChat}
+            .map(edge => view.titleOf(edge.target))}
+          onOpenChat={view.onOpenChat}
           onSettings={() => {
-            setSelection([dashboard.id]);
-            showPanel(true);
-            setDashboardId(null);
+            view.setSelection([dashboard.id]);
+            view.showPanel(true);
+            view.setDashboardId(null);
           }}
-          onClose={() => setDashboardId(null)}
+          onClose={() => view.setDashboardId(null)}
         />
       )}
       {flowEdit && (
@@ -804,49 +611,49 @@ export function CanvasBoard({
             maxLength={60}
             value={
               flowEdit.edge.source === MOTHER
-                ? (graph.motherFlow ?? "")
-                : (graph.edges.find(edge => edge.id === flowEdit.edge.id)?.label ?? "")
+                ? (view.graph.motherFlow ?? "")
+                : (view.graph.edges.find(edge => edge.id === flowEdit.edge.id)?.label ?? "")
             }
-            onSave={saveFlow}
-            onCancel={() => setFlowEdit(null)}
+            onSave={view.saveFlow}
+            onCancel={() => view.setFlowEdit(null)}
           />
         </div>
       )}
-      {deleted && (
+      {view.deleted && (
         <p className="canvas-notice" data-tone="info" role="status">
-          <span title={`Deleted ${deleted}`}>Deleted {deleted} ·</span>
+          <span title={`Deleted ${view.deleted}`}>Deleted {view.deleted} ·</span>
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
-              undo();
-              board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
+              view.undo();
+              view.board.current?.querySelector<HTMLElement>(".iso-board, .react-flow")?.focus();
             }}
           >
             Undo
           </Button>
         </p>
       )}
-      {planning && !deleted && (
+      {view.planning && !view.deleted && (
         <p className="canvas-notice" data-tone="info" role="status">
-          Elpis is on it: {planning.length > 60 ? `${planning.slice(0, 60)}…` : planning}
+          Elpis is on it: {view.planning.length > 60 ? `${view.planning.slice(0, 60)}…` : view.planning}
         </p>
       )}
-      {undoLoad && !notice && !planning && !deleted && (
+      {undoLoad && !view.notice && !view.planning && !view.deleted && (
         <p className="canvas-notice" data-tone="info" role="status">
           Loaded {undoLoad.loaded}.
           <Button
             variant="outline"
             size="sm"
             onClick={() => {
-              setGraph(undoLoad.previous);
-              setUndoLoad(null);
-              setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
+              view.setGraph(undoLoad.previous);
+              view.setUndoLoad(null);
+              setTimeout(() => void view.flow.fitView({ ...FIT, duration: 250 }), 60);
             }}
           >
             Undo
           </Button>
-          <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => setUndoLoad(null)}>
+          <Button variant="ghost" size="icon-xs" aria-label="Dismiss" onClick={() => view.setUndoLoad(null)}>
             <X size={13} />
           </Button>
         </p>

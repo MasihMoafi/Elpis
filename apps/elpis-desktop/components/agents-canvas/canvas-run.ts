@@ -97,18 +97,22 @@ export function canvasRun({
     if (allowed.atOnce < 1) throw Error("No workflow agents are available for this session.");
     return allowed.atOnce;
   }
-  async function fatherPart(tasks: RunTask[], current: () => boolean) {
-    if (!current()) throw Error(OFFLINE_WORKFLOW);
-    const goal = mother.brief.trim(),
-      name = `Father agent · ${graph.name || "Workflows"}`.slice(0, 120);
-    const repository =
+  async function needsWorktrees(tasks: RunTask[]) {
+    return (
       Boolean(cwd) &&
       !readyMade(graph.planningPattern) &&
       wantsIsolation(tasks) &&
       (await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(
         result => result.repository === true,
         () => false,
-      ));
+      ))
+    );
+  }
+  async function fatherPart(tasks: RunTask[], current: () => boolean) {
+    if (!current()) throw Error(OFFLINE_WORKFLOW);
+    const goal = mother.brief.trim(),
+      name = `Father agent · ${graph.name || "Workflows"}`.slice(0, 120);
+    const repository = await needsWorktrees(tasks);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const limit = await workflowLimit();
     if (!current()) throw Error(OFFLINE_WORKFLOW);
@@ -138,14 +142,7 @@ export function canvasRun({
     next?: Awaited<ReturnType<typeof fatherPart>>,
   ) {
     if (!current()) throw Error(OFFLINE_WORKFLOW);
-    const repository =
-      Boolean(cwd) &&
-      !readyMade(graph.planningPattern) &&
-      wantsIsolation(tasks) &&
-      (await api<{ repository?: boolean }>(`/repository?cwd=${encodeURIComponent(cwd!)}`).then(
-        result => result.repository === true,
-        () => false,
-      ));
+    const repository = await needsWorktrees(tasks);
     if (!current()) throw Error(OFFLINE_WORKFLOW);
     const limit = await workflowLimit();
     if (!current()) throw Error(OFFLINE_WORKFLOW);

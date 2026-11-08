@@ -1,5 +1,5 @@
 // Reading options (Settings → Appearance), as Claude's desktop app has them: the transcript's text size and width, the
-// interface font and a code font. They become CSS variables on the document (app/page.tsx), read by app/globals.css and
+// interface font and a code font. They become CSS variables on the document (components/use-workspace-controller.tsx), read by app/globals.css and
 // the terminal. No value imports, so the node tests load this file as it is.
 
 export type ReadingStep = "s" | "m" | "l";

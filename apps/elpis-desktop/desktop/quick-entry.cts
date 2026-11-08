@@ -11,7 +11,11 @@ import type {
 } from "electron";
 const path: typeof import("node:path") = require("node:path");
 const { execFile }: typeof import("node:child_process") = require("node:child_process");
-const { trustedBrowserSender }: typeof import("./browser-policy.cts") = require("./browser-policy.cts");
+const {
+  trustedBrowserSender,
+  popupWebPreferences,
+  lockPopup,
+}: typeof import("./browser-policy.cts") = require("./browser-policy.cts");
 
 // Quick Entry as Claude's desktop app has it on Linux: Ctrl+Alt+Space opens a 606 × 470 frameless, transparent window
 // above everything, centred on the main display or where it was last left. Enter sends text longer than two characters
@@ -205,17 +209,9 @@ function createQuickEntryImpl({ BrowserWindow, screen, ipcMain, dark, onSubmit, 
       maximizable: false,
       fullscreenable: false,
       skipTaskbar: true,
-      webPreferences: {
-        preload: preloadPath("quick-entry-preload"),
-        contextIsolation: true,
-        sandbox: true,
-        nodeIntegration: false,
-        webSecurity: true,
-      },
+      webPreferences: popupWebPreferences(preloadPath("quick-entry-preload")),
     });
-    window.setAlwaysOnTop(true, "pop-up-menu");
-    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    window.webContents.on("will-navigate", event => event.preventDefault());
+    lockPopup(window);
     const own = window;
     restoreDraft = true;
     own.on("blur", hide);

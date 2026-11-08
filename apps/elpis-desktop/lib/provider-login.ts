@@ -19,6 +19,7 @@ import type {
   CredentialCapability,
   ProviderStatusSnapshot,
   ProviderLogin,
+  SetKeyOptions,
 } from "./provider-login-types.ts";
 export type {
   ProviderId,
@@ -315,14 +316,7 @@ export const providerLogin: ProviderLogin & {
     provider: ProviderId,
     account: AccountId,
     secret: SecretInput,
-    options?: {
-      type?: ProviderType;
-      name?: string;
-      baseUrl?: string;
-      version?: string | null;
-      existing?: boolean;
-      action?: "preserve" | "replace" | "clear";
-    },
+    options?: SetKeyOptions,
   ): Promise<ProviderConfigsSnapshot | null> {
     const startedAt = Date.now();
     const method: Method =

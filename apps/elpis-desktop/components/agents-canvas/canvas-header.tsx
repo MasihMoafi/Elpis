@@ -15,112 +15,14 @@ import { over, ENDED, OFFLINE_WORKFLOW } from "./run-state";
 import { ENTRY_PATTERNS } from "./constants";
 import { LanguageField } from "./fields";
 
-export function CanvasHeader({
-  stopPlanning,
-  recordedRun,
-  run,
-  onLeaveRecordedRun,
-  letElpis,
-  requestText,
-  setGraph,
-  graph,
-  planning,
-  starting,
-  setSelection,
-  setMorePatterns,
-  showPanel,
-  readyMade,
-  pickReadyMade,
-  setNotice,
-  loadTemplate,
-  chosenWorkflow,
-  ready,
-  cwd,
-  chooseFolderFor,
-  offlineReasonId,
-  done,
-  agents,
-  runClock,
-  openResult,
-  savedRecord,
-  liveTeam,
-  onOpenChat,
-  workflowCatalog,
-  onOpenRecordedRun,
-  identity,
-  presetName,
-  renamingPreset,
-  setRenamingPreset,
-  setRun,
-  setStates,
-  projectMenu,
-  iso,
-  setIso,
-  motherOpen,
-  autoLayout,
-  toggleAuto,
-  panelOpen,
-  start,
-  notice,
-  runReasonId,
-  onSchedule,
-}: Pick<
-  CanvasController,
-  | "stopPlanning"
-  | "recordedRun"
-  | "run"
-  | "onLeaveRecordedRun"
-  | "letElpis"
-  | "requestText"
-  | "setGraph"
-  | "graph"
-  | "planning"
-  | "starting"
-  | "setSelection"
-  | "setMorePatterns"
-  | "showPanel"
-  | "readyMade"
-  | "pickReadyMade"
-  | "setNotice"
-  | "loadTemplate"
-  | "chosenWorkflow"
-  | "ready"
-  | "cwd"
-  | "chooseFolderFor"
-  | "offlineReasonId"
-  | "done"
-  | "agents"
-  | "runClock"
-  | "openResult"
-  | "savedRecord"
-  | "liveTeam"
-  | "onOpenChat"
-  | "workflowCatalog"
-  | "onOpenRecordedRun"
-  | "identity"
-  | "presetName"
-  | "renamingPreset"
-  | "setRenamingPreset"
-  | "setRun"
-  | "setStates"
-  | "projectMenu"
-  | "iso"
-  | "setIso"
-  | "motherOpen"
-  | "autoLayout"
-  | "toggleAuto"
-  | "panelOpen"
-  | "start"
-  | "notice"
-  | "runReasonId"
-  | "onSchedule"
->) {
+export function CanvasHeader({ view }: { view: CanvasController }) {
+  const { run, chosenWorkflow, onSchedule } = view;
   return (
     <header className="canvas-header">
-      {recordedRun ? (
+      {view.recordedRun ? (
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
           <span className="text-sm text-muted-foreground">Saved workflow{!run && " · Loading…"}</span>
-          <Button size="sm" onClick={onLeaveRecordedRun} disabled={!onLeaveRecordedRun}>
+          <Button size="sm" onClick={view.onLeaveRecordedRun} disabled={!view.onLeaveRecordedRun}>
             New workflow
           </Button>
         </div>
@@ -130,48 +32,48 @@ export function CanvasHeader({
           aria-label="New workflow"
           onSubmit={event => {
             event.preventDefault();
-            void letElpis(requestText, undefined, true);
+            void view.letElpis(view.requestText, undefined, true);
           }}
         >
           <label className="field canvas-request">
             What should the workflow do?
             <Input
               aria-label="Workflow request"
-              value={requestText}
+              value={view.requestText}
               maxLength={8000}
               placeholder="Describe what you want to achieve"
-              onChange={event => setGraph(current => ({ ...current, request: event.target.value }))}
+              onChange={event => view.setGraph(current => ({ ...current, request: event.target.value }))}
             />
           </label>
           <OptionSelect
             aria-label="Workflow pattern"
-            value={graph.planningPattern ?? "auto"}
-            disabled={Boolean(planning || starting)}
+            value={view.graph.planningPattern ?? "auto"}
+            disabled={Boolean(view.planning || view.starting)}
             onChange={event => {
               const value = event.target.value;
               // The catalogue stays open to read during a run; loading a pattern waits for the run.
               if (value === "more") {
-                setSelection([]);
-                setMorePatterns(true);
-                showPanel(true);
+                view.setSelection([]);
+                view.setMorePatterns(true);
+                view.showPanel(true);
                 return;
               }
               if (value === "auto") {
-                setGraph(current => ({ ...current, planningPattern: "auto" }));
+                view.setGraph(current => ({ ...current, planningPattern: "auto" }));
                 return;
               }
-              const workflow = readyMade(value);
+              const workflow = view.readyMade(value);
               if (workflow) {
-                setGraph(current => ({ ...current, planningPattern: workflow.id }));
-                void pickReadyMade(workflow);
+                view.setGraph(current => ({ ...current, planningPattern: workflow.id }));
+                void view.pickReadyMade(workflow);
                 return;
               }
               if (run && !over(run)) {
-                setNotice("Wait for this run to finish before changing its pattern.");
+                view.setNotice("Wait for this run to finish before changing its pattern.");
                 return;
               }
               const template = TEMPLATES.find(item => item.id === value);
-              if (template) loadTemplate(template);
+              if (template) view.loadTemplate(template);
             }}
           >
             {ENTRY_PATTERNS.map(pattern => (
@@ -179,11 +81,11 @@ export function CanvasHeader({
                 {pattern.label}
               </option>
             ))}
-            {graph.planningPattern &&
-              graph.planningPattern !== "auto" &&
-              !ENTRY_PATTERNS.some(pattern => pattern.id === graph.planningPattern) && (
-                <option value={graph.planningPattern}>
-                  {TEMPLATES.find(pattern => pattern.id === graph.planningPattern)?.name ?? "Custom pattern"}
+            {view.graph.planningPattern &&
+              view.graph.planningPattern !== "auto" &&
+              !ENTRY_PATTERNS.some(pattern => pattern.id === view.graph.planningPattern) && (
+                <option value={view.graph.planningPattern}>
+                  {TEMPLATES.find(pattern => pattern.id === view.graph.planningPattern)?.name ?? "Custom pattern"}
                 </option>
               )}
             <option value="more">More patterns…</option>
@@ -193,9 +95,9 @@ export function CanvasHeader({
               type="button"
               variant="outline"
               size="sm"
-              disabled={!ready || Boolean(planning || starting)}
-              title={cwd ? `The folder of ${chosenWorkflow.what}: ${cwd}` : undefined}
-              onClick={() => void chooseFolderFor(chosenWorkflow)}
+              disabled={!view.ready || Boolean(view.planning || view.starting)}
+              title={view.cwd ? `The folder of ${chosenWorkflow.what}: ${view.cwd}` : undefined}
+              onClick={() => void view.chooseFolderFor(chosenWorkflow)}
             >
               <FolderIcon size={14} />
               Choose folder
@@ -203,42 +105,53 @@ export function CanvasHeader({
           )}
           {chosenWorkflow?.id === "translate" && (
             <LanguageField
-              value={languageOf(graph.language).name}
-              disabled={Boolean(planning || starting)}
+              value={languageOf(view.graph.language).name}
+              disabled={Boolean(view.planning || view.starting)}
               onChange={name => {
                 // The language stays with the board; a translation team already built is rebuilt for the new one.
                 const language = languageOf(name);
-                setGraph(current => ({ ...current, language: language.id }));
-                if (graph.planningPattern === "translate" && graph.result) void pickReadyMade(chosenWorkflow, language);
+                view.setGraph(current => ({ ...current, language: language.id }));
+                if (view.graph.planningPattern === "translate" && view.graph.result)
+                  void view.pickReadyMade(chosenWorkflow, language);
               }}
             />
           )}
           <Button
             type="submit"
             size="sm"
-            aria-describedby={!ready ? offlineReasonId : undefined}
-            disabled={!ready || !cwd || (!requestText.trim() && !chosenWorkflow) || Boolean(planning || starting)}
+            aria-describedby={!view.ready ? view.offlineReasonId : undefined}
+            disabled={
+              !view.ready ||
+              !view.cwd ||
+              (!view.requestText.trim() && !chosenWorkflow) ||
+              Boolean(view.planning || view.starting)
+            }
           >
-            {planning ? "Designing…" : "New workflow"}
+            {view.planning ? "Designing…" : "New workflow"}
           </Button>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            aria-describedby={!ready ? offlineReasonId : undefined}
-            disabled={!ready || !cwd || !requestText.trim() || Boolean(planning || starting || (run && !over(run)))}
-            onClick={() => void letElpis(requestText)}
+            aria-describedby={!view.ready ? view.offlineReasonId : undefined}
+            disabled={
+              !view.ready ||
+              !view.cwd ||
+              !view.requestText.trim() ||
+              Boolean(view.planning || view.starting || (run && !over(run)))
+            }
+            onClick={() => void view.letElpis(view.requestText)}
           >
             Update current
           </Button>
-          {planning && (
+          {view.planning && (
             <Button
               type="button"
               variant="outline"
               size="sm"
               aria-label="Stop designing"
               title="Stop designing: your workflow stays as it is"
-              onClick={stopPlanning}
+              onClick={view.stopPlanning}
             >
               Stop
             </Button>
@@ -253,10 +166,10 @@ export function CanvasHeader({
                 : run.father?.threadId
                   ? "Running · the Father agent's part"
                   : "Running"}{" "}
-              · {done} of {agents.length} done
+              · {view.done} of {view.agents.length} done
             </span>
           )}
-          {run && runClock}
+          {run && view.runClock}
           {/* Stop cancels the whole run: the engine treats an interrupt of the run's own chat as cancelling it (28 Oct:
             "a running workflow has no cancel control anywhere"). */}
           {run && !over(run) && (
@@ -268,7 +181,7 @@ export function CanvasHeader({
               title="Stop this run: every agent stops, finished work is kept"
               onClick={() =>
                 void api(`/threads/${encodeURIComponent(run.rootThreadId)}/interrupt`, {}).catch((cause: unknown) =>
-                  setNotice(errorText(cause)),
+                  view.setNotice(errorText(cause)),
                 )
               }
             >
@@ -276,54 +189,54 @@ export function CanvasHeader({
               Stop
             </Button>
           )}
-          {run && over(run) && graph.result && (
-            <Button type="button" variant="outline" size="sm" onClick={openResult}>
+          {run && over(run) && view.graph.result && (
+            <Button type="button" variant="outline" size="sm" onClick={view.openResult}>
               <FileText size={14} />
-              Open {graph.result.split("/").at(-1)}
+              Open {view.graph.result.split("/").at(-1)}
             </Button>
           )}
-          {!ready && (
-            <p id={offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">
+          {!view.ready && (
+            <p id={view.offlineReasonId} role="status" className="w-full text-xs text-muted-foreground">
               {OFFLINE_WORKFLOW}
             </p>
           )}
         </form>
       )}
-      {recordedRun && savedRecord && (
+      {view.recordedRun && view.savedRecord && (
         <div className="w-full">
-          <WorkflowProgress compact run={savedRecord} team={liveTeam} onOpenChat={onOpenChat} />
+          <WorkflowProgress compact run={view.savedRecord} team={view.liveTeam} onOpenChat={view.onOpenChat} />
         </div>
       )}
       <WorkflowHistory
-        catalog={workflowCatalog}
+        catalog={view.workflowCatalog}
         revision={`${run?.graphId ?? ""}:${run?.status ?? ""}`}
-        onOpenChat={onOpenChat}
-        {...(onOpenRecordedRun ? { onOpenCanvas: onOpenRecordedRun } : {})}
+        onOpenChat={view.onOpenChat}
+        {...(view.onOpenRecordedRun ? { onOpenCanvas: view.onOpenRecordedRun } : {})}
       />
       <div className="canvas-name-group relative flex min-w-0 max-w-full items-center gap-2">
-        {identity && presetName && !renamingPreset && !recordedRun && (
-          <WorkflowColourMenu identity={identity} catalog={workflowCatalog} onError={setNotice} />
+        {view.identity && view.presetName && !view.renamingPreset && !view.recordedRun && (
+          <WorkflowColourMenu identity={view.identity} catalog={view.workflowCatalog} onError={view.setNotice} />
         )}
-        {presetName && !renamingPreset && !recordedRun ? (
+        {view.presetName && !view.renamingPreset && !view.recordedRun ? (
           <Button
             variant="ghost"
             size="icon-sm"
             aria-label="Rename workflow"
             title="Rename workflow"
-            onClick={() => setRenamingPreset(true)}
+            onClick={() => view.setRenamingPreset(true)}
           >
             <Pencil size={14} />
           </Button>
-        ) : identity ? (
+        ) : view.identity ? (
           <WorkflowIdentityEditor
-            key={identity.id}
-            identity={identity}
-            catalog={workflowCatalog}
-            name={graph.name}
-            onName={name => setGraph(current => ({ ...current, name }))}
+            key={view.identity.id}
+            identity={view.identity}
+            catalog={view.workflowCatalog}
+            name={view.graph.name}
+            onName={name => view.setGraph(current => ({ ...current, name }))}
           />
         ) : (
-          <Input aria-label="Graph name" className="canvas-name" value={graph.name} readOnly />
+          <Input aria-label="Graph name" className="canvas-name" value={view.graph.name} readOnly />
         )}
       </div>
       <Button
@@ -332,24 +245,24 @@ export function CanvasHeader({
         aria-label="Duplicate workflow"
         title="Duplicate workflow"
         onClick={() => {
-          setGraph(current => ({ ...current, workflowId: undefined, name: identity?.name ?? current.name }));
-          setRun(null);
-          setStates({});
-          setSelection([]);
+          view.setGraph(current => ({ ...current, workflowId: undefined, name: view.identity?.name ?? current.name }));
+          view.setRun(null);
+          view.setStates({});
+          view.setSelection([]);
         }}
       >
         <Copy size={14} />
       </Button>
-      {projectMenu}
+      {view.projectMenu}
       <span className="canvas-spacer" />
-      <ViewToggle iso={iso} onChange={setIso} />
+      <ViewToggle iso={view.iso} onChange={view.setIso} />
       {run && (
         <Button
           variant="ghost"
           size="icon-sm"
           aria-label="Open run chat"
           title="Open run chat"
-          onClick={() => onOpenChat(run.rootThreadId)}
+          onClick={() => view.onOpenChat(run.rootThreadId)}
         >
           <ExternalLink size={14} />
         </Button>
@@ -357,8 +270,8 @@ export function CanvasHeader({
       <Button
         variant="ghost"
         size="sm"
-        aria-pressed={motherOpen}
-        onClick={() => setSelection([MOTHER])}
+        aria-pressed={view.motherOpen}
+        onClick={() => view.setSelection([MOTHER])}
         title="The run's settings: the brief every agent gets, her model, how many agents"
       >
         <i className="canvas-kind" data-kind="mother" />
@@ -368,10 +281,10 @@ export function CanvasHeader({
         variant="ghost"
         size="icon-sm"
         aria-label="Auto-arrange"
-        aria-pressed={autoLayout}
-        onClick={toggleAuto}
+        aria-pressed={view.autoLayout}
+        onClick={view.toggleAuto}
         title={
-          autoLayout
+          view.autoLayout
             ? "Auto-arrange is on: the board keeps run-order columns (Kahn's waves) after every change. Click to place agents freely."
             : "Auto-arrange is off. Click to arrange by run order and keep it so."
         }
@@ -382,43 +295,49 @@ export function CanvasHeader({
         variant="ghost"
         size="sm"
         aria-label="Side panel"
-        aria-pressed={panelOpen}
+        aria-pressed={view.panelOpen}
         title={
-          panelOpen
+          view.panelOpen
             ? "Hide the side panel: the board takes the whole width"
             : "Show the side panel: patterns and the selected agent"
         }
-        onClick={() => showPanel(!panelOpen)}
+        onClick={() => view.showPanel(!view.panelOpen)}
       >
         <AgentsIcon size={16} />
       </Button>
-      {!recordedRun && (
+      {!view.recordedRun && (
         <div className="canvas-run-control">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => void start()}
+            onClick={() => void view.start()}
             aria-describedby={
-              !ready ? offlineReasonId : notice || starting || (run && !over(run)) ? runReasonId : undefined
+              !view.ready
+                ? view.offlineReasonId
+                : view.notice || view.starting || (run && !over(run))
+                  ? view.runReasonId
+                  : undefined
             }
-            disabled={!ready || starting || Boolean(planning || (run && !over(run)))}
+            disabled={!view.ready || view.starting || Boolean(view.planning || (run && !over(run)))}
           >
             <Play size={14} />
-            {starting ? "Starting…" : "Run graph"}
+            {view.starting ? "Starting…" : "Run graph"}
           </Button>
           {onSchedule && (
             <Button
               variant="ghost"
               size="sm"
-              title={requestText.trim() ? "Run this workflow on a schedule" : "Write what the workflow should do first"}
-              disabled={!requestText.trim()}
+              title={
+                view.requestText.trim() ? "Run this workflow on a schedule" : "Write what the workflow should do first"
+              }
+              disabled={!view.requestText.trim()}
               onClick={() =>
                 onSchedule({
-                  id: graph.workflowId || graph.name || "workflow",
-                  name: identity?.name || graph.name || "Workflow",
-                  request: requestText.trim(),
-                  ...(cwd ? { cwd } : {}),
-                  board: graph,
+                  id: view.graph.workflowId || view.graph.name || "workflow",
+                  name: view.identity?.name || view.graph.name || "Workflow",
+                  request: view.requestText.trim(),
+                  ...(view.cwd ? { cwd: view.cwd } : {}),
+                  board: view.graph,
                 })
               }
             >
@@ -426,9 +345,9 @@ export function CanvasHeader({
               Schedule
             </Button>
           )}
-          {!notice && (starting || (run && !over(run))) && (
-            <span id={runReasonId} className="sr-only" role="status">
-              {starting
+          {!view.notice && (view.starting || (run && !over(run))) && (
+            <span id={view.runReasonId} className="sr-only" role="status">
+              {view.starting
                 ? "Starting the team. Wait for the run to start."
                 : "Wait for this run to finish before starting another."}
             </span>

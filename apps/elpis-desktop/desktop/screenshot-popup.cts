@@ -2,7 +2,11 @@
 const { preloadPath }: typeof import("./preload-path.cts") = require("./preload-path.cts");
 import type { BrowserWindow as Window, IpcMain, IpcMainEvent, Screen } from "electron";
 const path = require("node:path");
-const { trustedBrowserSender }: typeof import("./browser-policy.cts") = require("./browser-policy.cts");
+const {
+  trustedBrowserSender,
+  popupWebPreferences,
+  lockPopup,
+}: typeof import("./browser-policy.cts") = require("./browser-policy.cts");
 
 // The macOS screenshot thumbnail (A239, 24 Oct: "whenever I take a screenshot … pops up and if I press it it does it"):
 // while Elpis runs, each new screenshot shows a small thumbnail in the bottom-right corner, above every window and without
@@ -51,17 +55,9 @@ function createScreenshotPopupImpl({
       maximizable: false,
       fullscreenable: false,
       skipTaskbar: true,
-      webPreferences: {
-        preload: preloadPath("screenshot-popup-preload"),
-        contextIsolation: true,
-        sandbox: true,
-        nodeIntegration: false,
-        webSecurity: true,
-      },
+      webPreferences: popupWebPreferences(preloadPath("screenshot-popup-preload")),
     });
-    window.setAlwaysOnTop(true, "pop-up-menu");
-    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-    window.webContents.on("will-navigate", event => event.preventDefault());
+    lockPopup(window);
     const own = window;
     own.on("closed", () => {
       if (window === own) {

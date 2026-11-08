@@ -23,7 +23,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "pin", group: "Chat", label: "Toggle pin", keys: ["Ctrl+Alt+P"] },
   { id: "chat-to-top", group: "Chat", label: "Move the selected chat to the top of its list", keys: ["Ctrl+["] },
   { id: "chat-to-bottom", group: "Chat", label: "Move the selected chat to the bottom of its list", keys: ["Ctrl+]"] },
-  // Handled by the sidebar's chat list (app/page.tsx), where the row has focus.
+  // Handled by the sidebar's chat list (components/use-workspace-controller.tsx), where the row has focus.
   { id: "delete", group: "Chat", label: "Delete the selected chats in the sidebar", keys: ["D"] },
   {
     id: "select-chats",
@@ -48,14 +48,14 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "next-chat", group: "Navigation", label: "Next chat", keys: ["Ctrl+Shift+]", "Ctrl+PageDown"] },
   { id: "go-to-chat", group: "Navigation", label: "Go to chat 1–9", keys: ["Alt+1…9"] },
   { id: "list-chat", group: "Navigation", label: "Previous or next chat in the sidebar", keys: ["↑", "↓"] },
-  // Handled by the message box (app/page.tsx), as in Claude Code.
+  // Handled by the message box (components/use-workspace-controller.tsx), as in Claude Code.
   {
     id: "cycle-mode",
     group: "Chat",
     label: "Cycle Ask for approval, Approve for me and Plan mode (in the message box)",
     keys: ["Shift+Tab"],
   },
-  // Handled by the message box and the chat (app/page.tsx, lib/prompt-history.ts), as in Claude.
+  // Handled by the message box and the chat (components/use-workspace-controller.tsx, lib/prompt-history.ts), as in Claude.
   { id: "stop", group: "Chat", label: "Stop the response", keys: ["Esc"] },
   { id: "edit-last", group: "Chat", label: "Edit your last message (in an empty message box)", keys: ["Esc Esc"] },
   {

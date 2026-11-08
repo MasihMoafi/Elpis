@@ -1,5 +1,5 @@
 "use strict";
-import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
 const { trustedBrowserSender }: typeof import("./browser-policy.cts") = require("./browser-policy.cts");
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -18,14 +18,7 @@ function registerImproveImpl({
   host,
   origin,
   ipcMain,
-}: {
-  host: BrowserWindow;
-  origin: string;
-  ipcMain: {
-    handle: (channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => void;
-    removeHandler: (channel: string) => void;
-  };
-}) {
+}: import("./browser-policy.cts").AppFrameIpc) {
   const guard = (event: IpcMainInvokeEvent) => {
     if (!trustedBrowserSender(event, host.webContents, origin)) throw Error("Elpis application frame required");
   };

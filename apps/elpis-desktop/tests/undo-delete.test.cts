@@ -27,7 +27,7 @@ test('D deletes the focused chat and Ctrl+Z brings back the last deleted chats o
     const dialog = page.getByRole('alertdialog');
     await dialog.getByText(/Ctrl\+Z brings it back/).waitFor();
     assert.equal(await dialog.getByText('This cannot be undone').count(), 0);
-    await dialog.getByLabel('Don’t show me this again').check();
+    await dialog.getByRole('checkbox', { name: 'Don’t show me this again' }).click();
     await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
     await row(page, 'chat-b').waitFor({ state: 'detached' });
     // Now D deletes at once, and the focus stays in the sidebar so Ctrl+Z still reaches the app.

@@ -39,6 +39,19 @@ function browserUrlImpl(input: unknown, appOrigin?: string) {
   return url.href;
 }
 
+/** What a desktop feature needs to answer the Elpis application frame over IPC. */
+export type AppFrameIpc = {
+  host: import("electron").BrowserWindow;
+  origin: string;
+  ipcMain: {
+    handle: (
+      channel: string,
+      handler: (event: import("electron").IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+    ) => void;
+    removeHandler: (channel: string) => void;
+  };
+};
+
 function trustedBrowserSenderImpl(
   event: { sender: unknown; senderFrame: { url: string } | null },
   owner: { mainFrame: { url: string } },
@@ -135,12 +148,24 @@ function zoomStepImpl(factor: number, direction: string) {
   if (direction === "in") return ZOOM_STEPS.find(step => step > factor + 0.001) ?? ZOOM_STEPS.at(-1);
   return [...ZOOM_STEPS].reverse().find(step => step < factor - 0.001) ?? ZOOM_STEPS[0];
 }
+function popupWebPreferencesImpl(preload: string) {
+  return { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true };
+}
+
+/** A popup stays above other windows and can neither open pages nor navigate away. */
+function lockPopupImpl(window: import("electron").BrowserWindow) {
+  window.setAlwaysOnTop(true, "pop-up-menu");
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", event => event.preventDefault());
+}
 export declare const browserUrl: typeof browserUrlImpl;
 export declare const trustedBrowserSender: typeof trustedBrowserSenderImpl;
 export declare const nativeBounds: typeof nativeBoundsImpl;
 export declare const loadFailure: typeof loadFailureImpl;
 export declare const pageSecurity: typeof pageSecurityImpl;
 export declare const zoomStep: typeof zoomStepImpl;
+export declare const popupWebPreferences: typeof popupWebPreferencesImpl;
+export declare const lockPopup: typeof lockPopupImpl;
 module.exports = {
   browserUrl: browserUrlImpl,
   trustedBrowserSender: trustedBrowserSenderImpl,
@@ -148,4 +173,6 @@ module.exports = {
   loadFailure: loadFailureImpl,
   pageSecurity: pageSecurityImpl,
   zoomStep: zoomStepImpl,
+  popupWebPreferences: popupWebPreferencesImpl,
+  lockPopup: lockPopupImpl,
 };

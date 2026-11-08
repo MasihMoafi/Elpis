@@ -180,7 +180,7 @@ button:disabled { cursor:not-allowed; }
 .thread-list > section:first-child > .section-label-row { padding-top:0; }
 /* A spacer as tall as needed (under one row) so the list's end is itself a row position: without it, at most window
    heights the end was not a snap point and the last chat was snapped out of view (4 Nov recording). Set by
-   fitChatListEnd in app/page.tsx. */
+   fitChatListEnd in components/workspace-shell.tsx. */
 .thread-list::after { content:""; display:block; height:var(--list-end-space, 10px); }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:var(--text-sm); line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }

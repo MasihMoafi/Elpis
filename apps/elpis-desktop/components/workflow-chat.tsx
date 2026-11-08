@@ -78,6 +78,23 @@ export async function readWorkflowRun(ref: WorkflowRunRef): Promise<RecordedWork
   return { ...found, rootThreadId: ref.rootThreadId };
 }
 /** Rebuild the saved task DAG; generated verification tasks remain each agent's check. Positions are presentation only. */
+function agentNode(task: RecordedTask, position: { x: number; y: number }): CanvasNode {
+  return {
+    id: task.id,
+    type: "agent",
+    position,
+    data: {
+      title: task.title || task.id,
+      instruction: task.instruction ?? "",
+      model: task.model ?? null,
+      provider: task.provider ?? null,
+      effort: task.reasoningEffort ?? null,
+      writeScopes: task.writeScopes ?? [],
+      acceptanceCriteria: task.acceptanceCriteria ?? [],
+    },
+  };
+}
+
 export function graphForWorkflow(run: RecordedWorkflow, liveAgents: readonly Thread[] = []): CanvasGraph {
   const tasks = [...(run.tasks ?? []), ...(run.next?.tasks ?? [])],
     byId = new Map(tasks.map(task => [task.id, task]));
@@ -93,20 +110,7 @@ export function graphForWorkflow(run: RecordedWorkflow, liveAgents: readonly Thr
         ? [id]
         : [];
   };
-  const nodes: CanvasNode[] = agents.map((task, index) => ({
-    id: task.id,
-    type: "agent",
-    position: { x: 0, y: index * 140 },
-    data: {
-      title: task.title || task.id,
-      instruction: task.instruction ?? "",
-      model: task.model ?? null,
-      provider: task.provider ?? null,
-      effort: task.reasoningEffort ?? null,
-      writeScopes: task.writeScopes ?? [],
-      acceptanceCriteria: task.acceptanceCriteria ?? [],
-    },
-  }));
+  const nodes: CanvasNode[] = agents.map((task, index) => agentNode(task, { x: 0, y: index * 140 }));
   const edges = agents.flatMap(task =>
     [...new Set((task.dependsOn ?? []).flatMap(id => sources(id)))]
       .filter(id => id !== task.id)
@@ -152,20 +156,9 @@ export function withAddedAgents(
   const source = (id: string) => (byId.get(id)?.kind === "verify" ? (byId.get(id)?.dependsOn?.[0] ?? id) : id);
   const right = Math.max(0, ...graph.nodes.map(node => node.position.x)),
     low = Math.max(0, ...graph.nodes.map(node => node.position.y));
-  const nodes: CanvasNode[] = fresh.map((task, index) => ({
-    id: task.id,
-    type: "agent",
-    position: { x: right + 300, y: low + (index + 1) * 140 },
-    data: {
-      title: task.title || task.id,
-      instruction: task.instruction ?? "",
-      model: task.model ?? null,
-      provider: task.provider ?? null,
-      effort: task.reasoningEffort ?? null,
-      writeScopes: task.writeScopes ?? [],
-      acceptanceCriteria: task.acceptanceCriteria ?? [],
-    },
-  }));
+  const nodes: CanvasNode[] = fresh.map((task, index) =>
+    agentNode(task, { x: right + 300, y: low + (index + 1) * 140 }),
+  );
   const edges = fresh.flatMap(task =>
     [...new Set((task.dependsOn ?? []).map(source))]
       .filter(id => id !== task.id && agentIds.has(id))

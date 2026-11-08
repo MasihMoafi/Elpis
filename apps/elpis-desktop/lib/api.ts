@@ -159,7 +159,7 @@ async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Prom
     const code = typeof result?.code === "string" && /^ELPIS_[A-Z_]{1,64}$/.test(result.code) ? result.code : "";
     const requestId =
       typeof result?.requestId === "string" && /^[a-f0-9-]{36}$/.test(result.requestId) ? result.requestId : "";
-    // The code and request ID stay on the message for the app's own checks (refusedOffline in app/page.tsx); every notice shows
+    // The code and request ID stay on the message for the app's own checks (refusedOffline in components/use-workspace-controller.tsx); every notice shows
     // it through plainMessage (lib/use-workspace-notices.ts), without them (6 Nov, Masih: "I don't like to see such errors").
     throw new RequestError(
       `${message}${code ? ` (${code}${requestId ? `; request ${requestId}` : ""})` : ""}`,

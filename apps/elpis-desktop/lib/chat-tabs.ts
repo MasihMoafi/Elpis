@@ -1,5 +1,5 @@
 // The top tab strip: one tab per open chat, as in Obsidian. A tab holds a chat id, or nothing for an empty
-// "New chat". The active tab always mirrors the chat on screen (app/page.tsx), so every way of opening a chat
+// "New chat". The active tab always mirrors the chat on screen (components/use-workspace-controller.tsx), so every way of opening a chat
 // (sidebar, search, links) already lands in the active tab. Pure functions; the page keeps the state.
 import type {} from "./desktop";
 

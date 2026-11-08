@@ -4,6 +4,14 @@ export type ProviderId =
   "openai" | "claude" | "openrouter" | "anthropic" | "google-gemini" | "gemini" | "local" | "cloudroom" | string;
 export type Method = "api-key" | "chatgpt-subscription" | "claude-subscription" | "openrouter-key" | "local";
 export type AccountId = string;
+export type SetKeyOptions = {
+  type?: ProviderType;
+  name?: string;
+  baseUrl?: string;
+  version?: string | null;
+  existing?: boolean;
+  action?: "preserve" | "replace" | "clear";
+};
 export type AttemptId = string;
 export type SecretInput = string;
 export type AccountState =
@@ -149,14 +157,7 @@ export interface ProviderLogin {
     provider: ProviderId,
     account: AccountId,
     secret: SecretInput,
-    options?: {
-      type?: ProviderType;
-      name?: string;
-      baseUrl?: string;
-      version?: string | null;
-      existing?: boolean;
-      action?: "preserve" | "replace" | "clear";
-    },
+    options?: SetKeyOptions,
   ): Promise<ProviderConfigsSnapshot | null>;
   select(provider: ProviderId, account: AccountId): Promise<void>;
   disconnect(

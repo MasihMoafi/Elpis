@@ -148,15 +148,14 @@ export function ContextFiles({
       reading.current = false;
     };
   }, [refresh, threadId]);
-  const save = async (file: ContextFile, included: boolean) => {
-    if (writing.current || !file.selectable) return;
+  const write = async (marker: string, send: () => Promise<unknown>) => {
+    if (writing.current) return;
     writing.current = true;
-    setSaving(file.path);
+    setSaving(marker);
     setError("");
     const sequence = ++request.current;
     try {
-      const result = await api<unknown>(`${base}/context-files`, { path: file.path, included });
-      const value = sourcesOf(session ? await readContext<unknown>(endpoint) : result);
+      const value = sourcesOf(await send());
       if (sequence === request.current) setSources(value);
     } catch (cause) {
       if (sequence === request.current) setError(message(cause));
@@ -164,29 +163,24 @@ export function ContextFiles({
       writing.current = false;
       if (sequence === request.current) setSaving(null);
     }
+  };
+  const save = async (file: ContextFile, included: boolean) => {
+    if (!file.selectable) return;
+    await write(file.path, async () => {
+      const result = await api<unknown>(`${base}/context-files`, { path: file.path, included });
+      return session ? readContext<unknown>(endpoint) : result;
+    });
   };
   const open = (file: ContextFile) => {
     if (openRef({ path: file.path }, { onError: setError })) {
       if (!isAudioPath(file.path)) onOpenFile();
     } else setError("Open a project folder to view this file.");
   };
-  const clearGoal = async () => {
-    if (writing.current) return;
-    writing.current = true;
-    setSaving("goal");
-    setError("");
-    const sequence = ++request.current;
-    try {
+  const clearGoal = () =>
+    write("goal", async () => {
       await api(`${base}/goal`, { clear: true });
-      const value = sourcesOf(await readContext<unknown>(endpoint));
-      if (sequence === request.current) setSources(value);
-    } catch (cause) {
-      if (sequence === request.current) setError(message(cause));
-    } finally {
-      writing.current = false;
-      if (sequence === request.current) setSaving(null);
-    }
-  };
+      return readContext<unknown>(endpoint);
+    });
   return (
     <div className="context-files" aria-label="Context files" aria-busy={saving !== null}>
       {!sources && !error && (

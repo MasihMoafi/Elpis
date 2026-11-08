@@ -7,6 +7,34 @@ import { CHECK_LABEL, DONE, STATUS_LABEL, type CanvasNode, type TaskStatus } fro
 import { errorText } from "@/lib/error-text.mts";
 import { folderLabel } from "./folders";
 
+/** Reads a bridge path once, and again every 2 s while the work continues. */
+function usePolled<T>(path: string | null, working: boolean, ready: boolean) {
+  const [value, setValue] = useState<T | null>(null),
+    [error, setError] = useState("");
+  useEffect(() => {
+    if (!ready || !path) return;
+    let live = true;
+    const read = () =>
+      api<T>(path)
+        .then(result => {
+          if (live) {
+            setValue(result);
+            setError("");
+          }
+        })
+        .catch(cause => {
+          if (live) setError(errorText(cause));
+        });
+    void read();
+    const timer = working ? setInterval(() => void read(), 2000) : undefined;
+    return () => {
+      live = false;
+      if (timer) clearInterval(timer);
+    };
+  }, [path, working, ready]);
+  return { value, error };
+}
+
 /** One agent's info panel (Enter or double-click): what it is, what it waits for and feeds, and, once it runs, what it
  * has done so far from its own chat, refreshed while it works. */
 /** What a chat has done so far, read from it, and again every 2 s while it works: an agent's, or the Mother agent's. */
@@ -21,29 +49,12 @@ export function LiveFeed({
   idle: string;
   ready: boolean;
 }) {
-  const [entries, setEntries] = useState<Entry[] | null>(null),
-    [error, setError] = useState("");
-  useEffect(() => {
-    if (!ready || !chat) return;
-    let live = true;
-    const read = () =>
-      api<{ data: Entry[] }>(`/threads/${encodeURIComponent(chat)}?limit=100`)
-        .then(result => {
-          if (live) {
-            setEntries(result.data);
-            setError("");
-          }
-        })
-        .catch(cause => {
-          if (live) setError(errorText(cause));
-        });
-    void read();
-    const timer = working ? setInterval(() => void read(), 2000) : undefined;
-    return () => {
-      live = false;
-      if (timer) clearInterval(timer);
-    };
-  }, [chat, working, ready]);
+  const { value, error } = usePolled<{ data: Entry[] }>(
+    chat ? `/threads/${encodeURIComponent(chat)}?limit=100` : null,
+    working,
+    ready,
+  );
+  const entries = value?.data ?? null;
   const items = entries?.map(entry => entry.item) ?? [];
   const said = [...items].reverse().find(item => item.type === "agentMessage" && typeof item.text === "string")?.text;
   return (
@@ -92,29 +103,11 @@ export function AgentRunOutput({
   working: boolean;
   ready: boolean;
 }) {
-  const [output, setOutput] = useState<AgentOutput | null>(null),
-    [error, setError] = useState("");
-  useEffect(() => {
-    if (!ready) return;
-    let live = true;
-    const read = () =>
-      api<AgentOutput>(`/workflows/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(taskId)}/output`)
-        .then(result => {
-          if (live) {
-            setOutput(result);
-            setError("");
-          }
-        })
-        .catch(cause => {
-          if (live) setError(errorText(cause));
-        });
-    void read();
-    const timer = working ? setInterval(() => void read(), 2000) : undefined;
-    return () => {
-      live = false;
-      if (timer) clearInterval(timer);
-    };
-  }, [runId, taskId, working, ready]);
+  const { value: output, error } = usePolled<AgentOutput>(
+    `/workflows/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(taskId)}/output`,
+    working,
+    ready,
+  );
   return (
     <div className="agent-run-output" aria-label="Agent output">
       <section>

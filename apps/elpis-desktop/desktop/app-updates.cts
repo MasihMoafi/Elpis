@@ -1,5 +1,5 @@
 "use strict";
-import type { BrowserWindow, IpcMainInvokeEvent } from "electron";
+import type { IpcMainInvokeEvent } from "electron";
 import type { FSWatcher } from "node:fs";
 const fs: typeof import("node:fs") = require("node:fs");
 const os = require("node:os");
@@ -134,14 +134,7 @@ function createAppUpdatesImpl({
       host,
       origin,
       ipcMain,
-    }: {
-      host: BrowserWindow;
-      origin: string;
-      ipcMain: {
-        handle: (channel: string, handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown) => void;
-        removeHandler: (channel: string) => void;
-      };
-    }) {
+    }: import("./browser-policy.cts").AppFrameIpc) {
       const trusted = (event: IpcMainInvokeEvent) => trustedBrowserSender(event, host.webContents, origin);
       ipcMain.handle("elpis:updates:status", (event: IpcMainInvokeEvent) =>
         trusted(event) ? refresh() : { error: "Elpis application frame required" },

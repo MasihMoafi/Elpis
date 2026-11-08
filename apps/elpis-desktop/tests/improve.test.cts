@@ -38,7 +38,7 @@ for (const colorScheme of ['light']) test(`Ctrl+K improvement opens a pointed ch
     const sent = f.posts.find(post => post.path === '/api/improvements');
     assert.ok(sent);
     assert.equal(sent.body.request, 'Rename Send to Go'); assert.equal(sent.body.target.image, PNG);
-    assert.match(sent.body.target.id, /app\/page.tsx#Home/);
+    assert.match(sent.body.target.id, /components\/workspace-shell.tsx#WorkspaceShell/);
     const review = page.getByRole('dialog', { name: 'Review Elpis change' });
     await review.getByText('Run build and tests on this commit.', { exact: true }).waitFor();
     // Masih, 22 Oct (the review dialog): "keep and try it should be deleted."

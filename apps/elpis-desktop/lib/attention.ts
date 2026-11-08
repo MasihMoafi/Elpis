@@ -3,7 +3,7 @@ import { appStorage } from "./projects";
 const KEY = "elpis-chat-attention-v1";
 
 /** Which chats need you, kept on this computer: replies nobody has opened (`unread`) and plans that finished in Plan
- * mode and wait for review (`plans`: chat → the plan's turn). The sidebar draws them (app/page.tsx). */
+ * mode and wait for review (`plans`: chat → the plan's turn). The sidebar draws them (components/workspace-shell.tsx). */
 export type Attention = { unread: string[]; plans: Record<string, string> };
 
 export function readAttention(): Attention {

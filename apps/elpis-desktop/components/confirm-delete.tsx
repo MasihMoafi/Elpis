@@ -85,7 +85,7 @@ export function ConfirmDelete<T>({
         {children}
         {confirm && !alwaysConfirm && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Checkbox checked={skip} disabled={busy} onCheckedChange={setSkip} />
+            <Checkbox aria-label="Don’t show me this again" checked={skip} disabled={busy} onCheckedChange={setSkip} />
             Don’t show me this again
           </label>
         )}
