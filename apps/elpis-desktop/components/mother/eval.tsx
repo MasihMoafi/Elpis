@@ -8,13 +8,13 @@ import { ADMISSION_DEFAULTS, ADMISSION_OPTIONS, type Admission, type AdmissionCe
 import type { AdmissionRowView } from '../../bridge/router/sources/kind.mts'
 import { LIMITS } from '../../bridge/router/limits.mts'
 import { DECISION_FILTERS, DECISION_KINDS, usePoll, type DecisionFilter, type Settings, type SourceView } from './api.ts'
-import { Button, DisclosureRow, Icon, InfoTip, Input, Pill, SegmentedControl, Switch } from './controls.tsx'
+import { Button, DisclosureRow, Icon, InfoTip, Input, Pill, SegmentedControl, SegmentedTabs, Switch } from './controls.tsx'
 import { SaveBar } from './draft.tsx'
 import { useAction, usePanel } from './provider.tsx'
 import { DecisionLine } from './rows.tsx'
 import { ConfigHistory, Field, Fields, ModelField, SourceField, numberOf, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { localized, valueLabel, when } from './text.ts'
-import { Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.tsx'
+import { Empty, Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.tsx'
 
 export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter; window: '24h' | undefined; paused: boolean }) {
   const { t, call, navigate } = usePanel()
@@ -26,7 +26,7 @@ export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter;
   return <>
     <StatusHead hint={t('evalStatusIntro')} settings="eval" />
     {paused && <p className="dt-banner">
-      {t('evalRecordsPaused')} <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink"
+      {t('evalRecordsPaused')} <SharedButton variant="link" size="content" type="button" className="dt-textlink p-0 justify-start text-left"
         onClick={() => navigate({ page: 'execution' })}>{t('resumeWhere')}</SharedButton>
     </p>}
     <div className="dt-filters">
@@ -37,7 +37,7 @@ export function EvalStatus({ filter, window, paused }: { filter: DecisionFilter;
     </div>
     <LoadState error={error} loading={!data} />
     {data && (data.items.length ? <ul className="dt-list">{data.items.map(decision => <DecisionLine key={decision.id}
-      decision={decision} />)}</ul> : <Hint>{t('none')}</Hint>)}
+      decision={decision} />)}</ul> : <Empty>{t('none')}</Empty>)}
     {data?.next_offset != null && <LoadMore onMore={() => setLimit(limit + 30)} />}
   </>
 }
@@ -56,7 +56,7 @@ function RuleRow({ rule, expanded, onToggle, onChange, onDuplicate, onRemove }: 
         <Field label={t('ruleName')}><Input value={rule.name} required maxLength={LIMITS.ruleName} onChange={event => onChange({ ...rule,
           name: event.target.value })} /></Field>
         <Field label={t('ruleInstruction')}>
-          <Textarea className="dt-textarea" rows={4} required maxLength={LIMITS.ruleInstruction} value={rule.instruction}
+          <Textarea rows={4} required maxLength={LIMITS.ruleInstruction} value={rule.instruction}
             placeholder={t('ruleInstructionPlaceholder')}
             onChange={event => onChange({ ...rule, instruction: event.target.value })} />
         </Field>
@@ -112,7 +112,7 @@ function AdmissionTable({ rows, labels, table, explicit, onChange }: {
     const value = table[row.id]?.[cell] ?? ADMISSION_DEFAULTS[cell]
     // Reserve a fixed-width slot for the warning icon so selecting a value never shifts column widths.
     return <td key={cell}><span className="dt-admission-cell">
-      <OptionSelect className="dt-select" aria-label={`${name(row)} · ${t(`admissionCell.${cell}`)}`} value={value} onChange={event => set(row.id,
+      <OptionSelect aria-label={`${name(row)} · ${t(`admissionCell.${cell}`)}`} value={value} onChange={event => set(row.id,
         cell, event.target.value as Admission)}>
         {ADMISSION_OPTIONS[cell].map(option => <option key={option} value={option}>{t(`admissionValue.${option}`)}</option>)}
       </OptionSelect>
@@ -130,7 +130,7 @@ function AdmissionTable({ rows, labels, table, explicit, onChange }: {
       <tbody>{rows.map(row => <tr key={row.id}>
         <td className="dt-admission-scope">{name(row)}<small>{localized(t, row.note)}</small></td>
         {CELLS.map(cell => row.cells[cell] ? select(row, cell) : <td key={cell} className="dt-admission-na"
-          aria-label={t('admissionNotReceived')}>—</td>)}
+         aria-label={t('admissionNotReceived')}>—</td>)}
       </tr>)}</tbody>
     </table>
     <Hint>{t('admissionFootnote')}</Hint>
@@ -157,7 +157,7 @@ function PolicyBlock() {
     && target.closest('.dt-rules')) setExpanded(new Set(policy.rules.map(rule => rule.id))) }
   const part = (id: string) => (policy.sources[id] ?? { allowed: [] }) as Part
   const add = () => insert({ id: crypto.randomUUID(), name: '', enabled: true, instruction: '' }, policy.rules.length)
-  return <form className="dt-form dt-block" onSubmit={event => { void draft.submit(event) }}
+  return <form className="settings-card dt-form dt-block" onSubmit={event => { void draft.submit(event) }}
     onInvalidCapture={event => reveal(event.target)}>
     <Fields disabled={draft.busy}>
       <h2 className="dt-block-title">{t('term.policy')}<InfoTip text={t('policyIntro')} /></h2>
@@ -177,16 +177,14 @@ function PolicyBlock() {
             : <Hint>{t('rulesEmpty')}</Hint>}
       </Section>
       {current && <Section title={t('policyPerSource')} hint={t('policyPerSourceHint')}>
-        {parts.length > 1 && <div className="dt-subtabs" role="tablist" aria-label={t('policyPerSource')}>
-          {parts.map(source => <SharedButton variant="ghost" size="sm" key={source.id} type="button" role="tab" aria-selected={source === current} className="dt-subtab"
-            onClick={() => setTab(source.id)}>
-            {localized(t, source.title)}
-          </SharedButton>)}
-        </div>}
+        {parts.length > 1 && <SegmentedTabs label={t('policyPerSource')} value={current.id} onChange={setTab}
+          items={parts.map(source => ({ value: source.id, label: localized(t, source.title), id: `dt-policy-${source.id}`, panelId: 'dt-policy-source' }))} />}
+        <div id="dt-policy-source" role="tabpanel" aria-labelledby={parts.length > 1 ? `dt-policy-${current.id}` : undefined}>
         <SourcePart key={current.id} source={current} part={part(current.id)}
           saved={(blocks.policy.value.sources[current.id] ?? {}) as Part} dirty={draft.dirty}
           reload={reload} onChange={next => edit({ sources: { ...policy.sources,
             [current.id]: next as typeof policy.sources[string] } })} />
+        </div>
       </Section>}
     </Fields>
     <SaveBar {...draft} onDiscard={draft.discard} />
@@ -200,11 +198,11 @@ function EvalBlock() {
   const draft = useBlockDraft('eval', saved, block.revision, value => ({ ...value, timeoutSeconds: numberOf(value.timeoutSeconds) }))
   const value = draft.value
   const edit = (next: Partial<typeof value>) => draft.edit({ ...value, ...next })
-  return <form className="dt-form dt-block" onSubmit={event => { void draft.submit(event) }}>
+  return <form className="settings-card dt-form dt-block" onSubmit={event => { void draft.submit(event) }}>
     <Fields disabled={draft.busy}>
       <h2 className="dt-block-title">{t('evalSettings')}<InfoTip text={t('evalIntro')} /></h2>
       <Section title={t('acceptMode')} hint={t(`modeOption.${value.mode}`)}>
-        <SegmentedControl className="dt-segmented" label={t('acceptMode')} value={value.mode} onChange={mode => edit({ mode })}
+        <SegmentedControl label={t('acceptMode')} value={value.mode} onChange={mode => edit({ mode })}
           options={(['off', 'observe', 'auto'] as const).map(mode => ({ value: mode, label: valueLabel(t, 'mode', mode),
             title: t(`modeOption.${mode}`) }))} />
       </Section>

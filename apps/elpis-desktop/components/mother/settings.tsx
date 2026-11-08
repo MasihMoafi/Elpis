@@ -1,4 +1,5 @@
 import { Button as SharedButton } from '@/components/ui/button'
+import { SettingsHeader } from '@/components/settings/rows'
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/client/settings.tsx.
 /** Settings tab shell routing between stage settings (Sources, Eval, Execution), Prompts, and Deployment. */
 import type { StateView } from './api.ts'
@@ -11,7 +12,6 @@ import { SETTINGS_GROUPS, settingsRoute, type SettingsGroup } from './route.ts'
 import { SettingsProvider } from './settings-kit.tsx'
 import { SourceSettings } from './source.tsx'
 
-const STAGE_GROUPS: readonly SettingsGroup[] = ['source', 'eval', 'execution']
 export function SettingsPage({ group, query, state, deploymentForm }: {
   group: SettingsGroup; query: { source?: string | undefined; version?: string | undefined }; state: StateView; deploymentForm: DeploymentForm
 }) {
@@ -25,15 +25,17 @@ export function SettingsPage({ group, query, state, deploymentForm }: {
       case 'deployment': return <DeploymentPage setup={state.setup} form={deploymentForm} />
     }
   })()
-  return <div className="dt-settings">
-    <nav className="dt-settings-nav" aria-label={t('tab.settings')}>
-      {SETTINGS_GROUPS.map(value => <SharedButton variant="ghost" size="sm" key={value} type="button" className="dt-settings-link" data-stage={STAGE_GROUPS.includes(value)
-        || undefined}
-        aria-current={value === group ? 'page' : undefined} onClick={() => navigate(settingsRoute(value),
+  return <div className="settings-layout dt-settings">
+    <nav className="settings-nav" aria-label={t('tab.settings')}>
+      <div role="tablist" aria-label={t('tab.settings')} aria-orientation="vertical">
+      {SETTINGS_GROUPS.map(value => <SharedButton variant="ghost" size="sm" key={value} type="button" data-slot="nav-row"
+        role="tab" id={`dt-settings-${value}`} aria-selected={value === group} aria-controls="dt-settings-body"
+        className={value === group ? 'active' : undefined} onClick={() => navigate(settingsRoute(value),
           true)}>{t(`settingsGroup.${value}`)}</SharedButton>)}
+      </div>
     </nav>
-    <div className="dt-settings-body">
-      <h2 className="dt-settings-title">{t(`settingsGroup.${group}`)}</h2>
+    <div className="dt-settings-body" id="dt-settings-body" role="tabpanel" aria-labelledby={`dt-settings-${group}`}>
+      <SettingsHeader title={t(`settingsGroup.${group}`)} />
       {content}
     </div>
   </div>

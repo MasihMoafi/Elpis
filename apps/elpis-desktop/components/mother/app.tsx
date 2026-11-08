@@ -19,7 +19,7 @@ import { actorName, errorText, reasonLabel, valueLabel, type T, readableMarkers 
 import { ThreadPage } from './thread.tsx'
 import { TicketPage } from './ticket.tsx'
 import { TriggerStatus } from './trigger.tsx'
-import { When } from './widgets.tsx'
+import { LoadState, When } from './widgets.tsx'
 
 export interface AppProps {
   t: T; openSession: (sessionId: string) => Promise<void>
@@ -62,9 +62,9 @@ function Highlight({ text, query }: { text: string; query: string }) {
   return <>{text.slice(0, index)}<mark className="dt-mark">{text.slice(index, index + query.length)}</mark>{text.slice(index + query.length)}</>
 }
 function Result({ name, open, children }: { name: ReactNode; open: (() => void) | undefined; children: ReactNode }) {
-  return <li className="dt-row dt-link"><div className="dt-row-main">
-    <div className="dt-row-title">{open ? <SharedButton variant="ghost" size="sm" type="button" className="dt-open" onClick={open}>{name}</SharedButton> : name}</div>
-    <div className="dt-row-meta">{children}</div>
+  return <li data-slot="settings-row" className="settings-row dt-row dt-link"><div className="settings-row-text dt-row-main">
+    <div className="settings-row-title dt-row-title">{open ? <SharedButton variant="link" size="content" type="button" className="dt-open p-0 justify-start text-left max-w-full truncate text-foreground font-medium" onClick={open}><span className="min-w-0">{name}</span></SharedButton> : name}</div>
+    <div className="settings-row-description dt-row-meta">{children}</div>
   </div></li>
 }
 function SearchResults({ result, query, onClose }: { result: SearchView; query: string; onClose: () => void }) {
@@ -143,7 +143,7 @@ function Pages({ route, openTab, deploymentForm }: { route: Route; openTab: (tab
   const { state, error, reload } = usePanelData()
   // Keep the active tab scrolled into view on narrow screens when routes change via links.
   useEffect(() => { document.getElementById(`dt-tab-${route.page}`)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) }, [route.page])
-  const waiting = error ? <p className="dt-error" role="alert">{error.message}</p> : <p className="dt-hint">{t('loading')}</p>
+  const waiting = <LoadState error={error} loading />
   const page = (() => {
     switch (route.page) {
       case 'overview': return <OverviewPage />
@@ -158,8 +158,8 @@ function Pages({ route, openTab, deploymentForm }: { route: Route; openTab: (tab
         deploymentForm={deploymentForm} /> : waiting
     }
   })()
-  return <div className="dt-page">
-    <div className="dt-column">
+  return <div className="page-scroll dt-page">
+    <div className="settings-page dt-column">
       <Header masterId={state?.masterId} />
       {error && state && <p className="dt-error" role="status">{error.message}</p>}
       <SegmentedTabs className="dt-tabs" label={t('pagesLabel')} value={route.page} onChange={openTab}

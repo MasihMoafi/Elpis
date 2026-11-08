@@ -1,4 +1,5 @@
-import { Button as SharedButton } from '@/components/ui/button'
+import { Button as SharedButton, buttonVariants } from '@/components/ui/button'
+import { SettingsEmpty, SettingsGroup, SettingsNotice } from '@/components/settings/rows'
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/client/widgets.tsx.
 /** Context-aware shared UI widgets: page/section headers, timestamps, Markdown rendering, and confirmation actions. */
 import { Fragment, useState, type ReactNode } from 'react'
@@ -6,7 +7,7 @@ import type { SetupProblem } from '../../bridge/router/infra/setup.mts'
 import { Button, Icon, InfoTip, Modal, StateDot, type DotState, type IconName } from './controls.tsx'
 import { inlines, linkify, markdownBlocks, type Inline } from './markdown.ts'
 import { useAction, usePanel, usePanelData } from './provider.tsx'
-import { settingsRoute, type SettingsGroup } from './route.ts'
+import { settingsRoute, type SettingsGroup as SettingsGroupRoute } from './route.ts'
 import { errorText, fullTime, readableMarkers, setupText, when } from './text.ts'
 
 const external = { target: '_blank', rel: 'noopener noreferrer' } as const
@@ -26,16 +27,15 @@ export function SetupMessage({ problem, lead }: { problem: Pick<SetupProblem, 'c
 export function Section({ title, count, children, action, hint, badge, icon }: {
   title: string; count?: number | string | undefined; children: ReactNode; action?: ReactNode | undefined; hint?: string | undefined; badge?: ReactNode | undefined; icon?: IconName | undefined
 }) {
-  return <section className="dt-section">
-    <h2 className="dt-section-title">
-      {icon && <span className="dt-section-icon"><Icon name={icon} size={14} /></span>}<span className="dt-section-name">{title}</span>
-      {count !== undefined && <span className="dt-count">{count}</span>}{hint && <InfoTip text={hint} />}{badge}
-      {action && <span style={{ marginLeft: 'auto' }}>{action}</span>}
-    </h2>
+  return <SettingsGroup title={title} action={<span className="dt-actions">
+    {icon && <Icon name={icon} />}{count !== undefined && <span className="dt-count">{count}</span>}
+    {hint && <InfoTip text={hint} />}{badge}{action}
+  </span>}>
     {children}
-  </section>
+  </SettingsGroup>
 }
 export function Hint({ children }: { children: ReactNode }) { return <p className="dt-hint">{children}</p> }
+export function Empty({ children }: { children: string }) { return <SettingsEmpty title={children} /> }
 export function LabelValue({ label, value }: { label: string; value: ReactNode }) {
   return <span className="dt-lv"><span className="dt-lv-label">{label}</span> <span className="dt-lv-value">{value}</span></span>
 }
@@ -62,7 +62,7 @@ export function MarkdownLite({ text }: { text: string }) {
 }
 function MoreToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const { t } = usePanel()
-  return <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-more" aria-expanded={open} onClick={onToggle}>{open ? t('collapse')
+  return <SharedButton variant="link" size="content" type="button" className="dt-textlink dt-more p-0 justify-start text-left" aria-expanded={open} onClick={onToggle}>{open ? t('collapse')
     : t('expand')}</SharedButton>
 }
 export function ClampText({ text }: { text: string }) {
@@ -100,8 +100,7 @@ export function ExternalLink({ href, children, icon = 'external' }: { href: stri
   return <a className="dt-inline-link dt-icon-link" href={href} {...external}><Icon name={icon} size={13} />{children}</a>
 }
 export function ActionLink({ href, children, icon = 'external' }: { href: string; children: ReactNode; icon?: IconName | undefined }) {
-  return <a className="dt-btn dt-btn-outline dt-btn-sm" href={href} {...external}><span className="dt-btn-icon"><Icon name={icon}
-    size={14} /></span>{children}</a>
+  return <a className={buttonVariants({ variant: 'outline', size: 'sm' })} href={href} {...external}><Icon name={icon} />{children}</a>
 }
 export function StageMark({ state, icon, label }: { state: DotState; icon: IconName; label: string }) {
   return <span className="dt-stage" data-state={state}>{state === 'ongoing' ? <StateDot state="ongoing" /> : <Icon name={icon}
@@ -109,18 +108,18 @@ export function StageMark({ state, icon, label }: { state: DotState; icon: IconN
 }
 export function LoadState({ error, loading }: { error?: Error | undefined; loading: boolean }) {
   const { t } = usePanel()
-  if (error) return <p className="dt-error" role="alert">{error.message}</p>
-  return loading ? <Hint>{t('loading')}</Hint> : null
+  if (error) return <SettingsNotice tone="alert">{error.message}</SettingsNotice>
+  return loading ? <SettingsNotice>{t('loading')}</SettingsNotice> : null
 }
 export function LoadMore({ onMore }: { onMore: () => void }) {
   const { t } = usePanel()
   return <Button variant="outline" size="sm" icon={<Icon name="chevron-down" size={14} />} onClick={onMore}>{t('loadMore')}</Button>
 }
 
-export function StatusHead({ hint, settings }: { hint: string; settings?: SettingsGroup | undefined }) {
+export function StatusHead({ hint, settings }: { hint: string; settings?: SettingsGroupRoute | undefined }) {
   const { t, navigate } = usePanel()
-  return <div className="dt-status-head">
-    <h2 className="dt-status-title">{t('statusTitle')}<InfoTip text={hint} /></h2>
+  return <div className="settings-group-heading">
+    <h2>{t('statusTitle')}</h2><InfoTip text={hint} />
     {settings && <Button variant="ghost" size="sm" icon={<Icon name="settings" />}
       onClick={() => navigate(settingsRoute(settings))}>{t('tab.settings')}</Button>}
   </div>

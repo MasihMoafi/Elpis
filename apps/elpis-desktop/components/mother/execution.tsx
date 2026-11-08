@@ -12,7 +12,7 @@ import { usePanel } from './provider.tsx'
 import { TicketLine } from './rows.tsx'
 import { ConfigHistory, Field, Fields, ModelField, numberOf, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { localized } from './text.ts'
-import { ConfirmButton, Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.tsx'
+import { ConfirmButton, Empty, Hint, LabelValue, LoadMore, LoadState, Section, StatusHead } from './widgets.tsx'
 
 export function ExecutionStatus({ filter: current, state, reload }: {
   filter: TicketFilter; state: StateView; reload: () => Promise<void>
@@ -29,11 +29,11 @@ export function ExecutionStatus({ filter: current, state, reload }: {
   const action = paused ? 'resumeProcessing' : 'pauseProcessing'
   return <>
     <StatusHead hint={t('executionStatusIntro')} settings="execution" />
-    <div className="dt-row-meta dt-status-line">
+    <div className="settings-row-description dt-row-meta dt-status-line">
       <span className="dt-status-text" data-state={status.tone}>{status.label}</span>
       {!state.setup.problem && <>
         <LabelValue label={t('executingLabel')}
-          value={`${state.load.running} / ${maxWorkers}`} /><LabelValue label={t('queuedLabel')} value={state.load.queued} />
+         value={`${state.load.running} / ${maxWorkers}`} /><LabelValue label={t('queuedLabel')} value={state.load.queued} />
       </>}
       <ConfirmButton variant="outline" icon={paused ? 'play' : 'pause'} label={t(action)} title={t(action)} message={t(paused
         ? 'resumeProcessingConfirm' : 'pauseProcessingConfirm')}
@@ -48,7 +48,7 @@ export function ExecutionStatus({ filter: current, state, reload }: {
     <LoadState error={error} loading={!data} />
     {data && (data.items.length ? <ul className="dt-list">{data.items.map(ticket => ticket.stage === 'person'
       ? <TicketLine key={ticket.id} ticket={ticket} question
-        onChanged={reloadTickets} /> : <TicketLine key={ticket.id} ticket={ticket} />)}</ul> : <Hint>{t('none')}</Hint>)}
+        onChanged={reloadTickets} /> : <TicketLine key={ticket.id} ticket={ticket} />)}</ul> : <Empty>{t('none')}</Empty>)}
     {data?.next_offset != null && <LoadMore onMore={() => setLimit(limit + 20)} />}
   </>
 }
@@ -67,7 +67,7 @@ function EnvironmentVariables({ groups, sources,
       <table className="dt-table">
         <thead><tr><th>{t('environmentKey')}</th><th>{t('environmentDescription')}</th><th>{t('environmentOwner')}</th></tr></thead>
         <tbody>{groups.flatMap(group => group.variables.map(variable => <tr key={variable.key}>
-          <td><SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-mono" onClick={() => onPick(variable.key)}>{variable.key}</SharedButton></td>
+          <td><SharedButton variant="link" size="content" type="button" className="dt-textlink dt-mono p-0 justify-start text-left" onClick={() => onPick(variable.key)}>{variable.key}</SharedButton></td>
           <td title={localized(t, variable.description)}>{firstSentence(localized(t, variable.description))}</td>
           <td>{owner(group.owner)}{!group.enabled && <span className="dt-hint"> · {t('sourceOff')}</span>}</td>
         </tr>))}</tbody>
@@ -95,7 +95,7 @@ export function ExecutionSettings() {
   return <div className="dt-form">
     <form className="dt-form" onSubmit={event => { void draft.submit(event) }}>
       <Fields disabled={draft.busy}>
-        <div className="dt-form dt-block">
+        <div className="settings-card dt-form dt-block">
           <h2 className="dt-block-title">{t('term.executor')}<InfoTip text={t('executorIntro')} /></h2>
           <Section title={t('executorModel')} hint={t('executorModelHint')}><ModelField id="dt-worker-model" value={value.model}
             onChange={model => edit({ model })} /></Section>
@@ -104,7 +104,7 @@ export function ExecutionSettings() {
               onChange={event => edit({ maxWorkers: event.target.value })} />
           </Field>
         </div>
-        <div className="dt-form dt-block">
+        <div className="settings-card dt-form dt-block">
           <h2 className="dt-block-title">{t('term.environment')}<InfoTip text={t('environmentIntro')} /></h2>
           <Field label={t('executionDirectory')} hint={t('executionDirectoryHint')} note={value.directory ? undefined
             : t('executionDirectoryDefault', { root: environment.root })}>
@@ -112,7 +112,7 @@ export function ExecutionSettings() {
               onChange={event => edit({ directory: event.target.value })} />
           </Field>
           <Field label={t('prepareCommand')} hint={t('prepareCommandHint')}>
-            <Textarea ref={prepare} className="dt-textarea dt-mono" rows={3} maxLength={LIMITS.prepareCommand} spellCheck={false}
+            <Textarea ref={prepare} className="dt-mono" rows={3} maxLength={LIMITS.prepareCommand} spellCheck={false}
               placeholder={t('prepareCommandEmpty')} value={value.prepare}
               onChange={event => edit({ prepare: event.target.value })} />
           </Field>

@@ -8,7 +8,7 @@ import { decisionMark } from './marks.ts'
 import { useAction, usePanel } from './provider.tsx'
 import { DecisionLine, Earlier, TicketLine, automatedRuns } from './rows.tsx'
 import { actorName, errorText, readableMarkers, reasonLabel, valueLabel, when, type T } from './text.ts'
-import { ActionLink, ClampText, ConfirmButton, Hint, LoadState, PageHead, Section, When } from './widgets.tsx'
+import { ActionLink, ClampText, ConfirmButton, Empty, Hint, LoadState, PageHead, Section, When } from './widgets.tsx'
 
 /** Disposition tags for a Trigger; omits `ignore` (the common case) and suppresses fanout tags when every target Ticket is already listed in `subscribed`. */
 function triggerTags(t: T, trigger: TriggerRow, subscribed?: Set<string>): ReactNode {
@@ -47,9 +47,9 @@ function TriggerItem({ trigger, earlier, target, subscribed, requeue }: {
       reason: item.reason })}</Hint>)}
     <div className="dt-event-foot">
       {triggerTags(t, trigger, subscribed)}
-      {ticketId && !subscribed.has(ticketId) && <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-icon-link"
+      {ticketId && !subscribed.has(ticketId) && <SharedButton variant="link" size="content" type="button" className="dt-textlink dt-icon-link p-0 justify-start text-left"
         onClick={() => navigate({ page: 'execution', id: ticketId })}>{t('openTicket')}</SharedButton>}
-      {requeue && <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-icon-link dt-reveal" disabled={requeue.busy} aria-busy={requeue.busy}
+      {requeue && <SharedButton variant="link" size="content" type="button" className="dt-textlink dt-icon-link dt-reveal p-0 justify-start text-left" disabled={requeue.busy} aria-busy={requeue.busy}
         onClick={requeue.run}>
         <Icon name="refresh" size={13} />{t('requeue')}
       </SharedButton>}
@@ -116,7 +116,7 @@ export function ThreadPage({ id, target }: { id: string; target?: string | undef
     if (!result.queued) notify(t('requeueAlready'))
   }, { reload })
   if (!data) return <><PageHead
-    title={t('term.thread')} />{error instanceof ApiError && error.missing ? <Hint>{t('threadNotFound')}</Hint> : <LoadState
+    title={t('term.thread')} />{error instanceof ApiError && error.missing ? <Empty>{t('threadNotFound')}</Empty> : <LoadState
       error={error} loading />}</>
   const subscribed = new Set(data.tickets.map(ticket => ticket.id))
   // Never fold a deep-linked `target` Trigger into an automated run.
@@ -130,7 +130,7 @@ export function ThreadPage({ id, target }: { id: string; target?: string | undef
   return <>
     <PageHead title={readableMarkers(t, data.title)}>{data.url && <ActionLink href={data.url}>{t('openOriginal')}</ActionLink>}</PageHead>
     {error && <LoadState error={error} loading={false} />}
-    <div className="dt-row-meta dt-status-line">
+    <div className="settings-row-description dt-row-meta dt-status-line">
       <span>{valueLabel(t, 'source', data.source)}</span><span>{t('threadLatest',
         { time: when(data.lastAt, t('lang')) })}</span><span>{t('threadCreated', { time: when(data.createdAt, t('lang')) })}</span>
     </div>
@@ -151,7 +151,7 @@ export function ThreadPage({ id, target }: { id: string; target?: string | undef
     </DisclosureRow>}
     {data.correlated.length > 0 && <Section title={t('term.correlation')}>
       <ul className="dt-plain-list">{data.correlated.map(item => <li key={item.key}>
-        <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink" onClick={() => navigate({ page: 'trigger', id: item.key })}>{readableMarkers(t,
+        <SharedButton variant="link" size="content" type="button" className="dt-textlink p-0 justify-start text-left" onClick={() => navigate({ page: 'trigger', id: item.key })}>{readableMarkers(t,
           item.title)}</SharedButton>
       </li>)}</ul>
     </Section>}

@@ -7,6 +7,7 @@ import { ApiError } from './api.ts'
 import { usePanel } from './provider.tsx'
 import { errorText } from './text.ts'
 import { Button } from './controls.tsx'
+import { SettingsActions, SettingsNotice } from '@/components/settings/rows'
 
 import { draftReducer, saveBarText, type DraftState, type DraftWords, type Stored } from './draft-state'
 function read<V, M>(key: string | undefined): Stored<V, M> | undefined {
@@ -86,11 +87,11 @@ export function SaveBar({ state, dirty, busy, words, status, onDiscard, onSave }
   const leave = (next: Element | null) => { if (next && !bar.current?.contains(next)) focused.current = false }
   return <div ref={bar} className="dt-savebar" onFocus={() => { focused.current = true }}
     onBlur={event => leave(event.relatedTarget as Element | null)}>
-    {line.error ? <p className="dt-error dt-clamp" role="alert">{line.error}</p>
-      : <p className="dt-hint" aria-live="polite">{status ?? line.status}</p>}
+    <SettingsActions feedback={<SettingsNotice tone={line.error ? 'alert' : 'status'}>{line.error || status || line.status}</SettingsNotice>}>
     <Button variant="ghost" size="sm" disabled={!dirty || busy} onClick={onDiscard}>{t('discard')}</Button>
     <Button variant="primary" size="sm" disabled={!dirty || busy} {...onSave ? { onClick: onSave } : { type: 'submit' as const }}>
       {t('save')}
     </Button>
+    </SettingsActions>
   </div>
 }

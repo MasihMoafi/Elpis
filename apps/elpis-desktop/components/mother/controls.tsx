@@ -7,6 +7,8 @@ import { ArrowLeft, ArrowRight, ChevronDown, ChevronUp, Search, CircleHelp, Plus
   Users, List, type LucideIcon } from 'lucide-react'
 import { Button as ElpisButton } from '@/components/ui/button'
 import { Input as ElpisInput } from '@/components/ui/input'
+import { SearchField } from '@/components/ui/search-field'
+import { Segmented } from '@/components/settings/rows'
 import { Switch as ElpisSwitch } from '@/components/ui/switch'
 import { Tooltip } from '@/components/ui/tooltip'
 import { DisclosureSummary } from '@/components/ui/disclosure-summary'
@@ -23,34 +25,33 @@ export type IconName = keyof typeof ICONS
 export function Icon({ name, size = 16 }: { name: IconName; size?: number | undefined }) { const Glyph = ICONS[name]; return <Glyph size={size} aria-hidden="true" /> }
 type ButtonProps = { variant?: 'primary' | 'ghost' | 'outline' | undefined; size?: 'md' | 'sm' | undefined; icon?: ReactNode | undefined; className?: string | undefined } & ButtonHTMLAttributes<HTMLButtonElement>
 export function Button({ variant = 'ghost', size = 'md', icon, className, children, type = 'button', ...rest }: ButtonProps) {
-  return <ElpisButton type={type} variant={variant === 'primary' ? 'default' : variant} size={children ? size === 'sm' ? 'xs' : 'sm' : 'icon-sm'} className={className} {...rest}>
+  return <ElpisButton type={type} variant={variant === 'primary' ? 'default' : variant} size={children ? size === 'sm' ? 'sm' : 'default' : 'icon'} className={className} {...rest}>
     {icon}{children}
   </ElpisButton>
 }
 export type TagTone = 'outline' | 'neutral' | 'quiet' | 'success' | 'info' | 'warning' | 'danger'
-export function Tag({ tone = 'outline', title, children }: { tone?: TagTone | undefined; title?: string | undefined; children: ReactNode }) { return <span className="dt-tag" data-tone={tone} title={title}>{children}</span> }
-export function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) { return <ElpisButton variant={active ? 'secondary' : 'ghost'} size="xs" aria-pressed={active} onClick={onClick}>{children}</ElpisButton> }
+export function Tag({ tone = 'outline', title, children }: { tone?: TagTone | undefined; title?: string | undefined; children: ReactNode }) { return <span className={cn('settings-badge', tone === 'warning' && 'warn', tone === 'success' && 'ok', tone === 'danger' && 'text-destructive', tone === 'info' && 'text-primary')} title={title}>{children}</span> }
+export function Pill({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) { return <ElpisButton variant={active ? 'secondary' : 'ghost'} size="sm" aria-pressed={active} onClick={onClick}>{children}</ElpisButton> }
 function walk<V extends string>(event: KeyboardEvent, values: readonly V[], value: V, onChange: (next: V) => void) {
   const index = values.indexOf(value), steps: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: values.length - 1 }, next = steps[event.key]
   if (next === undefined) return
   event.preventDefault(); onChange(values[(next + values.length) % values.length]!)
   const list = event.currentTarget as HTMLElement
-  requestAnimationFrame(() => list.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus())
+  requestAnimationFrame(() => list.querySelector<HTMLElement>('[role="tab"][aria-selected="true"], [role="radio"][aria-checked="true"]')?.focus())
 }
 interface TabItem<V extends string> { value: V; label: string; id: string; panelId: string }
 export function SegmentedTabs<V extends string>({ items, value, onChange, label, className }: { items: readonly TabItem<V>[]; value: V; onChange: (next: V) => void; label: string; className?: string | undefined }) {
-  return <div role="tablist" aria-label={label} className={cn('dt-tabs', className)} onKeyDown={event => walk(event, items.map(item => item.value), value, onChange)}>
-    {items.map(item => <ElpisButton variant="ghost" size="sm" key={item.value} role="tab" id={item.id} aria-controls={item.panelId} aria-selected={item.value === value}
-      tabIndex={item.value === value ? 0 : -1} className="dt-tab" onClick={() => onChange(item.value)}>{item.label}</ElpisButton>)}
+  return <div role="tablist" aria-label={label} className={cn('segmented dt-tabs', className)} onKeyDown={event => walk(event, items.map(item => item.value), value, onChange)}>
+    {items.map(item => <ElpisButton variant={item.value === value ? 'secondary' : 'ghost'} size="sm" key={item.value} role="tab" id={item.id} aria-controls={item.panelId} aria-selected={item.value === value}
+      tabIndex={item.value === value ? 0 : -1} onClick={() => onChange(item.value)}>{item.label}</ElpisButton>)}
   </div>
 }
 export function SegmentedControl<V extends string>({ options, value, onChange, label, disabled, className }: { options: readonly { value: V; label: string; title?: string | undefined }[]; value: V; onChange: (next: V) => void; label: string; disabled?: boolean | undefined; className?: string | undefined }) {
-  return <div role="tablist" aria-label={label} className={cn('flex flex-wrap gap-1', className)} onKeyDown={event => { if (!disabled) walk(event, options.map(item => item.value), value, onChange) }}>
-    {options.map(option => <ElpisButton variant={option.value === value ? 'secondary' : 'ghost'} size="xs" key={option.value} role="tab" aria-selected={option.value === value}
-      tabIndex={option.value === value ? 0 : -1} title={option.title} disabled={disabled} onClick={() => onChange(option.value)}>{option.label}</ElpisButton>)}
+  return <div className={cn('inline-flex max-w-full', className)} onKeyDown={event => { if (!disabled) walk(event, options.map(item => item.value), value, onChange) }}>
+    <Segmented label={label} value={value} options={options.map(({ title, ...option }) => ({ ...option, ...title === undefined ? {} : { title } }))} onChange={onChange} {...disabled === undefined ? {} : { disabled }} />
   </div>
 }
-export function Input({ icon, className, ...rest }: { icon?: ReactNode | undefined; className?: string | undefined } & InputHTMLAttributes<HTMLInputElement>) { return <span className={cn('flex min-w-0 items-center gap-2', className)}>{icon}<ElpisInput {...rest} /></span> }
+export function Input({ icon, className, ...rest }: { icon?: ReactNode | undefined; className?: string | undefined } & InputHTMLAttributes<HTMLInputElement>) { return rest.type === 'search' ? <SearchField className={className} {...rest} /> : icon ? <span className="flex min-w-0 items-center gap-2">{icon}<ElpisInput className={className} {...rest} /></span> : <ElpisInput className={className} {...rest} /> }
 export function Switch({ checked, onChange, label, className }: { checked: boolean; onChange: (next: boolean) => void; label: string; className?: string | undefined }) { return <ElpisSwitch checked={checked} aria-label={label} className={className} onCheckedChange={onChange} /> }
 export type DotState = 'done' | 'warning' | 'ongoing' | 'error' | 'idle'
 export function StateDot({ state, className }: { state: DotState; className?: string | undefined }) { return state === 'ongoing' ? <LoaderCircle size={16} aria-hidden="true" className={cn('animate-spin', className)} /> : <span className={cn('dt-state-dot', className)} data-state={state} aria-hidden="true" /> }

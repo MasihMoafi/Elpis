@@ -5,7 +5,7 @@ import { Input } from './controls'
 import { SaveBar, useDraft } from './draft'
 import { usePanel } from './provider'
 import { Field, Fields } from './settings-kit'
-import { CheckSetupButton, Hint, KeyValues, Section, SetupMessage } from './widgets'
+import { CheckSetupButton, Hint, KeyValues, LoadState, Section, SetupMessage } from './widgets'
 export type DeploymentForm = undefined
 const KEYS = ['promptMaxChars', 'admissionContextMaxPages', 'admissionContextTimeoutMs'] as const
 export function DeploymentPage({ setup, accounts: showAccounts }: { setup: SetupView; form: DeploymentForm; accounts?: boolean | undefined }) {
@@ -15,7 +15,7 @@ export function DeploymentPage({ setup, accounts: showAccounts }: { setup: Setup
       const saved = await call('PUT deployment', { body: { value, revision } }); notify(t('saved')); return { ...saved, restarting: false }
     } })
   return <form className="dt-form" onSubmit={event => { void draft.submit(event) }}><Fields disabled={draft.busy || !data}>
-    {error && <p role="alert">{error.message}</p>}
+    <LoadState error={error} loading={!data} />
     {setup.problem && <Section title="Setup"><SetupMessage problem={setup.problem} lead /><CheckSetupButton /></Section>}
     {showAccounts && <Section title={t('deploymentDerived')}><KeyValues rows={[[t('deploymentRepository'), setup.accounts?.repository || '—'], [t('deploymentAgent'), setup.accounts?.agent || '—']]} /></Section>}
     <Section title={t('deploymentMachine')}><Hint>{setup.machine.stateDir}</Hint></Section>

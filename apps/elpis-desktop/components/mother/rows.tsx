@@ -17,12 +17,12 @@ export function TicketLine({ ticket, question, onChanged, context }: {
   const after = async (request: Promise<unknown>) => { await request; await onChanged?.() }
   const note = question && ticket.note && { ...ticket.note, text: readableMarkers(t, ticket.note.text) }
   const answer = ticket.reply && ticket.stage === 'person' && ticket.action === 'answer' ? ticket.reply : undefined
-  return <li className="dt-row dt-link dt-ticket" data-state={question ? status.dot : undefined}>
+  return <li data-slot="settings-row" className="settings-row dt-row dt-link dt-ticket" data-state={question ? status.dot : undefined}>
     <div className="dt-ticket-stage"><StageMark state={status.dot} icon={status.icon} label={status.label} /></div>
     <div className="dt-ticket-body">
-      <div className="dt-row-title"><SharedButton variant="ghost" size="sm" type="button" className="dt-open" onClick={() => navigate({ page: 'execution',
+      <div className="settings-row-title dt-row-title"><SharedButton variant="link" size="content" type="button" className="dt-open p-0 justify-start text-left max-w-full truncate text-foreground font-medium" onClick={() => navigate({ page: 'execution',
         id: ticket.id })}>{ticket.title}</SharedButton></div>
-      <div className="dt-row-meta dt-ticket-meta">
+      <div className="settings-row-description dt-row-meta dt-ticket-meta">
         {ticket.threads.map(thread => <ThreadChip key={thread.key} thread={thread} />)}
         {context && <ContextTag />}
         {ticket.undelivered > 0 && <LabelValue label={t('ticketUndeliveredLabel')} value={ticket.undelivered} />}
@@ -55,22 +55,22 @@ export function ThreadLine({ thread, ticketId, context }: { thread: ThreadRow; t
   const live = thread.tickets.filter(ticket => ticket.state === 'open' && ticket.id !== ticketId)
   const { dot, icon, label } = threadMark(t, thread)
   const reaches = live.length > 0 && `${live[0]!.title}${live.length > 1 ? t('andMore', { count: live.length - 1 }) : ''}`
-  return <li className="dt-row dt-link dt-ticket">
+  return <li data-slot="settings-row" className="settings-row dt-row dt-link dt-ticket">
     <div className="dt-ticket-stage"><StageMark state={dot} icon={icon} label={label} /></div>
     <div className="dt-ticket-body">
-      <div className="dt-row-title">
-        <SharedButton variant="ghost" size="sm" type="button" className="dt-open" title={thread.pollError} onClick={() => navigate({ page: 'trigger',
+      <div className="settings-row-title dt-row-title">
+        <SharedButton variant="link" size="content" type="button" className="dt-open p-0 justify-start text-left max-w-full truncate text-foreground font-medium" title={thread.pollError} onClick={() => navigate({ page: 'trigger',
           id: thread.key })}>{readableMarkers(t, thread.title)}</SharedButton>
       </div>
       <div className="dt-row-quote dt-line">
         {thread.latest && <>{actorName(t, thread.latest.actor)}{t('labelSeparator')}{readableMarkers(t, thread.latest.preview)
           || t('empty')}</>}
       </div>
-      <div className="dt-row-meta dt-line">
+      <div className="settings-row-description dt-row-meta dt-line">
         <ThreadChip thread={thread} />
         {context && <ContextTag />}
         {thread.pollError ? <span className="dt-line-text dt-error-text">{thread.pollError}</span> : reaches && <LabelValue
-          label={t('fanoutTo')} value={reaches} />}
+         label={t('fanoutTo')} value={reaches} />}
         <When at={thread.lastAt} />
       </div>
     </div>
@@ -85,16 +85,16 @@ export function DecisionLine({ decision }: { decision: DecisionRow }) {
   const reason = decision.reason ? reasonLabel(t, decision.reason) : ''
   const open = () => decision.ticketId ? navigate({ page: 'execution', id: decision.ticketId })
     : navigate({ page: 'trigger', id: decision.thread, query: { trigger: decision.triggerIds[0] ?? '' } })
-  return <li className="dt-row dt-link dt-ticket">
+  return <li data-slot="settings-row" className="settings-row dt-row dt-link dt-ticket">
     <div className="dt-ticket-stage"><StageMark state={mark.dot} icon={mark.icon} label={mark.label} /></div>
     <div className="dt-ticket-body">
-      <div className="dt-row-title">
-        <SharedButton variant="ghost" size="sm" type="button" className="dt-open" title={reason || undefined} onClick={open}>
+      <div className="settings-row-title dt-row-title">
+        <SharedButton variant="link" size="content" type="button" className="dt-open p-0 justify-start text-left max-w-full truncate text-foreground font-medium" title={reason || undefined} onClick={open}>
           {decision.ticketTitle ?? (decision.threadTitle ? readableMarkers(t, decision.threadTitle) : preview || t('empty'))}
         </SharedButton>
       </div>
       <div className="dt-row-quote dt-line">{preview}</div>
-      <div className="dt-row-meta dt-line">
+      <div className="settings-row-description dt-row-meta dt-line">
         {reason && <span className="dt-line-text">{reason}</span>}
         {matched.length > 0 && <LabelValue label={t('ruleLabel')} value={matched.join(t('listSeparator'))} />}
         <When at={decision.at} />
@@ -133,7 +133,7 @@ export function Earlier({ items }: { items: { id: string; at: string; preview: s
   const [open, setOpen] = useState(false)
   if (!items.length) return null
   return <div>
-    <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <SharedButton variant="link" size="content" type="button" className="dt-textlink p-0 justify-start text-left" aria-expanded={open} onClick={() => setOpen(!open)}>
       {open ? t('collapse') : t('automatedEarlier', { count: items.length })}
     </SharedButton>
     {open && <ul className="dt-plain-list dt-hint">{items.map(item => <li key={item.id}><When

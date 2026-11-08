@@ -11,7 +11,7 @@ import { usePanel, usePanelData } from './provider.tsx'
 import { setupPage, settingsRoute, type Route } from './route.ts'
 import { ConfigHistory, Fields, SourceField, useBlockDraft, useSettings } from './settings-kit.tsx'
 import { actorName, healthText, localized, readableMarkers, reasonLabel, valueLabel, valueText, when } from './text.ts'
-import { CheckSetupButton, Hint, LabelValue, LoadState, SetupMessage, StatusHead, When } from './widgets.tsx'
+import { CheckSetupButton, Empty, Hint, LabelValue, LoadState, SetupMessage, StatusHead, When } from './widgets.tsx'
 
 function SourceCard({ source }: { source: SourceView }) {
   const { t, call } = usePanel()
@@ -33,17 +33,17 @@ function SourceCard({ source }: { source: SourceView }) {
     refreshLabels={refreshLabels} fact={spec.type === 'fact' || !changed(spec.key) ? source.facts[spec.key] : undefined}
     onChange={next => draft.edit({ ...value, config: { ...value.config, [spec.key]: next } })} />
   const advanced = source.fields.filter(spec => spec.advanced)
-  return <form id={`dt-source-${source.id}`} className="dt-card" onSubmit={event => { void draft.submit(event) }}>
+  return <form id={`dt-source-${source.id}`} className="settings-card dt-card" onSubmit={event => { void draft.submit(event) }}>
     <Fields disabled={draft.busy}>
       <div className="dt-card-head">
-        <div className="dt-row-main">
-          <div className="dt-row-title">
+        <div className="settings-row-text dt-row-main">
+          <div className="settings-row-title dt-row-title">
             <span className="dt-card-title">{localized(t, source.title)}</span>{description && <InfoTip text={description} />}
             {!source.installed && <Tag tone="warning">{t('sourceNotInstalled')}</Tag>}
           </div>
         </div>
         {source.installed && <Switch checked={value.enabled} onChange={enabled => draft.edit({ ...value, enabled })}
-          label={t('sourceEnable', { name: localized(t, source.title) })} />}
+         label={t('sourceEnable', { name: localized(t, source.title) })} />}
       </div>
       {problem && <div className="dt-row-buttons">
         <p className="dt-error" role="status"><SetupMessage problem={problem} lead /></p><CheckSetupButton />
@@ -83,11 +83,11 @@ function DroppedReplies({ items }: { items: DroppedReply[] }) {
       <Hint>{t('sourceDroppedHint')}</Hint>
       <ul className="dt-list">{items.map(item => {
         const link = target(item)
-        return <li key={item.id} className="dt-row"><Dot state="idle" /><div className="dt-row-main">
-          <div className="dt-row-title dt-line">{readableMarkers(t, item.preview) || t('empty')}</div>
-          <div className="dt-row-meta">
+        return <li key={item.id} data-slot="settings-row" className="settings-row dt-row"><Dot state="idle" /><div className="settings-row-text dt-row-main">
+          <div className="settings-row-title dt-row-title dt-line">{readableMarkers(t, item.preview) || t('empty')}</div>
+          <div className="settings-row-description dt-row-meta">
             <Tag tone="neutral">{reasonLabel(t, item.dropped.reason)}</Tag><When at={item.dropped.at} />
-            {link && <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink" onClick={() => navigate(link.route)}>{link.name}</SharedButton>}
+            {link && <SharedButton variant="link" size="content" type="button" className="dt-textlink p-0 justify-start text-left" onClick={() => navigate(link.route)}>{link.name}</SharedButton>}
           </div>
         </div></li>
       })}</ul>
@@ -104,18 +104,18 @@ function SourceRow({ source }: { source: SourceStatusRow }) {
   // Omit healthy parts and suppress per-part notes when a setup problem already explains why the Source is stopped.
   const notes = source.enabled && !problem && !setup?.problem ? source.health.filter(item => item.state === 'error'
     || item.state === 'paused') : []
-  return <li className="dt-row">
+  return <li data-slot="settings-row" className="settings-row dt-row">
     <Dot state={dot} label={state} />
-    <div className="dt-row-main">
-      <div className="dt-row-title"><span className="dt-row-name">{localized(t, source.title)}</span><span className="dt-status-text"
+    <div className="settings-row-text dt-row-main">
+      <div className="settings-row-title dt-row-title"><span className="dt-row-name">{localized(t, source.title)}</span><span className="dt-status-text"
         data-state={dot}>{state}</span></div>
-      <div className="dt-row-meta">
+      <div className="settings-row-description dt-row-meta">
         {received > 0 && <LabelValue label={t('sourceReceivedLabel')}
-          value={received} />}{filtered > 0 && <LabelValue label={t('sourceFilteredLabel')} value={filtered} />}
+         value={received} />}{filtered > 0 && <LabelValue label={t('sourceFilteredLabel')} value={filtered} />}
         {lastAt && <LabelValue label={t('sourceLatestLabel')} value={when(lastAt, t('lang'))} />}
       </div>
       {problem && <p className="dt-error">
-        <SetupMessage problem={problem} lead /> <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink"
+        <SetupMessage problem={problem} lead /> <SharedButton variant="link" size="content" type="button" className="dt-textlink p-0 justify-start text-left"
           onClick={() => navigate(settingsRoute('source', { source: source.id }))}>
           {t('sourceOpenSettings')}
         </SharedButton>
@@ -127,11 +127,11 @@ function SourceRow({ source }: { source: SourceStatusRow }) {
       {source.filtered.length > 0 && <DisclosureRow icon={<Icon name="filter" />} title={t('sourceFilteredTitle')} open={filteredOpen}
         onToggle={() => setFilteredOpen(!filteredOpen)}>
         <div className="dt-disclosure-body">
-          <ul className="dt-list">{source.filtered.map(item => <li key={item.id} className="dt-row"><Dot state="idle" /><div
-            className="dt-row-main">
-            <div className="dt-row-title">{actorName(t, item.actor)}{t('labelSeparator')}{readableMarkers(t, item.preview)
+          <ul className="dt-list">{source.filtered.map(item => <li key={item.id} data-slot="settings-row" className="settings-row dt-row"><Dot state="idle" /><div
+            className="settings-row-text dt-row-main">
+            <div className="settings-row-title dt-row-title">{actorName(t, item.actor)}{t('labelSeparator')}{readableMarkers(t, item.preview)
               || t('empty')}</div>
-            <div className="dt-row-meta"><Tag tone="neutral">{reasonLabel(t, item.reason)}</Tag><When at={item.at} /></div>
+            <div className="settings-row-description dt-row-meta"><Tag tone="neutral">{reasonLabel(t, item.reason)}</Tag><When at={item.at} /></div>
           </div></li>)}</ul>
         </div>
       </DisclosureRow>}
@@ -149,10 +149,10 @@ export function SourceStatus() {
   return <div className="dt-form">
     <StatusHead hint={t('sourceStatusIntro')} settings="source" />
     {elsewhere && <p className="dt-error">
-      <SetupMessage problem={elsewhere} lead /> <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink"
+      <SetupMessage problem={elsewhere} lead /> <SharedButton variant="link" size="content" type="button" className="dt-textlink p-0 justify-start text-left"
         onClick={() => navigate(setupPage(elsewhere.place))}>{t('setupFixLink')}</SharedButton>
     </p>}
     <LoadState error={error} loading={!data} />
-    {data && <ul className="dt-list">{data.map(source => <SourceRow key={source.id} source={source} />)}</ul>}
+    {data && (data.length ? <ul className="settings-rows dt-list">{data.map(source => <SourceRow key={source.id} source={source} />)}</ul> : <Empty>{t('none')}</Empty>)}
   </div>
 }

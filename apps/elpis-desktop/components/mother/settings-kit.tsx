@@ -4,6 +4,8 @@ import { Button as SharedButton } from '@/components/ui/button'
 import { cloneElement, createContext, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactElement,
   type ReactNode } from 'react'
 import { OptionSelect } from '@/components/ui/option-select'
+import { Textarea } from '@/components/ui/textarea'
+import { SettingRow } from '@/components/settings/rows'
 import type { ApiResponse } from '../../bridge/router/app/api.mts'
 import type { FieldSpec, Localized } from '../../bridge/router/sources/kind.mts'
 import { usePoll, type HistoryView, type Settings, type SettingsView, type SourceView } from './api.ts'
@@ -59,17 +61,14 @@ export function Fields({ disabled, children }: { disabled: boolean; children: Re
 export function Field({ label, hint, note,
   children }: { label: string; hint?: string | undefined; note?: ReactNode | undefined; children: ReactElement<{ id?: string | undefined }> }) {
   const id = useId()
-  return <div className="dt-field">
-    <span className="dt-field-head"><label htmlFor={id}>{label}</label>{hint && <InfoTip text={hint} />}</span>{cloneElement(children,
-      { id })}{note && <small>{note}</small>}
-  </div>
+  return <SettingRow stacked={children.type === Textarea} title={<span className="dt-field-head"><label htmlFor={id}>{label}</label>{hint && <InfoTip text={hint} />}</span>}
+    description={note}><div className="settings-field-stack w-full">{cloneElement(children, { id })}</div></SettingRow>
 }
 function SwitchRow({ label, hint, checked,
   onChange }: { label: string; hint?: string | undefined; checked: boolean; onChange: (next: boolean) => void }) {
-  return <div className="dt-switch-row">
-    <div className="dt-field-head">{label}{hint && <InfoTip text={hint} />}</div><Switch checked={checked} onChange={onChange}
-      label={label} />
-  </div>
+  return <SettingRow title={<span className="dt-field-head">{label}{hint && <InfoTip text={hint} />}</span>}><Switch checked={checked} onChange={onChange}
+     label={label} />
+  </SettingRow>
 }
 type RoleModel = Settings['eval']['model']
 export function ModelField({ id, value, onChange }: { id: string; value: RoleModel; onChange: (next: RoleModel) => void }) {
@@ -92,16 +91,16 @@ export function ModelField({ id, value, onChange }: { id: string; value: RoleMod
     <Hint>{fallback ? t('defaultModel', { model: `${fallback.provider} / ${fallback.model}${fallback.reasoningEffort
       ? ` · ${fallback.reasoningEffort}` : ''}` }) : t('defaultModelUnavailable')}</Hint>
     {error && <p className="dt-error">{t('modelCatalogError', { error })}</p>}
-    <div className="dt-grid3">
+    <div className="settings-rows">
       {input('provider', t('modelProvider'), t('modelInherit'))}{input('model', t('modelName'), t('modelInherit'))}{input('effort',
         t('modelEffort'), t('modelEffortDefault'))}
     </div>
     <datalist id={`${id}-providers`}>{catalog?.groups.map(group => <option key={group.id}
-      value={group.id}>{group.name}</option>)}</datalist>
+     value={group.id}>{group.name}</option>)}</datalist>
     <datalist id={`${id}-models`}>{models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</datalist>
     <datalist id={`${id}-efforts`}>
       {(models.find(model => model.id === current.model.trim())?.reasoning?.efforts ?? []).map(effort => <option key={effort.id}
-        value={effort.id}>{effort.name}</option>)}
+       value={effort.id}>{effort.name}</option>)}
     </datalist>
   </div>
 }
@@ -148,7 +147,7 @@ export function ConfigHistory({ blocks, versions, focus }: { blocks: string[]; v
         {items.length ? <ul className="dt-timeline">{items.map(item => <li key={item.revision} className={item === target
           ? 'dt-event dt-highlight' : 'dt-event'}
           ref={item === target ? scroll : undefined}>
-          <div className="dt-row-title">{t('historyItem', { revision: item.revision, source: valueLabel(t, 'historySource',
+          <div className="settings-row-title dt-row-title">{t('historyItem', { revision: item.revision, source: valueLabel(t, 'historySource',
             item.source) })}</div>
           <div className="dt-event-foot">{when(item.savedAt, t('lang'))}{item.policyChanged && <> · {t('historyPolicyChanged',
             { version: item.policyVersion.slice(0, 8) })}</>}</div>
@@ -199,14 +198,14 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
       return <span key={column.key} className={labels[id] ? 'dt-row-label' : 'dt-row-label dt-mono'} title={id}>{labels[id] ?? id}</span>
     }
     if (column === key && choose) {
-      return <OptionSelect key={column.key} className="dt-select" aria-label={choose} required value={id}
+      return <OptionSelect key={column.key} aria-label={choose} required value={id}
         onChange={event => change(event.target.value)}>
         <option value="" disabled>{choose}</option>
         {choices(id).map(([option, name]) => <option key={option} value={option}>{name}</option>)}
       </OptionSelect>
     }
     if (column.type === 'select') {
-      return <OptionSelect key={column.key} className="dt-select" aria-label={localized(t, column.label)} value={row[column.key] ?? ''}
+      return <OptionSelect key={column.key} aria-label={localized(t, column.label)} value={row[column.key] ?? ''}
         onChange={event => change(event.target.value)}>
         {column.options.map(option => <option key={option.value} value={option.value}>{localized(t, option.label)}</option>)}
       </OptionSelect>
@@ -227,7 +226,7 @@ function RowsField({ field, value, saved, onChange, labels, refreshLabels }: {
           blank]) }}>{t('addRow')}</Button>
       </span>
     </div>
-    {rows.length > ROWS_SHOWN && <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-rows-summary" aria-expanded={open}
+    {rows.length > ROWS_SHOWN && <SharedButton variant="link" size="content" type="button" className="dt-textlink dt-rows-summary p-0 justify-start text-left" aria-expanded={open}
       onClick={() => setOpen(!open)}>
       {open ? t('collapse') : rows.map(rowName).join(t('listSeparator'))}
     </SharedButton>}
@@ -250,7 +249,7 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
   switch (field.type) {
     case 'switch': return <SwitchRow label={label} hint={hint} checked={value === true} onChange={onChange} />
     case 'select': return <Field label={label} hint={hint}>
-      <SegmentedControl className="dt-segmented dt-field-segmented" label={label} value={valueText(value ?? field.options[0]!.value)}
+      <SegmentedControl label={label} value={valueText(value ?? field.options[0]!.value)}
         options={field.options.map(option => ({ value: option.value, label: localized(t, option.label) }))} onChange={onChange} />
     </Field>
     case 'number': return <Field label={label} hint={hint}>
@@ -259,7 +258,7 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
     </Field>
     case 'text': return <Field label={label} hint={hint} note={localized(t, fact)}>
       {field.choose && Object.keys(labels).length
-        ? <OptionSelect className="dt-select" value={valueText(value)} onChange={event => onChange(event.target.value)}>
+        ? <OptionSelect value={valueText(value)} onChange={event => onChange(event.target.value)}>
           <option value="">{localized(t, field.choose)}</option>
           {value && !labels[valueText(value)] ? <option value={valueText(value)}>{valueText(value)}</option> : null}
           {Object.entries(labels).sort(byName).map(([option, name]) => <option key={option} value={option}>{name}</option>)}
@@ -271,7 +270,7 @@ export function SourceField({ field, value, saved, fact, onChange, labels, refre
       <span className="dt-field-head">{label}{hint && <InfoTip text={hint} />}</span>
       <span className="dt-mono">{localized(t, fact) || t('empty')}</span>
       {field.settings && <small>
-        <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink"
+        <SharedButton variant="link" size="content" type="button" className="dt-textlink p-0 justify-start text-left"
           onClick={() => navigate(settingsRoute(field.settings!))}>{t(`openSettingsOf.${field.settings}`)}</SharedButton>
       </small>}
     </div>

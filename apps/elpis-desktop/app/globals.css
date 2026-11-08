@@ -650,7 +650,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Segmented choices: Settings' side-by-side options. */
 .segmented { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; padding:2px; border-radius:var(--corner-radius, calc(var(--cut) + 1px) 0); corner-shape:var(--corner-shape, bevel); background:var(--muted); }
 .segmented > button { height:calc(var(--control-h) - 4px); padding:0 8px; font-size:var(--text-sm); font-weight:500; color:var(--muted-foreground); }
-.segmented > button:is([aria-pressed="true"], [aria-checked="true"]) { background:var(--card); color:var(--foreground); box-shadow:var(--shadow); }
+.segmented > button:is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]) { background:var(--card); color:var(--foreground); box-shadow:var(--shadow); }
 .agent-state { display:inline-flex; align-items:center; gap:6px; min-width:88px; font-size:var(--text-small); white-space:nowrap; color:var(--muted-foreground); }
 .agent-state i { height:7px; width:7px; border-radius:50%; background:currentColor; opacity:.55; }
 .agent-state.working { color:var(--success); font-weight:500; } .agent-state.working i { opacity:1; animation:pulse 1.6s ease-in-out infinite; }
@@ -659,8 +659,9 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 /* Settings respond to the available pane width, including beside the browser. */
 @container workspace (max-width:760px) {
  .settings-layout { grid-template-columns:1fr; gap:12px; }
- .settings-nav { position:static; display:flex; flex-wrap:wrap; gap:4px; }
- .settings-nav button { white-space:nowrap; }
+ .settings-nav:not(.settings-nav-detailed) { position:static; display:flex; flex-wrap:wrap; gap:4px; }
+ .settings-nav button[role="tab"] { white-space:nowrap; }
+ .settings-nav-detailed { position:static; max-height:240px; overflow:auto; }
 }
 
 /* ── Elpis HUD: transcript and composer (16 Oct 2026) ─────────────────────────────── */

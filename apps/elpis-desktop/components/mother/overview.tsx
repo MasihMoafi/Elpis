@@ -14,11 +14,11 @@ function ProblemLine({ problem, onChanged }: { problem: Problem; onChanged: () =
   const { t, call, navigate } = usePanel()
   const post = useAction((request: () => Promise<unknown>) => request(), { reload: onChanged })
   const row = (title: string, detail: ReactNode, route: Route | undefined, hint?: string, actions?: ReactNode) => <li
-    className="dt-row dt-link dt-att dt-att-error">
-    <div className="dt-row-main">
-      <div className="dt-att-what">{route ? <SharedButton variant="ghost" size="sm" type="button" className="dt-open dt-open-wrap"
+    data-slot="settings-row" className="settings-row dt-row dt-link dt-att dt-att-error">
+    <div className="settings-row-text dt-row-main">
+      <div className="dt-att-what">{route ? <SharedButton variant="link" size="content" type="button" className="dt-open p-0 justify-start text-left max-w-full break-words text-foreground font-medium"
         onClick={() => navigate(route)}>{title}</SharedButton> : title}</div>
-      {detail}{hint && <Hint>{hint}</Hint>}{actions && <div className="dt-row-meta dt-row-buttons">{actions}</div>}
+      {detail}{hint && <Hint>{hint}</Hint>}{actions && <div className="settings-row-description dt-row-meta dt-row-buttons">{actions}</div>}
     </div>
   </li>
   const go = (label: string, route: Route) => <Button variant="outline" size="sm" icon={<Icon name="settings"
@@ -66,10 +66,10 @@ export function OverviewPage() {
   if (!data) return <LoadState error={error} loading />
   const stat = (label: string, value: ReactNode, route?: Route) => <span className="dt-stat">
     <span className="dt-stat-label">{label}</span>
-    {route ? <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-stat-value" onClick={() => navigate(route)}>{value}</SharedButton> : <span
+    {route ? <SharedButton variant="link" size="content" type="button" className="dt-textlink dt-stat-value p-0 justify-start text-left" onClick={() => navigate(route)}>{value}</SharedButton> : <span
       className="dt-stat-value">{value}</span>}
   </span>
-  const more = (route: Route) => <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-more-link"
+  const more = (route: Route) => <SharedButton variant="link" size="content" type="button" className="dt-textlink dt-more-link p-0 justify-start text-left"
     onClick={() => navigate(route)}>{t('details')}</SharedButton>
   return <>
     {error && <LoadState error={error} loading={false} />}

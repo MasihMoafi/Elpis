@@ -9,21 +9,21 @@ import { usePanel } from './provider.tsx'
 import { settingsRoute } from './route.ts'
 import { Earlier, ThreadLine, automatedRuns } from './rows.tsx'
 import { actorName, localized, readableMarkers, reasonLabel, valueLabel, when } from './text.ts'
-import { ActionLink, ConfirmButton, ExternalLink, Hint, KeyValues, LabelValue, LoadState, MarkdownLite, PageHead, Section, SessionButton,
+import { ActionLink, ConfirmButton, ExternalLink, Empty, Hint, KeyValues, LabelValue, LoadState, MarkdownLite, PageHead, Section, SessionButton,
   StageMark, When } from './widgets.tsx'
 
 type Input = TicketPageView['inputs'][number]
 function InputLine({ input, earlier = [] }: { input: Input; earlier?: { id: string; at: string; preview: string }[] | undefined }) {
   const { t, navigate } = usePanel()
   const trigger = input.kind === 'trigger' ? input.trigger : undefined
-  return <li className="dt-row">
+  return <li data-slot="settings-row" className="settings-row dt-row">
     <Dot state={input.delivered ? 'idle' : 'warning'} label={input.delivered ? t('inputDelivered') : t('inputUndelivered')} />
-    <div className="dt-row-main">
-      {trigger ? <div className="dt-row-title"><SharedButton variant="ghost" size="sm" type="button" className="dt-open" onClick={() => navigate({ page: 'trigger',
+    <div className="settings-row-text dt-row-main">
+      {trigger ? <div className="settings-row-title dt-row-title"><SharedButton variant="link" size="content" type="button" className="dt-open p-0 justify-start text-left max-w-full truncate text-foreground font-medium" onClick={() => navigate({ page: 'trigger',
         id: trigger.thread, query: { trigger: trigger.id } })}>
         {actorName(t, trigger.actor)}{t('labelSeparator')}{readableMarkers(t, trigger.preview) || t('empty')}
-      </SharedButton></div> : <div className="dt-row-title">{valueLabel(t, 'input', input.kind)}</div>}
-      <div className="dt-row-meta">{input.kind === 'trigger' && <span>{valueLabel(t, 'input', input.kind)}</span>}<When
+      </SharedButton></div> : <div className="settings-row-title dt-row-title">{valueLabel(t, 'input', input.kind)}</div>}
+      <div className="settings-row-description dt-row-meta">{input.kind === 'trigger' && <span>{valueLabel(t, 'input', input.kind)}</span>}<When
         at={input.at} /></div>
       {(input.kind === 'text' || input.kind === 'note') && input.text && <div className="dt-row-quote"><MarkdownLite text={input.text} /></div>}
       {trigger?.handback && <Hint>{t('inputHandedBack', { reason: trigger.handback.reason })}</Hint>}
@@ -48,11 +48,11 @@ function Details({ icon, title, open = false, children }: { icon: IconName; titl
 function Assignments({ ticket }: { ticket: TicketPageView }) {
   const { t } = usePanel()
   const report = (state: string) => t('assignmentReportShort', { state: valueLabel(t, 'report', state) })
-  return <ul className="dt-list">{ticket.assignments.slice().reverse().map((item, index) => <li key={item.id} className="dt-row">
+  return <ul className="dt-list">{ticket.assignments.slice().reverse().map((item, index) => <li key={item.id} data-slot="settings-row" className="settings-row dt-row">
     <Dot state={item.state === 'running' ? reportDot(item.report?.state) : 'idle'} label={valueLabel(t, 'assignment', item.state)} />
-    <div className="dt-row-main">
-      <div className="dt-row-title">{t('assignmentNumber', { number: ticket.assignments.length - index })}</div>
-      <div className="dt-row-meta">
+    <div className="settings-row-text dt-row-main">
+      <div className="settings-row-title dt-row-title">{t('assignmentNumber', { number: ticket.assignments.length - index })}</div>
+      <div className="settings-row-description dt-row-meta">
         {/* A running Assignment whose worker reported a non-progress state has ended its turn; show that report as its tag and end its span there. */}
         {item.turnEndedAt && item.report ? <Tag tone="neutral">{report(item.report.state)}</Tag> : <Tag tone={item.state === 'running'
           ? 'info'
@@ -82,10 +82,10 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
   const facts = ticket.basis.facts.filter(item => !(item.name === 'sender' && item.value === actor))
   const direction = decision?.direction
   const rows: [string, ReactNode][] = decision ? [
-    [t('term.trigger'), <SharedButton variant="ghost" size="sm" type="button" className="dt-trigger-link" onClick={() => navigate({ page: 'trigger', id: decision.thread,
+    [t('term.trigger'), <SharedButton variant="link" size="content" type="button" className="flex-col items-start gap-1 w-full p-0 justify-start text-left" onClick={() => navigate({ page: 'trigger', id: decision.thread,
       query: { trigger: decision.triggerIds[0] ?? '' } })}>
       <span className="dt-trigger-text">{readableMarkers(t, decision.preview) || t('empty')}</span>
-      <span className="dt-row-meta"><span>{valueLabel(t, 'source', mandate.actor.source)} · {actor}</span><When at={decision.at} /></span>
+      <span className="settings-row-description dt-row-meta"><span>{valueLabel(t, 'source', mandate.actor.source)} · {actor}</span><When at={decision.at} /></span>
     </SharedButton>],
     [t('term.decision'), <div className="dt-kv-stack">
       <span>{decisionMark(t, decision.outcome).label}</span>
@@ -98,7 +98,7 @@ function MandateDetails({ ticket, actor }: { ticket: TicketPageView; actor: stri
           { evidence: direction.evidence })}</Hint>}
     </div>],
   ] : []
-  const version = <SharedButton variant="ghost" size="sm" type="button" className="dt-textlink dt-mono" onClick={() => navigate(settingsRoute('eval',
+  const version = <SharedButton variant="link" size="content" type="button" className="dt-textlink dt-mono p-0 justify-start text-left" onClick={() => navigate(settingsRoute('eval',
     { version: mandate.policyVersion }))}>{mandate.policyVersion.slice(0, 8)}</SharedButton>
   return <Section title={t('mandateDetails')} icon="shield">
     <KeyValues rows={[...rows, [t('term.scope'), legacy ? t('legacyScopeShort') : mandate.scope || t('empty')],
@@ -112,7 +112,7 @@ export function TicketPage({ id }: { id: string }) {
   const { data, error, reload } = usePoll(() => call('GET tickets/:id', { id }), [id])
   const after = async (request: Promise<unknown>) => { await request; await reload() }
   if (!data) return <><PageHead
-    title={t('term.ticket')} />{error instanceof ApiError && error.missing ? <Hint>{t('ticketNotFound')}</Hint> : <LoadState
+    title={t('term.ticket')} />{error instanceof ApiError && error.missing ? <Empty>{t('ticketNotFound')}</Empty> : <LoadState
       error={error} loading />}</>
   const status = ticketMark(t, data)
   const actor = actorName(t, data.mandate.actor)
@@ -136,7 +136,7 @@ export function TicketPage({ id }: { id: string }) {
       {data.sessionId && <SessionButton variant="outline" sessionId={data.sessionId} />}
     </PageHead>
     {error && <LoadState error={error} loading={false} />}
-    <div className="dt-row-meta dt-status-line">
+    <div className="settings-row-description dt-row-meta dt-status-line">
       <StageMark state={status.dot} icon={status.icon} label={status.label} />
       <LabelValue label={t('ticketMandateLabel')} value={valueLabel(t, 'strength', data.mandate.strength)} />
       <LabelValue label={t('ticketActorLabel')} value={`${valueLabel(t, 'source', data.mandate.actor.source)} · ${actor}`} />
