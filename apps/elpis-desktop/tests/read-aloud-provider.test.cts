@@ -17,10 +17,17 @@ function fixture() {
   const source = fs.readFileSync(path.join(__dirname, '../components/read-aloud.tsx'), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const module = { exports: {} as { ReadAloud(options: { enabled: boolean; children: null }): { props: { value: AudioContext | null } } } };
-  const imports = (id: string) => id === 'react' ? hooks : id === '@/lib/api' ? { sessionReady: async () => {}, api: async () => ({ available }) }
+  const imports = (id: string): unknown => id === './read-aloud-text.ts' ? helpers() : id === 'react' ? hooks : id === '@/lib/api' ? { sessionReady: async () => {}, api: async () => ({ available }) }
     : id === '@/lib/remote-audio' ? { playRemoteAudio: () => ({}) }
     : id === '@/lib/love-spot-audio' ? { READ_ALOUD_AUDIO: { available: false } }
     : id === '@/lib/error-text.mts' ? { errorText: (error: { message?: string } | null, fallback: string) => error?.message || fallback } : require(id);
+  const helpers = () => {
+    const text = fs.readFileSync(path.join(__dirname, '../components/read-aloud-text.ts'), 'utf8');
+    const compiled = ts.transpileModule(text, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+    const helper = { exports: {} };
+    compileFunction(compiled, ['require', 'module', 'exports'])(imports, helper, helper.exports);
+    return helper.exports;
+  };
   compileFunction(code, ['require', 'module', 'exports'])(imports, module, module.exports);
   const previousWindow = global.window;
   Reflect.set(global, 'window', { addEventListener: (name: string, callback: () => void) => listeners.set(name, callback), removeEventListener: (name: string) => listeners.delete(name) });

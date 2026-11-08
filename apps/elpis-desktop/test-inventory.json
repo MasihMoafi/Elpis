@@ -179,7 +179,7 @@
     "bridge/recorded-changes.test.mts",
     "bridge/github-connector.test.mts",
     "bridge/helper-desktop.test.mts",
-    "bridge/improve.test.mts",
+    "bridge/improve-source.test.mts",
     "bridge/love-agents.test.mts",
     "bridge/love-interview.test.mts",
     "bridge/love-interview-visibility.test.mts",
