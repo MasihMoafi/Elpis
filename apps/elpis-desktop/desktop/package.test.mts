@@ -21,6 +21,7 @@ test("Mother runtime modules and instruction assets ship together", async () => 
       file.includes("fixtures/") ||
       path.basename(file) === "fixtures.mts" ||
       file.endsWith(".test.mts") ||
+      file.endsWith(".fixtures.mts") ||
       file === "test-support.mts"
     )
       continue;
@@ -44,7 +45,7 @@ test("the package holds every local file its entry points import", async () => {
     const name = pending.pop()!;
     if (seen.has(name)) continue;
     seen.add(name);
-    const text = (await fs.readFile(path.join(root, name), "utf8")).replace(/^import type .*;$/gm, "");
+    const text = (await fs.readFile(path.join(root, name), "utf8")).replace(/^import type [^;]*;$/gm, "");
     for (const [, target] of text.matchAll(/(?:require\(|from |import\()\s*['"](\.{1,2}\/[^'"]+)['"]/g))
       pending.push(path.posix.normalize(path.posix.join(path.posix.dirname(name), target!)));
   }
