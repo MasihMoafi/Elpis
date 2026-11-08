@@ -1,7 +1,7 @@
 name: Binary size report
 
-# Measures only: builds the TUI + engine with size settings and prints the result. It ships nothing.
-# Results so far: installed 319.6 MB; opt-level=s, panic=abort, thin LTO 148 MB (33 MB under xz).
+# Measures only: compares the smallest build with the published v0.5.1 binary. It ships nothing.
+# Sizes so far: installed 319.6 MiB; opt-level=s 141 MiB; opt-level=z with fat LTO 90 MiB (26 MiB under xz).
 on:
   push:
     branches: [size-report]
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 jobs:
-  size-build:
+  speed:
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -22,7 +22,7 @@ jobs:
       CARGO_PROFILE_RELEASE_LTO: fat
       CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '1'
       CARGO_PROFILE_RELEASE_DEBUG: 'false'
-      CARGO_PROFILE_RELEASE_STRIP: 'false'
+      CARGO_PROFILE_RELEASE_STRIP: 'true'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
       - name: Install build tools
@@ -33,30 +33,69 @@ jobs:
       - name: Build for size
         working-directory: codex-rs
         run: cargo build --release --locked -p codex-cli --bin codex
-      - name: Size by package
-        working-directory: codex-rs/target/release
+      - name: Fetch the published binary
+        run: |
+          mkdir bench
+          curl --fail --location --silent --show-error --output bench/normal \
+            https://github.com/MasihMoafi/Elpis/releases/download/v0.5.1/elpis-linux-x86_64
+          chmod +x bench/normal
+          install -m 0755 codex-rs/target/release/codex bench/small
+          ls -l bench
+      - name: Compare speed
+        working-directory: bench
         shell: python
         run: |
-          import collections, re, subprocess
-          out = subprocess.run(['nm', '-S', '-t', 'd', '--demangle=rust', 'codex'],
-                               capture_output=True, text=True, check=True).stdout
-          totals = collections.Counter()
-          for line in out.splitlines():
-              parts = line.split(None, 3)
-              if len(parts) != 4 or parts[2] not in 'tTwW':
-                  continue
-              match = re.match(r'[<&\s*]*(?:impl\s+)?(?:dyn\s+)?([A-Za-z_][A-Za-z0-9_]*)::', parts[3])
-              totals[match.group(1) if match else '(other)'] += int(parts[1])
-          mb = 1024 * 1024
-          print(f'code total {sum(totals.values()) / mb:.1f} MB')
-          for name, size in totals.most_common(40):
-              print(f'{size / mb:8.2f} MB  {name}')
-      - name: Report the size
-        working-directory: codex-rs/target/release
-        run: |
-          strip codex
-          ./codex --version
-          ls -l codex
-          size -A codex | sort -k2 -nr | head -8
-          xz -9e -T2 --stdout codex | wc -c
-          zstd -19 -T0 --stdout codex | wc -c
+          import os, pathlib, shutil, statistics, subprocess, tempfile, time
+
+          home = tempfile.mkdtemp()
+          env = {**os.environ, 'HOME': home, 'CODEX_HOME': home, 'ELPIS_HOME': home}
+          lines = [f'line {i} of the benchmark file' for i in range(3000)]
+          original = '\n'.join(lines) + '\n'
+          body = ''.join(f'-{line}\n+{line} changed\n' for line in lines)
+          patch = f'*** Begin Patch\n*** Update File: target.txt\n@@\n{body}*** End Patch'
+          work = tempfile.mkdtemp()
+
+          def run(binary, *args):
+              start = time.perf_counter()
+              done = subprocess.run([binary, *args], env=env, cwd=work, capture_output=True, timeout=120)
+              elapsed = time.perf_counter() - start
+              if done.returncode:
+                  raise SystemExit(f'{args[:1]} failed: {done.stderr[-400:]!r}')
+              return elapsed
+
+          def version(binary):
+              return run(binary, '--version')
+
+          def features(binary):
+              return run(binary, 'features', 'list')
+
+          def apply_patch(binary):
+              pathlib.Path(work, 'target.txt').write_text(original)
+              return run(binary, '--codex-run-as-apply-patch', patch)
+
+          def app_server(binary):
+              request = b'{"id":1,"method":"initialize","params":{"clientInfo":{"name":"bench","title":"b","version":"1"}}}\n'
+              start = time.perf_counter()
+              process = subprocess.Popen([binary, 'app-server'], env=env, cwd=work, stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+              process.stdin.write(request)
+              process.stdin.flush()
+              reply = process.stdout.readline()
+              elapsed = time.perf_counter() - start
+              process.kill()
+              process.wait()
+              if not reply:
+                  raise SystemExit('app-server gave no reply')
+              return elapsed
+
+          binaries = {'normal': os.path.abspath('normal'), 'small': os.path.abspath('small')}
+          for name, measure, rounds in [('version', version, 40), ('features list', features, 20),
+                                        ('apply 3000-line patch', apply_patch, 20),
+                                        ('engine start to first reply', app_server, 15)]:
+              results = {key: [] for key in binaries}
+              for _ in range(rounds):
+                  for key, binary in binaries.items():
+                      results[key].append(measure(binary) * 1000)
+              normal = statistics.median(results['normal'])
+              small = statistics.median(results['small'])
+              print(f'RESULT {name}: normal {normal:.1f} ms, small {small:.1f} ms, ratio {small / normal:.2f}')
