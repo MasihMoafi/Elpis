@@ -471,6 +471,7 @@
     "tests/documents.runtime.mts",
     "tests/edit-fork-real.test.cts",
     "tests/love-dock.test.cts",
-    "tests/full-access.runtime.cts"
+    "tests/full-access.runtime.cts",
+    "tests/project-subagents.runtime.mts"
   ]
 }

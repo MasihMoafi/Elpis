@@ -248,6 +248,7 @@ export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscrip
           return;
         }
         if (added.length) {
+          await markHelpers({ data: added });
           // Each goes before the first engine thread that sorts after it; the engine's own order stays.
           const field = listField(req);
           const value = (t: EngineThread) => t[field] ?? t.updatedAt ?? 0;

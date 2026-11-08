@@ -183,6 +183,24 @@ if (process.argv.includes("app-server")) {
     const f = await setup(t, { approvalPolicy: policy, threads: { chat: { thread: thread('chat', 1) } } }, { chat: saved('Provider history') });
     const response = resultOf(await f.call('thread/resume', { threadId: 'chat', approvalPolicy: policy }));
     assert.ok(JSON.stringify(response.thread.turns).includes('Provider history'), 'the provider route must merge its durable chat history');
+
+  test("fallback history keeps delegated provider chats under their parent", async t => {
+    const parent = thread("parent", 10, { preview: "Project owner" });
+    const helper = thread("helper", 30);
+    const ordinary = thread("ordinary", 20);
+    const fixture = await setup(t, {
+      threads: { parent: { thread: parent }, helper: { thread: helper }, ordinary: { thread: ordinary } },
+      pages: { first: { data: [parent], nextCursor: null } },
+    }, {
+      helper: saved("Read the page", { model: "agy/gemini" }), ordinary: saved("My own chat"),
+      _delegations: { helper: { parentThreadId: "parent", model: "agy/gemini" } },
+    });
+    const response = await fixture.call("thread/list", list);
+    assert.ifError(response.error);
+    assert.deepEqual(response.result.data.map(row => row.id), ["helper", "ordinary", "parent"]);
+    assert.equal(response.result.data[0].parentThreadId, "parent", "fallback additions carry the recorded parent");
+    assert.equal(response.result.data[0].model, "agy/gemini");
+    assert.equal(response.result.data[1].parentThreadId, undefined, "a person's own chat remains independent");
   });
 
   test("lightweight provider resume excludes history and independently pages summary turns", async t => {

@@ -41,7 +41,7 @@ const readJson = async (file: string): Promise<Record<string, unknown>> => { try
 /** Index timestamped ID references once, then only appended bytes. No transcript content is retained or written.
  * The small desktop-owned index survives restarts, including negative lookups. */
 export class SessionCreators {
-  #file: string; #home: string; #appHome: string; #scans?: Record<string, Scan>; #catalog = new Map<string, Thread>(); #store: Record<string, ClaudeSession> = {}; #storeKey?: string | null; #sources = new Map<string, string | null>();
+  #file: string; #home: string; #appHome: string; #scans?: Record<string, Scan>; #catalog = new Map<string, Thread>(); #store: Record<string, ClaudeSession> = {}; #delegations: Record<string, string> = {}; #storeKey?: string | null; #sources = new Map<string, string | null>();
   constructor(file: string, { home = path.dirname(file), appHome = os.homedir() }: { home?: string; appHome?: string } = {}) {
     this.#file = file; this.#home = home; this.#appHome = appHome;
   }
@@ -68,15 +68,26 @@ export class SessionCreators {
     }));
     const children = threads.filter(thread => !linked.has(thread.id) && thread.threadSource !== 'user' && !agentParentId(thread) && Number.isFinite(seconds(thread.createdAt)));
     if (!children.length) return [];
-    this.#scans ??= (await readJson(this.#file)).scans as Record<string, Scan> ?? {};
     const parents = threads.filter(thread => thread.threadSource === 'user' && !agentParentId(thread));
-    if (parents.some(thread => thread.model?.startsWith('claude/'))) {
-      const file = path.join(this.#home, 'elpis-claude/sessions.json');
-      const stat = await fs.promises.stat(file).catch(() => null), key = stat && `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
-      if (key !== this.#storeKey) { this.#store = key ? await readJson(file) as Record<string, ClaudeSession> : {}; this.#storeKey = key; }
+    const file = path.join(this.#home, 'elpis-claude/sessions.json');
+    const stat = await fs.promises.stat(file).catch(() => null), key = stat && `${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+    if (key !== this.#storeKey) {
+      const saved = key ? await readJson(file) : {};
+      this.#store = saved as Record<string, ClaudeSession>; this.#storeKey = key;
+      const helpers = saved._delegations;
+      this.#delegations = helpers && typeof helpers === 'object' && !Array.isArray(helpers)
+        ? Object.fromEntries(Object.entries(helpers).flatMap(([id, value]: [string, unknown]) => value && typeof value === 'object' && 'parentThreadId' in value && typeof value.parentThreadId === 'string' ? [[id, value.parentThreadId]] : [])) : {};
     }
     const store = this.#store;
     const found = new Map<string, { child: string; maker: string; at: number }>(); let changed = false;
+    // Provider helpers have explicit lineage even when the fallback engine list omits it. Use that registry before
+    // transcript inference: a long-running tool need not print the new ID within the creation-time window.
+    for (const child of children) {
+      const maker = this.#delegations[child.id];
+      if (maker) found.set(child.id, { child: child.id, maker, at: -Infinity });
+    }
+    if (children.every(child => found.has(child.id))) return [...found.values()];
+    this.#scans ??= (await readJson(this.#file)).scans as Record<string, Scan> ?? {};
     for (const parent of parents) {
       const files: (string | undefined)[] = [parent.path];
       const saved = store[parent.id];
