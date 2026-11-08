@@ -183,6 +183,7 @@ if (process.argv.includes("app-server")) {
     const f = await setup(t, { approvalPolicy: policy, threads: { chat: { thread: thread('chat', 1) } } }, { chat: saved('Provider history') });
     const response = resultOf(await f.call('thread/resume', { threadId: 'chat', approvalPolicy: policy }));
     assert.ok(JSON.stringify(response.thread.turns).includes('Provider history'), 'the provider route must merge its durable chat history');
+  });
 
   test("fallback history keeps delegated provider chats under their parent", async t => {
     const parent = thread("parent", 10, { preview: "Project owner" });
