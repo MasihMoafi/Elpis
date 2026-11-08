@@ -1,13 +1,31 @@
 'use strict';
 // E-20261108-IMPORT: use the real native importer, without credentials or inference.
-const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const readline = require('node:readline');
-const { spawn } = require('node:child_process');
-const { randomUUID } = require('node:crypto');
-const { setTimeout: delay } = require('node:timers/promises');
+import type { ExternalAgentConfigDetectResponse } from '../codex-rs/app-server-protocol/schema/typescript/v2/ExternalAgentConfigDetectResponse.ts';
+import type { ExternalAgentConfigImportResponse } from '../codex-rs/app-server-protocol/schema/typescript/v2/ExternalAgentConfigImportResponse.ts';
+import type { ExternalAgentConfigImportHistoriesReadResponse } from '../codex-rs/app-server-protocol/schema/typescript/v2/ExternalAgentConfigImportHistoriesReadResponse.ts';
+import type { SessionMigration } from '../codex-rs/app-server-protocol/schema/typescript/v2/SessionMigration.ts';
+import type { ThreadReadResponse } from '../codex-rs/app-server-protocol/schema/typescript/v2/ThreadReadResponse.ts';
+import type { ThreadForkResponse } from '../codex-rs/app-server-protocol/schema/typescript/v2/ThreadForkResponse.ts';
+
+type Results = {
+  initialize: unknown;
+  'externalAgentConfig/detect': ExternalAgentConfigDetectResponse;
+  'externalAgentConfig/import': ExternalAgentConfigImportResponse;
+  'externalAgentConfig/import/readHistories': ExternalAgentConfigImportHistoriesReadResponse;
+  'thread/read': ThreadReadResponse;
+  'thread/fork': ThreadForkResponse;
+};
+type Waiter = { resolve(result: unknown): void; reject(error: unknown): void };
+type Message = { id?: number; error?: unknown; result?: unknown };
+
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs') = require('node:fs');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const readline: typeof import('node:readline') = require('node:readline');
+const { spawn }: typeof import('node:child_process') = require('node:child_process');
+const { randomUUID }: typeof import('node:crypto') = require('node:crypto');
+const { setTimeout: delay }: typeof import('node:timers/promises') = require('node:timers/promises');
 
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'provide the engine binary');
@@ -20,7 +38,7 @@ for (const directory of [elpisHome, project]) fs.mkdirSync(directory, { recursiv
 fs.mkdirSync(path.join(elpisHome, 'elpis-claude'), { recursive: true });
 fs.writeFileSync(path.join(elpisHome, 'elpis-claude/claude-accounts.json'), JSON.stringify({ activeId: accountId, ids: [accountId] }));
 fs.writeFileSync(path.join(elpisHome, 'config.toml'), 'model="gpt-5.5"\ncheck_for_update_on_startup=false\n');
-function seed(directory, title) {
+function seed(directory: string, title: string) {
   const id = randomUUID(), file = path.join(directory, 'projects/demo', `${id}.jsonl`);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const records = ['user', 'assistant'].map(role => JSON.stringify({
@@ -32,39 +50,39 @@ function seed(directory, title) {
 }
 const managed = seed(accountHome, 'Managed Claude chat');
 const unknown = seed(path.join(elpisHome, 'elpis-claude/claude-accounts', unknownId), 'Unregistered account');
-const originals = new Map([managed, unknown].map(file => [file, fs.readFileSync(file)]));
-const env = { ...process.env, HOME: home, ELPIS_HOME: elpisHome, CODEX_HOME: elpisHome, CODEX_AUTH_HOME: elpisHome,
+const originals = new Map<string, Buffer>([managed, unknown].map(file => [file, fs.readFileSync(file)]));
+const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, ELPIS_HOME: elpisHome, CODEX_HOME: elpisHome, CODEX_AUTH_HOME: elpisHome,
   XDG_CONFIG_HOME: path.join(home, '.config'), XDG_CACHE_HOME: path.join(home, '.cache'), XDG_DATA_HOME: path.join(home, '.local/share') };
 for (const key of Object.keys(env)) if (/^(CLAUDE_|ANTHROPIC_|OPENAI_|CODEX_API_KEY|ELPIS_CONFIG_DIR)/.test(key)) delete env[key];
 const child = spawn(binary, ['app-server'], { cwd: project, env, stdio: ['pipe', 'pipe', 'pipe'] });
-const exited = new Promise(resolve => child.once('exit', resolve));
+const exited = new Promise<void>(resolve => child.once('exit', () => resolve()));
 let nextId = 0, stderr = '';
-const pending = new Map();
+const pending = new Map<number, Waiter>();
 child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-20000); });
 child.on('error', error => { for (const waiter of pending.values()) waiter.reject(error); });
 child.on('exit', () => { for (const waiter of pending.values()) waiter.reject(Error('engine exited')); });
 const lines = readline.createInterface({ input: child.stdout });
 lines.on('line', line => {
-  const message = JSON.parse(line), waiter = pending.get(message.id);
-  if (waiter) {
+  const message: Message = JSON.parse(line), waiter = message.id === undefined ? undefined : pending.get(message.id);
+  if (waiter && message.id !== undefined) {
     pending.delete(message.id);
     message.error ? waiter.reject(Error(JSON.stringify(message.error))) : waiter.resolve(message.result);
   }
 });
-function request(method, params = {}) {
+function request<M extends keyof Results>(method: M, params: object = {}): Promise<Results[M]> {
   const id = ++nextId;
-  return new Promise((resolve, reject) => {
+  return new Promise<Results[M]>((resolve, reject) => {
     const timer = setTimeout(() => { pending.delete(id); reject(Error(`timeout: ${method}`)); }, 20000);
     pending.set(id, {
-      resolve: result => { clearTimeout(timer); resolve(result); },
+      resolve: result => { clearTimeout(timer); resolve(result as Results[M]); },
       reject: error => { clearTimeout(timer); reject(error); },
     });
     child.stdin.write(JSON.stringify({ id, method, params }) + '\n');
   });
 }
 const detect = async () => (await request('externalAgentConfig/detect', { includeHome: true, source: 'claude' }))
-  .items.filter(item => item.itemType === 'SESSIONS').flatMap(item => item.details.sessions);
-async function importSessions(sessions) {
+  .items.filter(item => item.itemType === 'SESSIONS').flatMap(item => { assert(item.details); return item.details.sessions; });
+async function importSessions(sessions: SessionMigration[]) {
   const { importId } = await request('externalAgentConfig/import', { source: 'claude', migrationItems: [
     { itemType: 'SESSIONS', description: 'Claude Code chats', cwd: null, details: { sessions } },
   ] });
@@ -93,6 +111,7 @@ async function importSessions(sessions) {
     assert.equal(done.failures.length, 0, JSON.stringify(done.failures));
     assert.equal(done.successes.length, 2, 'both account and default chats import');
     for (const success of done.successes) {
+      assert(success.target && success.title, 'an imported session has a target and title');
       const { thread } = await request('thread/read', { threadId: success.target, includeTurns: true });
       const text = JSON.stringify(thread.turns);
       assert(text.includes(success.title), 'user message is preserved');

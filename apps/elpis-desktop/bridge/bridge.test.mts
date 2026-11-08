@@ -732,7 +732,7 @@ test('configured connection models use only that endpoint and never authorize th
     await assert.rejects(client.createThread({ model: 'unique-local-book-model' }), /current Elpis model list/);
     // A built-in key provider (OpenRouter with a pasted key) is a connection too, not in config.toml (7 Nov).
     await client.createThread({ provider: 'openrouter', model: 'deepseek/deepseek-v4.1-flash' });
-    assert.equal(socket.sent.findLast(message => message.method === 'thread/start').params.modelProvider, 'openrouter');
+    assert.equal(required(required(socket.sent.findLast(message => message.method === 'thread/start')).params).modelProvider, 'openrouter');
     await assert.rejects(client.createThread({ model: 'deepseek/deepseek-v4.1-flash' }), /current Elpis model list/);
     await assert.rejects(client.models({ provider: 'missing' }), /saved API address/);
     requirementsRead.requirements = { modelProvider: 'openai' };
@@ -2894,15 +2894,19 @@ test('a pasted provider key is saved privately in the Elpis home and never sent 
     required(configRead.layers[0]).name.file = path.join(root, 'config.toml');
     const before = (await client.providerSettings()).providers.find(provider => provider.id === 'openrouter');
     assert.deepEqual([required(before).auth.keySet, required(before).auth.acceptsKey], [false, true]);
+    assert.equal(required((await client.providers()).openrouter.find(provider => provider.id === 'openrouter')).keySet, false);
     const after = await client.saveProviderKey({ provider: 'openrouter', key: '  sk-or-fixture-secret  ' });
     assert.deepEqual(required(after.providers.find(provider => provider.id === 'openrouter')).auth, { source: 'saved', keySet: true, envKey: 'APP_TEST_OPENROUTER_KEY', acceptsKey: true });
     assert(!JSON.stringify(after).includes('sk-or-fixture-secret'), 'the key is never returned');
+    const providers = await client.providers();
+    assert.equal(required(providers.openrouter.find(provider => provider.id === 'openrouter')).keySet, true);
+    assert(!JSON.stringify(providers).includes('sk-or-fixture-secret'), 'the connection list never returns the key');
     const file = path.join(root, 'provider-keys.json');
     assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), { openrouter: 'sk-or-fixture-secret' });
     assert.equal((await fs.stat(file)).mode & 0o777, 0o600, 'readable by its owner alone');
     await assert.rejects(client.saveProviderKey({ provider: 'openrouter', key: 'two words' }), /visible ASCII/);
     await assert.rejects(client.saveProviderKey({ provider: 'openai', key: 'sk-x' }), /does not take an API key/);
-  } finally { client.close(); }
+  } finally { client.close(); await fs.rm(root, { recursive: true, force: true }); }
 });
 
 test('fork chat from here copies history through the chosen turn and names the copy', async () => {

@@ -24,8 +24,13 @@ test('a provider key is saved privately, replaced and cleared without touching t
 
 test('a saved OpenRouter key shows as an OpenRouter connection with its key set', async () => {
   const { providersSnapshot } = await import('./elpis-features.mts');
-  const none = providersSnapshot({ config: { model_providers: {} } as never, models: [] });
+  const none = providersSnapshot({ config: { model_providers: {} }, models: [] });
   assert.deepEqual(none.openrouter, []);
-  const saved = providersSnapshot({ config: { model_providers: {} } as never, models: [], saved: new Set(['openrouter']) });
+  const saved = providersSnapshot({ config: { model_providers: {} }, models: [], saved: new Set(['openrouter']) });
   assert.deepEqual(saved.openrouter.map(item => [item.id, item.keySet]), [['openrouter', true]]);
+  const config = { model_providers: { openrouter: { name: 'Custom OpenRouter', base_url: 'https://openrouter.ai/api/v1', env_key: 'MISSING_OPENROUTER_KEY' } } };
+  const configured = providersSnapshot({ config, models: [], env: {} });
+  assert.deepEqual(configured.openrouter.map(item => [item.name, item.keySet]), [['Custom OpenRouter', false]]);
+  const configuredSaved = providersSnapshot({ config, models: [], env: {}, saved: new Set(['openrouter']) });
+  assert.deepEqual(configuredSaved.openrouter.map(item => [item.name, item.keySet]), [['Custom OpenRouter', true]]);
 });

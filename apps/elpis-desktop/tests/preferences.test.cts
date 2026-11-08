@@ -32,6 +32,8 @@ type Modules = {
 };
 type MockResponse = { ok: boolean; status?: number; json(): Promise<unknown> };
 type Notice = { title: string; options: NotificationOptions };
+const press = (key: string, code: string, modifiers: Partial<Pick<KeyboardEvent, 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>> = {}) =>
+  ({ key, code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
 
 const root = path.resolve(__dirname, '..');
 test('the history shortcut remains a generated copy of its shared source', () => {
@@ -116,7 +118,6 @@ test('OBSRM: empty, partial, repeated and long legacy orders load through the re
 test('custom app shortcuts replace defaults, disable, reset and reload without changing typing or native gestures', () => {
   browser(); const use = loader();
   const preferences = use('lib/preferences.ts'), shortcuts = use('lib/shortcuts.ts');
-  const press = (key: string, code: string, modifiers = {}) => ({ key, code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers } as KeyboardEvent);
   const original = press(',', 'Comma', { ctrlKey: true });
   const custom = press('y', 'KeyY', { ctrlKey: true, altKey: true });
   assert.deepEqual(shortcuts.shortcutFor(original, true), { id: 'settings' });
@@ -144,7 +145,6 @@ test('custom app shortcuts replace defaults, disable, reset and reload without c
 test('focused text keeps native undo and redo even when app bindings conflict', () => {
   browser(); const use = loader();
   const preferences = use('lib/preferences.ts'), shortcuts = use('lib/shortcuts.ts');
-  const press = (key, code, modifiers = {}) => ({ key, code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
   preferences.savePreferences({ shortcutBindings: JSON.stringify({ archive: 'Ctrl+Z', settings: 'Ctrl+Shift+Z', 'new-chat': 'Ctrl+Y', rename: 'Ctrl+Alt+Y' }) });
   for (const event of [
     press('z', 'KeyZ', { ctrlKey: true }),
@@ -169,7 +169,6 @@ test('focused text keeps native undo and redo even when app bindings conflict', 
 test('shortcut search preserves native text keys across keyboard layouts', () => {
   browser(); const use = loader();
   const preferences = use('lib/preferences.ts'), shortcuts = use('lib/shortcuts.ts');
-  const press = (key, code, modifiers = {}) => ({ key, code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...modifiers });
   const ctrl = { ctrlKey: true };
   for (const event of [press('z', 'KeyZ', ctrl), press('Z', 'KeyZ', { ...ctrl, shiftKey: true }), press('y', 'KeyY', ctrl), press('ظ', 'KeyZ', ctrl), press('غ', 'KeyY', ctrl), press('ر', 'KeyV', ctrl)]) {
     assert.equal(shortcuts.shortcutSearchKey(event), null, 'search keeps native editing keys');

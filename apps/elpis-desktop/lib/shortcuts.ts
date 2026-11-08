@@ -121,7 +121,7 @@ export function shortcutConflict(id: string, binding: string, preferences: Pick<
 }
 
 /** Which app shortcut a key event triggers. Undo and copy-folder retain their text-field behavior. */
-export function shortcutFor(event: KeyboardEvent, typing: boolean, textContext: "editable" | "read-only" | "none" = typing ? "editable" : "none"): { id: string; index?: number } | null {
+export function shortcutFor(event: KeyPress, typing: boolean, textContext: "editable" | "read-only" | "none" = typing ? "editable" : "none"): { id: string; index?: number } | null {
   if (event.defaultPrevented || event.isComposing) return null;
   if (textContext !== "none" && isNativeTextShortcut(event, { editable: textContext === "editable" })) return null;
   if (!event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && !/^F\d+$/.test(event.code)) return null;
@@ -135,7 +135,7 @@ export function shortcutFor(event: KeyboardEvent, typing: boolean, textContext: 
   return hit && Object.hasOwn(bindings, hit.id) ? null : hit;
 }
 
-function defaultShortcutFor(event: KeyboardEvent, typing: boolean): { id: string; index?: number } | null {
+function defaultShortcutFor(event: KeyPress, typing: boolean): { id: string; index?: number } | null {
   const ctrl = event.ctrlKey || event.metaKey, key = event.key.toLowerCase();
   if (ctrl && !event.altKey && !event.shiftKey) {
     if (key === "n") return { id: "new-chat" };

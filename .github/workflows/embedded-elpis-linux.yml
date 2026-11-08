@@ -274,7 +274,7 @@ jobs:
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-external-agent-migration --lib detect::sessions::cla::tests
-          node ../scripts/claude-import-runtime.test.cjs "$PWD/target/release/elpis"
+          node ../scripts/claude-import-runtime.test.cts "$PWD/target/release/elpis"
       - name: Record diagnostic runtime provenance
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
         working-directory: codex-rs/target/release
