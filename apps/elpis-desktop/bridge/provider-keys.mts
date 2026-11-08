@@ -39,15 +39,17 @@ export function savedProviderKey(home: string | null | undefined, id: string | u
   try { return home ? loadProviderKeys(home)[String(id)] ?? null : null; } catch { return null; }
 }
 
-/** Saves one key: validated as the terminal does, written to a private temporary file, then renamed into place. */
+/** Saves one key (or, with `null`, removes it): validated as the terminal does, written to a private temporary file,
+ *  then renamed into place. */
 export function saveProviderKey(home: unknown, id: unknown, key: unknown) {
   if (typeof id !== 'string' || !PROVIDER_ID.test(id)) throw new BridgeError('Choose a provider for this key.');
   const value = typeof key === 'string' ? key.trim() : '';
-  if (!value || value.length > MAX_KEY_BYTES || ![...value].every(char => char.charCodeAt(0) >= 33 && char.charCodeAt(0) <= 126)) {
+  if (key !== null && (!value || value.length > MAX_KEY_BYTES || ![...value].every(char => char.charCodeAt(0) >= 33 && char.charCodeAt(0) <= 126))) {
     throw new BridgeError('An API key must be 1-8192 visible ASCII characters.');
   }
   ownedDirectory(home);
-  const keys = { ...loadProviderKeys(home), [id]: value };
+  const { [id]: _old, ...others } = loadProviderKeys(home);
+  const keys = key === null ? others : { ...others, [id]: value };
   const temporary = path.join(home, `.${FILE_NAME}.${crypto.randomBytes(6).toString('hex')}`);
   const handle = fs.openSync(temporary, 'wx', 0o600);
   try {

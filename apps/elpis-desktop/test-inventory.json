@@ -203,7 +203,8 @@
     "bridge/router/executor/tool-runtime.test.mts",
     "bridge/router/sources/github-poll.test.mts",
     "components/mother/panel.test.mts",
-    "components/mother/marks.test.mts"
+    "components/mother/marks.test.mts",
+    "bridge/provider-keys.test.mts"
   ],
   "desktop": [
     "desktop/app-menu.test.cts",

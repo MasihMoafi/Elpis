@@ -4,6 +4,7 @@ import { CONTEXT_SWITCH_KEYS, cacheUse, contextLedger, contextSwitchesSnapshot, 
 import fs from 'node:fs';
 import path from 'node:path';
 import { sessionContextFiles } from './session-context.mts';
+import { BUILT_IN_KEY_PROVIDERS } from './provider-settings.mts';
 import { internal_decorate } from './client-thread-list.mts';
 import { internal_mutate } from './client-mutation.mts';
 import { internal_rpc } from './client-rpc.mts';
@@ -147,7 +148,9 @@ export async function internal_providerModel(this: DesktopClient, clientState: C
     if (model !== undefined && provider) {
       const current = await this.providerSettings();
       // A custom connection, or the engine's gateway route (e.g. the Anthropic credits), whose models it lists itself.
-      if (current.providers.some(entry => entry.id === provider && (entry.editable || entry.gateway))) {
+      // A built-in key provider (OpenRouter, Anthropic, Gemini with a pasted key) is a connection too, though config.toml
+      // does not list it (7 Nov, live: Matilda refused an OpenRouter model chosen in her picker).
+      if (current.providers.some(entry => entry.id === provider && (entry.editable || entry.gateway)) || (typeof provider === 'string' && Object.hasOwn(BUILT_IN_KEY_PROVIDERS, provider))) {
         if (typeof model !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(model)) throw new BridgeError('Give a model ID supported by this API provider');
         if (/^(claude|agy|antigravity)\//i.test(model)) throw new BridgeError('Subscription model routes cannot be used with an API provider');
         return model;

@@ -9,9 +9,8 @@ commit=$(git -C "$R" rev-parse HEAD)
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)
 [[ "$built" == "$commit" ]] || { [[ -n "$built" ]] && git -C "$R" diff --quiet "$built" "$commit" -- apps/elpis-desktop ':!apps/elpis-desktop/scripts'; } \
   || { echo "apps/elpis-desktop/out is not built from $commit: run npm run build" >&2; exit 1; }
-installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)")
 if [[ -n "${ENGINE_DIR:-}" ]]; then codex=$ENGINE_DIR/codex; host=$ENGINE_DIR/codex-code-mode-host; bwrap=$ENGINE_DIR/bwrap
-else codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi
+else installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)"); codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi
 for f in "$codex" "$host" "$bwrap"; do [[ -x "$f" ]] || { echo "missing engine file: $f" >&2; exit 1; }; done
 bridge=$R/tools/elpis-claude
 [[ -d "$bridge/node_modules/@agentclientprotocol/claude-agent-acp" ]] || { echo "run npm ci --omit=dev in tools/elpis-claude" >&2; exit 1; }
@@ -62,6 +61,8 @@ TUI
 cat > "$ROOT/usr/bin/love-spot" <<'LOVELAUNCH'
 #!/usr/bin/env bash
 R=${LOVE_SPOT_ROOT:-/opt/love-spot}
+# The window names this package's launcher, so the dock shows Love Spot's icon (desktop/main-profile.cts).
+export LOVE_SPOT_DESKTOP=love-spot.desktop
 export ELPIS_ENGINE_BIN=${ELPIS_ENGINE_BIN:-$R/engine/elpis-next} ELPIS_TUI_BIN=${ELPIS_TUI_BIN:-$R/bin/elpis}
 if [[ -z "${ELPIS_NODE_BIN:-}" ]]; then
   node=$(command -v node || true)
@@ -86,7 +87,7 @@ Icon=love-spot
 Terminal=false
 Categories=Graphics;Development;
 StartupNotify=true
-StartupWMClass=excalidraw
+StartupWMClass=love-spot
 
 [Desktop Action new-page]
 Name=New page

@@ -22,7 +22,7 @@ Exec=love-spot %U
 Icon=love-spot
 Terminal=false
 Categories=Graphics;Development;
-StartupWMClass=excalidraw
+StartupWMClass=love-spot
 ENTRY
 gio trash "$A/meta"
 if [[ -d "$A/usr/lib/x86_64-linux-gnu" ]]; then gio trash "$A/usr"; fi

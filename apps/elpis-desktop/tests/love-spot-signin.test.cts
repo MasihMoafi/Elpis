@@ -3,27 +3,32 @@ const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cts');
 const { chooseOption, controlValue } = require('./controls.cts');
 
-type Route = { request(): { method(): string; postDataJSON(): { action: string; id: string; name: string; baseUrl: string; provider: string; key: string; credential?: { action: string; value?: string } } }; fulfill(options: { status: number; json: object }): Promise<void> };
+type Body = { action?: string; id?: string; name?: string; baseUrl?: string; provider?: string; key?: string; credential?: { action?: string; value?: string } };
+type FakeRoute = { request(): { method(): string; postDataJSON(): Body }; fulfill(response: { status: number; json: unknown }): Promise<void> };
 type Account = { id: string; label: string; email: string | null; plan: string | null; authenticated: boolean; duplicate: boolean; signingIn: boolean; error: null };
-type Provider = { id: string; name: string; baseUrl: string; wireApi: string; editable: boolean; auth: { source: string; keySet: boolean; envKey: null } };
+type Provider = { id: string | undefined; name: string | undefined; baseUrl: string | undefined; wireApi: string; editable: boolean; auth: { source: string; keySet: boolean; envKey: null } };
+type OpenRouterItem = { id: string | undefined; name: string | undefined; baseUrl: string | undefined; envKey: null; keySet: boolean };
+type State = { openaiSignedIn: boolean; claudeSignedOut: boolean; claudeActiveId: string; claudeAccounts: Account[]; openrouter: OpenRouterItem[];
+  providers: Provider[]; version: string; builtInKeys: Body[]; needsKeyOpenRouter: boolean };
+type Commands = { __commands?: { action: string; url?: string }[] };
 
 test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API keys; the standalone app offers Anthropic by key only', async () => {
-  const state = {
+  const state: State = {
     openaiSignedIn: false,
     claudeSignedOut: false,
     claudeActiveId: 'default',
     claudeAccounts: [
       { id: 'default', label: 'Default', email: 'masih@example.com', plan: 'max', authenticated: true, duplicate: false, signingIn: false, error: null },
-    ] as Account[],
-    openrouter: [] as { id: string; name: string; baseUrl: string; envKey: null; keySet: boolean }[],
-    providers: [] as Provider[],
+    ],
+    openrouter: [],
+    providers: [],
     version: 'v1',
-    builtInKeys: [] as { provider: string; key: string }[],
+    builtInKeys: [],
     needsKeyOpenRouter: true,
   };
 
   const f = await loveSpotFixture({
-    configureClient: (emitter: { settings: () => Promise<object> }) => {
+    configureClient: (emitter: { settings?: () => Promise<unknown> }) => {
       emitter.settings = async () => ({
         main: { model: 'sol', provider: 'openai' },
         background: {},
@@ -42,7 +47,7 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
   try {
     const { page } = f;
 
-    await page.route('**/api/providers', async (route: Route) => {
+    await page.route('**/api/providers', async (route: FakeRoute) => {
       if (route.request().method() === 'POST') {
         const body = route.request().postDataJSON();
         if (body.action === 'chatgpt') {
@@ -84,14 +89,12 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
       });
     });
 
-    await page.route('**/api/providers/claude-accounts', async (route: Route) => {
+    await page.route('**/api/providers/claude-accounts', async (route: FakeRoute) => {
       if (route.request().method() === 'POST') {
         const body = route.request().postDataJSON();
         if (body.action === 'login') {
-          const first = state.claudeAccounts[0];
-          if (!first) throw new Error('Missing default Claude account');
           state.claudeAccounts = [
-            first,
+            state.claudeAccounts[0]!,
             { id: 'claude-2', label: 'Claude 2', email: null, plan: null, authenticated: false, duplicate: false, signingIn: true, error: null },
           ];
           return route.fulfill({
@@ -104,24 +107,22 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
           });
         }
         if (body.action === 'code') {
-          const first = state.claudeAccounts[0];
-          if (!first) throw new Error('Missing default Claude account');
           state.claudeAccounts = [
-            first,
+            state.claudeAccounts[0]!,
             { id: 'claude-2', label: 'Claude 2', email: 'alt@example.com', plan: 'max', authenticated: true, duplicate: false, signingIn: false, error: null },
           ];
           state.claudeActiveId = 'claude-2';
           return route.fulfill({ status: 200, json: { activeId: state.claudeActiveId, accounts: state.claudeAccounts } });
         }
         if (body.action === 'select') {
-          state.claudeActiveId = body.id;
+          state.claudeActiveId = body.id ?? '';
           return route.fulfill({ status: 200, json: { activeId: state.claudeActiveId, accounts: state.claudeAccounts } });
         }
       }
       return route.fulfill({ status: 200, json: { activeId: state.claudeActiveId, accounts: state.claudeAccounts } });
     });
 
-    await page.route('**/api/providers/settings', async (route: Route) => {
+    await page.route('**/api/providers/settings', async (route: FakeRoute) => {
       if (route.request().method() === 'POST') {
         const body = route.request().postDataJSON();
         const keySet = body.credential?.action === 'replace' && Boolean(body.credential?.value);
@@ -136,7 +137,7 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
         };
         if (existing >= 0) state.providers[existing] = entry;
         else state.providers.push(entry);
-        if (body.id === 'openrouter' || body.baseUrl.includes('openrouter.ai')) {
+        if (body.id === 'openrouter' || body.baseUrl?.includes('openrouter.ai')) {
           state.openrouter = [{ id: body.id, name: body.name, baseUrl: body.baseUrl, envKey: null, keySet }];
         }
       }
@@ -160,14 +161,14 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
       });
     });
 
-    await page.route('**/api/providers/key', async (route: Route) => {
+    await page.route('**/api/providers/key', async (route: FakeRoute) => {
       const body = route.request().postDataJSON();
       state.builtInKeys.push(body);
       state.needsKeyOpenRouter = false;
       return route.fulfill({ status: 200, json: { ok: true } });
     });
 
-    await page.route('**/api/models?provider=openrouter*', async (route: Route) => {
+    await page.route('**/api/models?provider=openrouter*', async (route: FakeRoute) => {
       return route.fulfill({
         status: 200,
         json: { data: [{ id: 'openrouter/kimi-k2', model: 'openrouter/kimi-k2', displayName: 'Kimi K2 (OpenRouter)', inputModalities: ['text', 'image'] }] },
@@ -190,7 +191,7 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
     const openaiCard = dialog.locator('[data-provider="openai"]');
     assert.match(await openaiCard.innerText(), /Not signed in/);
     await openaiCard.getByRole('button', { name: 'Sign in with ChatGPT', exact: true }).click();
-    await page.waitForFunction(() => (window as Window & { __commands?: { action: string; url?: string }[] }).__commands?.some(c => c.action === 'external-url' && c.url?.startsWith('https://auth.openai.com/oauth/authorize')));
+    await page.waitForFunction(() => (window as unknown as Commands).__commands?.some(c => c.action === 'external-url' && c.url?.startsWith('https://auth.openai.com/oauth/authorize')));
     await openaiCard.getByText('Signed in with chatgpt').waitFor({ timeout: 6000 });
     assert.match(await openaiCard.innerText(), /masih@example\.com · pro plan/);
 
@@ -201,7 +202,7 @@ test('Love Spot signs in with ChatGPT, Claude subscription, OpenRouter and API k
     // 3. Claude subscription sign-in (add account + paste code + switch + sign out/in)
     const claudeCard = dialog.locator('[data-provider="claude"]');
     await claudeCard.getByRole('button', { name: 'Add Claude account', exact: true }).click();
-    await page.waitForFunction(() => (window as Window & { __commands?: { action: string; url?: string }[] }).__commands?.some(c => c.action === 'external-url' && c.url?.startsWith('https://claude.ai/oauth/authorize')));
+    await page.waitForFunction(() => (window as unknown as Commands).__commands?.some(c => c.action === 'external-url' && c.url?.startsWith('https://claude.ai/oauth/authorize')));
     const codeInput = claudeCard.getByLabel('Claude sign-in code', { exact: true });
     await codeInput.waitFor();
     await codeInput.fill('claude-oauth-code-123');

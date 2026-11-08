@@ -1,5 +1,5 @@
 import { BridgeError, object, text } from './validate.mts';
-import { acceptsPastedKey, configHome, privateConfigFile, providerDefinition, providerEdits, providerSettingsSnapshot } from './provider-settings.mts';
+import { BUILT_IN_KEY_PROVIDERS, acceptsPastedKey, configHome, privateConfigFile, providerDefinition, providerEdits, providerSettingsSnapshot } from './provider-settings.mts';
 import { hooksSnapshot, mcpSnapshot, optionEdits, providersSnapshot, settingsSnapshot } from './elpis-features.mts';
 import { saveProviderKey, savedProviderKey, savedProviderKeyIds } from './provider-keys.mts';
 
@@ -119,12 +119,12 @@ export async function impl_providers(this: DesktopClient, clientState: ClientSta
     const [account, limits, read, models, anthropic] = await Promise.all([
       internal_rpc(this, clientState, 'account/read', { refreshToken: false }).catch(error => ({ error: error.message })),
       internal_rpc(this, clientState, 'account/rateLimits/read', {}).catch(error => ({ error: error.message })),
-      internal_rpc(this, clientState, 'config/read', { includeLayers: false }),
+      internal_rpc(this, clientState, 'config/read', { includeLayers: true }),
       internal_modelList.call(this, clientState, { limit: 100, includeHidden: false }).catch(() => null),
       // Elpis's own Anthropic sign-out; a bridge that predates it has none.
       internal_rpc(this, clientState, 'claudeSubscription/read', {}).catch(() => null),
     ]);
-    return providersSnapshot({ account, limits: limits as Exclude<Parameters<typeof providersSnapshot>[0]['limits'], undefined>, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic: anthropic as Exclude<Parameters<typeof providersSnapshot>[0]['anthropic'], undefined> });
+    return providersSnapshot({ account, limits: limits as Exclude<Parameters<typeof providersSnapshot>[0]['limits'], undefined>, config: read?.config, models: Array.isArray(models?.data) ? models.data : null, anthropic: anthropic as Exclude<Parameters<typeof providersSnapshot>[0]['anthropic'], undefined>, saved: savedProviderKeyIds(configHome(read)) });
   }
 
 export async function impl_providerSettings(this: DesktopClient, clientState: ClientState) {
@@ -161,6 +161,17 @@ export async function impl_saveProviderKey(this: DesktopClient, clientState: Cli
   }
 
 export async function impl_saveProvider(this: DesktopClient, clientState: ClientState, raw?: unknown) {
+    // A built-in key provider (OpenRouter, Anthropic, Gemini) at its own address is served by the engine's gateway, which
+    // reads the key file, not config.toml: a key saved in config never reached it (7 Nov, live: OpenRouter answered 401).
+    const asked = raw as { id?: unknown; baseUrl?: unknown; credential?: { action?: unknown; value?: unknown } } | undefined;
+    const builtIn = typeof asked?.id === 'string' && Object.hasOwn(BUILT_IN_KEY_PROVIDERS, asked.id) ? BUILT_IN_KEY_PROVIDERS[asked.id] : null;
+    const sameOrigin = (a: unknown, b: unknown) => { try { return new URL(String(a)).origin === new URL(String(b)).origin; } catch { return false; } };
+    if (builtIn && sameOrigin(asked!.baseUrl, builtIn.base_url) && ['replace', 'clear'].includes(String(asked!.credential?.action))) {
+      const read = await internal_rpc(this, clientState, 'config/read', { includeLayers: true });
+      saveProviderKey(configHome(read), asked!.id, asked!.credential!.action === 'clear' ? null : asked!.credential!.value);
+      clientState.catalog = null;
+      return this.providerSettings();
+    }
     const current = await this.providerSettings();
     const edits = providerEdits(raw, current);
     const input = raw as { version?: unknown };

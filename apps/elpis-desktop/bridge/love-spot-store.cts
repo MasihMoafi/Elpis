@@ -62,7 +62,12 @@ function mergeImpl(current: Drawing, incoming: IncomingDrawing) {
   return { ...current, type: 'excalidraw', version: 2, source: 'Love Spot', elements: [...elements.values()],
     appState: { ...current.appState, ...incoming.appState }, files: Object.fromEntries(Object.entries(files).filter(([id]) => referenced.has(id))) };
 }
-function createLoveSpotImpl({ directory = process.env.EXCALIDRAW_LOCAL_DIR || path.join(os.homedir(), '.local/share/excalidraw-local'), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
+// Masih, 7 Nov: the Love Spot app and Love Spot inside Elpis are separate, boards included ("Separate boards"). The app
+// (LOVE_SPOT_APP, desktop/main-profile.cts) keeps the board it always had; inside Elpis the board lives in the Elpis home.
+const defaultBoard = () => process.env.EXCALIDRAW_LOCAL_DIR || (process.env.LOVE_SPOT_APP === '1'
+  ? path.join(os.homedir(), '.local/share/excalidraw-local')
+  : path.join(process.env.ELPIS_HOME || path.join(os.homedir(), '.elpis-next'), 'love-spot'));
+function createLoveSpotImpl({ directory = defaultBoard(), screenshots = process.env.EXCALIDRAW_SCREENSHOTS_DIR || path.join(os.homedir(), 'Pictures/Screenshots') } = {}) {
   const sceneFile = path.join(directory, 'scene.excalidraw'), lock = path.join(directory, '.scene-lock'), inbox = path.join(directory, 'inbox'), pages = path.join(directory, 'pages');
   // Same-user local IPC keeps private trays available to a later dock process
   // without journaling screenshot names or pixels to the board directory.
@@ -222,6 +227,7 @@ function createLoveSpotImpl({ directory = process.env.EXCALIDRAW_LOCAL_DIR || pa
   const expiresAt = (modified: number, { since }: { since: number }) => Math.max(modified, since) + PAGE_DAYS * DAY;
   // One Matilda (Masih, 31 Oct: "what happens with Matilda in the chat isn't the same as what happens on the board"): whether
   // she answers, and with which model, is one setting here that the board, the small chat and her chat tab all read.
+  // Each app has its own board, so each keeps its own choice (7 Nov).
   const matildaFile = path.join(directory, '.matilda-settings.json');
   async function matildaSettings(update?: Record<string, unknown>) {
     let value: Record<string, unknown> = {};
@@ -230,6 +236,8 @@ function createLoveSpotImpl({ directory = process.env.EXCALIDRAW_LOCAL_DIR || pa
     if (update) {
       value = { ...value, ...update };
       for (const key of Object.keys(value)) if (value[key] === null) delete value[key];
+      // A new board (Love Spot inside Elpis since 7 Nov) may get her model before anything is drawn.
+      await fs.mkdir(directory, { recursive: true });
       await atomic(matildaFile, JSON.stringify(value));
     }
     const settings = { replies: value.replies !== false, model: typeof value.model === 'string' ? value.model : null, provider: typeof value.provider === 'string' ? value.provider : null };
