@@ -12,6 +12,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { Voice } from "@/components/voice";
 import type { Model, ProviderSettings, Thread } from "@/lib/api";
 import { ATTACHMENT_LIMITS } from "@/lib/attachments";
+import { chooseRouterModel } from "@/lib/elpis-agent-models";
 import type { createCommandActions } from "@/lib/command-actions";
 import type { createConversationSettings } from "@/lib/conversation-settings";
 import { insertTranscript } from "@/lib/dictation";
@@ -34,11 +35,11 @@ type Props = {
   model: string; choiceId: string; setModel: React.Dispatch<React.SetStateAction<string>>; setChoiceId: React.Dispatch<React.SetStateAction<string>>;
   setEffort: React.Dispatch<React.SetStateAction<string>>; newDraftKey: React.RefObject<string>;
   permissionMode: PermissionMode; planMode: boolean; busy: boolean; activeTurn: string | undefined; readOnlyRun: boolean; continues: boolean; sendBlocked: boolean;
-  selectedLoveChat: boolean; loveSpotAudioReason: string | undefined; manageConnections: () => void; motherSettings: () => void;
+  selectedLoveChat: boolean; loveSpotAudioReason: string | undefined; manageConnections: () => void;
   pickFiles: () => void; startMention: () => void; startSlash: () => void; focusComposer: () => void; editDraft: (value: string) => void; stop: (thread: Thread) => Promise<void>;
 };
 
-export function ComposerControls({ selected, selectedModel, settings, commands, runtime, composer, attachmentsState, projectState, slash, mention, promptKeys, models, settingsSnapshot, providerSettings, preferences, model, choiceId, setModel, setChoiceId, setEffort, newDraftKey, permissionMode, planMode, busy, activeTurn, readOnlyRun, continues, sendBlocked, selectedLoveChat, loveSpotAudioReason, manageConnections, motherSettings, pickFiles, startMention, startSlash, focusComposer, editDraft, stop }: Props) {
+export function ComposerControls({ selected, selectedModel, settings, commands, runtime, composer, attachmentsState, projectState, slash, mention, promptKeys, models, settingsSnapshot, providerSettings, preferences, model, choiceId, setModel, setChoiceId, setEffort, newDraftKey, permissionMode, planMode, busy, activeTurn, readOnlyRun, continues, sendBlocked, selectedLoveChat, loveSpotAudioReason, manageConnections, pickFiles, startMention, startSlash, focusComposer, editDraft, stop }: Props) {
   const { fastAvailable, fastOn, modelChoices, turnModel, selectedChoice, turnEfforts, turnEffort, dictationProvider } = selectedModel;
   const { setPlan, permissionsLocked, choosePermissions, setOverride, saveEffort } = settings;
   const { chooseFast } = commands;
@@ -54,9 +55,9 @@ export function ComposerControls({ selected, selectedModel, settings, commands, 
               {!selected?.motherAgent && <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} {...(settingsSnapshot?.managed ? { managed: settingsSnapshot.managed } : {})} onChange={choosePermissions} />}
             </div><div className="composer-right">
               {!selected?.motherAgent && <ContextUsage {...(selected ? { threadId: selected.id } : {})} />}
-              {selected?.motherAgent ? <Button type="button" variant="ghost" size="sm" onClick={motherSettings}>Elpis models</Button> : <ModelPicker choices={modelChoices} models={models}
+              <ModelPicker choices={modelChoices} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} {...(defaultModel !== undefined ? { defaultModel } : {})}
-                disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) { setOverride(selected.id, { model: choice.model }); setFailedTurns(previous => without(previous, selected.id)); } else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />}
+                disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected?.motherAgent) void chooseRouterModel(choice.model, modelChoices.find(item => item.id === choice.choiceId)?.provider); else if (selected) { setOverride(selected.id, { model: choice.model }); setFailedTurns(previous => without(previous, selected.id)); } else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
               {!selected?.motherAgent && turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || !connected || busy}>
                 <option value=""><span className="effort-long">Default effort</span><span className="effort-short">Default</span></option>
                 {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}

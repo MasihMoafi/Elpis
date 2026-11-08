@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { FileRefLink } from "@/components/file-ref";
 import { api } from "@/lib/api";
-import { editable, reloadSettings, saveOptions, saveSettings, type ConfigOptions, type ElpisSettings } from "@/lib/settings-store";
+import { editable, reloadSettings, saveOptions, type ConfigOptions, type ElpisSettings } from "@/lib/settings-store";
 import { Choice, SaveFeedback, SettingRow, SettingsActions, SettingsGroup, SettingsHeader } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
@@ -60,28 +58,6 @@ function ConfigOptionsGroup({ settings }: { settings: ElpisSettings }) {
   </SettingsGroup>;
 }
 
-/** The engine's feature flags, shared with the terminal: the ones that are on, then the ones that are off, each by name. */
-function FeatureDefaults({ settings }: { settings: ElpisSettings }) {
-  const [query, setQuery] = useState("");
-  const saver = useSaver();
-  const features = settings.features;
-  if (!features) return null;
-  const shown = features.data.filter(feature => `${feature.key} ${feature.title}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => a.title.localeCompare(b.title));
-  const rows = (enabled: boolean) => shown.filter(feature => feature.enabled === enabled).map(feature => <SettingRow key={feature.key} title={feature.title} description={feature.reason ?? feature.description} scope="new chats">
-    <Switch aria-label={feature.title} checked={feature.enabled} disabled={!editable(settings) || !!feature.reason || saver.pending !== null}
-      onCheckedChange={enabled => void saver.run(feature.key, () => saveSettings("/settings", { version: settings.version, features: { [feature.key]: enabled } }), "Feature default saved. Applies to new conversations.")} />
-  </SettingRow>);
-  return <>
-    <SettingsGroup title="Features" description={features.available ? "Defaults shared with the terminal. Changes apply to new chats." : features.reason}>
-      {features.available && <SettingRow title="Search features"><Input aria-label="Search features" value={query} onChange={event => setQuery(event.target.value)} /></SettingRow>}
-      {features.available && !shown.length && <SettingRow title="No matching features" />}
-      {saver.outcome && <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={() => void saver.run("reload", reloadSettings, "Settings reloaded.")} />} />}
-    </SettingsGroup>
-    {shown.some(feature => feature.enabled) && <SettingsGroup title="On">{rows(true)}</SettingsGroup>}
-    {shown.some(feature => !feature.enabled) && <SettingsGroup title="Off">{rows(false)}</SettingsGroup>}
-  </>;
-}
-
 export function ConfigurationSettings({ onOpenMother }: { onOpenMother?: (() => void) | undefined }) {
   const { models, error } = useModelCatalog();
   return <div aria-label="Configuration">
@@ -93,7 +69,6 @@ export function ConfigurationSettings({ onOpenMother }: { onOpenMother?: (() => 
       <ModelSettings value={settings} models={models} />
       <MotherAgentSettings onOpenMother={onOpenMother} settings={settings} models={models} />
       <PrunerSettings value={settings} models={models} />
-      <FeatureDefaults settings={settings} />
     </>}</SettingsLoader>
   </div>;
 }

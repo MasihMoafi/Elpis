@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Switch } from "@/components/ui/switch";
 import { Choice, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } from "@/components/settings/rows";
-import { ModelChoice, providerOptions, useProviderCatalogs } from "@/components/settings/maintenance";
+import { ModelChoice, providerOptions, subscriptionOptions, useProviderCatalogs } from "@/components/settings/maintenance";
 
 type Role = keyof MotherSettings["roles"];
 const ROLES: [Role, string][] = [["dispatch", "Elpis routing"], ["worker", "Elpis workers"]];
@@ -23,7 +23,7 @@ function RoleChoice({ role, label, value, settings, models, disabled, onChange }
   return <>
     <SettingRow title={`${label} provider`} description={role === "dispatch" ? "Routes goals and replies in the Elpis chat." : "Used when Elpis starts a new worker session."}>
       <OptionSelect aria-label={`${label} provider`} className="settings-choice" value={value?.provider ?? ""} disabled={disabled} onChange={event => onChange(event.target.value ? { provider: event.target.value, model: value?.model ?? inherited.model ?? "" } : null)}>
-        <option value="">Use background model (then main)</option>{providerOptions(provider, settings.providers)}
+        <option value="">Use background model (then main)</option>{subscriptionOptions(models)}{providerOptions(provider, settings.providers)}
       </OptionSelect>
     </SettingRow>
     <SettingRow title={`${label} model`}>

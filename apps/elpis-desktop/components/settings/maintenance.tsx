@@ -2,7 +2,7 @@
 
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, connectionOrder, effortsOf, isListedProvider, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
+import { api, SUBSCRIPTIONS, connectionOrder, effortsOf, isListedProvider, modelLabel, providerLabel, subscriptionOf, type Model } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Input } from "@/components/ui/input";
@@ -71,6 +71,10 @@ export function ModelChoice({ label, value, models, provider, catalogStatus, dis
   </div>;
 }
 
+/** Subscriptions come first. Their models are named by prefix (claude/…), so they need no configured connection. */
+export function subscriptionOptions(models: Model[], valueOf: (item: (typeof SUBSCRIPTIONS)[number]) => string = item => item.id) {
+  return SUBSCRIPTIONS.filter(item => models.some(model => model.model.startsWith(item.prefix))).map(item => <option key={item.id} value={valueOf(item)}>{item.label}</option>);
+}
 export function providerOptions(current: string, providers: ElpisSettings["providers"] = []) {
   const listed = providers.filter(item => item.id === current || isListedProvider(item.id)).map(item => ({ id: item.id, label: providerLabel(null, item.id, providers) }));
   return <>{current && !providers.some(item => item.id === current) && <option value={current}>{current}</option>}{connectionOrder(listed).map(item => <option key={item.id} value={item.id}>{item.label}</option>)}</>;
@@ -96,6 +100,14 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
   const title = `${name} model`;
   const catalogs = useProviderCatalogs(value, models, [current.provider]);
   const pinned = which === "main" && value.managed?.modelProvider ? value.managed.modelProvider : null;
+  const subscription = which === "main" ? subscriptionOf(current.model) : null;
+  const offered = subscription ? models.filter(model => model.model.startsWith(subscription.prefix)) : catalogs.forProvider(current.provider);
+  const chooseProvider = (next: string) => {
+    const picked = SUBSCRIPTIONS.find(item => item.prefix === next);
+    update("provider", picked ? null : next);
+    if (picked) update("model", models.find(model => model.model.startsWith(picked.prefix))?.model ?? null);
+    else if (subscription) update("model", null);
+  };
   const update = (key: keyof Background, text: string | null) => {
     const next = text?.trim() || null; saver.clear();
     setDraft(old => { const patch = { ...old }; if (next === saved[key]) delete patch[key]; else patch[key] = next; return patch; });
@@ -107,10 +119,10 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
   </>;
   return <>
     <SettingRow title={title} description={PAIRS[which].model}>
-      <ModelChoice label={title} value={current.model} models={catalogs.forProvider(current.provider)} provider={catalogs.connectionLabel(current.provider)} catalogStatus={catalogs.catalogStatus(current.provider)} disabled={saver.pending !== null} inheritLabel={which === "main" ? undefined : "Default background model"} onChange={model => update("model", model)} />
+      <ModelChoice label={title} value={current.model} models={offered} provider={subscription?.label ?? catalogs.connectionLabel(current.provider)} catalogStatus={subscription ? undefined : catalogs.catalogStatus(current.provider)} disabled={saver.pending !== null} inheritLabel={which === "main" ? undefined : "Default background model"} onChange={model => update("model", model)} />
     </SettingRow>
     <SettingRow title={`${name} provider`} description={pinned ? "Pinned by your requirements." : PAIRS[which].provider}>
-      <OptionSelect aria-label={`${name} provider`} className="settings-choice" value={current.provider ?? ""} onChange={event => update("provider", event.target.value)} disabled={saver.pending !== null || Boolean(pinned)}><option value="">Use default</option>{providerOptions(draft.provider ?? saved.provider ?? "", value.providers)}</OptionSelect>
+      <OptionSelect aria-label={`${name} provider`} className="settings-choice" value={subscription?.prefix ?? current.provider ?? ""} onChange={event => chooseProvider(event.target.value)} disabled={saver.pending !== null || Boolean(pinned)}><option value="">Use default</option>{which === "main" && subscriptionOptions(models, item => item.prefix)}{providerOptions(draft.provider ?? saved.provider ?? "", value.providers)}</OptionSelect>
     </SettingRow>
     <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
       <Button disabled={saver.pending !== null || !Object.keys(draft).length || (which === "main" && !current.model)} onClick={() => void saver.run("save", async () => { await saveSettings("/settings", { version: value.version, [which]: draft }); setDraft({}); }, `${name} model saved. Applies to new conversations.`)}>{saver.pending === "save" ? "Saving…" : `Save ${name.toLowerCase()} model`}</Button>
