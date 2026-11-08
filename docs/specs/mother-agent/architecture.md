@@ -25,7 +25,7 @@ Mother
 
 The Engine is the sole domain writer. Store reads do not mutate records. Effects and receipts commit in the same transaction as the action that queued them. External work begins after commit. SourceContext restricts each kind's state, metadata and health writes.
 
-Harness session delivery maps to executor/sessions.mts and adapters.mts: persistent logical-to-native identities, history receipts, validated dynamic tools, native transcripts and request cancellation. `tools/elpis-claude/app-server-connection.mjs` claims handled tool requests and declines unhandled approval requests.
+Harness session delivery maps to executor/sessions.mts and adapters.mts: persistent logical-to-native identities, history receipts, validated dynamic tools, native transcripts and request cancellation. `tools/elpis-claude/app-server-connection.mts` claims handled tool requests and declines unhandled approval requests.
 
 Feishu live events/history/topic loops map to the selected Elpis chat's durable history cursor and serialized polling. Feishu reads and images map to elpis-chat-read.mts; outgoing messages map to elpis-chat-channel.mts. Feishu account setup and lark-specific CLI parsing are excluded. Legacy Feishu records remain migratable as stored data.
 
