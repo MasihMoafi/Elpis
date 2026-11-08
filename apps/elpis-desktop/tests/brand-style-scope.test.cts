@@ -40,7 +40,7 @@ test('the light on the new-chat wordmark keeps moving after its first sweep', as
         const first = { opacity: getComputedStyle(element).opacity, transform: getComputedStyle(element).transform };
         animation.currentTime = 7850;
         await new Promise(requestAnimationFrame);
-        return { iterations: animation.effect.getTiming().iterations, first,
+        return { iterations: animation.effect?.getTiming().iterations, first,
           second: { opacity: getComputedStyle(element).opacity, transform: getComputedStyle(element).transform } };
       });
       assert.ok(frames, `${theme}: the sweep exists`);

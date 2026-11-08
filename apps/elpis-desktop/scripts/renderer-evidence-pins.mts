@@ -180,9 +180,9 @@ export const retainedUpdates: Record<string, Record<string, Pin>> = {
             "reason": "Masih 7 Nov: show the model and effort as a small grey line under each agent's name in the Agents panel and at the top of the subagent's own chat. The earlier agent-runs checks remain."
         },
         "tests/provider-model-pairs.test.cjs": {
-            "blob": "d107afadc886c3923c6de250e33ee821fbb5c650",
-            "approval": "56ab914e564a4900c93d6e03323c5aa02db45210",
-            "reason": "Wait for the configured provider default, its actual credits and enabled Send before exercising routing. Do not reselect a model. Preserve every default, provider, model, pointer, keyboard and request assertion; the earlier generic Model-visible check ran before settings and connection finished."
+            "blob": "7ff79e8b177209d1a98a22bdfae21bfc0c12230d",
+            "approval": "96d930ab47a8a36242a04571dbd711d96af69903",
+            "reason": "Masih 8 Nov: Anthropic first, OpenAI second, in the model picker's vendor tabs; the default no longer has to be the first tab. Wait for the configured provider default, its actual credits and enabled Send before exercising routing. Do not reselect a model. Preserve every default, provider, model, pointer, keyboard and request assertion; the earlier generic Model-visible check ran before settings and connection finished."
         },
         "tests/love-clarity.test.cjs": {
             "blob": "343243034b042a795b34100d50c595f2783c598d",

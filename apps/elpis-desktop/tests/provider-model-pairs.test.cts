@@ -82,7 +82,7 @@ test('a changed API default offers its own models and keeps the selected provide
       main = { provider: 'anthropic-credits', model: catalog[0].model };
       await refreshSettings(page);
       await page.getByLabel('Model', { exact: true }).click();
-      await page.waitForFunction(() => document.querySelectorAll('[role=tab]')[1]?.textContent === 'Anthropic credits');
+      await page.waitForFunction(() => [...document.querySelectorAll('[role=tab]')].some(tab => tab.textContent === 'Anthropic credits'));
       await page.getByLabel('Search models', { exact: true }).press('Escape');
       await screenshot(page, 'pairs-retained-sol');
       assert.match(await page.getByLabel('Model', { exact: true }).getAttribute('title'), /GPT-6\.1 Sol · OpenAI/, 'a selected model keeps its provider across a default change');
