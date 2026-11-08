@@ -1,0 +1,299 @@
+/* Every chat reserves the same chevron column, including chats without agents. */
+/* Activity is separate from the manually chosen conversation colour. */
+.thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 26px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
+.thread-dot[data-state="working"] { border-color:var(--primary); background:transparent; }
+.thread-dot[data-state="waiting"] { border-color:var(--warning); background:var(--warning); }
+.thread-dot[data-state="unread"] { border-color:var(--primary); background:var(--primary); padding:0; cursor:pointer; }
+.thread-row:has(.thread-dot[data-state="unread"]) .thread-title { font-weight:600; }
+.thread-subtitle { font-size:var(--text-xs); color:var(--warning); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.thread-dot[data-state="error"] { border-color:var(--destructive); background:var(--destructive); }
+.thread-dot.workflow-mark { display:inline-block; margin:0 3px; border-color:var(--workflow-colour); background:var(--workflow-colour); vertical-align:middle; }
+.conversation-state-slot { display:flex; align-items:center; justify-content:center; flex-shrink:0; width:20px; height:24px; margin-left:20.5px; }
+.conversation-state-slot .thread-dot { margin:0; }
+.conversation-colour-swatch { display:inline-block; flex-shrink:0; box-sizing:border-box; width:9px; height:9px; border:1.5px solid var(--workflow-colour, var(--subtle-foreground)); border-radius:50%; background:var(--workflow-colour, transparent); }
+.thread-row > .conversation-status { margin:0 2px; }
+
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="blue"], .thread-row[data-conversation-colour="blue"] { --workflow-colour:light-dark(#2458b8,#8bb7ff); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="teal"], .thread-row[data-conversation-colour="teal"] { --workflow-colour:light-dark(#146b67,#68d4c7); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="violet"], .thread-row[data-conversation-colour="violet"] { --workflow-colour:light-dark(#6b44ac,#c1a0fa); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="rose"], .thread-row[data-conversation-colour="rose"] { --workflow-colour:light-dark(#a73459,#f39cbb); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="green"], .thread-row[data-conversation-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
+:is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"], .thread-row[data-conversation-colour="amber"] { --workflow-colour:var(--brand-accent); }
+/* A chat's colour fills its circle only; the row keeps the plain sidebar look. A live status (working, unread,
+ * waiting, error) shows in the circle instead, so the colour never hides it. */
+/* 4 Nov: an unread chat kept its amber circle, so choosing a colour seemed to do nothing. A coloured chat shows its colour
+   read or unread (unread stays bold); working, waiting and error keep their status colours. */
+.thread-row[data-conversation-colour] .conversation-state-slot .thread-dot:is([data-state="idle"], [data-state="unread"]) { border-color:var(--workflow-colour); background:var(--workflow-colour); }
+/* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */
+.sidebar-group { margin-bottom:2px; }
+.sidebar-group-row { display:flex; align-items:center; min-height:var(--row-h); padding-inline-end:8px; }  /* the "+" lines up with the Projects header's */
+.sidebar-group-row:hover, .sidebar-group-row[data-popup-open] { background:var(--hover); }
+.sidebar-group-actions { display:flex; opacity:0; }
+.project-new-chat { flex-shrink:0; color:var(--muted-foreground); }
+.project-new-chat:hover { color:var(--foreground); }
+.sidebar-group-row:hover .sidebar-group-actions, .sidebar-group-row[data-popup-open] .sidebar-group-actions, .sidebar-group-row:focus-within .sidebar-group-actions, .sidebar-group-actions:has([aria-expanded="true"]) { opacity:1; }
+.sidebar-group-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:6px; height:var(--row-h); border:0; background:none; color:var(--foreground); padding:0 6px; font-size:var(--text-sm); text-align:left; }
+.sidebar-group-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sidebar-group-toggle svg { flex-shrink:0; color:var(--muted-foreground); }
+/* One icon size in the sidebar, as in ChatGPT: rows, groups, search and the footer (chevrons keep their own). */
+.sidebar :is(.brand, .nav-list button, .sidebar-group-toggle, .section-label-row, .sidebar-footer, .sidebar-status) svg:not(.sidebar-group-chevron, .section-chevron, .size-wordmark),
+.workspace-header :is(.header-action, .task-tab-new, .sidebar-open) svg { width:var(--icon-size); height:var(--icon-size); }
+.sidebar-group-chevron, .section-chevron { width:14px; height:14px; transition:transform .15s; }
+.sidebar-group-toggle[aria-expanded="true"] .sidebar-group-chevron, .section-toggle[aria-expanded="true"] .section-chevron { transform:rotate(90deg); }
+.section-toggle { display:flex; align-items:center; gap:4px; border:0; background:none; padding:0; cursor:pointer; text-align:left; font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; }
+.sidebar-group-row.active .sidebar-group-toggle svg:not(.sidebar-group-chevron) { color:var(--primary); }
+.sidebar-group-items { padding-left:0; }
+.sidebar-group-empty { margin:0; padding:3px 8px 6px 26px; font-size:var(--text-xs); color:var(--subtle-foreground); }
+/* A closed group holding a chat that needs you: the chat's waiting dot, after the group's name. */
+.sidebar-group-toggle .thread-dot { margin:0 0 0 2px; }
+/* The "Group and sort" button is marked while the list is grouped or sorted away from the defaults. */
+.section-label-row > .group-sort[data-active] { color:var(--primary); }
+.workspace-header h1 { display:flex; align-items:center; gap:4px; }
+.workspace-header h1 .thread-actions { opacity:.7; }
+.message-time { font-size:var(--text-small); color:var(--subtle-foreground); opacity:0; transition:opacity .12s; font-variant-numeric:tabular-nums; }
+.user-turn:hover .message-time { opacity:1; }
+.message-actions { opacity:.0; transition:opacity .12s; }
+.user-turn:hover .message-actions, .message.agent:hover .message-actions, .message-actions:focus-within { opacity:1; }
+.app-shell.sidebar-collapsed { grid-template-columns:minmax(0,1fr); }
+.app-shell.sidebar-collapsed > .sidebar { display:none; }
+/* The sidebar button at the top left: in the sidebar to close it, in the header to reopen it (always on narrow windows). */
+.brand .sidebar-toggle { margin-inline-start:auto; }
+.brand .sidebar-toggle, .workspace-header > .sidebar-open { color:var(--muted-foreground); flex-shrink:0; }
+.app-shell.sidebar-collapsed .workspace-header > .sidebar-open { display:inline-flex; }
+/* Desktop: the app's own title bar (desktop/main.cts), as in the ChatGPT app. It holds the sidebar button, is the
+   window's drag handle, and leaves room on the right for the system's window buttons. */
+.app-shell.has-title-bar { grid-template-rows:36px minmax(0,1fr); }
+/* A bad browser-reported inset must not reserve half the title bar from app controls. */
+.title-bar { --title-bar-native-controls-inset:calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw)); grid-column:1 / -1; display:flex; align-items:center; gap:4px; height:36px; padding:0 clamp(0px, var(--title-bar-native-controls-inset), 160px) 0 6px; background:var(--sidebar); border-bottom:1px solid var(--hairline); app-region:drag; -webkit-app-region:drag; }
+.title-bar-actions { display:flex; align-items:center; gap:4px; margin-inline-start:auto; min-width:0; flex-shrink:0; }
+.title-bar button { color:var(--muted-foreground); app-region:no-drag; -webkit-app-region:no-drag; }
+.app-menus, .app-menubar { display:flex; align-items:center; min-width:0; gap:2px; app-region:no-drag; -webkit-app-region:no-drag; }
+.title-bar .app-menu-trigger { height:28px; padding-inline:10px; color:var(--foreground); }
+.app-menu-content { min-width:220px; }
+@media(max-width:520px) { .title-bar .app-menu-trigger { padding-inline:6px; } }
+
+.has-title-bar[data-desktop] .workspace-header > .sidebar-open { display:none !important; }
+.title-bar .sidebar-open-narrow { display:none; }
+@media(max-width:760px) { .title-bar .sidebar-open-narrow { display:inline-flex; } }
+.shortcuts-dialog { display:grid; gap:12px; max-width:520px; }
+.shortcuts-list { display:grid; gap:12px; max-height:min(60vh, 520px); overflow:auto; padding-right:4px; }
+.shortcuts-list h3 { margin:0 0 6px; color:var(--accent-text); }
+.shortcut-row { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px solid var(--hairline); font-size:var(--text-sm); }
+.shortcut-keys { display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end; }
+.command-menu { max-width:600px; max-height:calc(100dvh - 32px); gap:12px; grid-template-rows:auto auto minmax(0,1fr); }
+.command-list { min-height:0; max-height:50dvh; overflow:auto; }
+.command-list h3 { margin:8px 8px 4px; color:var(--muted-foreground); }
+.command-row { display:flex; align-items:center; gap:8px; height:50px; padding:6px 8px; cursor:pointer; }
+.command-row[aria-selected="true"], .command-row:hover { background:var(--hover); }
+.command-row > svg { flex:none; color:var(--muted-foreground); }
+.command-copy { display:flex; flex:1; flex-direction:column; min-width:0; }
+.command-name, .command-detail { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.command-name { font-size:var(--text-sm); }
+.command-detail { font-size:var(--text-xs); color:var(--muted-foreground); }
+.command-help { margin:0; }
+.header-title-row { display:flex; align-items:center; gap:4px; min-width:0; } .header-title-row .thread-actions { opacity:.7; flex-shrink:0; }
+/* Tabs, as in the ChatGPT app and Obsidian: the top strip (chats) and the side panel's (terminals and pages) share one style. */
+.tab-strip { display:flex; align-items:center; gap:2px; min-width:0; flex:1 1 auto; }
+.task-tabs { display:flex; align-items:center; gap:2px; min-width:0; overflow-x:auto; scrollbar-width:none; padding:0; }
+.task-tab { display:flex; align-items:center; gap:2px; min-width:128px; max-width:240px; flex:0 1 auto; border:1px solid transparent; color:var(--muted-foreground); padding:0 2px 0 0; position:relative; }
+.task-tab > button[role="tab"] { display:flex; flex:1 1 auto; align-items:center; gap:6px; min-width:0; border:0; background:none; color:inherit; font:inherit; font-size:var(--text-sm); height:var(--control-h); padding:0 6px 0 8px; }
+.task-tab > button[role="tab"] span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.task-tab > button[role="tab"] svg { flex-shrink:0; width:var(--icon-size); height:var(--icon-size); }
+.task-tab:hover, .task-tab[data-popup-open] { background:var(--hover); color:var(--foreground); }
+.task-tab[data-selected]:not(.active) { background:var(--selected); color:var(--foreground); border-color:var(--border); }
+.task-tab.active { background:var(--card); border-color:var(--border); color:var(--foreground); }
+.task-tab.active::after { content:""; position:absolute; left:8px; right:8px; bottom:-1px; height:1.5px; background:var(--primary); box-shadow:0 0 4px var(--primary); }
+.task-tab.chat-tab { max-width:340px; font-weight:500; }
+.task-tab.chat-tab.active > button svg { color:var(--primary); }
+.task-tab + .task-tab:not(.active):not(:hover)::before { content:""; position:absolute; left:-2px; top:9px; bottom:9px; width:1px; background:var(--hairline); }
+.task-tab-new { flex-shrink:0; color:var(--muted-foreground); }
+.workspace-body { position:relative; }
+.composer .model-controls { flex-wrap:nowrap; flex-shrink:0; }
+.composer-right { flex:1 1 auto; flex-wrap:nowrap; min-width:0; justify-content:flex-end; }
+.composer .model-picker-trigger { min-width:88px; max-width:none; flex:0 0 auto; }
+.header-action[aria-pressed="true"], .side-action[aria-pressed="true"] { color:var(--primary); background:var(--selected); }
+/* Slash commands: the menu a leading "/" opens above the composer, as in the ChatGPT app's Codex composer. */
+.slash-menu { position:absolute; left:0; right:0; bottom:calc(100% + 6px); z-index:20; max-height:min(320px, 50vh); overflow-y:auto; }
+.slash-option { align-items:baseline; gap:12px; min-width:0; cursor:pointer; font-size:var(--text-sm); }
+.slash-name { flex-shrink:0; min-width:110px; font:500 var(--text-sm)/1.4 var(--mono); color:var(--foreground); }
+.slash-description { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
+
+
+/* Full view (components/side-panel.tsx): the panel fills the work area and the chat floats over it as a card, folded
+ * to a pill on request. The native page paints over any HTML, so the page, the shell and the annotation bar give up
+ * the card's column (the pill's row) rather than sit under it. */
+.workspace-body { --float-w:400px; --float-h:520px; --float-gap:16px; --float-reserve:calc(var(--float-w) + 2 * var(--float-gap)); --pill-reserve:52px; }
+.side-panel.full { flex:1 1 0; width:auto; max-width:none; }
+.side-panel.full .side-resize { display:none; }
+.full-view > .workspace-content { position:absolute; z-index:6; right:var(--float-gap); bottom:var(--float-gap); display:flex; flex:none; width:var(--float-w); max-width:calc(100% - 2 * var(--float-gap)); height:var(--float-h); max-height:calc(100% - 120px); border:1px solid var(--hud-edge); background:var(--background); box-shadow:var(--shadow); overflow:hidden; }
+.chat-collapsed > .workspace-content { visibility:hidden; }
+.full-view > .workspace-content .chat-scroll { --chat-top-inset:14px; padding:var(--chat-top-inset) 16px 8px; }
+.full-view > .workspace-content .composer-wrap { padding:6px 12px 12px; }
+/* Keep controls on the bottom row using the width of their own chat box. */
+.composer { container:composer / inline-size; }
+.followup-send-icon { display:none; }
+.composer-pill, .composer .model-select { flex-shrink:0; }
+.composer .model-select [data-slot="select-value"] { display:block; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.composer .model-select { min-width:64px; }
+.composer .model-picker-trigger { flex-shrink:1; }
+.composer-right :is(.dictation-control, .send-button, .context-ring) { flex-shrink:0; }
+.pill-short { display:none; }
+/* Follow the chat pane's width when the browser or another session is beside it. */
+@media(min-width:761px) { @container workspace (max-width:640px) { .chat-scroll { padding-inline:22px; } } }
+@container workspace (max-width:640px) { .composer-wrap { padding-inline:22px; } }
+@container composer (max-width:640px) { .pill-long { display:none; } .pill-short { display:inline; } }
+@container workspace (max-width:520px) { .composer-wrap { padding-inline:12px; } }
+.effort-short { display:none; }
+@container composer (max-width:780px) {
+  .composer-controls { flex-wrap:nowrap; }
+  .composer-right { display:flex; min-width:0; }
+  .model-controls { flex-wrap:nowrap; flex-shrink:0; }
+  .composer-actions { margin-inline-start:auto; }
+  .stop-button, .send-button { width:var(--control-h); min-width:var(--control-h); padding-inline:0; gap:0; }
+  .composer-action-label { display:none; }
+  .followup-send-icon { display:block; }
+}
+/* Mid-turn at about 700px the right group needed 2px more than the row had, so in fonts wider than Inter (DejaVu Sans
+   on CI) it slid under the permissions pill; the short effort label frees about 36px. */
+@container composer (max-width:700px) { .plan-pill > span { display:none; } .composer .effort-long { display:none; } .composer .effort-short { display:inline; } }
+@container composer (max-width:640px) {
+  .composer .plan-pill { display:none; }
+  .composer-right .dictation-status:not(.dictation-error) { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+  .effort-long { display:none; } .effort-short { display:inline; }
+  .composer-controls { gap:8px; }
+  .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
+  .composer .model-picker-trigger { min-width:56px; max-width:130px; flex:0 1 auto; }
+}
+@container composer (max-width:520px) {
+  .composer-controls { --composer-control-gap:4px; gap:4px; }
+}
+/* A Fast the model does not offer leaves the toolbar in a compact composer; the "+" menu still lists it with its reason. */
+@container composer (max-width:640px) { .composer-right > .fast-toggle[data-unavailable] { display:none; } }
+/* Mid-turn (Stop and Send both shown) the right group needs about 320px; below 460px it overflowed leftward under the
+   permissions pill, since .composer-right is end-aligned. The pill keeps its icon and colour; its menu names the mode. */
+@container composer (max-width:460px) {
+  .composer-pill .pill-short { display:none; }
+  .composer [aria-label="Change permissions"] > svg:last-child { display:none; }
+}
+@container composer (max-width:380px) {
+  .composer-right > .fast-toggle { display:none; }
+  .composer-controls { flex-wrap:wrap; }
+  .composer .model-picker-trigger { min-width:40px; max-width:100px; padding-inline:4px; gap:4px; }
+  .composer-actions:has([aria-label="End voice chat"]) > .dictation-control:has([aria-label="Dictate message"]):not(:has([aria-label="Cancel dictation"])),
+  .composer-actions:has([aria-label="Cancel dictation"]) > .dictation-control:has([aria-label="Start voice chat"]) { display:none; }
+  .composer-pill .pill-short { display:none; }
+  .composer [aria-label="Change permissions"] > svg:last-child { display:none; }
+  .composer .model-select { min-width:40px; flex-shrink:1; }
+}
+@container workspace (min-width:421px) and (max-width:520px) {
+  .composer .effort-long { display:none; } .composer .effort-short { display:inline; }
+  .composer-controls { gap:8px; }
+  .composer-pill, .composer .model-select { padding-inline:4px; gap:4px; }
+}
+/* The @ picker names the file or chat, and says which it is at the right edge. */
+.option-list-kind .slash-description { margin-left:auto; flex-shrink:0; }
+.float-chat-bar { display:flex; align-items:center; gap:8px; flex-shrink:0; height:40px; padding:0 6px 0 14px; border-bottom:1px solid var(--hairline); }
+.float-chat-title { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-sm); font-weight:600; }
+.float-chat-pill { position:absolute; z-index:6; right:var(--float-gap); bottom:12px; max-width:min(360px, calc(100% - 2 * var(--float-gap))); gap:8px; border-radius:999px; corner-shape:round; box-shadow:var(--shadow); }
+.float-chat-pill .agent-state { min-width:0; }
+.float-chat-pill-title { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.side-panel[data-float="card"] :is(.browser-viewport, .annotation-dock, .terminal-body) { margin-inline-end:var(--float-reserve); }
+.side-panel[data-float="pill"] .side-body { padding-bottom:var(--pill-reserve); }
+
+/* Split sessions reuse the same chat surface and responsive composer in each document. */
+.session-split .workspace > .workspace-header,
+.session-split .workspace > .workspace-notices,
+.session-split .workspace > .workspace-body { width:50%; }
+.split-session { position:absolute; inset:0 0 0 auto; width:50%; height:100%; border:0; border-left:1px solid var(--hairline); background:var(--background); }
+.session-pane.app-shell { grid-template-columns:minmax(0,1fr); }
+.session-pane > .sidebar, .session-pane > .title-bar,
+.session-pane .workspace-header > .mobile-menu, .session-pane .mobile-brand { display:none; }
+.session-pane.has-title-bar { grid-template-rows:minmax(0,1fr); }
+.session-pane .workspace-header { min-height:var(--header-h); gap:12px; }
+.session-pane .workspace-header h1 { font-size:var(--text-sm); }
+.session-split .composer-wrap { padding-inline:12px; }
+.session-split .chat-scroll { padding-inline:20px; }
+.session-split .team-panel { display:none; }
+@media(max-width:1100px) {
+  .session-split.app-shell { grid-template-columns:minmax(0,1fr); }
+  .session-split > .sidebar:not(.open) { display:none; }
+  .session-split .workspace-header > .mobile-menu { display:inline-flex; }
+}
+
+/* Context file groups follow the TUI Ledger: teal sections and olive admission states. */
+.context-files { --source-heading:#007c78; --source-included:#6e7d00; margin-top:8px; border-top:1px solid var(--hairline); }
+.context-panel { flex:1; min-height:0; min-width:0; overflow:auto; padding-bottom:16px; }
+.context-panel .context-files { margin-top:0; border-top:0; }
+.context-goal-objective { margin:0 0 8px; overflow-wrap:anywhere; }
+.context-goal-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.dark .context-files { --source-heading:#5bc8c0; --source-included:#bdce55; }
+.context-files section { padding:10px 16px 4px; }
+.context-files-heading { margin:0 0 8px; color:var(--source-heading); font-size:var(--text-small); font-weight:600; }
+.context-files ul { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.context-files li { display:flex; align-items:center; gap:12px; min-width:0; }
+.context-files [data-slot="switch"][data-checked] { background:var(--source-included); }
+.context-file-detail { flex:1; min-width:0; }
+.context-file-name { display:block; max-width:100%; padding:0; border:0; background:transparent; color:var(--foreground); font:inherit; text-align:start; text-decoration:underline; text-underline-offset:3px; cursor:pointer; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.context-file-name:focus-visible { outline:1.5px solid var(--ring); outline-offset:2px; }
+.context-file-meta { display:flex; flex-wrap:wrap; gap:4px 8px; color:var(--muted-foreground); font-size:var(--text-small); }
+.context-file-state { margin-left:auto; }
+.context-files li[data-included="true"] .context-file-state { color:var(--source-included); }
+.context-files-error { padding:8px 16px; overflow-wrap:anywhere; }
+.context-files-error [role="alert"] { color:var(--destructive); }
+
+
+/* Love Spot's brand color stays local to its navigation mark and drawing controls. */
+:root { --love-red:#8B1017; }
+.dark { --love-red:#ec575e; }
+:is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup, .nav-list button[data-nav-page="loveSpot"]) { --primary:var(--love-red); --primary-foreground:#fff; }
+.dark :is(.love-spot, .love-spot-tools, .love-chat, .matilda-mini-popup, .nav-list button[data-nav-page="loveSpot"]) { --primary-foreground:var(--background); }
+.nav-list button[data-nav-page="loveSpot"] svg { color:var(--love-red); }
+.thread-origin[data-origin="Love Spot"] { color:var(--foreground); }
+.love-unread { display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px; border-radius:50%; font-size:var(--text-xs); line-height:1; font-weight:600; margin-left:auto; background:var(--love-red); color:#fff; box-shadow:0 0 12px color-mix(in oklab, var(--love-red) 55%, transparent); }
+.dark .love-unread { color:var(--background); }
+
+.workflow-history { position:relative; margin-left:auto; }
+.workflow-history-list { width:min(440px, calc(100vw - 36px)); max-height:60vh; overflow:auto; padding:14px; background:var(--card); color:var(--foreground); }
+.workflow-history-list ul { display:grid; gap:8px; margin:10px 0 0; padding:0; list-style:none; }
+.workflow-history-list li { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-top:10px; border-top:1px solid var(--border); }
+.workflow-history-list li > div { display:grid; min-width:0; gap:4px; }
+.workflow-history-list strong { overflow-wrap:anywhere; }
+.workflow-history-list small, .workflow-history-list p { color:var(--muted-foreground); }
+
+.nav-list button[data-nav-page="loveSpot"]:has(.love-unread) { background:color-mix(in oklab, var(--love-red) 12%, transparent); box-shadow:inset 2px 0 var(--love-red); }
+.nav-list button[data-nav-page="loveSpot"]:has(.love-unread):hover:not([aria-current="page"]) { background:color-mix(in oklab, var(--love-red) 18%, transparent); }
+
+[data-drop-target="true"] { outline:1px solid var(--primary); outline-offset:-1px; background:var(--hover); }
+
+/* A hidden drawing style panel keeps its place, so its slider still measures its width; only the toggle in its corner stays visible (components/drawing-style.tsx). */
+.drawing-style-hidden .selected-shape-actions .App-menu__left { visibility: hidden; }
+
+[data-fast-notice] { animation:fast-notice-dismiss 4s ease forwards; }
+@keyframes fast-notice-dismiss {
+  0%,88% { opacity:1; filter:blur(0); }
+  100% { opacity:0; filter:blur(4px); }
+}
+@media(prefers-reduced-motion:reduce) {
+  [data-fast-notice] { animation-name:fast-notice-dismiss-reduced; }
+}
+@keyframes fast-notice-dismiss-reduced {
+  0%,97% { opacity:1; }
+  100% { opacity:0; }
+}
+/* components/load-on-scroll.tsx: the edge marker that loads more of any list; a 16px spinner while it loads, nothing at rest. */
+.load-on-scroll { flex:none; display:flex; justify-content:center; min-height:1px; color:var(--muted-foreground); }
+.load-on-scroll[data-loading] { padding:8px 0; }
+/* components/matilda-switch.tsx: the one Matilda on/off. */
+.matilda-switch { display:flex; align-items:center; gap:8px; font-size:var(--text-xs); white-space:nowrap; }
+/* Observability: the Trajectory page fills the view (5 Nov). */
+.observability { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; }
+.observability > iframe { flex:1; width:100%; min-height:0; border:0; }
+.observability-bar { flex:none; display:flex; align-items:center; gap:8px; padding:8px 16px; border-bottom:1px solid var(--border); }
+.observability-chat { display:inline-flex; align-items:center; gap:6px; max-width:min(520px, 100%); height:32px; padding:0 10px; border-radius:var(--radius-md, 6px); font-size:14px; }
+.observability-chat:hover { background:var(--accent); }
+.observability-chat-menu { width:min(480px, 90vw); }
+.observability-health { display:flex; flex-wrap:wrap; gap:4px 18px; margin:0 0 0 auto; font-size:var(--text-small); color:var(--muted-foreground); }
+.observability-health > div { display:flex; gap:6px; }
+.observability-health dt::after { content:":"; }
+.observability-health dd { margin:0; color:var(--foreground); font-variant-numeric:tabular-nums; }
+.empty-state .empty-mark .light { animation-iteration-count:infinite; }

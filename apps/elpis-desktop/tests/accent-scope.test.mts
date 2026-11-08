@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 // Every stylesheet of the app: a rule moved out of globals.css into a component's file stays checked.
-const sheets = ['app/globals.css', ...fs.readdirSync(new URL('../components/', import.meta.url), { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.css')).map(file => `components/${file}`)];
+const sheets = ['app/styles/foundation.css', 'app/styles/conversation.css', 'app/styles/panels.css', ...fs.readdirSync(new URL('../components/', import.meta.url), { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.css')).map(file => `components/${file}`)];
 const css = sheets.map(file => fs.readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n').replace(/\/\*[\s\S]*?\*\//g, '');
 const DERIVED = /var\(--(primary|gold|love-red|edge-color)\b/;
 const SHARED = new Set([':root, .accent-scope', '.dark, .dark .accent-scope']);

@@ -1,0 +1,457 @@
+/* The header stays only while something needs input, so an approval is never hidden behind Settings. */
+.app-shell.settings-mode .workspace-header:not(:has(.pending-input-anchor)) { display:none; }
+.settings-mode .page-scroll:has(> .settings-layout) { padding:0; overflow:hidden; }
+.settings-mode .settings-layout { height:100%; max-width:none; gap:0; grid-template-columns:256px minmax(0,1fr); }
+.settings-mode .settings-nav { position:static; height:100%; overflow:auto; align-content:start; background:var(--sidebar); border-right:1px solid var(--hairline); padding:10px 8px 16px; gap:6px; }
+.settings-mode .settings-page { max-width:none; height:100%; overflow:auto; padding:48px 32px 64px; }
+.settings-mode .settings-page { --settings-content-width:860px; }
+/* The content column is centred in the space beside the navigation, as in ChatGPT and Claude (27 Oct). */
+.settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:auto; }
+/* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
+/* Title, search and the first section each get room of their own (Masih, 7 Nov: "the settings and search too cramped up
+   together"). */
+.settings-title { margin:14px 8px 10px; font:500 var(--text-base)/1.3 var(--ui-font); }
+.settings-nav > .search-field { margin-bottom:12px; }
+.settings-nav-group + .settings-nav-group { margin-top:10px; }
+.settings-nav [role="tablist"] { display:grid; gap:2px; }
+.settings-nav-group { display:grid; gap:2px; }
+.settings-nav-empty { padding:8px; font-size:var(--text-xs); color:var(--muted-foreground); }
+.settings-nav { display:grid; align-content:start; gap:2px; position:sticky; top:0; }
+/* Keep all settings destinations visible at desktop heights; very short windows retain scrolling. Tabs keep the
+ * sidebar's row height (--row-h; Masih, 1 Nov: one role, one look), so short windows fit by spacing alone (27 Oct fit rule). */
+@media (max-height:1200px) {
+ .settings-mode .settings-nav { padding:8px; gap:4px; }
+ .settings-mode .settings-nav .settings-title { margin:4px 8px 0; }
+ .settings-mode .settings-nav .settings-section-link { height:auto; margin:6px 0 2px; padding:4px 8px; }
+}
+@media (max-height:800px) {
+ .settings-mode .settings-nav, .settings-mode .settings-nav :is([role="tablist"], .settings-nav-group) { gap:0; }
+ .settings-mode .settings-nav { padding:4px 8px; }
+ .settings-mode .settings-nav .settings-title { margin:0 8px; line-height:1; }
+ .settings-mode .settings-nav .settings-section-link { margin:1px 0 0; padding:0 8px; }
+}
+
+.settings-page { min-width:0; max-width:820px; }
+.provider-note { font-size:var(--text-sm); color:var(--muted-foreground); margin:0; }
+.provider-note code, .mcp-server code { font-size:var(--text-xs); background:var(--muted); color:var(--foreground); padding:1px 5px; border-radius:5px; }
+.usage-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
+.usage-bar { height:6px; border-radius:999px; background:var(--muted); overflow:hidden; margin-top:4px; }
+.usage-bar span { display:block; height:100%; background:var(--primary); }
+.key-state { list-style:none; }
+.key-state.set { color:var(--foreground); }
+.key-state.unset { color:var(--warning); }
+.mcp-values { display:grid; gap:6px; margin:0; font-size:var(--text-sm); }
+.mcp-values div { display:grid; grid-template-columns:130px minmax(0,1fr); gap:8px; }
+.mcp-values dt { color:var(--muted-foreground); }
+.mcp-values dd { margin:0; overflow-wrap:anywhere; }
+.field { display:grid; gap:6px; font-size:var(--text-sm); font-weight:500; min-width:0; }
+@media(max-width:760px) {
+ .mcp-values div { grid-template-columns:1fr; gap:0; }
+}
+.mobile-brand { display:none; border-radius:6px; flex-shrink:0; }
+.field [data-slot="select-trigger"] { width:100%; min-height:36px; font-size:var(--text-sm); font-weight:400; }
+.field .model-picker-trigger { width:100%; height:36px; max-width:none; }
+.field select { width:100%; height:36px; border:1px solid var(--border); padding:0 10px; background:var(--background); color:var(--foreground); font-size:var(--text-base); font-weight:400; }
+@media(max-width:760px) { .mobile-brand { display:block; } }
+/* Chat parity: your messages can be copied and edited; code blocks carry their own copy button. */
+.user-turn { position:relative; display:flex; flex-direction:column; align-items:flex-end; margin-bottom:28px; min-width:0; }
+.user-turn .message.user { margin-bottom:0; }
+.user-turn .message-actions { left:auto; right:0; }
+.message-actions .copy-status { font-size:var(--text-xs); }
+/* A long message of his folds to about twelve lines (chat-message.tsx LONG_MESSAGE_PX), fading out above its chevron. */
+.message.user .message-body[data-clamped] { max-height:288px; overflow:hidden; mask-image:linear-gradient(to bottom, #000 75%, transparent); }
+.message.user .message-fold { display:flex; margin:2px -8px -6px auto; }
+.message.user.editing { width:min(100%, 680px); max-width:100%; display:flex; flex-direction:column; gap:8px; white-space:normal; }
+.code-block { position:relative; margin:0 0 14px; }
+.code-block > pre { margin:0; padding-right:44px; }
+.code-block-bar { position:absolute; top:6px; right:6px; display:flex; align-items:center; gap:4px; color:var(--muted-foreground); }
+.code-block-bar .copy-status { font-size:var(--text-small); }
+.code-block-bar .copy-status:empty { display:none; }
+.code-block-language { font:var(--text-xs)/1 var(--mono); color:var(--muted-foreground); }
+/* Code colours (rehype-highlight's hljs classes), as Claude's chats colour code: a few hues on the block's neutral
+ * ground, none orange (the light theme has none). */
+.markdown, .fe-coloured, .fe-windowed { --code-keyword:#7c3aed; --code-string:#15803d; --code-number:#1d4ed8; --code-title:#6d28d9; --code-comment:#6b7280; }
+.dark :is(.markdown, .fe-coloured, .fe-windowed) { --code-keyword:#c4a7ff; --code-string:#8fd19e; --code-number:#8ab4ff; --code-title:#dcc8ff; --code-comment:#8b929c; }
+:is(.markdown, .fe-coloured, .fe-windowed) :is(.hljs-keyword, .hljs-selector-tag, .hljs-doctag) { color:var(--code-keyword); }
+:is(.markdown, .fe-coloured, .fe-windowed) :is(.hljs-string, .hljs-regexp, .hljs-symbol, .hljs-template-tag, .hljs-addition) { color:var(--code-string); }
+:is(.markdown, .fe-coloured, .fe-windowed) :is(.hljs-number, .hljs-literal, .hljs-built_in, .hljs-type) { color:var(--code-number); }
+:is(.markdown, .fe-coloured, .fe-windowed) :is(.hljs-title, .hljs-section, .hljs-name, .hljs-selector-class, .hljs-selector-id) { color:var(--code-title); }
+:is(.markdown, .fe-coloured, .fe-windowed) :is(.hljs-comment, .hljs-quote, .hljs-meta) { color:var(--code-comment); }
+:is(.markdown, .fe-coloured, .fe-windowed) .hljs-comment { font-style:italic; }
+:is(.markdown, .fe-coloured, .fe-windowed) .hljs-deletion { color:var(--destructive); }
+.markdown [dir="auto"] { text-align:start; }
+.markdown blockquote { border-inline-start:3px solid var(--border); margin:12px 0; padding-inline-start:14px; color:var(--muted-foreground); }
+.markdown blockquote > :last-child { margin-bottom:0; }
+.markdown hr { border:0; border-top:1px solid var(--border); margin:20px 0; }
+.markdown h5,.markdown h6 { font-size:var(--text-sm); }
+.markdown .contains-task-list { list-style:none; padding-inline-start:0; }
+.markdown input[type="checkbox"] { margin-inline-end:6px; accent-color:var(--primary); }
+.markdown pre { direction:ltr; text-align:left; }
+.markdown :not(pre) > code { unicode-bidi:isolate; }
+.usage-reset { font-size:var(--text-xs); color:var(--muted-foreground); margin:2px 0 0; }
+.usage-value.high { color:var(--warning, #b45309); } .usage-value.critical { color:var(--destructive); }
+.usage-summary { display:grid; gap:6px; width:100%; margin:0; padding:8px; border:0; background:none; color:var(--foreground); text-align:left; cursor:pointer; }
+.usage-summary:hover { background:var(--hover); }
+.usage-row { display:grid; grid-template-columns:1fr auto; gap:4px 8px; font-size:var(--text-xs); }
+.usage-row .usage-left { color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.usage-row i { grid-column:1/-1; height:3px; border-radius:2px; background:linear-gradient(to right, var(--primary) var(--used), color-mix(in oklch, var(--foreground) 12%, transparent) var(--used)); }
+.usage-row.high i { background:linear-gradient(to right, var(--warning) var(--used), color-mix(in oklch, var(--foreground) 12%, transparent) var(--used)); }
+.usage-row.critical i { background:linear-gradient(to right, var(--destructive) var(--used), color-mix(in oklch, var(--foreground) 12%, transparent) var(--used)); }
+.usage-row-note { font-size:var(--text-xs); color:var(--muted-foreground); }
+
+/* Workspace hierarchy and requests stay separate from the scrolling task list. */
+.workspace-header > .min-w-0 { order:1; }
+.workspace-header > .mobile-menu, .workspace-header > .mobile-brand { order:0; }
+.pending-input-anchor { order:2; margin-left:auto; min-width:0; }
+.pending-input-trigger { gap:6px; max-width:300px; }
+.pending-count { display:grid; place-items:center; min-width:18px; height:18px; padding:0 4px; background:var(--primary); color:var(--primary-foreground); font-size:var(--text-small); }
+.pending-task-name { max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); border-left:1px solid var(--border); padding-left:8px; }
+.pending-input-panel { position:absolute; z-index:15; top:82px; right:24px; width:min(520px,calc(100% - 48px)); max-height:calc(100dvh - 116px); overflow:auto; border:1px solid var(--hud-edge); background:var(--background); box-shadow:0 16px 56px #0003; }
+.pending-panel-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:16px 18px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--background); z-index:1; }
+.pending-panel-heading h2 { font-size:var(--text-base); font-weight:600; }
+.pending-panel-heading p { color:var(--muted-foreground); font-size:var(--text-xs); margin-top:4px; }
+.pending-request-list { padding:8px 16px 16px; }
+.pending-request-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; }
+.pending-request-heading p { font-size:var(--text-sm); font-weight:550; overflow-wrap:anywhere; }
+@media(hover:none) { .thread-actions { opacity:1; } }
+@media(max-width:760px) {
+ .workspace-header { min-height:68px; gap:8px; }
+ .workspace-header h1 { font-size:var(--text-base); }
+ .pending-task-name { display:none; }
+ .pending-input-trigger { font-size:var(--text-small); }
+ .pending-input-panel { right:12px; top:74px; width:calc(100% - 24px); max-height:calc(100dvh - 100px); }
+ .agent-state { grid-column:2; font-size:var(--text-small); min-width:0; }
+ .thread-actions { opacity:1; }
+}
+
+/* Home: greeting, composer, then recent chats (Codex/Cloudroom style). */
+
+/* Chat with its agents beside it (Cloudroom split). */
+.chat-split { display:flex; flex:1; min-height:0; }
+.chat-split > .chat-view { flex:1; min-width:0; }
+.team-panel { width:300px; flex-shrink:0; border-left:1px solid var(--hairline); background:var(--sidebar); overflow:auto; padding:10px 8px; display:flex; flex-direction:column; gap:2px; }
+.team-heading { display:flex; align-items:baseline; justify-content:space-between; gap:8px; padding:4px 8px 10px; font-size:var(--text-sm); font-weight:600; }
+.team-heading small { font-size:var(--text-small); font-weight:450; color:var(--subtle-foreground); }
+.team-row { display:grid; grid-template-columns:16px minmax(0,1fr); column-gap:8px; align-items:center; text-align:left; padding:6px 8px; border:0; background:none; color:var(--foreground); }
+.team-row:hover { background:var(--hover); }
+.team-row.active { background:var(--selected); }
+.team-row.root { margin-bottom:6px; }
+.team-row.root > small { grid-column:2; }
+.team-title { font-size:var(--text-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.team-row .agent-model { font-size:var(--text-small); }
+.team-state { display:grid; place-items:center; width:16px; height:16px; }
+.team-state i { width:10px; height:10px; border-radius:50%; border:1.5px dashed var(--subtle-foreground); }
+.team-row.root .team-state i { border-style:solid; border-color:var(--muted-foreground); background:var(--muted-foreground); width:8px; height:8px; }
+.team-row.working .team-state i { border:1.5px solid color-mix(in oklch, var(--success), transparent 70%); border-top-color:var(--success); animation:spin .9s linear infinite; }
+.team-row.waiting .team-state i { border:0; background:var(--primary); }
+.team-row.error .team-state i { border:0; background:var(--destructive); }
+@media(max-width:1100px) { .team-panel { display:none; } }
+
+/* Customize (components/customize-view.tsx), as Claude's: the three sections, then each one's list of rows. */
+.customize { display:grid; gap:0; max-width:var(--page-content-width); margin:0 auto; }
+/* Customize keeps Settings' rhythm: the tabs, then 20px, then sections 24px apart; inside one, the title, note and list stack 8px apart. */
+.customize > .customize-head { margin-bottom:var(--page-head-gap); }
+.customize > section { display:grid; gap:8px; margin-bottom:var(--page-section-gap); }
+.customize-title { display:flex; align-items:center; gap:12px; min-height:32px; }
+.customize-actions { display:flex; align-items:center; gap:6px; }
+.customize-note { margin:0; font-size:var(--text-sm); color:var(--muted-foreground); }
+.customize-list { display:grid; margin:0; padding:0; list-style:none; border:1px solid var(--border); background:var(--card); overflow:hidden; }
+.customize-list:empty { display:none; }
+.customize-item { display:flex; align-items:center; gap:12px; min-height:56px; padding:10px 14px; }
+.customize-item + .customize-item { border-top:1px solid var(--border); }
+.customize-text { display:grid; gap:2px; flex:1; min-width:0; }
+.customize-name { font-size:var(--text-base); font-weight:500; color:var(--foreground); }
+.customize-description { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-sm); color:var(--muted-foreground); }
+.customize-badge { flex:none; padding:2px 8px; background:var(--muted); font-size:var(--text-xs); color:var(--muted-foreground); }
+.customize-state { flex:none; min-width:28px; font-size:var(--text-sm); color:var(--muted-foreground); text-align:right; }
+.customize-state[data-on] { color:var(--foreground); }
+.customize-errors { margin-top:10px; font-size:var(--text-sm); color:var(--muted-foreground); }
+.customize-errors summary { cursor:pointer; }
+/* Segmented choices: Settings' side-by-side options. */
+.segmented { display:inline-flex; flex-wrap:wrap; align-items:center; gap:2px; padding:2px; border-radius:var(--corner-radius, calc(var(--cut) + 1px) 0); corner-shape:var(--corner-shape, bevel); background:var(--muted); }
+.segmented > button { height:calc(var(--control-h) - 4px); padding:0 8px; font-size:var(--text-sm); font-weight:500; color:var(--muted-foreground); }
+.segmented > button:is([aria-pressed="true"], [aria-checked="true"], [aria-selected="true"]) { background:var(--card); color:var(--foreground); box-shadow:var(--shadow); }
+.agent-state { display:inline-flex; align-items:center; gap:6px; min-width:88px; font-size:var(--text-small); white-space:nowrap; color:var(--muted-foreground); }
+.agent-state i { height:7px; width:7px; border-radius:50%; background:currentColor; opacity:.55; }
+.agent-state.working { color:var(--success); font-weight:500; } .agent-state.working i { opacity:1; animation:pulse 1.6s ease-in-out infinite; }
+.agent-state.waiting { color:var(--accent-text); font-weight:500; } .agent-state.waiting i { opacity:1; }
+
+/* Settings respond to the available pane width, including beside the browser. */
+@container workspace (max-width:760px) {
+ .settings-layout { grid-template-columns:1fr; gap:12px; }
+ .settings-nav:not(.settings-nav-detailed) { position:static; display:flex; flex-wrap:wrap; gap:4px; }
+ .settings-nav button[role="tab"] { white-space:nowrap; }
+ .settings-nav-detailed { position:static; max-height:240px; overflow:auto; }
+}
+
+/* ── Elpis HUD: transcript and composer (16 Oct 2026) ─────────────────────────────── */
+.hud-label { line-height:1; }
+/* Long chats: a turn off screen skips style, layout and paint until it nears the view (the browser's own
+ * virtualisation, so find, selection and scroll position keep working); the size it last had holds its place. */
+/* A reply's last line sits 44px above the next prompt, as in ChatGPT: its final reply's 40px (components/message-actions.css) and 4px here. */
+.turn { margin-bottom:4px; content-visibility:auto; contain-intrinsic-size:auto 320px; }
+.turn-time { text-align:center; color:var(--muted-foreground); font-size:var(--text-small, 13px); margin:28px 0 20px; }
+.turn .user-turn { margin-bottom:24px; }
+.message.agent { position:relative; margin-bottom:18px; }
+/* Agent work, as Claude's desktop app shows it (components/transcript.tsx, chat-message.tsx CommandStep): a finished
+ * run of tools is one muted row with a chevron; a running step is a sentence with dots and a timer; an opened command
+ * is a title, its script in a bordered block coloured as shell, then its output, in red when it failed. */
+:root { --code-ink:#b3261e; --sh-command:#1f5fbf; --sh-string:#1a7f37; --sh-variable:#8241c8; }
+.dark { --code-ink:#ff8b7d; --sh-command:#7cb7ff; --sh-string:#8bd49c; --sh-variable:#c9a2ff; }
+.activity-group { margin:-3px 0 9px; }
+.activity-group > summary { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; padding:3px 8px 3px 4px; margin-left:-4px; cursor:pointer; font-size:var(--text-base); color:var(--muted-foreground); transition:color .12s, background .12s; }
+.activity-group > summary:hover { color:var(--foreground); background:var(--hover); }
+.activity-group[open] > summary { position:sticky; top:calc(-1 * var(--chat-top-inset, 0px)); z-index:1; width:100%; background:var(--background); }
+.activity-group[open] > summary:hover { background:var(--hover); }
+.activity-group > summary:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
+.activity-group-label, .live-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* What the agent viewed and made, as Claude's chats show it (components/file-cards.tsx): thumbnails on a row, a larger
+ * picture in its step, the full view over the page, and a card per created file after the reply. */
+.activity-thumb { flex:none; width:28px; height:28px; object-fit:cover; border:1px solid var(--border); border-radius:5px; background:var(--card); cursor:zoom-in; transition:transform .15s ease, box-shadow .15s ease; }
+.activity-thumb:hover { transform:rotate(-2deg); box-shadow:var(--shadow); }
+.activity-image { display:block; max-width:min(100%, 420px); max-height:260px; margin:6px 0; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--card); cursor:zoom-in; }
+.image-view { max-width:min(92vw, 1400px); max-height:92vh; padding:0; border:0; border-radius:10px; background:transparent; cursor:zoom-out; }
+.image-view::backdrop { background:color-mix(in oklch, #000 72%, transparent); }
+.image-view img { display:block; max-width:min(92vw, 1400px); max-height:92vh; object-fit:contain; border-radius:10px; }
+.file-cards { display:grid; gap:8px; margin:4px 0 14px; padding:0; list-style:none; max-width:520px; }
+.file-card { display:flex; align-items:center; gap:12px; min-width:0; padding:10px 10px 10px 14px; border:1px solid var(--border); background:var(--card); }
+.file-card-icon { flex:none; color:var(--muted-foreground); }
+.file-card-text { display:grid; gap:2px; flex:1; min-width:0; }
+.file-card-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-base); font-weight:500; color:var(--foreground); }
+.file-card-type { font-size:var(--text-sm); color:var(--muted-foreground); }
+.file-card-actions { display:flex; align-items:center; gap:4px; flex:none; }
+.file-cards:has(+ .file-cards-more) { margin-bottom:6px; }
+.file-cards-more { margin:0 0 14px; gap:6px; color:var(--muted-foreground); }
+.file-cards-error { margin:-8px 0 12px; font-size:var(--text-sm); color:var(--destructive); }
+.activity-group-failed { color:var(--destructive); }
+.activity-group-body { margin:6px 0 4px 10px; padding-left:12px; border-left:1px solid var(--border); }
+.live-label { color:var(--foreground); }
+.live-timer { flex-shrink:0; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.elpis-working-mark { width:18px; height:18px; flex-shrink:0; vertical-align:middle; color:var(--primary-action, var(--primary)); }
+.elpis-working-mark path { fill:none; stroke:currentColor; stroke-width:4; stroke-linejoin:round; }
+.elpis-working-rotor { transform-origin:32px 32px; animation:spin 4s linear infinite; }
+.elpis-working-dot { fill:currentColor; animation:elpis-blink 2s ease-in-out infinite; }
+.elpis-working-edge { animation:elpis-working-edge-opacity 4s ease-in-out infinite; }
+@keyframes elpis-blink { 0%,100% { opacity:1; } 50% { opacity:.15; } }
+@keyframes elpis-working-edge-opacity { 0%,100% { opacity:.45; } 50% { opacity:1; } }
+@media(prefers-reduced-motion:reduce) { .elpis-working-edge { animation:none; opacity:1; } }
+.turn-stopped, .context-event { margin:6px 0 18px; font-size:var(--text-sm); color:var(--muted-foreground); }
+.turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:7px; padding:3px 0; font-size:var(--text-base); color:var(--muted-foreground); }
+.composer-working { width:100%; max-width:var(--transcript-width,740px); margin-inline:auto; }
+.composer-working:empty { display:none; }
+.composer-working > .turn-working { margin:0 0 18px; }
+/* Raised about 1 mm after the 31 October preview; the composer remains its anchor. */
+.turn:has(> .turn-working) { margin-bottom:0; }
+.chat-scroll:has(.turn-working) { padding-bottom:8px; }
+.sh-command { color:var(--sh-command); }
+.sh-flag { color:color-mix(in oklch, var(--sh-command) 70%, var(--muted-foreground)); }
+.sh-string { color:var(--sh-string); }
+.sh-variable { color:var(--sh-variable); }
+.sh-operator { color:var(--muted-foreground); }
+.sh-comment { color:var(--subtle-foreground); font-style:italic; }
+.worked-for { margin:0 0 8px; }
+.worked-for > summary { width:100%; gap:4px; padding:0 0 5px; border-bottom:1px solid var(--thread-hairline); color:var(--muted-foreground); font-size:var(--text-base); line-height:20px; }
+.worked-for > summary > span { flex:none; }
+.worked-for > summary > .disclosure-chevron { order:1; color:inherit; transition:transform var(--motion, .2s); }
+.worked-for > summary::after { content:""; order:2; flex:1; }
+.worked-for > summary:hover { color:var(--foreground); }
+.worked-for-body { padding:6px 0 0; }
+
+.composer, .composer-tray { --edge:var(--composer-edge); }
+.composer:focus-within, .composer-tray:has(+ .composer:focus-within), .composer-tray:has(+ .composer-working:empty + .composer:focus-within) { --edge:color-mix(in srgb, var(--primary) 80%, var(--hud-edge)); }
+.composer { position:relative; background:var(--composer); border-color:var(--edge); box-shadow:var(--elevation-composer); }
+/* The chat box glows in the theme colour on all four sides, as the selected sidebar chat does (Masih, 31 Oct). */
+.composer { box-shadow:var(--elevation-composer), var(--chat-box-glow); }
+.composer-tray { border-color:var(--edge); }
+/* No colour transition: the dark edge is gold, and a theme switch must not fade gold into the light theme. */
+/* The native bevel draws the border once, using the same width and colour as its straight edges. */
+.composer:focus-within { box-shadow:var(--elevation-composer), var(--chat-box-glow); }
+.empty-state h2 { font-family:var(--ui-font); font-weight:300; letter-spacing:.01em; }
+.dark .empty-state .empty-mark { filter:drop-shadow(0 0 18px color-mix(in srgb, var(--primary) 35%, transparent)); }
+.composer-controls { margin-top:6px; }
+.composer-right { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); min-width:0; }
+.composer-actions { display:flex; align-items:center; gap:var(--composer-control-gap, 8px); flex-shrink:0; }
+/* Every control on the composer's row is one --control-h box with one --icon-size glyph, as in ChatGPT (28px send, 9px
+ * from the edges). Send is the one filled box, so it also keeps the glyph inset the plain buttons have on each side. */
+.composer-controls { --action-box:var(--control-h); --action-glyph:var(--icon-size); }
+.composer-controls :is(button, [data-slot="composer-chip"]) { height:var(--control-h); }
+.composer-controls :is(.composer-plus, .context-ring, .fast-toggle, [data-size^="icon"]) { width:var(--control-h); min-width:var(--control-h); }
+.composer-controls svg:not(.context-ring-icon) { width:var(--icon-size); height:var(--icon-size); }
+.composer-actions :is(.dictation-buttons > button, .stop-button, .send-button) { height:var(--action-box); min-width:var(--action-box); }
+.composer-actions :is(.dictation-buttons > button, .stop-button, .send-button) svg { width:var(--action-glyph); height:var(--action-glyph); }
+.composer-actions > .send-button { margin-inline-start:calc((var(--action-box) - var(--action-glyph)) / 2); }
+.composer-right .dictation-control { margin-top:0; }
+.composer .dictation-status:empty { display:none; }
+.fast-toggle[aria-pressed="true"] { color:var(--accent-text); background:var(--selected); }
+.composer-plus { color:var(--muted-foreground); }
+.composer-plus:hover { color:var(--accent-text); }
+.composer-pill { display:inline-flex; align-items:center; gap:6px; padding:0 9px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); white-space:nowrap; }
+.composer-pill svg { flex-shrink:0; }
+.plan-pill { color:var(--accent-text); border-color:color-mix(in oklch, var(--primary) 35%, transparent); background:color-mix(in oklch, var(--primary) 8%, transparent); padding-right:4px; }
+.plan-pill button { display:inline-grid; place-items:center; width:18px; height:18px; border:0; background:none; color:inherit; cursor:pointer; }
+.plan-pill button:hover { background:var(--hover); }
+.provider-key-form { display:grid; gap:8px; padding:12px; margin:8px; border:1px solid color-mix(in srgb, var(--primary) 35%, var(--border)); font-size:var(--text-sm); color:var(--muted-foreground); }
+.provider-key-form strong { color:var(--foreground); font-weight:500; }
+.provider-key-row { display:flex; gap:8px; }
+.plan-card { margin:10px 0; padding:12px 16px 4px; border:1px solid var(--border); border-left:2px solid var(--primary); background:var(--card); }
+.plan-card-heading { display:flex; align-items:center; gap:6px; margin:0 0 6px; line-height:1.2; color:var(--accent-text); }
+/* A failed workflow check: its bar, icon, heading and underline take the destructive colour. */
+.plan-card.check-failed { --primary:var(--destructive); }
+.permissions-auto svg:first-child { color:var(--primary); }
+.permissions-full { color:var(--accent-text); }
+/* Floating surfaces: menus, list pop-ups (selects, the model picker, slash commands), popovers and dialogs share one
+   edge, corner, fill and glow. The components in components/ui apply these classes; callers add only width. */
+.hud-menu, .hud-popover, .hud-dialog { border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); box-shadow:var(--shadow), var(--glow); }
+.hud-menu { padding:6px; }
+.hud-popover { padding:16px; }
+.hud-dialog { padding:20px; }
+.hud-menu-title { line-height:1.2; color:var(--muted-foreground); padding:6px 8px 8px; margin:0; }
+.hud-menu-item { display:flex; align-items:center; gap:8px; padding:7px 8px; }
+.hud-menu-item > .grid { min-width:0; overflow-wrap:anywhere; }
+.hud-menu-item small { color:var(--muted-foreground); font-size:var(--text-small); line-height:1.35; }
+.hud-menu-item[data-highlighted] { background:var(--hover); }
+.hud-menu-item[aria-selected="true"] { background:var(--selected); }
+/* A row the keys reach (components/ui/menu-row.tsx) shows focus as a dropdown item does: by its fill, not the page outline. */
+[data-slot="menu-row"]:focus-visible { outline:none; }
+.hud-menu-item svg { flex-shrink:0; }
+.hud-menu-item > svg:first-child { color:var(--primary); }
+.hud-menu-item[data-variant="destructive"] { color:var(--destructive); }
+.hud-menu-item[data-variant="destructive"] > svg:first-child { color:inherit; }
+/* A two-line item (name, then a description) keeps its icon and check level with the name. */
+.hud-menu-item:has(small) > svg { align-self:flex-start; margin-top:2px; }
+/* Selects and the model picker mark the chosen item with a check at the right edge. */
+.hud-menu-item[data-slot="select-item"], .hud-menu-item[data-slot="combobox-item"] { padding-inline-end:32px; }
+/* A menu's dividing line, a submenu's arrow and a chosen choice's check (components/ui/dropdown-menu.tsx). */
+.hud-menu-separator { height:1px; margin:6px -6px; background:var(--hairline); }
+.hud-menu-chevron { margin-left:auto; color:var(--muted-foreground); }
+.hud-menu-check { display:inline-flex; margin-left:auto; color:var(--primary); }
+.select-option { display:grid; gap:2px; }
+.context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
+.context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
+.context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
+/* The context ring fills clockwise in its chat accent at every usage level. */
+.context-ring-icon circle { fill:none; stroke-width:2; }
+.context-ring-icon .context-ring-track { stroke:var(--border); }
+.context-ring-icon .context-ring-fill { stroke:var(--primary); stroke-linecap:round; transition:stroke-dashoffset .3s; }
+/* Claude's tooltip on its icon buttons: the text, and a quieter line under it. */
+.hud-tooltip { display:grid; gap:2px; max-width:260px; padding:6px 10px; border:1px solid var(--hud-edge); background:var(--card); color:var(--foreground); font-size:var(--text-small); line-height:1.35; box-shadow:var(--shadow); pointer-events:none; }
+.hud-tooltip small { color:var(--muted-foreground); font-size:var(--text-small); }
+/* Liquid glass: the page shows through, blurred and brightened, under a light rim (Matilda's face label, 5 Nov). */
+.hud-tooltip.hud-tooltip-glass { border:1px solid color-mix(in oklab, white 45%, transparent); background:color-mix(in oklab, var(--card) 38%, transparent); -webkit-backdrop-filter:blur(18px) saturate(1.8); backdrop-filter:blur(18px) saturate(1.8); box-shadow:inset 0 1px 0 color-mix(in oklab, white 55%, transparent), 0 8px 24px rgb(0 0 0 / 0.18); border-radius:12px; corner-shape:round; }
+.dark .hud-tooltip.hud-tooltip-glass { border-color:color-mix(in oklab, white 18%, transparent); box-shadow:inset 0 1px 0 color-mix(in oklab, white 22%, transparent), 0 8px 24px rgb(0 0 0 / 0.4); }
+/* The ring's popover, laid out as Claude's: a 360px card; rows inset 16px; the context section is a muted header row, a thin
+ * bar and the categories below it. It shows the TUI Context Ledger's CONTEXT WINDOW section on one full-window scale. */
+.context-ledger { display:flex; flex-direction:column; gap:4px; width:360px; max-width:calc(100vw - 2rem); max-height:min(var(--available-height, 640px), 640px); overflow-y:auto; padding:8px 0; font-size:var(--text-small); line-height:1.4; }
+.context-ledger p { margin:0; }
+.context-ledger-head { display:flex; align-items:center; gap:8px; min-height:20px; padding:4px 16px; border:0; background:transparent; color:var(--muted-foreground); font:inherit; text-align:left; cursor:pointer; }
+.context-ledger-head:disabled { cursor:default; }
+.context-ledger-head:focus-visible { outline:1.5px solid var(--ring); outline-offset:-2px; border-radius:4px; }
+.context-ledger-summary { margin-left:auto; font-variant-numeric:tabular-nums; }
+.context-ledger-caret { flex:none; transition:transform .15s; }
+.context-ledger-caret[data-expanded] { transform:rotate(90deg); }
+.context-ledger-head:hover:not(:disabled) .context-ledger-caret { color:var(--foreground); }
+.context-ledger-note { padding:0 16px; line-height:1.35; color:var(--muted-foreground); }
+.context-bar { display:flex; height:4px; margin:2px 16px; border-radius:999px; overflow:hidden; background:var(--muted); }
+.context-bar-segment { flex:none; height:100%; background:var(--category, var(--context)); }
+.context-bar-segment:not(:first-child) { box-shadow:-1px 0 0 var(--card); }
+.context-bar-segment:only-child:not([data-category]) { min-width:4px; }
+.context-ledger-rows { display:grid; gap:4px; margin:2px 0 0; padding:0 16px; list-style:none; }
+.context-ledger-row { display:flex; align-items:center; gap:8px; }
+.context-ledger-row::before { content:""; flex:none; width:10px; height:10px; border-radius:2px; background:var(--category, var(--context)); }
+.context-ledger-row-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.context-ledger-row-value { color:var(--muted-foreground); font-variant-numeric:tabular-nums; white-space:nowrap; }
+.context-ledger-row-share { width:44px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.context-ledger-row[data-category="free"] { color:var(--muted-foreground); }
+.context-ledger-row[data-category="free"] .context-ledger-row-share { color:inherit; }
+.context-ledger-row[data-category="free"]::before { background:var(--muted); box-shadow:inset 0 0 0 1px var(--border); }
+.context-ledger-compact { display:flex; justify-content:flex-end; padding:4px 16px 0; }
+/* Category colours are the TUI's (context_usage.rs): its paper palette in light, its charcoal palette in dark. */
+[data-category="userMessages"] { --category:#006cce; } [data-category="agentMessages"] { --category:#00875c; } [data-category="reasoning"] { --category:#7143d6; }
+[data-category="toolCalls"] { --category:#7d5b3a; } [data-category="toolResults"] { --category:#74841b; } [data-category="systemInstructions"] { --category:#8c2d3c; }
+[data-category="developerMessages"] { --category:#ce478f; } [data-category="toolDefinitions"] { --category:#646464; } [data-category="unrecognizedItems"] { --category:#008395; }
+.dark [data-category="userMessages"] { --category:#53b1ff; } .dark [data-category="agentMessages"] { --category:#3fd394; } .dark [data-category="reasoning"] { --category:#ab84ff; }
+.dark [data-category="toolCalls"] { --category:#ffa13a; } .dark [data-category="toolResults"] { --category:#d9db75; } .dark [data-category="systemInstructions"] { --category:#f0445d; }
+.dark [data-category="developerMessages"] { --category:#ff99c2; } .dark [data-category="toolDefinitions"] { --category:#a0a0a0; } .dark [data-category="unrecognizedItems"] { --category:#1dd1e2; }
+.message.agent p, .message.agent li { white-space:pre-line; }
+/* Matilda's full Love Spot conversation and floating chat share one reading rhythm: compact lines and half a line between blocks. */
+.message.agent.matilda-message { line-height:var(--reply-line-height); }
+.message.agent.matilda-message .markdown > :is(p, ul, ol, pre) { margin-block:0; }
+.message.agent.matilda-message .markdown > :is(p, ul, ol, pre) + :is(p, ul, ol, pre) { margin-top:var(--reply-paragraph-gap); }
+.no-browser > .side-panel { display:none; }
+.composer-hint:empty { display:none; }
+/* The agent's task list above the message box (components/task-list.tsx), as Claude Code shows its todo list. */
+.task-list { max-width:var(--transcript-width, 740px); margin:0 auto 8px; padding:8px 12px; border:1px solid var(--border); background:var(--card); font-size:var(--text-sm); }
+.task-list-head { display:flex; align-items:center; gap:8px; }
+.task-list-head .hud-menu-title { padding:0; }
+.task-list-count { margin-left:auto; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.task-list-note { margin:6px 0 0; color:var(--muted-foreground); font-size:var(--text-sm); }
+.task-list ul { display:grid; gap:4px; margin:8px 0 2px; padding:0; list-style:none; }
+.task-list li { display:flex; align-items:baseline; gap:8px; line-height:1.4; }
+.task-mark { flex:none; width:11px; height:11px; border-radius:3px; box-shadow:inset 0 0 0 1.5px var(--muted-foreground); transform:translateY(1px); }
+.task-list li[data-status="inProgress"] { font-weight:600; }
+.task-list li[data-status="inProgress"] .task-mark { background:var(--context); box-shadow:0 0 0 3px color-mix(in oklab, var(--context) 24%, transparent); }
+.task-list li[data-status="completed"] { color:var(--muted-foreground); text-decoration:line-through; }
+.task-list li[data-status="completed"] .task-mark { box-shadow:none; background:var(--muted-foreground); clip-path:polygon(14% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 38% 72%); }
+/* Elpis's features under the message box (components/elpis-features.tsx): a chip each, its dot olive when on. */
+.elpis-features { display:flex; align-items:center; gap:2px; margin-left:auto; }
+.feature-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-xs); white-space:nowrap; cursor:pointer; }
+.feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--muted-foreground); }
+.feature-chip:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
+.feature-chip:disabled { cursor:default; }
+.feature-chip[aria-pressed="true"] { color:var(--accent-text); }
+.feature-dot { width:7px; height:7px; border-radius:50%; box-shadow:inset 0 0 0 1.5px var(--muted-foreground); }
+.feature-chip[aria-pressed="true"] .feature-dot { background:var(--primary); box-shadow:none; }
+.feature-chip .context-ring-icon .context-ring-track { stroke:currentColor; }
+.composer .model-picker-trigger { border-color:transparent; background:transparent; }
+/* The composer's toolbar controls (permissions, model, effort) are one pill: height, corner, text size and hover. */
+.composer-pill, .composer .model-select { height:28px; font-size:var(--text-xs); }
+.composer-pill:hover:not(:disabled), .composer .model-select:hover:not(:disabled) { background:var(--hover); color:var(--foreground); border-color:var(--hairline); }
+.composer .model-trigger-provider { display:none; }
+/* Sidebar */
+/* Group labels in the sidebar and in Settings' navigation. */
+.section-label { display:flex; align-items:center; height:var(--row-h); line-height:1; color:var(--muted-foreground); padding:0 8px; }
+.section-label-row > .section-label { height:auto; }
+.thread-row { position:relative; }
+/* Match the group chevron's center (6px inset + half its 13px icon); only circles and names indent for agents. */
+.thread-row > button[aria-expanded]:first-child { position:absolute; left:calc(6.5px + var(--thread-depth, 0) * 14px); width:14px; background:transparent; box-shadow:none; }
+/* The cropped viewBox keeps the same drawn caret inside an 8px box, clear of the active rail. */
+.thread-row > button[aria-expanded]:first-child svg { width:14px; height:14px; }
+.thread-row > span[aria-hidden="true"]:first-child { display:none; }
+.thread-row > button[aria-expanded]:first-child:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+.thread-row.active { background:var(--selected); }
+/* Keep the chat list's native drag image and solid source row. Reordering a button is not a button press. */
+[data-reorder] { transition:none; translate:none; }
+[data-reorder][data-drop="before"] { box-shadow:inset 0 2px 0 0 var(--primary); }
+[data-reorder][data-drop="after"] { box-shadow:inset 0 -2px 0 0 var(--primary); }
+[data-reorder][data-drop="into"] { background:var(--selected); box-shadow:inset 0 0 0 1px var(--primary); }
+/* The angular edge (Masih's drawing on the Love Spot board, 31 Oct): ONE unbroken line in the theme colour that runs the whole
+ * length of one side and carries on round that side's cut corner. Every surface that shows it uses this rule and only chooses
+ * its side through --edge-paint, so a change to the line (width, colour, glow) is made here once.
+ *   selected sidebar row: the whole left side, bending into the top-left cut;
+ *   selected chat tab:    the whole bottom side, bending into the bottom-right cut;
+ *   your message box:     the whole right side, bending into the bottom-right cut. */
+:root { --edge-line:2px; }
+.thread-row.active::before, .task-tab.chat-tab.active::before, .message.user::after {
+  content:""; position:absolute; inset:0; pointer-events:none; border:var(--edge-line) solid transparent;
+  border-radius:inherit; corner-shape:inherit; background:var(--edge-paint);
+  mask:linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0) border-box; mask-composite:exclude;
+}
+.thread-row.active, .task-tab.chat-tab.active, .message.user {
+  --edge-color:var(--primary); --edge-ink:linear-gradient(var(--edge-color), var(--edge-color));
+  --edge-corner:calc(var(--edge-cut, var(--cut)) + var(--edge-line));
+}
+.thread-row.active { --edge-paint:var(--edge-ink) left top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) left top / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
+.task-tab.chat-tab.active { --edge-paint:var(--edge-ink) left bottom / 100% var(--edge-line) no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
+.message.user { position:relative; --edge-cut:var(--cut-lg); --edge-color:color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent);
+  --edge-paint:var(--edge-ink) right top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
+/* The glow follows the straight part of the line. */
+.thread-row.active::after { content:""; position:absolute; left:0; top:var(--edge-cut, var(--cut)); bottom:0; width:var(--edge-line); pointer-events:none; box-shadow:var(--edge-glow); }
+.task-tab.chat-tab.active::after { left:0; right:var(--edge-cut, var(--cut)); bottom:0; height:var(--edge-line); background:none; box-shadow:var(--edge-glow); }
+/* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
+.thread-link:focus-visible { outline:none; }
+.thread-row:has(.thread-link:focus-visible) { outline:1px solid color-mix(in oklch, var(--primary) 40%, transparent); outline-offset:-1px; }
+.thread-row.selected { background:var(--selected); }
+.thread-bookmark { position:absolute; right:7px; top:50%; transform:translateY(-50%); color:var(--primary); pointer-events:none; }
+.thread-row:has(.thread-bookmark) .thread-actions { opacity:0; }
+.thread-row:has(.thread-bookmark):is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-actions { opacity:1; }
+.thread-row:is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-bookmark { visibility:hidden; }
