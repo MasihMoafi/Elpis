@@ -26,6 +26,7 @@ export const THEME_CHARACTERS: Record<string, { name: string; image: string; the
 );
 
 /** The selected palette's character, or null for Matilda herself. */
+export const OPEN_CHARACTER_PICKER = "elpis-open-character-picker";
 export function useThemeCharacter() {
   const { selectedPalette } = usePreferences();
   return THEME_CHARACTERS[selectedPalette] ?? null;

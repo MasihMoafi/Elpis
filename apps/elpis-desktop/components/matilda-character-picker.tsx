@@ -1,22 +1,30 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import { ChevronDown, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cts";
 import { savePreferences, usePreferences } from "@/lib/preferences";
-import { THEME_CHARACTER_LIST, useThemeCharacter } from "@/lib/theme-characters";
+import { OPEN_CHARACTER_PICKER, THEME_CHARACTER_LIST, useThemeCharacter } from "@/lib/theme-characters";
+import { shortcutTitle } from "@/lib/shortcuts";
 
 /** Love Spot and the companion share the same character and palette choice. */
 export function MatildaCharacterPicker({ compact = false }: { compact?: boolean }) {
-  const { selectedPalette } = usePreferences(), character = useThemeCharacter();
+  const preferences = usePreferences(), { selectedPalette } = preferences, character = useThemeCharacter();
+  const [open, setOpen] = useState(false), trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    // Several pickers can be mounted; the first one on screen answers the shortcut.
+    const answer = (event: Event) => { if (!event.defaultPrevented && trigger.current?.getClientRects().length) { event.preventDefault(); setOpen(true); } };
+    window.addEventListener(OPEN_CHARACTER_PICKER, answer); return () => window.removeEventListener(OPEN_CHARACTER_PICKER, answer);
+  }, []);
   const selectedStyle = { background: "color-mix(in srgb, var(--primary) 14%, transparent)", color: "var(--primary)", fontWeight: 600 };
   const matilda = <>
     <img src={MATILDA_SHOTS_LIGHT.softSmile} alt="" className="absolute inset-0 size-full object-contain dark:hidden" />
     <img src={MATILDA_SHOTS.softSmile} alt="" className="absolute inset-0 hidden size-full object-contain dark:block" />
   </>;
-  return <DropdownMenu>
-    <DropdownMenuTrigger render={<Button variant={compact ? "ghost" : "outline"} size={compact ? "icon-xs" : "sm"} aria-label="Character" title={compact ? "Change character" : character ? `${character.name} · ${character.theme}` : "Matilda · Default"} className={compact ? "shrink-0" : "shrink-0 gap-1.5 px-2"} />}>
+  return <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenuTrigger render={<Button ref={trigger} variant={compact ? "ghost" : "outline"} size={compact ? "icon-xs" : "sm"} aria-label="Character" title={compact ? shortcutTitle("Change character", "theme", preferences) : character ? `${character.name} · ${character.theme}` : "Matilda · Default"} className={compact ? "shrink-0" : "shrink-0 gap-1.5 px-2"} />}>
       {compact ? <UsersRound aria-hidden="true" /> : <span className="relative size-4 shrink-0">{character ? <img src={character.image} alt="" className="size-full object-contain" /> : matilda}</span>}
       {!compact && <><span className="love-spot-label max-w-28 truncate">{character?.name ?? "Matilda"}</span><ChevronDown aria-hidden="true" className="love-spot-label shrink-0" /></>}
     </DropdownMenuTrigger>

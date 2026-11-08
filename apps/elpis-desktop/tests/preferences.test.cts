@@ -116,6 +116,16 @@ test('OBSRM: empty, partial, repeated and long legacy orders load through the re
   }
 });
 
+test('page and theme shortcuts work from the message box and leave the browser and terminal their own keys', () => {
+  const ctrl = { ctrlKey: true };
+  for (const [key, id] of [['L', 'go-loveSpot'], ['E', 'go-mother'], ['G', 'go-canvas'], ['U', 'go-customize'], ['O', 'go-observability']] as const) {
+    assert.deepEqual(shortcuts.shortcutFor(press(key.toLowerCase(), `Key${key}`, ctrl), true), { id });
+    assert.equal(shortcuts.shortcutInScope(id, 'chat', false, false), true);
+    assert.equal(shortcuts.shortcutInScope(id, 'chat', false, true), false);
+  }
+  assert.deepEqual(shortcuts.shortcutFor(press('L', 'KeyL', { ctrlKey: true, shiftKey: true }), false), { id: 'theme' });
+});
+
 test('custom app shortcuts replace defaults, disable, reset and reload without changing typing or native gestures', () => {
   browser(); const use = loader();
   const preferences = use('lib/preferences.ts'), shortcuts = use('lib/shortcuts.ts');

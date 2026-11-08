@@ -3,6 +3,7 @@ import { stopsOnEscape } from "@/lib/prompt-history";
 import type { SideChatState } from "@/lib/use-composer-panels";
 import type { Thread } from "@/lib/api";
 import type { View } from "@/lib/workspace-types";
+import { OPEN_CHARACTER_PICKER } from "@/lib/theme-characters";
 import type { useSidePanel } from "@/components/side-panel";
 
 type Inputs = {
@@ -36,6 +37,9 @@ export function useWorkspaceShortcuts({ shortcutAction, selected, ordered, readO
     else if (id === "undo-delete") void undoDelete();
     else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
     else if (id === "settings") { setSettingsSection("general"); show("settings"); }
+    else if (id.startsWith("go-")) show(id.slice(3) as View);
+    // A cancelled event means a visible picker took it; with Matilda hidden, Settings holds the same choice.
+    else if (id === "theme") { if (window.dispatchEvent(new CustomEvent(OPEN_CHARACTER_PICKER, { cancelable: true }))) { setSettingsSection("general"); show("settings"); } }
     else if (id === "back" || id === "forward") goHistory(id === "back" ? -1 : 1);
     else if (id === "shortcuts") { shortcutsReturnFocus.current = document.activeElement as HTMLElement | null; setShortcutsOpen(true); }
     else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]!);

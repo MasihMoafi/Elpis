@@ -23,6 +23,11 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "select-chats", group: "Chat", label: "Select several chats in the sidebar (Esc clears)", keys: ["Ctrl+click", "Shift+click"] },
   { id: "undo-delete", group: "Chat", label: "Bring back the last deleted chat (outside text fields)", keys: ["Ctrl+Z"] },
   { id: "command-menu", group: "Navigation", label: "Command menu", keys: ["Ctrl+K"] },
+  { id: "go-loveSpot", group: "Navigation", label: "Open Love Spot", keys: ["Ctrl+L"] },
+  { id: "go-mother", group: "Navigation", label: "Open Elpis", keys: ["Ctrl+E"] },
+  { id: "go-canvas", group: "Navigation", label: "Open Workflows", keys: ["Ctrl+G"] },
+  { id: "go-customize", group: "Navigation", label: "Open Customize", keys: ["Ctrl+U"] },
+  { id: "go-observability", group: "Navigation", label: "Open Observability", keys: ["Ctrl+O"] },
   { id: "search", group: "Navigation", label: "Search chats", keys: ["Ctrl+Shift+K"] },
   { id: "previous-chat", group: "Navigation", label: "Previous chat", keys: ["Ctrl+Shift+[", "Ctrl+PageUp"] },
   { id: "next-chat", group: "Navigation", label: "Next chat", keys: ["Ctrl+Shift+]", "Ctrl+PageDown"] },
@@ -48,6 +53,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: "sidebar", group: "App", label: "Toggle sidebar", keys: ["Ctrl+Shift+S", "Ctrl+B"] },
   { id: "copy-folder", group: "App", label: "Copy working directory", keys: ["Ctrl+Shift+C"] },
   { id: "settings", group: "App", label: "Settings", keys: ["Ctrl+,"] },
+  { id: "theme", group: "App", label: "Choose a theme and character", keys: ["Ctrl+Shift+L"] },
   { id: "shortcuts", group: "App", label: "Show keyboard shortcuts", keys: ["Ctrl+/"] },
 ];
 
@@ -56,7 +62,8 @@ export const SHORTCUTS: Shortcut[] = [
 const APP_BINDINGS = new Set([
   "new-chat", "side-chat", "rename", "archive", "pin", "chat-to-top", "chat-to-bottom", "undo-delete", "command-menu", "search",
   "previous-chat", "next-chat", "new-tab", "close-tab", "next-tab", "previous-tab", "back", "forward",
-  "terminal", "full-view", "files", "sidebar", "copy-folder", "settings", "shortcuts",
+  "terminal", "full-view", "files", "sidebar", "copy-folder", "settings", "shortcuts", "theme",
+  "go-loveSpot", "go-mother", "go-canvas", "go-customize", "go-observability",
 ]);
 export const canCustomizeShortcut = (id: string) => APP_BINDINGS.has(id);
 
@@ -102,6 +109,8 @@ export function shortcutSearchKey(event: KeyPress): string | null {
 
 /** Chat deletion is not the undo history of another page, panel or popup. */
 export function shortcutInScope(id: string, view: string, inSidebar: boolean, inOtherSurface = false): boolean {
+  // The browser's address bar and the terminal keep Ctrl+L, Ctrl+U and the rest while the focus is there.
+  if (id.startsWith("go-")) return !inOtherSurface;
   return id !== "undo-delete" || (!inOtherSurface && (inSidebar || view === "chat"));
 }
 
@@ -143,6 +152,11 @@ function defaultShortcutFor(event: KeyPress, typing: boolean): { id: string; ind
     // In a text field Ctrl+Z stays the field's own undo.
     if (shortcutLetter(event, "z") && !typing) return { id: "undo-delete" };
     if (key === "k") return { id: "command-menu" };
+    if (shortcutLetter(event, "l")) return { id: "go-loveSpot" };
+    if (shortcutLetter(event, "e")) return { id: "go-mother" };
+    if (shortcutLetter(event, "g")) return { id: "go-canvas" };
+    if (shortcutLetter(event, "u")) return { id: "go-customize" };
+    if (shortcutLetter(event, "o")) return { id: "go-observability" };
     if (key === "b") return { id: "sidebar" };
     if (key === "t") return { id: "new-tab" };
     if (key === "w") return { id: "close-tab" };
@@ -157,6 +171,7 @@ function defaultShortcutFor(event: KeyPress, typing: boolean): { id: string; ind
   }
   if (ctrl && event.shiftKey && !event.altKey) {
     if (key === "k") return { id: "search" };
+    if (shortcutLetter(event, "l")) return { id: "theme" };
     if (key === "s") return { id: "sidebar" };
     if (key === "tab") return { id: "previous-tab" };
     if (key === "a") return { id: "archive" };
