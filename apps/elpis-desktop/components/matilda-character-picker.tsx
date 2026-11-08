@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronDown, UsersRound } from "lucide-react";
+import { ChevronDown, UsersRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cts";
@@ -10,6 +10,7 @@ import { THEME_CHARACTER_LIST, useThemeCharacter } from "@/lib/theme-characters"
 /** Love Spot and the companion share the same character and palette choice. */
 export function MatildaCharacterPicker({ compact = false }: { compact?: boolean }) {
   const { selectedPalette } = usePreferences(), character = useThemeCharacter();
+  const selectedStyle = { background: "color-mix(in srgb, var(--primary) 14%, transparent)", color: "var(--primary)", fontWeight: 600 };
   const matilda = <>
     <img src={MATILDA_SHOTS_LIGHT.softSmile} alt="" className="absolute inset-0 size-full object-contain dark:hidden" />
     <img src={MATILDA_SHOTS.softSmile} alt="" className="absolute inset-0 hidden size-full object-contain dark:block" />
@@ -21,14 +22,12 @@ export function MatildaCharacterPicker({ compact = false }: { compact?: boolean 
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="max-h-96 w-56 overflow-y-auto" aria-label="Characters" data-matilda-character-menu>
       <DropdownMenuGroup>
-        <DropdownMenuItem data-character-id="elpis" onClick={() => savePreferences({ selectedPalette: "elpis" })}>
-          <Check aria-hidden="true" className={!character ? "shrink-0" : "invisible shrink-0"} />
+        <DropdownMenuItem data-character-id="elpis" aria-current={!character ? "true" : undefined} style={!character ? selectedStyle : undefined} onClick={() => savePreferences({ selectedPalette: "elpis" })}>
           <span className="relative size-6 shrink-0">{matilda}</span>
           <span className="min-w-0 flex-1 truncate">Matilda</span>
           <span className="text-xs text-muted-foreground">Default</span>
         </DropdownMenuItem>
-        {THEME_CHARACTER_LIST.map(item => <DropdownMenuItem key={item.id} data-character-id={item.id} onClick={() => savePreferences({ selectedPalette: item.id })}>
-          <Check aria-hidden="true" className={selectedPalette === item.id ? "shrink-0" : "invisible shrink-0"} />
+        {THEME_CHARACTER_LIST.map(item => <DropdownMenuItem key={item.id} data-character-id={item.id} aria-current={selectedPalette === item.id ? "true" : undefined} style={selectedPalette === item.id ? selectedStyle : undefined} onClick={() => savePreferences({ selectedPalette: item.id })}>
           <img src={item.image} alt="" className="size-6 shrink-0 rounded-sm object-contain" />
           <span className="min-w-0 flex-1 truncate">{item.name}</span>
           <span className="text-xs text-muted-foreground">{item.theme}</span>

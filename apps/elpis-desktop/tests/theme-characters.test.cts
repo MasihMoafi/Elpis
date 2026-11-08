@@ -89,6 +89,19 @@ for (const colorScheme of ['light', 'dark']) test(`characters can be selected be
       await page.keyboard.press('Enter');
       const menu = page.locator('[data-matilda-character-menu]');
       await menu.waitFor();
+      const selected = menu.locator('[aria-current="true"]');
+      assert.equal(await selected.count(), 1, 'one character is visibly chosen');
+      assert.equal(await selected.getAttribute('data-character-id'), palette === 'palette-plum' ? 'elpis' : 'palette-plum');
+      assert.equal(await menu.locator('svg').count(), 0, 'portraits replace the tick column');
+      assert.equal(await menu.locator('[data-character-id]').count(), 13);
+      assert.equal(await menu.locator('[data-character-id]:not(:has(img))').count(), 0, 'every character keeps its portrait');
+      const selectedStyle = await selected.evaluate((row: HTMLElement) => {
+        const style = getComputedStyle(row);
+        return { weight: Number(style.fontWeight), background: style.backgroundColor };
+      });
+      assert.ok(selectedStyle.weight >= 600, 'chosen name is bold');
+      assert.notEqual(selectedStyle.background, 'rgba(0, 0, 0, 0)', 'chosen row has a tint');
+      assert.ok(await menu.locator('[data-character-id]:not([aria-current])').first().evaluate((row: HTMLElement) => Number(getComputedStyle(row).fontWeight) < 600), 'other names keep normal weight');
       const bounds = await menu.boundingBox();
       assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1440 && bounds.y + bounds.height <= 960, 'picker fits in the window');
       await menu.locator(`[data-character-id="${palette}"]`).click();
