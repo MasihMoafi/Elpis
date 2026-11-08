@@ -91,6 +91,60 @@ test('unarchiving a chat brings back the agents archived with it, and not one ar
 
 function rowFor<T extends { id: string }>(rows: T[], id: string) { const row = rows.find(value => value.id === id); assert.ok(row); return row; }
 
+test('saved provider delegations recover without a creation-time transcript mention, including after restart', async t => {
+  const f = fixture(t), at = 1792827361;
+  Object.assign(f.threads.get(MAKER)!, { threadSource: 'user', createdAt: at - 100 });
+  for (const id of [CHILD, OTHER]) Object.assign(f.threads.get(id)!, { threadSource: null, createdAt: at });
+  const directory = path.join(f.home, 'elpis-claude');
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, 'sessions.json'), JSON.stringify({
+    [CHILD]: { model: 'agy/gemini', turns: [] },
+    _delegations: { [CHILD]: { parentThreadId: MAKER, model: 'agy/gemini' } },
+  }));
+  assert.equal(await parentOf(f.client, CHILD), MAKER, 'the bridge registry is explicit creation evidence');
+  assert.equal(await parentOf(f.client, OTHER), undefined, 'folder and timestamps never imply membership');
+  const restarted = f.open(); t.after(() => restarted.close());
+  assert.equal(await parentOf(restarted, CHILD), MAKER);
+  assert.deepEqual((await restarted.listThreads({ ancestorThreadId: MAKER })).data.map(thread => thread.id), [CHILD]);
+});
+
+test('saved delegations retain nested families and include a parent on an older history page', async t => {
+  const f = fixture(t), at = 1792827361;
+  Object.assign(f.threads.get(MAKER)!, { threadSource: 'user', createdAt: at - 100 });
+  for (const id of [CHILD, OTHER]) Object.assign(f.threads.get(id)!, { threadSource: null, createdAt: at });
+  const directory = path.join(f.home, 'elpis-claude');
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, 'sessions.json'), JSON.stringify({
+    _delegations: { [CHILD]: { parentThreadId: MAKER }, [OTHER]: { parentThreadId: CHILD } },
+  }));
+  const send = f.socket.send;
+  f.socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== 'thread/list' || request.params.ancestorThreadId) return send(raw);
+    const data = request.params.cursor ? [f.threads.get(MAKER)] : [f.threads.get(CHILD), f.threads.get(OTHER)];
+    queueMicrotask(() => f.socket.emit('message', JSON.stringify({ id: request.id, result: { data: structuredClone(data), nextCursor: request.params.cursor ? null : 'older' } })));
+  };
+  const page = await f.client.listThreads();
+  assert.equal(rowFor(page.data, CHILD).parentThreadId, MAKER);
+  assert.equal(rowFor(page.data, OTHER).parentThreadId, CHILD);
+  assert.equal(page.data.filter(row => row.id === MAKER).length, 1, 'the project parent is present once');
+});
+
+test('malformed delegation records never invent a parent or take over a user-created chat', async t => {
+  for (const helpers of [null, [], 'unreadable', { [CHILD]: null }, { [CHILD]: { parentThreadId: 42 } }, { [CHILD]: { parentThreadId: CHILD } }]) {
+    const f = fixture(t), directory = path.join(f.home, 'elpis-claude');
+    Object.assign(f.threads.get(CHILD)!, { threadSource: null, createdAt: 1792827361 });
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(path.join(directory, 'sessions.json'), JSON.stringify({ _delegations: helpers }));
+    assert.equal(await parentOf(f.client, CHILD), undefined);
+  }
+  const f = fixture(t), directory = path.join(f.home, 'elpis-claude');
+  Object.assign(f.threads.get(CHILD)!, { threadSource: 'user', createdAt: 1792827361 });
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, 'sessions.json'), JSON.stringify({ _delegations: { [CHILD]: { parentThreadId: MAKER } } }));
+  assert.equal(await parentOf(f.client, CHILD), undefined);
+});
+
 test('cold history recovers only creation-time references, keeps explicit and user parents, and caches unchanged bytes', async t => {
   const f = fixture(t), at = 1792827361, second = '00000000-0000-0000-0000-0000000000a4';
   const wrongTime = '00000000-0000-0000-0000-0000000000a5';

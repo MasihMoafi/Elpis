@@ -142,6 +142,25 @@ if (process.argv.includes("app-server")) {
   const saved = (text, extra = {}) => ({ model: "claude/haiku", turns: [{ items: [{ type: "userMessage", content: [{ type: "text", text }] }] }], ...extra });
   const list = { sortKey: "updated_at", sourceKinds: ["cli", "vscode"], limit: 25 };
 
+  test("fallback history keeps delegated provider chats under their parent", async t => {
+    const parent = thread("parent", 10, { preview: "Project owner" });
+    const helper = thread("helper", 30);
+    const ordinary = thread("ordinary", 20);
+    const fixture = await setup(t, {
+      threads: { parent: { thread: parent }, helper: { thread: helper }, ordinary: { thread: ordinary } },
+      pages: { first: { data: [parent], nextCursor: null } },
+    }, {
+      helper: saved("Read the page", { model: "agy/gemini" }), ordinary: saved("My own chat"),
+      _delegations: { helper: { parentThreadId: "parent", model: "agy/gemini" } },
+    });
+    const response = await fixture.call("thread/list", list);
+    assert.ifError(response.error);
+    assert.deepEqual(response.result.data.map(row => row.id), ["helper", "ordinary", "parent"]);
+    assert.equal(response.result.data[0].parentThreadId, "parent", "fallback additions carry the recorded parent");
+    assert.equal(response.result.data[0].model, "agy/gemini");
+    assert.equal(response.result.data[1].parentThreadId, undefined, "a person's own chat remains independent");
+  });
+
   test("lightweight provider resume excludes history and independently pages summary turns", async t => {
     const turns = Array.from({length:12},(_,i)=>({id:`stored-${i}`,startedAt:i+2,status:"completed",items:[{id:`u-${i}`,type:"userMessage",content:[{type:"text",text:`User ${i}`}]},{id:`tool-${i}`,type:"commandExecution",aggregatedOutput:"x".repeat(700000)},{id:`a-${i}`,type:"agentMessage",text:`Answer ${i}`}]}));
     const native={id:"native",startedAt:1,status:"completed",items:[{id:"native-answer",type:"agentMessage",text:"Native answer"}]};

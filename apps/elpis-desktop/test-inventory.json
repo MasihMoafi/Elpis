@@ -398,6 +398,7 @@
     "tests/love-spot-talk.runtime.mjs",
     "tests/love-spot-voice.runtime.mjs",
     "tests/project-journey.runtime.mjs",
+    "tests/project-subagents.runtime.mjs",
     "tests/documents.runtime.mjs",
     "tests/rewind.runtime.mjs",
     "tests/edit-fork-real.test.cjs",
