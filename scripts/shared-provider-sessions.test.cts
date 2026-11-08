@@ -21,6 +21,7 @@ const path: typeof import('node:path') = require('node:path');
 const { spawn }: typeof import('node:child_process') = require('node:child_process');
 const WebSocket: new (address: string) => Socket = require('../tools/elpis-claude/node_modules/ws');
 const { Provider, message }: ProviderApi = require('./lib/mock-provider.cts');
+const { writeSharedProviderAgyFixture }: typeof import('./lib/shared-provider-agy.cts') = require('./lib/shared-provider-agy.cts');
 const pause = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 const wait = async (f: () => unknown, label: string) => { const until = Date.now() + 20000; while (!f()) { assert(Date.now() < until, `timed out: ${label}`); await pause(20); } };
 const missingThread = (threadId: string) => (error: Error) => error.message === `thread not found: ${threadId}`
@@ -38,24 +39,7 @@ async function main() {
   const sock = path.join(root, 'bridge.sock'), log = path.join(root, 'bridge.log'), control = path.join(root, 'control.json'), calls = path.join(root, 'calls.jsonl');
   const adapter = path.join(root, 'adapter.cjs');
   const agy = path.join(root, 'agy.cjs');
-  fs.writeFileSync(agy, `#!/usr/bin/env node
-const fs: typeof import('node:fs') = require('node:fs');
-const newline = String.fromCharCode(10);
-let pending = '';
-const logPrompt = input => {
-  if (input) fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ method: 'agy/prompt', args: process.argv.slice(2), input }) + newline);
-};
-if (process.argv.includes('--input-format')) {
-  process.stdin.on('data', chunk => {
-    pending += chunk;
-    let end;
-    while ((end = pending.indexOf(newline)) >= 0) { logPrompt(pending.slice(0, end)); pending = pending.slice(end + 1); }
-  });
-  process.stdin.on('end', () => logPrompt(pending));
-}
-process.argv.push('--agy-fixture');
-require(${JSON.stringify(path.resolve(__dirname, 'permissions-bridge.test.cts'))});
-`, { mode: 0o755 });
+  writeSharedProviderAgyFixture(agy, calls);
   fs.writeFileSync(adapter, `const fs=require('node:fs');let b='';process.stdin.on('data',c=>{b+=c;let i;while((i=b.indexOf('\\n'))>=0){const l=b.slice(0,i);b=b.slice(i+1);if(l)fs.appendFileSync(${JSON.stringify(calls)},l+'\\n');}});require(${JSON.stringify(path.resolve(__dirname, 'permissions-bridge.test.cts'))});\n`);
   const bridge = spawn(process.execPath, [process.env.SHARED_PROVIDER_BRIDGE ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], { cwd, env: {
     PATH: process.env.PATH, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home,
