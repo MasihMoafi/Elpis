@@ -14,3 +14,10 @@
 .user-turn .message-actions { opacity:1; }
 /* ‹ 2 / 2 ›: an edited message's versions, before its other actions. */
 .message-versions { display:inline-flex; align-items:center; gap:2px; }
+
+/* A message sent while a turn runs starts a new beat, so it gets room above. The last message before Working needs only
+   room for its hanging actions (Masih, 8 Nov: "the space there is too small while the space here is too large"). */
+.turn > div > .user-turn { margin-top:24px; }
+.chat-view:has(.composer-working > .turn-working) .chat-scroll { padding-bottom:0; }
+.chat-view:has(.composer-working > .turn-working) .turn:last-of-type { margin-bottom:0; }
+.chat-view:has(.composer-working > .turn-working) .turn:last-of-type :is(> .user-turn:last-child, > div:last-child > .user-turn) { margin-bottom:34px; }
