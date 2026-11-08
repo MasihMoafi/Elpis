@@ -8,7 +8,7 @@ import { editKey } from "./graph-key";
 import { FIT } from "./constants";
 import { useProjectFolders } from "./folders";
 
-export function canvasPlanning({ runtimeAttempt, recordedRun, planning, startingRun, setNotice, cwd, readyMade, graph, buildReadyMade, mother, setPlanning, setMenu, project, limit, latest, checkpoint, workflowCatalog, setRun, setStates, setDashboardId, setUndoLoad, setGraph, setSelection, flow }: {
+export function canvasPlanning({ runtimeAttempt, recordedRun, planning, startingRun, setNotice, cwd, readyMade, graph, buildReadyMade, mother, setPlanning, planStop, setMenu, project, limit, latest, checkpoint, workflowCatalog, setRun, setStates, setDashboardId, setUndoLoad, setGraph, setSelection, flow }: {
   runtimeAttempt: () => () => boolean;
   recordedRun: Props["recordedRun"];
   planning: string;
@@ -20,6 +20,7 @@ export function canvasPlanning({ runtimeAttempt, recordedRun, planning, starting
   buildReadyMade: (workflow: ReadyMade, goal: string) => Promise<CanvasGraph | null>;
   mother: MotherSettings;
   setPlanning: React.Dispatch<React.SetStateAction<string>>;
+  planStop: React.RefObject<AbortController | null>;
   setMenu: React.Dispatch<React.SetStateAction<BoardMenu | null>>;
   project: ReturnType<typeof useProjectFolders>;
   limit: number;
@@ -49,8 +50,9 @@ export function canvasPlanning({ runtimeAttempt, recordedRun, planning, starting
       edges: starter?.edges ?? [], template: chosenPattern?.id, planningPattern: graph.planningPattern ?? "auto", maxAgents: graph.maxAgents, mother: { ...mother, brief: goal } }) : graph;
     const planningGoal = chosenPattern ? `${goal}\n\nUse the selected ${chosenPattern.name} pattern exactly: keep these agents and their dependencies, without adding or removing agents. Tailor their prompts, folders and completion checks to this goal.` : goal;
     setPlanning(goal); setNotice(""); setMenu(null);
+    const stop = new AbortController(); planStop.current = stop;
     try {
-      const plan = await api<Plan>("/canvas/plan", { goal: planningGoal, cwd, folders: project.folders ?? [], agents: boardForPlan(scope ?? base), maxAgents: limit });
+      const plan = await api<Plan>("/canvas/plan", { goal: planningGoal, cwd, folders: project.folders ?? [], agents: boardForPlan(scope ?? base), maxAgents: limit }, stop.signal);
       if (!current()) return null;
       if (editKey(latest.current) !== editKey(graph)) throw Error("The current workflow changed while Elpis was designing. Your changes are kept; try again.");
       if (chosenPattern) {
@@ -71,8 +73,8 @@ export function canvasPlanning({ runtimeAttempt, recordedRun, planning, starting
       if (newWorkflow && plan.why?.trim()) setNotice(`${plan.mode === "direct" ? "One agent does it" : `A team of ${plan.agents.length}`}: ${plan.why.trim()}`);
       setTimeout(() => void flow.fitView({ ...FIT, duration: 250 }), 60);
       return next;
-    } catch (error) { if (current()) setNotice(`Elpis could not fill in the team: ${errorText(error)}`); return null; }
-    finally { setPlanning(""); }
+    } catch (error) { if (current()) setNotice(stop.signal.aborted ? "Stopped. Your workflow is unchanged." : `Elpis could not fill in the team: ${errorText(error)}`); return null; }
+    finally { planStop.current = null; setPlanning(""); }
   }
   return { letElpis };
 }

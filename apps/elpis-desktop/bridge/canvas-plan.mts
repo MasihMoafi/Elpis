@@ -208,12 +208,12 @@ async function choices(client: Required<PlannerClient>) {
 // ---- The route's operation -----------------------------------------------------------------------------------
 
 /** Decides and plans for `input.goal`: `{ name, mode, why, agents }`, one agent when mode is "direct". `client` is the bridge's DesktopClient. */
-export async function planCanvas(client: PlannerClient, input: unknown, { timeoutMs = PLAN_TIMEOUT_MS } = {}) {
+export async function planCanvas(client: PlannerClient, input: unknown, { timeoutMs = PLAN_TIMEOUT_MS, signal }: { timeoutMs?: number; signal?: AbortSignal } = {}) {
   const request = parseRequest(input);
   const options = typeof client.models === 'function' ? await choices(client as Required<PlannerClient>) : { models: [], preferences: '' };
   // A Claude-subscription model runs through the elpis-claude bridge: no provider, its level in the thread's config,
   // and no schema parameter, so the schema goes in the prompt (as tools/elpis-claude/workflow-agents.mts does).
-  const ask = (route: typeof MOTHER_ROUTE | null) => askBackground(client, { cwd: request.cwd, permissions: ':danger-full-access', timeoutMs,
+  const ask = (route: typeof MOTHER_ROUTE | null) => askBackground(client, { cwd: request.cwd, permissions: ':danger-full-access', timeoutMs, ...(signal ? { signal } : {}),
     ...(route?.provider === 'claude'
       ? { prompt: `${promptFor(request, options)}\n\nAnswer with JSON only, matching this JSON Schema:\n${JSON.stringify(PLAN_SCHEMA)}`,
         model: { model: route.model }, config: { model_reasoning_effort: route.reasoningEffort } }
@@ -223,7 +223,7 @@ export async function planCanvas(client: PlannerClient, input: unknown, { timeou
   const routes = typeof client.models === 'function' ? [MOTHER_ROUTE, MOTHER_FALLBACK] : [null];
   let answer, failure;
   for (const route of routes) {
-    try { answer = await ask(route); break; } catch (error) { failure = error; }
+    try { answer = await ask(route); break; } catch (error) { if (signal?.aborted) throw error; failure = error; }
   }
   if (answer === undefined) throw failure;
   return checkPlan(answer, { ...request, models: options.models });

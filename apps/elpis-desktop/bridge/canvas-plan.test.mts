@@ -401,3 +401,11 @@ test('POST /api/canvas/plan needs the session, answers the plan, and explains a 
   const get = await fetch(`${origin}/api/canvas/plan`, { headers: { Cookie: cookie } });
   assert.notEqual(get.status, 200);
 });
+
+test('a stopped design ends without trying the fallback model', async () => {
+  const stop = new AbortController(); stop.abort();
+  let calls = 0;
+  const client = { settings: async () => { calls++; return { main: { model: 'm' } }; }, sideRpc: async () => { calls++; return {}; }, on() {}, off() {} };
+  await assert.rejects(planCanvas(client as never, BODY, { signal: stop.signal }), { name: 'AbortError' });
+  assert.equal(calls, 0);
+});

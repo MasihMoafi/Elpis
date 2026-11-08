@@ -47,7 +47,12 @@ export function createWorkflowDispatcher({ event, claimWait = 60_000 }: { event:
 
 export async function handleWorkflowRoutes(state: import('./server-http.mts').ServerState, request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse, url: URL, method: string) {
   const { client, options, experimentLab, automations, workflowDispatcher } = state;
-  if (url.pathname === '/api/canvas/plan' && method === 'POST') { json(response, 200, await planCanvas(client, await body(request))); return true; }
+  if (url.pathname === '/api/canvas/plan' && method === 'POST') {
+    // Stop in the app closes this request, which ends the planner's background turn.
+    const stop = new AbortController();
+    response.once('close', () => { if (!response.writableEnded) stop.abort(); });
+    json(response, 200, await planCanvas(client, await body(request), { signal: stop.signal })); return true;
+  }
   if (url.pathname === '/api/experiment-lab') {
     if (method === 'GET') { json(response, 200, { record: await experimentLab.read(url.searchParams.get('id') || undefined), entries: await experimentLab.list() }); return true; }
     const input = await body(request);
