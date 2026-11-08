@@ -1,5 +1,7 @@
 name: Binary size report
 
+# Reads Codex's published symbols instead of compiling (a cold release build takes about 100 minutes).
+# Elpis's binary is the same size class as this Codex release (320 MB against 321 MB).
 on:
   push:
     branches: [size-report]
@@ -8,27 +10,47 @@ on:
 permissions:
   contents: read
 
+env:
+  TAG: rust-v0.167.0
+  ASSET: codex-symbols-x86_64-unknown-linux-musl.tar.gz
+
 jobs:
-  bloat:
+  symbols:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
-    env:
-      CODEX_SKIP_BWRAP_BUILD: '1'
-      CARGO_BUILD_JOBS: '4'
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - name: Install build tools
+      - name: Download the symbols
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
-          cargo install cargo-bloat --locked
+          curl --fail --location --silent --show-error --output symbols.tar.gz \
+            "https://github.com/openai/codex/releases/download/$TAG/$ASSET"
+          mkdir symbols
+          tar -xzf symbols.tar.gz -C symbols
+          find symbols -type f -printf '%s %p\n' | sort -nr | head
       - name: Size by package
-        working-directory: codex-rs
-        run: cargo bloat --release --locked -p codex-cli --bin codex --crates -n 80
-      - name: Largest functions
-        working-directory: codex-rs
-        run: cargo bloat --release --locked -p codex-cli --bin codex -n 40
-      - name: Size by section
-        working-directory: codex-rs
-        run: size -A target/release/codex | sort -k2 -nr | head -12
+        shell: python
+        run: |
+          import collections, pathlib, re, subprocess
+          files = [p for p in pathlib.Path('symbols').rglob('*') if p.is_file()
+                   and p.read_bytes()[:4] == b'\x7fELF' and 'codex' in p.name
+                   and 'app-server' not in str(p) and 'host' not in p.name]
+          target = max(files, key=lambda p: p.stat().st_size)
+          print('file', target)
+          out = subprocess.run(['nm', '-S', '-t', 'd', '--demangle=rust', str(target)],
+                               capture_output=True, text=True, check=True).stdout
+          totals = collections.Counter()
+          functions = collections.Counter()
+          for line in out.splitlines():
+              parts = line.split(None, 3)
+              if len(parts) != 4 or parts[2] not in 'tTwW':
+                  continue
+              size, name = int(parts[1]), parts[3]
+              match = re.match(r'[<&\s*]*(?:impl\s+)?(?:dyn\s+)?([A-Za-z_][A-Za-z0-9_]*)::', name)
+              totals[match.group(1) if match else '(other)'] += size
+              functions[name[:110]] += size
+          mb = 1024 * 1024
+          print(f'code total {sum(totals.values()) / mb:.1f} MB')
+          for name, size in totals.most_common(70):
+              print(f'{size / mb:8.2f} MB  {name}')
+          print('largest functions')
+          for name, size in functions.most_common(25):
+              print(f'{size / mb:8.2f} MB  {name}')
