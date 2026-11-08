@@ -45,7 +45,7 @@
   "R5|components/tab-strip.tsx|hand-written control; use the shadcn/ui component from components/ui": 1,
   "R5|components/thread-actions.tsx|hand-written control; use the shadcn/ui component from components/ui": 1,
   "R6|components/agents-canvas/architectures.tsx|<details> draws a disclosure triangle; use the shadcn Collapsible": 1,
-  "R6|components/agents-canvas/canvas-board.tsx|<details> draws a disclosure triangle; use the shadcn Collapsible": 1,
+  "R6|components/agents-canvas/canvas-overlays.tsx|<details> draws a disclosure triangle; use the shadcn Collapsible": 1,
   "R6|components/chat-message.tsx|<details> draws a disclosure triangle; use the shadcn Collapsible": 4,
   "R6|components/customize-plugins.tsx|<details> draws a disclosure triangle; use the shadcn Collapsible": 1,
   "R6|components/customize-view.tsx|<details> draws a disclosure triangle; use the shadcn Collapsible": 1,

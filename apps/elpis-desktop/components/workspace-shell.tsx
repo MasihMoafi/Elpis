@@ -29,175 +29,43 @@ import { WorkspaceChatPage } from "@/components/workspace-chat-page";
 
 /** The workspace page's layout. */
 export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }) {
-  const {
-    activeTurn,
-    addProject,
-    agentRunsOpen,
-    agentsPanel,
-    appearance,
-    approvalCardProps,
-    arrangedPages,
-    attachFromBrowser,
-    attachmentState,
-    awaitingTeam,
-    browser,
-    browserPins,
-    busy,
-    catalog,
-    chatActions,
-    chatGroupSection,
-    chatGroups,
-    chatReorder,
-    chatRows,
-    chatTab,
-    children,
-    collapsedProjects,
-    collapsedSections,
-    commandActions,
-    composer,
-    composerRef,
-    conversations,
-    cwd,
-    dark,
-    deleteRunHistory,
-    deleteTargets,
-    deleteThread,
-    descendants,
-    desktop,
-    dialogs,
-    draftStore,
-    editDraft,
-    expanded,
-    find,
-    finishReplay,
-    focusComposer,
-    foldable,
-    fullView,
-    goHistory,
-    groups,
-    hasTerminal,
-    keepWorkflowTab,
-    knownModel,
-    listKeys,
-    loadThread,
-    loading,
-    loveActivity,
-    loveToolbarHost,
-    models,
-    narrow,
-    navHistory,
-    newChat,
-    newChatTab,
-    notices,
-    openAgentsPanel,
-    openById,
-    openComposerControl,
-    openSettings,
-    openThread,
-    outsideChatApprovals,
-    pageReorder,
-    pages,
-    panelDrawer,
-    panelShown,
-    pendingInputButton,
-    pendingInputOpen,
-    permissionMode,
-    pins,
-    placement,
-    preferences,
-    projectActions,
-    projectReorder,
-    projectState,
-    ready,
-    refreshModels,
-    removeProject,
-    resumeOpen,
-    rewindFrom,
-    rewindState,
-    rewindTurn,
-    runDescendants,
-    runtime,
-    search,
-    searchInput,
-    selectProject,
-    selected,
-    selectedLoveChat,
-    selection,
-    session,
-    setAgentRunsOpen,
-    setAgentsPanelState,
-    setAttention,
-    setCollapsedProjects,
-    setDeleteRunHistory,
-    setDeleteTargets,
-    setDesktopPrompt,
-    setError,
-    setLoveToolbarHost,
-    setPendingInputOpen,
-    setResumeOpen,
-    setRewindTurn,
-    setTuiLaunch,
-    shortcutAction,
-    show,
-    showPage,
-    showSidebar,
-    side,
-    sidebar,
-    sidebarCollapsed,
-    sidebarKeys,
-    sidebarModel,
-    sidebarThreads,
-    sidebarWidth,
-    split,
-    switchRewind,
-    tabs,
-    team,
-    threadBranch,
-    threadList,
-    threadRow,
-    threads,
-    trashChats,
-    tuiLaunch,
-    turnEntries,
-    unarchived,
-    undoDelete,
-    updateGroups,
-    view,
-    waitingIds,
-    workIn,
-    workflowFolder,
-    workflowSandbox,
-  } = workspace;
-  const heading = view === "chat" ? (selected ? title(selected) : "") : PAGE_NAMES[view];
-  const chatName = selected ? title(selected) : "New chat";
-  const chatState = selected ? agentState(selected, waitingIds) : "idle",
-    floatState = activeTurn && chatState === "idle" ? "working" : chatState;
-  const meta = selected
-    ? [agentName(selected), selected.agentRole && selected.agentRole !== "default" ? selected.agentRole : null]
+  const heading =
+    workspace.view === "chat" ? (workspace.selected ? title(workspace.selected) : "") : PAGE_NAMES[workspace.view];
+  const chatName = workspace.selected ? title(workspace.selected) : "New chat";
+  const chatState = workspace.selected ? agentState(workspace.selected, workspace.waitingIds) : "idle",
+    floatState = workspace.activeTurn && chatState === "idle" ? "working" : chatState;
+  const meta = workspace.selected
+    ? [
+        agentName(workspace.selected),
+        workspace.selected.agentRole && workspace.selected.agentRole !== "default"
+          ? workspace.selected.agentRole
+          : null,
+      ]
         .filter(Boolean)
         .join(" · ")
     : "";
   const alerts = (
     <WorkspaceAlertArea
-      notices={notices}
-      session={session}
-      runtime={runtime}
-      composer={composer}
-      attachments={attachmentState}
-      drafts={draftStore}
-      rewind={rewindState}
-      catalog={catalog}
-      activeTurn={activeTurn}
-      undoDelete={undoDelete}
-      switchRewind={switchRewind}
-      editDraft={editDraft}
+      notices={workspace.notices}
+      session={workspace.session}
+      runtime={workspace.runtime}
+      composer={workspace.composer}
+      attachments={workspace.attachmentState}
+      drafts={workspace.draftStore}
+      rewind={workspace.rewindState}
+      catalog={workspace.catalog}
+      activeTurn={workspace.activeTurn}
+      undoDelete={workspace.undoDelete}
+      switchRewind={workspace.switchRewind}
+      editDraft={workspace.editDraft}
     />
   );
-  const chatCovered = (panelShown && panelDrawer) || (fullView && side.chatCollapsed);
+  const chatCovered =
+    (workspace.panelShown && workspace.panelDrawer) || (workspace.fullView && workspace.side.chatCollapsed);
 
   // One Matilda voice and one live call for the whole app: both go on when he leaves the board or Love Spot's chat; her face shows and controls them.
   return (
-    <DocumentReviewProvider onAttach={parts => attachFromBrowser(parts, false)}>
+    <DocumentReviewProvider onAttach={parts => workspace.attachFromBrowser(parts, false)}>
       <LiveVoiceProvider>
         <ReadAloud
           threadId="love-spot"
@@ -206,313 +74,332 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
           unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}
         >
           <div
-            data-workspace={view}
-            data-desktop={desktop || undefined}
-            className={`app-shell${split.pane ? " session-pane" : ""}${split.thread && view === "chat" ? " session-split" : ""}${dark ? " dark" : ""} has-title-bar${sidebarCollapsed ? " sidebar-collapsed" : ""}${view === "settings" ? " settings-mode" : ""}${panelShown ? " panel-active" : ""}`}
-            style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+            data-workspace={workspace.view}
+            data-desktop={workspace.desktop || undefined}
+            className={`app-shell${workspace.split.pane ? " session-pane" : ""}${workspace.split.thread && workspace.view === "chat" ? " session-split" : ""}${workspace.dark ? " dark" : ""} has-title-bar${workspace.sidebarCollapsed ? " sidebar-collapsed" : ""}${workspace.view === "settings" ? " settings-mode" : ""}${workspace.panelShown ? " panel-active" : ""}`}
+            style={{ "--sidebar-width": `${workspace.sidebarWidth}px` } as CSSProperties}
           >
             <title>
-              {view === "canvas"
+              {workspace.view === "canvas"
                 ? "Workflows · Elpis"
-                : view === "experimentLab"
+                : workspace.view === "experimentLab"
                   ? "Lab · Elpis"
-                  : view === "customize"
+                  : workspace.view === "customize"
                     ? "Customize — Elpis"
                     : "Elpis"}
             </title>
             <WorkspaceTitleBar
-              desktop={desktop}
-              preferences={preferences}
-              navHistory={navHistory}
-              sidebar={sidebar}
-              sidebarCollapsed={sidebarCollapsed}
-              panelShown={panelShown}
-              panelDrawer={panelDrawer}
-              setError={setError}
-              newChat={newChat}
-              goHistory={goHistory}
-              addProject={addProject}
-              show={show}
-              showSidebar={showSidebar}
-              narrow={narrow}
-              shortcutAction={shortcutAction}
+              desktop={workspace.desktop}
+              preferences={workspace.preferences}
+              navHistory={workspace.navHistory}
+              sidebar={workspace.sidebar}
+              sidebarCollapsed={workspace.sidebarCollapsed}
+              panelShown={workspace.panelShown}
+              panelDrawer={workspace.panelDrawer}
+              setError={workspace.setError}
+              newChat={workspace.newChat}
+              goHistory={workspace.goHistory}
+              addProject={workspace.addProject}
+              show={workspace.show}
+              showSidebar={workspace.showSidebar}
+              narrow={workspace.narrow}
+              shortcutAction={workspace.shortcutAction}
             />
             <WorkspaceCommandDialogs
-              session={session}
-              runtime={runtime}
-              notices={notices}
-              pages={pages}
-              dialogs={dialogs}
-              projectState={projectState}
-              sidebarModel={sidebarModel}
-              childrenState={children}
-              split={split}
-              desktop={desktop}
-              panelShown={panelShown}
-              actions={commandActions}
-              openThread={openThread}
-              selectProject={selectProject}
-              newChat={newChat}
-              setDesktopPrompt={setDesktopPrompt}
+              session={workspace.session}
+              runtime={workspace.runtime}
+              notices={workspace.notices}
+              pages={workspace.pages}
+              dialogs={workspace.dialogs}
+              projectState={workspace.projectState}
+              sidebarModel={workspace.sidebarModel}
+              childrenState={workspace.children}
+              split={workspace.split}
+              desktop={workspace.desktop}
+              panelShown={workspace.panelShown}
+              actions={workspace.commandActions}
+              openThread={workspace.openThread}
+              selectProject={workspace.selectProject}
+              newChat={workspace.newChat}
+              setDesktopPrompt={workspace.setDesktopPrompt}
             />
             <WorkspaceOrganizationDialogs
-              projectState={projectState}
-              dialogs={dialogs}
-              model={sidebarModel}
-              groups={groups}
-              selection={selection}
-              placement={placement}
-              actions={projectActions}
+              projectState={workspace.projectState}
+              dialogs={workspace.dialogs}
+              model={workspace.sidebarModel}
+              groups={workspace.groups}
+              selection={workspace.selection}
+              placement={workspace.placement}
+              actions={workspace.projectActions}
             >
               <ResumeConversation
-                open={resumeOpen}
-                chats={sidebarThreads}
-                returnFocus={composerRef}
-                onClose={() => setResumeOpen(false)}
+                open={workspace.resumeOpen}
+                chats={workspace.sidebarThreads}
+                returnFocus={workspace.composerRef}
+                onClose={() => workspace.setResumeOpen(false)}
                 onChoose={thread => {
-                  setResumeOpen(false);
-                  void openThread(thread);
+                  workspace.setResumeOpen(false);
+                  void workspace.openThread(thread);
                 }}
               />
             </WorkspaceOrganizationDialogs>
             <DeleteChatsDialog
-              threads={deleteTargets}
-              trash={trashChats}
-              alwaysConfirm={deleteRunHistory}
+              threads={workspace.deleteTargets}
+              trash={workspace.trashChats}
+              alwaysConfirm={workspace.deleteRunHistory}
               onClose={() => {
-                setDeleteTargets(null);
-                setDeleteRunHistory(false);
+                workspace.setDeleteTargets(null);
+                workspace.setDeleteRunHistory(false);
               }}
             />
             <RewindDialog
-              threadId={selected?.id}
-              turnId={rewindTurn}
+              threadId={workspace.selected?.id}
+              turnId={workspace.rewindTurn}
               prompt={
-                rewindTurn
-                  ? (turnEntries
-                      .get(rewindTurn)
+                workspace.rewindTurn
+                  ? (workspace.turnEntries
+                      .get(workspace.rewindTurn)
                       ?.find(entry => entry.item.type === "userMessage")
                       ?.item.content?.map(part => part.text ?? "")
                       .join("\n") ?? "")
                   : ""
               }
-              turns={rewindTurn ? Math.max(1, turnEntries.size - [...turnEntries.keys()].indexOf(rewindTurn)) : null}
-              onConfirm={(mode, version) => rewindFrom(rewindTurn!, mode, version)}
-              onClose={() => setRewindTurn(null)}
+              turns={
+                workspace.rewindTurn
+                  ? Math.max(
+                      1,
+                      workspace.turnEntries.size - [...workspace.turnEntries.keys()].indexOf(workspace.rewindTurn),
+                    )
+                  : null
+              }
+              onConfirm={(mode, version) => workspace.rewindFrom(workspace.rewindTurn!, mode, version)}
+              onClose={() => workspace.setRewindTurn(null)}
             />
             <WorkspaceSidebar
-              sidebar={sidebar}
-              sidebarKeys={sidebarKeys}
-              appearance={appearance}
-              pages={pages}
-              preferences={preferences}
-              projectState={projectState}
-              runtime={runtime}
-              loveActivity={loveActivity}
-              search={search}
-              searchInput={searchInput}
-              selected={selected}
-              arrangedPages={arrangedPages}
-              pageReorder={pageReorder}
-              show={showPage}
-              showSidebar={showSidebar}
-              focusComposer={focusComposer}
-              openSettings={openSettings}
-              newChat={newChat}
+              sidebar={workspace.sidebar}
+              sidebarKeys={workspace.sidebarKeys}
+              appearance={workspace.appearance}
+              pages={workspace.pages}
+              preferences={workspace.preferences}
+              projectState={workspace.projectState}
+              runtime={workspace.runtime}
+              loveActivity={workspace.loveActivity}
+              search={workspace.search}
+              searchInput={workspace.searchInput}
+              selected={workspace.selected}
+              arrangedPages={workspace.arrangedPages}
+              pageReorder={workspace.pageReorder}
+              show={workspace.showPage}
+              showSidebar={workspace.showSidebar}
+              focusComposer={workspace.focusComposer}
+              openSettings={workspace.openSettings}
+              newChat={workspace.newChat}
             >
               <SidebarChatList
-                model={sidebarModel}
-                projectState={projectState}
-                search={search}
-                browser={browser}
-                browserPins={browserPins}
-                preferences={preferences}
-                chatGroups={chatGroups}
-                updateGroups={updateGroups}
-                setAttention={setAttention}
-                conversations={conversations}
-                threadList={threadList}
-                listKeys={listKeys}
-                collapsedSections={collapsedSections}
-                collapsedProjects={collapsedProjects}
-                expanded={expanded}
-                pins={pins}
-                setCollapsedProjects={setCollapsedProjects}
-                chatReorder={chatReorder}
-                projectReorder={projectReorder}
-                foldable={foldable}
-                addProject={addProject}
-                removeProject={removeProject}
-                selectProject={selectProject}
-                chatRows={chatRows}
-                chatGroupSection={chatGroupSection}
-                threadRow={threadRow}
-                descendants={descendants}
-                threadBranch={threadBranch}
-                runDescendants={runDescendants}
-                show={show}
-                ready={ready}
-                busy={busy}
-                threads={threads}
-                agentRunsOpen={agentRunsOpen}
-                setAgentRunsOpen={setAgentRunsOpen}
+                model={workspace.sidebarModel}
+                projectState={workspace.projectState}
+                search={workspace.search}
+                browser={workspace.browser}
+                browserPins={workspace.browserPins}
+                preferences={workspace.preferences}
+                chatGroups={workspace.chatGroups}
+                updateGroups={workspace.updateGroups}
+                setAttention={workspace.setAttention}
+                conversations={workspace.conversations}
+                threadList={workspace.threadList}
+                listKeys={workspace.listKeys}
+                collapsedSections={workspace.collapsedSections}
+                collapsedProjects={workspace.collapsedProjects}
+                expanded={workspace.expanded}
+                pins={workspace.pins}
+                setCollapsedProjects={workspace.setCollapsedProjects}
+                chatReorder={workspace.chatReorder}
+                projectReorder={workspace.projectReorder}
+                foldable={workspace.foldable}
+                addProject={workspace.addProject}
+                removeProject={workspace.removeProject}
+                selectProject={workspace.selectProject}
+                chatRows={workspace.chatRows}
+                chatGroupSection={workspace.chatGroupSection}
+                threadRow={workspace.threadRow}
+                descendants={workspace.descendants}
+                threadBranch={workspace.threadBranch}
+                runDescendants={workspace.runDescendants}
+                show={workspace.show}
+                ready={workspace.ready}
+                busy={workspace.busy}
+                threads={workspace.threads}
+                agentRunsOpen={workspace.agentRunsOpen}
+                setAgentRunsOpen={workspace.setAgentRunsOpen}
               />
             </WorkspaceSidebar>
             <main
-              className={`workspace${view === "chat" && selectedLoveChat ? " love-chat accent-scope" : ""}`}
+              className={`workspace${workspace.view === "chat" && workspace.selectedLoveChat ? " love-chat accent-scope" : ""}`}
               style={
-                panelShown && !fullView
+                workspace.panelShown && !workspace.fullView
                   ? ({
-                      "--side-min": `${sideMinWidth(side.shown)}px`,
-                      ...(side.width
-                        ? { "--side-w": `clamp(${sideMinWidth(side.shown)}px, ${side.width}px, 70%)` }
+                      "--side-min": `${sideMinWidth(workspace.side.shown)}px`,
+                      ...(workspace.side.width
+                        ? {
+                            "--side-w": `clamp(${sideMinWidth(workspace.side.shown)}px, ${workspace.side.width}px, 70%)`,
+                          }
                         : {}),
                     } as CSSProperties)
                   : undefined
               }
             >
               <WorkspaceHeader
-                pages={pages}
-                preferences={preferences}
-                composer={composer}
-                loveActivity={loveActivity}
-                side={side}
-                split={split}
-                tabs={tabs}
-                selected={selected}
-                threads={threads}
-                models={models}
-                outsideChatApprovals={outsideChatApprovals}
-                pendingInputButton={pendingInputButton}
-                pendingInputOpen={pendingInputOpen}
-                setPendingInputOpen={setPendingInputOpen}
+                pages={workspace.pages}
+                preferences={workspace.preferences}
+                composer={workspace.composer}
+                loveActivity={workspace.loveActivity}
+                side={workspace.side}
+                split={workspace.split}
+                tabs={workspace.tabs}
+                selected={workspace.selected}
+                threads={workspace.threads}
+                models={workspace.models}
+                outsideChatApprovals={workspace.outsideChatApprovals}
+                pendingInputButton={workspace.pendingInputButton}
+                pendingInputOpen={workspace.pendingInputOpen}
+                setPendingInputOpen={workspace.setPendingInputOpen}
                 heading={heading}
                 meta={meta}
-                dark={dark}
-                desktop={desktop}
-                loading={loading}
-                panelShown={panelShown}
-                team={team}
-                awaitingTeam={awaitingTeam}
-                agentsPanel={agentsPanel}
-                setAgentsPanelState={setAgentsPanelState}
-                setLoveToolbarHost={setLoveToolbarHost}
-                find={find}
-                show={show}
-                showSidebar={showSidebar}
-                openById={openById}
-                loadThread={loadThread}
-                newChatTab={newChatTab}
-                openAgentsPanel={openAgentsPanel}
-                chatTab={chatTab}
-                chatActions={chatActions}
+                dark={workspace.dark}
+                desktop={workspace.desktop}
+                loading={workspace.loading}
+                panelShown={workspace.panelShown}
+                team={workspace.team}
+                awaitingTeam={workspace.awaitingTeam}
+                agentsPanel={workspace.agentsPanel}
+                setAgentsPanelState={workspace.setAgentsPanelState}
+                setLoveToolbarHost={workspace.setLoveToolbarHost}
+                find={workspace.find}
+                show={workspace.show}
+                showSidebar={workspace.showSidebar}
+                openById={workspace.openById}
+                loadThread={workspace.loadThread}
+                newChatTab={workspace.newChatTab}
+                openAgentsPanel={workspace.openAgentsPanel}
+                chatTab={workspace.chatTab}
+                chatActions={workspace.chatActions}
               />
-              {outsideChatApprovals.length > 0 && pendingInputOpen && (
+              {workspace.outsideChatApprovals.length > 0 && workspace.pendingInputOpen && (
                 <PendingInputPanel
-                  approvals={outsideChatApprovals}
-                  threads={threads}
-                  button={pendingInputButton}
-                  setOpen={setPendingInputOpen}
+                  approvals={workspace.outsideChatApprovals}
+                  threads={workspace.threads}
+                  button={workspace.pendingInputButton}
+                  setOpen={workspace.setPendingInputOpen}
                   openById={id => {
-                    void openById(id);
+                    void workspace.openById(id);
                   }}
-                  approvalCardProps={approvalCardProps}
+                  approvalCardProps={workspace.approvalCardProps}
                 />
               )}
               <div
-                className={`workspace-body${panelShown ? " panel-open" : ""}${fullView ? ` full-view${side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${view !== "chat" ? " no-browser" : ""}`}
+                className={`workspace-body${workspace.panelShown ? " panel-open" : ""}${workspace.fullView ? ` full-view${workspace.side.chatCollapsed ? " chat-collapsed" : ""}` : ""}${workspace.view !== "chat" ? " no-browser" : ""}`}
               >
                 <div
                   className="workspace-content"
-                  {...(fullView ? { role: "region", "aria-label": "Floating chat" } : {})}
+                  {...(workspace.fullView ? { role: "region", "aria-label": "Floating chat" } : {})}
                 >
-                  {fullView && <FloatChatBar title={chatName} onCollapse={() => side.setChatCollapsed(true)} />}
+                  {workspace.fullView && (
+                    <FloatChatBar title={chatName} onCollapse={() => workspace.side.setChatCollapsed(true)} />
+                  )}
                   <WorkspaceSettings
-                    pages={pages}
-                    selected={selected}
-                    permissionMode={permissionMode}
-                    appearance={appearance}
-                    conversations={conversations}
-                    runtime={runtime}
-                    unarchived={unarchived}
-                    deleteThread={deleteThread}
-                    browser={browser}
-                    busy={busy}
-                    show={show}
-                    focusComposer={focusComposer}
-                    openComposerControl={openComposerControl}
-                    refreshModels={refreshModels}
+                    pages={workspace.pages}
+                    selected={workspace.selected}
+                    permissionMode={workspace.permissionMode}
+                    appearance={workspace.appearance}
+                    conversations={workspace.conversations}
+                    runtime={workspace.runtime}
+                    unarchived={workspace.unarchived}
+                    deleteThread={workspace.deleteThread}
+                    browser={workspace.browser}
+                    busy={workspace.busy}
+                    show={workspace.show}
+                    focusComposer={workspace.focusComposer}
+                    openComposerControl={workspace.openComposerControl}
+                    refreshModels={workspace.refreshModels}
                   />
-                  <WorkspaceGuideAndLab view={view} show={show} />
+                  <WorkspaceGuideAndLab view={workspace.view} show={workspace.show} />
                   <WorkflowPages
-                    pages={pages}
-                    sidebarModel={sidebarModel}
-                    projectState={projectState}
-                    runtime={runtime}
-                    threads={threads}
-                    models={models}
-                    workflowFolder={workflowFolder}
-                    workflowSandbox={workflowSandbox}
-                    dark={dark}
-                    show={show}
+                    pages={workspace.pages}
+                    sidebarModel={workspace.sidebarModel}
+                    projectState={workspace.projectState}
+                    runtime={workspace.runtime}
+                    threads={workspace.threads}
+                    models={workspace.models}
+                    workflowFolder={workspace.workflowFolder}
+                    workflowSandbox={workspace.workflowSandbox}
+                    dark={workspace.dark}
+                    show={workspace.show}
                     openById={id => {
-                      void openById(id);
+                      void workspace.openById(id);
                     }}
-                    keepWorkflowTab={keepWorkflowTab}
-                    selectProject={selectProject}
-                    addProject={addProject}
-                    workIn={workIn}
-                    finishReplay={finishReplay}
+                    keepWorkflowTab={workspace.keepWorkflowTab}
+                    selectProject={workspace.selectProject}
+                    addProject={workspace.addProject}
+                    workIn={workspace.workIn}
+                    finishReplay={workspace.finishReplay}
                   />
                   <OtherWorkspacePages
                     onOpenThread={id => {
-                      void openById(id);
+                      void workspace.openById(id);
                     }}
-                    view={view}
-                    selected={selected}
-                    threads={threads}
-                    cwd={cwd}
-                    dark={dark}
-                    loveToolbarHost={loveToolbarHost}
-                    side={side}
-                    hasTerminal={hasTerminal}
-                    setTuiLaunch={setTuiLaunch}
-                    show={show}
-                    openSettings={openSettings}
-                    newChat={newChat}
-                    editDraft={editDraft}
+                    view={workspace.view}
+                    selected={workspace.selected}
+                    threads={workspace.threads}
+                    cwd={workspace.cwd}
+                    dark={workspace.dark}
+                    loveToolbarHost={workspace.loveToolbarHost}
+                    side={workspace.side}
+                    hasTerminal={workspace.hasTerminal}
+                    setTuiLaunch={workspace.setTuiLaunch}
+                    show={workspace.show}
+                    openSettings={workspace.openSettings}
+                    newChat={workspace.newChat}
+                    editDraft={workspace.editDraft}
                   />
-                  {view === "chat" && (
+                  {workspace.view === "chat" && (
                     <WorkspaceChatPage workspace={workspace} transcriptAlerts={!chatCovered && alerts} />
                   )}
                 </div>
-                {fullView && side.chatCollapsed && (
-                  <FloatChatPill title={chatName} state={floatState} onRestore={() => side.setChatCollapsed(false)} />
+                {workspace.fullView && workspace.side.chatCollapsed && (
+                  <FloatChatPill
+                    title={chatName}
+                    state={floatState}
+                    onRestore={() => workspace.side.setChatCollapsed(false)}
+                  />
                 )}
-                {desktop && (
+                {workspace.desktop && (
                   <SidePanel
-                    panel={side}
-                    browser={browser}
-                    hasTerminal={hasTerminal}
-                    dark={dark}
-                    cwd={selected?.cwd || cwd}
-                    threadId={selected?.id}
-                    running={!!activeTurn}
-                    launch={tuiLaunch}
-                    covered={pendingInputOpen || sidebar || view !== "chat"}
-                    onAttach={attachFromBrowser}
-                    imagesAllowed={!(knownModel?.inputModalities && !knownModel.inputModalities.includes("image"))}
+                    panel={workspace.side}
+                    browser={workspace.browser}
+                    hasTerminal={workspace.hasTerminal}
+                    dark={workspace.dark}
+                    cwd={workspace.selected?.cwd || workspace.cwd}
+                    threadId={workspace.selected?.id}
+                    running={!!workspace.activeTurn}
+                    launch={workspace.tuiLaunch}
+                    covered={workspace.pendingInputOpen || workspace.sidebar || workspace.view !== "chat"}
+                    onAttach={workspace.attachFromBrowser}
+                    imagesAllowed={
+                      !(
+                        workspace.knownModel?.inputModalities && !workspace.knownModel.inputModalities.includes("image")
+                      )
+                    }
                   />
                 )}
               </div>
-              {(view !== "chat" || chatCovered) && alerts}
-              {split.thread && view === "chat" && (
+              {(workspace.view !== "chat" || chatCovered) && alerts}
+              {workspace.split.thread && workspace.view === "chat" && (
                 <iframe
-                  key={split.thread.id}
-                  ref={split.frame}
+                  key={workspace.split.thread.id}
+                  ref={workspace.split.frame}
                   className="split-session"
                   title="Split session"
-                  src={`/?pane=1&session=${encodeURIComponent(split.thread.id)}`}
+                  src={`/?pane=1&session=${encodeURIComponent(workspace.split.thread.id)}`}
                 />
               )}
             </main>
