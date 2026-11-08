@@ -46,7 +46,7 @@ export function WorkspaceSidebar({ sidebar, sidebarKeys, appearance, pages, pref
         {arrangedPages.map(page => <ReorderItem key={page.id} reorder={pageReorder} itemId={page.id} render={<Button data-slot="nav-row" variant="ghost" data-nav-page={page.id} className={page.id === "loveSpot" ? "accent-scope" : undefined} aria-label={page.name} data-shortcut={shortcutHint(shownPageShortcut(page.id) ?? "", preferences)} aria-current={view === page.id || (page.id === "mother" && view === "chat" && selected?.motherAgent) ? "page" : undefined} onClick={() => show(page.id)} title={`${page.name} (drag, or Alt+Up/Down, to reorder)`}>
           <page.Icon size={16} />{page.name}{page.id === "loveSpot" && loveActivity.unread > 0 && <span className="love-unread badge badge-sm" role="status" aria-label={`${loveActivity.unread} Love Spot agents replied`}>{loveActivity.unread}</span>}</Button>} />)}
       </nav>
-      <SearchField ref={searchInput} hint="Ctrl Shift K" aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search.search} onChange={e => search.setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); search.setSearch(""); focusComposer(); } }} />
+      <SearchField ref={searchInput} hint={shortcutHint("search", preferences)} aria-label="Search conversations" placeholder="Search chats" maxLength={200} value={search.search} onChange={e => search.setSearch(e.target.value)} onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); search.setSearch(""); focusComposer(); } }} />
       {children}
       <UsagePanel refreshKey={accountRefresh} onOpen={() => openSettings("usage")} />
       <div className="sidebar-footer"><AccountRow refreshKey={accountRefresh} /></div>

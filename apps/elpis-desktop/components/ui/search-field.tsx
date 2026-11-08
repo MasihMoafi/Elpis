@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 type Props = ComponentProps<typeof Input> & {
   /** A shortcut shown at the right edge, such as "Ctrl K". */
-  hint?: string;
+  hint?: string | undefined;
   /** `bare` is the top row of a popup (the model picker): no fill, a divider below. */
   variant?: "filled" | "bare";
   /** Replaces the plain input, for a combobox's own input. */

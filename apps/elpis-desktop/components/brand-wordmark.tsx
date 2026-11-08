@@ -9,7 +9,7 @@ const DARK = "<title id=\"elpis-word-dark-title\">Elpis</title><desc>The gold E 
 /** Prefixes each top-level rule's selectors with `scope`; @keyframes bodies (from, to, n%) are left alone. */
 export function scopeRules(css: string, scope: string) {
   return css.replace(/(^|})([^{}@]+)\{/g, (whole, end: string, selectors: string) =>
-    /^\s*(from|to|[\d.]+%)\s*$/.test(selectors) ? whole : `${end}${selectors.split(",").map(selector => `${scope} ${selector.trim()}`).join(",")}{`);
+    /^\s*(?:from|to|[\d.]+%)(?:\s*,\s*(?:from|to|[\d.]+%))*\s*$/.test(selectors) ? whole : `${end}${selectors.split(",").map(selector => `${scope} ${selector.trim()}`).join(",")}{`);
 }
 export const BrandWordmark = memo(function BrandWordmark({ dark, className, width, height }: { dark: boolean; className?: string; width?: number; height?: number }) {
   const id = useId().replaceAll(":", "");

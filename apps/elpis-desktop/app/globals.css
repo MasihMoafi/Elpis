@@ -161,7 +161,7 @@ button:disabled { cursor:not-allowed; }
 @keyframes spin { to { transform:rotate(360deg); } }
 /* Search fields: one component (components/ui/search-field.tsx), one look, wherever they are. */
 /* The magnifier and text line up with the navigation rows' icons and labels (same 8px inset, 18px icon, 10px gap). */
-.search-field { display:flex; align-items:center; gap:8px; height:var(--row-h); padding:0 10px 0 8px; background:var(--hover); color:var(--muted-foreground); min-width:0; cursor:text; }
+.search-field { display:flex; align-items:center; gap:8px; height:var(--row-h); padding:0 8px; background:var(--hover); color:var(--muted-foreground); min-width:0; cursor:text; }
 .search-field > svg { flex-shrink:0; width:var(--icon-size); height:var(--icon-size); }
 .search-field input { flex:1; min-width:0; height:100%; padding:0; border:0; border-radius:0; background:transparent; box-shadow:none; font-size:var(--text-sm); color:var(--foreground); }
 .search-field input:focus-visible { outline:none; box-shadow:none; }
@@ -171,7 +171,7 @@ button:disabled { cursor:not-allowed; }
 .sidebar > .search-field { margin:4px 0 2px; }
 /* Keys: a keycap in shortcut lists, a quiet hint beside a field or menu item. */
 .kbd { display:inline-flex; align-items:center; height:22px; padding:0 7px; border:1px solid var(--border); border-bottom-width:2px; background:var(--background); font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--foreground); white-space:nowrap; }
-.kbd-hint, [data-shortcut]::after { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--ui-font, Inter, system-ui, sans-serif); color:var(--subtle-foreground); white-space:nowrap; }
+.kbd-hint, [data-shortcut]::after { flex-shrink:0; margin-left:auto; padding-left:12px; font:500 var(--text-small)/1 var(--mono); color:var(--subtle-foreground); white-space:nowrap; }
 [data-shortcut]::after { content:attr(data-shortcut); }
 .thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:0; margin:0 -4px 0 -8px; padding:0 4px 0 8px; scroll-snap-type:y mandatory; }  /* its bottom gap is the end spacer below */
 /* Rows, the "More …" buttons and every section heading (Agent runs too) are snap points, so scrolling to the end can
@@ -1233,3 +1233,4 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .observability-health > div { display:flex; gap:6px; }
 .observability-health dt::after { content:":"; }
 .observability-health dd { margin:0; color:var(--foreground); font-variant-numeric:tabular-nums; }
+.empty-state .empty-mark .light { animation-iteration-count:infinite; }
