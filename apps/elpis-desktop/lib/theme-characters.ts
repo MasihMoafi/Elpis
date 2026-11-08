@@ -25,9 +25,11 @@ export const THEME_CHARACTERS: Record<string, { name: string; image: string; the
   THEME_CHARACTER_LIST.map(({ id, name, image, theme }) => [id, { name, image, theme }]),
 );
 
-/** The selected palette's character, or null for Matilda herself. */
 export const OPEN_CHARACTER_PICKER = "elpis-open-character-picker";
+/** The selected palette's character, or null for Matilda herself. */
 export function useThemeCharacter() {
   const { selectedPalette } = usePreferences();
   return THEME_CHARACTERS[selectedPalette] ?? null;
 }
+/** Who the person is talking to in Love Spot. */
+export const useCompanionName = () => useThemeCharacter()?.name ?? "Matilda";

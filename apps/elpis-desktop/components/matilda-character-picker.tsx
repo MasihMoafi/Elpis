@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cts";
 import { savePreferences, usePreferences } from "@/lib/preferences";
-import { OPEN_CHARACTER_PICKER, THEME_CHARACTER_LIST, useThemeCharacter } from "@/lib/theme-characters";
+import { OPEN_CHARACTER_PICKER, THEME_CHARACTER_LIST, useCompanionName, useThemeCharacter } from "@/lib/theme-characters";
 import { shortcutTitle } from "@/lib/shortcuts";
 
 /** Love Spot and the companion share the same character and palette choice. */
 export function MatildaCharacterPicker({ compact = false }: { compact?: boolean }) {
-  const preferences = usePreferences(), { selectedPalette } = preferences, character = useThemeCharacter();
+  const preferences = usePreferences(), { selectedPalette } = preferences, character = useThemeCharacter(), companion = useCompanionName();
   const [open, setOpen] = useState(false), trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     // Several pickers can be mounted; the first one on screen answers the shortcut.
@@ -26,7 +26,7 @@ export function MatildaCharacterPicker({ compact = false }: { compact?: boolean 
   return <DropdownMenu open={open} onOpenChange={setOpen}>
     <DropdownMenuTrigger render={<Button ref={trigger} variant={compact ? "ghost" : "outline"} size={compact ? "icon-xs" : "sm"} aria-label="Character" title={compact ? shortcutTitle("Change character", "theme", preferences) : character ? `${character.name} · ${character.theme}` : "Matilda · Default"} className={compact ? "shrink-0" : "shrink-0 gap-1.5 px-2"} />}>
       {compact ? <UsersRound aria-hidden="true" /> : <span className="relative size-4 shrink-0">{character ? <img src={character.image} alt="" className="size-full object-contain" /> : matilda}</span>}
-      {!compact && <><span className="love-spot-label max-w-28 truncate">{character?.name ?? "Matilda"}</span><ChevronDown aria-hidden="true" className="love-spot-label shrink-0" /></>}
+      {!compact && <><span className="love-spot-label max-w-28 truncate">{companion}</span><ChevronDown aria-hidden="true" className="love-spot-label shrink-0" /></>}
     </DropdownMenuTrigger>
     <DropdownMenuContent align="end" className="max-h-96 w-56 overflow-y-auto" aria-label="Characters" data-matilda-character-menu>
       <DropdownMenuGroup>

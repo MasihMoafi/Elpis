@@ -117,6 +117,7 @@ test('OBSRM: empty, partial, repeated and long legacy orders load through the re
 });
 
 test('page and theme shortcuts work from the message box and leave the browser and terminal their own keys', () => {
+  browser(); const shortcuts = loader()('lib/shortcuts.ts');
   const ctrl = { ctrlKey: true };
   for (const [key, id] of [['L', 'go-loveSpot'], ['E', 'go-mother'], ['G', 'go-canvas'], ['U', 'go-customize'], ['O', 'go-observability']] as const) {
     assert.deepEqual(shortcuts.shortcutFor(press(key.toLowerCase(), `Key${key}`, ctrl), true), { id });
