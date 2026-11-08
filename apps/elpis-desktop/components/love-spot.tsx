@@ -25,6 +25,7 @@ import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { keepModel, savedModel, MATILDA_CHANGED } from "@/lib/matilda";
 import { useMatildaSettings, type MatildaSettings } from "@/lib/matilda-settings";
 import { MatildaSwitch } from "@/components/matilda-switch";
+import { MatildaCharacterPicker } from "@/components/matilda-character-picker";
 import { applyRemoteScene, mergeRemoteElements, restoreRemoteElements } from "@/lib/love-spot-history";
 import { createTextJournal, saveWithTextDrafts } from "@/lib/love-spot-drafts";
 import { subscribeLoveSpotEvents } from "@/lib/love-spot-events";
@@ -32,9 +33,7 @@ import { MASIH_PEN, latestMessage, lightFiles, lightImage } from "@/lib/love-spo
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { noticed, told } from "@/lib/matilda";
 import { newer } from "@/bridge/love-spot-order.cts";
-import { BOARD_THEMED, MATILDA_SHOTS, MATILDA_SHOTS_LIGHT } from "@/bridge/matilda-face.cts";
-import { savePreferences, usePreferences } from "@/lib/preferences";
-import { THEME_CHARACTER_LIST, useThemeCharacter } from "@/lib/theme-characters";
+import { BOARD_THEMED } from "@/bridge/matilda-face.cts";
 import { upgradeAgentArt } from "@/lib/love-agents";
 import "@excalidraw/excalidraw/index.css";
 import "./love-spot.css";
@@ -94,8 +93,6 @@ const standaloneApp = typeof location !== "undefined" && new URLSearchParams(loc
 
 function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
   const speech = useReadAloud();
-  const { selectedPalette } = usePreferences();
-  const character = useThemeCharacter();
   const voiceEnabled = useRef(false);
   const voiceVersion = useRef(0);
   const calling = false; // no voice call with her any more (1 Nov)
@@ -605,27 +602,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
       <div role="group" aria-label="Matilda's model"><ModelPicker choices={choices} models={models} model={shared.settings?.model || pick.model || settings?.main.model || ""} choiceId={pick.choiceId} disabled={!choices.length} allowCustom={false} onConfigure={() => setAccountsOpen(true)} onKeySaved={() => void reloadAccounts()} onChange={value => { setPick(value); keepModel(value); void shared.update({ model: value.model, provider: choices.find(choice => choice.id === value.choiceId)?.provider ?? null }).catch(report); }} /></div>
       <div role="group" aria-label="Voice note"><Dictation provider={provider} disabled={!editor || !settings} onBusy={() => {}} selection={insertion} onTranscript={addVoiceNote} purpose="Adds a note to the board." /></div>
       <MatildaSwitch settings={shared.settings} onChange={chooseReplies} />
-      <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="outline" size="sm" aria-label="Character" title={character ? `${character.name} · ${character.theme}` : "Matilda · Default"} className="shrink-0 gap-1.5 px-2" />}>
-          <img src={character?.image ?? (dark ? MATILDA_SHOTS.softSmile : MATILDA_SHOTS_LIGHT.softSmile)} alt="" className="size-4 shrink-0 rounded-sm object-contain" />
-          <span className="love-spot-label max-w-28 truncate">{character?.name ?? "Matilda"}</span>
-          <ChevronDown aria-hidden="true" size={12} className="love-spot-label shrink-0" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="max-h-96 w-56 overflow-y-auto" aria-label="Characters">
-          <DropdownMenuItem data-character-id="elpis" onClick={() => savePreferences({ selectedPalette: "elpis" })}>
-            <Check aria-hidden="true" className={!character ? "shrink-0" : "invisible shrink-0"} />
-            <img src={dark ? MATILDA_SHOTS.softSmile : MATILDA_SHOTS_LIGHT.softSmile} alt="" className="size-6 shrink-0 rounded-sm object-contain" />
-            <span className="min-w-0 flex-1 truncate">Matilda</span>
-            <span className="text-xs text-muted-foreground">Default</span>
-          </DropdownMenuItem>
-          {THEME_CHARACTER_LIST.map(item => <DropdownMenuItem key={item.id} data-character-id={item.id} onClick={() => savePreferences({ selectedPalette: item.id })}>
-            <Check aria-hidden="true" className={selectedPalette === item.id ? "shrink-0" : "invisible shrink-0"} />
-            <img src={item.image} alt="" className="size-6 shrink-0 rounded-sm object-contain" />
-            <span className="min-w-0 flex-1 truncate">{item.name}</span>
-            <span className="text-xs text-muted-foreground">{item.theme}</span>
-          </DropdownMenuItem>)}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <MatildaCharacterPicker />
       {!toolbarHost && <Button variant="outline" size="sm" aria-label="Models & accounts" title="Models & accounts" className="shrink-0" onClick={() => setAccountsOpen(true)}><ModelsIcon aria-hidden="true" /><span className="love-spot-label">Models &amp; accounts</span></Button>}
       {matilda.replying && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">Matilda is writing…</span>}
       {saveStatus && <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">{saveStatus}</span>}

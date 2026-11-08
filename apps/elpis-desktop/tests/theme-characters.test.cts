@@ -70,3 +70,55 @@ test('Matilda takes each palette\'s character across all 12 themes, is selectabl
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+for (const colorScheme of ['light', 'dark']) test(`characters can be selected beside pinned Matilda without leaving the chat (${colorScheme})`, async () => {
+  const f = await loveSpotFixture({ colorScheme });
+  try {
+    const { page } = f;
+    await page.getByRole('button', { name: 'Pin Matilda', exact: true }).click();
+    const pinned = page.getByRole('region', { name: 'Pinned Matilda', exact: true });
+    await pinned.waitFor();
+    const place = await pinned.boundingBox();
+    await pinned.getByRole('button', { name: 'Chat with Matilda', exact: true }).click();
+    const draft = page.getByRole('textbox', { name: 'Message Matilda', exact: true });
+    await draft.fill('Keep this draft while I choose');
+    const picker = pinned.getByRole('button', { name: 'Character', exact: true });
+    await picker.waitFor();
+    for (const [palette, name] of [ALL_CHARACTERS[0], ALL_CHARACTERS.at(-1)]) {
+      await picker.focus();
+      await page.keyboard.press('Enter');
+      const menu = page.getByRole('menu', { name: 'Characters', exact: true });
+      await menu.waitFor();
+      const bounds = await menu.boundingBox();
+      assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1440 && bounds.y + bounds.height <= 960, 'picker fits in the window');
+      await menu.locator(`[data-character-id="${palette}"]`).click();
+      await page.waitForFunction((expected: string) => document.querySelector('.matilda-face img[data-character]')?.getAttribute('data-character') === expected, name);
+      assert.equal(await draft.inputValue(), 'Keep this draft while I choose');
+      assert.equal(await draft.isVisible(), true, 'choosing a character keeps the mini chat open');
+      assert.deepEqual(await pinned.boundingBox(), place, 'choosing a character keeps her place');
+      assert.ok(await pinned.locator('.matilda-face img[data-character]').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0));
+    }
+    await picker.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    assert.equal(await draft.isVisible(), true, 'Escape closes only the character menu');
+    assert.equal(await picker.evaluate((button: HTMLElement) => button === document.activeElement), true, 'menu returns focus to its button');
+
+    await page.reload();
+    await pinned.waitFor();
+    assert.equal(await pinned.locator('.matilda-face img[data-character]').getAttribute('data-character'), 'Ink', 'choice survives reload');
+    await picker.focus();
+    await page.keyboard.press('Enter');
+    await page.getByRole('menu', { name: 'Characters', exact: true }).locator('[data-character-id="elpis"]').click();
+    await page.waitForFunction(() => !document.querySelector('.matilda-face img[data-character]'));
+    assert.equal(await pinned.locator('.matilda-face .matilda-avatar-light').count() > 0, true, 'Matilda can be restored');
+    await pinned.getByRole('button', { name: 'Unpin Matilda', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    const titlePicker = page.locator('.title-bar').getByRole('button', { name: 'Character', exact: true });
+    await titlePicker.click();
+    await page.getByRole('menu', { name: 'Characters', exact: true }).locator('[data-character-id="palette-paper"]').click();
+    await page.waitForFunction(() => document.querySelector('.title-bar .matilda-pin img[data-character]')?.getAttribute('data-character') === 'Ice');
+    assert.equal(f.turns.length, 0, 'choosing a character never sends the draft');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

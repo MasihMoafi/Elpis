@@ -11,6 +11,7 @@ import { ContextMenu, ContextMenuContent } from "@/components/ui/context-menu";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MatildaMiniChat, useMatildaMiniChat } from "@/components/matilda-mini-chat";
 import { MatildaHeartBurst } from "@/components/matilda-heart-burst";
+import { MatildaCharacterPicker } from "@/components/matilda-character-picker";
 import { Button } from "@/components/ui/button";
 import { Tooltip } from "@/components/ui/tooltip";
 import { useThemeCharacter } from "@/lib/theme-characters";
@@ -135,7 +136,10 @@ export function MatildaCompanion() {
   useEffect(() => {
     if (!chatOpen) return;
     const key = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape" && !event.defaultPrevented) { setChatOpen(false); faceRef.current?.focus(); } };
-    const press = (event: globalThis.PointerEvent) => { if (!floatRef.current?.contains(event.target as Node)) setChatOpen(false); };
+    const press = (event: globalThis.PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest("[data-matilda-character-menu]")) return;
+      if (!floatRef.current?.contains(event.target as Node)) setChatOpen(false);
+    };
     document.addEventListener("keydown", key); document.addEventListener("pointerdown", press, true);
     return () => { document.removeEventListener("keydown", key); document.removeEventListener("pointerdown", press, true); };
   }, [chatOpen]);
@@ -315,6 +319,7 @@ export function MatildaCompanion() {
     <button type="button" className="matilda-resize" aria-label="Resize Matilda" title="Drag to resize · + and − keys" style={{ touchAction: "none" }}
       onPointerDown={grab(true)} onPointerMove={pull} onPointerUp={release} onLostPointerCapture={release} onKeyDown={keys(true)} />
     <div className="matilda-float-controls">
+      <MatildaCharacterPicker compact />
       {/* Only while music plays (or she muted it), as an icon (29 Oct, Masih: "no music is playing!", "I don't want texts; I want visuals"). */}
       {/* Not during her call: no music plays then (5 Nov, Masih: "while call happens no music is playing"). */}
       {!voice.call && track?.canMute && (track.status === "Playing" || track.muted) && <Button variant="ghost" size="icon-xs" aria-label={track.muted ? "Unmute music" : "Mute music"} aria-pressed={track.muted} disabled={busy} onClick={() => void act("toggle-mute")}>{track.muted ? <SoundOffIcon size={16} /> : <SoundIcon size={16} />}</Button>}
@@ -326,6 +331,7 @@ export function MatildaCompanion() {
     <MatildaHeartBurst />
     {floating ? createPortal(floating, document.body) : <Button variant="ghost" size="icon-sm" className="matilda-pin" data-speaking={voice.speaking || undefined} aria-label="Pin Matilda" title="Pin Matilda" disabled={busy} onClick={pin}><>{character ? <img className="matilda-pin-face matilda-theme-face" src={character.image} alt="" data-character={character.name} /> : <><img className="matilda-pin-face matilda-avatar-light" src={MATILDA_SHOTS_LIGHT.softSmile} alt="" /><img className="matilda-pin-face matilda-avatar-dark" src={MATILDA_SHOTS.softSmile} alt="" /></>}{voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}</></Button>}
     {!floating && <HerVoiceControls voice={voice} threadId={state?.threadId} />}
+    {!floating && <MatildaCharacterPicker compact />}
     {!floating && alert && <div className="hud-popover matilda-alert-popup matilda-alert-anchor">{alert}</div>}
   </div>;
 }
