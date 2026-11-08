@@ -20,6 +20,10 @@ const mockProvider = importedMockProvider as unknown as ProviderApi;
 const { DesktopClient } = await import((process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mts", import.meta.url)).href) as typeof import("../../../apps/elpis-desktop/bridge/client.mts");
 
 type StoredItem = { id: string; type: string; text?: string; content?: { text: string }[] };
+const firstText = (item: { content?: (string | { text?: string })[] }) => {
+  const part = item.content?.[0];
+  return typeof part === 'string' ? undefined : part?.text;
+};
 type StoredTurn = { id: string; status: string; items: StoredItem[]; claudeMessageId?: string };
 type Session = { session?: string; turns: StoredTurn[]; active?: { turnId: string; userItems?: StoredItem[] }; effort?: string };
 type Entry = { method?: string; text?: string; ended?: boolean; toolStarted?: string; toolCompleted?: string; interruptedTool?: boolean; betweenTools?: boolean; params?: { sessionId?: string; configId?: string; prompt?: { text: string }[]; mcpServers?: { name: string; env: { name: string; value: string }[] }[]; _meta?: { claudeCode?: { options: { disallowedTools?: string[]; allowedTools?: string[] } }; systemPrompt?: { append: string }; jetbrains?: { air: { fork: { messageId: string } } } } } };
@@ -350,7 +354,7 @@ test("A37: Stop on a Claude helper's thread stops only that helper, and its chat
   await until(() => f.events.some(e => e.method === "thread/started" && e.params.thread?.parentThreadId === f.id), "the helper's thread appears");
   const helper = required(f.events.find(e => e.method === "thread/started" && e.params.thread?.parentThreadId === f.id)?.params.thread);
   assert.equal(helper.name, "Explore");
-  const task = await until(async () => (await f.client.readThread(helper.id)).data.find(entry => entry.item.type === "userMessage" && entry.item.content?.[0]?.text === "find the notes"), "the helper's task shows in its thread");
+  const task = await until(async () => (await f.client.readThread(helper.id)).data.find(entry => entry.item.type === "userMessage" && firstText(entry.item) === "find the notes"), "the helper's task shows in its thread");
   await f.client.interrupt(helper.id, { turnId: task.turnId });
   await until(() => f.ended(turn.id), "the chat answers after its helper stops");
   assert.deepEqual(f.agent().filter(e => e.method === "session/cancel").map(e => e.params?.sessionId), [`${f.agent().find(e => e.method === "session/prompt")?.params?.sessionId}-helper`], "only the helper is cancelled");
@@ -378,7 +382,7 @@ test("A128: desktop reload while a tool has waiting messages keeps their order a
   await until(() => reloaded.events.some(e => e.method === "turn/completed" && e.params.turn?.id === turn.id), "reloaded desktop gets the answer and end");
   const read = await reloaded.client.readThread(f.id);
   assert.equal(read.thread.status?.type, "idle");
-  assert.deepEqual([...read.data].reverse().filter(e => e.item.type === "userMessage").map(e => e.item.content?.[0]?.text), [initial, "before reload", "after reload"]);
+  assert.deepEqual([...read.data].reverse().filter(e => e.item.type === "userMessage").map(e => firstText(e.item)), [initial, "before reload", "after reload"]);
   assert.ok(read.data.some(e => e.item.text?.includes("answered:") && e.item.text.includes("after reload")));
 });
 
@@ -550,12 +554,12 @@ test("a stopped turn with two delivered follow-ups can replace its first message
   await f.client.interrupt(f.id, { turnId: turn.id });
   await until(() => f.ended(turn.id), "the turn stops");
   const history = await f.client.readThread(f.id);
-  assert.deepEqual([...history.data].reverse().filter(e => e.turnId === turn.id && e.item.type === "userMessage").map(e => e.item.content?.[0]?.text), ["[wait] original long turn", "first follow-up", "second follow-up"]);
+  assert.deepEqual([...history.data].reverse().filter(e => e.turnId === turn.id && e.item.type === "userMessage").map(e => firstText(e.item)), ["[wait] original long turn", "first follow-up", "second follow-up"]);
   const replaced = await f.client.revert(f.id, { beforeTurnId: turn.id, text: "replacement" });
   assert.ok(replaced && "turn" in replaced, replaced && "sendError" in replaced ? replaced.sendError : undefined);
   await until(() => f.ended(replaced.turn.id), "the replacement is answered");
   const after = await f.client.readThread(f.id);
-  assert.deepEqual([...after.data].reverse().filter(e => e.item.type === "userMessage").map(e => e.item.content?.[0]?.text), ["replacement"]);
+  assert.deepEqual([...after.data].reverse().filter(e => e.item.type === "userMessage").map(e => firstText(e.item)), ["replacement"]);
 });
 
 for (const count of [0, 4]) test(`Claude delivers a final answer and turn end after ${count} in-flight messages, then hello`, { timeout: 20000 }, async t => {
@@ -581,7 +585,7 @@ for (const count of [0, 4]) test(`Claude delivers a final answer and turn end af
   await until(() => f.ended(hello.turn.id), "a message to a stale Working chat is answered and ends");
   assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item?.text?.includes("answered: hello?")));
   const reread = await f.client.readThread(f.id);
-  assert.deepEqual([...reread.data].reverse().filter(entry => entry.item.type === "userMessage").map(entry => entry.item.content?.[0]?.text), [...users, "hello?"], "a catch-up read keeps fast consecutive turns and their messages in order");
+  assert.deepEqual([...reread.data].reverse().filter(entry => entry.item.type === "userMessage").map(entry => firstText(entry.item)), [...users, "hello?"], "a catch-up read keeps fast consecutive turns and their messages in order");
 });
 
 test("a tool in flight retains several waiting messages until it finishes", { timeout: 20000 }, async t => {
@@ -736,7 +740,7 @@ test("a completed chat survives a graceful bridge restart with several turns in 
   const restarted = await f.restart();
   const read = await restarted.client.readThread(f.id);
   assert.equal(read.thread.status?.type, "idle");
-  assert.deepEqual([...read.data].reverse().filter(e => e.item.type === "userMessage").map(e => e.item.content?.[0]?.text), ["first", "middle", "last — پایان"]);
+  assert.deepEqual([...read.data].reverse().filter(e => e.item.type === "userMessage").map(e => firstText(e.item)), ["first", "middle", "last — پایان"]);
 });
 
 test("the existing desktop reconnects after a bridge restart and can read and continue its chat", { timeout: 20000 }, async t => {

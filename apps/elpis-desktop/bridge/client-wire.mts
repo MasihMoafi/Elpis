@@ -7,13 +7,13 @@ type ConfigRead = {
         model_provider?: string | null;
         model_providers?: Record<string, Record<string, unknown>>;
         realtime?: {
-            voice?: string;
-        };
+            voice?: string | null;
+        } | null;
         features?: {
-            multi_agent?: boolean;
-        };
+            multi_agent?: boolean | null;
+        } | null;
         mcp_servers?: Record<string, {
-            env?: Record<string, unknown>;
+            env?: Record<string, unknown> | null;
         }>;
         [key: string]: unknown;
     };
@@ -21,8 +21,8 @@ type ConfigRead = {
 type ConfigRequirements = {
     requirements?: {
         modelProvider?: string | null;
-        modelProviders?: Record<string, Record<string, unknown>>;
-        featureRequirements?: Record<string, unknown>;
+        modelProviders?: Record<string, Record<string, unknown>> | null;
+        featureRequirements?: Record<string, unknown> | null;
     } | null;
 };
 type ThreadResponse = {
@@ -182,29 +182,31 @@ const strings = z.array(text);
 const record = z.record(text, z.unknown());
 const nullableText = text.nullish();
 const item = z.looseObject({ id: text, type: text, text: text.optional(), path: text.optional(),
-    content: z.array(z.looseObject({ type: text.optional(), text: text.optional() })).optional() });
+    content: z.union([strings, z.array(z.looseObject({ type: text.optional(), text: text.optional() }))]).optional() })
+    .refine(value => !value.content || value.content.every(part => typeof part === (value.type === 'reasoning' ? 'string' : 'object')));
 const turn = z.looseObject({ id: text, status: text.optional(), items: z.array(item) });
 const summaryTurn = turn.partial({ items: true });
 const thread = z.looseObject({ id: text, cwd: text.optional(), path: nullableText, name: nullableText, preview: nullableText,
     model: nullableText, modelProvider: text.optional(), parentThreadId: nullableText, reasoningEffort: nullableText,
     turns: z.array(turn).optional(), status: z.looseObject({ type: text.optional() }).optional(),
-    source: z.union([text, z.looseObject({ subAgent: z.looseObject({ other: z.unknown().optional(),
-                thread_spawn: z.looseObject({ agent_path: z.unknown().optional() }).optional() }).optional() })]).optional(),
+    source: z.union([text, z.looseObject({ custom: text.optional(), subAgent: z.union([text, z.looseObject({ other: z.unknown().optional(),
+                thread_spawn: z.looseObject({ agent_path: z.unknown().optional() }).optional() })]).optional() })]).optional(),
     archived: z.boolean().optional(), workflowTaskTitle: text.optional(), canAcceptDirectInput: z.boolean().nullish() });
 const threadResponse = z.looseObject({ thread, followingLive: z.boolean().optional(), model: text.optional(), modelProvider: text.optional(),
     serviceTier: nullableText, reasoningEffort: nullableText, collaborationMode: z.looseObject({ mode: text.optional() }).nullish(),
     initialTurnsPage: z.looseObject({ data: z.array(summaryTurn) }).nullish() });
 const config = z.looseObject({ model_provider: nullableText, model_providers: z.record(text, record).optional(),
-    realtime: z.looseObject({ voice: text.optional() }).optional(), features: z.looseObject({ multi_agent: z.boolean().optional() }).optional(),
-    mcp_servers: z.record(text, z.looseObject({ env: record.optional() })).optional() });
+    realtime: z.looseObject({ voice: nullableText }).nullish(), features: z.looseObject({ multi_agent: z.boolean().nullish() }).nullish(),
+    mcp_servers: z.record(text, z.looseObject({ env: record.nullish() })).optional() });
 const contextFiles = z.looseObject({ files: z.array(z.looseObject({ name: text, path: text, group: text,
         estimatedTokens: z.number(), included: z.boolean(), reason: text, selectable: z.boolean() })), note: text.optional() });
 const accounts = z.looseObject({ activeId: text, accounts: z.array(z.looseObject({ id: z.unknown().optional(), authenticated: z.unknown().optional(), duplicate: z.unknown().optional() })) });
 const page = <T extends z.ZodType>(row: T) => z.looseObject({ data: z.array(row), nextCursor: nullableText, backwardsCursor: nullableText });
 const results = {
-    'config/read': z.looseObject({ config: config.optional(), layers: z.array(z.looseObject({ config: config.optional() })).nullish() }),
+    // Layers contain raw JSON, not the effective Config projection (ConfigLayer.config).
+    'config/read': z.looseObject({ config: config.optional(), layers: z.array(z.looseObject({ config: z.json().optional() })).nullish() }),
     'configRequirements/read': z.looseObject({ requirements: z.looseObject({ modelProvider: nullableText,
-            modelProviders: z.record(text, record).optional(), featureRequirements: record.optional() }).nullish() }),
+            modelProviders: z.record(text, record).nullish(), featureRequirements: record.nullish() }).nullish() }),
     'thread/read': threadResponse, 'thread/start': threadResponse, 'thread/resume': threadResponse,
     'thread/subscribe': threadResponse, 'thread/fork': threadResponse, 'thread/unarchive': threadResponse, 'thread/register': threadResponse,
     'thread/list': page(thread), 'thread/turns/list': page(summaryTurn),

@@ -4,7 +4,7 @@ import { BridgeError, object, text } from './validate.mts';
 import { gatewayRouted } from './provider-models.mts';
 type Definition = { name?: unknown; base_url?: string; env_key?: unknown; wire_api?: unknown; requires_openai_auth?: unknown; auth?: unknown; aws?: unknown; gateway_oauth?: unknown; http_headers?: Record<string, unknown>; env_http_headers?: Record<string, unknown>; experimental_bearer_token?: unknown };
 type ConfigRead = { config?: { model_providers?: Record<string, Definition> }; layers?: { name?: { type?: string; profile?: unknown; file?: string }; version?: string }[] } | null | undefined;
-type RequirementsRead = { requirements?: { modelProvider?: unknown; modelProviders?: Record<string, unknown> } | null } | null;
+type RequirementsRead = { requirements?: { modelProvider?: unknown; modelProviders?: Record<string, unknown> | null } | null } | null;
 type Current = { version?: unknown; write: { available: boolean; reason?: string | null }; providers: { id: string; editable: boolean; baseUrl?: string | null; auth?: { keySet?: boolean } }[] };
 const reserved = new Set(['openai', 'claude', 'agy', 'antigravity']);
 

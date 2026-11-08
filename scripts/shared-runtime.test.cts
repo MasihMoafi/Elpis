@@ -35,6 +35,7 @@ assert(binaryArg && path.isAbsolute(binaryArg), 'provide the absolute path of th
 const binary: string = binaryArg;
 const tools = path.resolve(__dirname, '../tools/elpis-claude');
 const runtimePath = path.join(tools, 'shared-runtime.mts');
+const runtimeFiles = ['shared-runtime.mts', 'runtime-identity.mts', 'runtime-transport.mts', 'runtime-process.mts', 'log-redaction.mts'];
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'esr-'));
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const checks: string[] = [];
@@ -447,7 +448,7 @@ async function launcherGroup(runtime: Runtime) {
     fs.mkdirSync(directory, { recursive: true });
     const script = path.join(directory, 'acp-bridge.mts'), launcher = path.join(directory, 'shared-runtime.mts');
     fs.copyFileSync(fakeBridgeDir(`installed-${name}`), script);
-    for (const file of ['shared-runtime.mts', 'log-redaction.mts']) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
+    for (const file of runtimeFiles) fs.copyFileSync(path.join(tools, file), path.join(directory, file));
     fs.symlinkSync(path.join(tools, 'node_modules'), path.join(directory, 'node_modules'));
     const engine = path.join(bundle, 'package/bin/codex');
     fs.mkdirSync(path.dirname(engine), { recursive: true });
@@ -767,8 +768,7 @@ async function launcherGroup(runtime: Runtime) {
   fs.mkdirSync(toolDir);
   fs.copyFileSync(path.join(tools, 'elpis-claude'), path.join(toolDir, 'elpis-claude'));
   fs.chmodSync(path.join(toolDir, 'elpis-claude'), 0o755);
-  fs.copyFileSync(runtimePath, path.join(toolDir, 'shared-runtime.mts'));
-  fs.copyFileSync(path.join(tools, 'log-redaction.mts'), path.join(toolDir, 'log-redaction.mts'));
+  for (const file of runtimeFiles) fs.copyFileSync(path.join(tools, file), path.join(toolDir, file));
   fs.symlinkSync(path.join(tools, 'node_modules'), path.join(toolDir, 'node_modules'));
   fs.copyFileSync(bridgeA, path.join(toolDir, 'acp-bridge.mts'));
   const printer = path.join(lroot, 'tui');

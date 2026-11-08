@@ -50,8 +50,8 @@ const notImportMarker = (entry: unknown) => {
   return !(value?.item?.type === 'agentMessage' && value.item.text === IMPORT_MARKER);
 };
 
-type ThreadSource = string | { subAgent?: { other?: unknown; thread_spawn?: { agent_path?: unknown } } };
-export const subAgentSource = (source: ThreadSource | undefined) => typeof source === 'object' ? source?.subAgent : undefined;
+type ThreadSource = string | { custom?: string; subAgent?: string | { other?: unknown; thread_spawn?: { agent_path?: unknown } } };
+export const subAgentSource = (source: ThreadSource | undefined) => typeof source === 'object' && typeof source?.subAgent === 'object' ? source.subAgent : undefined;
 
 export type ThreadListOptions = { cursor?: unknown; limit?: unknown; ancestorThreadId?: unknown; archived?: unknown; searchTerm?: unknown; includeAgentRuns?: unknown };
 export type ListedThread = { id: string; parentThreadId?: string | null | undefined; source?: ThreadSource | undefined; status?: { type?: string } | undefined; [key: string]: unknown };
@@ -288,10 +288,10 @@ export async function impl_readPrompts(this: DesktopClient, _clientState: Client
       for (const { turnId, item } of page.data) {
         if (typeof turnId !== 'string') continue;
         if (item?.type === 'userMessage' && !isVoiceHandoff(item)) {
-          const text = Array.isArray(item.content) ? item.content.filter((part: { type?: unknown; text?: unknown } | null) => part?.type === 'text' && typeof part.text === 'string').map((part: { text?: unknown }) => part.text).join('\n') : '';
+          const text = Array.isArray(item.content) ? item.content.flatMap(part => typeof part !== 'string' && part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []).join('\n') : '';
           prompts.set(turnId, { itemId: item.id, text: Array.from(text.trim()).slice(0, 200).join('') });
         } else if (item?.type === 'agentMessage') {
-          const text = typeof item.text === 'string' ? item.text : Array.isArray(item.content) ? item.content.filter((part: { type?: unknown; text?: unknown } | null) => part?.type === 'text' && typeof part.text === 'string').map((part: { text?: unknown }) => part.text).join('\n') : '';
+          const text = typeof item.text === 'string' ? item.text : Array.isArray(item.content) ? item.content.flatMap(part => typeof part !== 'string' && part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []).join('\n') : '';
           if (text.trim()) replies.set(turnId, Array.from(text.trim()).slice(0, 600).join(''));
         }
       }
@@ -336,7 +336,8 @@ export async function impl_media(this: DesktopClient, clientState: ClientState, 
         // An image the agent viewed is its one picture.
         if (entry.item.type === 'imageView' && inputIndex === 0 && typeof entry.item.path === 'string') return recordedMedia({ type: 'localImage', path: entry.item.path });
         if (entry.item.type !== 'userMessage' || !Array.isArray(entry.item.content)) throw new BridgeError('No recorded media here', 404);
-        return recordedMedia(entry.item.content[inputIndex]);
+        const part = entry.item.content[inputIndex];
+        return recordedMedia(typeof part === 'string' ? undefined : part);
       }
       if (page.nextCursor === null) break;
       if (typeof page.nextCursor !== 'string' || !page.nextCursor || cursors.has(page.nextCursor)) throw new BridgeError('Could not verify recorded media', 502);

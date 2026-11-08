@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
-type Config = { command?: string; args?: string[]; cwd?: string; url?: string; enabled?: boolean; env?: Record<string, unknown> };
+type Config = { command?: string; args?: string[]; cwd?: string; url?: string; enabled?: boolean; env?: Record<string, unknown> | null };
 type Environment = { chatgpt?: boolean; geminiKey?: string | null; openrouterKey?: string; home?: string | null };
 type GeminiResponse = { error?: { details?: { reason?: string }[] }; candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
 type McpResponse = { id?: number; error?: unknown; result: { isError?: boolean; content: { type: string; text: string }[] } };

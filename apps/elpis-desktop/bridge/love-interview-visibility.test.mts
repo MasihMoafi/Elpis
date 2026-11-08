@@ -4,6 +4,11 @@ import { createLoveAgents } from './love-agents.mts';
 import { interviewRuntime } from '../tests/love-interview-runtime.mts';
 import { runAcpNode } from './acp-nodes.mts';
 
+const firstText = (item: { content?: (string | { text?: string })[] } | undefined) => {
+  const part = item?.content?.[0];
+  return typeof part === 'string' ? undefined : part?.text;
+};
+
 test('saved interview chats show only the real answers and decoded agent question', async t => {
   const f = await interviewRuntime(); t.after(() => f.close());
   const conversation = [{ role: 'assistant', text: 'What would you like to write?' }, { role: 'user', text: 'A garden letter.' }];
@@ -11,11 +16,11 @@ test('saved interview chats show only the real answers and decoded agent questio
   const result = await runAcpNode(f.nodeSpec({ name: 'Writer', model: 'gpt-6-luna', prompt: 'Writer' }), { task: `Continue the interview. Conversation:\n${JSON.stringify(conversation)}` }, { cwd: f.root, timeoutMs: 5000 });
   const history = await f.client.readThread(result.sessionId);
   assert.doesNotMatch(JSON.stringify(history), /Continue the interview|Conversation:|\\"question\\"/);
-  assert.deepEqual(history.data.slice().reverse().map(e => e.item.text ?? e.item.content?.[0]?.text), ['What would you like to write?', 'A garden letter.', 'Who will read it?']);
+  assert.deepEqual(history.data.slice().reverse().map(e => e.item.text ?? firstText(e.item)), ['What would you like to write?', 'A garden letter.', 'Who will read it?']);
   const first = await f.client.readThread(result.sessionId, { limit: 1 });
   const second = await f.client.readThread(result.sessionId, { limit: 1, cursor: first.nextCursor });
   assert.equal(first.data[0]?.item.text, 'Who will read it?');
-  assert.equal(second.data[0]?.item.content?.[0]?.text, 'A garden letter.');
+  assert.equal(firstText(second.data[0]?.item), 'A garden letter.');
   assert.doesNotMatch(JSON.stringify(await f.client.listThreads()), /Continue the interview|Conversation:|\\"question\\"/);
   f.answer('{"result":"keep normal task output"}');
   const normal = await runAcpNode(f.nodeSpec({ name: 'Writer', model: 'gpt-6-luna', prompt: 'Writer' }), { task: 'Show an API example.' }, { cwd: f.root, timeoutMs: 5000 });
@@ -55,7 +60,7 @@ test('real ACP interview never exposes an internal user prompt or JSON through d
   await f.runner.run({ id: 'writer', cwd: f.root, confirm: true });
   const completed = (await f.client.listThreads()).data;
   assert.equal(completed.length, 1, 'only the confirmed execution creates a chat');
-  assert.equal(completed[0]?.turns?.[0]?.items[0]?.content?.[0]?.text, interview.proposal);
+  assert.equal(firstText(completed[0]?.turns?.[0]?.items[0]), interview.proposal);
   assert.equal(completed[0]?.turns?.[0]?.items[1]?.text, 'Here is the garden letter.');
 });
 

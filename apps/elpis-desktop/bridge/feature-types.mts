@@ -28,7 +28,7 @@ export type ServerDefinition = {
     enabled?: unknown;
     url?: unknown;
     command?: unknown;
-    env?: Record<string, unknown>;
+    env?: Record<string, unknown> | null;
     env_vars?: unknown;
     bearer_token_env_var?: unknown;
 };
@@ -42,7 +42,7 @@ export type Config = RecordValue & {
             enabled?: boolean;
             max_concurrent_threads_per_session?: unknown;
         } | boolean;
-    };
+    } | null;
     agents?: {
         max_threads?: unknown;
         max_concurrent_threads_per_session?: unknown;
@@ -70,7 +70,7 @@ export type ConfigRead = {
 } | null | undefined;
 export type Requirements = {
     modelProvider?: unknown;
-    modelProviders?: Record<string, NonNullable<Definition>>;
+    modelProviders?: Record<string, NonNullable<Definition>> | null;
     allowedApprovalPolicies?: unknown;
     allowedApprovalsReviewers?: unknown;
     allowedSandboxModes?: unknown;

@@ -49,9 +49,7 @@ function bundle(root: string, name: string, managed: Mode | boolean) {
 }
 
 async function fixture(t: TestContext, { directMode = null, locks = false }: { directMode?: Mode; locks?: boolean } = {}) {
-  const base = directMode ? path.join(os.homedir(), ".cache/elpis-tests") : os.tmpdir();
-  if (directMode) fs.mkdirSync(base, { recursive: true });
-  const root = createTestTempDir(path.join(base, "ebh-"));
+  const root = createTestTempDir(path.join(os.tmpdir(), "ebh-"));
   const [firstBundle, secondBundle] = [bundle(root, "a", directMode), bundle(root, "b", directMode)];
   const [first, second] = [firstBundle.dir, secondBundle.dir];
   const agentLog = path.join(root, "agent.jsonl"), release = path.join(root, "release");
@@ -174,9 +172,7 @@ test("mixed configuration changes do not stop an unattached bridge", { timeout: 
 
 for (const mode of ["symlink", "public", "wrong-target"]) {
   test(`direct handover rejects a ${mode} marker`, { timeout: 15000 }, async (t) => {
-    const base = path.join(os.homedir(), ".cache/elpis-tests");
-    fs.mkdirSync(base, { recursive: true });
-    const root = createTestTempDir(path.join(base, "edh-"));
+    const root = createTestTempDir(path.join(os.tmpdir(), "edh-"));
     t.after(() => assert.equal(spawnSync("gio", ["trash", root]).status, 0));
     const old = bundle(root, "a", true), next = bundle(root, "b", true);
     const home = path.join(root, "elpis");
@@ -194,7 +190,7 @@ for (const mode of ["symlink", "public", "wrong-target"]) {
       fs.writeFileSync(marker, mode === "wrong-target" ? path.join(root, "other") : target, { mode: 0o600 });
       if (mode === "public") fs.chmodSync(marker, 0o644);
     }
-    const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, XDG_RUNTIME_DIR: root, ELPIS_ENGINE_BIN: old.engine };
+    const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: home, XDG_RUNTIME_DIR: root, TMPDIR: root, ELPIS_ENGINE_BIN: old.engine };
     const child = spawn(process.execPath, [path.join(next.dir, "shared-runtime.mts"), target], { env, stdio: ["ignore", "pipe", "pipe"] });
     let stderr = ""; child.stderr.on("data", data => { stderr += data; });
     await once(child, "exit");

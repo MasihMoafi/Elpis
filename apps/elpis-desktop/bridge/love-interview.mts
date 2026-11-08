@@ -1,4 +1,4 @@
-type Item = { id?: string; type?: string; text?: string; content?: { type?: string; text?: string }[] };
+type Item = { id?: string; type?: string; text?: string; content?: (string | { type?: string; text?: string })[] };
 type Turn = { id?: string; items: Item[] };
 type InterviewMessage = { role: 'assistant' | 'user'; text: string };
 
@@ -15,7 +15,10 @@ export function interviewReply(answer: string, answered: boolean) {
   return null;
 }
 
-const promptText = (item: Item | null | undefined) => item?.type === 'userMessage' && item.content?.length === 1 && item.content[0]!.type === 'text' && typeof item.content[0]!.text === 'string' ? item.content[0]!.text : '';
+const promptText = (item: Item | null | undefined) => {
+  const part = item?.content?.[0];
+  return item?.type === 'userMessage' && item.content?.length === 1 && typeof part !== 'string' && part?.type === 'text' && typeof part.text === 'string' ? part.text : '';
+};
 export function legacyInterview(thread: { name?: unknown; preview?: unknown; turns?: Turn[] }) {
   return typeof thread.name === 'string' && thread.name.startsWith('Love Spot · ') && (typeof thread.preview === 'string' && thread.preview.startsWith(PREFIX.trimEnd()) || thread.turns?.some(turn => turn.items?.some(item => promptText(item).startsWith(PREFIX))));
 }
