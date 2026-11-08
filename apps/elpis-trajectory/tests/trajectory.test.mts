@@ -1,0 +1,365 @@
+import { after, before, test } from 'node:test'
+import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { createServer } from 'node:net'
+import { chromium } from 'playwright-core'
+import type { Browser } from 'playwright-core'
+import type { TrajectoryDocument } from '../../../docs/specs/trajectory-contract.ts'
+
+const fixture: TrajectoryDocument = JSON.parse(await readFile(new URL('../fixtures/sample.json', import.meta.url), 'utf8'))
+const cells = fixture.turns.flatMap(turn => turn.groups.flatMap(group => group.cells))
+let server: ChildProcessWithoutNullStreams | undefined
+let browser: Browser | undefined
+let baseURL: string | undefined
+
+async function availablePort() {
+  return new Promise<number>((resolve, reject) => {
+    const probe = createServer()
+    probe.once('error', reject)
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address()
+      assert.ok(address && typeof address !== 'string')
+      const port = address.port
+      probe.close(() => resolve(port))
+    })
+  })
+}
+
+before(async () => {
+  const port = await availablePort()
+  baseURL = `http://127.0.0.1:${port}`
+  server = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', String(port), '--strictPort'], {
+    stdio: 'pipe',
+    env: { ...process.env, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' },
+  })
+  let serverOutput = ''
+  server.stdout.on('data', chunk => { serverOutput += chunk })
+  server.stderr.on('data', chunk => { serverOutput += chunk })
+  let ready = false
+  for (let i = 0; i < 100; i++) {
+    if (server.exitCode !== null) break
+    try {
+      if ((await fetch(baseURL)).ok) { ready = true; break }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  assert.ok(ready, `Vite did not start: ${serverOutput}`)
+  const chrome = process.env.CHROME_PATH ?? ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(existsSync)
+  assert.ok(chrome, 'Set CHROME_PATH to a Chromium or Chrome executable')
+  browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] })
+})
+
+after(async () => {
+  await browser?.close()
+  server?.kill('SIGTERM')
+})
+
+async function pageWith(document: TrajectoryDocument = fixture) {
+  assert.ok(browser)
+  assert.ok(baseURL)
+  const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } })
+  page.setDefaultTimeout(3_000)
+  await page.route('**/api/trajectory', route => route.fulfill({ json: document }))
+  await page.goto(baseURL)
+  await page.locator('tr[data-record-index]').first().waitFor()
+  return page
+}
+
+test('the API document renders each record and its timeline', async () => {
+  const page = await pageWith()
+  try {
+    const rows = page.locator('tr[data-record-index]')
+    assert.equal(await rows.count(), cells.length)
+    assert.equal(await page.locator('[data-timeline-span]').count(), cells.length)
+    assert.match(await page.locator('tr[data-record-index="6"]').innerText(), /run tests/)
+    assert.ok(await page.locator('[data-kind="tool"][data-error="true"]').count())
+    assert.ok(await page.getByText('Earlier history compacted').count())
+  } finally { await page.close() }
+})
+
+test('folding and searching change the visible ledger', async () => {
+  const page = await pageWith()
+  try {
+    await page.getByRole('button', { name: 'Collapse turns' }).click()
+    assert.equal(await page.locator('tr[data-record-index]').count(), 4)
+    assert.equal(await page.locator('tr[data-record-index="6"]').count(), 0)
+    await page.getByRole('button', { name: 'Expand turns' }).click()
+    assert.equal(await page.locator('tr[data-record-index]').count(), cells.length)
+    await page.getByRole('searchbox', { name: 'Search trajectory' }).fill('missing fixture')
+    const matches = page.locator('tr[data-record-index]')
+    assert.ok((await matches.count()) > 0)
+    assert.ok((await matches.count()) < cells.length)
+    assert.equal(await page.locator('tr[data-record-index="3"]').count(), 0)
+    await page.getByRole('searchbox', { name: 'Search trajectory' }).fill('no such trajectory record')
+    assert.equal(await matches.count(), 0)
+  } finally { await page.close() }
+})
+
+test('assistant and request inspectors show the matching cache verdict', async () => {
+  const page = await pageWith()
+  try {
+    await page.locator('tr[data-record-index="2"]').click()
+    assert.ok(await page.getByText('Cache hit 87%', { exact: true }).isVisible())
+    await page.locator('tr[data-record-index="5"]').click()
+    assert.ok(await page.getByText('Cache hit 75%', { exact: true }).isVisible())
+    assert.ok(await page.getByText('Cache miss after: Context Ledger update', { exact: true }).isVisible())
+    await page.getByRole('tabpanel', { name: 'Summary' }).getByRole('button', { name: 'Request #2', exact: true }).click()
+    assert.ok(await page.getByText('Cache hit 75%', { exact: true }).isVisible())
+    await page.locator('tr[data-record-index="13"]').click()
+    assert.ok(await page.getByText('Cache hit 0%', { exact: true }).isVisible())
+    assert.ok(await page.getByText('Cache miss after: compaction', { exact: true }).isVisible())
+  } finally { await page.close() }
+})
+
+test('the API response, not the sample, supplies rows', async () => {
+  const custom: TrajectoryDocument = { ...fixture, turns: [{ turn: 99, groups: [{ title: 'Message', cells: [{ index: 77, kind: 'user', text: 'From the API only', timeSeconds: null }] }] }], requestNumbers: [] }
+  const page = await pageWith(custom)
+  try {
+    assert.equal(await page.locator('tr[data-record-index]').count(), 1)
+    assert.ok(await page.getByText('From the API only').isVisible())
+    assert.equal(await page.locator('tr[data-record-index="6"]').count(), 0)
+  } finally { await page.close() }
+})
+
+test('request usage adds disjoint output and reasoning buckets', async () => {
+  const page = await pageWith()
+  try {
+    await page.getByRole('button', { name: 'Request #1', exact: true }).click()
+    await page.getByRole('tab', { name: 'Usage' }).click()
+    const panel = page.getByRole('tabpanel', { name: 'Usage' })
+    assert.match(await panel.innerText(), /Output\s+102 tok/)
+    assert.match(await panel.innerText(), /Reasoning\s+12 tok/)
+    assert.match(await panel.innerText(), /Content\s+90 tok/)
+  } finally { await page.close() }
+})
+
+test('call and subcall controls fold only their descendants', async () => {
+  const page = await pageWith()
+  try {
+    await page.getByRole('button', { name: 'Collapse subcalls' }).click()
+    assert.equal(await page.locator('tr[data-record-index="4"]').count(), 0)
+    assert.equal(await page.locator('tr[data-record-index="3"]').count(), 1)
+    await page.getByRole('button', { name: 'Expand subcalls' }).click()
+    await page.getByRole('button', { name: 'Collapse calls' }).click()
+    assert.equal(await page.locator('tr[data-record-index="3"]').count(), 0)
+    assert.equal(await page.locator('tr[data-record-index="4"]').count(), 0)
+    assert.equal(await page.locator('tr[data-record-index="2"]').count(), 1)
+    await page.getByRole('button', { name: 'Expand calls' }).click()
+    assert.equal(await page.locator('tr[data-record-index]').count(), cells.length)
+  } finally { await page.close() }
+})
+
+test('timeline dragging filters rows, right-click clears, and the wheel zooms', async () => {
+  const page = await pageWith()
+  try {
+    const track = page.getByLabel('Timeline overview; drag horizontally to focus events')
+    const box = await track.boundingBox()
+    assert.ok(box)
+    const y = box.y + box.height - 2
+    await page.mouse.move(box.x + box.width * 0.10, y)
+    await page.mouse.down()
+    await page.mouse.move(box.x + box.width * 0.30, y, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForFunction(total => document.querySelectorAll('tr[data-record-index]').length < total, cells.length)
+    assert.ok(await page.locator('tr[data-record-index]').count() > 0)
+    await page.mouse.click(box.x + box.width * 0.5, y, { button: 'right' })
+    await page.waitForFunction(total => document.querySelectorAll('tr[data-record-index]').length === total, cells.length)
+    const domain = page.locator('[data-timeline-domain]')
+    const before = await domain.evaluate(node => node.getBoundingClientRect().width)
+    await page.mouse.move(box.x + box.width * 0.5, y)
+    await page.mouse.wheel(0, -500)
+    await page.waitForFunction(width => { const domain = document.querySelector('[data-timeline-domain]'); if (!domain) throw new Error('Timeline domain is missing'); return domain.getBoundingClientRect().width > width }, before)
+  } finally { await page.close() }
+})
+
+test('the current turn stays visible while the ledger scrolls', async () => {
+  const page = await pageWith()
+  try {
+    await page.setViewportSize({ width: 1000, height: 240 })
+    const ledger = page.locator('[data-trajectory-scroll]')
+    await ledger.evaluate(node => { node.scrollTop = 60 })
+    await page.locator('[data-sticky-turn]').waitFor({ state: 'visible' })
+    assert.match(await page.locator('[data-sticky-turn]').innerText(), /Turn 1/)
+    await ledger.evaluate(node => { node.scrollTop = 260 })
+    await page.waitForFunction(() => document.querySelector('[data-sticky-turn]')?.textContent?.includes('Turn 2'))
+    const bounds = await page.locator('[data-sticky-turn]').boundingBox()
+    const ledgerBounds = await ledger.boundingBox()
+    assert.ok(bounds && ledgerBounds && Math.abs(bounds.y - ledgerBounds.y) < 2)
+  } finally { await page.close() }
+})
+
+test('development falls back to the sample when the API is absent', async () => {
+  assert.ok(browser)
+  assert.ok(baseURL)
+  const page = await browser.newPage()
+  try {
+    await page.route('**/api/trajectory', route => route.fulfill({ status: 404, body: '' }))
+    await page.goto(baseURL)
+    await page.locator('tr[data-record-index]').first().waitFor()
+    assert.equal(await page.locator('tr[data-record-index]').count(), cells.length)
+  } finally { await page.close() }
+})
+
+test('unrecorded values do not imply a running call or a complete token total', async () => {
+  const custom: TrajectoryDocument = { version: 1, threadId: 'missing-values', turns: [{ turn: 1, groups: [
+    { title: 'Message', cells: [{ index: 1, kind: 'user', text: 'Check this', timeSeconds: null }] },
+    { title: 'Step 1', cells: [
+      { index: 2, kind: 'message', text: 'Checking', timeSeconds: null, output: 50 },
+      { index: 3, kind: 'tool', text: 'tool with no recorded result', timeSeconds: null }
+    ] }
+  ] }], requestNumbers: [{ number: 1, turn: 1, step: 1, group: 'Step 1', usage: { input: 200, cacheRead: 100, output: 50 } }] }
+  const page = await pageWith(custom)
+  try {
+    await page.locator('tr[data-record-index="2"]').click()
+    assert.match(await page.locator('aside').innerText(), /Tokens\s+50 tok/)
+    assert.equal(await page.getByText(/Cache hit/).count(), 0)
+    await page.locator('tr[data-record-index="3"]').click()
+    assert.match(await page.locator('aside').innerText(), /Status\s+Not recorded/)
+    assert.doesNotMatch(await page.locator('aside').innerText(), /Pending/)
+    await page.getByRole('button', { name: 'Request #1', exact: true }).click()
+    await page.getByRole('tab', { name: 'Usage' }).click()
+    const usage = await page.getByRole('tabpanel', { name: 'Usage' }).innerText()
+    assert.doesNotMatch(usage, /Input\s+300 tok/)
+    assert.match(usage, /Uncached input\s+200 tok/)
+    assert.match(usage, /Cached\s+100 tok/)
+    assert.match(usage, /Session cumulative\s+Usage not reported/)
+  } finally { await page.close() }
+})
+
+test('large ledgers retain virtual scrolling and can reach both ends', async () => {
+  const many: TrajectoryDocument = { version: 1, threadId: 'large', turns: [{ turn: 1, groups: [{ title: 'Step 1', cells: Array.from({ length: 250 }, (_, i) => ({ index: i + 1, kind: 'message', text: `Entry ${i + 1}`, timeSeconds: 1 })) }] }], requestNumbers: [] }
+  const page = await pageWith(many)
+  try {
+    const rows = page.locator('tr[data-record-index]')
+    assert.ok((await rows.count()) < 100)
+    const ledger = page.locator('[data-trajectory-scroll]')
+    await ledger.evaluate(node => { node.scrollTop = 0 })
+    await page.locator('tr[data-record-index="1"]').waitFor()
+    await ledger.evaluate(node => { node.scrollTop = node.scrollHeight })
+    await page.locator('tr[data-record-index="250"]').waitFor()
+    assert.ok((await rows.count()) < 100)
+  } finally { await page.close() }
+})
+
+test('the sample covers turns, three call steps, failures, subtools, compaction and cache changes', () => {
+  assert.equal(fixture.version, 1)
+  assert.ok(fixture.turns.filter(turn => turn.turn !== null).length >= 3)
+  const firstTurn = fixture.turns.find(turn => turn.turn === 1)
+  assert.ok(firstTurn)
+  assert.equal(firstTurn.groups.filter(group => /^Step /.test(group.title) && group.cells.some(cell => cell.kind === 'tool')).length, 3)
+  assert.ok(cells.some(cell => cell.kind === 'tool' && cell.isError))
+  assert.ok(cells.some(cell => cell.kind === 'subtool'))
+  assert.ok(fixture.turns.some(turn => turn.turn === null && turn.groups.some(group => group.cells.some(cell => cell.kind === 'compacted'))))
+  assert.ok(fixture.requestNumbers.some(request => (request.usage?.cacheRead ?? 0) > 0 && (request.usage?.cacheWrite ?? 0) > 0))
+  assert.ok(fixture.requestNumbers.some(request => request.cache?.cause))
+  assert.equal(new Set(cells.map(cell => cell.index)).size, cells.length)
+  assert.ok(cells.every(cell => 'timeSeconds' in cell))
+})
+
+test('every request remains inspectable when requests share a group or have no record', async () => {
+  const custom: TrajectoryDocument = {
+    version: 1, threadId: 'request-boundaries',
+    turns: [{ turn: 1, groups: [
+      { title: 'Step 1', cells: [{ index: 1, kind: 'message', text: 'Only response', timeSeconds: 1 }] },
+      { title: 'Step 2', cells: [] }
+    ] }],
+    requestNumbers: [
+      { number: 1, turn: 1, step: 1, group: 'Step 1', cache: { hitPercent: 10 } },
+      { number: 2, turn: 1, step: 1, group: 'Step 1', cache: { hitPercent: 80 } },
+      { number: 3, turn: 1, step: 2, group: 'Step 2', cache: { hitPercent: 0, cause: 'model change' } }
+    ]
+  }
+  const page = await pageWith(custom)
+  try {
+    await page.locator('tr[data-record-index="1"]').click()
+    assert.equal(await page.getByText(/Cache hit/).count(), 0)
+    for (const [number, verdict] of [[1, 'Cache hit 10%'], [2, 'Cache hit 80%'], [3, 'Cache hit 0%']] as [number, string][]) {
+      await page.getByRole('button', { name: `Request #${number}`, exact: true }).click()
+      assert.ok(await page.getByText(verdict, { exact: true }).isVisible())
+    }
+    assert.ok(await page.getByText('Cache miss after: model change', { exact: true }).isVisible())
+  } finally { await page.close() }
+})
+
+test('ledger content excludes record numbers and group titles', async () => {
+  const page = await pageWith()
+  try {
+    assert.equal((await page.locator('tr[data-record-index="1"] td').last().innerText()).trim(), 'Inspect the project and run its checks.')
+    assert.equal((await page.locator('tr[data-record-index="2"] td').last().innerText()).trim(), "I'll inspect the project first.")
+    assert.equal(await page.locator('tr[data-record-index="1"]').evaluate(el => el.getBoundingClientRect().height), 30)
+  } finally { await page.close() }
+})
+
+test('record inspector tabs follow the reference by kind and payload', async () => {
+  const page = await pageWith()
+  try {
+    for (const [index, tabs] of [[1, ['Summary', 'Preview', 'Raw']], [2, ['Summary', 'Preview', 'Raw']], [3, ['Summary', 'Payload', 'Result', 'Schema', 'Timing']], [11, ['Summary', 'Raw Output']]] as [number, string[]][]) {
+      await page.locator(`tr[data-record-index="${index}"]`).click()
+      assert.deepEqual(await page.locator('aside [role="tab"]').allTextContents(), tabs)
+    }
+  } finally { await page.close() }
+})
+
+test('assistant summary orders the reference fields and preserves unknown timing', async () => {
+  const page = await pageWith()
+  try {
+    await page.locator('tr[data-record-index="2"]').click()
+    const panel = page.getByRole('tabpanel', { name: 'Summary' })
+    assert.deepEqual(await panel.locator('dt, h3').allTextContents(), ['Source', 'Status', 'Tokens', 'Cache', 'Preview', 'Request Timing', 'Started', 'Total duration', 'TTFT', 'Generation', 'Throughput'])
+    assert.match(await panel.innerText(), /Cache hit 87%/)
+    await page.locator('tr[data-record-index="10"]').click()
+    const text = await panel.innerText()
+    assert.match(text, /TTFT\s+Not recorded/)
+    assert.match(text, /Throughput\s+Not recorded/)
+  } finally { await page.close() }
+})
+
+test('footer shows aggregated sample usage and omits unavailable metrics', async () => {
+  const page = await pageWith()
+  try {
+    const footer = page.locator('footer')
+    assert.match(await footer.innerText(), /3 turns 6 steps[\s\S]*54 tok\/s/)
+    assert.match(await footer.innerText(), /43.9K tok[\s\S]*Cache hit 79%/)
+    assert.match(await footer.innerText(), /2%/)
+  } finally { await page.close() }
+  const custom: TrajectoryDocument = { version: 1, threadId: 'empty', turns: [{ turn: 1, groups: [{ title: 'Message', cells: [{ index: 1, kind: 'user', text: 'Hello', timeSeconds: null }] }] }], requestNumbers: [] }
+  const empty = await pageWith(custom)
+  try {
+    const text = await empty.locator('footer').innerText()
+    assert.match(text, /1 turns 0 steps/)
+    assert.doesNotMatch(text, /tok\/s|Cache hit|%/)
+  } finally { await empty.close() }
+})
+
+// 5 Nov, Masih: "cache and buttons down aren't clickable". Each footer figure opens its details; Escape or a click
+// outside closes it, and only one is open at a time.
+test('the footer figures open their details', async () => {
+  const page = await pageWith()
+  try {
+    const usage = page.locator('[data-stat="usage"] button')
+    assert.equal(await page.getByRole('dialog').count(), 0, 'nothing is open before a click')
+    await usage.click()
+    const tokens = page.getByRole('dialog', { name: 'Tokens' })
+    const text = await tokens.innerText()
+    for (const shown of ['Cache hit', 'Input', 'Cache read', 'Output', 'Context Ledger update', 'compaction']) assert.ok(text.includes(shown), `Tokens shows "${shown}":\n${text}`)
+    // 6 Nov, Masih: "our cache in trajectory is transparent; it shouldn't be." The panel is solid; rows never show through.
+    const fill = await tokens.evaluate(node => getComputedStyle(node).backgroundColor)
+    assert.ok(!/rgba\([^)]*,\s*0?\.\d+\)|transparent/.test(fill), `the panel's fill is opaque: ${fill}`)
+    assert.equal(await usage.getAttribute('aria-expanded'), 'true')
+    await page.locator('[data-stat="activity"] button').click()
+    assert.equal(await tokens.count(), 0, 'opening another figure closes the first')
+    assert.match(await page.getByRole('dialog', { name: 'Time and speed' }).innerText(), /turns .* steps/)
+    await page.keyboard.press('Escape')
+    assert.equal(await page.getByRole('dialog').count(), 0, 'Escape closes it')
+    const context = page.locator('[data-stat="context"] button')
+    if (await context.count()) {
+      await context.click()
+      assert.match(await page.getByRole('dialog', { name: 'Context' }).innerText(), /Used[\s\S]*Window[\s\S]*Free/)
+      await page.locator('tr[data-record-index]').first().click()
+      assert.equal(await page.getByRole('dialog', { name: 'Context' }).count(), 0, 'a click outside closes it')
+    }
+  } finally { await page.close() }
+})

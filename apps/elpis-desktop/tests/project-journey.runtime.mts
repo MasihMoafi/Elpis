@@ -19,7 +19,7 @@ type Reply = { type: string; [key: string]: unknown };
 type Action = Reply | ((request: ModelRequest) => Reply);
 type MockProvider = { requests: { body: ModelRequest }[]; actions: Action[]; error?: Error; url: string; start(): Promise<void>; close(): void };
 const { _electron }: { _electron: { launch(options: object): Promise<ElectronApp> } } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { Provider, message }: { Provider: new () => MockProvider; message(text: string): Reply } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message }: { Provider: new () => MockProvider; message(text: string): Reply } = require('../../../scripts/lib/mock-provider.cts');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary));
 const appRoot = fileURLToPath(new URL('..', import.meta.url));

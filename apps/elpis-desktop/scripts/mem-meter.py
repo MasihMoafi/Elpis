@@ -21,13 +21,13 @@ Stdlib only; run with `python3 -I`.
 """
 import json, os, re, sys, time
 
-ROOT = re.compile(r'elpis-desktop/versions/.*/runtime/electron/electron (?!.*--type=)|tools/elpis-claude/acp-bridge\.mjs')
+ROOT = re.compile(r'elpis-desktop/versions/.*/runtime/electron/electron (?!.*--type=)|tools/elpis-claude/acp-bridge\.mts')
 KINDS = [
     ('browser', re.compile(r'chrome-headless-shell|chromium|elpis-browser-agent')),
     ('engine', re.compile(r'(codex|elpis) app-server')),
     ('bridge', re.compile(r'acp-bridge\.mjs')),
     ('workers', re.compile(r'claude-code/bin/claude\.exe|(^|/)claude |/agy |/codex ')),
-    ('adapters', re.compile(r'tools/elpis-claude/.*\.mjs')),
+    ('adapters', re.compile(r'tools/elpis-claude/.*\.mts')),
     ('app', re.compile(r'elpis-desktop/versions/.*/runtime/electron/electron')),
     ('mcp', re.compile(r'(^|[ /])mcp([ @/-]|$)|npm exec|_mcp_server|mcp-server|mcp-for-|modelcontextprotocol')),
 ]

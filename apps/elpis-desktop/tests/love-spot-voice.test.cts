@@ -78,7 +78,7 @@ for (const colorScheme of ['light'] as const) test(`Love Spot hides unavailable 
   } finally { await f.close(); }
 });
 
-// Defined only while subscription speech is reliable: a skipped test fails the renderer gate (scripts/renderer-artifact-gate.mjs).
+// Defined only while subscription speech is reliable: a skipped test fails the renderer gate (scripts/renderer-artifact-gate.mts).
 if (require('../lib/love-spot-audio.mts').READ_ALOUD_AUDIO.available) for (const sound of [true, false]) test(`Read aloud verifies actual sound before completion (sound=${sound})`, async t => {
   const { READ_ALOUD_AUDIO } = await import('../lib/love-spot-audio.mts');
   let f: ParityFixture; const streams = new Set<ServerResponse>();

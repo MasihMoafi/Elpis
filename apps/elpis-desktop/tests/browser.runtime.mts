@@ -22,7 +22,7 @@ type ToolReplies = { browser_open: { tabId: string }; browser_snapshot: { url: s
 type ToolCall = <K extends keyof ToolReplies>(name: K, args?: Record<string, unknown>) => Promise<ToolReplies[K]>;
 type Socket = EventEmitter & { send(value: string): void; close(): void };
 const require = createRequire(import.meta.url);
-const { Provider, message: modelMessage, call: modelCall }: { Provider: new () => MockProvider; message(text: string): object; call(id: string, name: string, args: object): object } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message: modelMessage, call: modelCall }: { Provider: new () => MockProvider; message(text: string): object; call(id: string, name: string, args: object): object } = require('../../../scripts/lib/mock-provider.cts');
 const { _electron }: typeof import('playwright-core') = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];
 const approvalEval = process.argv.includes('--approvals') || process.argv.includes('--only-approvals');

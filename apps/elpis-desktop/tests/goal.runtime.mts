@@ -10,11 +10,12 @@ import { once } from 'node:events';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as pause } from 'node:timers/promises';
-import provider from '../../../scripts/lib/mock-provider.js';
+import type { ProviderApi } from '../../../scripts/lib/mock-provider.cts';
 import { DesktopClient } from '../bridge/client.mts';
 import { startDesktopServer } from '../bridge/server.mts';
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
+const provider: ProviderApi = createRequire(import.meta.url)('../../../scripts/lib/mock-provider.cts');
 async function until(check: () => boolean | Promise<boolean>, label: string, timeout = 15000) {
   for (const end = Date.now() + timeout; Date.now() < end; await pause(30)) if (await check()) return;
   throw Error(`Timed out: ${label}`);

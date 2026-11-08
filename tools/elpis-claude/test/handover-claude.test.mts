@@ -14,7 +14,7 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { startToken } from "../shared-runtime.mts";
-import mockProvider from "../../../scripts/lib/mock-provider.js";
+import mockProvider from "../../../scripts/lib/mock-provider.cts";
 import WebSocket from "ws";
 
 const { DesktopClient } = await import("../../../apps/elpis-desktop/bridge/client.mts");

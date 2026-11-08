@@ -44,7 +44,7 @@ Receipts retain old and proposed state and up to 64,000 characters of serialized
 
 Full evidence IDs in saved memory become numeric references in `memories/memory-references/sources.md`; provenance is written before the shortened memory. Unsupported UUID-based citations are rejected. For unchanged lines that still end in numeric references, the guard rejects replacing registered support with different references. It does not catch complete citation removal or validate rewritten prose, interior citations or the claim itself. [Reference handling](../codex-rs/core/src/memory_save.rs).
 
-The runtime check is `node scripts/memory-runtime.test.cjs /absolute/path/to/binary`, using a built Elpis or app-server binary. [Driver](../scripts/memory-agent-tool-runtime.test.cjs). The [memory acceptance record](evals/memory-lessons-review.md) documents behavioral checks and their limits; fitting a checkpoint budget does not prove fidelity. Acceptance requires a checkpoint to retain the goal, constraints, unresolved work and evidence locations, replace superseded facts and keep detailed evidence outside the admission budget.
+The runtime check is `node scripts/memory-runtime.test.cts /absolute/path/to/binary`, using a built Elpis or app-server binary. [Driver](../scripts/memory-agent-tool-runtime.test.cts). The [memory acceptance record](evals/memory-lessons-review.md) documents behavioral checks and their limits; fitting a checkpoint budget does not prove fidelity. Acceptance requires a checkpoint to retain the goal, constraints, unresolved work and evidence locations, replace superseded facts and keep detailed evidence outside the admission budget.
 
 ## 4. Context Ledger and admission
 

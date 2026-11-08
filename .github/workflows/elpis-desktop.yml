@@ -53,7 +53,7 @@ jobs:
       - name: Bind the renderer and complete regression plan to eight shards (six took 9.5 min on the slowest, 7 Nov)
         id: plan
         run: |
-          node scripts/renderer-artifact-gate.mjs --prepare "$RUNNER_TEMP/elpis-ui-plan" 8
+          node scripts/renderer-artifact-gate.mts --prepare "$RUNNER_TEMP/elpis-ui-plan" 8
           node --input-type=module -e '
             import fs from "node:fs";
             const { shardCount } = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
@@ -119,7 +119,7 @@ jobs:
           ELPIS_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/elpis-ui/node_modules/playwright-core
           ELPIS_CHROMIUM: /usr/bin/google-chrome
           ELPIS_REVIEW_SHOTS: ${{ runner.temp }}/elpis-ui-evidence/review
-        run: node scripts/renderer-artifact-gate.mjs --shard "$RUNNER_TEMP/elpis-ui-plan/plan.json" "${{ matrix.shard }}" "$RUNNER_TEMP/elpis-ui-evidence"
+        run: node scripts/renderer-artifact-gate.mts --shard "$RUNNER_TEMP/elpis-ui-plan/plan.json" "${{ matrix.shard }}" "$RUNNER_TEMP/elpis-ui-evidence"
       - name: Preserve UI gate diagnostics
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -162,7 +162,7 @@ jobs:
         run: |
           bash scripts/fetch-retained.sh
       - name: Merge every shard and write the installer receipt
-        run: node scripts/renderer-artifact-gate.mjs --merge "$RUNNER_TEMP/elpis-ui-plan/plan.json" "$RUNNER_TEMP/elpis-ui-evidence"
+        run: node scripts/renderer-artifact-gate.mts --merge "$RUNNER_TEMP/elpis-ui-plan/plan.json" "$RUNNER_TEMP/elpis-ui-evidence"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: renderer

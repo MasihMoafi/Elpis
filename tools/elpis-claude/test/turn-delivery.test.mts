@@ -13,7 +13,9 @@ import type { ChildProcess } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
 import type { DesktopClient as DesktopClientType, DesktopClientOptions } from "../../../apps/elpis-desktop/bridge/client.mts";
-import mockProvider from "../../../scripts/lib/mock-provider.js";
+import importedMockProvider from "../../../scripts/lib/mock-provider.cts";
+import type { ProviderApi } from "../../../scripts/lib/mock-provider.cts";
+const mockProvider = importedMockProvider as unknown as ProviderApi;
 const { DesktopClient } = await import((process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mts", import.meta.url)).href) as typeof import("../../../apps/elpis-desktop/bridge/client.mts");
 
 type StoredItem = { id: string; type: string; text?: string; content?: { text: string }[] };
@@ -38,6 +40,7 @@ async function steerNewTurn(client: DesktopClientType, id: unknown, body: unknow
 
 const source = fileURLToPath(new URL("../", import.meta.url));
 const engine = process.env.A124_ENGINE ?? path.join(source, "test/fake-app-server.mts");
+const standInEngine = /fake-app-server\.mts$/.test(engine);
 const lines = (file: string): Entry[] => fs.existsSync(file) ? fs.readFileSync(file, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line)) : [];
 async function until<T>(check: () => T | Promise<T>, label: string, ms = 5000): Promise<Exclude<T, false | 0 | "" | null | undefined>> {
   for (const end = Date.now() + ms; Date.now() < end; await pause(10)) { const value = await check(); if (value) return value as Exclude<T, false | 0 | "" | null | undefined>; }
@@ -286,7 +289,7 @@ test("A224/A255: /compact forced during a Claude reply stops the reply, then com
   await until(() => f.events.filter(e => e.method === "turn/completed").length === 2, "the compaction ends");
   // The contract carrier logs RPCs; the real carrier is independently guarded by
   // fixture teardown, which rejects any native inference for a provider turn.
-  if (!process.env.A124_ENGINE) {
+  if (standInEngine) {
     const engine = fs.readFileSync(f.env.FAKE_ENGINE_LOG, "utf8");
     assert.ok(!engine.includes("thread/compact/start"), "a Claude chat's compaction never falls through to the engine");
   }
@@ -331,19 +334,19 @@ test("A128: desktop reload while a tool has waiting messages keeps their order a
 });
 
 for (const count of [4]) test(`A128: GPT keeps its native tool running through ${count} messages`, { timeout: 25000 }, async t => {
-  const native = !engine.endsWith("/test/fake-app-server.mts");
+  const native = !standInEngine;
   const followups = Array.from({ length: count }, (_, n) => `GPT follow-up ${n + 1} — پیام`);
   let provider: (InstanceType<typeof mockProvider.Provider> & { error?: unknown }) | undefined;
   if (native) {
-    const { Provider } = (await import("../../../scripts/lib/mock-provider.js")).default;
-    provider = new Provider(); await provider.start();
+    const activeProvider = new mockProvider.Provider();
+    provider = activeProvider; await activeProvider.start();
     t.after(() => required(provider).close());
   }
   const f = await fixture(t, {}, { model: native ? "gpt-5.5" : "luna-test", prepare: async (root, env) => {
     env.FAKE_ENGINE_TOOL_RELEASE = path.join(root, "native-release");
     if (!native) return;
     const nativeProvider = required(provider);
-    const { call, message } = (await import("../../../scripts/lib/mock-provider.js")).default;
+    const { call, message } = (await import("../../../scripts/lib/mock-provider.cts")).default as unknown as ProviderApi;
     const catalog = (JSON.parse(fs.readFileSync(path.join(source, "../../codex-rs/models-manager/models.json"), "utf8")) as { models: { slug: string }[] }).models.find(m => m.slug === "gpt-5.5");
     assert.ok(catalog);
     fs.mkdirSync(env.ELPIS_HOME, { recursive: true });
@@ -405,12 +408,12 @@ test("a new Antigravity model survives the old model process exiting", { timeout
 
 // OpenAI turns reach the local carrier only through the real engine; the stand-in app server cannot carry them. The Linux
 // verification runs this file on the real engine (A124 step), so the desktop gate's stand-in run skips this one case.
-const standInEngine = /fake-app-server\.mts$/.test(process.env.A124_ENGINE ?? "");
 test("an existing chat changes models across providers after idle, stop and failure", { timeout: 30000, skip: standInEngine && "needs the real engine (runs in the Linux verification A124 step)" }, async t => {
   const f = await agyFixture(t, { FAKE_ACP_MODELS: 'sonnet,opus' }, { nativeCalls: true });
-  const nativeReply = (request: { input?: { role?: string; content?: { text?: string }[] }[] }) => {
+  const nativeReply = (request: { input?: unknown }) => {
     f.carrier.actions.unshift(nativeReply);
-    const last = [...(request.input ?? [])].reverse().find(item => item.role === 'user');
+    const input = Array.isArray(request.input) ? request.input as { role?: string; content?: { text?: string }[] }[] : [];
+    const last = [...input].reverse().find(item => item.role === 'user');
     return mockProvider.message(`native answered ${last?.content?.map(part => part.text ?? '').join(' ') ?? 'context'}`);
   };
   f.carrier.actions.push(nativeReply);
@@ -700,7 +703,7 @@ test("the existing desktop reconnects after a bridge restart and can read and co
   await until(() => f.ended(next.turn.id), "the reconnect does not strand the next message");
 });
 
-test("a failed carrier persistence barrier rejects the turn before Claude starts", { timeout: 20000, skip: !engine.endsWith("/test/fake-app-server.mts") && "scripted engine failure" }, async t => {
+test("a failed carrier persistence barrier rejects the turn before Claude starts", { timeout: 20000, skip: !standInEngine && "scripted engine failure" }, async t => {
   const f = await fixture(t, { FAKE_ENGINE_FAIL_MATERIALIZE: "1" });
   const { turn } = await sendTurn(f.client, f.id, { text: "do not infer without a durable chat" });
   await until(() => f.ended(turn.id), "persistence failure ends Working");
@@ -737,7 +740,7 @@ test("a stalled native history mirror cannot hold Claude's answer or completion"
   assert.ok(f.events.some(e => e.method === "item/completed" && e.params.item?.text?.includes("answered:")));
 });
 
-test("GPT chat turns still use the native engine and never Claude", { timeout: 20000, skip: !engine.endsWith("/test/fake-app-server.mts") && "scripted native inference only; use the real-app GPT check" }, async t => {
+test("GPT chat turns still use the native engine and never Claude", { timeout: 20000, skip: !standInEngine && "scripted native inference only; use the real-app GPT check" }, async t => {
   const f = await fixture(t);
   const created = await f.client.createThread({ model: "luna-test", cwd: f.root });
   const before = f.agent().filter(e => e.method === "session/prompt").length;
@@ -782,7 +785,7 @@ test("an effort picked while a Claude turn runs reaches that turn and survives a
 });
 
 // Only the real engine records and restores a chat's permissions: run with A124_ENGINE=/absolute/native/binary.
-for (const mode of ["full", "auto", "bypass", "ask"]) test(`a Claude chat set to ${mode} reopens in ${mode} after a bridge and engine restart`, { timeout: 30000, skip: engine.endsWith("fake-app-server.mts") && "needs the real engine (A124_ENGINE)" }, async t => {
+for (const mode of ["full", "auto", "bypass", "ask"]) test(`a Claude chat set to ${mode} reopens in ${mode} after a bridge and engine restart`, { timeout: 30000, skip: standInEngine && "needs the real engine (A124_ENGINE)" }, async t => {
   const f = await fixture(t);
   const { turn } = await sendTurn(f.client, f.id, { text: "hello" });
   await until(() => f.ended(turn.id), "the turn ends");

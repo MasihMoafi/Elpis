@@ -1,3 +1,4 @@
+// Generated from scripts/untitled-tui-e2e.mts by scripts/emit-compat-js.mts; do not edit.
 // Run with Node 22+: ELPIS_UNTITLED_TUI=/path/to/CI/elpis-next node scripts/untitled-tui-e2e.mjs
 // Uses the installed engine unless ELPIS_UNTITLED_ENGINE names a CI engine.
 import assert from 'node:assert/strict';
@@ -8,6 +9,8 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as pause } from 'node:timers/promises';
+
+
 
 const installed = path.join(os.homedir(), '.local/bin/elpis');
 const tui = process.env.ELPIS_UNTITLED_TUI || installed;
@@ -36,25 +39,26 @@ trust_level = "trusted"
 `);
 fs.writeFileSync(path.join(elpis, 'hooks.json'), '{"hooks":{}}\n');
 const reserve = net.createServer();
-await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve));
-const port = reserve.address().port;
-await new Promise(resolve => reserve.close(resolve));
+await new Promise      (resolve => reserve.listen(0, '127.0.0.1', resolve));
+const address = reserve.address(); assert(address && typeof address !== 'string');
+const port = address.port;
+await new Promise      (resolve => reserve.close(() => resolve()));
 const endpoint = `ws://127.0.0.1:${port}`;
 const log = fs.openSync(path.join(evidence, 'engine.log'), 'w');
 const child = spawn(engine, ['app-server', '--listen', endpoint], { env, cwd: work, stdio: ['ignore', log, log] });
-const exited = new Promise(resolve => child.once('exit', resolve));
-let ws;
-const tmux = (...args) => execFileSync('tmux', ['-S', socket, ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-const quote = text => `'${text.replaceAll("'", "'\\''")}'`;
-const capture = name => {
+const exited = new Promise               (resolve => child.once('exit', resolve));
+let ws                       ;
+const tmux = (...args          ) => execFileSync('tmux', ['-S', socket, ...args], { env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const quote = (text        ) => `'${text.replaceAll("'", "'\\''")}'`;
+const capture = (name        ) => {
   const text = tmux('capture-pane', '-p', '-t', 'untitled');
   fs.writeFileSync(path.join(evidence, name), text);
   return text;
 };
-async function until(check, label) {
+async function until   (check                      , label        )                                                         {
   for (let n = 0; n < 150; n++) {
     const value = await check();
-    if (value) return value;
+    if (value) return value                                                 ;
     await pause(100);
   }
   throw Error(`Timed out: ${label}`);
@@ -62,30 +66,32 @@ async function until(check, label) {
 try {
   ws = await until(async () => {
     const candidate = new WebSocket(endpoint);
-    return new Promise(resolve => {
+    return new Promise                  (resolve => {
       candidate.onopen = () => resolve(candidate);
       candidate.onerror = () => { candidate.close(); resolve(null); };
     });
   }, 'real engine WebSocket');
+  const socket = ws;
   let nextId = 0;
-  const pending = new Map();
-  ws.onmessage = event => {
-    const message = JSON.parse(event.data);
+  const pending = new Map                                  ();
+  socket.onmessage = event => {
+    const message        = JSON.parse(event.data);
     if (message.id !== undefined) {
       pending.get(message.id)?.(message);
       pending.delete(message.id);
     }
   };
-  const request = (method, params) => new Promise((resolve, reject) => {
+  const request = (method        , params        ) => new Promise       ((resolve, reject) => {
     const id = ++nextId;
     const timeout = setTimeout(() => { pending.delete(id); reject(Error(`Timed out: ${method}`)); }, 15000);
     pending.set(id, response => { clearTimeout(timeout); resolve(response); });
-    ws.send(JSON.stringify({ id, method, params }));
+    socket.send(JSON.stringify({ id, method, params }));
   });
   await request('initialize', { clientInfo: { name: 'untitled-e2e', version: '1' }, capabilities: { experimentalApi: true } });
   for (let n = 0; n < 3; n++) {
     const started = await request('thread/start', { cwd: work, model: 'gpt-5.4', modelProvider: 'offline' });
     assert.ok(started.result?.thread.id, JSON.stringify(started));
+    assert(started.result);
     const resume = await request('thread/resume', { threadId: started.result.thread.id });
     fs.appendFileSync(path.join(evidence, 'empty-resume.jsonl'), JSON.stringify(resume) + '\n');
     assert.match(resume.error?.message || '', /no rollout found for thread id/);
@@ -152,7 +158,7 @@ try {
   }
   console.log(`PASS: saved chat opens and reopens; repeated launches omit peer drafts. Evidence: ${evidence}`);
 } catch (error) {
-  fs.writeFileSync(path.join(evidence, 'failure.txt'), `${error.stack}\n`);
+  fs.writeFileSync(path.join(evidence, 'failure.txt'), `${(error         ).stack}\n`);
   console.error(`Evidence: ${evidence}`);
   throw error;
 } finally {

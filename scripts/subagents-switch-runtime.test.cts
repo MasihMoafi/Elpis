@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { once } = require('node:events');
-const { AppServer } = require('./lib/rpc.js');
+const { AppServer } = require('./lib/rpc.cts');
 
 async function main() {
   const binary = process.argv[2];

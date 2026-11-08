@@ -53,7 +53,7 @@ They translate messages, tool declarations, calls and results, auth headers, str
 - Gemini emits only the first candidate and drops a repeated complete function call.
 - The completion event exposes `end_turn`, not the vendor finish reason. A turn that called a tool always has `end_turn = false`. A Chat stream without a finish reason fails; Chat tool calls count under any finish reason except `length`.
 - Vendor error statuses pass through to core's retry and rate-limit handling, except 401 and Anthropic's 529 overload (`lib.rs`).
-- No real vendor has accepted the adapters yet: [`scripts/provider-gateway-runtime.test.cjs`](../scripts/provider-gateway-runtime.test.cjs) runs a read-and-patch turn against a loopback fake Anthropic and Chat vendor.
+- No real vendor has accepted the adapters yet: [`scripts/provider-gateway-runtime.test.cts`](../scripts/provider-gateway-runtime.test.cts) runs a read-and-patch turn against a loopback fake Anthropic and Chat vendor.
 
 ## 5. Manual smoke test
 

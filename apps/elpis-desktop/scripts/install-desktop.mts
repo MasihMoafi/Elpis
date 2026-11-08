@@ -14,7 +14,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mts';
-import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mjs';
+import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mts';
 import { durableSourceCheckout } from '../bridge/improve-source.mts';
 import { pruneVersions } from '../../../scripts/prune-versions.mts';
 

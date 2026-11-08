@@ -15,7 +15,7 @@ const path: typeof import('node:path') = require('node:path');
 const { spawn }: typeof import('node:child_process') = require('node:child_process');
 const { once }: typeof import('node:events') = require('node:events');
 type MockProvider = { server: Server; url: string; requests: { body: { input: unknown } }[]; actions: { shift(): unknown }; start(): Promise<void>; close(): void };
-const { Provider, message }: { Provider: new () => MockProvider; message(text: string): unknown } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message }: { Provider: new () => MockProvider; message(text: string): unknown } = require('../../../scripts/lib/mock-provider.cts');
 const { fakeDesktop }: { fakeDesktop: import('./fake-desktop.cts').FakeDesktop } = require('./fake-desktop.cts');
 
 type TurnRow = [string, string | undefined, string | undefined, string];

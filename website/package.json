@@ -6,7 +6,7 @@
     "build": "python3 ../scripts/build-public-content.py && npm run build:js && npm run build:css",
     "build:js": "tsc -p tsconfig.json && tsc -p candidates/persistent-logo/tsconfig.json",
     "build:css": "tailwindcss -i ./source.css -o ./styles.css --minify",
-    "test": "node --test --test-isolation=none tests/*.test.mjs"
+    "test": "node --test --test-isolation=none tests/*.test.mts"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.3.3",

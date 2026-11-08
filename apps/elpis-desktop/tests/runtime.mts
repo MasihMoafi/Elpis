@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mts';
 const require = createRequire(import.meta.url);
 const { chooseOption, controlValue }: Pick<import('./controls.cts').Controls, 'chooseOption' | 'controlValue'> = require('./controls.cts');
-const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message } = require('../../../scripts/lib/mock-provider.cts');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary), 'Provide an absolute Elpis executable');

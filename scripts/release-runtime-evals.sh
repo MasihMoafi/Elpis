@@ -2,19 +2,19 @@
 # Run the real multitool with loopback fixtures, then prove the controls fail.
 set -euo pipefail
 binary=$(realpath "${1:?usage: release-runtime-evals.sh BINARY}")
-node scripts/elpis-next-identity.test.cjs "$binary"
-positive() { node "scripts/$1-runtime.test.cjs" "$binary" "${@:2}"; }
+node scripts/elpis-next-identity.test.cts "$binary"
+positive() { node "scripts/$1-runtime.test.cts" "$binary" "${@:2}"; }
 negative() {
-  if node "scripts/$1-runtime.test.cjs" "$binary" "${@:2}"; then
+  if node "scripts/$1-runtime.test.cts" "$binary" "${@:2}"; then
     printf 'FAIL negative control unexpectedly passed: %s\n' "$*" >&2
     exit 1
   fi
   printf 'PASS negative control failed as expected: %s\n' "$*"
 }
-ELPIS_BIN="$binary" node scripts/continuity-admission-runtime.test.cjs
+ELPIS_BIN="$binary" node scripts/continuity-admission-runtime.test.cts
 continuity_negative() {
   local mode=$1 expected=$2 output
-  if output=$(ELPIS_BIN="$binary" ELPIS_CONTINUITY_NEGATIVE_CONTROL="$mode" node scripts/continuity-admission-runtime.test.cjs 2>&1); then
+  if output=$(ELPIS_BIN="$binary" ELPIS_CONTINUITY_NEGATIVE_CONTROL="$mode" node scripts/continuity-admission-runtime.test.cts 2>&1); then
     printf 'FAIL continuity negative control unexpectedly passed: %s\n' "$mode" >&2
     exit 1
   fi
@@ -44,4 +44,4 @@ positive provider-gateway
 positive provider-gateway --drop-completion
 positive code-mode-install
 negative code-mode-install --missing-host
-node scripts/elpis-next-privacy.test.cjs "$binary"
+node scripts/elpis-next-privacy.test.cts "$binary"

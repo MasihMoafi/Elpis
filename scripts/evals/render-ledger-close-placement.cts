@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+'use strict';
+
+import type { BinaryLike } from 'node:crypto';
+
+type Cell = {
+  getChars(): string;
+  isBold(): number;
+  isFgDefault(): boolean;
+  isBgDefault(): boolean;
+  isFgRGB(): boolean;
+  isBgRGB(): boolean;
+  getFgColor(): number;
+  getBgColor(): number;
+};
+type TerminalLine = { getCell(column: number): Cell };
+type TerminalInstance = {
+  buffer: { active: { getLine(row: number): TerminalLine } };
+  open(host: HTMLElement): void;
+  write(text: string, callback: () => void): void;
+};
+declare const Terminal: new (options: Record<string, unknown>) => TerminalInstance;
+type Replay = {
+  row: number;
+  theme: { foreground: string; background: string };
+  label: string;
+  button: { text: string; bold: boolean; foreground: { mode: string; value?: number }; background: { mode: string; value?: number } }[];
+};
+type ReplayInput = { width: number; light: boolean; rows: number; text: string };
+type RenderPage = {
+  route(pattern: string, handler: (route: { abort(): Promise<void> }) => Promise<void>): Promise<void>;
+  addStyleTag(options: { path: string }): Promise<unknown>;
+  addScriptTag(options: { path: string }): Promise<unknown>;
+  evaluate(fn: (input: ReplayInput) => Promise<Replay>, input: ReplayInput): Promise<Replay>;
+  locator(selector: string): { screenshot(options: { path: string }): Promise<Buffer> };
+  close(): Promise<void>;
+};
+type Chromium = {
+  launch(options: { executablePath: string; headless: boolean; args: string[] }): Promise<{
+    newPage(options: { viewport: { width: number; height: number }; deviceScaleFactor: number }): Promise<RenderPage>;
+    close(): Promise<void>;
+  }>;
+};
+
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const { createHash }: typeof import('node:crypto') = require('node:crypto');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+
+function options() {
+  const args = process.argv.slice(2);
+  assert.equal(args.length, 6, 'Usage: render-ledger-close-placement.cts --evidence DIR --modules NODE_MODULES_DIR --chrome PATH');
+  const values: Record<string, string> = {};
+  for (let i = 0; i < args.length; i += 2) {
+    assert(['--evidence', '--modules', '--chrome'].includes(args[i] as string) && !values[args[i] as string], `Unexpected or duplicate option: ${args[i]}`);
+    values[args[i] as string] = fs.realpathSync(args[i + 1] as string);
+  }
+  return { evidence: values['--evidence'] as string, modules: values['--modules'] as string, chrome: values['--chrome'] as string };
+}
+
+const sha256 = (bytes: BinaryLike) => createHash('sha256').update(bytes).digest('hex');
+
+(async () => {
+  const { evidence, modules, chrome } = options();
+  const { chromium }: { chromium: Chromium } = require(path.join(modules, 'playwright-core'));
+  const xterm = path.join(modules, '@xterm/xterm');
+  const versions = Object.fromEntries(['playwright-core', '@xterm/xterm'].map(name => [
+    name, JSON.parse(fs.readFileSync(path.join(modules, name, 'package.json'), 'utf8')).version,
+  ]));
+  const captures = fs.readdirSync(evidence).flatMap(name => {
+    const match = name.match(/(?:^|-)(100|140)-(light|dark)-open\.ansi$/);
+    return match ? [{ name, width: Number(match[1]), light: match[2] === 'light' }] : [];
+  }).sort((a, b) => a.name.localeCompare(b.name));
+  for (const width of [100, 140]) for (const light of [false, true]) {
+    assert(captures.some(capture => capture.width === width && capture.light === light), `Missing ${width}-${light ? 'light' : 'dark'}-open.ansi capture`);
+  }
+  const resultFile = path.join(evidence, 'render-result.json');
+  for (const filename of [resultFile, ...captures.map(capture => path.join(evidence, capture.name.replace(/\.ansi$/, '.png')))]) {
+    assert(!fs.existsSync(filename), `Refusing to overwrite existing evidence: ${filename}`);
+  }
+  const browser = await chromium.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+  const rendered: unknown[] = [];
+  try {
+    for (const capture of captures) {
+      const raw = fs.readFileSync(path.join(evidence, capture.name), 'utf8');
+      const lines = raw.replaceAll('\r\n', '\n').split('\n');
+      // capture-pane appends one newline; preserve every cell and all other rows.
+      if (lines.at(-1) === '') lines.pop();
+      const rows = Math.max(40, lines.length);
+      const page = await browser.newPage({ viewport: { width: 2200, height: 1200 }, deviceScaleFactor: 1 });
+      try {
+        await page.route('**/*', route => route.abort());
+        await page.addStyleTag({ path: path.join(xterm, 'css/xterm.css') });
+        await page.addScriptTag({ path: path.join(xterm, 'lib/xterm.js') });
+        const cells = await page.evaluate(async ({ width, light, rows, text }) => {
+          // These defaults are exactly the native harness's tmux window-style.
+          // Captured SGR foreground/background and formatting remain untouched.
+          const theme = { foreground: light ? '#111111' : '#eeeeee', background: light ? '#ffffff' : '#111111' };
+          document.body.style.margin = '0';
+          document.body.style.background = theme.background;
+          const host = document.createElement('div');
+          host.id = 'terminal'; document.body.appendChild(host);
+          const terminal = new Terminal({
+            cols: width, rows, fontFamily: 'DejaVu Sans Mono, monospace', fontSize: 18,
+            lineHeight: 1.2, theme, allowTransparency: false, allowProposedApi: true,
+          });
+          await document.fonts.ready;
+          terminal.open(host);
+          await new Promise<void>(resolve => terminal.write(text + '\x1b[?25l', resolve));
+          host.style.width = `${(host.querySelector('.xterm-screen') as Element).getBoundingClientRect().width}px`;
+          await new Promise<number>(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+          const label = terminal.buffer.active.getLine(0)?.getCell(width - 3)?.getChars() === '╳' ? ' ╳ ' : ' ✕ Close ';
+          const row = Array.from({ length: rows }, (_, y) => y).find(y => terminal.buffer.active.getLine(y)?.getCell(width - label.length)?.getChars() === label.trim()[0]);
+          if (row === undefined) throw Error('Missing Close glyph in replayed ANSI cells');
+          const color = (cell: Cell, foreground: boolean) => {
+            const isDefault = foreground ? cell.isFgDefault() : cell.isBgDefault();
+            const isRGB = foreground ? cell.isFgRGB() : cell.isBgRGB();
+            const value = foreground ? cell.getFgColor() : cell.getBgColor();
+            return isDefault ? { mode: 'default' } : { mode: isRGB ? 'rgb' : 'palette', value };
+          };
+          return { row, theme, label, button: Array.from({ length: label.length }, (_, offset) => {
+            const cell = terminal.buffer.active.getLine(row).getCell(width - label.length - 1 + offset);
+            return { text: cell.getChars(), bold: Boolean(cell.isBold()), foreground: color(cell, true), background: color(cell, false) };
+          }) };
+        }, { width: capture.width, light: capture.light, rows, text: lines.join('\r\n') });
+        assert.equal(cells.button.map(cell => cell.text).join(''), cells.label, 'ANSI replay must retain the native Close cells');
+        const png = capture.name.replace(/\.ansi$/, '.png');
+        await page.locator('#terminal').screenshot({ path: path.join(evidence, png) });
+        rendered.push({ input: capture.name, png, columns: capture.width, rows, ansiSha256: sha256(Buffer.from(raw)), pngSha256: sha256(fs.readFileSync(path.join(evidence, png))), ...cells });
+      } finally { await page.close(); }
+    }
+  } finally { await browser.close(); }
+  fs.writeFileSync(resultFile, JSON.stringify({ versions, font: 'DejaVu Sans Mono, monospace', fontSize: 18, lineHeight: 1.2, captures: rendered }, null, 2) + '\n');
+  console.log(JSON.stringify({ rendered: rendered.length, resultFile }));
+})().catch((error: Error) => { console.error(error.stack); process.exitCode = 1; });
