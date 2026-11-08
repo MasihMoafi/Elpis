@@ -33,14 +33,14 @@ export class ToolRuntime {
     return this.starting ??= (async () => {
       await mkdir(this.directory, { recursive: true, mode: 0o700 })
       const directory = await lstat(this.directory)
-      if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== process.getuid?.() || (directory.mode & 0o077)) throw new Error('Mother tool IPC directory is not private')
+      if (!directory.isDirectory() || directory.isSymbolicLink() || directory.uid !== process.getuid?.() || (directory.mode & 0o077)) throw new Error('Elpis tool IPC directory is not private')
       const old = await lstat(this.socket).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
-      if (old) { if (!old.isSocket()) throw new Error('Mother tool IPC path contains another file'); await unlink(this.socket) }
+      if (old) { if (!old.isSocket()) throw new Error('Elpis tool IPC path contains another file'); await unlink(this.socket) }
       await new Promise<void>((resolve, reject) => { this.server.once('error', reject); this.server.listen(this.socket, () => { this.server.off('error', reject); this.ownsSocket = true; resolve() }) })
     })()
   }
   async transport(id: string, tools: Tool[], role: 'orchestrator' | 'worker' = 'worker'): Promise<McpRuntime> {
-    if (this.stopping) throw new Error('Mother tools are stopping')
+    if (this.stopping) throw new Error('Elpis tools are stopping')
     const token = this.store.get(KV.sessions.tools(id)) ?? randomUUID()
     this.store.set(KV.sessions.tools(id), token); this.entries.set(id, { token, initial: tools })
     await this.start()
@@ -53,16 +53,16 @@ export class ToolRuntime {
     try {
       const id = req.headers['x-mother-session'], token = req.headers['x-mother-capability']
       const entry = typeof id === 'string' ? this.entries.get(id) : undefined
-      if (this.stopping || !entry || token !== entry.token) { json(403, { error: 'Mother tool session is unavailable' }); return }
+      if (this.stopping || !entry || token !== entry.token) { json(403, { error: 'Elpis tool session is unavailable' }); return }
       if (req.method === 'GET' && req.url === '/tools') {
         json(200, { tools: (entry.binding?.tools() ?? entry.initial).map(tool => ({ name: tool.name, description: tool.description, inputSchema: z.toJSONSchema(tool.schema, { io: 'input' }) })) }); return
       }
-      if (req.method !== 'POST' || req.url !== '/call') { json(404, { error: 'Unknown Mother tool operation' }); return }
+      if (req.method !== 'POST' || req.url !== '/call') { json(404, { error: 'Unknown Elpis tool operation' }); return }
       const binding = entry.binding
-      if (!binding) throw new Error('The Mother session is still attaching')
+      if (!binding) throw new Error('The Elpis session is still attaching')
       binding.signal.throwIfAborted(); binding.authorize()
       let size = 0; const chunks: Buffer[] = []
-      for await (const chunk of req) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > 128 * 1024) throw new Error('Mother tool arguments are too large'); chunks.push(bytes) }
+      for await (const chunk of req) { const bytes = Buffer.from(chunk); size += bytes.length; if (size > 128 * 1024) throw new Error('Elpis tool arguments are too large'); chunks.push(bytes) }
       const args = z.object({ name: z.string(), arguments: z.unknown() }).strict().parse(JSON.parse(Buffer.concat(chunks).toString('utf8')))
       binding.signal.throwIfAborted(); binding.authorize()
       const tool = binding.tools().find(tool => tool.name === args.name)

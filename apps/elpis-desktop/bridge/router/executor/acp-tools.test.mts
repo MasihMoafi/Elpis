@@ -21,7 +21,7 @@ async function wait(check: () => Promise<boolean>, description: string) {
   while (!await check()) { assert.ok(Date.now() < end, description); await delay(10) }
 }
 
-for (const native of [false, true]) test(`${native ? 'Native-to-Claude switch' : 'Claude role'} receives Mother tools and reloads the same conversation with the next prompt revision`, { timeout: 20000 }, async () => {
+for (const native of [false, true]) test(`${native ? 'Native-to-Claude switch' : 'Claude role'} receives Elpis tools and reloads the same conversation with the next prompt revision`, { timeout: 20000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), 'mother-acp-')), log = join(root, 'bridge.log'), trace = join(root, 'acp.jsonl')
   const config = join(root, 'config.json')
   await writeFile(config, JSON.stringify({ config: { features: { multi_agent: false }, mcp_servers: {} } }))
@@ -46,7 +46,7 @@ for (const native of [false, true]) test(`${native ? 'Native-to-Claude switch' :
     const environment = { PATH: '/managed/bin:/usr/bin:/bin', GIT_CONFIG_GLOBAL: '/managed/gitconfig' }
     const binding: ToolBinding = { tools: () => definitions, instructions: () => instructions, signal: lifetime.signal, authorize() {},
       mcp: () => Promise.resolve(mcp), environment: () => environment }
-    const session = await adapter.open({ cwd: root, name: 'Mother ACP', model: native ? { provider: 'openai', model: 'luna-test' } : { provider: 'claude', model: 'sonnet' }, role: 'orchestrator', tools: definitions, instructions, ...(!native ? { mcp } : {}), environment })
+    const session = await adapter.open({ cwd: root, name: 'Elpis ACP', model: native ? { provider: 'openai', model: 'luna-test' } : { provider: 'claude', model: 'sonnet' }, role: 'orchestrator', tools: definitions, instructions, ...(!native ? { mcp } : {}), environment })
     runtime.bind('main', binding); adapter.bind(session.threadId, binding)
     if (native) { assert.ok(connection); await connection.call('thread/settings/update', { threadId: session.threadId, model: 'claude/sonnet' }) }
     let completed = 0
@@ -65,7 +65,7 @@ for (const native of [false, true]) test(`${native ? 'Native-to-Claude switch' :
     const options = object(object(object(sessions[1]!.params)._meta).claudeCode).options
     assert.deepEqual(object(options).env, { PATH: '/managed/bin:/usr/bin:/bin', GIT_CONFIG_GLOBAL: '/managed/gitconfig', ELPIS_MOTHER_ROLE: 'orchestrator', GH_TOKEN: '', GITHUB_TOKEN: '' })
     assert.deepEqual(object(options).tools, [])
-    assert.equal((object(sessions[1]!.params).mcpServers as unknown[]).length, 1, 'Only Mother supplies the main role tools')
+    assert.equal((object(sessions[1]!.params).mcpServers as unknown[]).length, 1, 'Only Elpis supplies the main role tools')
     const ids = (await records()).filter(record => record.method === 'session/prompt').map(record => object(record.params).sessionId)
     assert.equal(new Set(ids).size, 1, 'Prompt reload retains the provider conversation')
   } finally {

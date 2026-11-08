@@ -9,11 +9,11 @@ import { waitFor } from '../../bridge/router/executor/fixtures.mts'
 import { savePrompts } from '../../bridge/router/app/prompts.mts'
 after(() => dom.window.close())
 
-test('Mother panel exposes every domain page, opens its main session, and remembers navigation', async t => {
+test('Elpis panel exposes every domain page, opens its main session, and remembers navigation', async t => {
   const p = await panel(); t.after(p.close)
   assert.deepEqual([...document.querySelectorAll('[role="tab"]')].map(element => element.textContent), ['Overview', 'Source', 'Trigger', 'Eval', 'Execution', 'Settings'])
   await p.click(en.openMaster); assert.deepEqual(p.opened, [p.h.app.masterId])
-  for (const name of ['Source', 'Trigger', 'Eval', 'Execution', 'Settings']) await p.click(name, document.querySelector('[aria-label="Mother"]') ?? document.querySelector('.dt-tabs') ?? document)
+  for (const name of ['Source', 'Trigger', 'Eval', 'Execution', 'Settings']) await p.click(name, document.querySelector('[aria-label="Elpis"]') ?? document.querySelector('.dt-tabs') ?? document)
   await p.click(en['settingsGroup.prompts'])
   await p.remount(); assert.match(p.text(), /Communication/)
   assert.ok(p.requests.some(request => request.includes('/prompts')))
@@ -41,9 +41,9 @@ test('deployment limit edits, discard, and save change only the revisioned local
 test('execution drafts survive navigation and saving persists the worker limit through the actual API', async t => {
   const p = await panel({ page: 'settings', query: { group: 'execution' } }); t.after(p.close)
   const initial = p.h.app.store.settings().executor.maxWorkers
-  await p.fill(field(en.maxWorkers), String(initial + 1))
-  await p.remount(); assert.equal(field(en.maxWorkers).value, String(initial + 1))
-  await p.click(en.save); assert.equal(p.h.app.store.settings().executor.maxWorkers, initial + 1)
+  await p.fill(field(en.maxWorkers), String(initial - 1))
+  await p.remount(); assert.equal(field(en.maxWorkers).value, String(initial - 1))
+  await p.click(en.save); assert.equal(p.h.app.store.settings().executor.maxWorkers, initial - 1)
   assert.ok(p.requests.some(request => request.startsWith('PUT /api/mother/settings/executor')))
 })
 

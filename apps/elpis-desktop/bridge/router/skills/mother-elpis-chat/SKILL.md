@@ -1,6 +1,6 @@
 ---
 name: mother-elpis-chat
-description: Read and reply to the Mother conversation in Elpis.
+description: Read and reply to the Elpis conversation in Elpis.
 ---
 
 Adapted from DeepSeek dsh-superagent-prototype (MIT), skills/dsh-superagent-feishu/SKILL.md.

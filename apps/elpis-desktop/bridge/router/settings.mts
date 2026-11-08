@@ -6,7 +6,7 @@ import { RoleModelSchema } from './executor/settings.mts';
 import { BridgeError } from '../validate.mts';
 
 const RolesSchema = z.object({ dispatch: RoleModelSchema.nullable().default(null), worker: RoleModelSchema.nullable().default(null) }).strict()
-const ConfigSchema = z.object({ enabled: z.boolean().default(false), threadId: z.string().nullable().default(null), creating: z.boolean().default(false), roles: RolesSchema.default({ dispatch: null, worker: null }) }).strict()
+const ConfigSchema = z.object({ enabled: z.boolean().default(true), threadId: z.string().nullable().default(null), creating: z.boolean().default(false), roles: RolesSchema.default({ dispatch: null, worker: null }) }).strict()
 export const MotherChangeSchema = z.object({ version: z.string(), enabled: z.boolean().optional(), roles: RolesSchema.optional() }).strict()
 export type MotherConfig = z.infer<typeof ConfigSchema>
 export type MotherSettings = MotherConfig & { version: string; error?: string; health?: Readonly<Record<string, { state: string; detail: string }>> }
@@ -24,7 +24,7 @@ export class MotherSettingsFile {
   }
   change(input: unknown): MotherConfig {
     const data = MotherChangeSchema.parse(input), before = this.snapshot()
-    if (before.version !== data.version) throw new BridgeError('Mother agent settings changed elsewhere. Reload before saving.', 409)
+    if (before.version !== data.version) throw new BridgeError('Elpis settings changed elsewhere. Reload before saving.', 409)
     return this.write({ ...before, enabled: data.enabled ?? before.enabled, roles: data.roles ?? before.roles })
   }
   write(value: MotherConfig): MotherConfig {

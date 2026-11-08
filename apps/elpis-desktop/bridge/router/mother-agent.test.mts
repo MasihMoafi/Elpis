@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DesktopClient } from '../client.mts';
@@ -11,8 +11,9 @@ import { FakeServer, waitFor } from './executor/fixtures.mts';
 
 const CHAT = '00000000-0000-0000-0000-000000000001'
 
-function fixture() {
+function fixture({ fresh = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'mother-bridge-')), workers = new FakeServer()
+  if (!fresh) { mkdirSync(join(home, 'router'), { recursive: true }); writeFileSync(join(home, 'router', 'mother.json'), JSON.stringify({ enabled: false })) }
   const calls: { method: string; params: Record<string, unknown> }[] = []
   let adapterStarts = 0, created = false, name = '', configured = true, archived = false
   const socket = Object.assign(new EventEmitter(), { close() {}, send(raw: string) {
@@ -46,7 +47,17 @@ function fixture() {
   return { home, workers, calls, socket, client, create, get name() { return name }, get adapterStarts() { return adapterStarts }, unsetDefaults() { configured = false }, archiveExternally() { archived = true } }
 }
 
-test('real bridge chat storage stays offline until enabled, then routes persisted input and reopens one Mother chat', async () => {
+test('a fresh install starts Elpis and its pinned chat without any setting', async () => {
+  const h = fixture({ fresh: true }), { client, create } = h
+  const elpis = create()
+  try {
+    await client.initialize(); await elpis.start()
+    const on = elpis.snapshot()
+    assert.equal(on.enabled, true); assert.equal(on.error, undefined); assert.ok(on.threadId); assert.ok(h.adapterStarts > 0)
+  } finally { await elpis.close(); client.close(); rmSync(h.home, { recursive: true, force: true }) }
+})
+
+test('real bridge chat storage stays offline until enabled, then routes persisted input and reopens one Elpis chat', async () => {
   const h = fixture(), { home, workers, calls, client, create } = h
   let mother = create()
   try {
@@ -55,9 +66,9 @@ test('real bridge chat storage stays offline until enabled, then routes persiste
     assert.equal(off.enabled, false); assert.equal(off.threadId, null); assert.equal(h.adapterStarts, 0)
     assert.equal(existsSync(join(home, 'router', 'orchestrator.sqlite')), false)
     const on = await mother.save({ version: off.version, enabled: true })
-    assert.equal(on.error, undefined); assert.equal(on.threadId, CHAT); assert.equal(h.name, 'Mother agent')
+    assert.equal(on.error, undefined); assert.equal(on.threadId, CHAT); assert.equal(h.name, 'Elpis')
     assert.equal(mother.decorate({ id: CHAT }).motherAgent, true)
-    assert.equal((await mother.list([], {}))[0]?.id, CHAT, 'A Mother chat without native turns still appears in the sidebar')
+    assert.equal((await mother.list([], {}))[0]?.id, CHAT, 'A Elpis chat without native turns still appears in the sidebar')
     assert.deepEqual(await mother.list([], { archived: true }), [])
     assert.equal(calls.find(call => call.method === 'thread/start')?.params.model, 'chosen-background')
     await assert.rejects(mother.save({ version: off.version, enabled: false }), /changed elsewhere/)
@@ -90,14 +101,14 @@ test('real bridge chat storage stays offline until enabled, then routes persiste
     assert.equal(workers.calls.filter(call => call.method === 'thread/start').length, 2)
     const disabled = await mother.save({ version: mother.snapshot().version, enabled: false })
     assert.equal(disabled.enabled, false)
-    await assert.rejects(mother.send(CHAT, { text: 'Do more' }), /Turn Mother agent on/)
+    await assert.rejects(mother.send(CHAT, { text: 'Do more' }), /Turn Elpis on/)
   } finally { await mother.close(); client.close(); rmSync(home, { recursive: true, force: true }) }
   assert.equal(workers.connections.size, 0)
 })
 
 const roles = (suffix: string) => ({ dispatch: { provider: 'openai', model: `router-${suffix}` }, worker: { provider: 'openai', model: `worker-${suffix}` } })
 
-test('persisted explicit role models start a fresh Mother without global defaults', async () => {
+test('persisted explicit role models start a fresh Elpis without global defaults', async () => {
   const h = fixture()
   let mother = h.create()
   try {
@@ -111,7 +122,7 @@ test('persisted explicit role models start a fresh Mother without global default
   } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
 })
 
-test('two Mother settings windows cannot overwrite role models with a stale version', async () => {
+test('two Elpis settings windows cannot overwrite role models with a stale version', async () => {
   const h = fixture(), mother = h.create()
   try {
     const original = mother.snapshot()
@@ -125,7 +136,7 @@ test('two Mother settings windows cannot overwrite role models with a stale vers
   } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
 })
 
-test('the bound Mother chat respects archive, trash exclusions, undo and permanent deletion', async () => {
+test('the bound Elpis chat respects archive, trash exclusions, undo and permanent deletion', async () => {
   const h = fixture()
   let mother = h.create()
   try {
@@ -135,11 +146,11 @@ test('the bound Mother chat respects archive, trash exclusions, undo and permane
     h.archiveExternally()
     assert.deepEqual(await mother.list([], {}), [], 'Native archive paths exclude a chat archived by another client')
     await mother.close(); mother = h.create(); await mother.start()
-    assert.equal(h.workers.connections.size, 0, 'An externally archived Mother must stay stopped after restart')
+    assert.equal(h.workers.connections.size, 0, 'An externally archived Elpis must stay stopped after restart')
     await mother.mutate(CHAT, 'unarchiveThread', () => h.client.unarchiveThread(CHAT, {}))
     assert.equal((await mother.list([], {}))[0]?.id, CHAT)
     await assert.rejects(mother.mutate(CHAT, 'archiveThread', async () => { throw new Error('Archive unavailable') }), /Archive unavailable/)
-    assert.ok(h.workers.connections.size > 0, 'A failed archive must leave Mother running')
+    assert.ok(h.workers.connections.size > 0, 'A failed archive must leave Elpis running')
     await mother.mutate(CHAT, 'archiveThread', () => h.client.archiveThread(CHAT, {}))
     assert.equal(h.workers.connections.size, 0)
     assert.deepEqual(await mother.list([], {}), [])

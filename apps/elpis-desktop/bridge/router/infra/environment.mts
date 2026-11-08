@@ -70,7 +70,7 @@ export async function writeEnvironment(deployment: Pick<Deployment, 'stateDir' |
     'set +f', 'unset IFS', 'PATH=$rest', 'export PATH',
   ].join('\n')
   const fail = (message: string): string => `echo ${shellQuote(message)} >&2\nexit 1`
-  await shim('gh', github.cli ? `${withoutShims}\nunset ${GH_UNSET.join(' ')}\nexec ${shellQuote(github.cli)} "$@"` : fail('GitHub is not configured; select its repository in the Mother settings.'))
+  await shim('gh', github.cli ? `${withoutShims}\nunset ${GH_UNSET.join(' ')}\nexec ${shellQuote(github.cli)} "$@"` : fail('GitHub is not configured; select its repository in the Elpis settings.'))
   await shim('lark-cli', fail('lark-cli is unavailable: this installation has no Feishu bot.'))
   for (const name of new Set(blockedCommands.filter(name => !WORKER_COMMANDS.includes(name)))) {
     await shim(name, fail(`${name} is blocked in this installation; use gh, which acts as ${github.login}.`))

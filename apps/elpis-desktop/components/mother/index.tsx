@@ -6,7 +6,7 @@ import { App } from './app'
 import { en } from './locales'
 import type { T } from './text'
 const t: T = (key, values) => (en[key] ?? key).replace(/\{(\w+)\}/g, (all, name: string) => String(values?.[name] ?? all))
-/** Mother is an ordinary Elpis page; native sessions open through the workspace's existing chat selection. */
+/** Elpis is an ordinary Elpis page; native sessions open through the workspace's existing chat selection. */
 export default function MotherPage({ onOpenThread }: { onOpenThread: (id: string) => void }) {
   const navigation = useRef<AbortController | null>(null)
   useEffect(() => () => navigation.current?.abort(), [])

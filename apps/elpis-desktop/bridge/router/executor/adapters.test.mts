@@ -51,17 +51,17 @@ it('recovers receipts from every history page, including a turn with paged items
   } finally { adapter.close() }
 })
 
-it('refuses a Mother role before connecting when its runtime cannot expose the role tools', async () => {
+it('refuses a Elpis role before connecting when its runtime cannot expose the role tools', async () => {
   const server = new FakeServer(), adapter = new GeminiAdapter(server.connect)
   try {
-    await assert.rejects(adapter.open({ cwd: '/project', name: 'Mother', model: { provider: 'gemini', model: 'gemini-worker' },
+    await assert.rejects(adapter.open({ cwd: '/project', name: 'Elpis', model: { provider: 'gemini', model: 'gemini-worker' },
       tools: [{ name: 'orchestrator_read', description: 'Read context', schema: z.object({}), execute: async () => '' }] }), /does not expose session MCP tools/)
     assert.equal(server.calls.length, 0)
     assert.equal(server.connections.size, 0)
   } finally { adapter.close() }
 })
 
-it('closing Mother also closes connections whose session creation has not finished', async () => {
+it('closing Elpis also closes connections whose session creation has not finished', async () => {
   const server = new FakeServer(), adapter = new ElpisAdapter(server.connect), gate = deferred()
   server.hold = (method) => method === 'thread/start' ? gate.promise : Promise.resolve()
   const opening = adapter.open({ cwd: '/project', name: 'Pending', model: null })

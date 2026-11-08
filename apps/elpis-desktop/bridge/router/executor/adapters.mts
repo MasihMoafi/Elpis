@@ -22,7 +22,7 @@ const shellConfig = (values: Record<string, string | undefined>) => ({ 'shell_en
   'shell_environment_policy.exclude': ['*KEY*', '*PASSWORD*', '*SECRET*', '*TOKEN*', ...WORKER_ENV_EXCLUDE],
   'shell_environment_policy.set': Object.fromEntries(Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined)) })
 const string = (value: unknown): string | undefined => typeof value === 'string' && value ? value : undefined
-const managedInstructions = 'This is a managed Mother session. Its current role instructions are supplied at each turn in collaboration mode developer instructions.'
+const managedInstructions = 'This is a managed Elpis session. Its current role instructions are supplied at each turn in collaboration mode developer instructions.'
 /** Main work stays in the domain queue; workers keep native coding tools without independent goals or interactive prompts. */
 function roleConfig(role: OpenOptions['role']): Record<string, unknown> {
   return { 'features.code_mode': false, 'features.apps': false, 'features.plugins': false, 'features.goals': false,
@@ -97,7 +97,7 @@ export class AppServerAdapter implements RuntimeAdapter {
     return model ? { model: model.model, modelProvider: model.provider, ...(model.reasoningEffort ? { config: { model_reasoning_effort: model.reasoningEffort } } : {}) } : {}
   }
   async open(options: OpenOptions): Promise<WorkerSession> {
-    if (this.runtime === 'gemini' && options.tools?.length) throw Object.assign(new Error('The Antigravity adapter does not expose session MCP tools. Choose Elpis, Codex or Claude for a Mother role.'), { creationUnknown: false })
+    if (this.runtime === 'gemini' && options.tools?.length) throw Object.assign(new Error('The Antigravity adapter does not expose session MCP tools. Choose Elpis, Codex or Claude for a Elpis role.'), { creationUnknown: false })
     const conn = this.createConnection()
     let creating = false
     try {
@@ -183,9 +183,9 @@ export class AppServerAdapter implements RuntimeAdapter {
       const mode = object(current.collaborationMode), settings = object(mode.settings)
       const model = string(current.model) ?? string(object(current.thread).model)
       if (!model) throw new Error('The runtime did not return the session model')
-      if (model.startsWith('agy/')) throw new Error('The Antigravity adapter does not expose Mother tools. Choose Elpis, Codex or Claude for this role.')
+      if (model.startsWith('agy/')) throw new Error('The Antigravity adapter does not expose Elpis tools. Choose Elpis, Codex or Claude for this role.')
       if (model.startsWith('claude/')) {
-        if (!binding.mcp) throw new Error('This session cannot reconnect Mother tools after a provider change')
+        if (!binding.mcp) throw new Error('This session cannot reconnect Elpis tools after a provider change')
         await this.configure(threadId, await binding.mcp(), binding.environment?.())
       }
       collaborationMode = { mode: string(mode.mode) ?? 'default', settings: { model,
@@ -201,7 +201,7 @@ export class AppServerAdapter implements RuntimeAdapter {
   }
   async stop(threadId: string, turnId: string): Promise<void> { const conn = await this.connection(threadId); await conn.call('turn/interrupt', { threadId, turnId }) }
   async configure(threadId: string, mcp: McpRuntime, environment?: Record<string, string | undefined>): Promise<void> {
-    if (this.runtime === 'gemini') throw new Error('The Antigravity adapter does not expose Mother tools. Choose Elpis, Codex or Claude for this role.')
+    if (this.runtime === 'gemini') throw new Error('The Antigravity adapter does not expose Elpis tools. Choose Elpis, Codex or Claude for this role.')
     const conn = await this.connection(threadId)
     await conn.call('thread/resume', { threadId, excludeTurns: true, config: { 'mcp_servers.elpis_mother': mcp,
       ...shellConfig({ ...environment, ELPIS_MOTHER_ROLE: mcp.env.ELPIS_MOTHER_ROLE ?? 'worker' }) } })
@@ -275,7 +275,7 @@ export class AppServerAdapter implements RuntimeAdapter {
   }
   bind(threadId: string, binding: ToolBinding): void {
     const conn = this.connections.get(threadId)
-    if (!conn?.requests || !conn.respond) throw new Error('This runtime connection cannot serve Mother tools; update the Elpis runtime')
+    if (!conn?.requests || !conn.respond) throw new Error('This runtime connection cannot serve Elpis tools; update the Elpis runtime')
     this.bindings.set(threadId, binding)
   }
   close(): void { this.closed = true; for (const dispose of this.disposers) dispose(); this.bindings.clear(); this.watchers.clear(); for (const conn of this.owned) conn.close(); this.owned.clear(); this.connections.clear() }

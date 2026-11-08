@@ -347,3 +347,17 @@ a.dt-btn, a.dt-btn:hover { text-decoration: none; }
 .dt-admission-slot { display: inline-flex; flex: none; width: 16px; }
 .dt-info-warn { color: var(--warning); }
 .dt-field-segmented { max-width: 240px; }
+
+/* Shared Button gives every button a fixed height and centred label; these panel buttons are text rows. */
+.dt-page button:is(.dt-textlink, .dt-open, .dt-more-link) { height:auto; min-height:0; padding:0; line-height:inherit; }
+.dt-page button.dt-textlink:hover { background:none; }
+.dt-page .dt-head { justify-content:flex-end; }
+.dt-page .dt-stat { align-items:baseline; line-height:22px; }
+.dt-page .dt-prompt { grid-template-columns:260px minmax(0, 1fr); }
+.dt-page .dt-prompt-nav button.dt-nav-item { height:auto; min-height:32px; padding:6px 10px; white-space:normal; justify-content:flex-start; }
+.dt-page .dt-prompt-nav .dt-nav-item > span, .dt-page .dt-prompt-nav .dt-nav-item small { white-space:normal; text-align:left; overflow-wrap:anywhere; }
+.dt-page .dt-prompt-nav .dt-nav-group { margin:12px 10px 4px; }
+.dt-page .dt-prompt-nav .dt-nav-group:first-child { margin-top:0; }
+.dt-page .dt-settings-nav button.dt-settings-link { width:100%; height:auto; min-height:32px; justify-content:flex-start; text-align:left; white-space:normal; margin-top:0; }
+.dt-page .dt-row > .dt-dot-wrap { width:16px; height:20px; align-items:center; justify-content:center; }
+.dt-page .dt-row > .dt-dot-wrap .dt-dot { margin-top:0; }

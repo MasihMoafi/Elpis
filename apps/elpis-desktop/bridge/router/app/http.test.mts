@@ -36,7 +36,8 @@ test('panel HTTP validates its boundary, exposes records, and persists revisione
     assert.equal((await call('POST', 'tickets/missing/retry')).status, 404)
     assert.equal((await call('GET', 'threads/%GG')).status, 400)
     const current = h.app.store.settings(), revision = h.app.store.blockRevision('executor')
-    const executor = { ...current.executor, maxWorkers: current.executor.maxWorkers + 1 }
+    assert.equal(current.executor.maxWorkers, 16)
+    const executor = { ...current.executor, maxWorkers: current.executor.maxWorkers - 1 }
     assert.equal((await call('PUT', 'settings/executor', { revision, value: executor })).status, 200)
     assert.equal((await call('PUT', 'settings/executor', { revision, value: executor })).status, 409)
     assert.equal((await call('PUT', 'settings/executor', { revision: h.app.store.blockRevision('executor'), value: { ...executor, maxWorkers: 'wrong' } })).status, 400)

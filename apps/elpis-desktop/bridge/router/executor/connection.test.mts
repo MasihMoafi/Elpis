@@ -12,7 +12,7 @@ type Socket = EventEmitter & { send(data: string): void }
 type Server = EventEmitter & { address(): AddressInfo | string | null; close(done: (error?: Error) => void): void }
 const { WebSocketServer } = createRequire(import.meta.url)('ws') as { WebSocketServer: new (options: { host: string; port: number }) => Server }
 
-it('uses the packaged connection helper for runtime lifecycle and bidirectional Mother tools without calling a model', async () => {
+it('uses the packaged connection helper for runtime lifecycle and bidirectional Elpis tools without calling a model', async () => {
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 }), fixture = new FakeServer()
   await once(server, 'listening')
   const address = server.address()

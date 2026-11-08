@@ -54,7 +54,7 @@ export function ComposerControls({ selected, selectedModel, settings, commands, 
               {!selected?.motherAgent && <PermissionsMenu mode={permissionMode} disabled={permissionsLocked} {...(settingsSnapshot?.managed ? { managed: settingsSnapshot.managed } : {})} onChange={choosePermissions} />}
             </div><div className="composer-right">
               {!selected?.motherAgent && <ContextUsage {...(selected ? { threadId: selected.id } : {})} />}
-              {selected?.motherAgent ? <Button type="button" variant="ghost" size="sm" onClick={motherSettings}>Mother models</Button> : <ModelPicker choices={modelChoices} models={models}
+              {selected?.motherAgent ? <Button type="button" variant="ghost" size="sm" onClick={motherSettings}>Elpis models</Button> : <ModelPicker choices={modelChoices} models={models}
                 model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} {...(defaultModel !== undefined ? { defaultModel } : {})}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected) { setOverride(selected.id, { model: choice.model }); setFailedTurns(previous => without(previous, selected.id)); } else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />}
               {!selected?.motherAgent && turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || !connected || busy}>

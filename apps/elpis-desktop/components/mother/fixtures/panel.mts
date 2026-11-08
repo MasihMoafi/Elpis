@@ -1,5 +1,5 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), tests/fixtures/panel.tsx.
-// Uses the real Mother HTTP routes and SQLite state instead of reproducing the API in a fake server.
+// Uses the real Elpis HTTP routes and SQLite state instead of reproducing the API in a fake server.
 import './dom.mts'
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'

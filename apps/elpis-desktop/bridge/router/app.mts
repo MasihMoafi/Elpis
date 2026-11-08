@@ -163,7 +163,7 @@ export class MotherApp implements SourceHost {
     this.started = true
     try {
       await this.setup.run(this.store.settings())
-      await this.workers.sessions.ensure(this.masterId, this.machine.stateDir, 'Mother router', 'orchestrator')
+      await this.workers.sessions.ensure(this.masterId, this.machine.stateDir, 'Elpis', 'orchestrator')
       await this.workers.start()
       this.loops.push(watchElpisChat(this.context({ kind: 'elpis-chat', health: ['elpis-chat'] }), this.options.transport, this.lifetime.signal),
         watchGithub(this.context(githubKind), this.lifetime.signal))

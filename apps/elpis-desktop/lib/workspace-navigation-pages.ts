@@ -1,5 +1,5 @@
-import { ExperimentLabIcon, LoveSpotIcon, WorkflowsIcon } from "@/components/elpis-icons";
-import { Activity, Blocks, Network } from "lucide-react";
+import { ElpisMarkIcon, ExperimentLabIcon, LoveSpotIcon, WorkflowsIcon } from "@/components/elpis-icons";
+import { Activity, Blocks } from "lucide-react";
 import type { View } from "@/lib/workspace-types";
 
 /** The sidebar's pages after New chat, in their default order; the person may rearrange them. */
@@ -7,7 +7,7 @@ export const NAV_PAGES = [
   { id: "experimentLab", name: "Lab", Icon: ExperimentLabIcon },
   { id: "canvas", name: "Workflows", Icon: WorkflowsIcon },
   { id: "loveSpot", name: "Love Spot", Icon: LoveSpotIcon },
-  { id: "mother", name: "Mother", Icon: Network },
+  { id: "mother", name: "Elpis", Icon: ElpisMarkIcon },
   // 5 Nov: back, as the TUI's /dashboard page (DeepSeek's Trajectory), with the pulse icon he approved.
   { id: "observability", name: "Observability", Icon: Activity },
   { id: "customize", name: "Customize", Icon: Blocks },

@@ -13,7 +13,7 @@ import { Choice, SettingRow, SettingsActions, SettingsGroup, SettingsNotice } fr
 import { ModelChoice, providerOptions, useProviderCatalogs } from "@/components/settings/maintenance";
 
 type Role = keyof MotherSettings["roles"];
-const ROLES: [Role, string][] = [["dispatch", "Mother routing"], ["worker", "Mother workers"]];
+const ROLES: [Role, string][] = [["dispatch", "Elpis routing"], ["worker", "Elpis workers"]];
 function RoleChoice({ role, label, value, settings, models, disabled, onChange }: { role: Role; label: string; value: RoleModel | null; settings: ElpisSettings; models: Model[]; disabled: boolean; onChange: (value: RoleModel | null) => void }) {
   const inherited = settings.background.model ? settings.background : settings.main;
   const provider = value?.provider ?? inherited.provider ?? settings.main.provider ?? "";
@@ -21,7 +21,7 @@ function RoleChoice({ role, label, value, settings, models, disabled, onChange }
   const offered = [...catalogs.forProvider(provider), ...models.filter(model => subscriptionOf(model.model))];
   const efforts = effortsOf(value?.model ?? inherited.model, offered);
   return <>
-    <SettingRow title={`${label} provider`} description={role === "dispatch" ? "Routes goals and replies in the Mother chat." : "Used when Mother starts a new worker session."}>
+    <SettingRow title={`${label} provider`} description={role === "dispatch" ? "Routes goals and replies in the Elpis chat." : "Used when Elpis starts a new worker session."}>
       <OptionSelect aria-label={`${label} provider`} className="settings-choice" value={value?.provider ?? ""} disabled={disabled} onChange={event => onChange(event.target.value ? { provider: event.target.value, model: value?.model ?? inherited.model ?? "" } : null)}>
         <option value="">Use background model (then main)</option>{providerOptions(provider, settings.providers)}
       </OptionSelect>
@@ -49,14 +49,14 @@ export function MotherAgentSettings({ settings, models, onOpenMother }: { settin
     finally { setBusy(false); }
   }
   const failed = value?.error || Object.values(value?.health ?? {}).find(entry => entry.state === "error")?.detail;
-  return <SettingsGroup title="Mother agent" description="Give Mother a goal in her pinned chat. She routes it to workers and brings the result back there.">
-    {onOpenMother && <SettingsActions><Button variant="outline" onClick={onOpenMother}>Open Mother panel</Button></SettingsActions>}
-    <SettingRow title="Enable Mother agent" description="Off by default. Turning it off stops her workers; the chat and unfinished work are kept.">
-      <Switch aria-label="Enable Mother agent" checked={value?.enabled ?? false} disabled={!value || busy} onCheckedChange={enabled => void save({ enabled })} />
+  return <SettingsGroup title="Elpis" description="Give Elpis a goal in its pinned chat. It routes the goal to workers and brings the result back there.">
+    {onOpenMother && <SettingsActions><Button variant="outline" onClick={onOpenMother}>Open Elpis panel</Button></SettingsActions>}
+    <SettingRow title="Enable Elpis" description="On by default. Turning it off stops its workers; the chat and unfinished work are kept.">
+      <Switch aria-label="Enable Elpis" checked={value?.enabled ?? false} disabled={!value || busy} onCheckedChange={enabled => void save({ enabled })} />
     </SettingRow>
     {value && ROLES.map(([role, label]) => <RoleChoice key={role} role={role} label={label} value={(draft ?? value.roles)[role]} settings={settings} models={models} disabled={busy}
       onChange={choice => setDraft(previous => ({ ...(previous ?? value.roles), [role]: choice }))} />)}
-    {draft && <SettingsActions><Button disabled={busy || Object.values(draft).some(role => role && !role.model)} onClick={() => void save({ roles: draft })}>Save Mother models</Button></SettingsActions>}
+    {draft && <SettingsActions><Button disabled={busy || Object.values(draft).some(role => role && !role.model)} onClick={() => void save({ roles: draft })}>Save Elpis models</Button></SettingsActions>}
     {(error || failed) && <SettingsNotice tone="alert">{error || failed}</SettingsNotice>}
   </SettingsGroup>;
 }

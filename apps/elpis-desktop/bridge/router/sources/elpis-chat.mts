@@ -30,7 +30,7 @@ export const elpisChatTriggerId = (threadId: string, messageId: string): string 
 export function createElpisChatKind(transport: ElpisChatTransport): SourceKind<ElpisChatConfig> {
   return {
     kind: SOURCE, title: { zh: 'Elpis 聊天', en: 'Elpis chat' },
-    description: { zh: 'Mother 智能体的聊天。', en: 'The Mother agent’s conversation.' },
+    description: { zh: 'Elpis 智能体的聊天。', en: 'The Elpis’s conversation.' },
     schema: ConfigSchema,
     fields: [{ key: 'threadId', type: 'text', label: { zh: '聊天 ID', en: 'Chat thread ID' } },
       { key: 'pollSeconds', type: 'number', advanced: true, min: 1, max: 3600, label: { zh: '轮询间隔 / 秒', en: 'Polling interval / seconds' } }],
@@ -42,7 +42,7 @@ export function createElpisChatKind(transport: ElpisChatTransport): SourceKind<E
     repliesTo: trigger => typeof trigger.meta.replyTo === 'string' ? elpisChatTriggerId(String(trigger.meta.threadId), trigger.meta.replyTo) : undefined,
     policy: { schema: z.object({ allowed: z.array(AllowedSchema).default([]) }).strict(),
       fields: [{ key: 'allowed', type: 'rows', label: { zh: '发送者', en: 'Allowed people' }, columns: [{ key: 'id', type: 'text', label: { zh: '发送者', en: 'Person' } }] }],
-      explicit: { zh: '所选聊天中的直接请求。', en: 'A direct request in the selected Mother chat.' } },
+      explicit: { zh: '所选聊天中的直接请求。', en: 'A direct request in the selected Elpis chat.' } },
   }
 }
 
@@ -97,7 +97,7 @@ export async function watchElpisChat(ctx: SourceContext, transport: ElpisChatTra
     const config = ctx.config<ElpisChatConfig>(SOURCE)
     try {
       if (config?.threadId) await pollElpisChat(ctx, transport, signal)
-      else ctx.report(SOURCE, { state: 'paused', detail: config ? 'Choose the Mother agent’s chat' : 'Off' })
+      else ctx.report(SOURCE, { state: 'paused', detail: config ? 'Choose the Elpis’s chat' : 'Off' })
     } catch (error) { if (!signal.aborted) ctx.report(SOURCE, { state: 'error', detail: String(error) }) }
     await pause((ctx.config<ElpisChatConfig>(SOURCE)?.pollSeconds ?? 2) * 1000, signal)
   }

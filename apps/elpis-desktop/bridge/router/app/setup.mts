@@ -8,7 +8,7 @@ const fields = (settings: Settings) => JSON.stringify(Object.entries(SETUP_FIELD
 export const setupChanged = (before: Settings, after: Settings): boolean => fields(before) !== fields(after)
 interface Host { machine: Machine; subprocess: SubprocessRuntime; lifetime: AbortSignal; restart(): void }
 const problemOf = (error: unknown): SetupProblem => error instanceof SetupError ? error.problem : new SetupError('environmentFailed', { output: error instanceof Error ? error.message : String(error) }).problem
-/** GitHub failure pauses that Source; the selected local Mother chat remains available for setup. */
+/** GitHub failure pauses that Source; the selected local Elpis chat remains available for setup. */
 export class Setup {
   private readonly host: Host
   private resolved: Deployment

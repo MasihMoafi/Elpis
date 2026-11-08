@@ -172,16 +172,16 @@ export class Sessions implements Context {
     const agent = new WorkerAgent(id, record, this)
     this.agents.set(id, agent)
     if (this.options.tools) {
-      if (!adapter.bind) throw new Error('This runtime cannot serve Mother tools')
+      if (!adapter.bind) throw new Error('This runtime cannot serve Elpis tools')
       const binding: ToolBinding = { tools: () => this.options.tools!(id), instructions: () => this.instructions(id),
         mcp: async () => {
-          if (!this.toolRuntime) throw new Error('This session cannot reconnect Mother tools')
+          if (!this.toolRuntime) throw new Error('This session cannot reconnect Elpis tools')
           const config = await this.toolRuntime.transport(id, binding.tools(), role)
           this.toolRuntime.bind(id, binding); return config
         },
         ...(this.options.environment ? { environment: () => this.options.environment!(id) } : {}),
         signal: this.lifetime.signal, authorize: () => {
-          if (this.disposed) throw new Error('Mother is stopping')
+          if (this.disposed) throw new Error('Elpis is stopping')
           const ticketId = id.startsWith('worker-') ? id.slice('worker-'.length) : undefined
           const ticket = ticketId ? this.options.store.tickets.get(ticketId) : undefined
           if (ticketId && (!ticket || !liveTicket(ticket))) throw new Error('Ticket ended; its tools are unavailable')

@@ -1,4 +1,4 @@
-/** Desktop lifecycle and the opt-in Mother chat. One controller serializes settings changes and startup. */
+/** Desktop lifecycle and the opt-in Elpis chat. One controller serializes settings changes and startup. */
 import { attachmentInput } from '../attachments.mts';
 import { createHash, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
@@ -42,27 +42,27 @@ export class MotherAgent {
     const config = this.file.read()
     if (config.threadId !== thread.id) return thread
     const model = this.app?.store.settings().eval.model ?? readSettings(this.options.home).eval.model ?? this.roles?.dispatch ?? config.roles.dispatch
-    return { ...thread, name: 'Mother agent', motherAgent: true, ...(model ? { model: model.model, modelProvider: model.provider } : {}) }
+    return { ...thread, name: 'Elpis', motherAgent: true, ...(model ? { model: model.model, modelProvider: model.provider } : {}) }
   }
-  /** Native lists omit chats without a native preview; Mother owns her history in the bridge. */
+  /** Native lists omit chats without a native preview; Elpis owns her history in the bridge. */
   async list(threads: ListedThread[], query: ThreadListOptions, excluded: (id: string) => boolean = () => false): Promise<ListedThread[]> {
     const id = this.file.read().threadId
     const rows = threads.filter(thread => !excluded(thread.id)).map(thread => this.decorate(thread))
     if (!id || excluded(id) || query.archived || query.cursor || query.ancestorThreadId || rows.some(thread => thread.id === id)) return rows
-    if (typeof query.searchTerm === 'string' && !'mother agent'.includes(query.searchTerm.toLowerCase())) return rows
+    if (typeof query.searchTerm === 'string' && !'elpis'.includes(query.searchTerm.toLowerCase())) return rows
     try { const thread = await this.options.client.readThreadMetadata(id); if (!thread.archived) rows.unshift(this.decorate(thread)) }
-    catch { /* A deleted or unavailable Mother chat remains visible as a startup error in Settings. */ }
+    catch { /* A deleted or unavailable Elpis chat remains visible as a startup error in Settings. */ }
     return rows
   }
   /** Called once at bridge startup and again on reconnection; disabled settings start no runtime. */
   start(): Promise<void> {
-    return this.serialized(async () => { try { await this.reconcile() } catch (error) { this.error = error instanceof Error ? error.message : 'Mother agent could not start' } })
+    return this.serialized(async () => { try { await this.reconcile() } catch (error) { this.error = error instanceof Error ? error.message : 'Elpis could not start' } })
   }
   save(input: unknown): Promise<MotherSettings> {
     return this.serialized(async () => {
-      if (this.closed) throw new BridgeError('Mother agent is stopping', 409)
+      if (this.closed) throw new BridgeError('Elpis is stopping', 409)
       const data = MotherChangeSchema.parse(input)
-      if (data.version !== this.snapshot().version) throw new BridgeError('Mother agent settings changed elsewhere. Reload before saving.', 409)
+      if (data.version !== this.snapshot().version) throw new BridgeError('Elpis settings changed elsewhere. Reload before saving.', 409)
       const before = this.file.read(), roles = data.roles
       if (roles) {
         const app = this.passive()
@@ -76,8 +76,8 @@ export class MotherAgent {
       } else this.file.write({ ...before, enabled: data.enabled ?? before.enabled })
       await this.stop()
       this.error = undefined
-      try { await this.reconcile() } catch (error) { this.error = error instanceof Error ? error.message : 'Mother agent could not start' }
-      this.options.client.emit('event', { type: 'message', data: { method: 'thread/name/updated', params: { threadId: this.file.read().threadId, name: 'Mother agent' } } })
+      try { await this.reconcile() } catch (error) { this.error = error instanceof Error ? error.message : 'Elpis could not start' }
+      this.options.client.emit('event', { type: 'message', data: { method: 'thread/name/updated', params: { threadId: this.file.read().threadId, name: 'Elpis' } } })
       return this.snapshot()
     })
   }
@@ -90,18 +90,18 @@ export class MotherAgent {
     const fallback: RoleModel = { provider: inherited.provider ?? settings.main.provider ?? '', model: inherited.model ?? '' }
     const saved = readSettings(home)
     this.roles = { dispatch: saved.eval.model ?? config.roles.dispatch ?? fallback, worker: saved.executor.model ?? config.roles.worker ?? fallback }
-    if (Object.values(this.roles).some(role => !role.provider || !role.model)) throw new Error('Choose a model in Settings → Configuration before enabling Mother agent.')
+    if (Object.values(this.roles).some(role => !role.provider || !role.model)) throw new Error('Choose a model in Settings → Configuration before enabling Elpis.')
     if (!config.threadId) {
-      if (config.creating) throw new Error('Mother chat creation was interrupted. Bind the existing chat in router/mother.json before enabling it again.')
+      if (config.creating) throw new Error('Elpis chat creation was interrupted. Bind the existing chat in router/mother.json before enabling it again.')
       await client.models()
       this.file.write({ ...config, creating: true })
       const created = await client.createThread({ model: this.roles.dispatch.model, provider: this.roles.dispatch.provider })
       config = this.file.write({ ...config, creating: false, threadId: created.thread.id })
     }
     const threadId = config.threadId
-    if (!threadId) throw new Error('Mother agent has no chat')
+    if (!threadId) throw new Error('Elpis has no chat')
     if ((await client.readThreadMetadata(threadId)).archived) return
-    await client.renameThread(threadId, { name: 'Mother agent' })
+    await client.renameThread(threadId, { name: 'Elpis' })
     const adapters = await (this.options.adapters?.() ?? runtimeAdapters({ url: `ws+unix://${existingSocket(this.options.socketPath, profileEnvironment(home))}:/` }))
     let app: MotherApp | undefined
     try {
@@ -126,7 +126,7 @@ export class MotherAgent {
       catch (error) {
         if (owned && lifecycle) {
           try { await this.reconcile() }
-          catch (restart) { this.error = restart instanceof Error ? restart.message : 'Mother agent could not restart' }
+          catch (restart) { this.error = restart instanceof Error ? restart.message : 'Elpis could not restart' }
         }
         throw error
       }
@@ -138,20 +138,20 @@ export class MotherAgent {
     })
   }
   async send(id: string, raw: unknown) {
-    if (this.closed || !this.file.read().enabled) throw new BridgeError('Turn Mother agent on in Settings → Configuration to send a goal.', 409)
-    if (!this.owns(id)) throw new BridgeError('This is not the Mother agent chat', 409)
+    if (this.closed || !this.file.read().enabled) throw new BridgeError('Turn Elpis on in Settings → Configuration to send a goal.', 409)
+    if (!this.owns(id)) throw new BridgeError('This is not the Elpis chat', 409)
     await this.start()
     const app = this.app
-    if (!app) throw new BridgeError(this.error ?? 'Mother agent is unavailable', 503)
+    if (!app) throw new BridgeError(this.error ?? 'Elpis is unavailable', 503)
     const input = object(raw, ['text', 'model', 'effort', 'mode', 'attachments', 'mentions', 'expectedTurnId']) as Record<string, unknown>
     const content = attachmentInput(input.text, input.attachments, input.mentions)
     const message = content.flatMap(block => block.type === 'text' ? [block.text] : block.type === 'mention' ? [`${block.name}: ${block.path}`] : []).join('\n') || '[Image attachment]'
     const entry = await this.options.client.appendUser(id, { id: randomUUID(), text: message, content })
     // Intake is durable before acknowledgement; the pass loop performs inference in the background.
-    void app.pump().catch(error => { this.error = error instanceof Error ? error.message : 'Mother agent routing failed' })
+    void app.pump().catch(error => { this.error = error instanceof Error ? error.message : 'Elpis routing failed' })
     return { turn: { id: entry.turnId }, routed: true }
   }
-  /** The panel can configure a disabled Mother without starting a session, worker, poll or model call. */
+  /** The panel can configure a disabled Elpis without starting a session, worker, poll or model call. */
   private passive(): MotherApp {
     if (!this.app) {
       const config = this.file.read(), initial = readSettings(this.options.home)
@@ -163,7 +163,7 @@ export class MotherAgent {
   }
   async handle(request: IncomingMessage, response: ServerResponse, port: string): Promise<void> {
     await this.serialized(async () => {
-      if (this.closed) throw new BridgeError('Mother is stopping', 409)
+      if (this.closed) throw new BridgeError('Elpis is stopping', 409)
       await handleMotherHttp(this.passive().http(), request, response, Number(port))
     })
   }
