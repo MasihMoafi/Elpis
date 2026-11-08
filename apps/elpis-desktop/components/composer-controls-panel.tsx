@@ -10,7 +10,7 @@ import type { useSlashMenu } from "@/components/slash-menu";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
 import { Voice } from "@/components/voice";
-import type { Model, ProviderSettings, Thread } from "@/lib/api";
+import { subscriptionOf, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { ATTACHMENT_LIMITS } from "@/lib/attachments";
 import { chooseRouterModel } from "@/lib/elpis-agent-models";
 import type { createCommandActions } from "@/lib/command-actions";
@@ -56,7 +56,7 @@ export function ComposerControls({ selected, selectedModel, settings, commands, 
             </div><div className="composer-right">
               {!selected?.motherAgent && <ContextUsage {...(selected ? { threadId: selected.id } : {})} />}
               <ModelPicker choices={modelChoices} models={models}
-                model={selected ? turnModel : model} choiceId={selected ? selectedChoice?.id || "" : choiceId} {...(defaultModel !== undefined ? { defaultModel } : {})}
+                model={selected?.motherAgent ? selected.model ?? turnModel : selected ? turnModel : model} choiceId={selected?.motherAgent ? subscriptionOf(selected.model)?.prefix ?? selectedChoice?.id ?? "" : selected ? selectedChoice?.id || "" : choiceId} {...(defaultModel !== undefined ? { defaultModel } : {})}
                 disabled={!ready || busy || projectChanging} onConfigure={manageConnections} onKeySaved={() => void reloadSettings().catch(() => {})} onChange={choice => { if (selected?.motherAgent) void chooseRouterModel(choice.model, modelChoices.find(item => item.id === choice.choiceId)?.provider); else if (selected) { setOverride(selected.id, { model: choice.model }); setFailedTurns(previous => without(previous, selected.id)); } else { setChoiceId(choice.choiceId); setModel(choice.model); setEffort(""); } }} />
               {!selected?.motherAgent && turnEfforts.length > 0 && <OptionSelect aria-label="Reasoning effort" size="sm" className="model-select" value={turnEffort} onChange={e => selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value)} disabled={!ready || !connected || busy}>
                 <option value=""><span className="effort-long">Default effort</span><span className="effort-short">Default</span></option>
