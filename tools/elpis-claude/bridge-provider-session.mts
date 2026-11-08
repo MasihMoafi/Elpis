@@ -94,7 +94,8 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
             sessionModel.set(sessionId, want);
             log(`session ${sessionId} model -> ${want}`);
         }
-        const wantMode = claudeModeOf(threadId, agent.key, ask);
+        // The router has no built-in tools at all (tools: [] above); Plan mode would only block its routing tools.
+        const wantMode = managedMain ? "bypassPermissions" : claudeModeOf(threadId, agent.key, ask);
         if (sessionMode.get(sessionId) !== wantMode) {
             await acp.call("session/set_mode", { sessionId, modeId: wantMode })
                 .then(() => { sessionMode.set(sessionId, wantMode); log(`session ${sessionId} mode -> ${wantMode}`); })

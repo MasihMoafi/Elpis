@@ -189,7 +189,7 @@ if (role) {
         assert.equal(context?.modelContextWindow, 256000, "Gemini's reported context window reaches the desktop");
       }
       // Full access uses the normal permission hook, answered by Elpis without asking the person.
-      const modes: Record<string, string> = { manual: "acceptEdits", full: "default" };
+      const modes: Record<string, string> = { mother: "bypassPermissions", manual: "acceptEdits", full: "default" };
       if (!agy) assert.ok(rows.some(row => row.method === "session/set_mode" && row.params?.modeId === (modes[scenario] ?? "auto")));
     });
   }
