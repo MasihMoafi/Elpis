@@ -141,6 +141,38 @@ fn long_prompt_keeps_the_active_input_visible() {
 }
 
 #[test]
+fn multiline_question_preserves_blank_lines_and_links() {
+    let mut editor = editor();
+    editor.state.pending[0].question.title =
+        "First paragraph.\n\nVisit https://example.com/path for details.".into();
+
+    let lines = editor.wrapped_question_lines(80);
+    let text: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            line.line
+                .spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        text,
+        [
+            "First paragraph.",
+            "",
+            "Visit https://example.com/path for details."
+        ]
+    );
+    assert_eq!(lines[2].hyperlinks.len(), 1);
+    assert_eq!(
+        lines[2].hyperlinks[0].destination,
+        "https://example.com/path"
+    );
+}
+
+#[test]
 fn wrapped_question_url_keeps_its_complete_destination() {
     let url = "https://github.com/openai/codex/pull/12345?diff=split";
     let mut editor = editor();

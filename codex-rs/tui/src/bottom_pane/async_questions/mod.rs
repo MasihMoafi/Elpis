@@ -158,16 +158,21 @@ impl AsyncQuestions {
     pub(super) fn wrapped_question_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         self.current_question()
             .map(|q| {
-                let source = annotate_web_urls_in_line(q.title.clone().into());
-                let wrapped = wrap_ranges_trim(&q.title, usize::from(width.max(1)))
-                    .into_iter()
-                    .map(|range| WrappedLine {
-                        line: (&q.title[range.clone()]).into(),
-                        range,
-                        prefix_bytes: 0,
+                q.title
+                    .split('\n')
+                    .flat_map(|text| {
+                        let source = annotate_web_urls_in_line(text.to_owned().into());
+                        let wrapped = wrap_ranges_trim(text, usize::from(width.max(1)))
+                            .into_iter()
+                            .map(|range| WrappedLine {
+                                line: (&text[range.clone()]).into(),
+                                range,
+                                prefix_bytes: 0,
+                            })
+                            .collect();
+                        remap_source_wrapped_line(&source, wrapped)
                     })
-                    .collect();
-                remap_source_wrapped_line(&source, wrapped)
+                    .collect()
             })
             .unwrap_or_default()
     }
