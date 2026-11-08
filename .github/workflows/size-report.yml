@@ -49,7 +49,7 @@ jobs:
 
           home = tempfile.mkdtemp()
           env = {**os.environ, 'HOME': home, 'CODEX_HOME': home, 'ELPIS_HOME': home}
-          lines = [f'line {i} of the benchmark file' for i in range(3000)]
+          lines = [f'line {i} of the benchmark file' for i in range(1500)]
           original = '\n'.join(lines) + '\n'
           body = ''.join(f'-{line}\n+{line} changed\n' for line in lines)
           patch = f'*** Begin Patch\n*** Update File: target.txt\n@@\n{body}*** End Patch'
@@ -90,7 +90,7 @@ jobs:
 
           binaries = {'normal': os.path.abspath('normal'), 'small': os.path.abspath('small')}
           for name, measure, rounds in [('version', version, 40), ('features list', features, 20),
-                                        ('apply 3000-line patch', apply_patch, 20),
+                                        ('apply 1500-line patch', apply_patch, 20),
                                         ('engine start to first reply', app_server, 15)]:
               results = {key: [] for key in binaries}
               for _ in range(rounds):
