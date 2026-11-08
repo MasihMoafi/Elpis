@@ -95,6 +95,9 @@ test('explicit panel toggle resizes, empty teams do not reserve space, and stale
   const { page, composer } = f;
   try {
     await page.locator('.team-panel').waitFor({ state: 'visible' });
+    await composer.focus();
+    await page.keyboard.press('Alt+9');
+    assert.equal(await composer.isVisible(), true, 'a missing numbered chat leaves the current page open');
     await page.getByRole('button', { name: 'Working agents only', exact: true }).click();
     await page.locator('.team-row[data-thread-id="agent-a"]').waitFor({ state: 'visible' });
     const width = () => page.locator('.composer').evaluate(el => el.getBoundingClientRect().width);

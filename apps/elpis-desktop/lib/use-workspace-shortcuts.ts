@@ -37,6 +37,7 @@ export function useWorkspaceShortcuts({ shortcutAction, selected, ordered, readO
     else if (id === "undo-delete") void undoDelete();
     else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
     else if (id === "settings") { setSettingsSection("general"); show("settings"); }
+    else if (id === "go-to-chat") { if (index !== undefined && ordered[index]) void loadThread(ordered[index]); }
     else if (id.startsWith("go-")) show(id.slice(3) as View);
     // A cancelled event means a visible picker took it; with Matilda hidden, Settings holds the same choice.
     else if (id === "theme") { if (window.dispatchEvent(new CustomEvent(OPEN_CHARACTER_PICKER, { cancelable: true }))) { setSettingsSection("general"); show("settings"); } }
@@ -44,7 +45,6 @@ export function useWorkspaceShortcuts({ shortcutAction, selected, ordered, readO
     else if (id === "shortcuts") { shortcutsReturnFocus.current = document.activeElement as HTMLElement | null; setShortcutsOpen(true); }
     else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]!);
     else if (id === "next-chat" && ordered.length) void loadThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]!);
-    else if (id === "go-to-chat" && index !== undefined && ordered[index]) void loadThread(ordered[index]);
     else if (id === "rename" && selected) setRenameRequest(true);
     else if (id === "archive") archiveChats(chosenChats());
     else if (id === "pin" && selected) togglePin(selected);
