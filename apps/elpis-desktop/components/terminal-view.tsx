@@ -56,7 +56,7 @@ function attach(view: View, session: TerminalSession) {
 }
 
 /** Resolves a CSS colour (the app's tokens use color-mix) to #rrggbb for xterm. */
-function rgb(value: string, alpha?: number) {
+function resolvedColour(value: string, alpha?: number) {
   const context = document.createElement("canvas").getContext("2d");
   if (!context) return value;
   context.fillStyle = value;
@@ -70,11 +70,11 @@ function theme(element: HTMLElement) {
   const style = getComputedStyle(element),
     token = (name: string) => style.getPropertyValue(name).trim();
   return {
-    background: rgb(token("--background")),
-    foreground: rgb(token("--foreground")),
-    cursor: rgb(token("--primary")),
-    cursorAccent: rgb(token("--background")),
-    selectionBackground: rgb(token("--primary"), 0.3),
+    background: resolvedColour(token("--background")),
+    foreground: resolvedColour(token("--foreground")),
+    cursor: resolvedColour(token("--primary")),
+    cursorAccent: resolvedColour(token("--background")),
+    selectionBackground: resolvedColour(token("--primary"), 0.3),
   };
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogClose,
@@ -84,14 +85,7 @@ export function ConfirmDelete<T>({
         {children}
         {confirm && !alwaysConfirm && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            {/* ui-check-ignore: the chat dialog's existing checkbox, moved unchanged; components/ui has no checkbox */}
-            <input
-              type="checkbox"
-              className="accent-primary"
-              checked={skip}
-              disabled={busy}
-              onChange={event => setSkip(event.target.checked)}
-            />
+            <Checkbox checked={skip} disabled={busy} onCheckedChange={setSkip} />
             Don’t show me this again
           </label>
         )}

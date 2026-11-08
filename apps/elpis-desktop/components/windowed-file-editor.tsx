@@ -292,21 +292,20 @@ export function WindowedFileEditor({
     <div className="fe fe-windowed" onKeyDown={keys}>
       {find && (
         <div className="fe-find" role="search" aria-label="Find in file">
-          <SearchField className="fe-find-field">
-            <input
-              ref={field}
-              aria-label="Find in file"
-              placeholder="Find in file…"
-              value={find.query}
-              onChange={event => setFind({ ...find, query: event.target.value, at: 0 })}
-              onKeyDown={event => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  step(event.shiftKey ? -1 : 1);
-                }
-              }}
-            />
-          </SearchField>
+          <SearchField
+            className="fe-find-field"
+            ref={field}
+            aria-label="Find in file"
+            placeholder="Find in file…"
+            value={find.query}
+            onChange={event => setFind({ ...find, query: event.target.value, at: 0 })}
+            onKeyDown={event => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                step(event.shiftKey ? -1 : 1);
+              }
+            }}
+          />
           <span role="status" className="fe-find-count">
             {!find.query ? "" : found.length ? `Finding ${current + 1} of ${found.length}` : "No matches"}
           </span>
