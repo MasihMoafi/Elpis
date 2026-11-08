@@ -2,8 +2,8 @@
 // Runs the exported renderer against the mock bridge; no engine or real desktop profile.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const path = require('node:path');
+
+
 const { fixture } = require('./parity-fixture.cts');
 
 /** Observe the brief introduction with the browser clock paused; bridge data has its own tests. */

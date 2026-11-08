@@ -66,7 +66,7 @@ test('a stopped run says Cancelled, not Finished, and the run log says why it st
 
 test('a clash at the end of the run stops it: the files are listed and the agent whose work clashed is marked', async () => {
   const error = `Not merged: elpis/graph-1/a2 clashes with main in src/app.ts, README.md; main is untouched. ${KEPT}`;
-  const { page, canvas, node, errors, close } = await openCanvas({ graph: TEAM, repository: true, listed: ended('failed', error) });
+  const { canvas, node, errors, close } = await openCanvas({ graph: TEAM, repository: true, listed: ended('failed', error) });
   try {
     await run(canvas);
     const notice = canvas.locator('.canvas-notice');

@@ -67,8 +67,8 @@ export function useMatilda({ ready, enabled, context, told, drawingOnly, send, o
       // An error left from an earlier visit is not news.
       if (said.current !== null && state.error && state.error !== said.current) latest.current.onError(state.error);
       said.current = state.error ?? "";
-      if (busy.current) asking.current = setTimeout(ask, RETRY);
-    } catch { if (mounted.current && request === poll.current) asking.current = setTimeout(ask, RETRY); }
+      if (busy.current) asking.current = setTimeout(() => { void ask(); }, RETRY);
+    } catch { if (mounted.current && request === poll.current) asking.current = setTimeout(() => { void ask(); }, RETRY); }
   }, []);
   const look = useCallback(async () => {
     if (!mounted.current || !ids.current.size) return;
@@ -83,8 +83,8 @@ export function useMatilda({ ready, enabled, context, told, drawingOnly, send, o
       });
       return;
     }
-    if (!now.ready()) { timer.current = setTimeout(look, QUIET); return; }
-    if (busy.current || working.current) { timer.current = setTimeout(look, RETRY); return; }
+    if (!now.ready()) { timer.current = setTimeout(() => { void look(); }, QUIET); return; }
+    if (busy.current || working.current) { timer.current = setTimeout(() => { void look(); }, RETRY); return; }
     const batch = ids.current, token = generation.current;
     const text = now.told(batch), onlyDrawing = now.drawingOnly(batch); ids.current = new Set(); waiting.current = "";
     if (!text) { keepPending(now.context, ids.current); return; }
@@ -120,7 +120,7 @@ export function useMatilda({ ready, enabled, context, told, drawingOnly, send, o
       working.current = false;
       if (now.context === latest.current.context) { if (mounted.current) keepPending(now.context, ids.current); else addPending(now.context, ids.current); }
       finishHandover(now.context, handover);
-      if (mounted.current && ids.current.size && !held.current) { clearTimeout(timer.current); timer.current = setTimeout(look, latest.current.ready() ? 0 : QUIET); }
+      if (mounted.current && ids.current.size && !held.current) { clearTimeout(timer.current); timer.current = setTimeout(() => { void look(); }, latest.current.ready() ? 0 : QUIET); }
     }
   }, [ask]);
   const notice = useCallback((found: string[], finished = false) => {
@@ -132,7 +132,7 @@ export function useMatilda({ ready, enabled, context, told, drawingOnly, send, o
     keepPending(latest.current.context, ids.current);
     try { waiting.current = ids.current.size ? latest.current.told(ids.current) : ""; waitingDrawingOnly.current = !!ids.current.size && latest.current.drawingOnly(ids.current); } catch { /* told again when she looks */ }
     clearTimeout(timer.current);
-    if (ids.current.size) timer.current = setTimeout(look, finished ? 0 : QUIET);
+    if (ids.current.size) timer.current = setTimeout(() => { void look(); }, finished ? 0 : QUIET);
   }, [look]);
   const wake = useCallback(() => {
     generation.current++;
@@ -143,10 +143,10 @@ export function useMatilda({ ready, enabled, context, told, drawingOnly, send, o
   // A page's waiting notes come back when it is shown again.
   useEffect(() => {
     for (const id of context ? pendingNotes()[context] ?? [] : []) ids.current.add(id);
-    if (ids.current.size) { clearTimeout(timer.current); timer.current = setTimeout(look, QUIET); }
+    if (ids.current.size) { clearTimeout(timer.current); timer.current = setTimeout(() => { void look(); }, QUIET); }
   }, [context, look]);
   useEffect(() => {
-    mounted.current = true; ask();
+    mounted.current = true; void ask();
     return () => {
       mounted.current = false; poll.current++; clearTimeout(timer.current); clearTimeout(asking.current);
       // Leaving the board sends what she has not been told yet; if she is still writing, it waits for the next visit.

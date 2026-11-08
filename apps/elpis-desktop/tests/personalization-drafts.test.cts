@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -7,7 +8,7 @@ function load(storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>) {
   const window = { addEventListener: (event: 'beforeunload', fn: typeof listeners.beforeunload) => { listeners[event] = fn; }, __elpisFlushSettings: () => { throw Error('flush not installed'); } };
   const module = { exports: {} };
   const code = transpileModule(fs.readFileSync(require('node:path').join(__dirname, '../lib/personalization-drafts.ts'), 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, target: ScriptTarget.ES2022 } }).outputText;
-  new Function('require', 'module', 'exports', 'window', code)(() => ({ appStorage: () => storage }), module, module.exports, window);
+  compileFunction(code, ['require', 'module', 'exports', 'window'])(() => ({ appStorage: () => storage }), module, module.exports, window);
   return { ...module.exports as typeof import('../lib/personalization-drafts.ts'), window, listeners };
 }
 test('file drafts survive module reload, ask before leaving, and recover after the store refuses writes', () => {

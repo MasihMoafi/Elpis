@@ -111,7 +111,7 @@ const inferenceHandler = async (req: http.IncomingMessage, res: http.ServerRespo
     send(typeof action === 'function' ? action(body) : action);
   } catch (error) { const caught = error instanceof Error ? error : new Error(String(error)); fixture.error ??= caught; res.writeHead(500); res.end(String(caught.message)); }
 };
-const server = http.createServer(inferenceHandler), workflowServer = http.createServer(inferenceHandler);
+const server = http.createServer((req, res) => { void inferenceHandler(req, res); }), workflowServer = http.createServer((req, res) => { void inferenceHandler(req, res); });
 server.listen(0, '127.0.0.1'); await once(server, 'listening');
 workflowServer.listen(0, '127.0.0.1'); await once(workflowServer, 'listening');
 const address = server.address(), workflowAddress = workflowServer.address();
@@ -433,8 +433,7 @@ try {
     other.close();
   });
 
-  let agentThread;
-  agentThread = (await api('/threads', { model: 'gpt-6-luna', cwd: agentCwd })).body.thread;
+  const agentThread = (await api('/threads', { model: 'gpt-6-luna', cwd: agentCwd })).body.thread;
   await api(`/threads/${agentThread.id}/rename`, { name: 'Docs reviewer 4242' });
   await page.reload();
   await page.locator(`.thread-row[data-thread-id="${agentThread.id}"] .thread-link`).click();

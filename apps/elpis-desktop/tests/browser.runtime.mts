@@ -43,7 +43,6 @@ await fs.writeFile(path.join(home, 'models.json'), JSON.stringify({models:catalo
 await fs.writeFile(path.join(home, 'hooks.json'), '{}');
 await fs.writeFile(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\nmodel_catalog_json=${JSON.stringify(path.join(home,'models.json'))}\napproval_policy="on-request"\nsandbox_mode="workspace-write"\n[features]\ncode_mode=false\n[model_providers.fixture]\nname="Local browser fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n[projects.${JSON.stringify(root)}]\ntrust_level="trusted"\n`);
 }
-let display: string;
 const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 async function until<T>(check: () => T | Promise<T>, label: string, timeout = 10000): Promise<NonNullable<T>> {
   const deadline = Date.now() + timeout;
@@ -70,7 +69,7 @@ const siteAddress = site.address(); assert(siteAddress && typeof siteAddress !==
 const siteUrl = `http://127.0.0.1:${siteAddress.port}/login`;
 
 const xvfb = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1440x960x24', '-nolisten', 'tcp'], { stdio: ['ignore','ignore','ignore','pipe'] });
-display=await new Promise<string>((resolve,reject)=>{xvfb.once('error',reject);xvfb.once('exit',code=>reject(Error(`Xvfb exited (${code})`)));let value='';const pipe=xvfb.stdio[3];assert(pipe);pipe.on('data',chunk=>{value+=chunk;if(value.includes('\n'))resolve(`:${value.trim()}`);});});
+const display=await new Promise<string>((resolve,reject)=>{xvfb.once('error',reject);xvfb.once('exit',code=>reject(Error(`Xvfb exited (${code})`)));let value='';const pipe=xvfb.stdio[3];assert(pipe);pipe.on('data',chunk=>{value+=chunk;if(value.includes('\n'))resolve(`:${value.trim()}`);});});
 const socket = path.join(root, 'runtime.sock');
 const runtime = spawn(binary, [...(path.basename(binary).includes('app-server') ? [] : ['app-server']), '--listen', `unix://${socket}`], { cwd: root, env: { PATH: process.env.PATH, HOME: home, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home, LANG: 'C.UTF-8' }, stdio: 'ignore' });
 let desktop: ElectronApplication, engineSocket: Socket | undefined, failed = false;
@@ -100,7 +99,7 @@ try {
   const WebSocket: new (url: string) => Socket = require('ws'),pending=new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();let rpcId=0;
   const ws = new WebSocket(`ws+unix://${bridge}:/`); engineSocket=ws;
   await new Promise<void>((resolve,reject)=>{ws.once('open',resolve);ws.once('error',reject);});
-  ws.on('message',(raw: Buffer)=>{const message: { id: number; error?: { message: string }; result: unknown }=JSON.parse(raw.toString());const handler=pending.get(message.id);if(handler){pending.delete(message.id);message.error?handler.reject(Error(message.error.message)):handler.resolve(message.result);}});
+  ws.on('message',(raw: Buffer)=>{const message: { id: number; error?: { message: string }; result: unknown }=JSON.parse(raw.toString());const handler=pending.get(message.id);if(handler){pending.delete(message.id);if (message.error) handler.reject(Error(message.error.message)); else handler.resolve(message.result);}});
   const rpc=<K extends keyof RpcReplies>(method: K,params: object)=>new Promise<RpcReplies[K]>((resolve,reject)=>{const id=++rpcId,timer=setTimeout(()=>{pending.delete(id);reject(Error(`Timed out: ${method}`));},35000);pending.set(id,{resolve:value=>{clearTimeout(timer);resolve(value as RpcReplies[K]);},reject:error=>{clearTimeout(timer);reject(error);}});ws.send(JSON.stringify({id,method,params}));});
   await rpc('initialize',{clientInfo:{name:'browser-runtime-test',version:'1.0.0'},capabilities:{experimentalApi:true}});
   ws.send(JSON.stringify({method:'initialized',params:{}}));

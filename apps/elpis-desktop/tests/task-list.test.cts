@@ -10,7 +10,7 @@ const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright
 test('the task list follows turn/plan/updated live and collapses when the turn ends', async () => {
   const chat = (id: string, name: string) => ({ id, name, cwd: '/tmp/demo', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
   const threads = [chat('work', 'Fix the parser'), chat('other', 'Write the docs')], streams = new Set<import('node:http').ServerResponse>();
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/',  'http://local'); for await (const _ of req) { /* drain */ }
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
@@ -23,7 +23,7 @@ test('the task list follows turn/plan/updated live and collapses when the turn e
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
     catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   const send = (method: string, params: unknown) => { for (const stream of streams) stream.write(`data: ${JSON.stringify({ method, params })}\n\n`); };
   const plan = (steps: [string, string][]) => send('turn/plan/updated', { threadId: 'work', turnId: 't1', explanation: null, plan: steps.map(([step, status]) => ({ step, status })) });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));

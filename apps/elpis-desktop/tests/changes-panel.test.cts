@@ -38,7 +38,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>, { width = 1130,
   const state: State = { files: files(), diffs: { 'README.md': README, 'old.txt': OLD, 'src/parser.ts': PARSER }, root: '/work/parser', error: null, posts: [], reads: [] };
   const clients = new Set<ServerResponse>();
   const emit = (method: string, params: object) => { for (const client of clients) client.write(`event: message\ndata: ${JSON.stringify({ method, params })}\n\n`); };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: unknown, status = 200) => { res.statusCode = status; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
@@ -59,7 +59,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>, { width = 1130,
     if (url.pathname === '/api/threads/chat-one') return json({ thread, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}), headless: true });
   try {

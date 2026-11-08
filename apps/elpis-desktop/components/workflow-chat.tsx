@@ -108,7 +108,7 @@ export function WorkflowChat({ run, identity, ready, models = [], threads = [], 
         const next = await readWorkflowRun(run);
         if (!live) return;
         setRecord(next); setError("");
-        timer = setTimeout(read, ACTIVE.has(next.status) || next.next && !next.next.reported && ACTIVE.has(next.next.status) ? 1500 : 5000);
+        timer = setTimeout(() => { void read(); }, ACTIVE.has(next.status) || next.next && !next.next.reported && ACTIVE.has(next.next.status) ? 1500 : 5000);
       } catch (cause) { if (live) setError(errorText(cause)); }
     };
     void read();

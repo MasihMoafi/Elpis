@@ -55,7 +55,7 @@ export function LiveVoiceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const close = () => end(); window.addEventListener("pagehide", close);
     return () => { window.removeEventListener("pagehide", close); end(); };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   async function start(threadId: string, persistent: boolean) {
     if (call.current) end();

@@ -231,7 +231,7 @@ export default function Home() {
   const writable = !!selected && !continues;
   const chatFolder = selected ? selected.cwd : newChatFolder(cwd);
   // The profile opens as source: /personal is for editing it.
-  const personal = usePersonal(ready && !selected, path => { const at = selected?.cwd || cwd; openFile(at, path); setFileView(at, path, "source"); side.openFiles(); }, setError);
+  const personal = usePersonal(ready && !selected, path => { const at = selected?.cwd || cwd; void openFile(at, path); setFileView(at, path, "source"); side.openFiles(); }, setError);
   const conversationCommands = createCommandActions({ selected, selectedRef, textRef, turnEfforts, turnEffort, turnModel, models, providerSettings, newChoice, commandNoticeOwner, fastNoticeOwner, side, runtime, conversations, ready, connected, desktop, setSlashNotice, setEffort, setPanel, setError, setBusy, openComposerControl, saveEffort, focusComposer, editDraft });
   const { chooseEffort, startReview, compactChat, exportChat, turnSmartPruneOn, chooseFast, chooseGoal } = conversationCommands;
   useEffect(() => {
@@ -239,7 +239,7 @@ export default function Home() {
     if (selected?.id !== queuedCompact.threadId) { setQueuedCompact(null); return; }
     if (!idle) return;
     setQueuedCompact(null); setSlashNotice(""); compactChat(selected, queuedCompact.guidance);
-  }, [queuedCompact, selected, idle]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [queuedCompact, selected, idle]);
   const sessionRows = makeSessionRows(session, selectedModel, models, providerSettings, permissionMode, chatFolder);
   const slashCommands = createSlashCommands({ selected, askSideQuestion, readOnlyRun, recapConversation, chooseGoal, busy, openComposerControl, chooseFast, turnEfforts, chooseEffort, openSettings, personal, writable, idle, startReview, setPanel, renameThread, setError, setRenameRequest, newChat, clearChat, archiveChats: chats => archiveChats(chats), deleteChats: (ids, focusAt) => deleteChats(ids, focusAt), setResumeOpen, lastTurn, activeTurn, forkFrom, continues, send, compactChat, setQueuedCompact, setSlashNotice, turnSmartPruneOn, planMode, setPlan, team, panelShown, openAgentsPanel, entries, exportChat, chatFolder });
   const slash = useSlashMenu(ready && connected ? text : "", slashCommands, () => { editDraft(""); setPanel(null); setSlashNotice(""); });

@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 // Models & accounts: each API key carries a checkbox per feature (Masih, 6 Nov: "optionally one key for everything;
 // remember? we get to check and uncheck."). A ticked box routes that feature to the key through its existing owner
 // (Configuration's main model, the read aloud preference, WhisperType); an unticked one returns it to the default.
@@ -58,7 +59,7 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
   const file = path.join(root, 'components/settings/use-for-settings.tsx');
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const loaded = { exports: {} as { useKeyUses(props: { providers: Provider[]; refreshKey: number; active: boolean }): (provider: Provider) => unknown } };
-  new Function('require', 'module', 'exports', code)((id: string) => id === 'react' ? hooks : mocks[id] || require(id), loaded, loaded.exports);
+  compileFunction(code, ['require', 'module', 'exports'])((id: string) => id === 'react' ? hooks : mocks[id] || require(id), loaded, loaded.exports);
   const props = { providers, refreshKey: 0, active: true };
   const elements = (node: unknown): TestElement[] => React.isValidElement(node) ? [node as TestElement, ...React.Children.toArray((node as TestElement).props.children).flatMap(elements)] : Array.isArray(node) ? node.flatMap(elements) : [];
   const render = () => { cursor = 0; const uses = loaded.exports.useKeyUses(props); return providers.map(item => uses(item)); };

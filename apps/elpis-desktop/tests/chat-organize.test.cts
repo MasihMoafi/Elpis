@@ -73,6 +73,8 @@ async function drag(page: Page, from: string, to: string | Locator, where = 'mid
   const end = await target.boundingBox();
   assert(end);
   await page.mouse.move(end.x + end.width / 2, where === 'top' ? end.y + 2 : where === 'bottom' ? end.y + end.height - 2 : end.y + end.height / 2, { steps: 10 });
+  // Native dragging can scroll the list during the move; aim at the row's settled position again.
+  await target.hover({ position: { x: end.width / 2, y: where === 'top' ? 2 : where === 'bottom' ? end.height - 2 : end.height / 2 } });
   if (during) await during();
   await page.mouse.up();
 }
@@ -301,6 +303,7 @@ test('a refused final order save leaves the subtree, projects, order and selecti
       };
     });
     await drag(page, 'save-child', 'save-target', 'top', async () => {
+      await shot(page, 'refused-order-hover');
       await eventually(async () => assert.equal(await row(page, 'save-target').getAttribute('data-drop'), 'before', 'the visible recent row accepts the edge drop before the store refuses it'));
     });
     await page.getByRole('alert').filter({ hasText: 'Could not save chat placement' }).waitFor();

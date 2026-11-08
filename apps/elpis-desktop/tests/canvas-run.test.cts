@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
+
 const { openCanvas } = require('./canvas-fixture.cts');
 const { chooseTheme, captureReview } = require('./controls.cts');
 const { assertUiFit } = require('./ui-fit.cts');
@@ -70,7 +70,7 @@ test('a new workflow can be designed at laptop width while the previous run keep
     { id: 'writer', type: 'agent', position: { x: 300, y: 0 }, data: { title: 'Keep working', instruction: 'Complete the existing task.', model: null, writeScopes: ['src'], acceptanceCriteria: ['Return the result'] } },
   ], edges: [] }, listed(run: Run) { return { id: run.graphId, status: 'running', tasks: run.tasks.map(task => ({ id: task.id, status: 'running', assignedThreadId: null })) }; } });
   try {
-    const { page, canvas } = fixture;
+    const { canvas } = fixture;
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
     await canvas.getByText('Wait for this run to finish before starting another.', { exact: true }).waitFor();
     const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });

@@ -17,7 +17,7 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
   const alpha = threads[0]; assert.ok(alpha);
   threads.push({ ...alpha, id: 'alpha-worker', name: 'Alpha worker', parentThreadId: 'alpha', agentNickname: 'Alpha worker' });
   const creates: { cwd?: string }[] = [], shells: { threadId: string; body: unknown }[] = [];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     const thread = threads.find(item => item.id === url.pathname.split('/')[3]);
@@ -36,7 +36,7 @@ test('projects: explicit membership, drag, menu moves, persistence, and unscoped
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(await fs.readFile(file)); }
     catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });

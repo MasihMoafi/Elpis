@@ -9,7 +9,7 @@ const { chooseOption } = require('./controls.cts');
 
 // As the engine lists them: the subscriptions' models in its own list, routed by prefix (bridge/workflow-models.mjs).
 const MODELS = { extraModels: [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }, { id: 'argon', model: 'agy/gemini-4-argon-high', displayName: 'Gemini 4 Argon' }, { id: 'g38', model: 'agy/gemini-3.8-flash-high', displayName: 'Gemini 3.8 Flash (High)' }, { id: 'g38l', model: 'agy/gemini-3.8-flash-low', displayName: 'Gemini 3.8 Flash (Low)' }] };
-const pages = [...Array.from({ length: 8 }, (_, i) => `screen-${i + 1}.png`), 'screen-10.png', 'notes.txt'];
+
 
 // 28 Oct, Masih: "it says Name the folder of page images in the request ... and no where I can do that! ... make it so I
 // can choose that folder properly; and view the writings ... move it on top; and it should be one of the built-in workflows."

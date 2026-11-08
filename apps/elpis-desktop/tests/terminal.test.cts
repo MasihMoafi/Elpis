@@ -24,7 +24,7 @@ async function fixture(run: (args: { page: Page; calls(): Promise<Calls> }) => P
     { id: 'chat-one', name: 'Fix the parser', preview: 'Fix the parser', cwd: '/work/parser', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } },
     { id: 'chat-two', name: 'Write the docs', preview: 'Write the docs', cwd: '/work/docs', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } },
   ];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://localhost'); for await (const _ of req) { /* drain */ }
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     const thread = threads.find(item => item.id === url.pathname.split('/')[3]);
@@ -36,7 +36,7 @@ async function fixture(run: (args: { page: Page; calls(): Promise<Calls> }) => P
     if (thread) return json({ thread, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });

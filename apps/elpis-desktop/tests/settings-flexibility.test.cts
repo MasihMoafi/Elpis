@@ -4,10 +4,8 @@ const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cts');
 const { controlValue } = require('./controls.cts');
-const settings = { version: 'v1', main: { model: 'sol', provider: 'openai' }, background: { model: null, provider: null },
-  providers: [{ id: 'openai', displayName: 'OpenAI' }], smartPrune: { enabled: false, explicitOverride: {} },
-  memory: { generate: null, use: null, extractionModel: null, consolidationModel: null }, write: { available: true } };
-const routes = { '/api/settings': () => settings };
+
+
 
 // Masih, 23 Oct: the section titles "wouldn't make sense if I could just change the order"; "Don't make users change them".
 test('SETTINGS: Configuration owns model edits and preserves custom model drafts across pages', async () => {

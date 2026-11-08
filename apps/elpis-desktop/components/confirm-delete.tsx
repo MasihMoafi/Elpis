@@ -8,13 +8,13 @@ import { errorText } from "@/lib/error-text.mts";
 
 /** One confirmation and preference for named deletions. A failed automatic delete opens the dialog for retry. */
 export function ConfirmDelete<T>({ request, names, noun, description, onDelete, onClose, alwaysConfirm, finalFocus, children }: {
-  request: T | null; names: string[]; noun: string; description: ReactNode; onDelete: (request: T) => Promise<void>; onClose: () => void;
+  request: T | null; names: string[]; noun: string; description: ReactNode; onDelete: (request: T) => void | Promise<void>; onClose: () => void;
   alwaysConfirm?: boolean; finalFocus?: () => HTMLElement | null | undefined; children?: ReactNode;
 }) {
   const [opened, setOpened] = useState<T | null>(null), [confirm, setConfirm] = useState(true), [skip, setSkip] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const removing = useRef(false);
   if (opened !== request) { setOpened(request); setConfirm(request !== null ? !!alwaysConfirm || readPreferences().confirmDeleteChats : true); setSkip(false); setError(""); }
-  useEffect(() => { if (request !== null && !confirm) void remove(); }, [request]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (request !== null && !confirm) void remove(); }, [request]);
   async function remove() {
     if (request === null || removing.current) return;
     removing.current = true; setBusy(true); setError("");

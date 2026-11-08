@@ -67,7 +67,7 @@ export function AutomationsView({ projects, onOpenChat, prefill, onPrefillUsed }
   const [open, setOpen] = useState<string | null>(null), [busy, setBusy] = useState<string | null>(null), [deleting, setDeleting] = useState<Automation | null>(null);
   const [fromBoard, setFromBoard] = useState<WorkflowPrefill | null>(null);
   // The board's Schedule button: open a new automation for that workflow, once.
-  useEffect(() => { if (!prefill) return; setFromBoard(prefill); setEditing("new"); onPrefillUsed?.(); }, [prefill]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!prefill) return; setFromBoard(prefill); setEditing("new"); onPrefillUsed?.(); }, [prefill]);
   const load = useCallback(async () => {
     try { const result = await api<{ data: Automation[] }>("/automations"); setTasks(result.data); setError(""); }
     catch (cause) { setError(errorText(cause)); }

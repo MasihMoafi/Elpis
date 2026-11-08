@@ -37,7 +37,7 @@ function DefaultFolder({ folder, onSave }: { folder: string; onSave: (folder: st
       <span className={`settings-path${folder ? "" : " unset"}`} title={folder || undefined}><bdi>{folder || "Elpis default"}</bdi></span>
       <Button variant="outline" onClick={() => desktop?.chooseFolder ? void choose() : setEditing(folder)}>Change</Button>
       {folder && <Button variant="ghost" onClick={() => onSave("")}>Reset</Button>}
-    </> : <form className="flex min-w-0 flex-wrap gap-2" onSubmit={submit}>
+    </> : <form className="flex min-w-0 flex-wrap gap-2" onSubmit={event => { void submit(event); }}>
       <Input aria-label="Default folder for new chats" className="w-64 max-w-full" autoFocus value={editing} placeholder="/home/you/projects" onChange={event => setEditing(event.target.value)} />
       <Button type="submit">Save</Button><Button type="button" variant="ghost" onClick={() => { setEditing(null); setError(""); }}>Cancel</Button>
     </form>}

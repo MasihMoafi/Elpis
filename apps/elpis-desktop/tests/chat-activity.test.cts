@@ -42,7 +42,7 @@ function history(now: number): HistoryEntry[] {
 
 async function fixture({ longGroup = false } = {}) {
   const steered: { text: string }[] = [];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: object) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); return; }
@@ -61,7 +61,7 @@ async function fixture({ longGroup = false } = {}) {
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
     catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}), headless: true });
   /** A page with the chat open; `preferences` are saved on this device before the app starts. */
@@ -80,8 +80,8 @@ async function fixture({ longGroup = false } = {}) {
   return { steered, open, close: async () => { await browser.close(); server.close(); } };
 }
 
-const rgb = (value: string) => { const matches = value.match(/[\d.]+/g); assert.ok(matches); return matches.slice(0, 3).map(Number); };
-const seconds = (text: string) => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/); assert.ok(m, `a timer reads "39s" or "1m 2s", not "${text}"`); return Number(m[1] ?? 0) * 60 + Number(m[2]); };
+
+
 
 test('a message sent while a turn runs appears where it was sent, after the work before it', async () => {
   const f = await fixture();

@@ -2,8 +2,8 @@
 // with a logo I had approved"); it was retired on 21 Oct (A132). Exported-renderer checks of the page list and saved order.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
-const path = require('node:path');
+
+
 const { fixture } = require('./parity-fixture.cts');
 
 const names = { experimentLab: 'Lab', canvas: 'Workflows', loveSpot: 'Love Spot', observability: 'Observability', customize: 'Customize' };

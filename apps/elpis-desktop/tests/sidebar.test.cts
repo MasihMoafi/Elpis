@@ -20,7 +20,7 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
   const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'];
   const threads: { id: string; name: string; preview: string; cwd?: string; model: string; modelProvider?: string; status: { type: string } }[] = names.map(name => ({ id: name.toLowerCase(), name, preview: name, cwd: '/tmp/elpis-sidebar-fixture', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } }));
   const deleted: string[] = [], creates: unknown[] = [];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     const id = url.pathname.split('/')[3], thread = threads.find(item => item.id === id);
@@ -40,7 +40,7 @@ test('sidebar: projects, toggle, D to delete, arrows, Ctrl/Shift selection, hove
     if (thread) return json({ thread, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });

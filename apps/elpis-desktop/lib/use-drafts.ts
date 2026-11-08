@@ -16,12 +16,12 @@ export function useDraftStore(onError: (message: string) => void) {
   const saveDraft = useCallback((id: string, value: string) => {
     drafts.current[id] = value;
     if (!writeDraft(id, value)) onError("Draft recovery is unavailable. Your text is kept in this window; copy it before reloading.");
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
   const savedAttachments = useCallback((id: string) => attachmentDrafts.current[id] ?? (attachmentDrafts.current[id] = readAttachmentDraft(id)), []);
   const saveAttachments = useCallback((id: string, value: Attachment[]) => {
     attachmentDrafts.current[id] = value;
     if (!writeAttachmentDraft(id, value)) onError("Attachment recovery is unavailable. Your files are kept in this window; save them before reloading.");
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
   /** Attachments already read for a key, without reading the store. */
   const heldAttachments = (id: string) => attachmentDrafts.current[id];
   /** A deleted chat's drafts, its own and its recovery copy. */

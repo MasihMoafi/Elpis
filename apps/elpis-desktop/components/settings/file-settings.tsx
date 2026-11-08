@@ -44,7 +44,7 @@ export function FileSettings({ kind, label }: { kind: "instructions" | "memory";
       current.current = restored; setDraft(restored);
     } catch (cause) { setError(`Could not restore this draft: ${message(cause)}`); }
     void load();
-  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key]);
   async function save() {
     const value = current.current;
     if (!value || pending) return;

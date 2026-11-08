@@ -125,6 +125,6 @@ export function GroupActions({ group, state, count, area, children, onRename, on
     </RightClickMenu>
     <GroupNameDialog open={renaming} state={state} group={group} onSave={name => { onRename(name); setRenaming(false); }} onClose={() => setRenaming(false)} />
     <ConfirmDelete request={deleting ? group : null} names={[group.name]} noun="group" description={`${contents} No chat is archived or deleted.`}
-      onDelete={async () => { onDelete(); }} onClose={() => setDeleting(false)} />
+      onDelete={() => { onDelete(); }} onClose={() => setDeleting(false)} />
   </>;
 }

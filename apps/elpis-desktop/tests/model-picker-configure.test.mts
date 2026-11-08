@@ -1,3 +1,4 @@
+import { compileFunction } from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
@@ -33,17 +34,17 @@ function fixture<T = Element>(relative: string, name: string, props: object | st
       const found = ['.tsx', '.ts', ''].map(extension => target + extension).find(existsSync); assert.ok(found); return load(found);
     };
     const { outputText } = transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ES2022 } });
-    new Function('require', 'module', 'exports', outputText)(imports, module, module.exports);
+    compileFunction(outputText, ['require', 'module', 'exports'])(imports, module, module.exports);
     return module.exports;
   }
   const Component = load(path.join(root, relative))[name]; assert.ok(Component);
   return { render() { cursor = 0; return Component(props); }, effects() { for (const effect of pending.splice(0)) effect(); }, dispose() { for (const slot of slots) (slot as EffectSlot | null | undefined)?.cleanup?.(); } };
 }
 function elements(node: ReactNode): Element[] { if (React.isValidElement<ElementProps>(node)) return [node, ...React.Children.toArray(node.props.children).flatMap(elements)]; return Array.isArray(node) ? node.flatMap(elements) : []; }
-const named = (tree: Element, name: string) => elements(tree).find(element => typeof element.type !== 'string' && element.type.name === name);
+
 const button = (tree: Element, label: string) => elements(tree).find(element => element.props.children === label && typeof element.props.onClick === 'function');
 const models = [{ id: 'sol', model: 'sol', displayName: 'Sol' }];
-const settings = { main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }, { id: 'local', displayName: 'Local server' }] };
+
 const choice = { id: 'local', provider: 'local', label: 'Local server', models: [] };
 const pickerProps = { choices: [choice], models: [], model: 'saved', choiceId: 'local', disabled: false, onChange() { assert.fail('Configuration must not change the selected model'); } };
 // The engine's shared list (lib/model-catalog.ts), which every open also refreshes; these tests are about connections.
@@ -52,9 +53,9 @@ const connectionsOnly = (handler: MockFetch): MockFetch => async url => url === 
 async function open(view: View<Element>) { view.render().props.onOpenChange(true); view.render(); view.effects(); await new Promise(setImmediate); return view.render(); }
 
 test('catalog error offers connection setup and closes the popup before navigation', async () => {
-  const previous = globalThis.fetch, calls: string[] = []; let configured = 0, view: View<Element>;
+  const previous = globalThis.fetch, calls: string[] = []; let configured = 0;
   setMockFetch(connectionsOnly(async url => { calls.push(url); return { ok: false, json: async () => ({ error: 'Set up the connection address.' }) }; }));
-  view = fixture('components/model-picker.tsx', 'ModelPicker', { ...pickerProps, onConfigure() { assert.equal(view.render().props.open, false); configured++; } });
+  const view = fixture('components/model-picker.tsx', 'ModelPicker', { ...pickerProps, onConfigure() { assert.equal(view.render().props.open, false); configured++; } });
   try {
     const tree = await open(view);
     const status = elements(tree).find(element => element.props.role === 'status' && element.props.title); assert.ok(status);

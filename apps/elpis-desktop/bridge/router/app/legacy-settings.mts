@@ -6,6 +6,7 @@ import { SettingsSchema, type SettingsOrigin } from '../policy.mts';
 import { autoMergeThreshold, teamDefaults } from './context.mts';
 import { PromptConfigSchema, type PromptConfig, type PromptVersion } from './prompts.mts';
 import type { Store } from './store.mts';
+import { KV } from '../sources/kv.mts';
 /** Settings save origin names recorded by versions before schema 11, mapped to current `SettingsOrigin` values. */
 export const ORIGINS: Readonly<Record<string, SettingsOrigin>> = { web: 'panel', 'orchestrator-tool': 'tool', 'policy-sync': 'sync', 'member-sync': 'sync' };
 /** Source kinds removed from dsh-superagent; the unified `github` Source now ingests Issues via notifications. */
@@ -21,7 +22,7 @@ export function migrateSettingsRecords(store: Store): void {
         store.set('settings', { ...settings, sources: Object.fromEntries(Object.entries(settings.sources).filter(([id]) => !REMOVED_SOURCES.includes(id))) });
     }
     // Preserve unparseable historical revisions as-is so a corrupt history entry does not block startup.
-    for (const name of store.keys('settings-version:')) {
+    for (const name of store.keys(KV.settings.version.prefix)) {
         const version = store.get<{
             source: string;
             settings: unknown;
@@ -167,7 +168,7 @@ export function normalize(config: unknown): PromptConfig {
  */
 export function migratePrompts(store: Store): void {
     // Preserve original configs on legacy or unparseable revisions, falling back to the last readable config so sessions always have valid prompts.
-    const versions = store.keys('prompt-version:').map(name => store.get<PromptVersion & {
+    const versions = store.keys(KV.prompts.version.prefix).map(name => store.get<PromptVersion & {
         config: unknown;
     }>(name)!).sort((a, b) => a.revision - b.revision);
     let readable: PromptConfig = { ...teamDefaults, skills: {} };
@@ -181,7 +182,7 @@ export function migratePrompts(store: Store): void {
             config = readable;
         }
         const kept = legacy || config === readable ? { legacy: version.legacy ?? { config: version.config } } : {};
-        store.set(`prompt-version:${version.revision}`, { ...version, config, ...kept });
+        store.set(KV.prompts.version(version.revision), { ...version, config, ...kept });
         readable = config;
     }
     if (store.get('prompt-settings-text') === 1)
@@ -193,8 +194,8 @@ export function migratePrompts(store: Store): void {
     } | undefined;
     const limit = typeof policy?.autoMergeLineLimit === 'number' ? policy.autoMergeLineLimit : 200;
     const mapped = ((Array.isArray(policy?.members) ? policy.members : []) as Member[]).filter(person => person.feishuId && person.github);
-    const revision = store.get<number>('prompt-revision');
-    const current = revision === undefined ? undefined : store.get<PromptVersion>(`prompt-version:${revision}`);
+    const revision = store.get(KV.prompts.revision);
+    const current = revision === undefined ? undefined : store.get(KV.prompts.version(revision));
     const config = current?.config ?? { ...teamDefaults, skills: {} };
     const delivery = config.delivery.includes(autoMergeThreshold(200)) ? config.delivery.replace(autoMergeThreshold(200), autoMergeThreshold(limit))
         : limit === 200 ? config.delivery : `${config.delivery}\nEnable auto-merge only on a PR that changes fewer than ${limit} lines (additions plus deletions).`;
@@ -205,7 +206,7 @@ export function migratePrompts(store: Store): void {
         return;
     const previous = current?.revision ?? 0;
     if (!current)
-        store.set('prompt-version:0', { revision: 0, previousRevision: null, savedAt: '', source: 'defaults', config });
-    store.set(`prompt-version:${previous + 1}`, { revision: previous + 1, previousRevision: previous, savedAt: new Date().toISOString(), source: 'settings-migration', config: next });
-    store.set('prompt-revision', previous + 1);
+        store.set(KV.prompts.version(0), { revision: 0, previousRevision: null, savedAt: '', source: 'defaults', config });
+    store.set(KV.prompts.version(previous + 1), { revision: previous + 1, previousRevision: previous, savedAt: new Date().toISOString(), source: 'settings-migration', config: next });
+    store.set(KV.prompts.revision, previous + 1);
 }

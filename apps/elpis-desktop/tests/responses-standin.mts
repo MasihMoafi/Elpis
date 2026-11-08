@@ -26,7 +26,7 @@ export async function model() {
   const server = http.createServer((req, res) => {
     let body = '';
     req.on('data', chunk => { body += chunk; });
-    req.on('end', async () => {
+    req.on('end', () => { void (async () => {
       if (req.method === 'GET') { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ data: [{ id: 'mock-model', object: 'model' }], models: [] })); return; }
       const request = JSON.parse(body || '{}') as { input?: InputItem[]; instructions?: string; tools?: unknown[] };
       if (req.url === undefined) throw Error('Request URL is missing');
@@ -74,7 +74,7 @@ export async function model() {
       state.last = recorded.truth = { input: reasoning + other, output: outReasoning + outOther, reasoning: reasoning + outReasoning };
       send('response.completed', { response: { id: `resp_${n}`, usage: { input_tokens: reasoning + other, input_tokens_details: null, output_tokens: outReasoning + outOther, output_tokens_details: { reasoning_tokens: outReasoning }, total_tokens: reasoning + other + outReasoning + outOther } } });
       res.end();
-    });
+    })().catch(error => { res.destroy(error); }); });
   });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); if (!address || typeof address === 'string') throw Error('Stand-in did not bind a port');

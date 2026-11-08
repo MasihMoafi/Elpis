@@ -52,7 +52,7 @@ function WhisperTypeSettings({ server, save, active, refreshKey, disabled = fals
     try { await save({ action: "whispertype", backend: backend === "auto" ? null : backend, model: model.trim() || null }); setBackendDraft(null); setModelDraft(null); setSaved(true); }
     catch (e) { setError(message(e)); } finally { setBusy(false); }
   }
-  return <form onSubmit={submit} aria-label="Transcription settings">
+  return <form onSubmit={event => { void submit(event); }} aria-label="Transcription settings">
     <SettingRow title="OpenRouter transcription model" description={server.whispertype?.explicit && backend === "openrouter" ? "Used for dictation in every chat." : "For chats that run on OpenRouter. Choose a model that accepts audio input; it is required there."}>
       <div className="settings-field-stack text-sm">
         <OptionSelect aria-label="OpenRouter transcription model" aria-describedby="openrouter-transcription-status" className="settings-choice" value={model} disabled={disabled || busy || (!models.length && !model)} onChange={e => { setSaved(false); setModelDraft(e.target.value === savedModel ? null : e.target.value); }}>

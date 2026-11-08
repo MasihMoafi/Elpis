@@ -1,4 +1,4 @@
-const { chooseOption, controlValue, leaveSettings, sidebar, openSettings } = require('./controls.cts');
+const { chooseOption, controlValue, sidebar, openSettings } = require('./controls.cts');
 const {test}=require('node:test');
 const assert: typeof import('node:assert/strict')=require('node:assert/strict');
 const http: typeof import('node:http')=require('node:http');
@@ -17,7 +17,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
  let config: Config={version:'v1',configPath:'/tmp/config.toml',write:{available:true},managed:{modelProvider:null},providers:[]};
  const subscription={state:'notConnected',models:[],usage:[]};
  const accounts={openai:{auth:{state:'signedOut'},usage:[],usageError:null},claude:subscription,gemini:subscription,openrouter:[],local:[]};
- const server=http.createServer(async(req,res)=>{
+ const server=http.createServer((req, res) => { void (async () => {
   assert.ok(req.url);const route=new URL(req.url,'http://local').pathname;
   const json=(body: unknown,status=200)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(body));};
   if(route==='/api/events'){res.writeHead(200,{'content-type':'text/event-stream'});res.write('event: connection\ndata: {"connected":true}\n\n');clients.add(res);req.on('close',()=>clients.delete(res));return;}
@@ -35,7 +35,7 @@ test('provider setup preserves edits on conflict, refreshes choices and never re
    return json(config);
   }
   try{const file=path.join(__dirname,'../out',route==='/'?'index.html':route);res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(await fs.readFile(file));}catch{res.statusCode=404;res.end();}
- });await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+ })().catch(error => { res.destroy(error); }); });await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
  const address=server.address();assert.ok(address && typeof address !== 'string');
  const browser=await chromium.launch({executablePath:process.env.ELPIS_CHROMIUM||undefined,headless:true});
  const page=await browser.newPage({viewport:{width:1440,height:1000}});page.setDefaultTimeout(7000);

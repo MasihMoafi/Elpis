@@ -17,7 +17,7 @@ test('Mother runtime modules and instruction assets ship together', async () => 
   for (const entry of await fs.readdir(root, { recursive: true, withFileTypes: true })) {
     if (!entry.isFile()) continue;
     const file = path.relative(root, path.join(entry.parentPath, entry.name)).split(path.sep).join('/');
-    if (file.includes('fixtures/') || file.endsWith('.test.mts') || file === 'test-support.mts') continue;
+    if (file.includes('fixtures/') || path.basename(file) === 'fixtures.mts' || file.endsWith('.test.mts') || file === 'test-support.mts') continue;
     if (/\.(mts|md)$/.test(file) || file === 'LICENSE-dsh-superagent') assert(production.includes(`bridge/router/${file}`), `Mother runtime asset missing: ${file}`);
   }
 });

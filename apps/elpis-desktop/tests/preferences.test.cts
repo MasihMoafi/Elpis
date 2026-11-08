@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 // Settings → General and Notifications: the preference, queue and notification modules app/page.tsx wires in.
 // Compiles the real TypeScript modules; no browser, runtime or network.
 const test = require('node:test');
@@ -56,7 +57,7 @@ function loader() {
       const resolved = ['.ts', '.tsx', ''].map(extension => base + extension).find(fs.existsSync);
       if (!resolved) throw Error(`Cannot resolve ${id}`); return load(resolved);
     };
-    new Function('require', 'exports', 'module', code)(local, module.exports, module);
+    compileFunction(code, ['require', 'exports', 'module'])(local, module.exports, module);
     // The page opens its session before any request goes out (lib/api.ts); here nothing else would.
     if (file.endsWith(path.join('lib', 'api.ts')) && typeof module.exports.openSession === 'function') module.exports.openSession();
     return module.exports;

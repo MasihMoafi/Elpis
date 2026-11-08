@@ -1,4 +1,4 @@
-const { leaveSettings, sidebar, openSettings } = require('./controls.cts');
+const { leaveSettings, openSettings } = require('./controls.cts');
 // Account usage and Models & accounts against a local adapter: one shared usage store, reported usage that stays,
 // no internal gateway listed as a server, and the settings search spacing. No runtime or model calls.
 const { test } = require('node:test');
@@ -28,7 +28,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
   const settings = { version: 'v1', main: { model: 'luna', provider: 'openai' }, background: { model: null, provider: null }, providers: [{ id: 'openai', displayName: 'OpenAI' }],
     smartPrune: { enabled: null, explicitOverride: { available: false, reason: 'Not available' } }, memory: { generate: null, use: null, extractionModel: null, consolidationModel: null },
     options: { defaultPermissions: 'full' }, managed: {}, write: { available: true } };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://local'); for await (const chunk of req) void chunk;
     const json = (value: object) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (url.pathname === '/api/events') { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('event: connection\ndata: {"connected":true}\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
@@ -48,7 +48,7 @@ test('usage is one shared store whose reported values stay until sign-out; gatew
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(__dirname, '../out', url.pathname === '/' ? 'index.html' : url.pathname); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(await fs.readFile(file)); }
     catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const accountChanged = () => { for (const client of clients) client.write('event: account\ndata: {}\n\n'); };
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });

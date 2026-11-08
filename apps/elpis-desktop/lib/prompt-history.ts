@@ -87,7 +87,7 @@ export function usePromptKeys(resetKey: string, wiring: Wiring) {
     if (restore) write(search.draft, "end");
     else { const target = box(); if (target) target.setSelectionRange(target.value.length, target.value.length); }
   };
-  const cancel = useCallback(() => { if (searching.current) finish(false); stepping.current = null; setStatus(previous => previous?.kind === "history" ? null : previous); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const cancel = useCallback(() => { if (searching.current) finish(false); stepping.current = null; setStatus(previous => previous?.kind === "history" ? null : previous); }, []);
   useEffect(() => { stepping.current = null; searching.current = null; armed.current = null; clearTimer(); setStatus(null); return clearTimer; }, [resetKey]);
 
   const find = (query: string, from: number, step: 1 | -1) => {
@@ -160,7 +160,7 @@ export function usePromptKeys(resetKey: string, wiring: Wiring) {
     here.index = index; here.shown = prompt;
     latest.current.write(prompt, "end"); setStatus({ kind: "history", index: index + 1, total: prompts.length });
     return true;
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return { onKeyDown, status, cancel };
 }

@@ -11,7 +11,7 @@ import { startDesktopServer } from './server.mts';
 
 type Request = { id?: number; method: string; params: { threadId: string; voice: string; model: string; modelProvider: string; text: string; transport: { type: string }; input: { text: string }[]; [key: string]: unknown } };
 type SpeechEvent = { type: string; id: string; [key: string]: unknown };
-type TestState = { account: string | null; provider: string; voice: string; configModel: string; listed: string[]; holdStart: boolean; failAppend: boolean; holdCleanup: boolean; busy: boolean; model?: string; finishBusyRead?: boolean; finishStart?: () => void; finishCleanup?: () => void; beforeTurnAnswer?: (turn: { id: string; status: string }) => void };
+type TestState = { account: string | null; provider: string; voice: string; configModel: string; listed: string[]; holdStart: boolean; failAppend: boolean; holdCleanup: boolean; busy: boolean; model?: string; finishStart?: () => void; finishCleanup?: () => void; beforeTurnAnswer?: (turn: { id: string; status: string }) => void };
 type TestResponse = EventEmitter & { body: ReadableStream<Uint8Array>; status: number; destroyed: boolean; headersSent: boolean; headers: { get: (name: string) => string | undefined }; setHeader: (name: string, value: string) => void; writeHead: (status: number, values?: Record<string, string>) => void; flushHeaders: () => void; write: (line: string) => void; end: (line?: string) => void; destroy: () => void; text: () => Promise<string> };
 
 function required<T>(value: T | null | undefined): T { assert.ok(value); return value; }
@@ -52,16 +52,12 @@ async function fixture(t: TestContext, { loveSpotAudio }: { loveSpotAudio?: { av
     if (!request.id) return;
     const answer = (result: unknown) => socket.emit('message', JSON.stringify({ id: request.id, result }));
     queueMicrotask(() => {
-      if (request.method === 'account/read') return answer({ account: { type: state.account } });
+      if (request.method === 'account/read') return answer({ account: state.account === null ? null : { type: state.account } });
       if (request.method === 'config/read') return answer({ config: { realtime: { voice: state.voice }, model: state.configModel, model_provider: 'openai' } });
       if (request.method === 'model/list') return answer({ data: state.listed.map(model => ({ id: model, model })), nextCursor: null });
       if (request.method === 'thread/realtime/listVoices') return answer({ voices: { v1: ['cove', 'juniper'], defaultV1: 'cove' } });
       if (request.method === 'thread/read') {
         answer({ thread: { id: request.params.threadId, model: state.model ?? (state.provider === 'openai' ? 'gpt-5' : 'claude/sonnet'), modelProvider: state.provider, status: { type: state.busy ? 'active' : 'idle' } } });
-        if (state.finishBusyRead) {
-          state.finishBusyRead = false;
-          notify('turn/completed', { threadId: CHAT, turn: { id: 'typed-turn', status: 'completed', items: [] } });
-        }
         return;
       }
       if (request.method === 'thread/resume') return answer({ thread: { id: CHAT } });
@@ -69,7 +65,7 @@ async function fixture(t: TestContext, { loveSpotAudio }: { loveSpotAudio?: { av
       if (request.method === 'thread/start') { const n = socket.sent.filter(row => row.method === 'thread/start').length; return answer({ thread: { id: n === 1 ? SPEECH : `00000000-0000-0000-0000-${String(100 + n).padStart(12, '0')}`, ephemeral: true } }); }
       if (request.method === 'turn/start') {
         state.busy = true;
-        const turn = { id: `voice-turn-${socket.sent.filter(row => row.method === 'turn/start').length}`, status: 'inProgress' };
+        const turn = { id: `voice-turn-${socket.sent.filter(row => row.method === 'turn/start').length}`, status: 'inProgress', items: [] };
         state.beforeTurnAnswer?.(turn);
         return answer({ turn });
       }
@@ -311,8 +307,7 @@ test('Claude and Antigravity voice handoffs queue ordinary turns and speak only 
     handoff('first', 'First spoken request'); handoff('first', 'First spoken request'); handoff('second', 'Second spoken request');
     await new Promise(resolve => setImmediate(resolve));
     assert.equal(f.methods('turn/start').length, 0, 'a typed turn is never steered or interrupted');
-    f.state.finishBusyRead = true;
-    f.notify('thread/status/changed', { threadId: CHAT, status: { type: 'active' } });
+    f.notify('turn/completed', { threadId: CHAT, turn: { id: 'typed-turn', status: 'completed', items: [] } });
     await until(() => f.methods('turn/start').length === 1);
     const sent = required(f.methods('turn/start')[0]).params;
     assert.equal(sent.threadId, CHAT);

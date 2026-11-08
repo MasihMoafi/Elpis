@@ -38,7 +38,7 @@ function planFor(body: Plan, fill = ['src']) {
 const ENDED = new Set(['succeeded', 'completed', 'failed', 'cancelled']);
 async function openCanvas({ width = 1440, height = 900, repository = false, graph = null, listed = null, agentOutput = null, settings = {}, providerModels = {}, desktop = false, autoLayout, folders = ['docs', 'src', 'src/lib', 'tests'], refuseReport = '', files = {}, texts = {}, extraModels = [], models = null, planned = {} }: Options = {}) {
   const posts: { path: string; body: unknown }[] = [], plans: Plan[] = [], runs: Run[] = [];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (req.method === 'POST' && url.pathname !== '/api/session') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : null });
@@ -92,7 +92,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
     catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}), headless: true });
   const page = await browser.newPage({ viewport: { width, height } }); page.setDefaultTimeout(6000);

@@ -17,7 +17,7 @@ test('a changed API default offers its own models and keeps the selected provide
   const bothProviders = [{ id: 'anthropic-credits', displayName: 'Anthropic credits' }, { id: 'openai', displayName: 'OpenAI' }];
   let unavailable = false, main: { model: string; provider: string } = { model: catalog[0].model, provider: 'anthropic-credits' }, activeThread = thread, configuredProviders = bothProviders;
   let managedProvider: string | null = null;
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://local');
     let wire = ''; for await (const chunk of req) wire += chunk;
     const body = wire ? JSON.parse(wire) as { model?: string; provider?: string } : undefined;
@@ -57,7 +57,7 @@ test('a changed API default offers its own models and keeps the selected provide
       res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html');
       res.end(await fs.readFile(file));
     } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });

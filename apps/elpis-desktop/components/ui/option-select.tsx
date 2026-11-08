@@ -8,13 +8,17 @@ type Props = Omit<React.ComponentProps<"select">, "onChange" | "value" | "defaul
   value?: string | number; defaultValue?: string | number; onChange?: (event: Change) => void;
 };
 type Item = { value: string; label: ReactNode; hint?: string | undefined; disabled: boolean };
+function optionText(children: ReactNode): string {
+  return Children.toArray(children).map(child => isValidElement<{ children?: ReactNode }>(child) ? optionText(child.props.children)
+    : typeof child === "string" || typeof child === "number" || typeof child === "bigint" ? String(child) : "").join("");
+}
 /** Reads `<option>`s; an option's `data-hint` shows under its name in the menu but not in the closed control. */
 function options(children: ReactNode): Item[] {
   const result: Item[] = [];
   Children.forEach(children, child => {
     if (!isValidElement<{ children?: ReactNode; value?: string | number; disabled?: boolean; "data-hint"?: string }>(child)) return;
     if (child.type === Fragment || child.type === "optgroup") result.push(...options(child.props.children));
-    else if (child.type === "option") result.push({ value: String(child.props.value ?? child.props.children ?? ""), label: child.props.children, hint: child.props["data-hint"], disabled: !!child.props.disabled });
+    else if (child.type === "option") result.push({ value: child.props.value == null ? optionText(child.props.children) : String(child.props.value), label: child.props.children, hint: child.props["data-hint"], disabled: !!child.props.disabled });
   });
   return result;
 }

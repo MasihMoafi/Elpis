@@ -13,13 +13,13 @@ function fixture({unsupported=false}={}) {
     {id:uuid(6),parentThreadId:ROOT,source:{subAgent:{other:`work_graph:${GRAPH}:wrong_assigned`}}},
     {id:uuid(7),parentThreadId:ROOT,source:{subAgent:{thread_spawn:{agent_path:'/root/unrelated'}}}},
   ].map(thread=>({...thread,preview:'You are a bounded worker in this workspace.',model:'shared-model',cwd:'/same/workspace',status:{type:'idle'}}));
-  const records={data:[{id:GRAPH,tasks:[
+  const records={data:[{id:GRAPH,name:'Inspect endpoints',status:'running',maxConcurrency:2,eventCount:0,worktreeReport:null,error:null,tasks:[
     {id:'inspect',title:'Inspect endpoint A',assignedThreadId:uuid(2)},
     {id:'review',title:'Review endpoint B',assignedThreadId:uuid(3)},
     {id:'wrong_graph',title:'Wrong graph title',assignedThreadId:uuid(4)},
     {id:'another_task',title:'Wrong task title',assignedThreadId:uuid(5)},
     {id:'wrong_assigned',title:'Wrong assigned title',assignedThreadId:uuid(7)},
-  ]}]};
+  ].map(task=>({...task,kind:'implement',status:'running',dependencies:[],provider:null,model:null,result:null,evidence:[],failureReason:null}))}]};
   const calls: { id: number; method: string; params: { threadId: string } }[]=[];
   class Socket extends EventEmitter { send(raw: string){const request=JSON.parse(raw);if(!request.id)return;calls.push(request);queueMicrotask(()=>{const result=request.method==='thread/list'?{data:threads}:request.method==='thread/read'?{thread:threads.find(thread=>thread.id===request.params.threadId)}:request.method==='thread/items/list'?{data:[]}:request.method==='workGraph/list'?records:{};this.emit('message',JSON.stringify(request.method==='workGraph/list'&&unsupported?{id:request.id,error:{code:-32601,message:'Unknown method'}}:{id:request.id,result}));});} close(){} }
   return {client:new DesktopClient(new Socket()),calls};

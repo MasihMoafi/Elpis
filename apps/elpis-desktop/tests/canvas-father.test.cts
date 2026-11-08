@@ -11,7 +11,7 @@ type Post = { path: string; body: { agents: boolean } };
 type Task = { id: string; title: string; dependsOn: string[] };
 
 test('past ten agents the Father agent runs the rest in his own chat, after the Mother agent, and reports to her', async () => {
-  const { page, canvas, node, runs, posts, agentCount, fit, errors, close } = await openCanvas({
+  const { page, canvas, runs, posts, agentCount, fit, errors, close } = await openCanvas({
     listed: (run: Run, looks: number) => looks ? { id: run.graphId, name: run.name, status: 'succeeded',
       tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: { summary: `Accepted result: ${task.title}` } })) } : undefined,
   });
@@ -75,7 +75,7 @@ const twelve = { name: 'Twelve writers', maxAgents: 12, edges: [], nodes: Array.
 })) };
 
 test('a Father agent report the bridge could not deliver says why, and the run stays open without a second Father agent', async () => {
-  const { page, canvas, runs, posts, errors, close } = await openCanvas({ graph: twelve, refuseReport: 'try again',
+  const { canvas, runs, posts, errors, close } = await openCanvas({ graph: twelve, refuseReport: 'try again',
     listed: (run: Run, looks: number) => looks ? { id: run.graphId, status: run.graphId === 'graph-1' ? 'succeeded' : 'failed',
       tasks: run.tasks.map(task => ({ id: task.id, status: 'succeeded', assignedThreadId: null, result: { summary: `Evidence ${task.id}` } })) } : undefined,
   });

@@ -51,7 +51,7 @@ export function parseHref(href: string): FileRef | null {
 export function withoutTail(text: string) {
   if (/[.,;:!?]$/.test(text)) text = text.slice(0, -1);
   for (const [open, close] of [["(", ")"], ["[", "]"]] as const) {
-    let opened = text.split(open).length - 1, closed = text.split(close).length - 1;
+    const opened = text.split(open).length - 1; let closed = text.split(close).length - 1;
     while (closed > opened && text.endsWith(close)) { text = text.slice(0, -1); closed--; }
   }
   return text;

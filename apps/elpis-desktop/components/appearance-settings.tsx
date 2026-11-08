@@ -78,7 +78,7 @@ export function AppearanceSettings({ theme, onTheme }: { theme: ThemeChoice; onT
     {selectedTheme && <ThemeEditor theme={selectedTheme} onSave={saveTheme} onDelete={() => setDeleting(selectedTheme)} />}
     <ConfirmDelete request={deleting} names={deleting ? [deleting.name] : []} noun="theme"
       description="This removes the saved theme and returns to the Elpis palette."
-      onDelete={async removed => { savePreferences({ customThemes: JSON.stringify(savedThemes.filter(item => item.id !== removed.id)), selectedPalette: "elpis" }); }}
+      onDelete={removed => { savePreferences({ customThemes: JSON.stringify(savedThemes.filter(item => item.id !== removed.id)), selectedPalette: "elpis" }); }}
       onClose={() => setDeleting(null)} />
     {notice && <SettingsNotice tone="alert">{notice}</SettingsNotice>}
   </div>;

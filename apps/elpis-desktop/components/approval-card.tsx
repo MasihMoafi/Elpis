@@ -56,7 +56,7 @@ export function ApprovalCard({ approval, answer, deny, answers, onAnswerChange, 
   const toolParams = params._meta?.tool_params_display ?? params._meta?.tool_params;
   const card = { busy, error, ...(globalKeys === undefined ? {} : { globalKeys }), className: "approval" };
 
-  if (questions) return <QuestionCard {...card} questions={questions} answers={answers} onChange={changeAnswer} onSubmit={() => send({ answers: Object.fromEntries(questions.map(question => [question.id, questionAnswer(question, answers[question.id])])) })} />;
+  if (questions) return <QuestionCard {...card} questions={questions} answers={answers} onChange={changeAnswer} onSubmit={() => { void send({ answers: Object.fromEntries(questions.map(question => [question.id, questionAnswer(question, answers[question.id])])) }); }} />;
 
   let choices: Choice[];
   if (elicitation) choices = elicitationChoices(params).map(choice => ({

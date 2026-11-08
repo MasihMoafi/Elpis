@@ -13,7 +13,7 @@ export function useWorkflowSidebar(enabled: boolean, threads: Thread[], hidden: 
   const catalog = useWorkflowCatalog(enabled);
   const listed = useMemo(() => new Set(threads.map(thread => thread.id)), [threads]);
   /** Runs with a chat in the list, not deleted. */
-  const runs = useMemo(() => catalog.runs.filter(run => !hidden.current.has(run.rootThreadId) && (listed.has(run.rootThreadId) || workflowMembers(run).some(member => listed.has(member.threadId)))), [catalog.runs, listed]); // eslint-disable-line react-hooks/exhaustive-deps
+  const runs = useMemo(() => catalog.runs.filter(run => !hidden.current.has(run.rootThreadId) && (listed.has(run.rootThreadId) || workflowMembers(run).some(member => listed.has(member.threadId)))), [catalog.runs, listed]);
   /** Each run by its root chat; the newest run wins a root it shares. */
   const roots = useMemo(() => new Map([...runs].sort((a, b) => (a.startedAt ?? a.createdAt ?? 0) - (b.startedAt ?? b.createdAt ?? 0)).map(run => [run.rootThreadId, run])), [runs]);
   const steps = useMemo(() => new Map<string, Step>(runs.flatMap(run => workflowMembers(run).map(member => [member.threadId, { parent: run.rootThreadId, title: member.title, runId: run.id, mother: !!member.mother, check: !!member.check }] as const))), [runs]);

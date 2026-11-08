@@ -54,7 +54,7 @@ async function fixtureImpl({ staticDir = out, cwd = CWD, width = 1130, height = 
       { turnId: id, item: { id: `a-${id}`, type: 'agentMessage', text: reply }, startedAtMs: at + 5000, completedAtMs: at + 5000 }];
     return startedAt === null ? turn.map(({ turnId, item }) => ({ turnId, item })) : turn;
   });
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     if (!req.url) throw Error('Request URL is missing'); const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     requests.push({ method: req.method, path: url.pathname });
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -107,7 +107,7 @@ async function fixtureImpl({ staticDir = out, cwd = CWD, width = 1130, height = 
       const file = path.join(staticDir, url.pathname === '/' ? 'index.html' : url.pathname), content = await fs.readFile(file);
       res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content);
     } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); if (!address || typeof address === 'string') throw Error('Fixture did not bind a port');
   let browser: FixtureBrowser | undefined;

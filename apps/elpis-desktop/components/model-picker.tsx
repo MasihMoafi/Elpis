@@ -25,7 +25,7 @@ export function ProviderKeyForm({ provider, label, onSaved }: { provider: string
     catch (cause) { setError(errorText(cause)); }
     finally { setBusy(false); }
   }
-  return <form className="provider-key-form" aria-label={`${label} API key`} onSubmit={save} onKeyDown={event => event.stopPropagation()}>
+  return <form className="provider-key-form" aria-label={`${label} API key`} onSubmit={event => { void save(event); }} onKeyDown={event => event.stopPropagation()}>
     <p><strong>{label} needs an API key.</strong> {KEY_PAGES[provider] && <>Get one at {KEY_PAGES[provider]}. </>}It is saved on this computer, readable by you alone, and never shown again.</p>
     <div className="provider-key-row"><Input type="password" aria-label={`${label} API key`} placeholder="Paste the key" value={key} maxLength={8192} autoComplete="off" spellCheck={false} onChange={event => setKey(event.target.value)} />
       <Button type="submit" size="sm" disabled={busy || !key.trim()}>{busy ? "Saving…" : "Save key"}</Button></div>
@@ -83,7 +83,7 @@ export function ModelPicker({ choices, models, model, choiceId, defaultModel, di
         .catch(cause => { if (!disposed) setCatalogs(previous => ({ ...previous, [id]: { version, data: previous[id]?.data ?? [], loaded: false, loading: false, error: errorText(cause) } })); });
     }
     return () => { disposed = true; };
-  }, [open, disabled, targetKey, retry]); // eslint-disable-line react-hooks/exhaustive-deps -- targets are keyed by targetKey; reuse successful catalogs only for the same saved configuration.
+  }, [open, disabled, targetKey, retry]); // targets are keyed by targetKey; reuse successful catalogs only for the same saved configuration.
   // A subscription's models (claude/…, agy/…) belong to its own connection, never to another's live list (5 Nov: OpenAI's
   // live list, now loaded in All, carried the engine's Claude subscription models). A connection's own saved models stay.
   const own = (choice: ProviderChoice, item: Model) => { const subscription = subscriptionOf(item.model); return !subscription || subscription.prefix === choice.id; };

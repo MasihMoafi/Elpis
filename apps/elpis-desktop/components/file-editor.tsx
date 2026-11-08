@@ -108,8 +108,8 @@ export function FileEditor({ label, value, marks, softWrap = false, onChange, on
     observer.observe(box); observer.observe(content);
     return () => observer.disconnect();
   }, [value, softWrap]);
-  useLayoutEffect(() => { if (marks?.line) show(marks.line - 1, true); }, [marks?.focus, label]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const match = found[current]; if (current >= 0 && match) show(match.line); }, [current, find?.query]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { if (marks?.line) show(marks.line - 1, true); }, [marks?.focus, label]);
+  useEffect(() => { const match = found[current]; if (current >= 0 && match) show(match.line); }, [current, find?.query]);
   useEffect(() => { if (find?.focus) { field.current?.focus(); field.current?.select(); } }, [find?.focus]);
 
   const openFind = () => {

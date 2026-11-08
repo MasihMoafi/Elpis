@@ -22,6 +22,6 @@ export function useChatTabs(onError: (message: string) => void) {
   useEffect(() => {
     const store = window.elpisDesktop?.storage;
     if (restoreDone && store && !writeTabs(tabs, store)) onError("Could not save the open chat tabs on this device.");
-  }, [tabs, restoreDone]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabs, restoreDone]);
   return { tabs, tabsRef, updateTabs, restoreTabs, restored };
 }

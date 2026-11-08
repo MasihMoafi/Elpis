@@ -1,7 +1,9 @@
-const { test } = require('node:test');
+const { test }: typeof import('node:test') = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const os = require('node:os');
+const { createTestTempDir, removeTestTempDir }: typeof import('./temp-root.cts') = require('./temp-root.cts');
 const { spawn, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const run = promisify(execFile);
@@ -11,8 +13,9 @@ const { assertUiFit } = require('./ui-fit.cts');
 const projectChat = (cwd: string) => ({ id: 'chat-a', name: 'Project preview', cwd, model: 'sol', modelProvider: 'openai', desktopAccess: { writable: true, mode: 'direct' }, status: { type: 'idle' } });
 const projectRoutes = (cwd: string) => ({ '/api/threads/chat-a/resume': () => ({ thread: projectChat(cwd) }) });
 
-for (const scheme of ['light']) test(`real Electron opens the started project in the native browser and stops it with a click (${scheme})`, async () => {
-  const root = await fs.mkdtemp('/tmp/elpis-preview-native-');
+for (const scheme of ['light']) test(`real Electron opens the started project in the native browser and stops it with a click (${scheme})`, async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), 'elpis-preview-native-'));
+  t.after(() => removeTestTempDir(root));
   await fs.writeFile(path.join(root, 'package.json'), JSON.stringify({ scripts: { dev: 'node server.cjs' } }));
   const html = `<!doctype html><title>Project preview proof</title><style>body{font:16px system-ui;padding:24px;color:#222;background:#fafafa}button{font:inherit;padding:8px 12px}</style><h1>Project preview proof</h1><button onclick="this.textContent='Clicked in preview'">Test this page</button>`;
   await fs.writeFile(path.join(root, 'server.cjs'), `require('node:http').createServer((q,s)=>{s.setHeader('Content-Type','text/html');s.end(${JSON.stringify(html)})}).listen(process.env.PORT,'127.0.0.1',()=>console.log('native preview ready'))`);
@@ -42,6 +45,7 @@ for (const scheme of ['light']) test(`real Electron opens the started project in
     await web.getByRole('button', { name: 'Clicked in preview' }).waitFor();
     await page.getByRole('button', { name: 'View logs', exact: true }).click();
     await page.getByRole('log').getByText(/native preview ready/).waitFor();
+    assert.deepEqual(await page.locator('.workspace-notices [role="alert"]').allTextContents(), [], 'native preview must not surface a desktop storage error');
     await assertUiFit(page.getByRole('region', { name: 'Dev server preview' }), 'native controls fit');
     await web.getByRole('button', { name: 'Clicked in preview' }).click();
     await web.waitForFunction(() => innerWidth > 300 && innerHeight > 200);

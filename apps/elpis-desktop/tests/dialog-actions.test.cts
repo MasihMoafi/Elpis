@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 // Focused renderer check of the real shared components, like preferences.test.cts; no app build or bridge.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -21,7 +22,7 @@ function components() {
       if (!target) throw new Error(`Cannot resolve ${id}`);
       return load(target);
     };
-    new Function('require', 'exports', 'module', code)(local, module.exports, module);
+    compileFunction(code, ['require', 'exports', 'module'])(local, module.exports, module);
     return module.exports;
   };
   return { ...load(path.join(root, 'components/ui/alert-dialog.tsx')), ...load(path.join(root, 'components/ui/button.tsx')) };

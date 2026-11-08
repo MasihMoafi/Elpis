@@ -247,8 +247,8 @@ export function MatildaCompanion() {
     if (grow) resize(placeRef.current.size + grow * SIZE.step * step); else move(delta![0] * step, delta![1] * step);
     void save();
   };
-  useLayoutEffect(() => { if (state?.pinned) fit(); }, [state?.pinned]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { const resized = () => fit(); window.addEventListener("resize", resized); return () => window.removeEventListener("resize", resized); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => { if (state?.pinned) fit(); }, [state?.pinned]);
+  useEffect(() => { const resized = () => fit(); window.addEventListener("resize", resized); return () => window.removeEventListener("resize", resized); }, []);
   useEffect(() => {
     if (!state?.pinned) return;
     let panes: Element[] = [];
@@ -260,7 +260,7 @@ export function MatildaCompanion() {
     };
     const changed = new MutationObserver(discover); changed.observe(document.body, { childList: true, subtree: true }); discover();
     return () => { changed.disconnect(); resized.disconnect(); };
-  }, [state?.pinned]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state?.pinned]);
   useEffect(() => {
     const capture = window.elpisDesktop?.screenCapture;
     if (!capture) return;
@@ -291,17 +291,12 @@ export function MatildaCompanion() {
       onPointerCancel={() => { const start = drag.current; if (start) put(start.left, start.top, start.size); release(); }}
       onKeyDown={keys(false)} onPointerEnter={() => mood.setHovered(true)} onPointerLeave={() => mood.setHovered(false)}>
       {/* A palette with its own character shows her, one picture for every mood (lib/theme-characters.ts). */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       {character && <img src={character.image} alt="Matilda" data-character={character.name} width={size} height={size} draggable={false} className="matilda-theme-face select-none" />}
       {!character && <>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={MATILDA_SHOTS_LIGHT.listening} alt="Matilda" width={size} height={size} draggable={false} className="matilda-avatar-light select-none" />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={MATILDA_SHOTS.listening} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark select-none" />
       {MOODS.flatMap(name => ([
-        // eslint-disable-next-line @next/next/no-img-element
         <img key={`${name}-light`} src={MATILDA_SHOTS_LIGHT[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-light matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
-        // eslint-disable-next-line @next/next/no-img-element
         <img key={`${name}-dark`} src={MATILDA_SHOTS[name]} alt="" aria-hidden="true" width={size} height={size} draggable={false} className="matilda-avatar-dark matilda-mood select-none" data-mood={name} data-shown={mood.shown === name} />,
       ]))}
       </>}

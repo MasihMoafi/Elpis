@@ -48,6 +48,6 @@ try {
   await fs.writeFile('/tmp/love-agents-live-evidence.json', JSON.stringify(evidence, null, 2));
   process.stdout.write(`${JSON.stringify(evidence)}\n`);
 } finally {
-  store?.close();
+  await store?.close();
   removeTestTempDir(root);
 }

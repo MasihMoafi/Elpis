@@ -8,7 +8,6 @@ type TestWindow = typeof window & { __push(patch: object): void };
 const test: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const { loveSpotFixture }: { loveSpotFixture(options: LoveSpotOptions): Promise<LoveSpotFixture> } = require('./love-spot-fixture.cts');
-const { fixture }: { fixture(options: Options): Promise<ParityFixture> } = require('./parity-fixture.cts');
 
 // Fitting her into a narrow window is temporary: it never rewrites where she was put (27 Oct: she "jumps from top
 // right to that position when I opened something").

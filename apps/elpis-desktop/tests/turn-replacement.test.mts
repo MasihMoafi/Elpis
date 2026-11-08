@@ -1,3 +1,4 @@
+import { compileFunction } from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, statSync } from 'node:fs';
@@ -95,7 +96,7 @@ function loadComponent(file: string): ReturnType<NodeJS.Require> {
     return loadComponent(source);
   };
   const { outputText } = transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX } });
-  new Function('require', 'module', 'exports', outputText)(load, module, module.exports);
+  compileFunction(outputText, ['require', 'module', 'exports'])(load, module, module.exports);
   return module.exports;
 }
 const { ChatMessage } = loadComponent(path.join(root, 'components/chat-message.tsx'));

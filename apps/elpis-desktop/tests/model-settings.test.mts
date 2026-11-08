@@ -1,3 +1,4 @@
+import { compileFunction } from 'node:vm';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -34,7 +35,7 @@ function load<T = Element>(relative: string, react: object = React): Record<stri
       for (const extension of ['', '.tsx', '.ts', '.js']) { try { readFileSync(base + extension); return compiled(base + extension); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && (error as NodeJS.ErrnoException).code !== 'EISDIR') throw error; } }
       throw new Error(`Missing local module ${id}`);
     };
-    new Function('require', 'exports', 'module', code)(localRequire, module.exports, module);
+    compileFunction(code, ['require', 'exports', 'module'])(localRequire, module.exports, module);
     return module.exports;
   }
   const exports = compiled(relative);

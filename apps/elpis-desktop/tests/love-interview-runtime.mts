@@ -56,7 +56,7 @@ export async function interviewRuntime({ toolsDirectory = fileURLToPath(new URL(
     answer(value: string) { update({ answer: value, failure: null }); }, fail(value: string) { update({ failure: value }); },
     hold() { update({ hold: true }); }, resume() { update({ hold: false }); },
     async close() {
-      await runner.close(); store.close(); client.close();
+      await runner.close(); await store.close(); client.close();
       await stop();
       // Owned short socket/home fixtures are left for boot cleanup.
     },

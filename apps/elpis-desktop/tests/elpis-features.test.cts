@@ -14,7 +14,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
   // As the bridge does: every /api request is refused until the page trades its #token for a session.
   let session = false; const refused: string[] = [];
   const ledger = { used: 50000, window: 200000, categories: [['userMessages', 980], ['toolCalls', 490], ['toolResults', 26471], ['systemInstructions', 7843]].map(([id, tokens]) => ({ id, label: id, tokens })) };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (url.pathname === '/api/session' && req.method === 'POST') { session = JSON.parse(raw).token === 'fixture'; return json({ authenticated: session }); }
@@ -25,7 +25,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
     if (url.pathname === '/api/models') return json({ data: [{ id: 'sol', model: 'sol', displayName: 'Sol' }], nextCursor: null });
     if (url.pathname === '/api/threads') return json({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : [thread], nextCursor: null });
     if (url.pathname === '/api/context/switches') {
-      if (req.method === 'POST') { const body = JSON.parse(raw); saved.push(body); const { version, ...changes } = body; Object.assign(switches, changes, { version: `v${saved.length + 1}` }); }
+      if (req.method === 'POST') { const body = JSON.parse(raw); saved.push(body); const { version: _version, ...changes } = body; Object.assign(switches, changes, { version: `v${saved.length + 1}` }); }
       return json(switches);
     }
     if (url.pathname === '/api/threads/ledger/context') return json({ threadId: 'ledger', tokenUsage: null, smartPrune: null, ledger });
@@ -34,7 +34,7 @@ test('the main chat shows Elpis features under the message box, one click each, 
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(process.env.ELPIS_OUT_DIR || path.join(__dirname, '../out'), relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
     catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Server has no TCP address');

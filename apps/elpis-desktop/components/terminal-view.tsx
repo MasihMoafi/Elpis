@@ -117,7 +117,7 @@ export function TerminalView({ termKey, cwd, dark, launch }: Props) {
       shown.changed(); shown.term.focus();
     });
     return () => { disposed = true; const shown = current.current; if (shown) shown.changed = () => {}; current.current = null; };
-  }, [api, termKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, termKey]);
 
   // Resize: the panel's size gives the shell its rows and columns.
   useEffect(() => {

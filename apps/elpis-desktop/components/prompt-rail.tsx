@@ -124,7 +124,7 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     }).catch(() => { if (!cancelled) setIndexState({ threadId, status: "error" }); });
     return () => { cancelled = true; };
   }, [threadId, revision]);
-  useEffect(read, [threadId, entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(read, [threadId, entries]);
   useEffect(() => {
     if (!target || target.threadId !== threadId) return;
     const element = elementOf(target);
@@ -174,13 +174,13 @@ export function PromptRail({ scroller, threadId, entries, onLoadEarlier, onNavig
     });
   // Parent scroll renders recreate onLoadEarlier. Restarting here would forget
   // positionedTop and let the old jump take ownership of a newer user scroll.
-  }, [threadId, target, entries, loadRevision]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [threadId, target, entries, loadRevision]);
   useEffect(() => {
     const root = scroller.current; if (!root) return;
     const onScroll = () => { cancelAnimationFrame(frame.current); frame.current = requestAnimationFrame(place); };
     root.addEventListener("scroll", onScroll, { passive: true });
     return () => { root.removeEventListener("scroll", onScroll); cancelAnimationFrame(frame.current); };
-  }, [scroller]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scroller]);
   useEffect(() => { marks.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" }); }, [current, indexed]);
   useLayoutEffect(() => {
     if (!hovered || !card.current || !rail.current || !scroller.current) return;

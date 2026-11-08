@@ -46,7 +46,7 @@ export function useProviderCatalogs(value: ElpisSettings, models: Model[], selec
         if (active.current) setCatalogs(old => old[provider]?.version === version ? { ...old, [provider]: { version, models: [], error: errorText(error) } } : old);
       });
     }
-  }, [wanted, value.main.provider, value.providers, value.version, catalogs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wanted, value.main.provider, value.providers, value.version, catalogs]);
   return {
     mainModels,
     forProvider: (provider: string | null) => !provider || provider === value.main.provider ? mainModels : catalogFor(provider)?.models ?? [],

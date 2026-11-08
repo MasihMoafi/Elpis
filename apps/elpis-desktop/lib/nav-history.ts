@@ -40,7 +40,7 @@ export function useNavHistory(ready: boolean, place: Place) {
     if (!ready) return;
     commit(seeded.current ? visit(historyRef.current, place) : startHistory(place));
     seeded.current = true;
-  }, [ready, place.view, place.threadId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, place.view, place.threadId]);
   const go = (delta: -1 | 1, usable: (place: Place) => boolean) => {
     const found = step(historyRef.current, delta, usable);
     if (found) commit(found.history);

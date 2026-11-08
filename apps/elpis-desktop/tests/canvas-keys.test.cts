@@ -51,7 +51,7 @@ test('Ctrl+G frames a selection, F2 names it, Ctrl+Shift+G ungroups without remo
   const f = await editing();
   try {
     await pick(f, 'a'); await f.canvas.locator('.react-flow__node[data-id="b"]').click({ modifiers: ['Shift'] }); await off(f);
-    const before = await f.saved(); await f.page.keyboard.press('Control+g'); let after = await f.saved();
+    const before = await f.saved(); await f.page.keyboard.press('Control+g'); const after = await f.saved();
     assert.deepEqual(frameOf(after).nodeIds.sort(), ['a', 'b']); assert.deepEqual(after.edges, before.edges);
     await f.page.keyboard.press('F2'); const name = f.canvas.getByRole('textbox', { name: 'Frame name', exact: true }); await name.fill('First stage'); await f.page.keyboard.press('Enter');
     assert.equal(frameOf(await f.saved()).title, 'First stage'); await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click(); await f.canvas.waitFor();

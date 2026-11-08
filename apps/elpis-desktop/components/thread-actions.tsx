@@ -74,7 +74,7 @@ export function ThreadActions({ thread, onDelete, onRequestDelete, onRename, ren
     if (!renameRequested || !onRename) return;
     rename();
     onRenameRequestHandled?.();
-  }, [renameRequested]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [renameRequested]);
   async function save(value: string) {
     if (!onRename) return;
     setBusy(true); setError("");

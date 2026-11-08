@@ -1,8 +1,8 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
-const fs = require('node:fs/promises');
-const path = require('node:path');
+
+
 
 // A wrapped draft grows until its input ceiling; width changes must not clip it or add an early scrollbar.
 async function waitForDraftFit(page: { evaluate<T>(fn: () => T): Promise<T>; waitForFunction(fn: () => boolean): Promise<unknown> }) {

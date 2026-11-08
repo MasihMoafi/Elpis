@@ -32,7 +32,7 @@ async function fixture(run: (args: { page: Page; aside: Locator; state: { provid
   const state: { providers: ReturnType<typeof account>; posts: { path: string; body: unknown }[] } = { providers: account(signedIn ? undefined : { state: 'signedOut' }), posts: [] };
   const clients = new Set<import('node:http').ServerResponse>();
   const emit = (method: string, params: unknown) => { for (const client of clients) client.write(`event: message\ndata: ${JSON.stringify({ method, params })}\n\n`); };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (req.method === 'POST') state.posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
@@ -48,7 +48,7 @@ async function fixture(run: (args: { page: Page; aside: Locator; state: { provid
     if (thread) return json({ thread, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
@@ -67,12 +67,7 @@ async function fixture(run: (args: { page: Page; aside: Locator; state: { provid
     assert.deepEqual(errors, []);
   } finally { await browser.close(); for (const client of clients) client.end(); await new Promise(resolve => server.close(resolve)); }
 }
-const paint = (locator: { evaluate(fn: (element: HTMLElement, name: keyof CSSStyleDeclaration) => number[], property: keyof CSSStyleDeclaration): Promise<number[]> }, property: keyof CSSStyleDeclaration) => locator.evaluate((element, name) => {
-  const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1; const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw Error('Canvas context is unavailable');
-  context.fillStyle = '#fbfbfa'; context.fillRect(0, 0, 1, 1); context.fillStyle = getComputedStyle(element)[name] as string; context.fillRect(0, 0, 1, 1);
-  return [...context.getImageData(0, 0, 1, 1).data].slice(0, 3);
-}, property);
+
 // what `paint` lays a transparent colour over: the light theme's page
 
 test('every project header has a "+" that starts a new chat in that project', async () => {

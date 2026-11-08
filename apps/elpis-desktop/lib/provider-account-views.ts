@@ -1,5 +1,5 @@
 import type { AccountView, ProviderConfigItem, ClaudeAccountsSnapshot } from './provider-login-types.ts';
-import { type ConfiguredProvider, type OpenAIAccount, type Subscription } from "@/components/provider-usage";
+import type { ConfiguredProvider, OpenAIAccount, Subscription } from "@/components/provider-usage";
 export function mapOpenAIView(openai: OpenAIAccount): AccountView {
     const signedIn = openai.auth.state === "signedIn";
     return {

@@ -59,7 +59,7 @@ test('a new screenshot pops up a thumbnail; ignoring it does nothing and clickin
     // Ignored: the thumbnail leaves by itself and nothing changes, except that Love Spot's tray still offers the screenshot.
     await takeScreenshot(page, home, 'Screenshot From 2026-10-24 21-00-01.png', '#3a6ea5');
     const ignored = await waitForPopup(browser);
-    if (shots) await ignored.waitForTimeout(400), await ignored.screenshot({ path: path.join(shots, 'popup-light.png') });
+    if (shots) { await ignored.waitForTimeout(400); await ignored.screenshot({ path: path.join(shots, 'popup-light.png') }); }
     await ignored.waitForEvent('close', { timeout: 12000 });
     const after = await board(page);
     assert.equal(after.page, start.page, 'ignoring the thumbnail must not change the Love Spot page');
@@ -72,7 +72,7 @@ test('a new screenshot pops up a thumbnail; ignoring it does nothing and clickin
     if (shots) await chooseTheme(page, 'dark');
     await takeScreenshot(page, home, 'Screenshot From 2026-10-24 21-00-09.png', '#a53a6e');
     const popup = await waitForPopup(browser);
-    if (shots) await popup.waitForTimeout(400), await popup.screenshot({ path: path.join(shots, 'popup-dark.png') });
+    if (shots) { await popup.waitForTimeout(400); await popup.screenshot({ path: path.join(shots, 'popup-dark.png') }); }
     await popup.locator('.shot').click();
     await page.locator('.love-spot-editor canvas.excalidraw__canvas.static').waitFor({ timeout: 20000 });
     await page.waitForTimeout(1500);

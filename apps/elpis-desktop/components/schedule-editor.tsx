@@ -132,7 +132,7 @@ const HOURS = Array.from({ length: 24 }, (_, index) => pad(index)), MINUTES = Ar
 function ClockPicker({ value, onPick }: { value: string; onPick: (time: string) => void }) {
   const picked = [value.slice(0, 2), value.slice(3, 5)];
   const refs = useRef(new Map<string, HTMLDivElement>());
-  useEffect(() => { for (const [column, option] of picked.entries()) refs.current.get(`${column}:${option}`)?.scrollIntoView({ block: "center" }); refs.current.get(`0:${picked[0]}`)?.focus(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { for (const [column, option] of picked.entries()) refs.current.get(`${column}:${option}`)?.scrollIntoView({ block: "center" }); refs.current.get(`0:${picked[0]}`)?.focus(); }, []);
   const pick = (column: number, option: string) => { const next = [...picked]; next[column] = option; onPick(`${next[0]}:${next[1]}`); };
   return <div className="schedule-clock">
     {[["Hour", HOURS], ["Minute", MINUTES]].map(([label, options], column) => <div key={label as string} role="listbox" aria-label={label as string} className="schedule-clock-column">

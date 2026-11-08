@@ -30,7 +30,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>, { desktop = tru
     { turnId: 'turn-1', turnStatus: 'completed', item: { id: 'user-1', type: 'userMessage', content: [{ type: 'text', text: 'Please summarize the cache design.' }] } },
     { turnId: 'turn-1', turnStatus: 'completed', item: { id: 'reply-1', type: 'agentMessage', text: 'The cache keeps one prefix per chat. Read [the docs](https://docs.example.invalid/cache) for more.' } },
   ];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: object) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     const id = url.pathname.split('/')[3], thread = threads.find(item => item.id === id);
@@ -44,7 +44,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>, { desktop = tru
     if (thread) return json({ thread, data: id === 'alpha' ? entries : [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}), headless: true });
   try {

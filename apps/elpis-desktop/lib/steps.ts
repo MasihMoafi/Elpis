@@ -174,14 +174,14 @@ export function stepLabel(item: Item, running = item.status === "inProgress"): s
     if (kind === "listFiles") { const path = firstText(actions.map(action => action.path)); return say("Listing files", "Listed files", path ? `in ${path}` : ""); }
     return say("Running", "Ran", commandGist(String(item.command ?? "")));
   }
-  if (item.type === "mcpToolCall") return say("Using", "Used", `${String(item.server ?? "")} ${String(item.tool ?? "")}`.trim());
+  if (item.type === "mcpToolCall") return say("Using", "Used", `${firstText([item.server]) ?? ""} ${firstText([item.tool]) ?? ""}`.trim());
   if (item.type === "fileChange") {
     const changes = changesOf(item), kinds = new Set(changes.map(change => change.kind)), [kind] = kinds;
     const files = distinctFiles(changes.map(change => change.path)), name = files.length === 1 && files[0] ? baseName(files[0]) : undefined;
     const [now, done]: [string, string] = kinds.size === 1 && kind === "add" ? ["Creating", "Created"] : kinds.size === 1 && kind === "delete" ? ["Deleting", "Deleted"] : ["Editing", "Edited"];
     return say(now, done, fileWord(files.length, name));
   }
-  if (item.type === "webSearch") return say("Searching", "Searched", String(item.query ?? "the web"));
+  if (item.type === "webSearch") return say("Searching", "Searched", firstText([item.query]) ?? "the web");
   return say("Working", "Worked");
 }
 
@@ -254,7 +254,7 @@ export function summaryParts(items: Item[]): SummaryPart[] {
       case "commands": return { text: countWord(list.length, "ran a command", "ran # commands"), failed };
       case "search": return { text: "searched code", failed };
       case "listFiles": return { text: "listed files", failed };
-      case "mcp": return { text: `used ${andList([...new Set(list.map(item => String(item.server || "a tool")))])}`, failed };
+      case "mcp": return { text: `used ${andList([...new Set(list.map(item => firstText([item.server]) ?? "a tool"))])}`, failed };
       case "tools": return { text: countWord(list.length, "used a tool", "used # tools"), failed };
       case "web": return { text: "browsed the web", failed };
       case "agents": return { text: countWord(list.length, "worked with an agent", "worked with agents"), failed };

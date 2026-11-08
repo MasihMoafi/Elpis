@@ -25,7 +25,9 @@ test('discovery includes new specs and legacy node:test files outside existing t
   await fs.writeFile(path.join(directory, 'feature', 'added.spec.ts'), '');
   await fs.writeFile(path.join(directory, 'feature', 'added.test.mts'), '');
   await fs.writeFile(path.join(directory, 'feature', 'added.test.cts'), '');
-  await fs.writeFile(path.join(directory, 'feature', 'legacy.mjs'), "import test from 'node:test';");
+  await fs.writeFile(path.join(directory, 'feature', 'legacy.mjs'), "import test from 'node:test'; test('legacy', () => {});");
+  await fs.writeFile(path.join(directory, 'feature', 'fixtures.mts'), "import { after } from 'node:test'; after(() => {}); export const value = 1;");
+  await fs.writeFile(path.join(directory, 'feature', 'reexport.mts'), "export { value } from './fixtures.mts';");
   await fs.writeFile(path.join(directory, 'node_modules', 'excluded.test.cjs'), '');
   const files = await discoverTests(directory);
   assert.deepEqual(files, ['feature/added.spec.ts', 'feature/added.test.cts', 'feature/added.test.mts', 'feature/legacy.mjs']);
@@ -53,7 +55,7 @@ async function fakeApp(t: TestContext, files: Record<string, string>, inventory:
   const gate = (args: string[], seconds = 30, interrupt?: string) => new Promise<{ code: number | null; signal: NodeJS.Signals | null; out: string }>((resolve, reject) => {
     const source = `import { main } from ${JSON.stringify(new URL('../scripts/test-gate.mts', import.meta.url).href)}; await main(...JSON.parse(process.argv[1]));`;
     // Without NODE_TEST_CONTEXT the gate's own `node --test` children report as they do outside this runner.
-    const { NODE_TEST_CONTEXT, ...env } = process.env;
+    const { NODE_TEST_CONTEXT: _NODE_TEST_CONTEXT, ...env } = process.env;
     const child = spawn(process.execPath, ['--input-type=module', '-e', source, JSON.stringify([args, { dir, locks, seconds }])],
       { env: { ...env, TMPDIR: path.join(dir, 'tmp'), ELPIS_PLAYWRIGHT_PACKAGE: dir }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';

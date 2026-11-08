@@ -23,7 +23,7 @@ const thread = (id: string, name: string) => ({ id, name, preview: name, cwd: '/
 
 async function bridge() {
   const posts: Post[] = [], threads = [thread('chat-a', 'Fix the parser')];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://local'); let raw = ''; for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : {};
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
@@ -42,7 +42,7 @@ async function bridge() {
       const file = path.join(out, url.pathname === '/' ? 'index.html' : url.pathname), content = await fs.readFile(file);
       res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content);
     } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   return { posts, url: `http://127.0.0.1:${address.port}/#token=fixture`, close: () => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }) };

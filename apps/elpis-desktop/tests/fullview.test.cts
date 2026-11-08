@@ -35,7 +35,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>, { width = 1320,
   ];
   const clients = new Set<ServerResponse>(), posts: { path: string; body: unknown }[] = [];
   const emit = (method: string, params: object) => { for (const client of clients) client.write(`event: message\ndata: ${JSON.stringify({ method, params })}\n\n`); };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: object) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (req.method === 'POST') posts.push({ path: url.pathname, body: raw ? JSON.parse(raw) : {} });
@@ -48,7 +48,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>, { width = 1320,
     if (url.pathname === '/api/threads/chat-one') return json({ thread, data: history, nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}), headless: true });
   try {
@@ -74,7 +74,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>, { width = 1320,
   } finally { await browser.close(); for (const client of clients) client.end(); await new Promise<void>(resolve => server.close(() => resolve())); }
 }
 
-test('in full view the chat floats: the same message box with its draft, the conversation, a pill with the chat’s status and back', () => fixture(async ({ page, side, card, pill, enter, exit, area, openPanel, posts, emit }) => {
+test('in full view the chat floats: the same message box with its draft, the conversation, a pill with the chat’s status and back', () => fixture(async ({ page, card, pill, enter, exit, area, openPanel, posts, emit }) => {
   const composer = page.getByLabel('Message Elpis');
   await composer.fill('half-written thought');
   const splitFont = await composer.evaluate(element => getComputedStyle(element).fontSize);

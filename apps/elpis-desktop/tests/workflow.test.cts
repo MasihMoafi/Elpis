@@ -13,7 +13,7 @@ type Auth = { invalid?: boolean; failures?: number; calls: unknown[]; premature:
 type Reconnect = { thread: { id: string; name: string; model: string; modelProvider: string; status: { type: string }; desktopAccess: { writable: boolean } }; reply: string; calls: Request[]; connected?: boolean; rewind?: string; auth?: Auth };
 let browser: Browser,server: import('node:http').Server,url: string,reconnectFixture: Reconnect | null = null;const clients=new Set<import('node:http').ServerResponse>();
 before(async()=>{
- server=http.createServer(async(req,res)=>{
+ server=http.createServer((req, res) => { void (async () => {
   assert.ok(req.url);const route=new URL(req.url,'http://local').pathname;
   if(route==='/api/session'&&reconnectFixture?.auth){
    const auth=reconnectFixture.auth;let body='';for await(const chunk of req)body+=chunk;auth.calls.push(JSON.parse(body));
@@ -37,7 +37,7 @@ before(async()=>{
   }
   if(route.startsWith('/api/')){res.setHeader('content-type','application/json');res.end(JSON.stringify(route==='/api/health'?{connected:true}:{data:[],nextCursor:null}));return;}
   try{const file=path.join(__dirname,'../out',route==='/'?'index.html':route);res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(await fs.readFile(file));}catch{res.statusCode=404;res.end();}
- });await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const address=server.address();assert.ok(address&&typeof address!=='string');url=`http://127.0.0.1:${address.port}`;
+ })().catch(error => { res.destroy(error); }); });await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));const address=server.address();assert.ok(address&&typeof address!=='string');url=`http://127.0.0.1:${address.port}`;
  browser=await chromium.launch({executablePath:process.env.ELPIS_CHROMIUM||undefined,headless:true});
 });
 after(async()=>{await browser?.close();for(const client of clients)client.end();await new Promise(resolve=>server.close(resolve));});

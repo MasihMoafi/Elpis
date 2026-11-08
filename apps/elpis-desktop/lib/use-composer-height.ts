@@ -17,5 +17,5 @@ export function useComposerHeight(ref: RefObject<HTMLTextAreaElement | null>, de
     const observer = new ResizeObserver(() => { if (box.clientWidth !== width) { width = box.clientWidth; fit(); } });
     observer.observe(box);
     return () => observer.disconnect();
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps -- the caller names what refits it
+  }, deps); // the caller names what refits it
 }

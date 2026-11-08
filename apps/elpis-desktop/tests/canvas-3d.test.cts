@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
+
 const { openCanvas } = require('./canvas-fixture.cts');
 
 test('3D selection, dashboard, shared settings and delete/undo work together', async () => {

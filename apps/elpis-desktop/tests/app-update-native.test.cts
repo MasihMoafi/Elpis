@@ -181,7 +181,7 @@ test('standalone Love Spot update preserves dock mode and exact active text on r
   assert.equal((await events(root)).filter(event => event.type === 'launch').length, 1);
 }));
 
-test('source-file edits block real Quit and Restart, failed Save stays blocked, and deliberate Save/Revert permits Quit', t => using(t, { fileProject: true }, async ({ root, desktop, page, click, key, update, capture, sourceFile }) => {
+test('source-file edits block real Quit and Restart, failed Save stays blocked, and deliberate Save/Revert permits Quit', t => using(t, { fileProject: true }, async ({ root, page, click, key, update, capture, sourceFile }) => {
   const exact = 'export const exact = 821; // متن فارسی\n';
   await click(page.locator('.thread-row[data-thread-id="private-source"] .thread-link'));
   await click(page.getByRole('button', { name: 'Show side panel', exact: true }));

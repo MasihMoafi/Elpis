@@ -1,7 +1,7 @@
 const { threadMenuItem } = require('./controls.cts');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
+
 const { fixture, THREADS } = require('./parity-fixture.cts');
 const secondary = (page: { frameLocator(selector: string): { getByRole(role: string, options: object): { waitFor(): Promise<void>; fill(value: string): Promise<void>; click(): Promise<void>; evaluate(fn: (el: Element) => boolean): Promise<boolean> }; getByText(text: string, options: object): { waitFor(): Promise<void> } } }) => page.frameLocator('iframe[title="Split session"]');
 async function split(page: Parameters<typeof secondary>[0] & { locator(selector: string): { getByRole(role: string, options: object): { click(): Promise<void> } } }, id = 'chat-b') {

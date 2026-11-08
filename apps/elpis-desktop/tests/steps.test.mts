@@ -55,6 +55,9 @@ test('a finished group lists what was done in the order it began, with counts', 
   assert.equal(summarize([read('1', '/p/a.ts'), read('2', '/p/b.ts'), read('3', '/p/a.ts')]), 'Read 2 files', 'two files are counted, not named; the same file twice is one');
   assert.equal(summarize([search('1'), search('2'), list('3'), { id: 'w', type: 'webSearch', query: 'q', status: 'completed' }]), 'Searched code, listed files, browsed the web');
   assert.equal(summarize([{ id: 'm', type: 'mcpToolCall', server: 'rag', tool: 'search', status: 'completed' }, command('1')]), 'Used rag, ran a command');
+  assert.equal(summarize([{ id: 'm', type: 'mcpToolCall', server: { name: 'invalid' }, tool: 'search', status: 'completed' }]), 'Used a tool');
+  assert.equal(stepLabel({ id: 'm', type: 'mcpToolCall', server: {}, tool: 'search', status: 'completed' }), 'Used search');
+  assert.equal(stepLabel({ id: 'w', type: 'webSearch', query: {}, status: 'completed' }), 'Searched the web');
 });
 
 test('one file read and then edited is one phrase that names it', () => {

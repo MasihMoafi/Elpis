@@ -57,8 +57,8 @@ export function AnnotationDock({ browser, onAttach, imagesAllowed }: { browser: 
   const draft = state?.draft ?? null, comments = state?.annotations ?? [];
   const draftKey = draft ? `${draft.id}:${draft.editing}` : "";
   // A new selection keeps what was typed; opening a saved comment shows its text.
-  useEffect(() => { if (!draft) return; if (draft.editing) setBody(draft.body); field.current?.focus(); }, [draftKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!draft) setBody(""); }, [!!draft]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!draft) return; if (draft.editing) setBody(draft.body); field.current?.focus(); }, [draftKey]);
+  useEffect(() => { if (!draft) setBody(""); }, [!!draft]);
   if (!state || !state.annotating && !comments.length) return null;
   const save = async () => {
     if (!body.trim()) return false;

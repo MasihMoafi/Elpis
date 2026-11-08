@@ -16,7 +16,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>){
  const user={id:'ask',type:'userMessage',content:[{type:'text',text:'Check everyday interactions'}]};
  const reply={id:'reply',type:'agentMessage',text:'Local fixture reply'};
  const emit=(method: string,params: unknown)=>{for(const c of clients)c.write(`event: message\ndata: ${JSON.stringify({method,params})}\n\n`);};
- const server=http.createServer(async(req,res)=>{
+ const server=http.createServer((req, res) => { void (async () => {
   assert.ok(req.url);const url=new URL(req.url,'http://local');let raw='';for await(const c of req)raw+=c;
   const data=raw?JSON.parse(raw):{};if(req.method==='POST')posts.push({path:url.pathname,data});
   const json=(value: unknown)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify(value));};
@@ -34,7 +34,7 @@ async function fixture(run: (fixture: Fixture) => Promise<void>){
   if(url.pathname===`/api/threads/${thread.id}`)return json({thread,data:[{turnId:'first',item:reply},{turnId:'first',item:user}],nextCursor:null});
   if(url.pathname.startsWith('/api/'))return json({data:[]});
   try{const file=path.join(__dirname,'../out',url.pathname==='/'?'index.html':url.pathname);res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(await fs.readFile(file));}catch{res.statusCode=404;res.end();}
- });
+ })().catch(error => { res.destroy(error); }); });
  await new Promise<void>(r=>server.listen(0,'127.0.0.1',r));const address=server.address();assert.ok(address&&typeof address!=='string');
  const browser=await chromium.launch({executablePath:process.env.ELPIS_CHROMIUM||undefined,headless:true});
  try{

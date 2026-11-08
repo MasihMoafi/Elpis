@@ -49,7 +49,7 @@ export function useReorder({ dragType, order, onMove, canDrop = () => true, drop
         if (!id || !event.dataTransfer.types.includes(dragType)) return;
         if (!accept) { event.stopPropagation(); return; }
         event.preventDefault(); event.stopPropagation();
-        onMove(id, place);
+        void onMove(id, place);
       },
     };
   }

@@ -28,7 +28,7 @@ async function fixture(t: import('node:test').TestContext) {
   const settings = { version: 'fixture-v1', main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }], write: { available: true }, background: { model: 'sol', provider: 'openai' }, memory: { generate: true, use: true, extractionModel: 'sol', consolidationModel: null }, smartPrune: { enabled: true, explicitOverride: { available: false } } };
   const control: { failEdits: boolean; failAnswers: boolean; holdEdit?: boolean; holdAnswer?: boolean; releaseEdit?: () => void; releaseAnswer?: () => void; sharedIds?: boolean; bodyA?: string; bodyB?: string } = { failEdits: true, failAnswers: true };
   const emit = (type: string, data: unknown) => { for (const client of clients) client.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`); };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://fixture'), pathname = url.pathname;
     const json = (data: unknown, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
     if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return; }
@@ -65,12 +65,12 @@ async function fixture(t: import('node:test').TestContext) {
     const file = path.join(staticOut, pathname === '/' ? 'index.html' : pathname);
     if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }
     res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' } as Record<string, string>)[path.extname(file)] || 'application/octet-stream'); res.end(fs.readFileSync(file));
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
-  let browser: { close(): Promise<void> } | undefined;
-  t.after(async () => { control.releaseEdit?.(); control.releaseAnswer?.(); await browser?.close(); for (const client of clients) client.end(); await new Promise(resolve => server.close(resolve)); });
-  const launched = await chromium.launch({ headless: true, executablePath: process.env.ELPIS_CHROMIUM || undefined }); browser = launched;
+  const browserReady = chromium.launch({ headless: true, executablePath: process.env.ELPIS_CHROMIUM || undefined });
+  t.after(async () => { control.releaseEdit?.(); control.releaseAnswer?.(); await browserReady.then((browser: { close(): Promise<void> }) => browser.close(), () => {}); for (const client of clients) client.end(); await new Promise(resolve => server.close(resolve)); });
+  const launched = await browserReady;
   const page = await launched.newPage({ viewport: { width: 1280, height: 900 } });
   page.on('pageerror', (error: Error) => t.diagnostic(error.stack || error.message));
   page.setDefaultTimeout(4000);

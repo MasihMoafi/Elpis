@@ -30,7 +30,7 @@ createInterface({ input: child.stdout }).on('line', line => {
   const reply = JSON.parse(String(line)), entry = pending.get(reply.id);
   if (!entry) return;
   pending.delete(reply.id); clearTimeout(entry.timer);
-  reply.error ? entry.reject(new Error(JSON.stringify(reply.error))) : entry.resolve(reply.result);
+  if (reply.error) entry.reject(new Error(JSON.stringify(reply.error))); else entry.resolve(reply.result);
 });
 function rpc<T = unknown>(method: string, params: object = {}): Promise<T> {
   return new Promise<unknown>((resolve, reject) => {

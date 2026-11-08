@@ -27,7 +27,7 @@ async function fixture(run: (args: FixtureArgs) => Promise<void>, { width = 1320
     { id: 'chat-three', name: 'Plan the release', preview: 'Plan the release', cwd: '/work/release', model: 'gpt-6-luna', modelProvider: 'openai', status: { type: 'idle' } },
   ];
   const posts: string[] = [], reads: string[] = [];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     const thread = threads.find(item => item.id === url.pathname.split('/')[3]);
@@ -41,7 +41,7 @@ async function fixture(run: (args: FixtureArgs) => Promise<void>, { width = 1320
     if (thread) return json({ thread, data: [], nextCursor: null });
     if (url.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, url.pathname === '/' ? 'index.html' : url.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
@@ -86,7 +86,7 @@ test('the top strip holds chats: + opens an empty sibling chat, a tab switches t
   assert.deepEqual(posts.filter(path => path === '/api/threads' || /fork|agent/.test(path)), [], 'a tab is not a new server-side chat, fork or agent');
 }));
 
-test('middle-click on a sidebar chat opens it in its own tab; an open chat brings its tab forward instead of opening twice', () => fixture(async ({ page, link, names, shown }) => {
+test('middle-click on a sidebar chat opens it in its own tab; an open chat brings its tab forward instead of opening twice', () => fixture(async ({ link, names, shown }) => {
   await link('chat-one').click();
   await link('chat-two').click({ button: 'middle' });
   await eventually(async () => assert.deepEqual(await names(), ['Fix the parser', 'Write the docs']));

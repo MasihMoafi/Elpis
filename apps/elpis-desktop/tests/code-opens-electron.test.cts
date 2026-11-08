@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { fixture, CWD } = require('./parity-fixture.cts');
+const { fixture } = require('./parity-fixture.cts');
 
 test('real Electron clicks and Enter open inside Files; default native openFile never reaches shell.openPath', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'code-open-electron-'));

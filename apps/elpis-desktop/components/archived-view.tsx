@@ -94,10 +94,10 @@ export function ArchivedView({ onUnarchived, onDelete }: Props) {
           <div>{thread.archivedAt ? <time dateTime={new Date(thread.archivedAt).toISOString()}>Archived {new Date(thread.archivedAt).toLocaleString()}</time> : "Archive date unavailable"}</div>
           <div>{thread.archiveReason || "Reason unavailable for this older archive."}</div>
         </>}>
-          <Button variant="outline" disabled={busy === thread.id} onClick={() => unarchive(thread)} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>
+          <Button variant="outline" disabled={busy === thread.id} onClick={() => { void unarchive(thread); }} aria-label={`Unarchive ${title(thread)}`}><ArchiveRestore />{busy === thread.id ? "Restoring…" : "Unarchive"}</Button>
           {menu}
       </SettingRow>}</ThreadActions>)}
     </ul>}
-    {cursor && <LoadOnScroll label="Loading more archived chats" onLoad={() => load(cursor)} />}
+    {cursor && <LoadOnScroll label="Loading more archived chats" onLoad={() => { void load(cursor); }} />}
   </div>;
 }

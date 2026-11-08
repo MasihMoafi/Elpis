@@ -32,7 +32,7 @@ async function fixture(run: FixtureRun, { desktop = false } = {}) {
     background: { model: null, provider: null }, memory: { generate: false, use: true, extractionModel: null, consolidationModel: null },
     smartPrune: { enabled: false, explicitOverride: { available: true, model: null, provider: null, version: 'pruner-v1' } } };
   const apiProviders = providers.filter(item => item.id !== 'openai').map(item => ({ id: item.id, name: item.displayName, baseUrl: `http://127.0.0.1:${item.id === 'lab' ? 1234 : 11434}/v1`, wireApi: 'responses', editable: true, auth: { source: 'none', keySet: false, envKey: null } }));
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://local'); let raw = '';
     for await (const chunk of req) raw += chunk;
     const data = raw ? JSON.parse(raw) as { action?: string } : undefined;
@@ -59,7 +59,7 @@ async function fixture(run: FixtureRun, { desktop = false } = {}) {
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
     catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   let browser;

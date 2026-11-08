@@ -20,7 +20,7 @@ export function DevServerPreview({ cwd, browser }: { cwd: string; browser: Brows
     const poll = async () => {
       try { const reply = await api<Status>(`/dev-servers?cwd=${encodeURIComponent(cwd)}`); if (!disposed) setServers(reply.servers ?? []); }
       catch (e) { if (!disposed) setError(errorText(e)); }
-      if (!disposed) timer = setTimeout(poll, 1000);
+      if (!disposed) timer = setTimeout(() => { void poll(); }, 1000);
     };
     if (cwd) void poll();
     return () => { disposed = true; clearTimeout(timer); };

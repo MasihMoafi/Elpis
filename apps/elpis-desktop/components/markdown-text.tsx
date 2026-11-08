@@ -25,7 +25,7 @@ export function CopyButton({ text, label }: { text: () => string; label: string 
     setTimeout(() => setState("idle"), 2000);
   }
   return <>
-    <Button variant="ghost" size="icon-xs" aria-label={label} title={label} onClick={copy}>{state === "copied" ? <Check size={14} /> : <Copy size={14} />}</Button>
+    <Button variant="ghost" size="icon-xs" aria-label={label} title={label} onClick={() => { void copy(); }}>{state === "copied" ? <Check size={14} /> : <Copy size={14} />}</Button>
     <span role="status" className="copy-status">{state === "copied" ? "Copied" : state === "failed" ? "Could not copy. Select the text to copy it." : ""}</span>
   </>;
 }
@@ -107,6 +107,6 @@ export const MarkdownText = memo(function MarkdownText({ text, file, allowImages
         return found?.inside ? <img src={fileAssetUrl(file.cwd, found.rel)} alt={alt ?? ""} loading="lazy" /> : <span className="file-image-unavailable">{alt || "Image"} (image unavailable)</span>;
       },
     };
-  }, [file?.cwd, file?.path, allowImages]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [file?.cwd, file?.path, allowImages]);
   return <div className="markdown"><Markdown remarkPlugins={PLUGINS} rehypePlugins={HIGHLIGHT} components={rendered} urlTransform={urlTransform}>{dollarMath(text)}</Markdown></div>;
 });

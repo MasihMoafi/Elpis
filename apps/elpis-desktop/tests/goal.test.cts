@@ -19,7 +19,7 @@ for (const colorScheme of ['light']) test(`goal slash and right Context tab: set
     },
     '/api/threads/chat-a/session-context': () => ({ goal, files: rows }),
     '/api/threads/chat-b/session-context': () => ({ goal: null, files: [] }),
-    '/api/file': (body: { content: string } | null, url: URL) => { if (body) { content = body.content; return { mtimeMs: ++mtimeMs }; } return { content, size: content.length, mtimeMs }; },
+    '/api/file': (body: { content: string } | null) => { if (body) { content = body.content; return { mtimeMs: ++mtimeMs }; } return { content, size: content.length, mtimeMs }; },
     '/api/files/dir': () => ({ data: [] }),
   } });
   const panel = f.page.getByRole('region', { name: 'Side panel', exact: true });

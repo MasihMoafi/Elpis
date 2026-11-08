@@ -81,7 +81,7 @@ export function FilesPane({ cwd }: { cwd: string }) {
   }, [cwd, pane.active]);
   const active = pane.open.find(file => file.path === pane.active) ?? null;
   // Side by side the tree stays; one at a time, a file asked for takes the room.
-  useEffect(() => { if (narrow && active && pane.showTree) setShowTree(cwd, false); }, [narrow, active?.path, active?.focus]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (narrow && active && pane.showTree) setShowTree(cwd, false); }, [narrow, active?.path, active?.focus]);
   if (!cwd && !active) return <div className="files-pane"><p className="files-note">Open a chat to browse its folder.</p></div>;
 
   const dirtyOf = (paths: string[]) => paths.filter(path => isDirty(files.docs[docKey(cwd, path)]));

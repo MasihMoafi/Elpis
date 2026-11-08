@@ -196,12 +196,12 @@ test('an offline draft stays usable and a late team needs a deliberate open', as
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1450, height: 820, threads: roots, routes: routes({ 'chat-a': a }), storage });
   try {
     await requested(a);
-    await f.emit('connection', { connected: false });
+    f.emit('connection', { connected: false });
     await f.page.getByText(/Elpis is disconnected/).first().waitFor();
     await f.page.waitForFunction(() => { const wrap = document.querySelector('.composer-wrap'); if (!wrap) throw Error('Composer wrapper missing'); return getComputedStyle(wrap).opacity === '1'; });
     await f.composer.fill('Editable while disconnected');
     const before = await f.composer.boundingBox();
-    await f.emit('connection', { connected: true });
+    f.emit('connection', { connected: true });
     // The offline notice occupies space under the chat. Wait for its removal before measuring the delayed team,
     // so the notice's intentional disappearance is not mistaken for a panel-induced layout shift.
     await f.page.getByText(/Elpis is disconnected/).first().waitFor({ state: 'hidden' });

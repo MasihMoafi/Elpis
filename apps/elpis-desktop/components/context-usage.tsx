@@ -97,7 +97,7 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
         if (value.threadId !== threadId) throw new Error("Context reply belongs to another chat.");
         if (!disposed && value.threadId === threadId) { setRead({ threadId, ledger: value.ledger ?? UNMEASURED, compact: value.compact ?? null, cache: value.cache ?? null }); }
       } catch { if (!disposed) { setRead({ threadId, ledger: UNMEASURED, compact: null, unavailable: true }); } }
-      if (!disposed) timer = setTimeout(poll, 5000);
+      if (!disposed) timer = setTimeout(() => { void poll(); }, 5000);
     };
     void poll();
     return () => { disposed = true; controller.abort(); clearTimeout(timer); };
@@ -145,7 +145,7 @@ export function ContextUsage({ threadId }: { threadId?: string }) {
     </Tooltip>
     <PopoverContent anchor={anchor} side="top" align="end" sideOffset={aboveComposer} initialFocus={false} finalFocus={false} aria-label="Context window usage" className="context-ledger" style={{ visibility: revealed ? undefined : "hidden" }}>
       <LedgerView ledger={ledger} cache={current?.cache ?? null} loading={Boolean(threadId) && !ledger} unavailable={current?.unavailable} expanded={expanded} onToggle={() => setExpanded(value => !value)}
-        compact={ledger && used !== null && capacity && pct >= COMPACT_FROM_PERCENT && current?.compact ? { ...current.compact, run: compact } : null} />
+        compact={ledger && used !== null && capacity && pct >= COMPACT_FROM_PERCENT && current?.compact ? { ...current.compact, run: () => { void compact(); } } : null} />
       {opened && threadId && <ContextFiles key={threadId} threadId={threadId} onOpenFile={() => setOpened(false)} onReady={markFilesReady} />}
     </PopoverContent>
   </Popover>;

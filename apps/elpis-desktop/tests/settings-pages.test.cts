@@ -1,6 +1,6 @@
 const { openSettings } = require('./controls.cts');
 // Every Settings page against a local adapter: page order, what each control writes, and narrow layouts. No runtime or model calls.
-const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs/promises'), path = require('node:path'), http = require('node:http');
+const test = require('node:test'), assert = require('node:assert/strict');
 
 // ChatGPT's order (27 Oct): Personal, Integrations, Coding, Archived.
 

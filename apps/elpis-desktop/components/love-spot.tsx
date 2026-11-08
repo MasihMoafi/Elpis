@@ -311,7 +311,6 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
           event.dataTransfer.setData(screenshotDrag, shot.id); event.dataTransfer.effectAllowed = "copy";
         }} onClick={() => void chooseScreenshot(shot.id, "place")}>
           {/* Private previews stay outside Excalidraw and its exported scene. */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={shot.dataURL} alt="" draggable={false} /><span>{shot.name}</span>
         </Button>
         <Button variant="outline" size="icon-xs" className="love-spot-screenshot-dismiss" aria-label={`Dismiss ${shot.name}`} title={`Dismiss ${shot.name}`} disabled={choosing} onClick={() => void chooseScreenshot(shot.id, "dismiss")}><X aria-hidden="true" /></Button>
@@ -329,7 +328,7 @@ function LoveSpotBoard({ dark, toolbarHost }: LoveSpotProps) {
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>}
-    {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
+    {error && <div className="love-spot-status" role="alert">{error}<Button variant="ghost" size="sm" onClick={() => { if (editor) void save(); else setAttempt(a => a + 1); }}>Retry</Button></div>}
     <div className="love-spot-content"><div className={`love-spot-editor ${styleClassName}`} ref={boardArea} onDragOverCapture={event => {
       if (event.dataTransfer.types.includes(screenshotDrag)) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "copy"; }
     }} onDropCapture={event => {

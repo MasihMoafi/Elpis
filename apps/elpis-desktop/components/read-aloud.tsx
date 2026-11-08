@@ -105,8 +105,8 @@ export function ReadAloud({ threadId, enabled, available = READ_ALOUD_AUDIO.avai
     setError(null);
     const close = () => stop(); window.addEventListener("pagehide", close);
     return () => { window.removeEventListener("pagehide", close); stop(); };
-  }, [threadId]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (!enabled || unavailableReason) stop(); }, [enabled, unavailableReason]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [threadId]);
+  useEffect(() => { if (!enabled || unavailableReason) stop(); }, [enabled, unavailableReason]);
 
   async function play(id: string, text?: string, literal = false) {
     if (unavailableReason) return;

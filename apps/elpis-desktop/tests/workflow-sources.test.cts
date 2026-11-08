@@ -8,16 +8,21 @@ const { execFileSync } = require('node:child_process');
 const data: typeof import('../lib/workflow-sources.json') = require('../lib/workflow-sources.json');
 
 // Evaluate the real graph builders; only the desktop storage boundary is replaced.
-function load<T>(file: string, imports: Record<string, unknown>): T {
-  const exports = {}, code = ts.transpileModule(fs.readFileSync(path.join(__dirname, '../lib', file), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
-  vm.runInNewContext(code, { exports, require: (name: string) => { assert.ok(name in imports, name); return imports[name]; }, crypto: require('node:crypto').webcrypto, console });
+const modules = new Map<string, object>();
+function load<T>(file: string): T {
+  const filename = path.resolve(__dirname, '../lib', file.endsWith('.ts') ? file : `${file}.ts`);
+  if (modules.has(filename)) return modules.get(filename) as T;
+  const exports = {}, code = ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  modules.set(filename, exports);
+  vm.runInNewContext(code, { exports, require: (name: string) => {
+    if (name === '@/lib/projects') return { appStorage: () => ({ getItem: () => null }) };
+    assert.ok(name.startsWith('.') || name.startsWith('@/lib/'), name);
+    return load(name.startsWith('@/lib/') ? name.slice(6) : path.resolve(path.dirname(filename), name));
+  }, crypto: require('node:crypto').webcrypto, console });
   return exports as T;
 }
-// logo-team.ts and canvas.ts import each other; canvas calls logoTeam only when a Logo team is built, so it is filled in after.
-const logoTeam = {};
-const canvas = load<typeof import('../lib/canvas')>('canvas.ts', { './logo-team': logoTeam, './agent-characters': load('agent-characters.ts', { './love-characters': load('love-characters.ts', {}) }), './canvas-delete-flow': load('canvas-delete-flow.ts', {}), '@/lib/projects': { appStorage: () => ({ getItem: () => null }) } });
-Object.assign(logoTeam, load('logo-team.ts', { './canvas': canvas }));
-const lab = load<typeof import('../lib/experiment-lab')>('experiment-lab.ts', { '@/lib/canvas': canvas });
+const canvas = load<typeof import('../lib/canvas')>('canvas.ts');
+const lab = load<typeof import('../lib/experiment-lab')>('experiment-lab.ts');
 
 test('every actual starter has exactly one evidence entry, valid primary sources and an explicit limitation', () => {
   assert.deepEqual(data.patterns.map(p => p.id).sort(), Array.from(canvas.TEMPLATES, t => t.id).sort());

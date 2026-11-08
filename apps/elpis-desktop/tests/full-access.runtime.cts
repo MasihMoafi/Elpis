@@ -83,7 +83,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
       await deny().click();
     }
     else if (claude) { await page.getByText(new RegExp(`permission: allow_once[\\s\\S]*${tag}`)).last().waitFor({ timeout: 30000 }); assert.equal(await deny().count(), 0); assert.equal(await fs.readFile(file, 'utf8'), 'permission-ran'); }
-    else { await page.waitForFunction(async tag => { const r = await fetch('/api/threads?limit=100'); return r.ok; }, tag); const end = Date.now() + 45000; for (;;) { if (await fs.stat(file).then(() => true, () => false)) break; assert.equal(await deny().count(), 0, `${tag}: inherited Full access asked for approval`); assert.ok(Date.now() < end, `${tag}: command did not run`); await new Promise(r => setTimeout(r, 50)); } }
+    else { await page.waitForFunction(async () => { const r = await fetch('/api/threads?limit=100'); return r.ok; }, tag); const end = Date.now() + 45000; for (;;) { if (await fs.stat(file).then(() => true, () => false)) break; assert.equal(await deny().count(), 0, `${tag}: inherited Full access asked for approval`); assert.ok(Date.now() < end, `${tag}: command did not run`); await new Promise(r => setTimeout(r, 50)); } }
     await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'detached', timeout: 30000 });
     if (!claude) {
       const chatId = await page.locator('.thread-row.active').first().getAttribute('data-thread-id');
@@ -206,7 +206,7 @@ test('inherited permissions follow Settings across restart; explicit Ask stays; 
   peer.on('message', (data: Buffer) => {
     const message = JSON.parse(String(data));
     if (message.method && message.id !== undefined) peerRequests.push(message);
-    else if (peerPending.has(message.id)) { const pending = peerPending.get(message.id); assert.ok(pending); peerPending.delete(message.id); message.error ? pending.reject(message.error) : pending.resolve(message.result); }
+    else if (peerPending.has(message.id)) { const pending = peerPending.get(message.id); assert.ok(pending); peerPending.delete(message.id); if (message.error) pending.reject(message.error); else pending.resolve(message.result); }
   });
   await once(peer, 'open');
   const peerCall = <T = unknown,>(method: string, params: object): Promise<T> => new Promise<unknown>((resolve, reject) => { const requestId = `peer-${++peerSequence}`; peerPending.set(requestId, { resolve, reject }); peer.send(JSON.stringify({ id: requestId, method, params })); }) as Promise<T>;

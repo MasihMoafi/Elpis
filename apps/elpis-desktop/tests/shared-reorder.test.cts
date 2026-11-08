@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
@@ -22,7 +23,7 @@ test('ReorderItem preserves agent indentation when a context menu supplies its o
   const source = readFileSync(path.join(__dirname, '../components/reorder.tsx'), 'utf8');
   const code = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX } }).outputText;
   const component: { exports: { ReorderItem: (props: object) => { props: { style: { paddingLeft: string; userSelect: string }; children: string; draggable?: boolean } } } } = { exports: { ReorderItem: () => { throw new Error('component not loaded'); } } };
-  new Function('require', 'module', 'exports', code)(require, component, component.exports);
+  compileFunction(code, ['require', 'module', 'exports'])(require, component, component.exports);
   for (const enabled of [false, true]) for (const depth of [0, 1, 2]) {
     const row = component.exports.ReorderItem({
       enabled, itemId: 'agent', reorder: { itemProps: () => ({ draggable: true }) },

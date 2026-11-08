@@ -330,7 +330,7 @@ function engine() {
   socket.send = (raw: string) => {
     const request = JSON.parse(raw); socket.sent.push(request);
     if (request.id === undefined) return;
-    reply(request.id, request.method === 'thread/start' ? { thread: { id: THREAD, ephemeral: request.params.ephemeral === true } } : {});
+    reply(request.id, request.method === 'thread/start' ? { thread: { id: THREAD, ephemeral: request.params.ephemeral === true } } : request.method === 'turn/start' ? { turn: { id: 't1', status: 'inProgress', items: [] } } : {});
   };
   socket.close = () => socket.emit('close');
   const client = new DesktopClient(socket);

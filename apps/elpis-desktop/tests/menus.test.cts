@@ -44,7 +44,7 @@ async function fixture(run: (fixture: { page: Page; calls: Call[] }) => Promise<
   const google = { ...routed, id: 'google', name: 'Gemini chat', model: 'gemini-pro-latest', modelProvider: 'google-gemini' };
   const thread = {id:'existing',name:'Existing model check',model:'gpt-6-sol',modelProvider:'openai',reasoningEffort:null,status:{type:'idle'},desktopAccess:{writable:true,mode:'direct'}};
   const models = [{ id: 'sol', model: 'gpt-6-sol', displayName: 'GPT-6 Sol', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }, {id:'gpt-5.5',model:'gpt-5.5',displayName:'GPT-5.5',supportedReasoningEfforts:[{reasoningEffort:null},{reasoningEffort:'high'}]}, { id: 'opus', model: 'claude/opus', displayName: 'Opus' }, { id: 'agy', model: 'agy/gemini', displayName: 'Gemini via AGY' }];
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url);
     const url = new URL(req.url, 'http://localhost'); let raw = ''; for await (const chunk of req) raw += chunk;
     const data: unknown = raw ? JSON.parse(raw) : undefined; calls.push({ path: url.pathname, query: url.search.slice(1), method: req.method, data });
@@ -66,7 +66,7 @@ async function fixture(run: (fixture: { page: Page; calls: Call[] }) => Promise<
     if (url.pathname.startsWith('/api/')) return json({});
     const file = path.resolve(__dirname, '../out', url.pathname === '/' ? 'index.html' : `.${url.pathname}`);
     try { const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM, headless: true });
   try { const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); const address = server.address(); assert.ok(address && typeof address !== 'string'); await page.goto(`http://127.0.0.1:${address.port}`); await page.getByText('Local workspace', { exact: true }).waitFor(); await run({ page, calls }); assert.deepEqual(errors, []); }

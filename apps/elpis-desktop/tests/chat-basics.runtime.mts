@@ -63,7 +63,7 @@ test('chat view basics: a long saved chat opens with its messages and loads ten 
   /** The question numbers the transcript shows (not the sidebar or tab titles). */
   const questions = () => page.locator('.chat-content').evaluate(content => { const found = [], walk = document.createTreeWalker(content, NodeFilter.SHOW_TEXT); while (walk.nextNode()) { const match = /^Question (\d+)$/.exec((walk.currentNode as Text).data.trim()); if (match) found.push(Number(match[1])); } return found; });
   const earlier = page.locator('.load-earlier-messages');
-  const redBars = () => page.locator('.error-banner:not(.notice):not(.warning)').allInnerTexts();
+
 
   await t.test('a cached partial history stays visible without a spinner during a slow refresh', async () => {
     await row(long).locator('.thread-link').click();

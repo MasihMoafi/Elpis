@@ -159,6 +159,7 @@ jobs:
     env:
       CODEX_SKIP_BWRAP_BUILD: '1'
       CARGO_BUILD_JOBS: ${{ inputs.verification == 'build' && '4' || '2' }}
+      CARGO_INCREMENTAL: '0'
       RUST_TEST_THREADS: '1'
       CARGO_PROFILE_RELEASE_LTO: 'false'
       CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
@@ -444,6 +445,16 @@ jobs:
           path: dist/*
           if-no-files-found: error
           retention-days: 7
+      - name: Trim the Rust cache before saving
+        # Saved caches must stay well under GitHub's repository limit, or each save evicts the
+        # last one and every run recompiles everything (8 Nov: 21 GB per run, 29-minute builds).
+        if: always()
+        working-directory: codex-rs/target
+        run: |
+          rm -rf dev-small/incremental release/incremental debug
+          rm -rf dev-small/examples
+          if [ -d dev-small/deps ]; then find dev-small/deps -maxdepth 1 -type f -executable ! -name '*.so' -delete; fi
+          du -sh . || true
       - name: Retain compiled outputs after checks
         # UI-only runs do not rebuild release outputs, so must not label that cache with their source SHA.
         if: always() && inputs.verification != 'ui' && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
@@ -467,6 +478,7 @@ jobs:
     env:
       CODEX_SKIP_BWRAP_BUILD: '1'
       CARGO_BUILD_JOBS: '3'
+      CARGO_INCREMENTAL: '0'
       RUST_TEST_THREADS: '1'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -615,6 +627,16 @@ jobs:
           cargo test --profile dev-small --locked -p codex-model-provider-info --lib
           cargo test --profile dev-small --locked -p codex-external-agent-migration --lib claude_home_follows_claude_config_dir
           cargo test --profile dev-small --locked -p codex-cli --lib
+      - name: Trim the Rust cache before saving
+        # Saved caches must stay well under GitHub's repository limit, or each save evicts the
+        # last one and every run recompiles everything (8 Nov: 21 GB per run, 29-minute builds).
+        if: always()
+        working-directory: codex-rs/target
+        run: |
+          rm -rf dev-small/incremental release/incremental debug
+          rm -rf dev-small/examples
+          if [ -d dev-small/deps ]; then find dev-small/deps -maxdepth 1 -type f -executable ! -name '*.so' -delete; fi
+          du -sh . || true
       - name: Retain test build outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7

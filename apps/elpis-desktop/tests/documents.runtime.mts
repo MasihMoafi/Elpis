@@ -114,7 +114,7 @@ try {
   await new Promise<void>((resolve, reject) => { rpcSocket.once('open', resolve); rpcSocket.once('error', reject); });
   rpcSocket.on('message', (raw: Buffer) => {
     const message: { id: number; error?: { message: string }; result: unknown } = JSON.parse(String(raw)), handler = enginePending.get(message.id);
-    if (handler) { enginePending.delete(message.id); message.error ? handler.reject(Error(message.error.message)) : handler.resolve(message.result); }
+    if (handler) { enginePending.delete(message.id); if (message.error) handler.reject(Error(message.error.message)); else handler.resolve(message.result); }
   });
   const rpc = <T = unknown,>(method: string, params: object): Promise<T> => new Promise<unknown>((resolve, reject) => {
     const id = ++rpcId, timer = setTimeout(() => { enginePending.delete(id); reject(Error(`Timed out: ${method}`)); }, 35000);

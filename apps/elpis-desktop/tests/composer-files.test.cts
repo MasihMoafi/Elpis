@@ -1,7 +1,7 @@
-import type { Browser, Page } from 'playwright-core';
+import type { Page } from 'playwright-core';
 import type { TestContext } from 'node:test';
 import type { Controls } from './controls.cts';
-const { guardDesktopStore, leaveSettings, sidebar, openSettings }: Controls & { leaveSettings(page: Page): Promise<void>; sidebar(page: Page): Promise<import('playwright-core').Locator>; openSettings(page: Page): Promise<void> } = require('./controls.cts');
+const { guardDesktopStore, leaveSettings, openSettings }: Controls & { leaveSettings(page: Page): Promise<void>; sidebar(page: Page): Promise<import('playwright-core').Locator>; openSettings(page: Page): Promise<void> } = require('./controls.cts');
 // Real exported UI with synthetic transfer events. Never reads/writes the system clipboard.
 const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
@@ -26,7 +26,7 @@ async function fixture(t: TestContext, options: { textOnly?: boolean } = {}) {
   const threads = new Map(['a', 'b', 'agent', 'fork'].map(id => [id, { id, name: id === 'agent' ? 'Parent-owned agent' : `Chat ${id.toUpperCase()}`, cwd: '/tmp/composer-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, ...(id === 'agent' ? { parentThreadId: 'a', desktopAccess: { mode: 'continue' } } : {}) }]));
   const emit = (method: string, params: object) => { for (const stream of streams) stream.write(`event: message\ndata: ${JSON.stringify({ method, params })}\n\n`); };
   const settings = { version: 'fixture-v1', main: { model: 'sol', provider: 'openai' }, providers: [{ id: 'openai', displayName: 'OpenAI' }], write: { available: true }, background: { model: 'sol', provider: 'openai' }, memory: { generate: true, use: true, extractionModel: 'sol', consolidationModel: null }, smartPrune: { enabled: true, explicitOverride: { available: false } } };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://fixture'), pathname = url.pathname;
     const json = (data: unknown) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
     if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
@@ -69,11 +69,11 @@ async function fixture(t: TestContext, options: { textOnly?: boolean } = {}) {
     const file = path.join(staticOut, pathname === '/' ? 'index.html' : pathname);
     if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }
     const types: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }; res.setHeader('Content-Type', types[path.extname(file)] || 'application/octet-stream'); res.end(fs.readFileSync(file));
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  let browser: Browser | undefined;
-  t.after(async () => { control.release?.(); await browser?.close(); for (const stream of streams) stream.end(); await new Promise<void>(resolve => server.close(() => resolve())); });
-  browser = await chromium.launch({ headless: true, ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}) });
+  const browserReady = chromium.launch({ headless: true, ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}) });
+  t.after(async () => { control.release?.(); await browserReady.then(browser => browser.close(), () => {}); for (const stream of streams) stream.end(); await new Promise<void>(resolve => server.close(() => resolve())); });
+  const browser = await browserReady;
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(4000); page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);

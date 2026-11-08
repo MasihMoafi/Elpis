@@ -93,7 +93,7 @@ export function FileTree({ cwd }: { cwd: string }) {
     setProblem("");
     if (dir) toggleDir(cwd, path);
     else if (isAudioPath(path)) { if (!openRef({ path }, { onError: setProblem })) setProblem("Open a project folder to play this file."); }
-    else openFile(cwd, path, { preview: !keep, ...(line === undefined ? {} : { line, endLine: line }) });
+    else void openFile(cwd, path, { preview: !keep, ...(line === undefined ? {} : { line, endLine: line }) });
   }, [cwd]);
   const onError = useCallback((text: string) => setProblem(text), []);
 

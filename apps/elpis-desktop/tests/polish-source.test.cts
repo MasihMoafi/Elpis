@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -21,7 +22,7 @@ function source(relative: string): unknown {
     if (!match) throw new Error(`Cannot resolve ${id}`);
     return source(match);
   };
-  new Function('require', 'module', 'exports', code)(imports, module, module.exports);
+  compileFunction(code, ['require', 'module', 'exports'])(imports, module, module.exports);
   return module.exports;
 }
 

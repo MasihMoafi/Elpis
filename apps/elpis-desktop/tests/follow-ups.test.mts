@@ -6,7 +6,7 @@ import './alias.mts';
 
 const values = new Map<string, string>(), posts: { path: string; body: { text: string; expectedTurnId: string } }[] = [];
 Object.defineProperty(globalThis, 'window', { configurable: true, value: { localStorage: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) } } });
-globalThis.fetch = async (url, init) => { if (typeof init?.body !== 'string') throw new Error('expected a JSON request body'); posts.push({ path: new URL(String(url), 'http://x').pathname, body: JSON.parse(init.body) }); return new Response('{}', { status: 200 }); };
+globalThis.fetch = async (url, init) => { if (typeof init?.body !== 'string') throw new Error('expected a JSON request body'); posts.push({ path: new URL(typeof url === 'string' ? url : url instanceof URL ? url.href : url.url, 'http://x').pathname, body: JSON.parse(init.body) }); return new Response('{}', { status: 200 }); };
 const modulePath = '../lib/' + 'follow-ups.ts';
 const { clearFollowUps, queueFollowUp, queuedFollowUps, removeFollowUp, sendFollowUpNow }: {
   clearFollowUps(threadId: string): void;

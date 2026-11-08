@@ -233,12 +233,16 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
   // An HTML file opens as a page in this session's browser, served from its folder so its CSS and images load; if the
   // page cannot be served, the file opens as text in the Files tab instead.
   const { api: browserApi, command } = browser;
-  useEffect(() => browserApi ? onOpenPage(async abs => {
-    try {
-      const { url } = await api<{ url: string }>("/dev-servers/page", { cwd: abs.slice(0, abs.lastIndexOf("/")) || "/", path: abs.slice(abs.lastIndexOf("/") + 1) });
-      await command("new", { url });
-    } catch { openRef({ path: abs }, { asText: true }); }
-  }) : undefined, [browserApi, command]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!browserApi) return;
+    const openPage = async (abs: string) => {
+      try {
+        const { url } = await api<{ url: string }>("/dev-servers/page", { cwd: abs.slice(0, abs.lastIndexOf("/")) || "/", path: abs.slice(abs.lastIndexOf("/") + 1) });
+        await command("new", { url });
+      } catch { openRef({ path: abs }, { asText: true }); }
+    };
+    return onOpenPage(abs => { void openPage(abs); });
+  }, [browserApi, command]);
   if (!panel.open) return null;
   const kinds = kindsOf(panel, browser, hasTerminal, cwd, !!threadId), { shown } = panel, minWidth = sideMinWidth(shown);
   const full = panel.full, floating = full ? panel.chatCollapsed ? "pill" : "card" : undefined;
@@ -265,11 +269,11 @@ export function SidePanel({ panel, browser, hasTerminal, dark, cwd, threadId, ru
           const selectedPages = panel.items.filter((candidate): candidate is Item & { kind: "browser" } => candidate.kind === "browser" && targets.includes(candidate.key)).map(candidate => candidate.page);
           const others = pageKeys.filter(key => !targets.includes(key)), right = pageKeys.slice(Math.max(...targets.map(key => pageKeys.indexOf(key))) + 1);
           return <Tab key={item.key} icon={page.muted ? <VolumeX size={16} /> : <BrowserIcon size={16} />} label={page.title} title={page.url === "about:blank" ? page.title : `${page.title}\n${page.url}`} active={active} selected={selected.includes(item.key)}
-            closeLabel={`Close ${page.title} tab`} actions={browserTabActions(browser, page, { selected: selectedPages, close: () => closePages(targets),
-              ...(others.length ? { closeOthers: () => closePages(others) } : {}), ...(right.length ? { closeRight: () => closePages(right) } : {}),
+            closeLabel={`Close ${page.title} tab`} actions={browserTabActions(browser, page, { selected: selectedPages, close: () => { void closePages(targets); },
+              ...(others.length ? { closeOthers: () => { void closePages(others); } } : {}), ...(right.length ? { closeRight: () => { void closePages(right); } } : {}),
               pin: () => { setPinError(""); void browserPins.toggle({ url: page.url, title: page.title }); }, pinned: browserPins.pins.some(pin => pin.url === page.url),
               rename: () => { setName(page.title); setRenameError(""); setRenaming(page); } })}
-            onContextMenu={() => { if (!selected.includes(item.key)) { setSelection([item.key]); anchor.current = item.key; } }} onSelect={event => selectPage(item.key, event)} onClose={() => closePages(targets)} />;
+            onContextMenu={() => { if (!selected.includes(item.key)) { setSelection([item.key]); anchor.current = item.key; } }} onSelect={event => selectPage(item.key, event)} onClose={() => { void closePages(targets); }} />;
         })}
       </TabStrip>
       <Button type="button" variant="ghost" size="icon-sm" className="side-action" aria-pressed={full} aria-label={full ? "Exit full view" : "Enter full view"} title={full ? "Exit full view (Ctrl+Shift+F)" : "Full view (Ctrl+Shift+F)"} onClick={() => panel.toggleFull()}>{full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}</Button>

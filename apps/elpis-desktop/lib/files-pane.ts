@@ -165,7 +165,7 @@ export function openRef(ref: FileRef, { asText = false, onError }: { asText?: bo
     return true;
   }
   if (!asText && pageOpener && /\.html?$/i.test(found.abs) && found.line === undefined) { pageOpener(found.abs); for (const request of requests) request(); return true; }
-  openFile(cwd, found.rel, { line: found.line, endLine: found.endLine, added: found.added, show: true });
+  void openFile(cwd, found.rel, { line: found.line, endLine: found.endLine, added: found.added, show: true });
   for (const request of requests) request();
   return true;
 }

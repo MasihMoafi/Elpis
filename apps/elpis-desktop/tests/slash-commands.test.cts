@@ -37,7 +37,7 @@ const turnAfter = (threadId: string, turnId: string, items: object[] = []) => se
 }, 60);
 
 before(async () => {
-  server = http.createServer(async (req, res) => {
+  server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const route = new URL(req.url, 'http://localhost'); let body = ''; for await (const chunk of req) body += chunk;
     const json = (value: unknown) => { res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(value)); };
     if (req.method === 'POST' && route.pathname !== '/api/session') posts.push({ path: route.pathname, body: body ? JSON.parse(body) : undefined });
@@ -65,7 +65,7 @@ before(async () => {
     }
     if (route.pathname.startsWith('/api/')) return json({});
     try { const file = path.join(root, route.pathname === '/' ? 'index.html' : route.pathname); const content = await fs.readFile(file); res.setHeader('content-type', file.endsWith('.js') ? 'text/javascript' : file.endsWith('.css') ? 'text/css' : file.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); } catch { res.statusCode = 404; res.end(); }
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)); const address = server.address(); assert.ok(address && typeof address !== 'string'); url = `http://127.0.0.1:${address.port}/#token=fixture`;
   browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
 });
@@ -101,8 +101,8 @@ async function open({ colorScheme }: { colorScheme?: string } = {}) {
       assert.ok(left.every(value => value === ''), `${text} clears the composer`); assert.equal(await page.locator('[role="listbox"][aria-label="Slash commands"]').count(), 0, `${text} closes the menu`);
     } };
 }
-const names = (menu: Locator) => menu.getByRole('option').evaluateAll(options => options.map(option => { const name = option.querySelector('.slash-name'); if (!name) throw Error('Slash name is missing'); return name.textContent; }));
-const selected = (menu: Locator) => menu.locator('[role="option"][aria-selected="true"] .slash-name').textContent();
+
+
 const focused = (page: Page) => page.evaluate(() => { const element = document.activeElement; return element ? `${element.tagName.toLowerCase()}:${element.getAttribute('aria-label') || ''}` : ''; });
 const focusInside = (page: Page, selector: string) => page.evaluate(selector => !!document.activeElement?.closest(selector), selector);
 /** Typing after a command goes to the composer, wherever the command left the focus. */

@@ -254,7 +254,7 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
   const home2 = path.join(root, 'elpis2'), run2 = path.join(root, 'run2');
   for (const d of [home2, run2]) fs.mkdirSync(d, { recursive: true, mode: 0o700 });
   fs.copyFileSync(path.join(home, 'config.toml'), path.join(home2, 'config.toml'));
-  const { ELPIS_SHARED_BRIDGE, ELPIS_BRIDGE_SOCKET, ...base } = env;
+  const { ELPIS_SHARED_BRIDGE: _ELPIS_SHARED_BRIDGE, ELPIS_BRIDGE_SOCKET: _ELPIS_BRIDGE_SOCKET, ...base } = env;
   const env2 = { ...base, ELPIS_HOME: home2, CODEX_HOME: home2, XDG_RUNTIME_DIR: run2, ACP_BRIDGE_LOG: path.join(root, 'bridge2.log') };
   const launch = async (dir: string) => {
     const child = spawn(process.execPath, [path.join(dir, 'shared-runtime.mts'), path.join(dir, 'acp-bridge.mts')], { env: env2, cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });

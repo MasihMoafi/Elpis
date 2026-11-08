@@ -72,7 +72,7 @@ function fakeDesktop(scoped = false) {
 async function fixture(t: TestContext, { running = false, scoped = false, hold = null }: { running?: boolean; scoped?: boolean; hold?: (() => Promise<unknown>) | null } = {}) {
   const streams = new Set<import('node:http').ServerResponse>(), posts: Post[] = [], errors: string[] = [];
   const thread = { id: 'a', name: 'Chat A', cwd: '/tmp/browser-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' } };
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     const url = new URL(req.url ?? '/', 'http://fixture'), pathname = url.pathname;
     const json = (data: unknown) => { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(data)); };
     if (pathname === '/api/events') { res.writeHead(200, { 'Content-Type': 'text/event-stream' }); res.write(': connected\n\n'); streams.add(res); req.on('close', () => streams.delete(res)); return; }
@@ -96,7 +96,7 @@ async function fixture(t: TestContext, { running = false, scoped = false, hold =
     const file = path.join(staticOut, pathname === '/' ? 'index.html' : pathname);
     if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }
     const types: Record<string, string> = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' }; res.setHeader('Content-Type', types[path.extname(file)] || 'application/octet-stream'); res.end(fs.readFileSync(file));
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ headless: true, ...(process.env.ELPIS_CHROMIUM ? { executablePath: process.env.ELPIS_CHROMIUM } : {}) });
   t.after(async () => { await browser.close(); for (const stream of streams) stream.end(); await new Promise<void>(resolve => server.close(() => resolve())); });

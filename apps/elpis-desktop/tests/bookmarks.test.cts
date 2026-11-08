@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 import type { ReactElement, ReactNode } from 'react';
 import type { Thread } from '../lib/api.ts';
 
@@ -35,7 +36,7 @@ function fixture() {
       return target ? /\.tsx?$/.test(target) ? load(target) : local(target) : local(id);
     };
     const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-    new Function('require', 'module', 'exports', code)(imports, module, module.exports);
+    compileFunction(code, ['require', 'module', 'exports'])(imports, module, module.exports);
     return module.exports as T;
   }
   return { load, render<T>(run: () => T): T { cursor = 0; return run(); }, effects() { for (const effect of pending.splice(0)) effect(); } };

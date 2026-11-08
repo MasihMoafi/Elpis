@@ -76,7 +76,9 @@ export function HtmlFilePreview({ text, file, label, onSelection }: { text: stri
           const response = await fetch(fileAssetUrl(file.cwd, path), { signal: controller.signal });
           if (!response.ok) throw Error("Image unavailable");
           const blob = await response.blob();
-          const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(blob); });
+          const data = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => {
+            if (typeof reader.result === "string") resolve(reader.result); else reject(new Error("Image unavailable"));
+          }; reader.onerror = () => reject(reader.error ?? new Error("Image unavailable")); reader.readAsDataURL(blob); });
           element.setAttribute("src", data);
         } catch { warnings = true; element.removeAttribute("src"); }
       }

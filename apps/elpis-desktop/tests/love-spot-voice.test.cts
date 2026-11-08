@@ -79,10 +79,9 @@ for (const colorScheme of ['light'] as const) test(`Love Spot hides unavailable 
 });
 
 // Defined only while subscription speech is reliable: a skipped test fails the renderer gate (scripts/renderer-artifact-gate.mts).
-if (require('../lib/love-spot-audio.mts').READ_ALOUD_AUDIO.available) for (const sound of [true, false]) test(`Read aloud verifies actual sound before completion (sound=${sound})`, async t => {
-  const { READ_ALOUD_AUDIO } = await import('../lib/love-spot-audio.mts');
-  let f: ParityFixture; const streams = new Set<ServerResponse>();
-  f = await fixture({ routes: {
+if (require('../lib/love-spot-audio.mts').READ_ALOUD_AUDIO.available) for (const sound of [true, false]) test(`Read aloud verifies actual sound before completion (sound=${sound})`, async () => {
+  const streams = new Set<ServerResponse>();
+  const f = await fixture({ routes: {
     '/api/voice/read-aloud': async (body, _url, response) => {
       const sdp = await loopback(f.page, body.sdp);
       await f.page.evaluate(sound => { const output = (window as VoiceWindow).voiceProof.outputs.at(-1); if (!output) throw Error('No voice output'); output.gain.gain.value = sound ? 0.1 : 0; }, sound);

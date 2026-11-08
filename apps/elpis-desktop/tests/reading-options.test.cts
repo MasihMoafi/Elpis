@@ -4,7 +4,7 @@
 // engine or model. Captures go to $ELPIS_PARITY_SHOTS when it is set.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
+
 const { fixture } = require('./parity-fixture.cts');
 const { openSettings, leaveSettings } = require('./controls.cts');
 

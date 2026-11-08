@@ -5,7 +5,7 @@ import { act } from 'react'
 import { dom } from './fixtures/dom.mts'
 import { panel, field } from './fixtures/panel.mts'
 import { en } from './locales.ts'
-import { waitFor } from '../../bridge/router/executor/fixtures.test.mts'
+import { waitFor } from '../../bridge/router/executor/fixtures.mts'
 import { savePrompts } from '../../bridge/router/app/prompts.mts'
 after(() => dom.window.close())
 

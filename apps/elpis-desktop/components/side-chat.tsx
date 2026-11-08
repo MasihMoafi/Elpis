@@ -76,7 +76,7 @@ export function SideChat({ parentId, open, question, onClose, onForward }: { par
     if (!question || requested.current === question.id) return;
     requested.current = question.id; setDraft(question.text);
     if (question.text.trim()) void send(question.text);
-  }, [question]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [question]);
 
   return <section role="region" aria-label={isRecap ? "Recap" : "Side chat"} hidden={!open} className="side-chat" onKeyDown={event => {
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }

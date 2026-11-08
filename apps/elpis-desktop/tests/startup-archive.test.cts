@@ -34,7 +34,7 @@ async function fixture(t: import('node:test').TestContext, { modelFailure = fals
       emit('message', { method, params: { threadId: affected } });
     }
   }
-  const server = http.createServer(async (req, res) => {
+  const server = http.createServer((req, res) => { void (async () => {
     assert.ok(req.url); const url = new URL(req.url, 'http://fixture'), pathname = url.pathname;
     if (pathname.startsWith('/api/')) requests.push({ method: req.method, path: pathname });
     const json = (data: unknown, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(data)); };
@@ -97,12 +97,12 @@ async function fixture(t: import('node:test').TestContext, { modelFailure = fals
     const file = path.join(output, pathname === '/' ? 'index.html' : pathname);
     if (!fs.existsSync(file)) { res.writeHead(404); return res.end(); }
     res.setHeader('Content-Type', ({ '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css', '.svg': 'image/svg+xml' } as Record<string, string>)[path.extname(file)] || 'application/octet-stream'); res.end(fs.readFileSync(file));
-  });
+  })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
-  let browser: { close(): Promise<void> } | undefined;
-  t.after(async () => { if (!requests.length || process.env.ELPIS_AVAILABILITY_DEBUG) t.diagnostic(JSON.stringify({ body: await page.locator('body').innerText(), archived: [...archived], requests })); for (const finish of held) { try { finish({ error: 'Fixture ended' }, 503); } catch {} } await browser?.close(); for (const client of [...clients, ...loveClients]) client.end(); await new Promise(resolve => server.close(resolve)); assert.deepEqual(errors, [], 'Fixture must have no endpoint or renderer failures'); });
-  const launched = await chromium.launch({ headless: true, executablePath: process.env.ELPIS_CHROMIUM || undefined }); browser = launched;
+  const browserReady = chromium.launch({ headless: true, executablePath: process.env.ELPIS_CHROMIUM || undefined });
+  t.after(async () => { if (!requests.length || process.env.ELPIS_AVAILABILITY_DEBUG) t.diagnostic(JSON.stringify({ body: await page.locator('body').innerText(), archived: [...archived], requests })); for (const finish of held) { try { finish({ error: 'Fixture ended' }, 503); } catch {} } await browserReady.then((browser: { close(): Promise<void> }) => browser.close(), () => {}); for (const client of [...clients, ...loveClients]) client.end(); await new Promise(resolve => server.close(resolve)); assert.deepEqual(errors, [], 'Fixture must have no endpoint or renderer failures'); });
+  const launched = await browserReady;
   const page = await launched.newPage({ viewport: { width: 1280, height: 900 } });
   const network = await page.context().newCDPSession(page); await network.send('Network.enable'); await network.send('Network.setCacheDisabled', { cacheDisabled: true });
   page.on('pageerror', (error: Error) => errors.push(error.message)); page.on('console', (message: { type(): string; text(): string }) => { if (message.type() === 'error') t.diagnostic(message.text()); }); page.setDefaultTimeout(4000);

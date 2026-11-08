@@ -131,6 +131,6 @@ export function useWorkflowSandbox(wanted: boolean, onError: (message: string) =
       if (current) setSandbox(result.cwd);
     }).catch(cause => { if (current) onError(errorText(cause, "Could not open the workflow sandbox. Choose a project or reopen Workflows to retry.")); });
     return () => { current = false; };
-  }, [wanted, sandbox]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wanted, sandbox]);
   return sandbox;
 }

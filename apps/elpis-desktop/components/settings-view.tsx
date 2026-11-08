@@ -90,7 +90,7 @@ export function SettingsView({ initialTab = "providers", navigationKey = 0, acti
     setTab(next);
     if (settingsLoaded() && CONFIG_PAGES.includes(next)) reloadSettings().catch(() => {});
   };
-  useEffect(() => { setQuery(""); selectTab(initialTab); }, [initialTab, navigationKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setQuery(""); selectTab(initialTab); }, [initialTab, navigationKey]);
   const page = (section: Tab) => {
     switch (section) {
       case "general": return <GeneralSettings />;

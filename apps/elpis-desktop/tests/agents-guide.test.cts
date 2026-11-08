@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs/promises');
+
 const { fixture: startFixture } = require('./parity-fixture.cts');
 async function fixture() {
   const f = await startFixture();
@@ -8,7 +8,7 @@ async function fixture() {
   return f;
 }
 
-const topics = ['One agent or many', 'Mother agent and Father agent', 'Writers and checks', 'Choose a pattern', 'Read a run'];
+
 type GuidePage = { getByRole(role: string, options: { name: string | RegExp }): GuideLocator; keyboard: { press(key: string): Promise<unknown> } };
 type GuideLocator = { getByRole(role: string, options: { name: string | RegExp; exact?: boolean }): GuideLocator; getByText(text: string, options: { exact: boolean }): GuideLocator; click(): Promise<unknown>; fill(text: string): Promise<unknown>; waitFor(): Promise<unknown>; isVisible(): Promise<boolean> };
 const guide = (page: GuidePage) => page.getByRole('region', { name: 'Guide to managing agents' });

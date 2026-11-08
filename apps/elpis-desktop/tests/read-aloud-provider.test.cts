@@ -1,3 +1,4 @@
+const { compileFunction }: typeof import('node:vm') = require('node:vm');
 const { test } = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const fs = require('node:fs');
@@ -19,7 +20,7 @@ function fixture() {
   const imports = (id: string) => id === 'react' ? hooks : id === '@/lib/api' ? { sessionReady: async () => {}, api: async () => ({ available }) }
     : id === '@/lib/love-spot-audio' ? { READ_ALOUD_AUDIO: { available: false } }
     : id === '@/lib/error-text.mts' ? { errorText: (error: { message?: string } | null, fallback: string) => error?.message || fallback } : require(id);
-  new Function('require', 'module', 'exports', code)(imports, module, module.exports);
+  compileFunction(code, ['require', 'module', 'exports'])(imports, module, module.exports);
   const previousWindow = global.window;
   Reflect.set(global, 'window', { addEventListener: (name: string, callback: () => void) => listeners.set(name, callback), removeEventListener: (name: string) => listeners.delete(name) });
   return {

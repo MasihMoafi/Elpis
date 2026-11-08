@@ -1,4 +1,3 @@
-import type { Page } from 'playwright-core';
 import type { LoveSpotFixture, LoveSpotOptions, SceneElement, Turn } from './love-spot-test-types.mts';
 // Love Spot's board is where Matilda answers (Masih, 23 Oct: "I want to type in the draw board, or draw something. and I EXPECT a reply from Matilda."):
 // what reaches her, where her reply lands, and the board's own microphone. Her face, her painting and who she is: tests/matilda.test.cts.
@@ -6,24 +5,7 @@ const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const { loveSpotFixture }: { loveSpotFixture(options?: LoveSpotOptions): Promise<LoveSpotFixture> } = require('./love-spot-fixture.cts');
 
-async function microphone(page: Page) {
-  await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => ({ getTracks: () => [{ stop() {} }] }) } });
-    class FakeMediaRecorder {
-      static isTypeSupported() { return true; }
-      state = 'inactive';
-      ondataavailable?: (event: { data: Blob }) => void;
-      onstop?: () => void;
-      start() { this.state = 'recording'; }
-      stop() { this.state = 'inactive'; this.ondataavailable?.({ data: new Blob(['test sound']) }); this.onstop?.(); }
-    }
-    Reflect.set(window, 'MediaRecorder', FakeMediaRecorder);
-  });
-  let result = { text: 'A voice note from Masih' }, status = 200;
-  await page.route('**/api/tools/transcription?*', route => route.fulfill({ status: route.request().method() === 'POST' ? status : 200, json: route.request().method() === 'POST' ? result : { available: true, backend: 'fixture', label: 'the test transcriber' } }));
-  await page.reload();
-  return (value: { text: string }, code = 200) => { result = value; status = code; };
-}
+
 // Her reply no longer zooms the board (5 Nov), so a second note goes to its own empty spot, not onto the first.
 async function note(f: LoveSpotFixture, text: string, { x = 450, y = 300 } = {}) {
   const bounds = await f.page.locator('.excalidraw').boundingBox(); assert.ok(bounds);
