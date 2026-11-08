@@ -1,161 +1,14 @@
 const { createTestTempDir, removeTestTempDir } = require("../tests/temp-root.cts");
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const vm = require("node:vm");
-const { stripTypeScriptTypes } = require("node:module");
 const fs = require("node:fs");
 const path = require("node:path");
-const { EventEmitter } = require("node:events");
-
-type Control = { dirty: unknown; workflowSaved: boolean; inert?: boolean; readFailure?: boolean };
-type Relaunch = { execPath: string; args: string[] };
-type Call = string | ["thread", string] | ["relaunch", Relaunch];
-type Host = { isDestroyed: () => boolean; webContents: { executeJavaScript: (script: string) => Promise<unknown> } };
-
-// The standalone app makes its own home on start; tests give it a throwaway one, never the real ~/.local/share/love-spot.
 const launchHome = createTestTempDir(path.join(require("node:os").tmpdir(), "love-dock-home-"));
-test.after(() => removeTestTempDir(launchHome));
-let launchEnv: Record<string, string> = {};
-async function launch(
-  args: string[],
-  flushText?: () => Promise<boolean>,
-  flushBrowsers?: () => Promise<void>,
-  canRestart = async () => true,
-) {
-  const app = new EventEmitter();
-  let ready!: () => void, lock!: { loveSpot: boolean };
-  const identity: Record<string, string> = {};
-  Object.assign(app, {
-    setName: (name: string) => {
-      identity.name = name;
-    },
-    setPath: (key: string, value: string) => {
-      identity[key] = value;
-    },
-    setDesktopName: (name: string) => {
-      identity.desktop = name;
-    },
-    getPath: () => "/tmp/love-dock-test",
-    commandLine: { appendSwitch() {}, getSwitchValue: () => "" },
-    requestSingleInstanceLock: (data: { loveSpot: boolean }) => {
-      lock = data;
-      return true;
-    },
-    whenReady: () =>
-      new Promise<void>(resolve => {
-        ready = resolve;
-      }),
-    quit() {},
-    relaunch: (value: Relaunch) => calls.push(["relaunch", value]),
-  });
-  const calls: Call[] = [];
-  const host = {
-    isDestroyed: () => false,
-    isMinimized: () => false,
-    isVisible: () => true,
-    focus: () => calls.push("focus-chat"),
-  };
-  const openers = { threads: { queue: (id: string) => calls.push(["thread", id]) }, newChats: { queue() {} } };
-  const sessions = {
-    windows: new Set<Host>(),
-    flushText,
-    flushBrowsers: async () => {
-      calls.push("browser-flush");
-      await flushBrowsers?.();
-    },
-    openersFor: () => openers,
-    open: async () => {
-      calls.push("chat");
-      return host;
-    },
-    openLoveSpot: async () => {
-      calls.push("love");
-    },
-    openWorkflows: async () => {
-      calls.push("workflows");
-    },
-  };
-  const electron = {
-    app,
-    ipcMain: { handle() {}, removeHandler() {} },
-    dialog: { showErrorBox() {} },
-    Menu: { buildFromTemplate: (x: unknown) => x, setApplicationMenu() {} },
-  };
-  const context = vm.createContext({
-    __dirname,
-    console,
-    process: { argv: ["electron", "app", ...args], env: { HOME: launchHome, ...launchEnv }, platform: "linux" },
-    sessions,
-    openers,
-    testStore: { get: () => null, flush: async () => calls.push("workspace-flush") },
-    testServer: { canRestart, close: async () => calls.push("board-close") },
-    require: (name: string) =>
-      name === "./app-updates.cts"
-        ? { executableLauncher: (file: string) => file, createAppUpdates: () => ({ setRunningEngine() {} }) }
-        : name === "electron"
-          ? electron
-          : name === "./quick-entry.cts"
-            ? {
-                startQuickEntry: () => {
-                  calls.push("quick-entry");
-                  return { start: async () => {} };
-                },
-              }
-            : name === "./tray.cts"
-              ? {
-                  createCloseToTray: () => ({}),
-                  createTray: () => {
-                    calls.push("tray");
-                    return { destroy() {} };
-                  },
-                }
-              : name === "./screenshot-popup.cts"
-                ? {
-                    createScreenshotPopup: () => ({ attach: () => () => {}, dispose() {} }),
-                    drawsOnWayland: () => false,
-                  }
-                : require(name),
-  });
-  vm.runInContext(stripTypeScriptTypes(fs.readFileSync(path.join(__dirname, "main.cts"), "utf8")), context);
-  vm.runInContext(
-    "server = testServer; store = testStore; sessionWindows = sessions; primaryOpeners = openers;",
-    context,
-  );
-  ready();
-  const settle = () => new Promise(resolve => setImmediate(resolve));
-  await settle();
-  return {
-    app,
-    calls,
-    lock,
-    settle,
-    identity,
-    sessions,
-    quit: () => vm.runInContext("quitApp", context)(),
-    restart: (target: string) => vm.runInContext("quitApp", context)(target),
-  };
-}
+import type { Control, Relaunch } from "./love-spot.fixtures.cts";
+const { setLaunchEnv, launch, editableHost, sessionFixture }: import("./love-spot.fixtures.cts").Fixtures = require("./love-spot.fixtures.cts");
 
-function editableHost(control: Control, calls: Call[]) {
-  const webContents = Object.assign(new EventEmitter(), {
-    executeJavaScript: async (script: string) => {
-      if (script.includes("__elpisHasUnsavedFiles")) {
-        calls.push("files-check");
-        if (control.readFailure) throw Error("Private file status read failed");
-        return control.dirty;
-      }
-      if (script.includes("__elpisFlushWorkflow")) {
-        calls.push("workflow-flush");
-        return control.workflowSaved;
-      }
-      if (script.includes("inert = true")) control.inert = true;
-      if (script.includes("inert = false")) control.inert = false;
-      if (script.includes("storage")) calls.push("storage-flush");
-      return true;
-    },
-  });
-  return { isDestroyed: () => false, webContents };
-}
+test.after(() => removeTestTempDir(launchHome));
+
 for (const action of ["quit", "restart"])
   test(`explicit ${action} keeps all windows open for hidden source edits and permits a clean retry`, async () => {
     const f = await launch([], async () => true),
@@ -174,6 +27,7 @@ for (const action of ["quit", "restart"])
     assert.equal(await run(), true);
     assert.ok(f.calls.includes("board-close"));
   });
+
 test("explicit quit flushes the latest workflow before native storage and refuses a failed graph save", async () => {
   const f = await launch([], async () => true),
     control: Control = { dirty: false, workflowSaved: false };
@@ -187,6 +41,7 @@ test("explicit quit flushes the latest workflow before native storage and refuse
   assert.ok(f.calls.lastIndexOf("workflow-flush") < f.calls.indexOf("storage-flush"));
   assert.ok(f.calls.indexOf("storage-flush") < f.calls.indexOf("board-close"));
 });
+
 for (const dirty of [undefined, null, 1, "false"])
   test(`an invalid installed file status (${String(dirty)}) refuses explicit quit`, async () => {
     const f = await launch([], async () => true),
@@ -196,6 +51,7 @@ for (const dirty of [undefined, null, 1, "false"])
     assert.equal(control.inert, false);
     assert.ok(!f.calls.includes("board-close"));
   });
+
 test("a failed file status read restores editing and permits retry after the renderer recovers", async () => {
   const f = await launch([], async () => true),
     control: Control = { dirty: false, workflowSaved: true, readFailure: true };
@@ -280,98 +136,6 @@ test("app quit waits for browser persistence and permits retry after a failed sa
   assert.equal(quit, 1);
 });
 
-function sessionFixture({ loveSpotApp = false } = {}) {
-  class Window extends EventEmitter {
-    constructor() {
-      super();
-      this.text = "First words";
-      this.saved = "";
-      this.saves = 0;
-      this.webContents = Object.assign(new EventEmitter(), {
-        session: {
-          setPermissionRequestHandler() {},
-          setPermissionCheckHandler() {},
-          setUserAgent() {},
-          webRequest: { onHeadersReceived() {}, onBeforeSendHeaders() {} },
-        },
-        setWindowOpenHandler() {},
-        executeJavaScript: async () => {
-          this.saves++;
-          if (this.failure === "throw") throw Error("Test disk unavailable");
-          if (this.failure === "refuse") return false;
-          this.saved = this.text;
-          return true;
-        },
-      });
-    }
-    isDestroyed() {
-      return !!this.destroyed;
-    }
-    async loadURL(url: string) {
-      this.url = url;
-    }
-    close() {
-      let prevented = false;
-      this.emit("close", {
-        preventDefault() {
-          prevented = true;
-        },
-      });
-      if (!prevented) {
-        this.destroyed = true;
-        this.emit("closed");
-      }
-    }
-  }
-  const noop = () => {};
-  const stubs = {
-    "./browser-sessions.cts": {
-      createBrowserSessions: () => ({
-        attach: () => ({ open: noop, setBackground: noop, dispose: noop }),
-        drop: noop,
-        flush: async () => {},
-      }),
-    },
-    "./state.cts": { registerState: () => noop },
-    "./files.cts": { registerFiles: () => noop },
-    "./terminal.cts": { registerTerminal: () => noop },
-    "./context-menu.cts": { attachContextMenu: () => noop },
-    "./theme.cts": { registerTheme: () => noop },
-    "./improve.cts": { registerImprove: () => noop },
-    "./open-thread.cts": {
-      createThreadOpener: () => ({ attach: () => noop }),
-      createNewChatOpener: () => ({ attach: () => noop }),
-    },
-    "./window-ipc.cts": { createWindowIpc: () => () => ({ handle: noop, removeHandler: noop }) },
-    // Shared documents (84f35b9d4) attach to each window; these checks are about saving and closing.
-    "./documents.cts": { createDocuments: () => ({ attach: () => noop, call: async () => null }) },
-  };
-  const module = {
-    exports: {} as {
-      createSessionWindows: (options: unknown) => {
-        open: () => Promise<Window>;
-        openLoveSpot: () => Promise<Window>;
-        flushText: () => Promise<boolean>;
-        windows: Set<Window>;
-      };
-    },
-  };
-  vm.runInNewContext(stripTypeScriptTypes(fs.readFileSync(path.join(__dirname, "session-windows.cts"), "utf8")), {
-    __dirname,
-    module,
-    console: { ...console, error: noop },
-    URL,
-    require: (name: string) => (stubs as Record<string, unknown>)[name] ?? require(name),
-  });
-  return module.exports.createSessionWindows({
-    electron: { BrowserWindow: Window },
-    url: "http://127.0.0.1:4000/",
-    closeToTray: { hides: () => false, closed: noop },
-    mayClose: () => true,
-    loveSpotApp,
-  });
-}
-
 for (const failure of ["refuse", "throw"])
   test(`a partly failed quit still flushes later text when another window closes (${failure})`, async () => {
     const sessions = sessionFixture(),
@@ -430,11 +194,11 @@ test("--love-spot-app is its own app under the Love Spot dock icon", async () =>
 // 7 Nov: a package's window must carry its own launcher's identity, or the dock shows a generic icon.
 test("a packaged Love Spot names its own launcher", async (t: import("node:test").TestContext) => {
   t.after(() => {
-    launchEnv = {};
+    setLaunchEnv({});
   });
-  launchEnv = { LOVE_SPOT_DESKTOP: "love-spot.desktop" };
+  setLaunchEnv({ LOVE_SPOT_DESKTOP: "love-spot.desktop" });
   assert.equal((await launch(["--love-spot-app"])).identity.desktop, "love-spot.desktop");
-  launchEnv = { LOVE_SPOT_DESKTOP: "love-spot_love-spot.desktop" };
+  setLaunchEnv({ LOVE_SPOT_DESKTOP: "love-spot_love-spot.desktop" });
   assert.equal((await launch(["--love-spot-app"])).identity.desktop, "love-spot_love-spot.desktop");
 });
 
