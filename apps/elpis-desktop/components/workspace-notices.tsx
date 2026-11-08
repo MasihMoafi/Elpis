@@ -10,7 +10,7 @@ function Notice({ tone, role = "status", label, onDismiss, className = "", child
   return <div className={`error-banner ${tone} ${className}`.trim()} role={role}><span className="min-w-0 flex-1">{children}</span><Button variant="ghost" size="icon-sm" aria-label={label} onClick={onDismiss}><X size={14} /></Button></div>;
 }
 
-/** The notices under the chat, in their fixed order (a newer alert waits until the one before it is dismissed). `rewind` and
+/** Notices after the transcript, in their fixed order (a newer alert waits until the one before it is dismissed). `rewind` and
  * `recovery` are the page's own controls, placed where they belong in that order. */
 export function WorkspaceNotices({ connection, deleted, onUndoDelete, onDismissDeleted, rewind, error, onDismissError, worktree, onDismissWorktree, loadingModels, conversationError, onDismissConversationError, recovery }: {
   connection?: string; deleted: string | null; onUndoDelete: () => void; onDismissDeleted: () => void; rewind?: ReactNode;

@@ -18,7 +18,7 @@ These are the required behaviors, numbered 1–85 without gaps; refer to one as 
 
 ## Chat, composer and turns
 
-12. Sent input appears at once. Drafts survive navigation, reconnect and restart. Typing stays available while disconnected; runtime actions explain when a connection is required and are not replayed automatically. Messages queued during a turn remain in order. (S34, C5, R2, R3, R4, R66, R69)
+12. Sent input appears at once. Drafts survive navigation, reconnect and restart. Typing stays available while disconnected; runtime actions explain when a connection is required and are not replayed automatically. Messages queued during a turn remain in order. Reconnect and error notice placement follows [DESIGN.md](DESIGN.md#5-layout). (S34, C5, R2, R3, R4, R66, R69)
 13. The composer stays on one row at narrow widths. Thinking, effort, Send and Stop remain accessible; secondary controls move into the Plus menu. Fast applies at the next model request in the running turn, persists for later turns and shows the acknowledged state; unsupported routes explain why without starting a turn. (S32, S35, C5, R85, R87)
 14. User and assistant messages render in full, without Collapse or Expand previews. Copy retains the complete message. Image replies identify the selected image and source message, show a thumbnail, focus the composer and send that image's bytes. Replacing or cancelling the reply preserves unrelated attachments and drafts; failed image reads show an error. (S image replies, R27)
 15. Hide a Reasoning disclosure when no recorded or streamed summary exists. Preserve actual summaries, history and copying. A finished turn says “Worked for …” when its timing is known; otherwise it summarizes the recorded activity by kind. (S36, R88)

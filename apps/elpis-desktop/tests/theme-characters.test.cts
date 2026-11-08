@@ -84,7 +84,7 @@ for (const colorScheme of ['light', 'dark']) test(`characters can be selected be
     await draft.fill('Keep this draft while I choose');
     const picker = pinned.getByRole('button', { name: 'Character', exact: true });
     await picker.waitFor();
-    for (const [palette, name] of [ALL_CHARACTERS[0], ALL_CHARACTERS.at(-1)]) {
+    for (const [palette, name] of ALL_CHARACTERS.filter((_, index, all) => index === 0 || index === all.length - 1)) {
       await picker.focus();
       await page.keyboard.press('Enter');
       const menu = page.locator('[data-matilda-character-menu]');
