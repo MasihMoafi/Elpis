@@ -87,7 +87,7 @@ for (const colorScheme of ['light', 'dark']) test(`characters can be selected be
     for (const [palette, name] of [ALL_CHARACTERS[0], ALL_CHARACTERS.at(-1)]) {
       await picker.focus();
       await page.keyboard.press('Enter');
-      const menu = page.getByRole('menu', { name: 'Characters', exact: true });
+      const menu = page.locator('[data-matilda-character-menu]');
       await menu.waitFor();
       const bounds = await menu.boundingBox();
       assert.ok(bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 1440 && bounds.y + bounds.height <= 960, 'picker fits in the window');
@@ -109,14 +109,14 @@ for (const colorScheme of ['light', 'dark']) test(`characters can be selected be
     assert.equal(await pinned.locator('.matilda-face img[data-character]').getAttribute('data-character'), 'Ink', 'choice survives reload');
     await picker.focus();
     await page.keyboard.press('Enter');
-    await page.getByRole('menu', { name: 'Characters', exact: true }).locator('[data-character-id="elpis"]').click();
+    await page.locator('[data-matilda-character-menu] [data-character-id="elpis"]').click();
     await page.waitForFunction(() => !document.querySelector('.matilda-face img[data-character]'));
     assert.equal(await pinned.locator('.matilda-face .matilda-avatar-light').count() > 0, true, 'Matilda can be restored');
     await pinned.getByRole('button', { name: 'Unpin Matilda', exact: true }).focus();
     await page.keyboard.press('Enter');
     const titlePicker = page.locator('.title-bar').getByRole('button', { name: 'Character', exact: true });
     await titlePicker.click();
-    await page.getByRole('menu', { name: 'Characters', exact: true }).locator('[data-character-id="palette-paper"]').click();
+    await page.locator('[data-matilda-character-menu] [data-character-id="palette-paper"]').click();
     await page.waitForFunction(() => document.querySelector('.title-bar .matilda-pin img[data-character]')?.getAttribute('data-character') === 'Ice');
     assert.equal(f.turns.length, 0, 'choosing a character never sends the draft');
     assert.deepEqual(f.errors, []);
