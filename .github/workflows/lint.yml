@@ -17,7 +17,17 @@ jobs:
         env:
           SHELLCHECK_OPTS: -S warning
         run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          actionlint_version=1.7.12
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          for attempt in 1 2 3; do
+            if curl --fail --location --silent --show-error --connect-timeout 20 --max-time 90 \
+              --output "$archive" "https://github.com/rhysd/actionlint/releases/download/v${actionlint_version}/actionlint_${actionlint_version}_linux_amd64.tar.gz" \
+              && tar -xzf "$archive" actionlint; then
+              break
+            fi
+            echo "actionlint download or extraction failed (attempt $attempt/3)" >&2
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+          done
           ./actionlint -color
   scripts:
     name: scripts and website
