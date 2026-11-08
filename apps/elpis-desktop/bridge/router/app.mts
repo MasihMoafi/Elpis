@@ -38,6 +38,7 @@ import { KV } from './sources/kv.mts';
 export interface MotherAppOptions {
   home: string; threadId: string; settings: () => SettingsValue; adapters: RuntimeAdapter[]; subprocess: SubprocessRuntime
   transport: ElpisChatTransport; models?: () => Promise<ModelCatalog>
+  routerModelChanged?: () => void
 }
 export class MotherApp implements SourceHost {
   readonly store: ExecutorStore
@@ -77,7 +78,7 @@ export class MotherApp implements SourceHost {
       } else {
         const current = store.settings(), chat = current.sources['elpis-chat']
         if (chat?.config.threadId !== options.threadId) store.saveSettings({ ...current, sources: { ...current.sources,
-          'elpis-chat': { enabled: true, config: { ...chat?.config, threadId: options.threadId } } } })
+          'elpis-chat': { enabled: chat?.enabled ?? true, config: { ...chat?.config, threadId: options.threadId } } } })
       }
       const sources = this.sources = new SourceRegistry(() => store.settings(), this.board)
       this.stops.push(sources.register(githubKind), sources.register(createElpisChatKind(options.transport)))
@@ -117,7 +118,7 @@ export class MotherApp implements SourceHost {
         promptVersion: id => sessions.promptVersion(id), mayRead: (id, revision) => sessions.mayRead(id, revision) }
       this.settings = new Settings({ store, sources, context, sessions, lifetime: this.lifetime.signal, health: this.board,
         engine: { policyChanged: (...args) => this.engine.policyChanged(...args) }, setup: this.setup, sourceHost: this,
-        requestPass: () => this.passes.request() })
+        requestPass: () => this.passes.request(), ...(options.routerModelChanged ? { routerModelChanged: options.routerModelChanged } : {}) })
       this.assessor = new MasterAssessor({ get engine() { return runtime.engine }, commands: this.commands,
         get deployment() { return runtime.setup.deployment }, effects: workers.effects, settings: () => store.settings(),
         paused: () => this.paused(), threadContext: trigger => sources.threadContext(trigger),
@@ -164,6 +165,12 @@ export class MotherApp implements SourceHost {
     try {
       await this.setup.run(this.store.settings())
       await this.workers.sessions.ensure(this.masterId, this.machine.stateDir, 'Elpis', 'orchestrator')
+      // A replaced router has no delivery receipts; an existing one deduplicates these persisted candidates.
+      for (const thread of this.store.threads.active()) {
+        const triggerId = thread.evaluating?.triggerIds[0]
+        const candidate = triggerId && this.engine.candidate(triggerId)
+        if (candidate) this.assessor.request(candidate)
+      }
       await this.workers.start()
       this.loops.push(watchElpisChat(this.context({ kind: 'elpis-chat', health: ['elpis-chat'] }), this.options.transport, this.lifetime.signal),
         watchGithub(this.context(githubKind), this.lifetime.signal))

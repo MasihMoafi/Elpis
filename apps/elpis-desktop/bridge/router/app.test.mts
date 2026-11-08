@@ -7,6 +7,21 @@ import { savePrompts } from './app/prompts.mts';
 import { z } from 'zod';
 import { SettingsSchema } from './policy.mts';
 
+test('reopening a bound chat preserves its disabled source until a person enables it', async () => {
+  const h = fixture()
+  try {
+    await h.app.settings.save('source:elpis-chat', { enabled: false, config: { threadId: 'old-chat' } }, h.app.store.blockRevision('source:elpis-chat'), 'panel')
+    await h.restart()
+    const id = h.message('held', 'Keep this request until the source is enabled')
+    await h.app.pump()
+    assert.equal(h.app.store.settings().sources['elpis-chat']?.enabled, false)
+    assert.equal(h.app.store.triggers.get(id), undefined)
+    await h.app.settings.save('source:elpis-chat', { enabled: true, config: { threadId: 'mother' } }, h.app.store.blockRevision('source:elpis-chat'), 'panel')
+    await h.app.pump()
+    assert.ok(h.app.store.triggers.get(id))
+  } finally { await h.close() }
+})
+
 test('routes through native tools, delivers the complete goal, and recovers a worker and one reply after lost acknowledgement', async () => {
   const h = fixture()
   try {

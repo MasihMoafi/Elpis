@@ -1,17 +1,88 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events';
-import { mkdirSync, mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, existsSync, writeFileSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DesktopClient } from '../client.mts';
 import { MotherAgent } from './mother-agent.mts';
 import { ElpisAdapter } from './executor/adapters.mts';
 import { FakeServer, waitFor } from './executor/fixtures.mts';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
+import type { StateView } from './app/http.mts';
+import { WebSocketServer } from 'ws';
 
 const CHAT = '00000000-0000-0000-0000-000000000001'
 
-function fixture({ fresh = false } = {}) {
+async function panel<T>(mother: MotherAgent, path: string, value?: unknown, method = value === undefined ? 'GET' : 'PUT'): Promise<T> {
+  const server = createServer((req, res) => { void mother.handle(req, res, String((server.address() as { port: number }).port)) })
+  server.listen(0, '127.0.0.1'); await once(server, 'listening')
+  try {
+    const response = await fetch(`http://127.0.0.1:${(server.address() as { port: number }).port}/api/mother/${path}`, {
+      method, headers: { 'x-orchestrator-request': '1', 'content-type': 'application/json' },
+      ...(value === undefined ? {} : { body: JSON.stringify(value) }),
+    })
+    const body = await response.json() as T
+    assert.equal(response.status, 200, JSON.stringify(body)); return body
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) }
+}
+
+test('an offline executor remains paused until Elpis is enabled, independently of the saved processing pause', async () => {
+  const h = fixture(), mother = h.create()
+  try {
+    await h.client.initialize()
+    assert.equal((await panel<StateView>(mother, 'state')).paused, true)
+    await panel(mother, 'executor/pause', { paused: false }, 'POST')
+    assert.equal((await panel<StateView>(mother, 'state')).paused, true)
+    assert.equal(h.adapterStarts, 0)
+    await mother.save({ version: mother.snapshot().version, enabled: true })
+    assert.equal((await panel<StateView>(mother, 'state')).paused, false)
+    await panel(mother, 'executor/pause', { paused: true }, 'POST')
+    assert.equal((await panel<StateView>(mother, 'state')).paused, true)
+    assert.ok(h.adapterStarts > 0)
+  } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
+})
+
+test('the panel reports off, missing model, running and disconnected states without inventing startup', async () => {
+  const h = fixture(), mother = h.create()
+  try {
+    await h.client.initialize(); await mother.start()
+    const off = await panel<StateView>(mother, 'state')
+    assert.equal(off.health.runtime?.state, 'paused'); assert.match(off.health.runtime?.detail ?? '', /off/i)
+    assert.equal(off.setup.accounts, null); assert.equal(h.adapterStarts, 0)
+    h.unsetDefaults()
+    await mother.save({ version: mother.snapshot().version, enabled: true })
+    const missing = await panel<StateView>(mother, 'state')
+    assert.equal(missing.health.runtime?.state, 'error'); assert.match(missing.health.runtime?.detail ?? '', /model/i)
+    await mother.save({ version: mother.snapshot().version, roles: roles('saved') })
+    const running = await panel<StateView>(mother, 'state')
+    assert.equal(running.health.runtime?.state, 'ready')
+    h.client.close()
+    const disconnected = await panel<StateView>(mother, 'state')
+    assert.equal(disconnected.health.runtime?.state, 'error'); assert.match(disconnected.health.runtime?.detail ?? '', /connect/i)
+  } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
+})
+
+test('a router model saved in the agent panel replaces the running router session', async () => {
+  const h = fixture({ fresh: true }), mother = h.create()
+  try {
+    await h.client.initialize(); await mother.start()
+    await mother.send(CHAT, { text: 'Keep this goal through a router model change.' })
+    await waitFor(() => assert.ok([...h.workers.threads.values()][0]?.turns.length))
+    const settings = await panel<{ blocks: { eval: { revision: number; value: object } } }>(mother, 'settings')
+    await panel(mother, 'settings/eval', { revision: settings.blocks.eval.revision,
+      value: { ...settings.blocks.eval.value, model: { provider: 'openai', model: 'router-saved' } } })
+    await waitFor(() => assert.equal(h.workers.calls.filter(call => call.method === 'thread/start').length, 2))
+    assert.equal(h.workers.calls.findLast(call => call.method === 'thread/start')?.params.model, 'router-saved')
+    assert.ok(h.workers.calls.some(call => call.method === 'thread/archive'))
+    await waitFor(() => assert.match(JSON.stringify([...h.workers.threads.values()][1]?.turns), /Keep this goal through a router model change/))
+    await mother.start()
+    assert.equal(h.workers.calls.filter(call => call.method === 'turn/start').length, 2, 'A reconnect must not replay an already delivered candidate')
+  } finally { await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true }) }
+})
+
+function fixture({ fresh = false, native = false } = {}) {
   const home = mkdtempSync(join(tmpdir(), 'mother-bridge-')), workers = new FakeServer()
   if (!fresh) { mkdirSync(join(home, 'router'), { recursive: true }); writeFileSync(join(home, 'router', 'mother.json'), JSON.stringify({ enabled: false })) }
   const calls: { method: string; params: Record<string, unknown> }[] = []
@@ -43,9 +114,47 @@ function fixture({ fresh = false } = {}) {
     queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, result })))
   } })
   const client = new DesktopClient(socket, { home, appHome: home, githubConnector: { instructions: async () => '' } })
-  const create = () => new MotherAgent({ client, home, adapters: async () => { adapterStarts++; return [new ElpisAdapter(workers.connect)] } })
+  const create = () => new MotherAgent({ client, home, ...(native ? {} : { adapters: async () => { adapterStarts++; return [new ElpisAdapter(workers.connect)] } }) })
   return { home, workers, calls, socket, client, create, get name() { return name }, get adapterStarts() { return adapterStarts }, unsetDefaults() { configured = false }, archiveExternally() { archived = true } }
 }
+
+test('the router joins this profile’s explicit bridge socket and ignores another profile’s endpoint', async () => {
+  const h = fixture({ fresh: true, native: true }), server = createServer(), sockets = new WebSocketServer({ server })
+  const socketPath = join(h.home, 'bridge.sock')
+  const previous = { ELPIS_HOME: process.env.ELPIS_HOME, ELPIS_APP_BRIDGE_SOCKET: process.env.ELPIS_APP_BRIDGE_SOCKET }
+  sockets.on('connection', socket => {
+    const connection = h.workers.connect()
+    connection.listeners.add(value => socket.send(JSON.stringify(value)))
+    socket.on('close', () => connection.close())
+    socket.on('message', raw => {
+      const bytes = Buffer.isBuffer(raw) ? raw : Array.isArray(raw) ? Buffer.concat(raw) : Buffer.from(raw)
+      const message = JSON.parse(bytes.toString('utf8')) as { id?: string | number; method?: string; params?: object; result?: object }
+      if (message.id === undefined) return
+      if (!message.method) { connection.respond?.(message.id, message.result ?? {}); return }
+      const result = message.method === 'initialize' ? Promise.resolve({}) : connection.call(message.method, message.params ?? {})
+      void result.then(result => socket.send(JSON.stringify({ id: message.id, result })))
+    })
+  })
+  server.listen(socketPath); await once(server, 'listening'); chmodSync(socketPath, 0o600)
+  process.env.ELPIS_HOME = h.home; process.env.ELPIS_APP_BRIDGE_SOCKET = socketPath
+  let mother = h.create()
+  try {
+    await h.client.initialize(); await mother.start()
+    assert.equal(mother.snapshot().error, undefined)
+    assert.equal(h.workers.calls.filter(call => call.method === 'thread/start').length, 1)
+    await mother.close()
+    process.env.ELPIS_HOME = join(h.home, 'other-profile')
+    mother = h.create(); await mother.start()
+    assert.match(mother.snapshot().error ?? '', /No running Elpis bridge/)
+    await waitFor(() => assert.equal(h.workers.connections.size, 0))
+  } finally {
+    await mother.close(); h.client.close()
+    for (const socket of sockets.clients) socket.terminate()
+    await new Promise<void>(resolve => sockets.close(() => server.close(() => resolve())))
+    for (const [name, value] of Object.entries(previous)) { if (value === undefined) delete process.env[name]; else process.env[name] = value }
+    rmSync(h.home, { recursive: true, force: true })
+  }
+})
 
 test('a fresh install starts Elpis and its pinned chat without any setting', async () => {
   const h = fixture({ fresh: true }), { client, create } = h

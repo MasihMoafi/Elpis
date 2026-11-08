@@ -97,7 +97,7 @@ test('real DesktopClient append and read keep one assistant reply after a restar
       let result: object
       if (request.method === 'initialize') result = {}
       else if (request.method === 'thread/read') {
-        if (deleted) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: 'thread not found' } }))); return }
+        if (deleted) { queueMicrotask(() => socket.emit('message', JSON.stringify({ id: request.id, error: { code: -32600, message: `thread not found: ${CHAT}` } }))); return }
         result = { thread: { id: CHAT, status: { type: 'idle' }, canAcceptDirectInput: writable } }
       } else if (request.method === 'thread/items/list') result = { data: request.params.cursor ? [user('1')] : [user('2')], nextCursor: request.params.cursor ? null : 'older' }
       else throw new Error(`Unexpected RPC: ${request.method}`)
@@ -124,7 +124,9 @@ test('real DesktopClient append and read keep one assistant reply after a restar
     assert.equal(page.data[0]?.item.text, 'May I start the helper?')
     assert.deepEqual((await createElpisChatTransport(reopened).read(CHAT, undefined)).map(item => item.role), ['user', 'user', 'assistant'])
     writable = false; await assert.rejects(reopened.appendAssistant(CHAT, { id: 'r2', text: 'denied' }), /parent/)
+    await assert.rejects(createElpisChatTransport(reopened).appendAssistant(CHAT, { id: 'r2', text: 'denied' }), /parent/)
     writable = true; deleted = true; await assert.rejects(reopened.appendAssistant(CHAT, { id: 'r2', text: 'gone' }), /thread not found/)
+    assert.equal(await createElpisChatTransport(reopened).appendAssistant(CHAT, { id: 'r2', text: 'gone' }), 'gone', 'A deleted source conversation must settle its outbox receipt instead of retrying forever')
     assert.ok(calls.every(method => ['initialize', 'thread/read', 'thread/items/list'].includes(method)))
   } finally { for (const value of clients) value.close(); rmSync(home, { recursive: true, force: true }) }
 })

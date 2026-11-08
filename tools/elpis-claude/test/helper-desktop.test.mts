@@ -17,6 +17,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { DesktopClient } from '../../../apps/elpis-desktop/bridge/client.mts';
 import { startDesktopServer } from '../../../apps/elpis-desktop/bridge/server.mts';
+import { connectAppServer } from '../app-server-connection.mts';
 import { createTestTempDir, removeTestTempDir } from './temp-root.mts';
 
 type Profile = ':read-only' | ':workspace' | ':danger-full-access';
@@ -54,6 +55,9 @@ if (process.argv.includes('app-server')) {
     if (msg.id === undefined) return;
     if (!msg.method && String(msg.id).startsWith('native-child-approval-')) {
       fs.writeFileSync(path.join(home, 'native-child-decision.json'), JSON.stringify(msg.result)); return;
+    }
+    if (!msg.method && String(msg.id).startsWith('native-dynamic-')) {
+      fs.writeFileSync(path.join(home, 'native-dynamic-response.json'), JSON.stringify(msg)); return;
     }
     const p = msg.params ?? {};
     const reply = (result: object) => send({ id: msg.id, result });
@@ -123,6 +127,8 @@ if (process.argv.includes('app-server')) {
         const turn = { id: randomUUID(), status: 'inProgress', items: [{ id: 'prompt', type: 'userMessage', content: p.input }] };
         row.thread.status = { type: 'active', activeFlags: [] }; row.thread.turns = [turn]; save(row);
         reply({ turn }); send({ method: 'turn/started', params: { threadId: p.threadId, turn } });
+        if (p.input?.some(item => item.text === '[dynamic-tool]')) send({ id: `native-dynamic-${p.threadId}`, method: 'item/tool/call',
+          params: { threadId: p.threadId, turnId: turn.id, callId: 'probe', namespace: null, tool: 'orchestrator_probe', arguments: { value: 'source result' } } });
         if (p.input?.some(item => item.text === '[native-child]')) {
           const id = randomUUID();
           const childTurn = { id: 'child-turn', status: 'inProgress', items: [] };
@@ -289,6 +295,27 @@ if (process.argv.includes('app-server')) {
     const reading = readEvents();
     t.after(() => reading);
     const messages = (): BridgeEvent[] => live.split('\n\n').slice(0, -1).flatMap(block => block.split('\n').filter(line => line.startsWith('data: ')).map(line => JSON.parse(line.slice(6))));
+    await t.test('a managed helper serves its dynamic tool on its owning connection while its parent is open', async () => {
+      const connection = connectAppServer({ url: `ws+unix://${socketPath}:/`, name: 'elpis-agents' })
+      try {
+        await connection.ready
+        let served = 0
+        connection.requests.add(message => {
+          if (message.method !== 'item/tool/call' || message.id === undefined) return false
+          served++; connection.respond(message.id, { success: true, contentItems: [{ type: 'inputText', text: 'source result' }] }); return true
+        })
+        const started = await connection.call('thread/start', { model: 'gpt-test', cwd: root, elpisParentThreadId: parent.result.thread.id,
+          dynamicTools: [{ name: 'orchestrator_probe', description: 'Read evidence', inputSchema: { type: 'object' } }] })
+        const threadId = started.thread.id
+        await connection.call('turn/start', { threadId, input: [{ type: 'text', text: '[dynamic-tool]' }] })
+        await until(() => fs.existsSync(path.join(root, 'native-dynamic-response.json')), 'the dynamic tool response reaches the engine')
+        const response = JSON.parse(fs.readFileSync(path.join(root, 'native-dynamic-response.json'), 'utf8')) as { result?: unknown }
+        assert.deepEqual(response.result, { success: true, contentItems: [{ type: 'inputText', text: 'source result' }] })
+        assert.equal(served, 1)
+        assert.equal(observerEvents.some(message => message.method === 'item/tool/call'), false)
+        await connection.call('turn/interrupt', { threadId })
+      } finally { connection.close() }
+    })
     await t.test('an engine subagent follows Full access independently of its parent Ask choice and never relays approval', async () => {
       const native = await rpc('thread/start', { model: 'gpt-test', cwd: root });
       assert.ifError(native.error);

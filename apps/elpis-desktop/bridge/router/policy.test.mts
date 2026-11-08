@@ -12,6 +12,11 @@ import type { Thread, Ticket, Trigger } from './core/index.mts'
 const MEMBER = 'ou_alice'
 const CHAT = 'oc_team'
 const OBSERVED = 'oc_1111111111111111111111111111'
+it('worker capacity is a positive safe integer setting, with the reference default and no arbitrary ceiling', () => {
+  expect(SettingsSchema.parse({}).executor.maxWorkers).toBe(3)
+  for (const maxWorkers of [1, 17, 1000]) expect(SettingsSchema.parse({ executor: { maxWorkers } }).executor.maxWorkers).toBe(maxWorkers)
+  for (const maxWorkers of [0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) expect(SettingsSchema.safeParse({ executor: { maxWorkers } }).success).toBe(false)
+})
 const feishuSource = (config: { chats: { chatId: string; listen: 'mentions' | 'all' }[]; directMessages: boolean }, enabled = true) => ({ enabled, config })
 const base = SettingsSchema.parse({
   policy: { sources: { feishu: { allowed: [{ id: MEMBER, name: 'Alice' }], syncChat: CHAT }, github: { allowed: [{ id: 'Alice' }] } } },

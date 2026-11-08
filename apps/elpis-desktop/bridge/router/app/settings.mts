@@ -72,6 +72,8 @@ export interface SettingsHost {
   readonly setup: Pick<Setup, 'configured' | 'checkAccounts' | 'blockCommands' | 'restart'>
   /** Triggers an immediate pass so work newly allowed by a settings save runs right away. */
   requestPass(): void
+  /** The desktop controller replaces its router session when its selected model changes. */
+  routerModelChanged?(): void
 }
 
 /**
@@ -196,6 +198,7 @@ export class Settings {
     const delivery = restarting ? 'pending' : await sessions.delivery(`settings:${block}`)
     if (restarting) this.host.setup.restart()
     else this.host.requestPass()
+    if (block === 'eval' && JSON.stringify(old.eval.model) !== JSON.stringify(settings.eval.model)) this.host.routerModelChanged?.()
     return { saved: true, revision: store.blockRevision(block), policy_changed: before !== after, restarting, context_delivery: delivery }
   }
   /**

@@ -1,10 +1,10 @@
 /** Desktop lifecycle and the opt-in Elpis chat. One controller serializes settings changes and startup. */
 import { attachmentInput } from '../attachments.mts';
 import { createHash, randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import type { DesktopClient } from '../client.mts';
 import { BridgeError, object } from '../validate.mts';
-import { existingSocket } from '../client-paths.mts';
+import { elpisHome, existingSocket } from '../client-paths.mts';
 import { profileEnvironment } from '../profile-env.mts';
 import { MotherApp } from './app.mts';
 import { MotherChangeSchema, MotherSettingsFile, type MotherSettings } from './settings.mts';
@@ -17,6 +17,7 @@ import { subprocess } from './subprocess.mts';
 import type { ListedThread, ThreadListOptions } from '../client-thread-list.mts';
 import { handleMotherHttp } from './app/http.mts';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Health } from './sources/host.mts';
 
 interface Options { client: DesktopClient; home: string; socketPath?: string; adapters?: () => Promise<RuntimeAdapter[]> }
 export class MotherAgent {
@@ -27,6 +28,7 @@ export class MotherAgent {
   private queue: Promise<unknown> = Promise.resolve()
   private error: string | undefined
   private closed = false
+  private archived = false
   private roles: { dispatch: RoleModel; worker: RoleModel } | undefined
   constructor(options: Options) { this.options = options; this.file = new MotherSettingsFile(options.home) }
   private serialized<T>(work: () => Promise<T>): Promise<T> {
@@ -36,7 +38,20 @@ export class MotherAgent {
     const revision = this.app?.store.settingsHistory(1)[0]?.revision ?? storedSettingsVersion(join(this.options.home, 'router', 'orchestrator.sqlite'))?.revision ?? 0
     const version = createHash('sha256').update(JSON.stringify([snapshot.version, revision])).digest('hex')
     return { ...snapshot, version, ...(settings ? { roles: { dispatch: settings.eval.model, worker: settings.executor.model } } : {}),
-      ...(this.error ? { error: this.error } : {}), ...(this.app ? { health: this.app.health } : {}) } }
+      ...(this.error ? { error: this.error } : {}), health: this.health() } }
+  private health(): Record<string, Health> {
+    const config = this.file.read()
+    const runtime: Health = this.closed ? { state: 'paused', detail: 'Elpis is stopped' }
+      : !config.enabled ? { state: 'paused', detail: 'Elpis is off' }
+      : !this.options.client.connected ? { state: 'error', detail: 'Elpis is disconnected from the runtime' }
+      : this.error ? { state: 'error', detail: this.error }
+      : this.archived ? { state: 'paused', detail: 'The Elpis chat is archived' }
+      : !this.active ? { state: 'paused', detail: 'Elpis is stopped' }
+      : this.app?.store.settings().paused ? { state: 'paused', detail: 'Processing is paused' }
+      : this.app?.health.runtime ?? { state: 'ready', detail: 'Elpis is running' }
+    return { ...Object.fromEntries(Object.entries(this.app?.health ?? {}).map(([name, entry]) =>
+      [name, !this.active && entry.state === 'starting' ? runtime : entry])), runtime }
+  }
   owns(id: string): boolean { return this.file.read().threadId === id }
   decorate<T extends { id: string }>(thread: T): T & { motherAgent?: boolean } {
     const config = this.file.read()
@@ -85,15 +100,18 @@ export class MotherAgent {
   }
   private async reconcile(): Promise<void> {
     let config = this.file.read()
-    if (this.closed || !config.enabled || this.active || !this.options.client.connected) return
-    await this.stop()
+    if (this.closed || !config.enabled || !this.options.client.connected) return
     const { client, home } = this.options, settings = await client.settings()
     // The router decides what every worker does, so it follows the main model, never the cheap background one.
     const inherited = settings.main
     const fallback: RoleModel = { provider: inherited.provider ?? settings.main.provider ?? '', model: inherited.model ?? '' }
-    const saved = readSettings(home)
-    this.roles = { dispatch: saved.eval.model ?? config.roles.dispatch ?? fallback, worker: saved.executor.model ?? config.roles.worker ?? fallback }
-    if (Object.values(this.roles).some(role => !role.provider || !role.model)) throw new Error('Choose a model in Settings → Configuration before enabling Elpis.')
+    const saved = this.app?.store.settings() ?? readSettings(home)
+    const roles = { dispatch: saved.eval.model ?? config.roles.dispatch ?? fallback, worker: saved.executor.model ?? config.roles.worker ?? fallback }
+    if (Object.values(roles).some(role => !role.provider || !role.model)) {
+      await this.stop(); throw new Error('Choose a model in Settings → Configuration before enabling Elpis.')
+    }
+    if (this.active && JSON.stringify(this.roles?.dispatch) === JSON.stringify(roles.dispatch)) { this.roles = roles; return }
+    await this.stop(); this.roles = roles
     if (!config.threadId) {
       if (config.creating) throw new Error('Elpis chat creation was interrupted. Bind the existing chat in router/mother.json before enabling it again.')
       await client.models()
@@ -103,14 +121,16 @@ export class MotherAgent {
     }
     const threadId = config.threadId
     if (!threadId) throw new Error('Elpis has no chat')
-    if ((await client.readThreadMetadata(threadId)).archived) return
+    this.archived = !!(await client.readThreadMetadata(threadId)).archived
+    if (this.archived) return
     await client.renameThread(threadId, { name: 'Elpis' })
-    const adapters = await (this.options.adapters?.() ?? runtimeAdapters({ url: `ws+unix://${existingSocket(this.options.socketPath, profileEnvironment(home))}:/` }))
+    const env = profileEnvironment(home, resolve(home) === elpisHome() ? process.env : {})
+    const adapters = await (this.options.adapters?.() ?? runtimeAdapters({ url: `ws+unix://${existingSocket(this.options.socketPath, env)}:/` }))
     let app: MotherApp | undefined
     try {
       app = new MotherApp({ home, threadId, adapters, subprocess, transport: createElpisChatTransport(client),
         settings: () => { const value = readSettings(home); return { ...value, eval: { ...value.eval, model: this.roles!.dispatch }, executor: { ...value.executor, model: this.roles!.worker } } },
-        models: modelCatalog(client) })
+        models: modelCatalog(client), routerModelChanged: () => { void this.start() } })
       const current = app.store.settings()
       if (!current.eval.model || !current.executor.model) app.store.saveSettings({ ...current,
         eval: { ...current.eval, model: current.eval.model ?? this.roles.dispatch },
@@ -160,14 +180,16 @@ export class MotherAgent {
       const config = this.file.read(), initial = readSettings(this.options.home)
       this.app = new MotherApp({ home: this.options.home, threadId: config.threadId ?? '', adapters: [], subprocess,
         settings: () => ({ ...initial, eval: { ...initial.eval, model: config.roles.dispatch ?? initial.eval.model }, executor: { ...initial.executor, model: config.roles.worker ?? initial.executor.model } }),
-        transport: createElpisChatTransport(this.options.client), models: modelCatalog(this.options.client) })
+        transport: createElpisChatTransport(this.options.client), models: modelCatalog(this.options.client),
+        routerModelChanged: () => { void this.start() } })
     }
     return this.app
   }
   async handle(request: IncomingMessage, response: ServerResponse, port: string): Promise<void> {
     await this.serialized(async () => {
       if (this.closed) throw new BridgeError('Elpis is stopping', 409)
-      await handleMotherHttp(this.passive().http(), request, response, Number(port))
+      await handleMotherHttp({ ...this.passive().http(), health: this.health(),
+        configured: () => this.active && this.options.client.connected }, request, response, Number(port))
     })
   }
 

@@ -156,7 +156,8 @@ export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscrip
     notePlan(parsed);
     if (parsed?.method === "thread/unarchived" && parsed.params?.threadId) chatBack(parsed.params.threadId);
     if (parsed?.method === "thread/smartPrune/updated" && parsed.params?.threadId) smartPrune.set(parsed.params.threadId, !!parsed.params.smartPrune?.enabled);
-    if (parsed?.method && parsed.id !== undefined && parsed.params?.threadId && ((helperConns.has(ws) && helperThreads.has(parsed.params.threadId)) || providerOwners.get(parsed.params.threadId)?.ws === ws)
+    // Dynamic tools belong to the connection that registered them; a parent cannot execute or decline them.
+    if (parsed?.method && parsed.method !== 'item/tool/call' && parsed.id !== undefined && parsed.params?.threadId && ((helperConns.has(ws) && helperThreads.has(parsed.params.threadId)) || providerOwners.get(parsed.params.threadId)?.ws === ws)
       && relayToTui(parsed, (reply) => engine.stdin.write(JSON.stringify({ id: parsed.id, ...(reply.error ? { error: reply.error } : { result: reply.result }) }) + "\n"), ws)) return;
     const route = parsed.id === undefined ? undefined : pendingNativeRoutes.get(parsed.id);
     if (parsed.id !== undefined && route) {

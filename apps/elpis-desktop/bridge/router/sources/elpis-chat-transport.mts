@@ -39,6 +39,14 @@ export function createElpisChatTransport(client: ChatClient): ElpisChatTransport
       } while (cursor)
       return messages.reverse()
     },
-    appendAssistant: (threadId, reply) => client.appendAssistant(threadId, reply),
+    async appendAssistant(threadId, reply) {
+      try { return await client.appendAssistant(threadId, reply) }
+      catch (error) {
+        const failure = error as { code?: unknown; engineMessage?: unknown }
+        if (failure?.code === -32600 && (failure.engineMessage === `thread not found: ${threadId}`
+          || failure.engineMessage === `no rollout found for thread id ${threadId}`)) return 'gone'
+        throw error
+      }
+    },
   }
 }
