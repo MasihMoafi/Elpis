@@ -6,8 +6,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { baselineCommit, passingCounts, planSuite, prepareBaseline, receiptName, rendererHash, runGate, verifyPackagedSources, verifyRendererReceipt } from '../scripts/renderer-artifact-gate.mjs';
-import * as gate from '../scripts/renderer-artifact-gate.mjs';
+import { baselineCommit, passingCounts, planSuite, prepareBaseline, receiptName, rendererHash, runGate, verifyPackagedSources, verifyRendererReceipt } from '../scripts/renderer-artifact-gate.mts';
+import * as gate from '../scripts/renderer-artifact-gate.mts';
 
 const tap = ({ tests = 1, pass = 1, fail = 0, cancelled = 0, skipped = 0, todo = 0 } = {}) =>
   Object.entries({ tests, pass, fail, cancelled, skipped, todo }).map(([key, value]) => `# ${key} ${value}`).join('\n');
@@ -129,14 +129,14 @@ test('shards execute only their slice, including an empty slice; the merged rece
 test('the prepare, shard and merge CLI commands preserve the downloaded renderer and per-file evidence', async t => {
   const f = await fixture(t);
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const name of ['renderer-artifact-gate.mjs', 'test-gate.mts', 'gate-guards.mts']) {
+  for (const name of ['renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
     const source = await fs.readFile(new URL(`../scripts/${name}`, import.meta.url), 'utf8');
     await fs.writeFile(path.join(f.root, 'scripts', name), source.replace(baselineCommit, f.baseline));
   }
   await f.commitSource();
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
-  const cli = args => spawnSync(process.execPath, ['scripts/renderer-artifact-gate.mjs', ...args], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
+  const cli = args => spawnSync(process.execPath, ['scripts/renderer-artifact-gate.mts', ...args], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
   const prepared = path.join(f.repo, 'prepared'), results = path.join(f.repo, 'results');
   await fs.mkdir(results);
   let run = cli(['--prepare', prepared, '3']);
@@ -323,14 +323,14 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   const identity = JSON.parse(await fs.readFile(path.join(f.root, 'package.json'), 'utf8'));
   await fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ ...identity, name: 'elpis-desktop' }));
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const file of ['install-desktop.mts', 'renderer-artifact-gate.mjs', 'test-gate.mts', 'gate-guards.mts']) {
+  for (const file of ['install-desktop.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));
   }
   // The installer trims old versions with the repository's shared prune script (1 Nov).
   await fs.mkdir(path.join(f.root, '../../scripts'), { recursive: true });
   await fs.copyFile(fileURLToPath(new URL('../../../scripts/prune-versions.mts', import.meta.url)), path.join(f.root, '../../scripts/prune-versions.mts'));
   // The isolated repository has its own immutable checkpoint; production keeps the deployed checkpoint.
-  const helper = path.join(f.root, 'scripts/renderer-artifact-gate.mjs');
+  const helper = path.join(f.root, 'scripts/renderer-artifact-gate.mts');
   await fs.writeFile(helper, (await fs.readFile(helper, 'utf8')).replace(baselineCommit, f.baseline));
   await fs.writeFile(path.join(f.root, 'desktop/package.mts'), `import fs from "node:fs";import path from "node:path";
 fs.writeFileSync(process.env.PACKAGING_MARKER,"called");

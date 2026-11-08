@@ -1,0 +1,186 @@
+'use strict';
+// Real app-server, isolated home, deterministic local provider; no provider credentials.
+// Usage: node scripts/permissions-runtime.test.cts /absolute/path/to/elpis [--code-mode]
+import type { RpcApi } from './lib/rpc.cts';
+import type { ProviderApi } from './lib/mock-provider.cts';
+
+type Permission = boolean | 'readOnly';
+type Probe = { name: string; before: Permission; after?: Permission; escalation?: boolean; patch?: boolean; inner?: boolean; workspace?: boolean; writes: boolean; prompts: number };
+type CrossTurnProbe = { before: Permission; after: Permission; writes: boolean; prompts: number };
+type NotificationParams = { threadSettings: { approvalPolicy: string; activePermissionProfile: { id: string } }; turn: { status: string } };
+type Notification = { method: string; params: NotificationParams };
+type ThreadResult = { thread: { id: string } };
+type ResumeResult = { approvalPolicy: string; activePermissionProfile: { id: string }; sandbox: { type: string } };
+type ModelInput = { call_id?: string; type?: string; output?: unknown };
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs') = require('node:fs');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const { AppServer }: RpcApi = require('./lib/rpc.cts');
+const { Provider, message, call }: ProviderApi = require('./lib/mock-provider.cts');
+const binaryArg = process.argv[2];
+const codeMode = process.argv.includes('--code-mode');
+assert(binaryArg && path.isAbsolute(binaryArg), 'provide the candidate binary');
+const binary = binaryArg;
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-live-permissions-'));
+const home = path.join(root, 'home'), cwd = path.join(root, 'work');
+fs.mkdirSync(home); fs.mkdirSync(cwd);
+// /tmp is writable in the workspace preset. Use its explicitly protected metadata path
+// so the negative case proves real sandbox enforcement, even in an isolated temp home.
+const protectedDir = path.join(cwd, '.git');
+fs.mkdirSync(protectedDir);
+const provider = new Provider(), notifications: Notification[] = [], approvals: { id: number | string }[] = [], checks: string[] = [];
+let rpc: InstanceType<RpcApi['AppServer']>, selectedFull: Permission = false;
+function notification(method: string) {
+  return new Promise<NotificationParams>((resolve, reject) => {
+    const timer = setTimeout(() => { rpc.off('notification', receive); reject(Error(`${method} timed out`)); }, 20000);
+    function receive(event: Notification) {
+      if (event.method !== method) return;
+      clearTimeout(timer); rpc.off('notification', receive); resolve(event.params);
+    }
+    rpc.on('notification', receive);
+  });
+}
+async function select(threadId: string, full: Permission) {
+  if (selectedFull === full) return;
+  const applied = notification('thread/settings/updated');
+  const profile = full === 'readOnly' ? ':read-only' : full ? ':danger-full-access' : ':workspace';
+  await rpc.request('thread/settings/update', {
+    threadId, permissions: profile,
+    approvalPolicy: full ? 'never' : 'on-request', approvalsReviewer: 'user',
+  });
+  const snapshot = (await applied).threadSettings;
+  assert.equal(snapshot.approvalPolicy, full ? 'never' : 'on-request');
+  assert.equal(snapshot.activePermissionProfile.id, profile);
+  selectedFull = full;
+}
+function releaseResponse(item: unknown) {
+  const response = [...provider.hanging][0];
+  assert(response, 'the model response must still be in flight');
+  provider.hanging.delete(response);
+  response.writeHead(200, { 'content-type': 'text/event-stream' });
+  response.end([
+    { type: 'response.created', response: { id: `r_${checks.length}` } },
+    { type: 'response.output_item.done', output_index: 0, item },
+    { type: 'response.completed', response: { id: `r_${checks.length}`, usage: { input_tokens: 100, output_tokens: 10, total_tokens: 110 } } },
+  ].map(event => `data: ${JSON.stringify(event)}\n\n`).join(''));
+}
+async function probe(threadId: string, { name, before, after, escalation, patch, inner, workspace, writes, prompts }: Probe) {
+  await select(threadId, before);
+  const marker = path.join(workspace ? cwd : protectedDir, `sentinel-${checks.length}`);
+  const args = {
+    cmd: `printf permission-sentinel > '${marker}'`,
+    sandbox_permissions: escalation ? 'require_escalated' : 'use_default',
+    ...(escalation ? { justification: 'Isolated permission test write.' } : {}),
+  };
+  const edit = `*** Begin Patch\n*** Add File: ${marker}\n+permission-sentinel\n*** End Patch`;
+  const ready = path.join(cwd, `ready-${checks.length}`), release = path.join(cwd, `release-${checks.length}`);
+  const wait = inner ? `await tools.exec_command(${JSON.stringify({ cmd: `touch '${ready}'; while [ ! -f '${release}' ]; do sleep 0.05; done`, yield_time_ms: 10000 })});\n` : '';
+  const item = codeMode ? { type: 'custom_tool_call', call_id: `probe_${checks.length}`, name: 'exec', input: wait + (patch ? `text(await tools.apply_patch(${JSON.stringify(edit)}));` : `text(await tools.exec_command(${JSON.stringify(args)}));`) }
+    : patch ? { type: 'custom_tool_call', call_id: `probe_${checks.length}`, name: 'apply_patch', input: edit }
+    : call(`probe_${checks.length}`, 'exec_command', args);
+  const start = approvals.length;
+  provider.actions.push(after === undefined || inner ? item : { hang: true }, message('Done.'));
+  const completed = notification('turn/completed');
+  await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: 'Run the isolated write.' }] });
+  if (after !== undefined) {
+    const deadline = Date.now() + 10000;
+    while (inner ? !fs.existsSync(ready) : !provider.hanging.size) {
+      assert(Date.now() < deadline, inner ? 'sandboxed gate did not start' : 'provider request did not arrive');
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    await select(threadId, after);
+    if (inner) fs.writeFileSync(release, 'release');
+    else releaseResponse(item);
+  }
+  assert.equal((await completed).turn.status, 'completed', name);
+  assert.equal(approvals.length - start, prompts, `${name}: approval count`);
+  assert.equal(fs.existsSync(marker), writes, `${name}: actual write`);
+  checks.push(name); console.log(`PASS ${name}`);
+}
+// A cell can survive its original turn. Its next tool must use the thread's current
+// authority, including when the update happens while no turn is active.
+async function probeCrossTurnCell(threadId: string, { before, after, writes, prompts }: CrossTurnProbe) {
+  await select(threadId, before);
+  const gate = `cross-turn-${checks.length}`;
+  const marker = path.join(protectedDir, gate);
+  const release = path.join(cwd, `${gate}-release`);
+  const parked = { cmd: `while [ ! -f '${release}' ]; do sleep 0.01; done`, yield_time_ms: 30000, login: false };
+  const args = { cmd: `printf cross-turn > '${marker}'`, sandbox_permissions: 'require_escalated', justification: 'Isolated cross-turn permission probe.' };
+  let cellId;
+  const initialApprovals = approvals.length;
+  provider.actions.push(
+    { type: 'custom_tool_call', call_id: `park_${checks.length}`, name: 'exec', input:
+      `const pending = tools.exec_command(${JSON.stringify(parked)}); yield_control(); await pending; text(await tools.exec_command(${JSON.stringify(args)}));` },
+    request => {
+      cellId = JSON.stringify(request.input).match(/Script running with cell ID (\d+)/)?.[1];
+      assert(cellId, 'the first turn must leave a running code cell');
+      return message('The fixture cell is parked.');
+    },
+  );
+  let completed = notification('turn/completed');
+  await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: 'Park the isolated code cell.' }] });
+  assert.equal((await completed).turn.status, 'completed');
+  assert(!fs.existsSync(marker), 'the parked cell must not write early');
+  await select(threadId, after);
+  fs.writeFileSync(release, 'continue');
+  provider.actions.push(
+    call(`join_${checks.length}`, 'wait', { cell_id: cellId, yield_time_ms: 10000 }),
+    request => {
+      const joined = (request.input as ModelInput[]).findLast(item => item.call_id === `join_${checks.length}` && item.type === 'function_call_output');
+      assert(joined && !JSON.stringify(joined.output).includes('Script running'), 'the cross-turn cell must finish before checking its write');
+      return message('The fixture cell finished.');
+    },
+  );
+  completed = notification('turn/completed');
+  await rpc.request('turn/start', { threadId, input: [{ type: 'text', text: 'Release and wait for the earlier cell.' }] });
+  assert.equal((await completed).turn.status, 'completed');
+  assert.equal(approvals.length - initialApprovals, prompts, 'cross-turn approval count');
+  assert.equal(fs.existsSync(marker), writes, 'cross-turn actual protected write');
+  const label = `cell from an earlier turn adopts ${after ? 'Full Access' : 'revoked access'}`;
+  checks.push(label); console.log(`PASS ${label}`);
+}
+(async () => {
+  await provider.start();
+  fs.writeFileSync(path.join(home, 'config.toml'), `model="gpt-5.5"\nmodel_provider="fixture"\n[features]\ncode_mode=${codeMode}\n[model_providers.fixture]\nname="Permission fixture"\nbase_url=${JSON.stringify(provider.url)}\nwire_api="responses"\nrequires_openai_auth=false\n`);
+  rpc = new AppServer(binary, cwd, { args: ['app-server'], env: {
+    PATH: process.env.PATH, HOME: home, CODEX_HOME: home, ELPIS_HOME: home, CODEX_AUTH_HOME: home,
+  } });
+  rpc.on('notification', (event: Notification) => notifications.push(event));
+  rpc.on('request', (event: { id: number | string }) => { approvals.push(event); rpc.respond(event.id, { decision: 'decline' }); });
+  await rpc.request('initialize', { clientInfo: { name: 'permission_fixture', version: '1' }, capabilities: { experimentalApi: true } });
+  rpc.send({ method: 'initialized' });
+  const { thread } = (await rpc.request('thread/start', { cwd, approvalPolicy: 'on-request', permissions: ':workspace' })) as ThreadResult;
+  await probe(thread.id, { name: 'workspace mode permits an ordinary project write', before: false, workspace: true, writes: true, prompts: 0 });
+  await probe(thread.id, { name: 'idle Full Access writes without approval', before: true, writes: true, prompts: 0 });
+  await probe(thread.id, { name: 'idle restricted mode asks and denied write stays absent', before: false, escalation: true, writes: false, prompts: 1 });
+  await probe(thread.id, { name: 'idle restricted sandbox blocks the unapproved write', before: false, writes: false, prompts: 0 });
+  await probe(thread.id, { name: 'in-flight Full Access replaces stale approval and sandbox', before: false, after: true, escalation: true, writes: true, prompts: 0 });
+  await probe(thread.id, { name: 'in-flight restriction revokes an unrestricted write', before: true, after: false, writes: false, prompts: 0 });
+  await probe(thread.id, { name: 'in-flight restriction restores approval for escalation', before: true, after: false, escalation: true, writes: false, prompts: 1 });
+  await probe(thread.id, { name: 'idle Full Access tolerates a redundant escalation', before: true, escalation: true, writes: true, prompts: 0 });
+  await probe(thread.id, { name: 'read-only never policy does not grant escalation', before: true, after: 'readOnly', escalation: true, writes: false, prompts: 0 });
+  await probe(thread.id, { name: 'in-flight Full Access permits a protected file edit', before: false, after: true, patch: true, writes: true, prompts: 0 });
+  await probe(thread.id, { name: 'in-flight restriction restores approval for a protected edit', before: true, after: false, patch: true, writes: false, prompts: 1 });
+  if (codeMode) {
+    await probe(thread.id, { name: 'running code cell adopts Full Access for its next nested tool', before: false, after: true, inner: true, escalation: true, writes: true, prompts: 0 });
+    await probe(thread.id, { name: 'running code cell adopts restrictions for its next nested tool', before: true, after: false, inner: true, escalation: true, writes: false, prompts: 1 });
+    await probeCrossTurnCell(thread.id, { before: false, after: true, writes: true, prompts: 0 });
+    await probeCrossTurnCell(thread.id, { before: true, after: false, writes: false, prompts: 1 });
+  }
+  await select(thread.id, false);
+  const restored = (await rpc.request('thread/resume', { threadId: thread.id })) as ResumeResult;
+  assert.equal(restored.approvalPolicy, 'on-request');
+  checks.push('resume retains the selected restricted policy');
+  await select(thread.id, true);
+  const fullRestored = (await rpc.request('thread/resume', { threadId: thread.id })) as ResumeResult;
+  assert.equal(fullRestored.approvalPolicy, 'never');
+  assert.equal(fullRestored.activePermissionProfile.id, ':danger-full-access');
+  assert.equal(fullRestored.sandbox.type, 'dangerFullAccess');
+  checks.push('resume retains the selected Full Access policy');
+  assert.equal(provider.error, undefined);
+})().catch((error: Error) => { console.error(error.stack); process.exitCode = 1; }).finally(() => {
+  fs.writeFileSync(path.join(root, 'evidence.json'), JSON.stringify({ checks, approvals, notifications, requests: provider.requests }, null, 2));
+  console.log(`Evidence: ${root}`);
+  rpc?.dispose(); if (provider.server) provider.close();
+});

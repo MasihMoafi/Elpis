@@ -17,7 +17,7 @@ From `website/`:
 
 ```sh
 node_modules/.bin/tailwindcss -i prototypes/source.css -o prototypes/styles.css --minify
-node prototypes/tests/prototypes.test.mjs
+node prototypes/tests/prototypes.test.mts
 python3 -m http.server 4173
 ```
 

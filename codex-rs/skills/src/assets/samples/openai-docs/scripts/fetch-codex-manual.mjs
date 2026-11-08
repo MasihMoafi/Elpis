@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Generated from codex-rs/skills/assets-src/openai-docs/fetch-codex-manual.mts by scripts/emit-compat-js.mts; do not edit.
 import {
   access,
   mkdir,
@@ -24,16 +25,33 @@ const HASH_HEADER = "x-content-sha256";
 const USER_AGENT = "codex-openai-docs";
 const execFileAsync = promisify(execFile);
 
+
+
+
+
+
+
+
+
+
+
+
+const errorCode = (error         ) =>
+  error !== null && error !== undefined &&
+  (typeof error === "object" || typeof error === "function") && "code" in error
+    ? error.code
+    : undefined;
+
 class ManualFetchError extends Error {
-  constructor(message, options) {
+  constructor(message        , options               ) {
     super(message, options);
     this.name = "ManualFetchError";
   }
 }
 
-const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+const sha256 = (value        ) => createHash("sha256").update(value).digest("hex");
 
-const withTimeout = async (promiseFactory, timeoutMs) => {
+const withTimeout = async     (promiseFactory                                     , timeoutMs        ) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -49,13 +67,13 @@ const proxyConfigured = () =>
   process.env.http_proxy ||
   process.env.https_proxy;
 
-const responseHeaders = (headers) => ({
-  get(name) {
+const responseHeaders = (headers                     ) => ({
+  get(name        ) {
     return headers.get(name.toLowerCase()) ?? null;
   },
 });
 
-const makeResponse = ({ body, headers, status }) => ({
+const makeResponse = ({ body, headers, status }                                                                ) => ({
   headers: responseHeaders(headers),
   ok: status >= 200 && status < 300,
   status,
@@ -64,7 +82,7 @@ const makeResponse = ({ body, headers, status }) => ({
   },
 });
 
-const parseCurlHeaders = (rawHeaders) => {
+const parseCurlHeaders = (rawHeaders        ) => {
   const normalized = rawHeaders.replace(/\r\n/g, "\n").trim();
   const blocks = normalized.split(/\n\n+/).filter(Boolean);
   const headerBlock = [...blocks]
@@ -76,14 +94,14 @@ const parseCurlHeaders = (rawHeaders) => {
   }
 
   const [statusLine, ...lines] = headerBlock.split("\n");
-  const statusMatch = /^HTTP\/\S+\s+(\d{3})/.exec(statusLine);
+  const statusMatch = statusLine && /^HTTP\/\S+\s+(\d{3})/.exec(statusLine);
   if (!statusMatch) {
     throw new ManualFetchError(
       `Could not parse HTTP status from curl response: ${statusLine}`
     );
   }
 
-  const headers = new Map();
+  const headers = new Map                ();
   lines.forEach((line) => {
     const separator = line.indexOf(":");
     if (separator === -1) return;
@@ -98,7 +116,7 @@ const parseCurlHeaders = (rawHeaders) => {
   };
 };
 
-const tempFilePath = (cacheDir, suffix) =>
+const tempFilePath = (cacheDir        , suffix        ) =>
   path.join(
     cacheDir,
     `.fetch-codex-manual-${process.pid}-${Date.now()}-${Math.random()
@@ -106,7 +124,7 @@ const tempFilePath = (cacheDir, suffix) =>
       .slice(2)}${suffix}`
   );
 
-const requestManualWithCurl = async (url, { cacheDir, method, timeoutMs }) => {
+const requestManualWithCurl = async (url        , { cacheDir, method, timeoutMs }                )                        => {
   const headerPath = tempFilePath(cacheDir, ".headers");
   const bodyPath = tempFilePath(cacheDir, ".body");
   const curlNames =
@@ -144,7 +162,7 @@ const requestManualWithCurl = async (url, { cacheDir, method, timeoutMs }) => {
       return makeResponse({ body, headers, status });
     } catch (error) {
       lastError = error;
-      if (error?.code !== "ENOENT") break;
+      if (errorCode(error) !== "ENOENT") break;
     } finally {
       await Promise.all([
         rm(headerPath, { force: true }),
@@ -153,7 +171,7 @@ const requestManualWithCurl = async (url, { cacheDir, method, timeoutMs }) => {
     }
   }
 
-  if (lastError?.code === "ENOENT") {
+  if (errorCode(lastError) === "ENOENT") {
     throw new ManualFetchError("curl is unavailable in this environment.", {
       cause: lastError,
     });
@@ -163,7 +181,7 @@ const requestManualWithCurl = async (url, { cacheDir, method, timeoutMs }) => {
   });
 };
 
-const requestManualWithFetch = async (url, { method, timeoutMs }) => {
+const requestManualWithFetch = async (url        , { method, timeoutMs }                                  )                        => {
   if (typeof fetch !== "function") {
     throw new ManualFetchError(
       "Native fetch is unavailable in this Node runtime."
@@ -181,7 +199,7 @@ const requestManualWithFetch = async (url, { method, timeoutMs }) => {
   );
 };
 
-const requestManual = async (url, { cacheDir, method, timeoutMs }) => {
+const requestManual = async (url        , { cacheDir, method, timeoutMs }                )                        => {
   const preferCurl = Boolean(proxyConfigured()) || typeof fetch !== "function";
   const transports = preferCurl
     ? [
@@ -213,7 +231,7 @@ const requestManual = async (url, { cacheDir, method, timeoutMs }) => {
   });
 };
 
-const readHeaderSha = (response) => {
+const readHeaderSha = (response              ) => {
   const value = response.headers.get(HASH_HEADER);
   if (!value || !/^[a-f0-9]{64}$/i.test(value)) {
     throw new ManualFetchError(`Manual response is missing ${HASH_HEADER}.`);
@@ -221,14 +239,14 @@ const readHeaderSha = (response) => {
   return value.toLowerCase();
 };
 
-const nearestExistingParent = async (target) => {
+const nearestExistingParent = async (target        ) => {
   let current = target;
   while (true) {
     try {
       const info = await stat(current);
       return info.isDirectory() ? current : null;
     } catch (error) {
-      if (error?.code !== "ENOENT") return null;
+      if (errorCode(error) !== "ENOENT") return null;
     }
 
     const parent = path.dirname(current);
@@ -237,7 +255,7 @@ const nearestExistingParent = async (target) => {
   }
 };
 
-const usableCacheDir = async (cacheDir) => {
+const usableCacheDir = async (cacheDir                    ) => {
   if (!cacheDir) return null;
   const resolved = path.resolve(cacheDir);
 
@@ -245,7 +263,7 @@ const usableCacheDir = async (cacheDir) => {
     const info = await stat(resolved);
     if (!info.isDirectory()) return null;
   } catch (error) {
-    if (error?.code !== "ENOENT") return null;
+    if (errorCode(error) !== "ENOENT") return null;
   }
 
   const parent = await nearestExistingParent(resolved);
@@ -261,9 +279,9 @@ const usableCacheDir = async (cacheDir) => {
 };
 
 const defaultCacheDirCandidates = () => {
-  const candidates = [];
-  const seen = new Set();
-  const pushCandidate = (candidate) => {
+  const candidates           = [];
+  const seen = new Set        ();
+  const pushCandidate = (candidate        ) => {
     if (!candidate || seen.has(candidate)) return;
     seen.add(candidate);
     candidates.push(candidate);
@@ -283,7 +301,7 @@ const defaultCacheDirCandidates = () => {
   return candidates;
 };
 
-const resolveCacheDir = async (cacheDir) => {
+const resolveCacheDir = async (cacheDir                    ) => {
   if (cacheDir) {
     return usableCacheDir(cacheDir);
   }
@@ -296,22 +314,22 @@ const resolveCacheDir = async (cacheDir) => {
   return null;
 };
 
-const cacheFilePath = (cacheDir) => path.join(cacheDir, CACHE_FILE_NAME);
+const cacheFilePath = (cacheDir        ) => path.join(cacheDir, CACHE_FILE_NAME);
 
-const outlineFilePath = (cacheDir) => path.join(cacheDir, OUTLINE_FILE_NAME);
+const outlineFilePath = (cacheDir        ) => path.join(cacheDir, OUTLINE_FILE_NAME);
 
-const manualLines = (manual) => {
+const manualLines = (manual        ) => {
   const lines = manual.replace(/\r\n/g, "\n").split("\n");
   if (lines[lines.length - 1] === "") lines.pop();
   return lines;
 };
 
-const sectionTitle = (rawTitle) =>
+const sectionTitle = (rawTitle        ) =>
   rawTitle.replace(/\s+#+\s*$/, "").replace(/\s+/g, " ").trim();
 
-const buildOutline = (manual) => {
+const buildOutline = (manual        )          => {
   const lines = manualLines(manual);
-  const headings = [];
+  const headings            = [];
   let inFence = false;
 
   lines.forEach((line, index) => {
@@ -323,6 +341,7 @@ const buildOutline = (manual) => {
 
     const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
     if (!match) return;
+    if (match[1] === undefined || match[2] === undefined) return;
 
     const level = match[1].length;
     if (level < 2 || level > 3) return;
@@ -337,6 +356,7 @@ const buildOutline = (manual) => {
 
   for (let index = 0; index < headings.length; index += 1) {
     const heading = headings[index];
+    if (heading === undefined) continue;
     const nextPeer = headings
       .slice(index + 1)
       .find((candidate) => candidate.level <= heading.level);
@@ -366,14 +386,14 @@ const buildOutline = (manual) => {
   };
 };
 
-const outlineMarkdown = (outline) => `# Codex Manual Outline\n\n${outline.text}\n`;
+const outlineMarkdown = (outline         ) => `# Codex Manual Outline\n\n${outline.text}\n`;
 
-const manualStatusLine = (status) =>
+const manualStatusLine = (status              ) =>
   status.cacheStatus === "hit"
     ? "Manual status: local manual was already current."
     : "Manual status: local manual was updated.";
 
-const formatResult = ({ status, outlineText }) =>
+const formatResult = ({ status, outlineText }                                               ) =>
   [
     `Manual path: ${status.manualPath}`,
     `Outline path: ${status.outlinePath}`,
@@ -382,7 +402,7 @@ const formatResult = ({ status, outlineText }) =>
     outlineText,
   ].join("\n");
 
-const readCachedManual = async (cacheDir, expectedSha256) => {
+const readCachedManual = async (cacheDir        , expectedSha256        ) => {
   try {
     const manual = await readFile(cacheFilePath(cacheDir), "utf8");
     return sha256(manual) === expectedSha256 ? manual : null;
@@ -391,14 +411,14 @@ const readCachedManual = async (cacheDir, expectedSha256) => {
   }
 };
 
-const writeCachedManual = async (cacheDir, manual) => {
+const writeCachedManual = async (cacheDir        , manual        ) => {
   await mkdir(cacheDir, { recursive: true });
   const tmpPath = tempFilePath(cacheDir, `.${CACHE_FILE_NAME}.tmp`);
   await writeFile(tmpPath, manual, "utf8");
   await rename(tmpPath, cacheFilePath(cacheDir));
 };
 
-const writeOutline = async (cacheDir, outlineText) => {
+const writeOutline = async (cacheDir        , outlineText        ) => {
   await mkdir(cacheDir, { recursive: true });
   const tmpPath = tempFilePath(cacheDir, `.${OUTLINE_FILE_NAME}.tmp`);
   await writeFile(tmpPath, outlineText, "utf8");
@@ -409,7 +429,7 @@ const fetchCodexManual = async ({
   manualUrl = DEFAULT_MANUAL_URL,
   cacheDir,
   timeoutMs = 30000,
-} = {}) => {
+}                = {})                                                         => {
   const resolvedCacheDir = await resolveCacheDir(cacheDir);
   if (!resolvedCacheDir) {
     throw new ManualFetchError(
@@ -496,8 +516,8 @@ const fetchCodexManual = async ({
   };
 };
 
-const parseArgs = (argv) => {
-  const args = {
+const parseArgs = (argv          ) => {
+  const args                                                                                                          = {
     manualUrl: DEFAULT_MANUAL_URL,
     cacheDir: undefined,
     timeoutMs: 30000,
@@ -553,7 +573,7 @@ const envProxyHint = () => {
   return null;
 };
 
-const formatErrorDetails = (error) => {
+const formatErrorDetails = (error       ) => {
   const details = inspect(error, {
     breakLength: 120,
     colors: false,
@@ -582,7 +602,7 @@ const isCliEntrypoint = () => {
 };
 
 if (isCliEntrypoint()) {
-  main().catch((error) => {
+  main().catch((error       ) => {
     console.error(`Error: ${error.message}`);
     const hint = envProxyHint();
     if (hint) {

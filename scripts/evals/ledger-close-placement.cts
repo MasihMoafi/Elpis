@@ -1,0 +1,336 @@
+#!/usr/bin/env node
+'use strict';
+
+import type { ChildProcess, ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
+import type { ProviderApi } from '../lib/mock-provider.cts';
+
+type Config = { binary: string; output: string; phase: 'baseline' | 'candidate'; smoke: boolean };
+type Placement = { height: number; transcriptHeight: number; ledgerRows: number[]; reachesEdge: boolean; pass: boolean };
+type CaseResult = {
+  width: number; light: boolean; phase: Config['phase']; errors: string[];
+  geometry?: { controlY: number; titleY: number; left: number; buttonWidth: number };
+  topRowBlank?: boolean; switchEndsTitleRow?: boolean; titleHasStatus?: boolean; switchesAligned?: boolean;
+  layoutPass?: boolean; layoutAssertion?: string; visibleFixtureSourceRows?: string[];
+  sourceFilenameWrappingChecked?: boolean; outsideMouseCells?: number; titleLabelMiss?: boolean;
+  positiveMouseCells?: number; placements?: Placement[]; placementPass?: boolean; closedClickMiss?: boolean;
+  tabReopens?: boolean; openWrappingUnchanged?: boolean; keyboard?: string[]; shortcutTip?: boolean;
+  privateTmuxStopped?: boolean; modelRequests?: number; privateProfileTrashed?: boolean;
+};
+type Overall = Config & {
+  binarySha256: string; binaryUnchanged: boolean; interrupted: NodeJS.Signals | null; sourceFixture: string;
+  harnessSha256: string; checks: CaseResult[]; allPositiveControlsPass: boolean; layoutPasses: number;
+  layoutFailures: number; pass?: boolean;
+};
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const { execFileSync, spawn }: typeof import('node:child_process') = require('node:child_process');
+const { createHash }: typeof import('node:crypto') = require('node:crypto');
+const fs: typeof import('node:fs') = require('node:fs');
+const path: typeof import('node:path') = require('node:path');
+const { Provider, message }: ProviderApi = require('../lib/mock-provider.cts');
+
+const repo = path.resolve(__dirname, '../..');
+const onLabel = '[━━━●] ON';
+const offLabel = '[●━━━] OFF';
+// Retain the old controls only to demonstrate the baseline failure on an older binary.
+const legacyCloseLabels = [' ╳ ', ' ✕ Close '];
+const ledgerOpen = (text: string) => text.includes('CONTEXT LEDGER');
+const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+let interrupted: NodeJS.Signals | undefined;
+for (const signal of ['SIGINT', 'SIGTERM'] as const) process.on(signal, () => { interrupted = signal; });
+
+function options(): Config {
+  const args = process.argv.slice(2);
+  const smoke = args.at(-1) === '--smoke';
+  if (smoke) args.pop();
+  assert.equal(args.length, 6, 'Usage: ledger-close-placement.cjs --binary PATH --output EMPTY_DIR --phase baseline|candidate [--smoke]');
+  const values: Record<string, string> = {};
+  for (let i = 0; i < args.length; i += 2) {
+    assert(['--binary', '--output', '--phase'].includes(args[i] as string) && !values[args[i] as string], `Unexpected or duplicate option: ${args[i]}`);
+    values[args[i] as string] = args[i + 1] as string;
+  }
+  assert(['baseline', 'candidate'].includes(values['--phase'] as string), 'Phase must be baseline or candidate');
+  const binary = fs.realpathSync(values['--binary'] as string);
+  fs.accessSync(binary, fs.constants.X_OK);
+  const output = path.resolve(values['--output'] as string);
+  fs.mkdirSync(output, { recursive: true });
+  assert.equal(fs.readdirSync(output).length, 0, 'Output directory must be empty; existing evidence is never overwritten');
+  return { binary, output, phase: values['--phase'] as Config['phase'], smoke };
+}
+
+async function sha256(filename: string) {
+  const hash = createHash('sha256');
+  for await (const chunk of fs.createReadStream(filename)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+async function stopServer(server: ChildProcess | undefined) {
+  if (!server?.pid || server.exitCode !== null || server.signalCode !== null) return;
+  const exited = new Promise<void>(resolve => server.once('exit', () => resolve()));
+  server.kill('SIGTERM');
+  await Promise.race([exited, pause(3000)]);
+  if (server.exitCode === null && server.signalCode === null) {
+    server.kill('SIGKILL');
+    await Promise.race([exited, pause(3000)]);
+    assert(server.exitCode !== null || server.signalCode !== null, 'Private app-server did not stop');
+  }
+}
+
+async function check({ binary, output, phase, smoke }: Config, width: number, light: boolean): Promise<CaseResult> {
+  const label = `${width}-${light ? 'light' : 'dark'}`;
+  // Keep owned profiles on the evidence directory's mount, where gio trash works.
+  const fixtureBase = output;
+  assert(Buffer.byteLength(path.join(fixtureBase, 't7-ledger-XXXXXX', 'tmux')) < 100, 'Home-cache path is too long for a private tmux socket');
+  fs.mkdirSync(fixtureBase, { recursive: true, mode: 0o700 });
+  const fixture = fs.mkdtempSync(path.join(fixtureBase, 't7-ledger-'));
+  fs.chmodSync(fixture, 0o700);
+  const home = path.join(fixture, 'home');
+  const cwd = path.join(fixture, 'workspace');
+  // This is the entire environment of both the tmux server and native processes.
+  const env = {
+    PATH: '/usr/local/bin:/usr/bin:/bin', HOME: home, ELPIS_HOME: home,
+    CODEX_HOME: home, CODEX_AUTH_HOME: home,
+    XDG_CONFIG_HOME: path.join(home, '.config'), XDG_CACHE_HOME: path.join(home, '.cache'),
+    ELPIS_NO_CLAUDE: '1', ELPIS_NO_AGY: '1',
+    TERM: 'xterm-256color', COLORTERM: 'truecolor', LANG: 'C.UTF-8',
+  };
+  const socket = path.join(fixture, 'tmux');
+  const tm = (...args: string[]) => execFileSync('tmux', ['-f', '/dev/null', '-S', socket, ...args], {
+    env, encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const capture = (ansi: boolean) => tm('capture-pane', '-p', '-N', ...(ansi ? ['-e'] : []), '-t', 'check');
+  const key = (name: string) => tm('send-keys', '-t', 'check', name);
+  const literal = (text: string) => tm('send-keys', '-t', 'check', '-l', text);
+  const click = (x: number, y: number) => literal(`\x1b[<0;${x + 1};${y + 1}M\x1b[<0;${x + 1};${y + 1}m`);
+  const save = (name: string) => {
+    const text = capture(false);
+    fs.writeFileSync(path.join(output, `${label}-${name}.txt`), text);
+    fs.writeFileSync(path.join(output, `${label}-${name}.ansi`), capture(true));
+    return text;
+  };
+  const deadline = Date.now() + 45_000;
+  const active = () => {
+    assert(!interrupted, `Interrupted by ${interrupted}`);
+    assert(Date.now() < deadline, 'Private terminal case exceeded 45 seconds');
+  };
+  async function until(predicate: (text: string) => boolean) {
+    for (;;) {
+      active();
+      const text = capture(false);
+      if (text.includes('Hooks need review')) key('Escape');
+      if (predicate(text)) return text;
+      await pause(100);
+    }
+  }
+  const provider = new Provider();
+  let server: ChildProcessByStdio<null, Readable, Readable> | undefined, serverError: Error | undefined, serverLog = '', tmuxStarted = false;
+  const result: CaseResult = { width, light, phase, errors: [] };
+  const must = (condition: unknown, message: string) => { if (!condition) result.errors.push(message); };
+  try {
+    active();
+    fs.mkdirSync(home, { mode: 0o700 });
+    fs.mkdirSync(cwd, { mode: 0o700 });
+    await provider.start();
+    fs.writeFileSync(path.join(home, 'hooks.json'), '{}');
+    fs.writeFileSync(path.join(cwd, 'AGENTS.md'), '# Project fixture\nPrivate Ledger pointer check.\n');
+    fs.writeFileSync(path.join(home, 'config.toml'), [
+      `model_catalog_json=${JSON.stringify(path.join(repo, 'codex-rs/models-manager/models.json'))}`,
+      'model="gpt-6-luna"', 'model_provider="fixture"', 'approval_policy="never"', 'sandbox_mode="read-only"',
+      '[features]', 'code_mode=false', '[model_providers.fixture]', 'name="Idle terminal fixture"',
+      `base_url=${JSON.stringify(provider.url)}`, 'wire_api="responses"', 'requires_openai_auth=false',
+      '[tui]', 'alternate_screen="always"', 'fullscreen_transcript=true', 'animations=false',
+      'disable_paste_burst=true', 'copy_on_select="never"',
+      `[projects.${JSON.stringify(cwd)}]`, 'trust_level="trusted"',
+    ].join('\n'), { mode: 0o600 });
+    server = spawn(binary, ['app-server', '--listen', 'ws://127.0.0.1:0'], {
+      cwd, env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    server.on('error', error => { serverError = error; });
+    for (const stream of [server.stdout, server.stderr]) stream.on('data', data => { serverLog = (serverLog + data).slice(-131072); });
+    while (!/ws:\/\/127\.0\.0\.1:\d+/.test(serverLog)) {
+      active();
+      assert(!serverError, `Private app-server failed: ${serverError}`);
+      assert(server.exitCode === null && server.signalCode === null, 'Private app-server exited before listening');
+      await pause(100);
+    }
+    const address = (serverLog.match(/ws:\/\/127\.0\.0\.1:\d+/) as RegExpMatchArray)[0] as string;
+    tm('new-session', '-d', '-s', 'check', '-x', String(width), '-y', '40', '/bin/bash --noprofile --norc');
+    tmuxStarted = true;
+    tm('set-option', '-g', 'status', 'off');
+    tm('set-option', '-p', '-t', 'check', 'window-style', light ? 'fg=#111111,bg=#ffffff' : 'fg=#eeeeee,bg=#111111');
+    literal(['env', '-i', ...Object.entries(env).map(([k, v]) => `${k}=${v}`), binary, '--remote', address, '-C', cwd].map(quote).join(' '));
+    key('Enter');
+    await until(ledgerOpen);
+    await pause(200);
+    save('before-first-request');
+    // Real native transcript rendering, with a deterministic local inference response.
+    // Dense lines expose both covered glyphs and a missing gap; idle screens cannot.
+    // Two left-padding cells and one scrollbar cell leave width - 3 text cells.
+    // Fill complete wrapped rows: a seven-row terminal exposes just one transcript row,
+    // whose legitimate short remainder cannot establish the available transcript width.
+    provider.actions.push(message(Array(80).fill('X'.repeat((width - 3) * 8)).join('\n')));
+    literal('Render the Ledger clearance fixture'); key('Enter');
+    await until(text => text.includes('X'.repeat(20)) && !text.includes('esc to interrupt'));
+    await pause(200);
+    const text = save('open');
+    const lines = text.split('\n');
+    const titleY = lines.findIndex(line => line.includes('CONTEXT LEDGER'));
+    const controlLabel = legacyCloseLabels.find(label => lines.some(line => line.includes(label)))
+      || (lines[1]?.includes(onLabel) ? onLabel : undefined);
+    assert(controlLabel, 'Ledger must have a switch or the legacy close control');
+    const controlY = lines.findIndex(line => line.includes(controlLabel));
+    const left = (lines[controlY] as string).indexOf(controlLabel);
+    result.geometry = { controlY, titleY, left, buttonWidth: [...controlLabel].length };
+    const ledgerLeft = (lines[titleY] as string).indexOf('CONTEXT LEDGER') - 2;
+    result.topRowBlank = (lines[0] as string).slice(ledgerLeft + 2).trim() === '';
+    result.switchEndsTitleRow = (lines[titleY] as string).trimEnd().endsWith(onLabel);
+    result.titleHasStatus = /CONTEXT LEDGER  (?:≈|context)/u.test(lines[titleY] as string);
+    const switchRows = lines.filter(row => /SMART PRUNE|SUBAGENTS/u.test(row));
+    result.switchesAligned = switchRows.length === 2 && switchRows.every(row =>
+      row.trimEnd().length === width - 1 && (row.trimEnd().endsWith(onLabel) || row.trimEnd().endsWith(offLabel)));
+    result.layoutPass = controlLabel === onLabel && controlY === 1 && titleY === 1
+      && result.topRowBlank && result.switchEndsTitleRow && result.titleHasStatus && result.switchesAligned && !/[╳×✕]/u.test(text);
+    result.layoutAssertion = result.layoutPass ? 'PASS' : `FAIL: ${JSON.stringify(controlLabel)} on row ${controlY}; title on row ${titleY}; expected row 0 blank and title/status with ON on row 1`;
+    const xExtent = (text: string) => Math.max(-1, ...text.split('\n').map(row =>
+      row.includes('X'.repeat(8)) ? row.lastIndexOf('X') : -1));
+    const openExtent = xExtent(text);
+    must(result.topRowBlank, 'TUILEDGER: the first Ledger row must stay blank');
+    must(result.switchEndsTitleRow, 'TUILEDGER: the switch must end the title row');
+    must(result.titleHasStatus, 'TUILEDGER: the title row omits context status');
+    must(result.switchesAligned, 'TUILEDGER: Ledger switches no longer share their right edge');
+    result.visibleFixtureSourceRows = lines.map(line => line.slice(Math.max(0, ledgerLeft))).filter(line => line.includes('AGENTS.md'));
+    result.sourceFilenameWrappingChecked = false;
+    must((lines[controlY] as string).slice(left) === controlLabel + ' ', 'Painted toggle label or right margin differs');
+    for (const x of [left - 1, width - 1]) {
+      click(x, controlY); await pause(120);
+      must(ledgerOpen(capture(false)), `Outside cell x=${x} closed Ledger`);
+    }
+    result.outsideMouseCells = 2;
+    click(ledgerLeft + 2, titleY); await pause(120);
+    result.titleLabelMiss = ledgerOpen(capture(false));
+    must(result.titleLabelMiss, 'The title label acquired the toggle hitbox');
+    result.positiveMouseCells = 0;
+    for (let x = left; x < width - 1; x++) {
+      click(x, controlY); await until(text => !ledgerOpen(text));
+      result.positiveMouseCells = (result.positiveMouseCells as number) + 1;
+      key('Tab'); await until(ledgerOpen);
+    }
+    if (controlLabel === onLabel) {
+      key('Tab'); await until(text => !ledgerOpen(text));
+      literal('placement probe');
+      await until(text => text.includes('› placement probe'));
+      // Browse dense rows above completion metadata, including on the shortest viewport.
+      for (let wheel = 0; wheel < 8; wheel++) literal('\x1b[<64;3;3M');
+      await pause(150);
+      result.placements = [];
+      for (const height of [...(smoke ? [10] : Array.from({ length: 31 }, (_, i) => i + 10)), 8, 7, 6, 40]) {
+        tm('resize-window', '-t', 'check', '-x', String(width), '-y', String(height));
+        await pause(200);
+        // A resize repaints the whole screen; a capture taken mid-repaint is blank (21 Oct, 120 columns).
+        // Recapture for up to two seconds; a draft that really disappeared still fails below.
+        let closed = save(`closed-${height}`);
+        for (const settle = Date.now() + 2000; Date.now() < settle && !closed.includes('› placement probe');) {
+          await pause(100);
+          closed = save(`closed-${height}`);
+        }
+        const rows = closed.trimEnd().split('\n');
+        const composerY = rows.findIndex(row => row.includes('› placement probe'));
+        assert(composerY >= 0, `${height} rows: draft disappeared`);
+        // One padding row and the composer's gap precede the single-line input.
+        const transcriptHeight = Math.max(0, composerY - 2);
+        const body = rows.slice(0, transcriptHeight);
+        const ledgerRows = body.flatMap((row, y) =>
+          /[│╱╲]/u.test(row.slice(0, width - 1)) || row.includes(onLabel) || row.includes(offLabel) || ledgerOpen(row) ? [y] : []);
+        const reachesEdge = transcriptHeight === 0 || xExtent(body.join('\n')) === width - 2;
+        const pass = ledgerRows.length === 0 && reachesEdge;
+        result.placements.push({ height, transcriptHeight, ledgerRows, reachesEdge, pass });
+        must(ledgerRows.length === 0, `TUILEDGER: ${width}x${height}: closed Ledger still draws cells`);
+        must(reachesEdge, `TUILEDGER: ${width}x${height}: closed transcript does not use its full width`);
+      }
+      result.placementPass = result.placements.every(item => item.pass);
+      key('PageUp'); await pause(150);
+      const scrolled = save('scrolled');
+      must(scrolled.split('\n').every(row => !/[│╱╲]/u.test(row.slice(0, width - 1))) && !scrolled.includes(offLabel), 'TUILEDGER: closed Ledger draws cells after scrolling');
+      click(width - 3, 15); await pause(120);
+      result.closedClickMiss = !ledgerOpen(capture(false));
+      must(result.closedClickMiss, 'TUILEDGER: the removed tab still has a click target');
+      key('Tab'); await until(ledgerOpen);
+      result.tabReopens = true;
+      const reopened = save('reopened');
+      result.openWrappingUnchanged = xExtent(reopened) === openExtent;
+      must(result.openWrappingUnchanged, 'The open Ledger acquired a closed-tab gutter');
+      key('M-c'); key('Escape'); key('Escape'); await until(text => !ledgerOpen(text));
+      key('Tab'); await until(ledgerOpen);
+      key('Tab'); await until(text => !ledgerOpen(text));
+      result.keyboard = ['Alt+C', 'Escape', 'Tab'];
+      key('C-u'); literal('?'); await until(text => text.includes('Keyboard shortcuts'));
+      const shortcuts = save('shortcuts');
+      result.shortcutTip = shortcuts.includes('Tab shows or hides the Context Ledger');
+      must(result.shortcutTip, 'TUILEDGER: shortcuts omit the Ledger Tab tip');
+      key('Escape');
+    } else {
+      result.placementPass = false;
+      key('Escape'); key('Escape'); await until(text => !ledgerOpen(text));
+      key('Tab'); await until(ledgerOpen);
+      key('Tab'); await until(text => !ledgerOpen(text));
+      result.keyboard = ['Escape', 'Tab'];
+    }
+  } catch (error) {
+    result.errors.push((error as Error).stack as string);
+    try { save('failure'); } catch {}
+  } finally {
+    try { tm('kill-server'); result.privateTmuxStopped = true; } catch (error) {
+      result.privateTmuxStopped = !tmuxStarted;
+      if (tmuxStarted) result.errors.push(`Could not stop private tmux: ${(error as Error).message}`);
+    }
+    try { if (provider.server) provider.close(); } catch (error) { result.errors.push((error as Error).stack as string); }
+    try { await stopServer(server); } catch (error) { result.errors.push((error as Error).stack as string); }
+    result.modelRequests = provider.requests.length + provider.titleRequests.length;
+    must(provider.requests.length === 1 && provider.titleRequests.length <= 1, 'Expected one fixture response and at most one session title');
+    must(!provider.error, `Unexpected mock-provider traffic: ${(provider.error as Error | undefined)?.message}`);
+    try {
+      execFileSync('gio', ['trash', fixture], { env: { ...process.env, XDG_DATA_HOME: path.join(output, 'trash-data') }, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
+      assert(!fs.existsSync(fixture), 'Owned fixture still exists after gio trash');
+      result.privateProfileTrashed = true;
+    } catch (error) {
+      result.errors.push(`Could not trash owned fixture ${fixture}: ${(error as Error).message}`);
+    }
+    fs.writeFileSync(path.join(output, `${label}-server.log`), serverLog);
+  }
+  fs.writeFileSync(path.join(output, `${label}.json`), JSON.stringify(result, null, 2) + '\n');
+  console.log(JSON.stringify({ case: label, layout: result.layoutAssertion, positiveMouseCells: result.positiveMouseCells, modelRequests: result.modelRequests, errors: result.errors.length }));
+  return result;
+}
+
+(async () => {
+  if (process.argv[2] === '--snapshot-only') {
+    const file = path.join(repo, 'codex-rs/tui/src/app/snapshots/codex_tui__app__composer_hints__tests__composer_usage_notice.snap');
+    const text = fs.readFileSync(file, 'utf8').split('---\n').slice(2).join('---\n');
+    const first = text.split('\n').slice(1, 5);
+    const content = first.map(row => row.trim()).filter(Boolean).join(' ');
+    assert(content.includes('Run /usage for a breakdown.'), 'Usage notice lost text after restoring the full transcript width');
+    assert(!/[╱╲]/u.test(text) && !text.includes(offLabel), 'Snapshot still paints the removed closed tab');
+    console.log('PASS: complete usage notice survives full-width closed Ledger rendering');
+    return;
+  }
+  const config = options();
+  const binarySha256 = await sha256(config.binary);
+  const checks: CaseResult[] = [];
+  for (const width of config.smoke ? [80] : [80, 120, 200]) for (const light of config.smoke ? [false] : [false, true]) {
+    if (!interrupted) checks.push(await check(config, width, light));
+  }
+  const result: Overall = {
+    ...config, binarySha256, binaryUnchanged: binarySha256 === await sha256(config.binary), interrupted: interrupted || null,
+    sourceFixture: path.relative(repo, __filename), harnessSha256: await sha256(__filename), checks,
+    allPositiveControlsPass: checks.length === (config.smoke ? 1 : 6) && checks.every(check => check.positiveMouseCells === check.geometry?.buttonWidth && check.privateProfileTrashed),
+    layoutPasses: checks.filter(check => check.layoutPass === true).length,
+    layoutFailures: checks.filter(check => check.layoutPass === false).length,
+  };
+  result.pass = !interrupted && result.binaryUnchanged && result.allPositiveControlsPass && (config.phase === 'baseline'
+    ? checks.every(check => (!check.layoutPass || !check.placementPass) && check.errors.every(error =>
+      /^TUILEDGER:/u.test(error)))
+    : result.layoutPasses === checks.length && checks.every(check => !check.errors.length && check.placementPass && check.tabReopens && check.closedClickMiss && check.shortcutTip && check.openWrappingUnchanged));
+  fs.writeFileSync(path.join(config.output, 'result.json'), JSON.stringify(result, null, 2) + '\n');
+  if (!result.pass) process.exitCode = 1;
+})().catch((error: Error) => { console.error(error.stack); process.exitCode = 1; });

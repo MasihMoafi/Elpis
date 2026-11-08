@@ -12,7 +12,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { existingSocket } from '../bridge/client.mts';
 const require = createRequire(import.meta.url);
-const { Provider, message: modelMessage, call: modelCall } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message: modelMessage, call: modelCall } = require('../../../scripts/lib/mock-provider.cts');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const binary = process.argv[2];
 const approvalEval = process.argv.includes('--approvals') || process.argv.includes('--only-approvals');

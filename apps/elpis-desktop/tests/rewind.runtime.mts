@@ -9,7 +9,7 @@ import { DesktopClient } from '../bridge/client.mts';
 import { startDesktopServer } from '../bridge/server.mts';
 import { chooseOption } from './controls.cjs';
 const require = createRequire(import.meta.url);
-const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message } = require('../../../scripts/lib/mock-provider.cts');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
 const root = await fs.mkdtemp(path.resolve('../../.tmp/rewind/native-'));

@@ -10,7 +10,8 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { setTimeout as pause } from "node:timers/promises";
-import mockProvider from "../../../scripts/lib/mock-provider.js";
+import importedMockProvider from "../../../scripts/lib/mock-provider.cts";
+const mockProvider = /** @type {import("../../../scripts/lib/mock-provider.cts").ProviderApi} */ (importedMockProvider);
 const { DesktopClient } = await import(process.env.A124_CLIENT ? pathToFileURL(process.env.A124_CLIENT) : new URL("../../../apps/elpis-desktop/bridge/client.mts", import.meta.url));
 
 const source = fileURLToPath(new URL("../", import.meta.url));
@@ -308,14 +309,14 @@ for (const count of [4]) test(`A128: GPT keeps its native tool running through $
   const followups = Array.from({ length: count }, (_, n) => `GPT follow-up ${n + 1} — پیام`);
   let provider;
   if (native) {
-    const { Provider } = (await import("../../../scripts/lib/mock-provider.js")).default;
+    const { Provider } = /** @type {import("../../../scripts/lib/mock-provider.cts").ProviderApi} */ ((await import("../../../scripts/lib/mock-provider.cts")).default);
     provider = new Provider(); await provider.start();
     t.after(() => provider.close());
   }
   const f = await fixture(t, {}, { model: native ? "gpt-5.5" : "luna-test", prepare: async (root, env) => {
     env.FAKE_ENGINE_TOOL_RELEASE = path.join(root, "native-release");
     if (!native) return;
-    const { call, message } = (await import("../../../scripts/lib/mock-provider.js")).default;
+    const { call, message } = /** @type {import("../../../scripts/lib/mock-provider.cts").ProviderApi} */ ((await import("../../../scripts/lib/mock-provider.cts")).default);
     const catalog = JSON.parse(fs.readFileSync(path.join(source, "../../codex-rs/models-manager/models.json"), "utf8")).models.find(m => m.slug === "gpt-5.5");
     assert.ok(catalog);
     fs.mkdirSync(env.ELPIS_HOME, { recursive: true });

@@ -1,10 +1,20 @@
+// Generated from packaging/obsidian/love-spot/main.cts by scripts/emit-compat-js.mts; do not edit.
+
+
+
+
+
+
+
+
+
 'use strict';
 
-const { ItemView, Plugin, Notice, addIcon } = require('obsidian');
-const { spawn } = require('node:child_process');
-const fs = require('node:fs');
-const path = require('node:path');
-const os = require('node:os');
+const { ItemView, Plugin, Notice, addIcon } = require('obsidian')                                          ;
+const { spawn } = require('node:child_process')                                       ;
+const fs = require('node:fs')                            ;
+const path = require('node:path')                              ;
+const os = require('node:os')                            ;
 
 const VIEW_TYPE_LOVE_SPOT = 'love-spot-view';
 const LOVE_SPOT_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 225 225"><path fill-rule="evenodd" fill="currentColor" d="M 112.5 62.5 L 88 38 L 52 38 L 24 66 L 24 104 L 112.5 192.5 L 201 104 L 201 66 L 173 38 L 137 38 Z M 112.5 88 L 80.5 56 L 59.5 56 L 42 73.5 L 42 96.5 L 112.5 167 L 183 96.5 L 183 73.5 L 165.5 56 L 144.5 56 Z M 112.5 104 L 130.5 122 L 112.5 140 L 94.5 122 Z"/></svg>`;
@@ -34,7 +44,10 @@ function findNodeBin() {
 }
 
 class LoveSpotView extends ItemView {
-  constructor(leaf, plugin) {
+
+
+
+  constructor(leaf               , plugin              ) {
     super(leaf);
     this.plugin = plugin;
   }
@@ -58,7 +71,7 @@ class LoveSpotView extends ItemView {
     } catch (error) {
       const box = container.createDiv({ cls: 'love-spot-obsidian-empty' });
       box.createEl('h3', { text: 'Love Spot requires the local Elpis runtime' });
-      box.createEl('p', { text: error.message || String(error) });
+      box.createEl('p', { text: (error         ).message || String(error) });
       const btn = box.createEl('button', { text: 'Open standalone Love Spot window' });
       btn.addEventListener('click', () => this.plugin.openStandalone());
     }
@@ -69,6 +82,8 @@ class LoveSpotView extends ItemView {
 }
 
 module.exports = class LoveSpotPlugin extends Plugin {
+
+
   async onload() {
     addIcon('love-spot', LOVE_SPOT_SVG);
     this.registerView(VIEW_TYPE_LOVE_SPOT, leaf => new LoveSpotView(leaf, this));
@@ -98,14 +113,14 @@ module.exports = class LoveSpotPlugin extends Plugin {
     const appDir = findDesktopRoot();
     if (!appDir) throw new Error('Install love-spot or elpis-desktop on this computer to run the local board server.');
     const nodeBin = findNodeBin();
-    return await new Promise((resolve, reject) => {
+    return await new Promise        ((resolve, reject) => {
       const child = spawn(nodeBin, [path.join(appDir, 'bridge/server.mts')], {
         cwd: appDir,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       this.serverProcess = child;
       let stdout = '', stderr = '';
-      child.stdout.on('data', chunk => {
+      child.stdout.on('data', (chunk        ) => {
         stdout += chunk.toString();
         const line = stdout.split('\n')[0]?.trim();
         if (line && line.startsWith('http://127.0.0.1:')) {
@@ -113,7 +128,7 @@ module.exports = class LoveSpotPlugin extends Plugin {
           resolve(line);
         }
       });
-      child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+      child.stderr.on('data', (chunk        ) => { stderr += chunk.toString(); });
       child.once('exit', code => {
         this.serverProcess = null;
         this.serverUrl = null;

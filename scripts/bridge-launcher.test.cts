@@ -1,0 +1,69 @@
+'use strict';
+// Exercise the real launcher with private homes and shared Unix-socket bridges.
+// A moving default command must not change the runtime selected for this session.
+import type { SpawnSyncReturns } from 'node:child_process';
+
+const assert: typeof import('node:assert/strict') = require('node:assert/strict');
+const fs: typeof import('node:fs') = require('node:fs');
+const os: typeof import('node:os') = require('node:os');
+const path: typeof import('node:path') = require('node:path');
+const { spawnSync }: typeof import('node:child_process') = require('node:child_process');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-launcher-'));
+const bridge = process.env.BRIDGE_LAUNCHER_DIR ?? path.resolve(__dirname, '../tools/elpis-claude');
+const expected = path.join(root, '.local/lib/elpis-next/elpis-next');
+const fallback = path.join(root, '.local/bin/elpis');
+const fixtureBridge = path.join(root, 'Desktop/p/Elpis-wt-acp/tools/elpis-claude');
+fs.mkdirSync(path.dirname(expected), { recursive: true });
+fs.mkdirSync(path.dirname(fallback), { recursive: true });
+fs.mkdirSync(path.dirname(fixtureBridge), { recursive: true });
+fs.symlinkSync(bridge, fixtureBridge);
+fs.writeFileSync(expected, '#!/bin/sh\nprintf "selected:%s\\n" "$ELPIS_ENGINE_BIN"\nprintf "arg:%s\\n" "$@"\n', { mode: 0o755 });
+fs.writeFileSync(fallback, '#!/bin/sh\nprintf "fallback\\n"\nprintf "arg:%s\\n" "$@"\n', { mode: 0o755 });
+const env: NodeJS.ProcessEnv = { ...process.env, HOME: root, CODEX_HOME: root, ELPIS_HOME: root, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: path.join(root, 'bridge.log') };
+delete env.ELPIS_ENGINE_BIN;
+delete env.ELPIS_NO_CLAUDE;
+function launch(script: string, args: string[], extra: NodeJS.ProcessEnv = {}) {
+  const result: SpawnSyncReturns<string> = spawnSync('bash', [path.join(bridge, script), ...args], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 15000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout;
+}
+async function main() {
+  const standaloneHome = path.join(root, 'standalone');
+  fs.mkdirSync(standaloneHome);
+  try {
+    let output = launch('elpis-wrapper', ['resume', 'fixture-session']);
+    assert(output.includes(`selected:${expected}`), output);
+    assert(!output.includes('fallback'), output);
+    assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:resume\narg:fixture-session/);
+    console.log('PASS interactive wrapper pins the same runtime for bridge and TUI');
+    output = launch('elpis-wrapper', ['fork', 'fixture-session', '--worktree']);
+    assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:fork\narg:fixture-session\narg:--worktree/);
+    console.log('PASS interactive fork uses the same local provider bridge');
+    output = launch('elpis-wrapper', ['--worktree', 'worktree fixture']);
+    assert.match(output, /arg:--elpis-local-bridge\narg:--remote\narg:unix:\/\/[^\n]+\narg:--worktree\narg:worktree fixture/);
+    console.log('PASS ordinary worktree launch explicitly selects the private local bridge');
+    output = launch('elpis-claude', ['resume', 'fixture-session'], { ELPIS_HOME: standaloneHome });
+    assert(output.includes('fallback'), output);
+    assert(!output.includes('selected:'), output);
+    console.log('PASS standalone bridge launcher retains the default command when no runtime is selected');
+    fs.writeFileSync(expected, `#!${process.execPath}\nimport readline from 'node:readline';\nif (process.argv.includes('app-server')) readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if (m.id !== undefined) process.stdout.write(JSON.stringify({id:m.id,result:m.method==='config/read'?{config:{}}:m.method==='configRequirements/read'?{requirements:null}:{}})+'\\n'); });\nelse for (const arg of process.argv.slice(2)) process.stdout.write('arg:'+arg+'\\n');\n`, { mode: 0o755 });
+    output = launch('elpis-wrapper', ['exec', 'Run a local test']);
+    assert.match(output, /arg:approval_policy="never"/);
+    assert.match(output, /arg:default_permissions=":danger-full-access"/);
+    assert.match(output, /arg:exec\narg:Run a local test/);
+    assert(!output.includes('dangerously-bypass'), output);
+    console.log('PASS headless wrapper uses the shared Full access policy without Bypass');
+  } finally {
+    const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mjs');
+    for (const home of [root, standaloneHome]) {
+      const stateFile = runtimeDir(home).state;
+      if (fs.existsSync(stateFile)) {
+        const state: { pid: number; token: string } = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+        if (startToken(state.pid) === state.token) process.kill(state.pid, 'SIGTERM');
+      }
+    }
+    console.log(`Evidence: ${root}`);
+  }
+}
+main().catch(e => { console.error(e); process.exitCode = 1; });

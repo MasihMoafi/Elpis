@@ -2,7 +2,7 @@
 # Run the real multitool with loopback fixtures, then prove the controls fail.
 set -euo pipefail
 binary=$(realpath "${1:?usage: release-runtime-evals.sh BINARY}")
-node scripts/elpis-next-identity.test.cjs "$binary"
+node scripts/elpis-next-identity.test.cts "$binary"
 positive() { node "scripts/$1-runtime.test.cjs" "$binary" "${@:2}"; }
 negative() {
   if node "scripts/$1-runtime.test.cjs" "$binary" "${@:2}"; then
@@ -11,7 +11,7 @@ negative() {
   fi
   printf 'PASS negative control failed as expected: %s\n' "$*"
 }
-ELPIS_BIN="$binary" node scripts/continuity-admission-runtime.test.cjs
+ELPIS_BIN="$binary" node scripts/continuity-admission-runtime.test.cts
 positive pressure-compaction
 negative pressure-compaction --drop-pressure
 for mode in local token-budget remote-v2; do
@@ -27,4 +27,4 @@ positive provider-gateway
 positive provider-gateway --drop-completion
 positive code-mode-install
 negative code-mode-install --missing-host
-node scripts/elpis-next-privacy.test.cjs "$binary"
+node scripts/elpis-next-privacy.test.cts "$binary"

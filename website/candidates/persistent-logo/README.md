@@ -8,8 +8,8 @@ the pending choice; only **Next fixture request** applies it to the displayed co
 Run locally from this directory:
 
 ```sh
-node preview.mjs
-node --test fixture.test.mjs
+node preview.mts
+node --test fixture.test.mts
 ```
 
 Open `http://127.0.0.1:43127`. Replay resets the fixture; Pause also stops the logo.
@@ -17,7 +17,7 @@ Reduced-motion preferences pause autoplay initially. Resume is an explicit opt-i
 
 [Recorded illustrative demo](demo.webm): 7.05 seconds, 1440×1280 VP9, captured
 from the actual candidate page. The desktop/mobile PNGs and replay video are new
-review assets; none replaces an existing deployed image. `record-demo.mjs` records
+review assets; none replaces an existing deployed image. `record-demo.mts` records
 through Chromium CDP and the system ffmpeg with one encoding thread; it refuses
 to overwrite an existing recording. It requires the local Playwright module path
 used by the script, not a dependency download.

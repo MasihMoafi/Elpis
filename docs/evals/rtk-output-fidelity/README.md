@@ -3,8 +3,8 @@
 Question: do the installed RTK rewrites omit information needed for actual repository
 inspection, relative to direct subprocess output? This is not a pruning ON/OFF study.
 
-Run `node docs/evals/rtk-output-fidelity/run.mjs --self-test`, then
-`node docs/evals/rtk-output-fidelity/run.mjs` from the repository root.
+Run `node docs/evals/rtk-output-fidelity/run.mts --self-test`, then
+`node docs/evals/rtk-output-fidelity/run.mts` from the repository root.
 No model calls, dependency installs, or changes to product settings are required.
 
 Three useful tasks: inspect the execution checkpoint before editing it; review the

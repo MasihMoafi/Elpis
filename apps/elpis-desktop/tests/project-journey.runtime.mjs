@@ -12,7 +12,7 @@ import { existingSocket } from '../bridge/client.mts';
 const require = createRequire(import.meta.url);
 const { chooseOption, chooseTheme, openSettings } = require('./controls.cjs');
 const { _electron } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message } = require('../../../scripts/lib/mock-provider.cts');
 const binary = process.argv[2];
 assert(binary && path.isAbsolute(binary));
 const appRoot = fileURLToPath(new URL('..', import.meta.url));

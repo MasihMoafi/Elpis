@@ -26,15 +26,33 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '26.1.0'
       - name: Shell scripts (shellcheck, errors)
         run: shellcheck -S error scripts/*.sh apps/elpis-desktop/scripts/*.sh
       - name: Node scripts parse
-        run: for f in scripts/*.mjs apps/elpis-desktop/scripts/*.mjs apps/elpis-desktop/scripts/*.cjs; do if [ -f "$f" ]; then node --check "$f"; fi; done
+        run: |
+          for f in scripts/*.{mjs,mts,cjs,cts} apps/elpis-desktop/scripts/*.{mjs,mts,cjs,cts}; do
+            [ -f "$f" ] || continue
+            if [[ "$f" == *.cts ]]; then
+              node --disable-warning=ExperimentalWarning --input-type=module -e '
+                import { readFileSync } from "node:fs";
+                import Module, { stripTypeScriptTypes } from "node:module";
+                import vm from "node:vm";
+                const file = process.argv[1];
+                const source = readFileSync(file, "utf8").replace(/^#!.*\n/, "");
+                new vm.Script(Module.wrap(stripTypeScriptTypes(source)), { filename: file });
+              ' "$f"
+            else
+              node --check "$f"
+            fi
+          done
       - name: JavaScript migration guard
-        run: node scripts/js-guard.mjs && node --test scripts/js-guard.test.mjs
+        run: |
+          node scripts/js-guard.mts
+          node scripts/emit-compat-js.mts --check
+          node --test scripts/js-guard.test.mts
       - name: Website and README page
-        run: node --test website/tests/site.test.mjs
+        run: node --test website/tests/site.test.mts
   strict:
     name: desktop strict checks (types, oxlint, jscpd)
     # The ratchet in apps/elpis-desktop/strict-baseline.json: counts may only go down and new files must be clean

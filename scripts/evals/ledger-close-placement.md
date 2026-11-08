@@ -3,9 +3,9 @@
 Linux, Node.js 20+, tmux, gio and a built native CLI are required. From the repository root in CI:
 
 ```sh
-node scripts/evals/ledger-close-placement.cjs --binary "$PWD/codex-rs/target/dev-small/codex" --output "$RUNNER_TEMP/t7-proof" --phase candidate
+node scripts/evals/ledger-close-placement.cts --binary "$PWD/codex-rs/target/dev-small/codex" --output "$RUNNER_TEMP/t7-proof" --phase candidate
 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --prefix "$RUNNER_TEMP/t7-render" --no-save --package-lock=false --ignore-scripts --no-audit --no-fund @xterm/xterm@6.0.0 playwright-core@1.62.1
-node scripts/evals/render-ledger-close-placement.cjs --evidence "$RUNNER_TEMP/t7-proof" --modules "$RUNNER_TEMP/t7-render/node_modules" --chrome /usr/bin/google-chrome
+node scripts/evals/render-ledger-close-placement.cts --evidence "$RUNNER_TEMP/t7-proof" --modules "$RUNNER_TEMP/t7-render/node_modules" --chrome /usr/bin/google-chrome
 ```
 
 Output must be fresh and empty. Candidate requires a blank row 0 and, on row 1, the title ending in the ON switch in all 100/140-column light/dark cases. Relative Close/title order alone does not establish top placement: the previous installed runtime paints them on rows 4 and 5. Baseline requires four placement failures with working controls. Both check every painted Close cell (nine old cells or three compact cells), outside misses, Tab/Escape and zero model requests; candidate also checks title-row misses. Full filenames and wrapped/scrolled links/toggles have separate Rust regressions.

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Generated from codex-rs/responses-api-proxy/npm/bin/codex-responses-api-proxy.mts by scripts/emit-compat-js.mts; do not edit.
 // Entry point for the Codex responses API proxy binary.
 
 import { spawn } from "node:child_process";
@@ -8,7 +9,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-function determineTargetTriple(platform, arch) {
+function determineTargetTriple(platform                 , arch        ) {
   switch (platform) {
     case "linux":
     case "android":
@@ -66,7 +67,7 @@ child.on("error", (err) => {
   process.exit(1);
 });
 
-const forwardSignal = (signal) => {
+const forwardSignal = (signal                ) => {
   if (!child.killed) {
     try {
       child.kill(signal);
@@ -76,11 +77,13 @@ const forwardSignal = (signal) => {
   }
 };
 
-["SIGINT", "SIGTERM", "SIGHUP"].forEach((sig) => {
+(["SIGINT", "SIGTERM", "SIGHUP"]         ).forEach((sig) => {
   process.on(sig, () => forwardSignal(sig));
 });
 
-const childResult = await new Promise((resolve) => {
+const childResult = await new Promise
+
+ ((resolve) => {
   child.on("exit", (code, signal) => {
     if (signal) {
       resolve({ type: "signal", signal });

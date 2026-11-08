@@ -3,7 +3,7 @@
   themes: light --default;
 }
 @source "./smart-prune-report.html";
-@source "../../scripts/render-smart-prune-report.cjs";
+@source "../../scripts/render-smart-prune-report.cts";
 @plugin "daisyui/theme" {
   name: "light";
   default: true;

@@ -9,7 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { once } = require('node:events');
-const { Provider, message } = require('../../../scripts/lib/mock-provider.js');
+const { Provider, message } = require('../../../scripts/lib/mock-provider.cts');
 const { fakeDesktop } = require('./fake-desktop.cjs');
 
 const engine = process.env.ELPIS_ENGINE_BIN;

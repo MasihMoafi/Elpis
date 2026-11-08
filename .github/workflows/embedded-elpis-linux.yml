@@ -226,7 +226,7 @@ jobs:
         run: |
           bash tests/install/test_install.sh
           bash tests/install/test_cache_source_times.sh
-          node --test --test-concurrency=1 tests/install/install-engine.test.mjs tests/install/prune-versions.test.mjs
+          node --test --test-concurrency=1 tests/install/install-engine.test.mts tests/install/prune-versions.test.mts
       - name: Install locked bridge dependencies
         working-directory: tools/elpis-claude
         run: npm ci --ignore-scripts
@@ -239,16 +239,16 @@ jobs:
           node apps/elpis-desktop/bridge/build-resources.mts --bridge-only
           node --test --test-concurrency=1 --test-name-pattern='existing chats are written directly|opening a chat rejoins|opening a completed parent-owned child|a child in a legacy drain' apps/elpis-desktop/bridge/bridge.test.mjs
           node --test tools/elpis-claude/test/handover-subscribe.test.mjs
-          node scripts/store-guard.test.cjs
-          node scripts/history-list.test.cjs
+          node scripts/store-guard.test.cts
+          node scripts/history-list.test.cts
           node --test tools/elpis-claude/test/resume-list.test.mjs
           node --test tools/elpis-claude/test/bridge-idle.test.mjs
           node --test --test-concurrency=1 tools/elpis-claude/test/approval-review.test.mjs tools/elpis-claude/test/delegate-start.test.mjs
           node --test --test-concurrency=1 tools/elpis-claude/test/context-agent-worker.test.mjs
           node --test --test-name-pattern="a Workflows node's chat starts" tools/elpis-claude/test/elpis-acp-agent.test.mjs
-          node scripts/bridge-launcher.test.cjs
-          node scripts/agy-steering.test.cjs
-          node scripts/build-elpis-local.test.cjs
+          node scripts/bridge-launcher.test.cts
+          node scripts/agy-steering.test.cts
+          node scripts/build-elpis-local.test.cts
       - name: Build the runtime, Code Mode host, and sandbox
         id: runtime_build
         if: ${{ !cancelled() && inputs.verification != 'ui' }}
@@ -293,7 +293,7 @@ jobs:
         shell: bash
         run: |
           cargo test --profile dev-small --locked -p codex-config --lib -- projectless_directory_tests project_config_ default_off_disables_every_skill_until_one_is_turned_on 2>&1 | tee "$RUNNER_TEMP/elpis-config-checks.log"
-          node ../scripts/user-config-isolation.test.cjs "$PWD/target/release/elpis" 2>&1 | tee -a "$RUNNER_TEMP/elpis-config-checks.log"
+          node ../scripts/user-config-isolation.test.cts "$PWD/target/release/elpis" 2>&1 | tee -a "$RUNNER_TEMP/elpis-config-checks.log"
       - name: Preserve configuration failure details immediately
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -305,7 +305,7 @@ jobs:
       - name: Native Ledger placement and compact Close regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
-          node scripts/evals/ledger-close-placement.cjs \
+          node scripts/evals/ledger-close-placement.cts \
             --binary "$PWD/codex-rs/target/release/elpis" \
             --output "$RUNNER_TEMP/elpis-ledger-native" --phase candidate
       - name: Preserve native Ledger evidence
@@ -320,13 +320,13 @@ jobs:
           retention-days: 7
       - name: Native permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
-        run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis"
+        run: node scripts/permissions-runtime.test.cts "$PWD/codex-rs/target/release/elpis"
       - name: Code Mode permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
-        run: node scripts/permissions-runtime.test.cjs "$PWD/codex-rs/target/release/elpis" --code-mode
+        run: node scripts/permissions-runtime.test.cts "$PWD/codex-rs/target/release/elpis" --code-mode
       - name: Claude bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
-        run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis"
+        run: node scripts/permissions-bridge.test.cts "$PWD/codex-rs/target/release/elpis"
       - name: Claude turn delivery and restart recovery through the real native runtime (A124)
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         env:
@@ -355,37 +355,37 @@ jobs:
           retention-days: 7
       - name: Gemini bridge permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
-        run: node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+        run: node scripts/permissions-bridge.test.cts "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Live admitted context refresh across providers
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
-          node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/bridge-context.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini
+          node scripts/bridge-context.test.cts "$PWD/codex-rs/target/release/elpis"
+          node scripts/bridge-context.test.cts "$PWD/codex-rs/target/release/elpis" --gemini
       - name: Delegated helper status across server restarts
         if: ${{ !cancelled() && inputs.verification != 'build' }}
-        run: node scripts/delegate-status-restart.test.cjs
+        run: node scripts/delegate-status-restart.test.cts
       - name: Exec helper ancestry
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         env:
           ELPIS_PARENT_TEST_BINARY: ${{ github.workspace }}/codex-rs/target/release/elpis
-        run: node --test codex-rs/exec/tests/parent-runtime.test.cjs
+        run: node --test codex-rs/exec/tests/parent-runtime.test.cts
       - name: Delegated helper permission regressions
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
-          node scripts/delegate-reload.test.cjs "$PWD/codex-rs/target/release/elpis"
-          node scripts/permissions-bridge-delegation.test.cjs "$PWD/codex-rs/target/release/elpis" --keep-going
+          node scripts/delegate-reload.test.cts "$PWD/codex-rs/target/release/elpis"
+          node scripts/permissions-bridge-delegation.test.cts "$PWD/codex-rs/target/release/elpis" --keep-going
       - name: Shared launcher, native transport, and provider session ownership
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}
         run: |
           # These fixtures own isolated homes and processes; collect every failure in one run.
           failed=0
-          node scripts/shared-runtime.test.cjs "$PWD/codex-rs/target/release/elpis" || failed=1
-          node scripts/terminal-input.test.cjs "$PWD/codex-rs/target/release/elpis" --launcher || failed=1
-          node scripts/continuity-workflows-terminal.test.cjs "$PWD/codex-rs/target/release/elpis" || failed=1
-          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" || failed=1
-          node scripts/shared-provider-sessions.test.cjs "$PWD/codex-rs/target/release/elpis" --gemini || failed=1
-          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared || failed=1
-          node scripts/permissions-bridge.test.cjs "$PWD/codex-rs/target/release/elpis" --shared --gemini || failed=1
+          node scripts/shared-runtime.test.cts "$PWD/codex-rs/target/release/elpis" || failed=1
+          node scripts/terminal-input.test.cts "$PWD/codex-rs/target/release/elpis" --launcher || failed=1
+          node scripts/continuity-workflows-terminal.test.cts "$PWD/codex-rs/target/release/elpis" || failed=1
+          node scripts/shared-provider-sessions.test.cts "$PWD/codex-rs/target/release/elpis" || failed=1
+          node scripts/shared-provider-sessions.test.cts "$PWD/codex-rs/target/release/elpis" --gemini || failed=1
+          node scripts/permissions-bridge.test.cts "$PWD/codex-rs/target/release/elpis" --shared || failed=1
+          node scripts/permissions-bridge.test.cts "$PWD/codex-rs/target/release/elpis" --shared --gemini || failed=1
           exit "$failed"
       - name: Preserve helper and checkout evidence
         if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' && inputs.verification != 'build' }}

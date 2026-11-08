@@ -1,0 +1,196 @@
+// Background maintenance on a non-OpenAI provider, end to end.
+//
+// Session naming uses the configured background model even on a chat provider.
+// Memory belongs to the responding agent and must not launch a second model call.
+import type { ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import type { RpcApi } from "./lib/rpc.cts";
+
+type JsonSchema = { schema?: { required?: string[] }; strict?: boolean };
+type ModelRequest = { model: string; response_format?: { json_schema?: JsonSchema } };
+type Notification = { method: string; params: { threadId: string } };
+type ThreadResult = { thread: { id: string } };
+const assert: typeof import("node:assert/strict") = require("node:assert/strict");
+const crypto: typeof import("node:crypto") = require("node:crypto");
+const fs: typeof import("node:fs") = require("node:fs");
+const http: typeof import("node:http") = require("node:http");
+const os: typeof import("node:os") = require("node:os");
+const path: typeof import("node:path") = require("node:path");
+const { AppServer }: RpcApi = require("./lib/rpc.cts");
+
+const BACKGROUND_MODEL = "deepseek/deepseek-v4.1-flash";
+const MAIN_MODEL = "some-main-model";
+
+const root = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-background-model-"));
+const home = path.join(root, "home");
+const cwd = path.join(root, "project");
+const workspace = path.join(
+  home,
+  "context/workspaces",
+  "project-" + crypto.createHash("sha256").update(cwd).digest("hex").slice(0, 12),
+);
+const memoryFile = path.join(home, "memories/MEMORY.md");
+for (const directory of [cwd, workspace, path.dirname(memoryFile)]) {
+  fs.mkdirSync(directory, { recursive: true });
+}
+fs.writeFileSync(path.join(workspace, "memory-autosave.json"), '{"enabled":true}');
+fs.writeFileSync(path.join(workspace, "admission.toml"), "memory = true\ncheckpoint = true\n");
+
+const requests: ModelRequest[] = [];
+let rpc: InstanceType<RpcApi['AppServer']>;
+
+function schemaOf(body: ModelRequest) {
+  return body.response_format?.json_schema;
+}
+
+function sse(response: ServerResponse, text: string) {
+  response.writeHead(200, { "content-type": "text/event-stream" });
+  const id = "chatcmpl-" + requests.length;
+  for (const event of [
+    { id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant" } }] },
+    { id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: text } }] },
+    { id, object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      usage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120 } },
+  ]) {
+    response.write("data: " + JSON.stringify(event) + "\n\n");
+  }
+  response.write("data: [DONE]\n\n");
+  response.end();
+}
+
+const server = http.createServer(async (request, response) => {
+  if (!(request.url as string).includes("/chat/completions")) {
+    response.writeHead(404);
+    response.end();
+    return;
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(chunk);
+  const body: ModelRequest = JSON.parse(Buffer.concat(chunks).toString());
+  requests.push(body);
+
+  const required = schemaOf(body)?.schema?.required ?? [];
+  if (required.includes("title")) {
+    sse(response, JSON.stringify({ title: "Background model routing" }));
+    return;
+  }
+  sse(response, "Acknowledged.");
+});
+
+const turn = async (threadId: string, text: string) => {
+  let listener: (message: Notification) => void = () => {};
+  const done = new Promise<void>(resolve => {
+    listener = message => {
+      if (message.method === "turn/completed" && message.params.threadId === threadId) resolve();
+    };
+    rpc.on("notification", listener);
+  });
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await rpc.request("turn/start", { threadId, input: [{ type: "text", text }] });
+    await Promise.race([
+      done,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(Error("turn never completed")), 20000);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    rpc.removeListener("notification", listener);
+  }
+};
+
+async function until(check: () => boolean, message: string) {
+  const deadline = Date.now() + 15000;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  throw Error(message);
+}
+
+(async () => {
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  fs.writeFileSync(
+    path.join(home, "config.toml"),
+    [
+      `model = "${MAIN_MODEL}"`,
+      'model_provider = "fixture"',
+      `background_model = "${BACKGROUND_MODEL}"`,
+      "[model_providers.fixture]",
+      'name = "Fixture"',
+      `base_url = "http://127.0.0.1:${(server.address() as AddressInfo).port}/v1"`,
+      'wire_api = "chat"',
+      "requires_openai_auth = false",
+      "",
+    ].join("\n"),
+  );
+  fs.writeFileSync(path.join(home, "hooks.json"), "{}");
+
+  rpc = new AppServer(
+    path.resolve(
+      process.argv[2] ||
+        path.resolve(__dirname, "../codex-rs/target/local-release/codex-app-server"),
+    ),
+    home,
+    { env: { ...process.env, ELPIS_HOME: home, CODEX_HOME: home, CODEX_AUTH_HOME: home } },
+  );
+  rpc.on("disconnect", () => {});
+  await rpc.request("initialize", {
+    clientInfo: { name: "background_model_test", version: "1" },
+    capabilities: { experimentalApi: true },
+  });
+  rpc.send({ method: "initialized" });
+
+  const { thread } = (await rpc.request("thread/start", {
+    cwd,
+    model: MAIN_MODEL,
+    approvalPolicy: "never",
+    sandbox: "read-only",
+  })) as ThreadResult;
+  await turn(thread.id, "Remember that the project uses port 5823.");
+
+  const main = requests.filter(body => !schemaOf(body));
+  assert(main.length >= 1, "the user's turn never reached the provider");
+  assert.equal((main[0] as ModelRequest).model, MAIN_MODEL, "the user's turn must keep the main model");
+
+  await until(
+    () => requests.some(body => schemaOf(body)?.schema?.required?.includes("title")),
+    "no session naming arrived",
+  );
+  const title = requests.find(body => schemaOf(body)?.schema?.required?.includes("title")) as ModelRequest;
+  assert.equal(title.model, BACKGROUND_MODEL, "naming ignored background_model");
+  assert.equal((schemaOf(title) as JsonSchema).strict, true, "the naming schema was not strict");
+
+  assert(
+    !requests.some(body => schemaOf(body)?.schema?.required?.includes("checkpoint")),
+    "memory still launched an auxiliary model request",
+  );
+  assert(!fs.existsSync(memoryFile), "an auxiliary model unexpectedly wrote memory");
+
+  console.log(
+    JSON.stringify(
+      {
+        passed: true,
+        background_model: BACKGROUND_MODEL,
+        checks: [
+          "the user's turn keeps the main model",
+          "session naming uses background_model on a chat provider",
+          "session naming carries a strict json schema on the chat wire",
+          "memory launches no auxiliary model request",
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+})()
+  .catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    rpc?.dispose();
+    server.close();
+    server.closeAllConnections();
+  });

@@ -197,7 +197,7 @@ and 33.917s; enabled pre-compaction saving can add such a wait before compaction
 The malformed citation exposed a separate deterministic persistence defect:
 unsupported UUID-based references were accepted and could become credible-looking
 numeric references. The installed runtime fails the new adversarial check in
-`scripts/memory-runtime.test.cjs` (`memory-citation-integrity-before.log`): an
+`scripts/memory-runtime.test.cts` (`memory-citation-integrity-before.log`): an
 invented source changes saved `[1]` to `[2]`. The candidate checks new UUID-like
 citations against supplied evidence, previous notes, or retained provenance before
 writing either file. It also recognizes the damaged UUID form from the real replay.
