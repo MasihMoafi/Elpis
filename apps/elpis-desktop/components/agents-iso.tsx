@@ -186,6 +186,7 @@ export type IsoController = {
  * (Shift adds), a double-click renames an agent and Enter opens Info, the arrows move between agents in run order.
  * The parent owns window/crossing selection in both views; middle-drag and scroll pan, Ctrl/Cmd+scroll zooms. */
 export function IsoBoard(props: Parameters<typeof useIsoBoardState>[0]) {
+  const scene = useIsoScene(useIsoBoardState(props));
   const {
     root,
     panning,
@@ -265,7 +266,7 @@ export function IsoBoard(props: Parameters<typeof useIsoBoardState>[0]) {
     subjectLine,
     subjectModel,
     overview,
-  } = useIsoScene(useIsoBoardState(props));
+  } = scene;
   return (
     <div
       ref={root}
