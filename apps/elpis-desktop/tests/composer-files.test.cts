@@ -230,7 +230,7 @@ test('known text-only model blocks images without discarding them; unsupported f
   const alertLook = () => view.page.locator('.composer [role="alert"]').evaluate(node => ({ tag: node.tagName, cls: node.className, margin: getComputedStyle(node).margin, padding: getComputedStyle(node).padding, color: getComputedStyle(node).color, size: getComputedStyle(node).fontSize }));
   const textOnlyLook = await alertLook();
   await attachments(view).getByRole('button', { name: 'Remove pasted-image.png' }).click();
-  await view.input.fill('Keep draft'); await view.page.getByLabel('Choose files', { exact: true }).setInputFiles({ name: 'archive.zip', mimeType: 'application/zip', buffer: Buffer.from('binary') });
+  await view.input.fill('Keep draft'); await view.page.getByLabel('Choose files', { exact: true }).setInputFiles({ name: 'archive.7z', mimeType: 'application/x-7z-compressed', buffer: Buffer.from('binary') });
   await eventually(async () => assert.match(await view.page.locator('.composer [role="alert"]').innerText(), /choose.*text file/i));
   assert.deepEqual(await alertLook(), textOnlyLook, 'a text-only model\'s notice looks like a file notice');
   view.control.pdfFail = true; await transfer(view, 'drop', { file: 'document' });

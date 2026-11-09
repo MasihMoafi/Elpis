@@ -56,7 +56,7 @@ html { font-size:var(--interface-size, 16px); }
 /* The rest of the app follows the same ChatGPT scale (specs/chatgpt-chat-style.md, "Shared scale"): three text sizes (12, 13,
  * 14; Tailwind's text-xs/sm/base read them too), one icon size per row, 28px composer controls, a 52px header, and pages
  * in Settings' rhythm (48px top, 20px under the header, 24px between sections, one 860px column). */
-:root { --text-xs:0.75rem; --text-sm:0.8125rem; --text-base:0.875rem; --text-title:1.75rem; --icon-size:16px; --control-h:28px; --row-h:34px; --header-h:52px; --heading-row-gap:15px;
+:root { --text-xs:0.75rem; --text-sm:0.8125rem; --text-base:0.875rem; --text-title:1.75rem; --icon-size:16px; --control-h:28px; --scrollbar-size:8px; --row-h:34px; --header-h:52px; --heading-row-gap:15px;
   --page-pad:48px 32px 64px; --page-content-width:860px; --page-head-gap:20px; --page-section-gap:24px;
   --reply-line-height:1.45; --reply-paragraph-gap:.725em;
   --composer-edge:color-mix(in oklab, var(--foreground) 8%, transparent); --elevation-composer:0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }
@@ -124,7 +124,7 @@ html { font-size:var(--interface-size, 16px); }
 @layer base { * { box-sizing:border-box; border-color:var(--border); } [hidden] { display:none!important; } }
 /* Chromium ignores the ::-webkit-scrollbar rules below on any element that sets scrollbar-width or scrollbar-color, and then
  * draws its native bar with arrow buttons. So those two are never set globally: one scrollbar look, here. */
-*::-webkit-scrollbar { width:8px; height:8px; }
+*::-webkit-scrollbar { width:var(--scrollbar-size); height:var(--scrollbar-size); }
 *::-webkit-scrollbar-track { background:transparent; }
 *::-webkit-scrollbar-thumb { border:2px solid transparent; border-radius:999px; background:color-mix(in oklch, var(--foreground) 22%, transparent); background-clip:content-box; }
 *::-webkit-scrollbar-button { display:none; width:0; height:0; }
@@ -264,7 +264,7 @@ button:disabled { cursor:not-allowed; }
 @keyframes quiet-notice-in { from { opacity:0; transform:translateY(4px); } }
 /* The last reply's hover actions hang in its own 40px margin, so the foot needs only 12px more above the message box
  * (29 Oct, Masih: "there is too much space between the message box and the gray things on top and the last mesasge"). */
-.chat-scroll { --chat-top-inset:var(--thread-inset); flex:1; min-height:0; overflow:auto; padding:var(--chat-top-inset) 32px 12px; scroll-timeline:--chat-scroll y; }
+.chat-scroll { scrollbar-gutter:stable; --chat-top-inset:var(--thread-inset); flex:1; min-height:0; overflow:auto; padding:var(--chat-top-inset) 32px 12px; scroll-timeline:--chat-scroll y; }
 /* One chat font role for main/side transcripts, messages in panels and both composers. */
 .chat-content, .side-chat-content, .message, .composer textarea, .side-chat-form textarea { font-family:var(--chat-font, var(--ui-font)); }
 /* Settings → Appearance sets the transcript text size and the columns' width (lib/reading.ts); these are the defaults. */
@@ -292,7 +292,8 @@ button:disabled { cursor:not-allowed; }
 .message.user { background:var(--card); border:1px solid var(--hairline); padding:10px 16px; margin-left:auto; width:fit-content; max-width:70%; white-space:pre-wrap; }
 .message.agent .speaker { font-size:var(--text-xs); font-weight:600; color:var(--muted-foreground); margin-bottom:6px; }
 .markdown p { margin:0 0 1em; } .markdown > :last-child { margin-bottom:0; } .markdown pre { background:var(--recessed); border:1px solid var(--hairline); padding:12px 14px; overflow:auto; line-height:1.55; } .markdown code { font-size:var(--code-size, 13px); font-family:var(--mono); } .markdown :not(pre) > code { color:inherit; background:color-mix(in oklab, var(--foreground) 6%, var(--background)); padding:1px 6px; border-radius:6px; corner-shape:round; font-size:var(--text-sm); } .markdown ul,.markdown ol { padding-inline-start:22px; margin:8px 0 12px; } .markdown li { margin:3px 0; } .markdown ul { list-style:disc; } .markdown ol { list-style:decimal; } .markdown a { color:inherit; text-decoration:underline dotted 1px; text-underline-offset:2px; text-decoration-color:var(--thread-tertiary); } .markdown a:hover { color:var(--accent-text); } .markdown-table { max-width:100%; overflow:auto; margin:0 0 14px; } .markdown table { border-collapse:collapse; font-size:var(--text-sm); width:max-content; } .markdown td,.markdown th { border:1px solid var(--border); padding:6px 10px; min-width:6rem; overflow-wrap:normal; word-break:normal; } .markdown h1,.markdown h2,.markdown h3,.markdown h4,.markdown h5,.markdown h6 { font-weight:600; margin:18px 0 8px; letter-spacing:-.01em; } .markdown h1 { font-size:var(--text-base); } .markdown h2 { font-size:var(--text-base); } .markdown h3 { font-size:var(--text-base); }
-.composer-wrap { position:relative; padding:6px 32px 16px; }
+/* The margin matches the transcript's scrollbar gutter, so messages and composer share one column. */
+.composer-wrap { position:relative; padding:6px 32px 16px; margin-right:var(--scrollbar-size); }
 .composer { max-width:var(--transcript-width, 740px); margin:auto; border:1px solid var(--border); background:var(--composer); padding:11px 8px 8px 13px; box-shadow:var(--elevation-composer); }
 /* Stop stays plain in both themes; keyboard focus uses an outline instead of a shadow ring. */
 .stop-button { background:transparent; box-shadow:none; }
