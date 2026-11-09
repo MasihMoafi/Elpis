@@ -1,4 +1,7 @@
-import { BridgeError } from "./validate.mts";
+import { runConnect } from "./client-connect.mts";
+import type { DesktopClientOptions } from "./client-options.mts";
+export type { DesktopClientOptions } from "./client-options.mts";
+import { createClientWorkflowRuns } from "./client-workflow-runs.mts";
 import { CustomizePage } from "./customize-page.mts";
 import { EventEmitter } from "node:events";
 import { MessageVersions } from "./message-versions.mts";
@@ -8,21 +11,19 @@ import { SkillTrash } from "./skill-trash.mts";
 import { SpawnLinks } from "./spawn-links.mts";
 import { createCloudroomVm } from "./cloudroom-vm.mts";
 import { createGithubConnector } from "./github-connector.mts";
-import { createWorkflowHistory, createWorkflowRuns } from "./workflow-acp.mts";
+import { createWorkflowHistory } from "./workflow-acp.mts";
 import os from "node:os";
 import path from "node:path";
 import { profileEnvironment } from "./profile-env.mts";
-import { workflowDefaults, workflowModelRoutes } from "./workflow-models.mts";
-import { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from "./client-paths.mts";
+
+import { elpisHome } from "./client-paths.mts";
 import { ClientState } from "./client-state.mts";
 import type { ClientSocket, ClientStateOptions } from "./client-state.mts";
 import { ArchiveHistory } from "./client-archive-history.mts";
 import { internal_rpc } from "./client-rpc.mts";
 import { internal_bind, internal_reconnect } from "./client-connection.mts";
 import { internal_forgetSubscription } from "./client-thread-list.mts";
-import { internal_releaseNode } from "./client-rewind.mts";
-import { internal_workflowEnded } from "./client-workflows.mts";
-import type { FinishedWorkflow } from "./client-workflows.mts";
+
 import * as clientConnection from "./client-connection.mts";
 import * as clientThreadList from "./client-thread-list.mts";
 import * as clientModels from "./client-models.mts";
@@ -42,28 +43,6 @@ export { MAX_BRIDGE_MESSAGE_BYTES, elpisHome, existingSocket } from "./client-pa
 export { speechChunks } from "./client-voice.mts";
 export { settledStatus } from "./client-thread-list.mts";
 export { BridgeError, object, text, threadId } from "./validate.mts";
-
-export type DesktopClientOptions = {
-  home?: string | undefined;
-  timeoutMs?: number | undefined;
-  openSocket?: (() => Promise<ClientSocket>) | undefined;
-  reconnectDelayMs?: number | undefined;
-  settingsConfirmMs?: number | undefined;
-  browserConfig?: ClientStateOptions["browserConfig"] | undefined;
-  archiveDirectory?: string | undefined;
-  rewindHome?: string | undefined;
-  spawnLinksFile?: string | undefined;
-  appHome?: string | undefined;
-  githubConnector?: unknown;
-  skillTrashOptions?: ConstructorParameters<typeof SkillTrash>[0] | undefined;
-  workflowOptions?: (Record<string, unknown> & { env?: NodeJS.ProcessEnv | undefined }) | undefined;
-  cloudroom?: unknown;
-  reportAttempts?: number | undefined;
-  reportRetryMs?: number | undefined;
-  socketPath?: string | undefined;
-  beforeConnect?: (() => void | Promise<void>) | undefined;
-  background?: boolean | undefined;
-};
 
 export class DesktopClient extends EventEmitter {
   #state: ClientState;
@@ -120,52 +99,11 @@ export class DesktopClient extends EventEmitter {
     cloudroom ??= (createCloudroomVm as (options: { home: string }) => ReturnType<typeof createCloudroomVm>)({
       home: profileHome,
     });
-    const workflowRuns = (
-      createWorkflowRuns as (options: Record<string, unknown>) => ReturnType<typeof createWorkflowRuns>
-    )({
-      stateDir: path.join(profileHome, "desktop-workflows"),
+    const workflowRuns = createClientWorkflowRuns(this, () => this.#state, {
+      profileHome,
       cloudroom,
-      onSession: (_record: unknown, _task: unknown, id: string) => {
-        this.#state.known.add(id);
-        return () => void internal_releaseNode.call(this, this.#state, id);
-      },
-      onEnd: (record: FinishedWorkflow) => internal_workflowEnded.call(this, this.#state, record),
-      observeThread: (id: unknown) => this.readThreadMetadata(id),
-      listThreadDescendants: (options: Parameters<DesktopClient["listThreads"]>[0]) => this.listThreads(options),
-      modelRoutes: async () => {
-        const [catalog, providers, policy] = await Promise.all([
-          this.models(),
-          this.providers(),
-          internal_rpc(this, this.#state, "configRequirements/read", {}).catch(() => null),
-        ]);
-        // Unknown managed policy cannot authorize a different connection.
-        return policy === null
-          ? []
-          : workflowModelRoutes(
-              catalog.data ?? [],
-              providers,
-              policy.requirements as Parameters<typeof workflowModelRoutes>[2],
-            );
-      },
-      // Default models for a run's agents, from the real catalogue: Antigravity's and Claude's in the main list.
-      // A list that cannot be read in time leaves its default empty, so the run keeps its earlier choice.
-      modelDefaults: async () => {
-        // The fallback timer is cleared once the list arrives, so a closed client never waits 15 s to exit.
-        const within = <T,>(promise: Promise<T>): Promise<T | null> => {
-          let timer: ReturnType<typeof setTimeout> | undefined;
-          return Promise.race([
-            promise,
-            new Promise<null>(resolve => {
-              timer = setTimeout(resolve, 15000, null);
-            }),
-          ])
-            .catch(() => null)
-            .finally(() => clearTimeout(timer));
-        };
-        return workflowDefaults((await within(this.models()))?.data ?? []);
-      },
-      ...workflowOptions,
-      env: workflowEnv,
+      workflowOptions,
+      workflowEnv,
     });
     const workflowHistory = createWorkflowHistory(path.join(profileHome, "desktop-workflow-history.json"));
     const transport = socket as ClientSocket;
@@ -192,51 +130,13 @@ export class DesktopClient extends EventEmitter {
     });
     internal_bind.call(this, this.#state, transport);
   }
+  /** Starts a client with no socket yet, and keeps trying to connect in the background. */
+  reconnectFromOffline() {
+    this.#state.closed = true;
+    void internal_reconnect.call(this, this.#state);
+  }
   static async connect(options: DesktopClientOptions = {}) {
-    const { default: WebSocket } = (await import("ws" as string)) as {
-      default: new (
-        address: string,
-        options?: { maxPayload?: number },
-      ) => ClientSocket & { once(event: string, listener: (...args: unknown[]) => void): void; terminate(): void };
-    };
-    const openSocket = async () => {
-      await options.beforeConnect?.();
-      // An explicitly isolated profile must not inherit another profile's ambient socket override.
-      const socketEnv = profileEnvironment(options.home);
-      const socketPath = existingSocket(options.socketPath, socketEnv);
-      const socket = new WebSocket(`ws+unix://${socketPath}:/`, { maxPayload: MAX_BRIDGE_MESSAGE_BYTES });
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          socket.terminate();
-          reject(new BridgeError("Bridge connection timed out", 504));
-        }, 10000);
-        socket.once("open", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-        socket.once("error", () => {
-          clearTimeout(timer);
-          reject(new BridgeError("Could not connect to the existing Elpis bridge", 503));
-        });
-      });
-      return socket;
-    };
-    // In the background the client exists at once and connects, and reconnects, on its own: the window never waits for
-    // a runtime that is still starting or missing, and shows it as connecting until it arrives.
-    if (options.background) {
-      const client = new DesktopClient({ on() {}, send() {}, terminate() {}, close() {} }, { ...options, openSocket });
-      client.#state.closed = true;
-      void internal_reconnect.call(client, client.#state);
-      return client;
-    }
-    const client = new DesktopClient(await openSocket(), { ...options, openSocket });
-    try {
-      await client.initialize();
-    } catch (error) {
-      client.close();
-      throw error;
-    }
-    return client;
+    return runConnect.call(this, options);
   }
   async initialize() {
     return clientConnection.impl_initialize.call(this, this.#state);
