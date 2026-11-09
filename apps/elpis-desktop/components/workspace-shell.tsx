@@ -220,7 +220,6 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
                 removeProject={workspace.removeProject}
                 selectProject={workspace.selectProject}
                 chatRows={workspace.chatRows}
-                chatGroupSection={workspace.chatGroupSection}
                 threadRow={workspace.threadRow}
                 descendants={workspace.descendants}
                 threadBranch={workspace.threadBranch}

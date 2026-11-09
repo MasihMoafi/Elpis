@@ -10,7 +10,6 @@ import { SidebarProjects } from "@/components/sidebar-projects";
 import { Button } from "@/components/ui/button";
 import type { Thread } from "@/lib/api";
 import type { useBrowserPins } from "@/lib/browser-pins";
-import type { ChatGroup } from "@/lib/chat-groups";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import type { createProjectActions } from "@/lib/project-actions";
 import type { useConversationList } from "@/lib/use-conversation-list";
@@ -45,7 +44,6 @@ type Props = {
   removeProject: ReturnType<typeof createProjectActions>["removeProject"];
   selectProject: ReturnType<typeof createProjectActions>["selectProject"];
   chatRows: (thread: Thread) => React.ReactNode;
-  chatGroupSection: (section: { group: ChatGroup; chats: Thread[] }) => React.ReactNode;
   threadRow: (thread: Thread, depth?: number, inOrigin?: boolean) => React.ReactNode;
   descendants: (id: string, depth: number) => React.ReactNode;
   threadBranch: (thread: Thread, depth?: number, seen?: Set<string>, inOrigin?: boolean) => React.ReactNode;
@@ -83,7 +81,6 @@ export function SidebarChatList({
   removeProject,
   selectProject,
   chatRows,
-  chatGroupSection,
   threadRow,
   descendants,
   threadBranch,
@@ -179,12 +176,6 @@ export function SidebarChatList({
         <section aria-label="Pinned">
           <div className="section-label-row">{foldable("pinned", "Pinned")}</div>
           {(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}
-        </section>
-      )}
-      {grouped && grouped.groups.length > 0 && (
-        <section aria-label="Groups">
-          <div className="section-label-row">{foldable("groups", "Groups")}</div>
-          {!collapsedSections.groups && grouped.groups.map(chatGroupSection)}
         </section>
       )}
       {loveChats.length > 0 && (

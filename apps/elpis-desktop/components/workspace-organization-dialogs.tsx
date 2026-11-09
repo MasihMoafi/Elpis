@@ -1,8 +1,6 @@
-import { GroupNameDialog } from "@/components/chat-groups";
 import { MoveChatDialog, ProjectDialog } from "@/components/project-picker";
 import { PutUnderDialog } from "@/components/put-under-dialog";
 import { title } from "@/lib/api";
-import { addGroup, moveChats } from "@/lib/chat-groups";
 import type { useProjectState } from "@/lib/use-project-state";
 import type { useWorkspaceDialogState } from "@/lib/use-workspace-dialog-state";
 import type { useSidebarThreads } from "@/lib/use-sidebar-threads";
@@ -24,10 +22,7 @@ type Props = {
 
 export function WorkspaceOrganizationDialogs({
   projectState,
-  dialogs,
   model,
-  groups,
-  selection,
   placement,
   actions,
   children,
@@ -45,11 +40,8 @@ export function WorkspaceOrganizationDialogs({
     nestTargets,
     setNestTargets,
   } = projectState;
-  const { newGroupFor, setNewGroupFor } = dialogs,
-    { ordinaryThreads } = model,
-    { chatGroups, updateGroups } = groups;
-  const { setMarked } = selection,
-    { canNest, nestChats } = placement,
+  const { ordinaryThreads } = model;
+  const { canNest, nestChats } = placement,
     { saveProjectFromChats, saveProject, assignProject } = actions;
   return (
     <>
@@ -115,20 +107,6 @@ export function WorkspaceOrganizationDialogs({
           )
         }
         onClose={() => setNestTargets(null)}
-      />
-      <GroupNameDialog
-        open={!!newGroupFor}
-        state={chatGroups}
-        group={null}
-        switches={chatGroups.groupBy !== "custom"}
-        onClose={() => setNewGroupFor(null)}
-        onSave={name => {
-          const ids = newGroupFor ?? [],
-            id = crypto.randomUUID();
-          updateGroups(state => moveChats(addGroup(state, name, id), ids, id));
-          setNewGroupFor(null);
-          setMarked([]);
-        }}
       />
     </>
   );

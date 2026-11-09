@@ -16,7 +16,6 @@ import { shortcutHint } from "@/lib/shortcuts";
 import { title, type Thread } from "@/lib/api";
 import { useConversationColour } from "@/components/conversation-colour";
 import { WORKFLOW_COLOURS, type WorkflowColour } from "@/lib/workflow-identity";
-import type { ChatGroup } from "@/lib/chat-groups";
 
 type Props = {
   onMoveToProject?: (threads: Thread[]) => void;
@@ -55,14 +54,6 @@ type Props = {
   onOpenSplit?: (thread: Thread) => void;
   onOpenWindow?: (thread: Thread) => void;
   attention?: { unread: boolean; planReady: boolean; onToggleRead: () => void; onComplete: () => void };
-  /** "Move to group" (several selected: "Move N chats to group"), as in Claude's sidebar: the groups, the chat's own one
-   * checked (`current`; undefined when the selected chats are in different ones), Ungrouped, and New group…. */
-  group?: {
-    groups: ChatGroup[];
-    current: string | null | undefined;
-    onMove: (groupId: string | null) => void;
-    onNew: () => void;
-  };
 };
 
 /** A chat's menu: Rename, Pin, Archive and Delete, each through Elpis. One list drawn by the "…" button and by right-click.
@@ -89,7 +80,6 @@ export function ThreadActions({
   onOpenSplit,
   onOpenWindow,
   attention,
-  group,
   onMoveToProject,
   onNewProject,
   onPutUnder,
@@ -169,26 +159,7 @@ export function ThreadActions({
         run: () => onArchive(many ?? [thread]),
       }
     : undefined;
-  const move: MenuAction | undefined = group
-    ? {
-        id: "move",
-        label: many ? `Move ${many.length} chats to group` : "Move to group",
-        icon: <FolderInput size={14} />,
-        run: () => {},
-        items: [
-          ...group.groups.map(item => ({
-            id: `group:${item.id}`,
-            label: item.name,
-            checked: group.current === item.id,
-            run: () => group.onMove(item.id),
-          })),
-          { id: "ungrouped", label: "Ungrouped", checked: group.current === null, run: () => group.onMove(null) },
-          { id: "new-group", label: "New group…", icon: <FolderPlus size={14} />, separated: true, run: group.onNew },
-        ],
-      }
-    : undefined;
   const organization: (MenuAction | undefined)[] = [
-    move,
     onPutUnder
       ? {
           id: "put-under",

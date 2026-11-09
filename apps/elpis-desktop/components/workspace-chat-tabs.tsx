@@ -68,16 +68,14 @@ export function createWorkspaceChatTabs({
   closeChatTab,
 }: Inputs) {
   const { sidebarTitle, workflowRoots, workflowSteps, workflowCatalog } = model;
-  const { groupMenu, movingIds, organizationActions } = placement;
+  const { movingIds, organizationActions } = placement;
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
   const threadMenu = (thread: Thread, area: ReactElement, content: (menu: ReactNode) => ReactNode, shown: boolean) => {
-    const group = groupMenu(thread, movingIds(thread.id));
     return (
       <ThreadActions
         {...(shown ? { label: "Chat actions" } : {})}
         thread={{ ...thread, name: sidebarTitle(thread) }}
         attention={attentionFor(thread.id)}
-        {...(group ? { group } : {})}
         {...(marked.includes(thread.id) ? { selection: chatsOf(marked) } : {})}
         onRequestDelete={() => deleteChats(movingIds(thread.id))}
         onRename={renameDisplayedThread}

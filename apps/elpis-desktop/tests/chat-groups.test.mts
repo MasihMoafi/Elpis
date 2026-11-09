@@ -73,23 +73,6 @@ test('nothing saved, or something unreadable, is no groups, ungrouped and in las
   assert.equal(isDefaultView(emptyGroups()), true);
 });
 
-test('a saved state keeps only what it can use: named groups once each, members and collapsed of known groups, known choices', () => {
-  const saved = { groups: [{ id: 'g1', name: '  Work  ' }, { id: 'g1', name: 'Again' }, { id: 'g2', name: '' }, { id: 3, name: 'Bad id' }, { id: 'g3', name: 'Home' }],
-    members: { a: 'g1', b: 'gone', c: 'g3', d: 7 }, groupBy: 'custom', sortBy: 'name', collapsed: ['g3', 'gone', 'g3'] };
-  const state = readGroups(storage({ [GROUPS_KEY]: JSON.stringify(saved) }));
-  assert.deepEqual(state, { groups: [{ id: 'g1', name: 'Work' }, { id: 'g3', name: 'Home' }], members: { a: 'g1', c: 'g3' }, groupBy: 'custom', sortBy: 'name', collapsed: ['g3'], order: [] });
-  assert.equal(readGroups(storage({ [GROUPS_KEY]: JSON.stringify({ ...saved, groupBy: 'date', sortBy: 'size' }) })).groupBy, 'none', 'an unknown grouping is the default');
-  assert.equal(readGroups(storage({ [GROUPS_KEY]: JSON.stringify({ ...saved, sortBy: 'size' }) })).sortBy, 'recency', 'an unknown order is the default');
-});
-
-test('what is written is read back the same', () => {
-  const store = storage();
-  const state = moveChats(addGroup(emptyGroups(), 'Work', 'g1'), ['a', 'b'], 'g1');
-  assert.equal(writeGroups(state, store), true);
-  assert.deepEqual(readGroups(store), state);
-  assert.equal(writeGroups(state, { getItem: () => null, setItem: () => { throw Error('full'); } }), false, 'a refused write reports false');
-});
-
 test('a new group comes last, trimmed, and switches the list to custom groups; a name must be new and not empty', () => {
   const one = addGroup(emptyGroups(), '  Work ', 'g1');
   assert.deepEqual(one.groups, [{ id: 'g1', name: 'Work' }]);

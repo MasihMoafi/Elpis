@@ -59,7 +59,6 @@ type Inputs = {
   ) => Pick<ThreadProps, "onMoveToProject" | "onNewProject" | "onPutUnder" | "onTakeOut">;
   attentionFor: (id: string) => NonNullable<ThreadProps["attention"]>;
   chatsOf: (ids: string[]) => Thread[];
-  groupMenu: (thread: Thread, ids: string[]) => ThreadProps["group"];
   movingIds: (id: string) => string[];
   markRead: ReturnType<typeof useChatAttention>["markRead"];
   prefetchThread: (thread: Thread) => void;
@@ -106,8 +105,6 @@ export function createSidebarThreadRow({
   organizationActions,
   attentionFor,
   chatsOf,
-  groupMenu,
-  movingIds,
   markRead,
   prefetchThread,
   openInNewTab,
@@ -161,7 +158,6 @@ export function createSidebarThreadRow({
       !!childCursors[thread.id];
     const canExpandAgents = !searchTerm && hasAgents,
       branchName = displayParentIds.has(thread.id) ? "chats" : "agents";
-    const group = depth ? undefined : groupMenu(thread, movingIds(thread.id));
     const selection = marked.length > 1 && marked.includes(thread.id) ? chatsOf(marked) : undefined;
     const colourSlot = agentColours.get(thread.id),
       role = run ? runSummary(run) : undefined;
@@ -185,7 +181,6 @@ export function createSidebarThreadRow({
         {...organizationActions(thread)}
         attention={attentionFor(thread.id)}
         {...(selection ? { selection } : {})}
-        {...(group ? { group } : {})}
         {...(!depth && !isAgent(thread) && hasAgents && !searchTerm
           ? {
               agents: {

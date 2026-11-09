@@ -24,8 +24,7 @@ type Storage = { getItem(key: string): string | null; setItem(key: string, value
 
 export const GROUPS_KEY = "elpis-chat-groups-v1";
 const NAME_LIMIT = 60;
-const GROUP_BY: readonly GroupBy[] = ["none", "custom"],
-  SORT_BY: readonly SortBy[] = ["recency", "created", "name", "manual"];
+const SORT_BY: readonly SortBy[] = ["recency", "created", "name", "manual"];
 
 export const emptyGroups = (): ChatGroups => ({
   groups: [],
@@ -50,25 +49,6 @@ export function readGroups(storage: Storage): ChatGroups {
     return emptyGroups();
   }
   if (!record(value)) return emptyGroups();
-  const groups: ChatGroup[] = [];
-  for (const item of Array.isArray(value.groups) ? value.groups : []) {
-    if (!record(item) || typeof item.id !== "string" || !item.id || typeof item.name !== "string") continue;
-    const name = item.name.trim().slice(0, NAME_LIMIT);
-    if (name && !groups.some(group => group.id === item.id)) groups.push({ id: item.id, name });
-  }
-  const known = new Set(groups.map(group => group.id));
-  const members = Object.fromEntries(
-    Object.entries(record(value.members) ? value.members : {}).filter(
-      (entry): entry is [string, string] => typeof entry[1] === "string" && known.has(entry[1]),
-    ),
-  );
-  const collapsed = [
-    ...new Set(
-      (Array.isArray(value.collapsed) ? value.collapsed : []).filter(
-        (id: unknown): id is string => typeof id === "string" && known.has(id),
-      ),
-    ),
-  ];
   const order = [
     ...new Set(
       (Array.isArray(value.order) ? value.order : []).filter(
@@ -86,12 +66,9 @@ export function readGroups(storage: Storage): ChatGroups {
     ),
   );
   return {
-    groups,
-    members,
-    collapsed,
+    ...emptyGroups(),
     order,
     ...(Object.keys(parents).length ? { parents } : {}),
-    groupBy: GROUP_BY.includes(value.groupBy as GroupBy) ? (value.groupBy as GroupBy) : "none",
     sortBy: SORT_BY.includes(value.sortBy as SortBy) ? (value.sortBy as SortBy) : "recency",
   };
 }

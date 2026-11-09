@@ -210,21 +210,18 @@ test('successful placement reveals folded workflow, project and group destinatio
     await page.getByRole('option', { name: 'workflow-parent', exact: true }).click();
     await dialog.getByRole('button', { name: 'Put under', exact: true }).click();
     await dialog.getByRole('alert').filter({ hasText: 'Could not save chat placement' }).waitFor();
-    for (const name of ['Workflows', 'Projects', 'Groups']) assert.equal(await section(name).getAttribute('aria-expanded'), 'false', 'a refused placement does not unfold a section');
+    for (const name of ['Workflows', 'Projects']) assert.equal(await section(name).getAttribute('aria-expanded'), 'false', 'a refused placement does not unfold a section');
     assert.deepEqual(await page.evaluate(() => ({ groups: (window as PlacementWindow).elpisDesktop.storage.getItem('elpis-chat-groups-v1'), folds: (window as PlacementWindow).elpisDesktop.storage.getItem('elpis-sidebar-folds-v1') })), before);
     await page.evaluate(() => (window as PlacementWindow).restorePlacementStore());
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    for (const [target, name] of [['workflow-parent', 'Workflows'], ['project-parent', 'Projects'], ['group-parent', 'Groups']] as const) {
+    for (const [target, name] of [['workflow-parent', 'Workflows'], ['project-parent', 'Projects']] as const) {
       await putUnder(page, 'chat-a', target);
       await eventually(async () => assert.equal(await row(page, 'chat-a').getAttribute('data-depth'), '1', `${name} reveals its destination after the placement saves`));
       assert.equal(await section(name).getAttribute('aria-expanded'), 'true');
       assert.equal(await aside(page).locator('.thread-row[data-thread-id="chat-a"]').count(), 1);
     }
     assert.equal(await project(page, 'Existing project').getByRole('button', { name: 'Existing project', exact: true }).getAttribute('aria-expanded'), 'true');
-    assert.equal(await project(page, 'Target group').getByRole('button', { name: 'Target group', exact: true }).getAttribute('aria-expanded'), 'true');
-    assert.equal(await project(page, 'Untouched group').getByRole('button', { name: 'Untouched group', exact: true }).getAttribute('aria-expanded'), 'false');
-    assert.deepEqual(await page.evaluate(() => { const value = (window as PlacementWindow).elpisDesktop.storage.getItem('elpis-chat-groups-v1'); if (value === null) throw Error('Groups missing'); return JSON.parse(value).collapsed; }), ['untouched']);
-    await putUnder(page, 'workflow-step', 'group-parent');
+    await putUnder(page, 'workflow-step', 'untouched-parent');
     await section('Workflows').click();
     assert.equal(await section('Workflows').getAttribute('aria-expanded'), 'false');
     const memberships = await page.evaluate(() => (window as PlacementWindow).elpisDesktop.storage.getItem('elpis-project-chats-v1'));
@@ -233,10 +230,10 @@ test('successful placement reveals folded workflow, project and group destinatio
     assert.equal(await section('Workflows').getAttribute('aria-expanded'), 'true');
     assert.equal(await aside(page).locator('.thread-row[data-thread-id="workflow-step"]').count(), 1);
     assert.equal(await page.evaluate(() => (window as PlacementWindow).elpisDesktop.storage.getItem('elpis-project-chats-v1')), memberships, 'Take out preserves project membership');
-    await page.reload(); await row(page, 'group-parent').waitFor();
+    await page.reload(); await row(page, 'project-parent').waitFor();
     assert.equal(await row(page, 'workflow-step').getAttribute('data-depth'), '0', 'the explicit root placement survives reload');
     assert.equal(await row(page, 'chat-a').count(), 0, 'revealing section and group folds does not persist an expanded chat branch');
-    await expandPath(page, ['group-parent']); await row(page, 'chat-a').waitFor();
+    await expandPath(page, ['project-parent']); await row(page, 'chat-a').waitFor();
     assert.equal(await aside(page).locator('.thread-row[data-thread-id="chat-a"]').count(), 1);
     assert.equal(f.posts.some(post => /\/(parent|folder|permissions|turns|steer)$/.test(post.path)), false);
     assert.deepEqual(f.errors, []);

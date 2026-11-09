@@ -129,10 +129,9 @@ test('A102: working chats come first, then waiting and unseen replies; errors an
 
 test('A102: Pinned stays separate; project and custom groups use the same priority', async () => {
   const chats = [chat('chat-a', 100), chat('recent', 90), chat('done', 20), chat('wait', 10, { type: 'active', activeFlags: ['waitingOnApproval'] }), chat('pin', 1)];
-  for (const project of [false, true]) {
+  {
     const storage = { ...attention(['done']), 'elpis-pinned-chats-v1': '["pin"]',
-      ...(project ? { 'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'g', name: 'Work', cwd: CWD }], selectedId: null }), 'elpis-project-chats-v1': JSON.stringify({ recent: 'g', done: 'g', wait: 'g' }) }
-        : { 'elpis-chat-groups-v1': JSON.stringify({ groups: [{ id: 'g', name: 'Work' }], members: { recent: 'g', done: 'g', wait: 'g' }, groupBy: 'custom', sortBy: 'recency', collapsed: [], order: [] }) }) };
+      'elpis-projects-v1': JSON.stringify({ projects: [{ id: 'g', name: 'Work', cwd: CWD }], selectedId: null }), 'elpis-project-chats-v1': JSON.stringify({ recent: 'g', done: 'g', wait: 'g' }) };
     const f = await open(chats, storage);
     try {
       await eventually(async () => assert.deepEqual(await ids(f.page.getByRole('group', { name: 'Work', exact: true })), ['wait', 'done', 'recent']));

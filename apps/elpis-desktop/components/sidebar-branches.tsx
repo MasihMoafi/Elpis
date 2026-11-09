@@ -1,12 +1,8 @@
-import { cloneElement, type ReactNode } from "react";
-import { Layers } from "lucide-react";
-import { GroupActions } from "@/components/chat-groups";
+import { type ReactNode } from "react";
 import type { useReorder } from "@/components/reorder";
-import { SidebarGroup } from "@/components/sidebar-group";
 import type { createSidebarThreadRow } from "@/components/sidebar-thread-row";
 import { Button } from "@/components/ui/button";
 import type { Thread } from "@/lib/api";
-import { deleteGroup, renameGroup, toggleCollapsed, type ChatGroup } from "@/lib/chat-groups";
 import type { useConversationList } from "@/lib/use-conversation-list";
 import type { useChatGroups } from "@/lib/use-sidebar-state";
 import type { useSidebarThreads } from "@/lib/use-sidebar-threads";
@@ -30,9 +26,6 @@ type Inputs = {
 export function createSidebarBranches({
   model,
   threadRow,
-  chatReorder,
-  chatGroups,
-  updateGroups,
   hidden,
   expanded,
   childCursors,
@@ -51,7 +44,6 @@ export function createSidebarBranches({
     workflowRuns,
     workflowChild,
     workflowOpen,
-    needsYou,
   } = model;
   function descendants(parentId: string, depth: number, seen = new Set<string>()): ReactNode {
     if (seen.has(parentId)) return null;
@@ -136,38 +128,5 @@ export function createSidebarBranches({
   }
   /** A group the person made, drawn as a project is: open or closed, its menu (Rename group, Delete group), its chats. A
    * closed group holding a chat that needs you says so, as Claude's does. */
-  function chatGroupSection({ group, chats }: { group: ChatGroup; chats: Thread[] }) {
-    const open = !chatGroups.collapsed.includes(group.id),
-      waiting = !open && chats.some(needsYou),
-      note = "A chat in this group is waiting on you";
-    return (
-      <SidebarGroup
-        key={group.id}
-        kind="chat"
-        name={group.name}
-        icon={<Layers size={14} aria-hidden="true" />}
-        open={open}
-        onToggle={() => updateGroups(state => toggleCollapsed(state, group.id))}
-        {...(waiting
-          ? { note: <span className="thread-dot" data-state="waiting" role="img" aria-label={note} title={note} /> }
-          : {})}
-        wrap={(area, content) => (
-          <GroupActions
-            group={group}
-            state={chatGroups}
-            area={cloneElement(area, chatReorder.targetProps(`group:${group.id}`, true) as object)}
-            count={ordinaryThreads.filter(thread => chatGroups.members[thread.id] === group.id).length}
-            onRename={name => updateGroups(state => renameGroup(state, group.id, name))}
-            onDelete={() => updateGroups(state => deleteGroup(state, group.id))}
-          >
-            {content}
-          </GroupActions>
-        )}
-        empty={!chats.length}
-      >
-        {chats.map(chatRows)}
-      </SidebarGroup>
-    );
-  }
-  return { descendants, threadBranch, runDescendants, chatRows, chatGroupSection };
+  return { descendants, threadBranch, runDescendants, chatRows };
 }

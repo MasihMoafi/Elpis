@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import { agentParentId } from "@/lib/agent-runs.mts";
 import type { Thread } from "@/lib/api";
-import { chatSelectionRoots, chatSubtree, moveChats, sidebarParents, type ChatGroups } from "@/lib/chat-groups";
+import { chatSelectionRoots, chatSubtree, sidebarParents, type ChatGroups } from "@/lib/chat-groups";
 import type { createProjectActions } from "@/lib/project-actions";
 import type { useChildConversations } from "@/lib/use-child-conversations";
 import type { useProjectState } from "@/lib/use-project-state";
@@ -20,7 +20,6 @@ type Inputs = {
   pins: string[];
   marked: string[];
   setMarked: Setter<string[]>;
-  setNewGroupFor: Setter<string[] | null>;
   setError: Setter<string>;
   assignProject: ReturnType<typeof createProjectActions>["assignProject"];
   newProjectFrom: ReturnType<typeof createProjectActions>["newProjectFrom"];
@@ -30,20 +29,15 @@ export function createSidebarPlacement({
   model,
   projectState,
   children,
-  chatGroups,
-  updateGroups,
   foldsRef,
   changeFolds,
   pins,
   marked,
-  setMarked,
-  setNewGroupFor,
   setError,
   assignProject,
   newProjectFrom,
 }: Inputs) {
   const {
-    sidebarParent,
     treeParents,
     ordinaryIds,
     nativeParents,
@@ -56,21 +50,6 @@ export function createSidebarPlacement({
   const { setExpanded, checkedChildren, loadChildren } = children;
   /** "Move to group" for these chats (the row's chat, or the selection it belongs to), as Claude's session menu has it.
    * Only top-level chats are grouped; an agent's chat stays under its parent. */
-  function groupMenu(thread: Thread, ids: string[]) {
-    if (sidebarParent(thread)) return undefined;
-    const known = (id: string) =>
-      chatGroups.groups.some(group => group.id === chatGroups.members[id]) ? chatGroups.members[id] : null;
-    const currents = new Set(ids.map(known));
-    return {
-      groups: chatGroups.groups,
-      current: currents.size === 1 ? [...currents][0] : undefined,
-      onMove: (groupId: string | null) => {
-        updateGroups(state => moveChats(state, ids, groupId));
-        setMarked([]);
-      },
-      onNew: () => setNewGroupFor(ids),
-    };
-  }
   const movingIds = (id: string) => chatSelectionRoots(marked.includes(id) ? marked : [id], treeParents);
   function canNest(ids: string[], parent: string) {
     return (
@@ -161,5 +140,5 @@ export function createSidebarPlacement({
         : {}),
     };
   }
-  return { groupMenu, movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions };
+  return { movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions };
 }

@@ -18,19 +18,18 @@ type Page = {
 };
 
 const KEY = 'elpis-chat-groups-v1';
-const LISTED = ['a', 'b', 'c', 'd', 'e', 'f'].map((letter, index) => ({ id: `chat-${letter}`, name: `Chat ${letter.toUpperCase()}`, preview: `Chat ${letter.toUpperCase()}`, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, createdAt: 100 + index }));
+const LISTED = ['a', 'b', 'd', 'e', 'f'].map((letter, index) => ({ id: `chat-${letter}`, name: `Chat ${letter.toUpperCase()}`, preview: `Chat ${letter.toUpperCase()}`, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, createdAt: 100 + index }));
 const routes = { '/api/threads': (_body: unknown, url: URL) => ({ data: url.searchParams.has('ancestorThreadId') || url.searchParams.get('archived') === 'true' ? [] : LISTED, nextCursor: null }) };
-// Pinned: a, b. Group "Work": c. Recents: d, e, f. Last activity (the bridge's order).
+// Pinned: a, b. Recents: d, e, f. Last activity (the bridge's order).
 const storage = (extra = {}) => ({
   'elpis-pinned-chats-v1': JSON.stringify(['chat-a', 'chat-b']),
-  [KEY]: JSON.stringify({ groups: [{ id: 'g1', name: 'Work' }], members: { 'chat-c': 'g1' }, groupBy: 'custom', sortBy: 'recency', collapsed: [], ...extra }),
+  [KEY]: JSON.stringify({ groups: [], members: {}, groupBy: 'none', sortBy: 'recency', collapsed: [], ...extra }),
 });
 const open = (extra: object = {}, more: object = {}) => fixture({ routes, storage: storage(extra), height: 1100, ...more });
 
 const aside = (page: Page) => page.locator('aside.sidebar');
 const row = (page: Page, id: string) => aside(page).locator(`.thread-row[data-thread-id="${id}"]`).first();
 const section = (page: Page, name: string) => aside(page).locator(`section[aria-label="${name}"]`);
-const work = (page: Page) => aside(page).getByRole('group', { name: 'Work', exact: true });
 const idsIn = (locator: Locator) => locator.locator('.thread-row').evaluateAll(rows => rows.map(element => element.dataset.threadId));
 const stored = (page: Page): Promise<{ sortBy?: string; order?: string[] }> => page.evaluate(key => JSON.parse(localStorage.getItem(key) || '{}'), KEY).catch(() => ({}));
 async function eventually<T>(check: () => Promise<T>, ms = 4000) {
@@ -65,7 +64,7 @@ test('dragging reorders Recents with a visible drop line, saves a manual order, 
     await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-f', 'chat-d', 'chat-e']));
     assert.equal(await row(page, 'chat-d').getAttribute('data-drop'), null, 'the line is gone after the drop');
     const state = await stored(page);
-    assert.equal(state.sortBy, 'manual'); assert.ok(state.order); assert.deepEqual(state.order.slice(0, 6).sort(), LISTED.map(chat => chat.id));
+    assert.equal(state.sortBy, 'manual'); assert.ok(state.order); assert.deepEqual(state.order.slice(0, 5).sort(), LISTED.map(chat => chat.id));
     // The lower half drops after the target.
     await drag(page, row(page, 'chat-f'), row(page, 'chat-e'), 'bottom', async () => {
       await eventually(async () => assert.equal(await row(page, 'chat-e').getAttribute('data-drop'), 'after'));
@@ -89,36 +88,9 @@ test('Pinned reorders inside itself only; a pinned chat cannot be dropped among 
     // Refused: no line over the target, nothing moves, nothing is saved as a move.
     await drag(page, row(page, 'chat-a'), row(page, 'chat-e'), 'top', async () => assert.equal(await row(page, 'chat-e').getAttribute('data-drop'), null, 'no drop line where a drop is refused'));
     await drag(page, row(page, 'chat-e'), row(page, 'chat-b'), 'top', async () => assert.equal(await row(page, 'chat-b').getAttribute('data-drop'), null));
-    await drag(page, row(page, 'chat-d'), aside(page).getByRole('group', { name: 'Work', exact: true }).locator('.sidebar-group-row'), 'middle'); // a legal move, so the checks below see a settled state
-    await eventually(async () => assert.deepEqual(await idsIn(work(page)), ['chat-c', 'chat-d']));
     assert.deepEqual(await idsIn(section(page, 'Pinned')), ['chat-b', 'chat-a'], 'pinned chats are still pinned, in their order');
-    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-e', 'chat-f']);
+    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-d', 'chat-e', 'chat-f']);
     assert.deepEqual(JSON.parse(await page.evaluate(() => localStorage.getItem('elpis-pinned-chats-v1'))), ['chat-a', 'chat-b'], 'pins themselves are untouched');
-    assert.deepEqual(f.errors, []);
-  } finally { await f.close(); }
-});
-
-test('a drop on a group heading, on a row in another group, or on the Recents heading moves the chat there, at the right place', async () => {
-  const f = await open(), { page } = f;
-  try {
-    await row(page, 'chat-e').waitFor();
-    const heading = work(page).locator('.sidebar-group-row');
-    await drag(page, row(page, 'chat-e'), heading, 'middle', async () => {
-      await eventually(async () => assert.equal(await heading.getAttribute('data-drop'), 'into'));
-    });
-    await eventually(async () => assert.deepEqual(await idsIn(work(page)), ['chat-c', 'chat-e']), 4000);
-    await drag(page, row(page, 'chat-f'), row(page, 'chat-c'), 'top');
-    await eventually(async () => assert.deepEqual(await idsIn(work(page)), ['chat-f', 'chat-c', 'chat-e']), 4000);
-    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-d']);
-    const recentsHeading = section(page, 'Recents').locator('.section-label-row');
-    await drag(page, row(page, 'chat-e'), recentsHeading, 'middle', async () => {
-      await eventually(async () => assert.equal(await recentsHeading.getAttribute('data-drop'), 'into'));
-    });
-    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-e', 'chat-d']));
-    assert.deepEqual(await idsIn(work(page)), ['chat-f', 'chat-c']);
-    await page.reload(); await row(page, 'chat-d').waitFor();
-    assert.deepEqual(await idsIn(work(page)), ['chat-f', 'chat-c'], 'group and order survive a reload');
-    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-e', 'chat-d']);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -127,15 +99,15 @@ test('the first move from a sorted list switches Sort by to Manual from the orde
   const f = await open({ sortBy: 'name', groupBy: 'none', members: {} }), { page } = f;
   try {
     await row(page, 'chat-f').waitFor();
-    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-c', 'chat-d', 'chat-e', 'chat-f'], 'sorted A to Z (Pinned shown apart)');
-    await drag(page, row(page, 'chat-f'), row(page, 'chat-c'), 'top');
-    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-f', 'chat-c', 'chat-d', 'chat-e'], 'only the dragged chat moved; the others kept the order they showed'));
-    await aside(page).getByRole('button', { name: 'Group and sort' }).click();
+    assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-d', 'chat-e', 'chat-f'], 'sorted A to Z (Pinned shown apart)');
+    await drag(page, row(page, 'chat-f'), row(page, 'chat-d'), 'top');
+    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-f', 'chat-d', 'chat-e'], 'only the dragged chat moved; the others kept the order they showed'));
+    await aside(page).getByRole('button', { name: 'Sort chats' }).click();
     assert.equal(await page.getByRole('menuitemradio', { name: /^Manual/ }).getAttribute('aria-checked'), 'true');
     await page.getByRole('menuitemradio', { name: 'Name', exact: true }).click();
-    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-c', 'chat-d', 'chat-e', 'chat-f'], 'choosing Name sorts again'));
+    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-d', 'chat-e', 'chat-f'], 'choosing Name sorts again'));
     await page.getByRole('menuitemradio', { name: /^Manual/ }).click();
-    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-f', 'chat-c', 'chat-d', 'chat-e'], 'Manual brings the saved order back'));
+    await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-f', 'chat-d', 'chat-e'], 'Manual brings the saved order back'));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -151,7 +123,6 @@ test('Alt+Up/Down reorders the focused chat inside its section and keeps focus; 
     assert.equal(await page.evaluate(() => document.activeElement?.closest<HTMLElement>('.thread-row')?.dataset.threadId), 'chat-e', 'focus stays on the moved chat');
     await page.keyboard.press('Alt+ArrowUp'); // already first in Recents: it does not jump into the group above
     assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-e', 'chat-d', 'chat-f']);
-    assert.deepEqual(await idsIn(work(page)), ['chat-c']);
     await page.keyboard.press('Alt+ArrowDown'); await page.keyboard.press('Alt+ArrowDown'); await page.keyboard.press('Alt+ArrowDown');
     await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-d', 'chat-f', 'chat-e']));
     await link('chat-b').focus(); await page.keyboard.press('Alt+ArrowUp');

@@ -97,7 +97,6 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     updateGroups,
     foldsRef,
     changeFolds,
-    setNewGroupFor,
     assignProject,
     newProjectFrom,
     renameThread,
@@ -245,12 +244,11 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     pins,
     marked,
     setMarked,
-    setNewGroupFor,
     setError,
     assignProject,
     newProjectFrom,
   });
-  const { groupMenu, movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions } = placement;
+  const { movingIds, canNest, placementReveal, revealPlacement, nestChats, organizationActions } = placement;
   async function renameDisplayedThread(thread: Thread, name: string, runId = workflowRoots.get(thread.id)?.id) {
     if (!runId) {
       await renameThread(thread, name);
@@ -318,7 +316,6 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     organizationActions,
     attentionFor,
     chatsOf,
-    groupMenu,
     movingIds,
     markRead,
     prefetchThread,
@@ -353,7 +350,7 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     showTab,
     closeChatTab,
   });
-  const { descendants, threadBranch, runDescendants, chatRows, chatGroupSection } = createSidebarBranches({
+  const { descendants, threadBranch, runDescendants, chatRows } = createSidebarBranches({
     model: sidebarModel,
     threadRow,
     chatReorder,
@@ -408,7 +405,6 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     threadBranch,
     runDescendants,
     chatRows,
-    chatGroupSection,
     arrangedPages,
     pageReorder,
     projectReorder,

@@ -84,7 +84,6 @@ export function useWorkspaceState() {
   } = sidebarStateStores;
   const { chatGroups, chatGroupsRef, updateGroups, commitGroups } = groups;
   const {
-    setNewGroupFor,
     deleteTargets,
     setDeleteTargets,
     deleteRunHistory,
@@ -302,7 +301,6 @@ export function useWorkspaceState() {
     chatGroupsRef,
     updateGroups,
     commitGroups,
-    setNewGroupFor,
     deleteTargets,
     setDeleteTargets,
     deleteRunHistory,
