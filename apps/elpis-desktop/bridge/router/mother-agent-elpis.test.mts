@@ -239,6 +239,10 @@ test("real bridge chat storage stays offline until enabled, then routes persiste
     const input = workers.threads.get(main)!.turns[0]!.items[0] as { content: { text: string }[] };
     const message = input.content[0]!.text;
     const candidate = JSON.parse(message.slice(message.indexOf("\n") + 1)) as { trigger_id: string };
+    const silent = await workers.tool(main, "orchestrator_route", {
+      decisions: [{ kind: "ignore", trigger_id: candidate.trigger_id, reason: "no request" }],
+    });
+    assert.match(JSON.stringify(silent.value), /always gets an answer/, "The Elpis chat never goes silent");
     const routed = await workers.tool(main, "orchestrator_route", {
       decisions: [
         {

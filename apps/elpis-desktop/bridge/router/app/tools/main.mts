@@ -97,6 +97,12 @@ const RouteItemSchema = z
       .nullish()
       .describe(`accept and attach: ${RoutingNoteSchema.description ?? ""}`),
     reason: z.string().nullish().describe("ignore and stop: why, at most 500 characters; an ignore needs it."),
+    answer: z
+      .string()
+      .min(1)
+      .max(20000)
+      .nullish()
+      .describe("ignore of a message in the Elpis chat: what to say to the person, in their language; a person there always gets an answer."),
   })
   .strict();
 type RouteItem = z.infer<typeof RouteItemSchema>;
@@ -110,6 +116,7 @@ const FIELDS: Record<Field, { check: z.ZodType; reads: readonly Kind[]; needs: r
   acknowledgement: { check: AcknowledgementSchema, reads: ["accept"], needs: ["accept"] },
   note: { check: RoutingNoteSchema, reads: ["accept", "attach"], needs: [] },
   reason: { check: z.string().max(500), reads: ["ignore", "stop"], needs: ["ignore"] },
+  answer: { check: z.string().min(1).max(20000), reads: ["ignore"], needs: [] },
 };
 /** Why an item cannot run: a field its kind needs is missing, or one it reads breaks its limit. */
 function invalid(item: RouteItem): string | undefined {
@@ -187,6 +194,12 @@ function route(
       return { ...fromDecision(decision), triggerIds: decision.triggerIds };
     }
     case "ignore": {
+      const inElpisChat = host.store.triggers.get(item.trigger_id)?.source === "elpis-chat";
+      if (inElpisChat && !item.answer) return { refused: "A person in the Elpis chat always gets an answer: give answer" };
+      if (inElpisChat) {
+        host.engine.reply({ purpose: "answer", text: item.answer!, triggerId: item.trigger_id });
+        void host.sendReplies();
+      }
       const decision = host.engine.decide(item.trigger_id, { kind: "ignore", reason: item.reason! });
       return { ...fromDecision(decision), triggerIds: decision.triggerIds };
     }
