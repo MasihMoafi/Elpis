@@ -185,6 +185,7 @@ export const productionFiles = [
   "bridge/matilda-clothes.cts",
   "bridge/matilda-board-faces.cts",
   "bridge/love-spot-talk.mts",
+  "bridge/love-spot-watcher-shots.cts",
   "bridge/love-spot-watcher.cts",
   "bridge/speech-buffer.mts",
   "bridge/speech-chunks.mts",
