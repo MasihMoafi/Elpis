@@ -143,6 +143,7 @@
 @container workspace (max-width:640px) { .composer-wrap { padding-inline:22px; } }
 @container composer (max-width:640px) { .pill-long { display:none; } .pill-short { display:inline; } }
 @container workspace (max-width:520px) { .composer-wrap { padding-inline:12px; } }
+@media(min-width:761px) { @container workspace (max-width:520px) { .chat-scroll { padding-inline:12px; } } }
 .effort-short { display:none; }
 @container composer (max-width:780px) {
   .composer-controls { flex-wrap:nowrap; }
