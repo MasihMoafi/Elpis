@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { required, useForSpeechFixture, fixture } from "./bridge.fixtures.mts";
+import { required, fixture } from "./bridge.fixtures.mts";
+import { useForSpeechFixture } from "./bridge-speech.fixtures.mts";
 
 test("Use for read aloud sends the selected OpenRouter model and saved key and returns MP3", async t => {
   const f = await useForSpeechFixture(t),

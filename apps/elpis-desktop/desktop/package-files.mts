@@ -40,6 +40,7 @@ export const productionFiles = [
   "desktop/improve.cts",
   "bridge/browser-mcp.mts",
   "bridge/claude-mcp-import.mts",
+  "desktop/browser-agent-page.cts",
   "desktop/browser-agent.cts",
   "desktop/browser-identity.cts",
   "desktop/documents.cts",

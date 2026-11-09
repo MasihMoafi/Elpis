@@ -1,21 +1,15 @@
 "use client";
 
+export { pen } from "./agents-iso-shared";
+import { ellipse } from "./agents-iso-shared";
+export { AGENT, PILLAR, ellipse, widths } from "./agents-iso-shared";
+import { shapeOf, height, INSET, bounds, meet, textWidth, LABEL } from "./agents-iso-shared";
+import { useIsoBoardState } from "./use-iso-board-state";
+import { useIsoScene } from "./use-iso-scene";
 import { WorkflowMark } from "@/components/workflow-identity";
-import type { WorkflowIdentity } from "@/lib/workflow-identity";
+
 import { Segmented } from "@/components/settings/rows";
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type Ref,
-  type MouseEvent as ReactMouseEvent,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { type CSSProperties } from "react";
 import { Maximize2, Minus } from "lucide-react";
 import { PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
@@ -23,30 +17,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import {
   agentColor,
-  agentCount,
-  CHECK_LABEL as CHECK,
   FATHER,
   MOTHER,
-  STATUS_LABEL as STATUS,
   checkOf,
   waits,
-  waves,
   type AgentData,
   type CanvasEdge,
-  type CanvasGraph,
   type TaskStatus,
 } from "@/lib/canvas";
-import {
-  ISO_STEP,
-  isoFit,
-  isoLayout,
-  isoRoute,
-  project,
-  type Box,
-  type Ground,
-  type IsoPlace,
-  type Point,
-} from "@/lib/iso";
+import { project, type Ground, type Point } from "@/lib/iso";
 
 /** A note's text, the same field on both views. */
 export function NoteText({ text, onText }: { text: string; onText: (text: string) => void }) {
@@ -61,27 +40,9 @@ export function NoteText({ text, onText }: { text: string; onText: (text: string
   );
 }
 
-/** The agents canvas's second view (components/agents-canvas.tsx): the graph as Deus Ex's hacking screen, for
- * watching, selecting and connecting agents. Settings and graph mutations are shared with the flat board.
- * Pedestals, wires and the ground are one SVG, projected by lib/iso.ts; titles and controls are flat HTML on top, so
- * text stays upright and legible at any zoom. */
-
-type State = TaskStatus | "idle";
-
 /** A pedestal in ground units: the slab, the block standing on it, the ring of its check and the plate a selection
  * or focus lights around it. The Mother and the Father are taller pillars. */
-type Shape = { base: number; baseHeight: number; core: number; coreHeight: number; ring: number; plate: number };
-const AGENT: Shape = { base: 64, baseHeight: 10, core: 36, coreHeight: 30, ring: 50, plate: 84 };
-const PILLAR: Shape = { base: 72, baseHeight: 12, core: 40, coreHeight: 86, ring: 56, plate: 94 };
-const shapeOf = (place: IsoPlace) => (place.kind === "agent" ? AGENT : PILLAR);
-const height = (shape: Shape) => shape.baseHeight + shape.coreHeight;
-/** A ground circle of radius r is this ellipse on screen. */
-const ellipse = (r: number) => ({ rx: r * Math.sqrt(1.5), ry: r * Math.SQRT1_2 });
-/** Room the fit leaves for the titles above the pedestals, at the sides, and for the controls along the bottom. */
-const INSET: Box = { left: 64, top: 48, right: 64, bottom: 100 };
-const FIT_ZOOM = { min: 0.08, max: 1.1 },
-  ZOOM = { min: 0.08, max: 2.5 };
-type View = { zoom: number; x: number; y: number };
+export type Shape = { base: number; baseHeight: number; core: number; coreHeight: number; ring: number; plate: number };
 
 const xy = (point: Point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`;
 /** A square of `side` on the ground around `ground`, lifted to `z`: its back, right, front and left corners. */
@@ -111,39 +72,6 @@ function longestSpan(route: [Ground, Ground, ...Ground[]]): [Ground, Ground] {
   return [from, to];
 }
 
-/** The screen box of everything drawn, at zoom 1: each pedestal's top, its plate and its ring. */
-function bounds(places: IsoPlace[]): Box {
-  const box = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
-  for (const place of places) {
-    const shape = shapeOf(place),
-      ring = ellipse(shape.ring),
-      across = Math.max(ring.rx, shape.plate * Math.cos(Math.PI / 6)),
-      down = Math.max(ring.ry, shape.plate / 2);
-    box.left = Math.min(box.left, place.at.x - across);
-    box.right = Math.max(box.right, place.at.x + across);
-    box.top = Math.min(box.top, place.at.y - shape.core / 2 - height(shape));
-    box.bottom = Math.max(box.bottom, place.at.y + down);
-  }
-  return places.length ? box : { left: 0, top: 0, right: 1, bottom: 1 };
-}
-
-const meet = (a: Box, b: Box) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-/** A title's width in the label's font (13px semibold), measured once per text. */
-const widths = new Map<string, number>();
-let pen: CanvasRenderingContext2D | null | undefined;
-function textWidth(text: string, family: string) {
-  const key = `${family}|${text}`;
-  if (!widths.has(key)) {
-    pen ??= typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
-    if (pen) pen.font = `600 13px ${family}`;
-    widths.set(key, pen ? pen.measureText(text).width : text.length * 7.5);
-  }
-  return widths.get(key)!;
-}
-/** A label's box on screen: its padding, border and badge around the title, at most its 176px, standing 8px above
- * the point given. */
-const LABEL = { max: 176, height: 24, gap: 8, chrome: 13, badge: 24 };
-
 /** A block on the ground: its two lit sides and its top. */
 function Prism({
   ground,
@@ -169,7 +97,7 @@ function Prism({
   );
 }
 
-type States = Record<string, { status: TaskStatus; activity?: string | undefined }>;
+export type States = Record<string, { status: TaskStatus; activity?: string | undefined }>;
 /** A wire's state, as the flat board colours it: live once its first agent's check passed and the second runs (a
  * Mother's or the Father agent's wire once its agent runs), done once that check passed, cut when it failed or the second
  * is blocked. A two-way wire sets no order, so it carries none. */
@@ -254,412 +182,90 @@ export type IsoController = {
   position: (client: Point) => Point;
   keepView: () => void;
 };
-type Props = {
-  workflowIdentity?: WorkflowIdentity | undefined;
-  inserting: string | null;
-  canConnect: (source: string, target: string, ignored?: string | null, alongside?: boolean) => boolean;
-  onReconnect: (edge: CanvasEdge, source: string, target: string) => void;
-  renamingFrame: string | null;
-  onFrameName: (id: string, title: string | null) => void;
-  onNoteText: (id: string, text: string) => void;
-  onMoveStart: (id: string, extract: boolean) => void;
-  onMove: (id: string, dx: number, dy: number) => void;
-  onMoveEnd: (shift: boolean, cancel?: boolean) => void;
-  onMovePreview: (id: string) => void;
-  modelLabel: (data: AgentData) => string;
-  controller: Ref<IsoController>;
-  onConnect: (source: string, target: string, kind?: CanvasEdge["kind"]) => void;
-  onAdd: (at: Point, id?: string, end?: "source" | "target") => void;
-  onCommand: (at: Point, id: string, end: "source" | "target") => void;
-  onNodeMenu: (event: ReactMouseEvent, id: string) => void;
-  onBoardMenu: (event: ReactMouseEvent) => void;
-  onWireMenu: (event: ReactMouseEvent, edge: CanvasEdge) => void;
-  onWireClick: (event: ReactMouseEvent, edge: CanvasEdge) => void;
-  onRename: (id: string, title: string) => void;
-  graph: CanvasGraph;
-  father: string[];
-  states: States;
-  selected: string[];
-  onSelect: (ids: string[]) => void;
-  onOpen: (id: string) => void;
-  dark: boolean;
-};
 /** The isometric board: the Mother (and the Father) and each agent on a pedestal in run order, wires on the ground. A click selects
  * (Shift adds), a double-click renames an agent and Enter opens Info, the arrows move between agents in run order.
  * The parent owns window/crossing selection in both views; middle-drag and scroll pan, Ctrl/Cmd+scroll zooms. */
-export function IsoBoard({
-  workflowIdentity,
-  inserting,
-  canConnect,
-  onReconnect,
-  renamingFrame,
-  onFrameName,
-  onNoteText,
-  onMoveStart,
-  onMove,
-  onMoveEnd,
-  onMovePreview,
-  graph,
-  father,
-  states,
-  selected,
-  onSelect,
-  onOpen,
-  dark,
-  modelLabel,
-  controller,
-  onConnect,
-  onAdd,
-  onCommand,
-  onNodeMenu,
-  onBoardMenu,
-  onWireMenu,
-  onWireClick,
-  onRename,
-}: Props) {
-  const root = useRef<HTMLDivElement>(null),
-    buttons = useRef(new Map<string, SVGGElement>());
-  const blur = `iso-blur-${useId().replace(/[^\w-]/g, "")}`;
-  const wave = useMemo(() => waves(graph), [graph]);
-  const fathered = father.length > 0,
-    his = new Set(father);
-  const places = useMemo(() => isoLayout(graph, wave, fathered ? FATHER : undefined), [graph, wave, fathered]);
-  const content = useMemo(() => {
-    const box = bounds(places);
-    for (const node of graph.nodes)
-      if (node.type === "note") {
-        const at = node.isoPosition ?? node.position;
-        box.left = Math.min(box.left, at.x);
-        box.top = Math.min(box.top, at.y);
-        box.right = Math.max(box.right, at.x + 200);
-        box.bottom = Math.max(box.bottom, at.y + 110);
-      }
-    return box;
-  }, [places, graph.nodes]);
-  const byId = new Map(places.map(place => [place.id, place])),
-    nodes = new Map(graph.nodes.map(node => [node.id, node]));
-  const order = places.map(place => place.id),
-    agents = places.filter(place => place.kind === "agent");
-  const [size, setSize] = useState<{ width: number; height: number } | null>(null),
-    [family, setFamily] = useState("sans-serif");
-  // The user's own zoom and pan, kept for the layout it was made on: a new layout (an agent added, an architecture
-  // loaded) is fitted again.
-  const layout = places.map(place => `${place.id}@${place.at.x},${place.at.y}`).join(" ");
-  const [moved, setMoved] = useState<{ layout: string; view: View } | null>(null);
-  const [hovered, setHovered] = useState<string | null>(null),
-    [focused, setFocused] = useState<string | null>(null),
-    [focusId, setFocusId] = useState<string | null>(null);
-  const [panning, setPanning] = useState(false);
-  const [renaming, setRenaming] = useState<string | null>(null);
-  const rename = (id: string) => {
-    if (nodes.get(id)?.type === "agent") {
-      onSelect([id]);
-      setRenaming(id);
-    }
-  };
-  const [wireDrag, setWireDrag] = useState<{
-    id: string;
-    end: "source" | "target";
-    from: Point;
-    to: Point;
-    edge?: CanvasEdge;
-    alongside?: boolean;
-  } | null>(null);
-  const movingNode = useRef<{ id: string; x: number; y: number; moved: boolean; alt: boolean } | null>(null),
-    suppressClick = useRef(false);
-  const drag = useRef<{ x: number; y: number; from: View; moved: boolean } | null>(null);
-
-  useLayoutEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    const measure = () => setSize({ width: element.clientWidth, height: element.clientHeight });
-    measure();
-    setFamily(getComputedStyle(element).fontFamily);
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const view: View =
-    (moved?.layout === layout || moved?.layout === "free" ? moved.view : null) ??
-    (size ? isoFit(content, size, INSET, FIT_ZOOM) : { zoom: 1, x: 0, y: 0 });
-  useLayoutEffect(() => {
-    if (moved?.layout === "free") setMoved({ layout, view: moved.view });
-  }, [layout, moved]);
-  const move = (next: View) => setMoved({ layout, view: next });
-  useImperativeHandle(controller, () => ({
-    position: client => {
-      const box = root.current!.getBoundingClientRect();
-      return { x: (client.x - box.left - view.x) / view.zoom, y: (client.y - box.top - view.y) / view.zoom };
-    },
-    reveal: ids => {
-      const picked = places.filter(place => ids.includes(place.id));
-      if (!size || !picked.length) return;
-      const box = bounds(picked);
-      if (
-        view.x + view.zoom * box.left < INSET.left ||
-        view.x + view.zoom * box.right > size.width - INSET.right ||
-        view.y + view.zoom * box.top < INSET.top ||
-        view.y + view.zoom * box.bottom > size.height - INSET.bottom
-      )
-        move(isoFit(box, size, INSET, { min: ZOOM.min, max: view.zoom }));
-    },
-    cancelGesture: () => {
-      if (!wireDrag) return false;
-      setWireDrag(null);
-      return true;
-    },
-    zoom: factor => zoomBy(factor ? factor : 1 / view.zoom),
-    keepView: () => setMoved({ layout: "free", view }),
-    fit: () => setMoved(null),
-    frame: () => {
-      const picked = places.filter(place => selected.includes(place.id));
-      if (size && picked.length) move(isoFit(bounds(picked), size, INSET, { min: ZOOM.min, max: 1.5 }));
-    },
-  }));
-  const zoomBy = (factor: number, at: Point = { x: (size?.width ?? 0) / 2, y: (size?.height ?? 0) / 2 }) => {
-    const zoom = Math.min(ZOOM.max, Math.max(ZOOM.min, view.zoom * factor)),
-      scale = zoom / view.zoom;
-    move({ zoom, x: at.x - (at.x - view.x) * scale, y: at.y - (at.y - view.y) * scale });
-  };
-  // The wheel zooms about the pointer; React's wheel listener is passive, so it can't keep the page from scrolling.
-  useEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    const wheel = (event: WheelEvent) => {
-      if ((event.target as Element).closest(".iso-hud, input, textarea")) return;
-      event.preventDefault();
-      const box = element.getBoundingClientRect(),
-        unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? box.height : 1;
-      if (event.ctrlKey || event.metaKey)
-        zoomBy(Math.exp(-event.deltaY * unit * 0.0015), { x: event.clientX - box.left, y: event.clientY - box.top });
-      else move({ ...view, x: view.x - event.deltaX * unit, y: view.y - event.deltaY * unit });
-    };
-    element.addEventListener("wheel", wheel, { passive: false });
-    return () => element.removeEventListener("wheel", wheel);
-  });
-
-  // Each parent runs while any of her (his) agents or their checks does.
-  const hisTasks = new Set(father.flatMap(id => [id, checkOf(id)]));
-  const partState = (mine: boolean): State => {
-    const tasks = Object.entries(states)
-      .filter(([id]) => hisTasks.has(id) === !mine)
-      .map(([, task]) => task.status);
-    return !tasks.length
-      ? "idle"
-      : tasks.some(status => status === "running" || status === "pending")
-        ? "running"
-        : tasks.some(status => status === "failed" || status === "blocked")
-          ? "failed"
-          : "succeeded";
-  };
-  const motherState = partState(true),
-    fatherState = partState(false);
-  const statusOf = (id: string): State =>
-    id === MOTHER ? motherState : id === FATHER ? fatherState : (states[id]?.status ?? "idle");
-  const titleOf = (id: string) => {
-    const node = nodes.get(id);
-    return id === MOTHER
-      ? "Mother agent"
-      : id === FATHER
-        ? "Father agent"
-        : node?.type === "agent"
-          ? node.data.title || "Untitled"
-          : id;
-  };
-  const parentLine = (id: string) =>
-    id === MOTHER
-      ? ["This run's chat", agentCount(agents.length), STATUS[motherState]]
-      : ["His own chat", agentCount(father.length), fatherState === "idle" ? "after her part" : STATUS[fatherState]];
-  const describe = (id: string) =>
-    id === MOTHER || id === FATHER
-      ? parentLine(id)
-          .join(", ")
-          .replace(/^./, letter => letter.toLowerCase())
-      : `${wave.has(id) ? `wave ${wave.get(id)}` : "no wave"}, ${states[id]?.status === "running" && states[id]?.activity ? `now: ${states[id].activity}` : nodes.get(id)?.type === "agent" && (nodes.get(id)!.data as AgentData).muted ? "muted, skipped in runs" : STATUS[statusOf(id)]}, ${CHECK[statusOf(checkOf(id))].toLowerCase()}`;
-  const wires: CanvasEdge[] = [
-    // The parents' wires, as on the flat board: the Mother starts her agents of the first wave; the Father starts his
-    // agents that wait for none of his others.
-    ...agents
-      .filter(place => wave.get(place.id) === 1 && !his.has(place.id))
-      .map(place => ({ id: `${MOTHER}->${place.id}`, source: MOTHER, target: place.id })),
-    ...agents
-      .filter(
-        place =>
-          his.has(place.id) &&
-          !graph.edges.some(edge => waits(edge) && edge.target === place.id && his.has(edge.source)),
-      )
-      .map(place => ({ id: `${FATHER}->${place.id}`, source: FATHER, target: place.id })),
-    ...graph.edges.filter(edge => byId.has(edge.source) && byId.has(edge.target)),
-  ];
-  const motherWires = wires.filter(wire => wire.source === MOTHER),
-    motherWire = motherWires[0],
-    motherPlace = byId.get(MOTHER);
-  const junction = motherPlace ? { u: motherPlace.ground.u + ISO_STEP.column / 2, v: motherPlace.ground.v } : null;
-  const routeOf = (wire: CanvasEdge): [Ground, Ground, ...Ground[]] => {
-    const to = byId.get(wire.target)!.ground;
-    return wire.source === MOTHER && junction
-      ? [junction, { u: junction.u, v: to.v }, to]
-      : isoRoute(byId.get(wire.source)!.ground, to);
-  };
-
-  // One agent is in the tab order (the last focused, else the selected, else the Mother); the arrows walk the rest.
-  const tabbable = focusId && byId.has(focusId) ? focusId : (selected.find(id => byId.has(id)) ?? order[0]);
-  const hot = hovered ?? focused;
-  const singleSelection = selected.length === 1 ? selected[0] : undefined;
-  const subject = hot ?? (singleSelection && byId.has(singleSelection) ? singleSelection : null);
-  const pick = (id: string, add: boolean) => {
-    setFocusId(id);
-    onSelect(
-      add && id !== FATHER ? (selected.includes(id) ? selected.filter(item => item !== id) : [...selected, id]) : [id],
-    );
-  };
-  const open = (id: string) => {
-    pick(id, false);
-    if (byId.get(id)?.kind === "agent") onOpen(id);
-  };
-  const screen = (point: Point) => ({ x: view.x + view.zoom * point.x, y: view.y + view.zoom * point.y });
-  // An agent reached by the keys is brought into view.
-  const reveal = (id: string) => {
-    const place = byId.get(id);
-    if (!place || !size) return;
-    const at = screen(place.at);
-    if (at.x < INSET.left || at.x > size.width - INSET.right || at.y < INSET.top || at.y > size.height - INSET.bottom)
-      move({ ...view, x: view.x + size.width / 2 - at.x, y: view.y + size.height / 2 - at.y });
-  };
-  const keys = (event: ReactKeyboardEvent, id: string) => {
-    // Plain arrows walk the agents in run order; with Shift or Alt they are the board's (select linked, nudge).
-    const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[event.key];
-    if (step && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey) {
-      event.preventDefault();
-      const next = order[Math.max(0, Math.min(order.length - 1, order.indexOf(id) + step))];
-      if (next) {
-        setFocusId(next);
-        buttons.current.get(next)?.focus({ preventScroll: true });
-        reveal(next);
-      }
-    } else if (event.key === "Enter" && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      event.preventDefault();
-      open(id);
-    }
-  };
-
-  // The ground: a plate under the graph with a grid offset from the agents, so each stands in a cell.
-  const us = places.map(place => place.ground.u),
-    vs = places.map(place => place.ground.v);
-  const u0 = Math.min(0, ...us) - ISO_STEP.column * 0.75,
-    u1 = Math.max(0, ...us) + ISO_STEP.column * 0.75,
-    v0 = Math.min(0, ...vs) - ISO_STEP.row * 0.75,
-    v1 = Math.max(0, ...vs) + ISO_STEP.row * 0.75;
-  const grid: [Point, Point][] = [];
-  for (let u = u0 + ISO_STEP.column / 4; u < u1; u += ISO_STEP.column / 2) grid.push([project(u, v0), project(u, v1)]);
-  for (let v = v0 + ISO_STEP.row / 4; v < v1; v += ISO_STEP.row / 2) grid.push([project(u0, v), project(u1, v)]);
-  // Nearer pedestals are drawn over farther ones.
-  const painted = [...places].sort((a, b) => a.at.y - b.at.y || a.at.x - b.at.x);
-  // Each title stands upright above its pedestal. Where the graph is dense, a title that would cover another title or
-  // another agent's block shows only its wave badge, until it is pointed at, focused or selected, or zoomed into room;
-  // the Mother's and those always show in full.
-  const anchor = (place: IsoPlace) => {
-    const shape = shapeOf(place);
-    return screen({ x: place.at.x, y: place.at.y - shape.core / 2 - height(shape) });
-  };
-  // Labels must clear the whole pedestal, including its ground plate and check ring.
-  const block = (place: IsoPlace): Box => {
-    const box = bounds([place]),
-      top = screen({ x: box.left, y: box.top }),
-      bottom = screen({ x: box.right, y: box.bottom });
-    return { left: top.x, top: top.y, right: bottom.x, bottom: bottom.y };
-  };
-  const kept = (place: IsoPlace) => place.kind !== "agent" || place.id === hot || selected.includes(place.id);
-  const full = new Set<string>(),
-    taken: Box[] = [],
-    labelPositions = new Map<string, Point>();
-  const labelBox = (at: Point, width: number, labelHeight = LABEL.height): Box => ({
-    left: at.x - width / 2,
-    top: at.y - labelHeight,
-    right: at.x + width / 2,
-    bottom: at.y,
-  });
-  const labelAt = (place: IsoPlace, width: number, labelHeight = LABEL.height) => {
-    const at = anchor(place);
-    return {
-      x: Math.max(width / 2 + 6, Math.min((size?.width ?? Infinity) - width / 2 - 6, at.x)),
-      y: Math.max(labelHeight + 6, Math.min((size?.height ?? Infinity) - INSET.bottom, at.y - LABEL.gap)),
-    };
-  };
-  for (const place of [...places].sort((a, b) => Number(kept(b)) - Number(kept(a)))) {
-    // A pillar adds 5px of left padding; the workflow mark also occupies 9px + 6px margins + the 6px gap.
-    const width =
-      renaming === place.id
-        ? LABEL.max
-        : Math.min(
-            LABEL.max,
-            textWidth(titleOf(place.id), family) +
-              LABEL.chrome +
-              (place.kind === "agent" ? LABEL.badge : 5 + (place.kind === "mother" && workflowIdentity ? 21 : 0)),
-          );
-    const labelHeight = renaming === place.id ? 36 : LABEL.height;
-    let at = labelAt(place, width, labelHeight),
-      box = labelBox(at, width, labelHeight);
-    if (
-      place.id === hot ||
-      (selected.length === 1 && selected.includes(place.id)) ||
-      (!taken.some(other => meet(other, box)) && !places.some(other => other !== place && meet(block(other), box)))
-    )
-      full.add(place.id);
-    else if (place.kind === "agent") {
-      at = labelAt(place, LABEL.badge, labelHeight);
-      box = labelBox(at, LABEL.badge, labelHeight);
-    } else full.add(place.id);
-    const usedWidth = full.has(place.id) ? width : LABEL.badge;
-    // A dense graph keeps wave badges; if even those meet, move a label to the nearest free row.
-    const original = at;
-    const collides = () => taken.some(other => meet(other, box)) || places.some(other => meet(block(other), box));
-    for (let step = 0; collides() && step < 60; step++) {
-      const offset = (Math.floor(step / 2) + 1) * (labelHeight + 4) * (step % 2 ? 1 : -1);
-      const y = original.y + offset;
-      if (y < labelHeight + 6 || y > (size?.height ?? Infinity) - INSET.bottom) continue;
-      at = { ...original, y };
-      box = labelBox(at, usedWidth, labelHeight);
-    }
-    // A short board may have no free row above this pedestal. Use the nearest free slot to either side instead of
-    // leaving a badge on its own block, where it would intercept the block's mouse and keyboard interactions.
-    if (collides() && size) {
-      const xs = [original.x],
-        ys = [original.y];
-      for (let x = usedWidth / 2 + 6; x <= size.width - usedWidth / 2 - 6; x += usedWidth + 8) xs.push(x);
-      for (let y = labelHeight + 6; y <= size.height - INSET.bottom; y += labelHeight + 4) ys.push(y);
-      const slots = ys
-        .flatMap(y => xs.map(x => ({ x, y })))
-        .sort(
-          (a, b) => Math.hypot(a.x - original.x, a.y - original.y) - Math.hypot(b.x - original.x, b.y - original.y),
-        );
-      const free = slots.find(slot => {
-        const box = labelBox(slot, usedWidth, labelHeight);
-        return !taken.some(other => meet(other, box)) && !places.some(other => meet(block(other), box));
-      });
-      if (free) {
-        at = free;
-        box = labelBox(at, usedWidth, labelHeight);
-      }
-    }
-    taken.push(box);
-    labelPositions.set(place.id, at);
-  }
-  const subjectPlace = subject ? byId.get(subject) : undefined;
-  const subjectNode = subjectPlace ? nodes.get(subjectPlace.id) : undefined;
-  const subjectModel =
-    subjectNode?.type === "agent"
-      ? `${modelLabel(subjectNode.data)}${subjectNode.data.effort ? ` · ${subjectNode.data.effort} thinking` : ""}`
-      : null;
-
-  const overview = `${agents.length} ${agents.length === 1 ? "agent" : "agents"}`;
-  const subjectLine = !subjectPlace
-    ? ""
-    : subjectPlace.kind !== "agent"
-      ? parentLine(subjectPlace.id).join(" · ")
-      : states[subjectPlace.id]?.status === "running" && states[subjectPlace.id]?.activity
-        ? `Now: ${states[subjectPlace.id]?.activity}`
-        : `${STATUS[statusOf(subjectPlace.id)]} · ${CHECK[statusOf(checkOf(subjectPlace.id))]}`;
+export function IsoBoard(props: Parameters<typeof useIsoBoardState>[0]) {
+  const {
+    root,
+    panning,
+    onAdd,
+    onBoardMenu,
+    drag,
+    view,
+    setWireDrag,
+    movingNode,
+    onMoveEnd,
+    onMoveStart,
+    suppressClick,
+    onMove,
+    onMovePreview,
+    wireDrag,
+    setPanning,
+    move,
+    onReconnect,
+    onCommand,
+    onConnect,
+    blur,
+    dark,
+    u0,
+    v0,
+    u1,
+    v1,
+    grid,
+    places,
+    statusOf,
+    motherPlace,
+    junction,
+    motherWire,
+    onWireClick,
+    onWireMenu,
+    motherWires,
+    states,
+    wires,
+    routeOf,
+    inserting,
+    hot,
+    painted,
+    buttons,
+    nodes,
+    tabbable,
+    selected,
+    titleOf,
+    describe,
+    onNodeMenu,
+    pick,
+    rename,
+    keys,
+    setHovered,
+    setFocused,
+    setFocusId,
+    screen,
+    canConnect,
+    graph,
+    byId,
+    onSelect,
+    renamingFrame,
+    onFrameName,
+    onNoteText,
+    labelPositions,
+    full,
+    renaming,
+    onRename,
+    setRenaming,
+    workflowIdentity,
+    wave,
+    family,
+    size,
+    labelBox,
+    taken,
+    zoomBy,
+    setMoved,
+    subjectPlace,
+    subjectLine,
+    subjectModel,
+    overview,
+  } = useIsoScene(useIsoBoardState(props));
   return (
     <div
       ref={root}
