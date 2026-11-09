@@ -139,7 +139,7 @@
 .team-row.root > small { grid-column:2; }
 .team-title { font-size:var(--text-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .team-row .agent-model { font-size:var(--text-small); }
-.team-state { display:grid; place-items:center; width:16px; height:16px; }
+.team-state { display:grid; place-items:center; width:var(--icon-size); height:var(--icon-size); }
 .team-state i { width:10px; height:10px; border-radius:50%; border:1.5px dashed var(--subtle-foreground); }
 .team-row.root .team-state i { border-style:solid; border-color:var(--muted-foreground); background:var(--muted-foreground); width:8px; height:8px; }
 .team-row.working .team-state i { border:1.5px solid color-mix(in oklch, var(--success), transparent 70%); border-top-color:var(--success); animation:spin .9s linear infinite; }
@@ -163,7 +163,7 @@
 .customize-name { font-size:var(--text-base); font-weight:500; color:var(--foreground); }
 .customize-description { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--text-sm); color:var(--muted-foreground); }
 .customize-badge { flex:none; padding:2px 8px; background:var(--muted); font-size:var(--text-xs); color:var(--muted-foreground); }
-.customize-state { flex:none; min-width:28px; font-size:var(--text-sm); color:var(--muted-foreground); text-align:right; }
+.customize-state { flex:none; min-width:var(--control-h); font-size:var(--text-sm); color:var(--muted-foreground); text-align:right; }
 .customize-state[data-on] { color:var(--foreground); }
 .customize-errors { margin-top:10px; font-size:var(--text-sm); color:var(--muted-foreground); }
 .customize-errors summary { cursor:pointer; }
@@ -207,7 +207,7 @@
 .activity-group-label, .live-label { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* What the agent viewed and made, as Claude's chats show it (components/file-cards.tsx): thumbnails on a row, a larger
  * picture in its step, the full view over the page, and a card per created file after the reply. */
-.activity-thumb { flex:none; width:28px; height:28px; object-fit:cover; border:1px solid var(--border); border-radius:5px; background:var(--card); cursor:zoom-in; transition:transform .15s ease, box-shadow .15s ease; }
+.activity-thumb { flex:none; width:var(--control-h); height:var(--control-h); object-fit:cover; border:1px solid var(--border); border-radius:5px; background:var(--card); cursor:zoom-in; transition:transform .15s ease, box-shadow .15s ease; }
 .activity-thumb:hover { transform:rotate(-2deg); box-shadow:var(--shadow); }
 .activity-image { display:block; max-width:min(100%, 420px); max-height:260px; margin:6px 0; object-fit:contain; border:1px solid var(--border); border-radius:8px; background:var(--card); cursor:zoom-in; }
 .image-view { max-width:min(92vw, 1400px); max-height:92vh; padding:0; border:0; border-radius:10px; background:transparent; cursor:zoom-out; }
@@ -326,7 +326,7 @@
 .hud-menu-chevron { margin-left:auto; color:var(--muted-foreground); }
 .hud-menu-check { display:inline-flex; margin-left:auto; color:var(--primary); }
 .select-option { display:grid; gap:2px; }
-.context-ring { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
+.context-ring { display:inline-flex; align-items:center; justify-content:center; width:var(--control-h); height:var(--control-h); padding:0; border:1px solid transparent; background:transparent; cursor:pointer; }
 .context-ring:hover, .context-ring[data-popup-open] { background:var(--hover); border-color:var(--hairline); }
 .context-ring:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
 /* The context ring fills clockwise in its chat accent at every usage level. */
@@ -394,7 +394,7 @@
 .task-list li[data-status="completed"] .task-mark { box-shadow:none; background:var(--muted-foreground); clip-path:polygon(14% 52%, 0 66%, 38% 100%, 100% 22%, 86% 8%, 38% 72%); }
 /* Elpis's features under the message box (components/elpis-features.tsx): a chip each, its dot olive when on. */
 .elpis-features { display:flex; align-items:center; gap:2px; margin-left:auto; }
-.feature-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-xs); white-space:nowrap; cursor:pointer; }
+.feature-chip { display:inline-flex; align-items:center; gap:6px; height:var(--control-h); padding:0 8px; border:1px solid transparent; background:transparent; color:var(--muted-foreground); font-size:var(--text-xs); white-space:nowrap; cursor:pointer; }
 .feature-chip:hover:not(:disabled) { background:var(--hover); color:var(--muted-foreground); }
 .feature-chip:focus-visible { outline:1.5px solid var(--ring); outline-offset:1px; }
 .feature-chip:disabled { cursor:default; }
@@ -404,7 +404,7 @@
 .feature-chip .context-ring-icon .context-ring-track { stroke:currentColor; }
 .composer .model-picker-trigger { border-color:transparent; background:transparent; }
 /* The composer's toolbar controls (permissions, model, effort) are one pill: height, corner, text size and hover. */
-.composer-pill, .composer .model-select { height:28px; font-size:var(--text-xs); }
+.composer-pill, .composer .model-select { height:var(--control-h); font-size:var(--text-xs); }
 .composer-pill:hover:not(:disabled), .composer .model-select:hover:not(:disabled) { background:var(--hover); color:var(--foreground); border-color:var(--hairline); }
 .composer .model-trigger-provider { display:none; }
 /* Sidebar */

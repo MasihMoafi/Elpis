@@ -68,7 +68,7 @@
 .title-bar-actions { display:flex; align-items:center; gap:4px; margin-inline-start:auto; min-width:0; flex-shrink:0; }
 .title-bar button { color:var(--muted-foreground); app-region:no-drag; -webkit-app-region:no-drag; }
 .app-menus, .app-menubar { display:flex; align-items:center; min-width:0; gap:2px; app-region:no-drag; -webkit-app-region:no-drag; }
-.title-bar .app-menu-trigger { height:28px; padding-inline:10px; color:var(--foreground); }
+.title-bar .app-menu-trigger { height:var(--control-h); padding-inline:10px; color:var(--foreground); }
 .app-menu-content { min-width:220px; }
 @media(max-width:520px) { .title-bar .app-menu-trigger { padding-inline:6px; } }
 

@@ -312,8 +312,8 @@ button:disabled { cursor:not-allowed; }
 span.model-select { display:inline-flex; align-items:center; background-image:none; padding-right:8px; }
 .model-select option { background:var(--card); color:var(--foreground); }
 .composer-meta { max-width:var(--transcript-width, 740px); margin:6px auto 0; display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; padding:0 6px; }
-.composer-chip { display:inline-flex; align-items:center; gap:6px; height:28px; padding:0 9px; border:1px solid transparent; font-size:var(--text-xs); color:var(--muted-foreground); white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
-.composer-chip > svg:first-child, .model-select > svg:first-child { width:16px; height:16px; }
+.composer-chip { display:inline-flex; align-items:center; gap:6px; height:var(--control-h); padding:0 9px; border:1px solid transparent; font-size:var(--text-xs); color:var(--muted-foreground); white-space:nowrap; max-width:220px; overflow:hidden; text-overflow:ellipsis; }
+.composer-chip > svg:first-child, .model-select > svg:first-child { width:var(--icon-size); height:var(--icon-size); }
 .composer-hint { margin-left:auto; color:var(--subtle-foreground); font-size:var(--text-small); text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .page-scroll { flex:1; min-height:0; overflow:auto; padding:var(--page-pad); }
 /* A page scrolls only for content, never for trailing space: the last section's own bottom margin is dropped (Masih, 31 Oct:
@@ -340,12 +340,12 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
  * 20, 14 and 10 px. At most min(70vh, 40rem) tall, then it scrolls. */
 /* Where the ChatGPT app puts it: 16px from the chat pane's left edge, not beside the column (Masih, 31 Oct: "check chatgpt app").
  * The component hides it when the pane is too narrow to keep it clear of the text. */
-.prompt-rail { position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:28px; max-height:min(70vh, 40rem, calc(100% - 24px)); }
+.prompt-rail { position:absolute; left:16px; top:50%; transform:translateY(-50%); z-index:2; display:flex; flex-direction:column; width:var(--control-h); max-height:min(70vh, 40rem, calc(100% - 24px)); }
 .prompt-rail[data-clear="false"] { display:none; }
 .prompt-rail-marks { display:flex; flex-direction:column; width:100%; min-height:0; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:none; }
 /* The dashes show at rest, faint, as in the ChatGPT app (Masih, 31 Oct, with its screenshot: "I don't see that mark"). */
 .prompt-rail-marks::-webkit-scrollbar { display:none; }
-.prompt-tick { flex:none; display:flex; align-items:center; justify-content:flex-start; width:28px; height:10px; padding:0 0 0 1px; border:0; border-radius:0; background:none; cursor:pointer; }
+.prompt-tick { flex:none; display:flex; align-items:center; justify-content:flex-start; width:var(--control-h); height:10px; padding:0 0 0 1px; border:0; border-radius:0; background:none; cursor:pointer; }
 .prompt-tick i { display:block; width:6px; height:2px; border-radius:1px; background:var(--thread-tertiary); opacity:.4; transition:width .16s, opacity .16s, background-color .16s; }
 .prompt-tick[aria-current="true"] i { background:var(--foreground); opacity:.6; }
 .prompt-rail:hover .prompt-tick[aria-current="true"]:not([data-distance]) i { background:var(--thread-tertiary); opacity:.4; }
