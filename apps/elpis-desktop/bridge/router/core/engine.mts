@@ -234,6 +234,12 @@ export class Engine {
       this.assignments.read(ticketId, inputIds);
     });
   }
+  /** The Executor's fact that a chat ticket's worker has answered: the chat's next message is new work for Eval. */
+  completeChatTicket(ticketId: string): void {
+    this.repo.atomic(() => {
+      this.tickets.end(ticketId, "executor", "completed");
+    });
+  }
   /** The Executor's fact that a turn of the worker of the Assignment that runs the ticket ended, after a report too. */
   turnEnded(ticketId: string, assignmentId: string): void {
     this.repo.atomic(() => {
@@ -335,6 +341,7 @@ export type EngineForExecutor = Pick<
   | "inputsDelivered"
   | "inputsRead"
   | "turnEnded"
+  | "completeChatTicket"
   | "deliveryFailed"
   | "assignmentInterrupted"
   | "report"

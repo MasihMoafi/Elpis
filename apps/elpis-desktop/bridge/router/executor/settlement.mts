@@ -1,7 +1,7 @@
 // Ported from dsh-superagent (MIT), src/executor/dsh.ts
 import { workerSessionId } from "./messages.mts";
 import type { Agent } from "./runtime.mts";
-import { latestReport, liveTicket, runningAssignment, waitsForPerson } from "../core/index.mts";
+import { chatWorkDone, latestReport, liveTicket, runningAssignment, waitsForPerson } from "../core/index.mts";
 import type { Assignment, Ticket } from "../core/index.mts";
 import { resultRelay } from "../app/notices.mts";
 import { collectJob, killJobs, runningJobs, stopBackground, stopSubagents, until, untilQuiet } from "./background.mts";
@@ -152,6 +152,7 @@ export class WorkerSettlement {
     if (handedOff(before) && !(report && person && person > report.at)) {
       this.host.engine.turnEnded(ticket.id, idle.id);
       this.handOff(ticket.id, agent);
+      if (report?.state === "ready") this.finishChat(ticket.id);
       return;
     }
     // Its turn ends once nothing runs for it in the background, which holds its slot meanwhile: at most for the limit from
@@ -235,5 +236,10 @@ export class WorkerSettlement {
         );
       }
     });
+    if (said) this.finishChat(ticket.id);
+  }
+  private finishChat(ticketId: string): void {
+    const stored = this.host.store.tickets.get(ticketId);
+    if (stored && chatWorkDone(stored)) this.host.engine.completeChatTicket(ticketId);
   }
 }

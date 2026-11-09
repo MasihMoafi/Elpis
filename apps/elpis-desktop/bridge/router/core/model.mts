@@ -366,6 +366,16 @@ export interface Execution {
 
 /** Whether a ticket is open: it has not ended. */
 export const liveTicket = (ticket: Pick<Ticket, "ended">): boolean => !ticket.ended;
+/**
+ * A ticket that only answers an Elpis chat is finished once its worker has answered: nothing else, such as a pull request,
+ * can close it, and while it stays open every later message in that chat goes to its idle worker (Masih, 9 Nov: "ho?" got no
+ * answer). A question for a person keeps it open, because the next message is the answer.
+ */
+export const chatWorkDone = (ticket: Pick<Ticket, "channels" | "attention" | "ended">): boolean =>
+  !ticket.ended &&
+  !ticket.attention &&
+  !!ticket.channels.length &&
+  ticket.channels.every(item => item.source === "elpis-chat");
 /** How a ticket ended. */
 export const ticketOutcome = (ticket: Pick<Ticket, "ended">): TicketOutcome | undefined => ticket.ended?.outcome;
 export const runningAssignment = (ticket: Ticket): Assignment | undefined =>

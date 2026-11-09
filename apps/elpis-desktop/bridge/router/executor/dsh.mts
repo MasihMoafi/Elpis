@@ -72,7 +72,7 @@ export interface ExecutorHost {
     | "assignmentStarted"
     | "inputsDelivered"
     | "inputsRead"
-    | "turnEnded"
+    | "turnEnded" | "completeChatTicket"
     | "deliveryFailed"
     | "report"
     | "assignmentInterrupted"

@@ -64,6 +64,7 @@
     "tests/run-log.test.mts",
     "tests/read-aloud-provider.test.cts",
     "tests/use-for-settings.test.cts",
+    "bridge/router/core/chat-work.test.mts",
     "bridge/router/core/engine-failed.test.mts",
     "bridge/router/core/engine-follow-up.test.mts",
     "bridge/router/core/engine-follow-ups.test.mts",
