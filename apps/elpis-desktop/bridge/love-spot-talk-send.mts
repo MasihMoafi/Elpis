@@ -1,7 +1,7 @@
 import { agentColor } from "../lib/love-spot.ts";
 import { PAINTING } from "./love-spot-talk-prompt.mts";
 import { object, BridgeError, text } from "./validate.mts";
-import type { Client, Scene } from "./love-spot-talk-types.mts";
+import type { Client, Entry, Item, Scene } from "./love-spot-talk-types.mts";
 
 export type SendBody = {
   text: string;
@@ -35,7 +35,10 @@ export async function findModel(client: Client, provider: string | undefined, mo
     const catalog = (await client.models({
       ...(provider ? { provider } : {}),
       ...(cursor ? { cursor } : {}),
-    })) as { data: { model: string; inputModalities?: string[] }[]; nextCursor?: string | null };
+    })) as {
+      data: { model: string; inputModalities?: string[] }[];
+      nextCursor?: string | null;
+    };
     selected = catalog.data.find(item => item.model === model);
     cursor = catalog.nextCursor;
     if (cursor && cursors.has(cursor)) throw new BridgeError("Could not read the model list.", 502);
@@ -65,10 +68,17 @@ const textFile = (id: string, name: string, content: string): Attachment => ({
 export function messageAttachments(scene: Scene, unchanged: boolean, action: unknown, persona: string | undefined) {
   const notes = scene.elements
     .filter(e => e.type === "text" && !e.isDeleted)
-    .map(e => ({ author: agentColor(e.strokeColor, e.id) ? "agent" : "Masih", text: e.originalText || e.text || "" }));
+    .map(e => ({
+      author: agentColor(e.strokeColor, e.id) ? "agent" : "Masih",
+      text: e.originalText || e.text || "",
+    }));
   const seen = unchanged ? "\nThe drawing is as it was in the last picture you saw." : "";
   const attachments = [
-    textFile("love-spot-notes", "Love Spot notes.txt", `Current Love Spot board notes (by colour):\n${JSON.stringify(notes)}${seen}`),
+    textFile(
+      "love-spot-notes",
+      "Love Spot notes.txt",
+      `Current Love Spot board notes (by colour):\n${JSON.stringify(notes)}${seen}`,
+    ),
   ];
   if (action)
     attachments.push(
@@ -81,4 +91,38 @@ export function messageAttachments(scene: Scene, unchanged: boolean, action: unk
   if (persona) attachments.push(textFile("love-spot-persona", "Who you are.txt", persona));
   attachments.push(textFile("love-spot-painting", "How to paint.txt", PAINTING));
   return attachments;
+}
+
+export const pictureAttachment = (picture: string): Attachment => ({
+  id: "love-spot-picture",
+  name: "view.png",
+  type: "image",
+  mimeType: "image/png",
+  dataUrl: `data:image/png;base64,${picture}`,
+});
+
+export function validateMatildaSettings(body: Record<string, unknown>) {
+  object(body, ["replies", "model", "provider"]);
+  if (body.replies !== undefined && typeof body.replies !== "boolean") throw new BridgeError("Invalid Matilda setting");
+  for (const key of ["model", "provider"]) if (body[key] !== undefined && body[key] !== null) text(body[key], key, 200);
+}
+
+export function freshChatInput(input: Record<string, unknown>) {
+  object(input, ["threadId", "model", "provider", "cwd", "permissions", "persona"]);
+  return {
+    sourceId: text(input.threadId, "thread ID", 200),
+    model: input.model === undefined ? undefined : text(input.model, "model", 200),
+    provider: input.provider === undefined ? undefined : text(input.provider, "provider", 200),
+    persona: input.persona === undefined ? "" : text(input.persona, "persona", 4000),
+  };
+}
+
+/** The agent messages of a finished turn: as the engine reports them, else as streamed. */
+export function turnMessages(turn: { items?: Item[] }, recorded: Item[], entries: Entry[]) {
+  const items = turn.items?.length
+    ? turn.items
+    : recorded.length
+      ? recorded
+      : entries.filter(entry => entry.turnId === (turn as { id?: string }).id).map(entry => entry.item);
+  return items.filter(item => item.type === "agentMessage");
 }

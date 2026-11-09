@@ -2,11 +2,22 @@
 // In-app browser pages: the annotation layer (the ChatGPT app's "Annotate" mode). It runs in Electron's
 // isolated world before the page's scripts, exposes nothing to the page and draws in a closed shadow root.
 // Comments are typed in Elpis, never in the page, so the page cannot read them. Sandboxed preloads cannot
-// load other files, so this file stands alone; tests/browser-annotate.test.cts runs it in Chromium.
+// load other files, so preload-path.cts bundles browser-page-locate.cts in front of it; tests/browser-annotate.test.cts runs it in Chromium.
+import type { PageElement, Rect } from "./browser-page-locate.cts";
 const { ipcRenderer }: typeof import("electron") = require("electron");
-type PageElement = Element &
-  Partial<Pick<HTMLElement, "innerText" | "isContentEditable">> & { labels?: NodeListOf<HTMLLabelElement> | null };
-type Rect = { x: number; y: number; width: number; height: number };
+const {
+  clean,
+  role,
+  name,
+  ownText,
+  nearby,
+  selector,
+  path,
+  fixed,
+  id,
+  viewport,
+  page,
+}: typeof import("./browser-page-locate.cts") = require("./browser-page-locate.cts");
 type Anchor = ReturnType<typeof import("./browser-annotations.cts").cleanPick>;
 type Comment = { id: string; number: number; kind: string; pageUrl: string; anchor: Anchor; editing?: string | null };
 type Layer = {
@@ -128,144 +139,6 @@ function ensureLayer() {
   return layer;
 }
 
-// --- What a selection says about the page (untrusted evidence; main checks every field). ---
-const ROLES: Record<string, string> = {
-  a: "link",
-  button: "button",
-  select: "combobox",
-  textarea: "textbox",
-  img: "img",
-  nav: "navigation",
-  main: "main",
-  header: "banner",
-  footer: "contentinfo",
-  ul: "list",
-  ol: "list",
-  li: "listitem",
-  table: "table",
-  form: "form",
-  dialog: "dialog",
-  h1: "heading",
-  h2: "heading",
-  h3: "heading",
-  h4: "heading",
-  h5: "heading",
-  h6: "heading",
-};
-const INPUTS: Record<string, string> = {
-  checkbox: "checkbox",
-  radio: "radio",
-  button: "button",
-  submit: "button",
-  reset: "button",
-  range: "slider",
-  search: "searchbox",
-};
-const clean = (value: string | null | undefined, limit: number) => {
-  const text = String(value ?? "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text ? text.slice(0, limit) : null;
-};
-function role(element: PageElement) {
-  const explicit = element.getAttribute("role");
-  if (explicit) return explicit.split(/\s+/)[0];
-  if (element.localName === "a") return element.hasAttribute("href") ? "link" : null;
-  if (element.localName === "input") return INPUTS[(element as HTMLInputElement).type] ?? "textbox";
-  return ROLES[element.localName] ?? null;
-}
-function name(element: PageElement) {
-  const labelled = element.getAttribute("aria-labelledby");
-  const byId = labelled
-    ? labelled
-        .split(/\s+/)
-        .map(id => document.getElementById(id)?.innerText ?? "")
-        .join(" ")
-    : "";
-  const label = element.labels?.[0]?.innerText;
-  const own =
-    element.getAttribute("aria-label") ||
-    byId ||
-    element.getAttribute("alt") ||
-    element.getAttribute("title") ||
-    element.getAttribute("placeholder") ||
-    label;
-  if (clean(own, 200)) return clean(own, 200);
-  const text = clean(element.innerText, 400);
-  return text && text.length <= 120 ? text : null;
-}
-function ownText(element: PageElement) {
-  return clean(
-    [...element.childNodes]
-      .filter(node => node.nodeType === 3)
-      .map(node => node.textContent)
-      .join(" "),
-    200,
-  );
-}
-function nearby(element: PageElement) {
-  for (let node = element.parentElement, depth = 0; node && depth < 4; node = node.parentElement, depth++) {
-    const text = clean(node.innerText, 300);
-    if (text && text !== clean(element.innerText, 300)) return text;
-  }
-  return null;
-}
-const escape = (value: string) =>
-  typeof globalThis.CSS?.escape === "function" ? CSS.escape(value) : value.replace(/[^\w-]/g, "\\$&");
-function selector(element: PageElement) {
-  const parts = [];
-  for (
-    let node: PageElement | null = element;
-    node && node.nodeType === 1 && parts.length < 10;
-    node = node.parentElement
-  ) {
-    if (node.id && /^[A-Za-z][\w-]*$/.test(node.id) && document.querySelectorAll(`#${escape(node.id)}`).length === 1) {
-      parts.unshift(`#${escape(node.id)}`);
-      break;
-    }
-    let part = node.localName;
-    const classes = [...node.classList]
-      .filter(name => /^[A-Za-z][\w-]{0,40}$/.test(name) && !/\d{3,}/.test(name))
-      .slice(0, 3);
-    if (classes.length) part += `.${classes.map(escape).join(".")}`;
-    const parent: HTMLElement | null = node.parentElement;
-    if (parent && node.localName !== "body" && node.localName !== "html") {
-      const same = [...parent.children].filter(
-        child =>
-          child.localName === node.localName &&
-          (!classes.length || classes.every(name => child.classList.contains(name))),
-      );
-      if (same.length > 1)
-        part += `:nth-of-type(${[...parent.children].filter(child => child.localName === node.localName).indexOf(node) + 1})`;
-    }
-    parts.unshift(part);
-    if (node.localName === "body") break;
-  }
-  const value = parts.join(" > ");
-  try {
-    return document.querySelector(value) === element ? value : null;
-  } catch {
-    return null;
-  }
-}
-function path(element: PageElement) {
-  const parts = [];
-  for (let node: PageElement | null = element; node && node.nodeType === 1; node = node.parentElement)
-    parts.unshift(node.localName);
-  return (parts.length > 12 ? ["…", ...parts.slice(-11)] : parts).join(" > ");
-}
-function fixed(element: PageElement) {
-  for (
-    let node: PageElement | null = element, depth = 0;
-    node && node.nodeType === 1 && depth < 12;
-    node = node.parentElement, depth++
-  )
-    if (/^(fixed|sticky)$/.test(getComputedStyle(node).position)) return true;
-  return false;
-}
-const id = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-const viewport = () => ({ width: innerWidth, height: innerHeight });
-const page = (rect: Rect) => ({ x: rect.x + scrollX, y: rect.y + scrollY, width: rect.width, height: rect.height });
 function elementAt(x: number, y: number): PageElement | null {
   return document.elementsFromPoint(x, y).find(element => element !== layer?.host) ?? null;
 }

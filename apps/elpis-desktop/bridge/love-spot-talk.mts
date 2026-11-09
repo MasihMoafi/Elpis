@@ -1,25 +1,24 @@
 import { createLiveConversation } from "./love-spot-talk-live.mts";
-import { findModel, messageAttachments, validateSendBody, type Attachment, type SendBody } from "./love-spot-talk-send.mts";
+import {
+  findModel,
+  freshChatInput,
+  messageAttachments,
+  pictureAttachment,
+  turnMessages,
+  validateMatildaSettings,
+  validateSendBody,
+  type Attachment,
+  type SendBody,
+} from "./love-spot-talk-send.mts";
 import { finalAnswers, paintingsToRepair } from "./love-spot-talk-history.mts";
-import { createSpeechFeed } from "./love-spot-speech.mts";
+import { createTalkVoice } from "./love-spot-talk-voice.mts";
+import { createTalkWriting } from "./love-spot-talk-writing.mts";
 import { INSTRUCTIONS, drawing, SUBSCRIPTION_MODEL, SUBSCRIPTION_BLOCKED } from "./love-spot-talk-prompt.mts";
 export { SUBSCRIPTION_BLOCKED } from "./love-spot-talk-prompt.mts";
-import type {
-  Store,
-  Page,
-  Client,
-  Item,
-  Entry,
-  SpeechFeed,
-  Writing,
-  Thread,
-  HeartReaction,
-  EngineEvent,
-} from "./love-spot-talk-types.mts";
+import type { Store, Page, Client, Item, Entry, Thread, HeartReaction, EngineEvent } from "./love-spot-talk-types.mts";
 import { BridgeError, object, text } from "./validate.mts";
 import { agentColor } from "../lib/love-spot.ts";
 import { splitPainting, withoutPainting } from "./love-spot-painting.cts";
-import { createSentenceBuffer } from "./speech-buffer.mts";
 import { LOVE_SPOT_AUDIO } from "../lib/love-spot-audio.mts";
 import { replyPortrait } from "./matilda-face.cts";
 
@@ -51,17 +50,15 @@ export function createLoveSpotTalk({
   let work = Promise.resolve(),
     loading: Promise<void> | null | undefined,
     sendingPage: Page | undefined;
-  let matilda: { replies: boolean; model: string | null; provider: string | null } = {
+  let matilda: {
+    replies: boolean;
+    model: string | null;
+    provider: string | null;
+  } = {
     replies: true,
     model: null,
     provider: null,
   };
-  let muted = false,
-    available = false,
-    voiceReason: string | undefined = "",
-    voiceError = "",
-    writing: Writing | undefined,
-    speechFeed: SpeechFeed | undefined;
   const finished = new Set<string>();
   const listeners = new Set<(value: ReturnType<typeof snapshot> & { heartReaction?: HeartReaction }) => void>(),
     parts = new Map<string, Map<string, Item>>(),
@@ -70,6 +67,7 @@ export function createLoveSpotTalk({
     seen = new Map<string, string>();
   /** The panel shows her note, not the block she paints with. */
   const shown = (entry: Entry) => {
+    const writing = writer.now();
     const buffer = writing?.id === entry.turnId && writing.items.get(entry.item.id)?.buffer;
     return entry.item.type === "agentMessage"
       ? {
@@ -82,107 +80,42 @@ export function createLoveSpotTalk({
         }
       : entry;
   };
-  const voice = () => ({ enabled: available && !muted, available, reason: voiceReason, error: voiceError });
   const snapshot = () => ({
     thread,
     entries: entries.map(shown),
     busy: sending || !!activeTurnId,
     error,
-    voice: voice(),
+    voice: talkVoice.state(),
     matilda,
   });
   const publish = (heartReaction?: HeartReaction) => {
     if (!closed) for (const listen of listeners) listen(heartReaction ? { ...snapshot(), heartReaction } : snapshot());
   };
-  async function refreshVoice() {
-    if (!audio.available) {
-      available = false;
-      voiceReason = audio.reason;
-      voiceError = "";
-      speechFeed?.emit({ type: "stop" });
-      return voice();
-    }
-    try {
-      muted = await store.voice();
-    } catch {
-      available = false;
-      voiceReason = "Voice settings could not be read. Writing can continue.";
-      speechFeed?.emit({ type: "stop" });
-      return voice();
-    }
-    try {
-      available = (await client.voiceStatus()).available;
-      voiceReason = available ? "" : "Connect ChatGPT in Settings → Connections.";
-    } catch {
-      available = false;
-      voiceReason = "ChatGPT voice is unavailable. Check Settings → Connections.";
-    }
-    if (!available) speechFeed?.emit({ type: "stop" });
-    return voice();
-  }
-  function newSpeechFeed() {
-    speechFeed?.emit({ type: "stop" });
-    speechFeed = createSpeechFeed(
-      threadId,
-      () => voice().enabled && !voiceError,
-      message => {
-        voiceError = message;
+  /** Board writes happen in order; a failed one is reported and the next still runs. */
+  const queueReply = (args: Parameters<Store["reply"]>, failure = "") => {
+    work = work
+      .catch(() => {})
+      .then(() => store.reply(...args))
+      .catch(cause => {
+        error = cause.message || failure;
         publish();
-      },
-    );
-    return speechFeed;
-  }
-  function cancelWriting() {
-    if (!writing) return;
-    clearTimeout(writing.timer!);
-    for (const item of writing.items.values()) item.buffer.cancel();
-  }
-  function begin(turnId: string | null) {
-    if (writing?.id === turnId && !writing.done) return;
-    cancelWriting();
-    writing = { id: turnId, items: new Map(), page: sendingPage, timer: null, done: false };
-    voiceError = "";
-    newSpeechFeed();
-  }
-  function streamed(turnId: string, item: Item, delta?: string) {
-    if (finished.has(turnId) || (item.phase && item.phase !== "final_answer")) return;
-    if (!writing || writing.done) begin(turnId);
-    if (!writing!.id) writing!.id = turnId;
-    if (writing!.id !== turnId) return;
-    let stream = writing!.items.get(item.id);
-    if (!stream) {
-      let separator = writing!.items.size ? "\n\n" : "";
-      for (const previous of writing!.items.values()) previous.buffer.finish();
-      stream = {
-        raw: "",
-        buffer: createSentenceBuffer(chunk => {
-          speechFeed?.emit({ type: "text", text: separator + chunk });
-          separator = "";
-        }),
-      };
-      writing!.items.set(item.id, stream);
-    }
-    const next = delta ?? (item.text?.startsWith(stream.raw) ? item.text.slice(stream.raw.length) : "");
-    stream.raw += next;
-    stream.buffer.push(next);
-    if (!writing!.timer) {
-      const current = writing!;
-      current.timer = setTimeout(() => {
-        current.timer = null;
-        if (current.done) return;
-        const note = [...current.items.values()].map(item => item.buffer.text()).join("\n\n");
-        work = work
-          .catch(() => {})
-          .then(() =>
-            store.reply(turnId, note, agentColor, current.page ?? turnPages.get(turnId), [], { preview: true }),
-          )
-          .catch(cause => {
-            error = cause.message;
-            publish();
-          });
-      }, 300).unref();
-    }
-  }
+      });
+  };
+  const talkVoice = createTalkVoice({
+    audio,
+    store,
+    client,
+    threadId: () => threadId,
+    publish,
+  });
+  const writer = createTalkWriting({
+    voice: talkVoice,
+    finished,
+    page: () => sendingPage,
+    preview: (turnId, note, page) => {
+      queueReply([turnId, note, agentColor, page ?? turnPages.get(turnId), [], { preview: true }]);
+    },
+  });
   function upsert(turnId: string, item: Item) {
     const at = entries.findIndex(e => e.turnId === turnId && e.item.id === item.id);
     const entry = { turnId, item };
@@ -192,7 +125,7 @@ export function createLoveSpotTalk({
     if (loaded) return;
     if (loading) return loading;
     loading = (async () => {
-      await refreshVoice();
+      await talkVoice.refresh();
       matilda = await store.matildaSettings();
       threadId = await store.chat();
       // A chat deleted from the sidebar is gone for good once Elpis quits; the next message starts a new one.
@@ -208,7 +141,12 @@ export function createLoveSpotTalk({
         thread = result.thread;
         entries = [...result.data].reverse() as Entry[];
         const { scene } = await store.read();
-        await store.repairPaintings(await paintingsToRepair(client, threadId!, scene, { entries, nextCursor: result.nextCursor }));
+        await store.repairPaintings(
+          await paintingsToRepair(client, threadId!, scene, {
+            entries,
+            nextCursor: result.nextCursor,
+          }),
+        );
         const resumed = await client.resume(threadId, {});
         activeTurnId = resumed.activeTurnId ?? null;
       }
@@ -226,7 +164,8 @@ export function createLoveSpotTalk({
     if (method === "turn/started") {
       activeTurnId = params.turn.id;
       error = "";
-      if (!writing || writing.done) begin(params.turn.id);
+      const writing = writer.now();
+      if (!writing || writing.done) writer.begin(params.turn.id);
       else writing.id ??= params.turn.id;
     }
     if (method === "item/started" && params.item?.type === "agentMessage") upsert(params.turnId, params.item);
@@ -235,8 +174,8 @@ export function createLoveSpotTalk({
         entries = entries.filter(e => e.turnId !== params.turnId || !e.item.id.startsWith("love-prompt-"));
       upsert(params.turnId, params.item);
       if (params.item.type === "agentMessage") {
-        streamed(params.turnId, params.item);
-        if (writing?.id === params.turnId) writing!.items.get(params.item.id)?.buffer.finish();
+        writer.streamed(params.turnId, params.item);
+        if (writer.now()?.id === params.turnId) writer.now()!.items.get(params.item.id)?.buffer.finish();
         const turnParts = parts.get(params.turnId) ?? new Map();
         turnParts.set(params.item.id, params.item);
         parts.set(params.turnId, turnParts);
@@ -251,7 +190,7 @@ export function createLoveSpotTalk({
         text: (previous?.text ?? "") + params.delta,
       };
       upsert(params.turnId, item);
-      streamed(params.turnId, item, params.delta);
+      writer.streamed(params.turnId, item, params.delta);
     }
     if (method === "turn/completed") {
       const turn = params.turn;
@@ -260,33 +199,27 @@ export function createLoveSpotTalk({
       activeTurnId = null;
       const completed = turn.status === "completed" && !turn.error;
       const recorded = [...(parts.get(turn.id)?.values() ?? [])];
-      const messages = (
-        turn.items?.length
-          ? turn.items
-          : recorded.length
-            ? recorded
-            : entries.filter(entry => entry.turnId === turn.id).map(entry => entry.item)
-      ).filter(item => item.type === "agentMessage");
+      const messages = turnMessages(turn, recorded, entries);
       for (const item of messages) {
         upsert(turn.id, item);
-        if (completed) streamed(turn.id, item);
+        if (completed) writer.streamed(turn.id, item);
       }
-      const partial =
-        writing?.id === turn.id
-          ? [...writing!.items.values()]
-              .map(item => item.buffer.text())
-              .join("\n\n")
-              .trim()
-          : "";
-      if (writing?.id === turn.id) {
-        writing!.done = true;
-        clearTimeout(writing!.timer!);
-        for (const item of writing!.items.values()) {
+      const writing = writer.now()?.id === turn.id ? writer.now()! : undefined;
+      const partial = writing
+        ? [...writing.items.values()]
+            .map(item => item.buffer.text())
+            .join("\n\n")
+            .trim()
+        : "";
+      if (writing) {
+        writing.done = true;
+        clearTimeout(writing.timer!);
+        for (const item of writing.items.values()) {
           if (completed) item.buffer.finish();
           else item.buffer.cancel();
         }
       }
-      speechFeed?.emit({ type: completed ? "done" : "stop" });
+      talkVoice.emit({ type: completed ? "done" : "stop" });
       finished.add(turn.id);
       if (finished.size > 100) finished.delete(finished.values().next().value!);
       const answers = finalAnswers(messages);
@@ -298,45 +231,33 @@ export function createLoveSpotTalk({
         answers.findLast(item => ["kissSoft", "kissPuckered"].includes(replyPortrait(item.text).expression))) as
         Item | undefined;
       if (affectionate?.id && threadId)
-        heartReaction = { threadId, itemId: affectionate.id, portrait: replyPortrait(affectionate.text).expression };
+        heartReaction = {
+          threadId,
+          itemId: affectionate.id,
+          portrait: replyPortrait(affectionate.text).expression,
+        };
       parts.delete(turn.id);
       error = turn.error?.message || (turn.status === "failed" ? "Love Spot could not get a reply. Try again." : "");
       const { note, shapes } = splitPainting(final);
       if (turn.status === "completed" && !turn.error && (note || shapes.length)) {
         const page = turnPages.get(turn.id) ?? sendingPage;
-        work = work
-          .catch(() => {})
-          .then(() => store.reply(turn.id, note, agentColor, page, shapes))
-          .catch(cause => {
-            error = cause.message || "The reply could not be added to the board.";
-            publish();
-          });
+        queueReply([turn.id, note, agentColor, page, shapes], "The reply could not be added to the board.");
       } else if (!completed && partial) {
         const page = turnPages.get(turn.id) ?? sendingPage;
-        work = work
-          .catch(() => {})
-          .then(() => store.reply(turn.id, partial, agentColor, page))
-          .catch(cause => {
-            error = cause.message;
-            publish();
-          });
+        queueReply([turn.id, partial, agentColor, page]);
       }
       turnPages.delete(turn.id);
     }
     if (method === "error" && !params.willRetry) {
       error = params.error?.message || params.message || "Love Spot could not get a reply.";
-      speechFeed?.emit({ type: "stop" });
-      cancelWriting();
+      talkVoice.emit({ type: "stop" });
+      writer.cancel();
     }
     publish(heartReaction);
   };
   client.on("event", event);
   async function startFresh(input: Record<string, unknown>) {
-    object(input, ["threadId", "model", "provider", "cwd", "permissions", "persona"]);
-    const sourceId = text(input.threadId, "thread ID", 200);
-    const model = input.model === undefined ? undefined : text(input.model, "model", 200);
-    const provider = input.provider === undefined ? undefined : text(input.provider, "provider", 200);
-    const persona = input.persona === undefined ? "" : text(input.persona, "persona", 4000);
+    const { sourceId, model, provider, persona } = freshChatInput(input);
     await load();
     await work;
 
@@ -366,8 +287,8 @@ export function createLoveSpotTalk({
     if (!created || nextId !== created.thread.id)
       throw new BridgeError("Love Spot changed in another window. Try again.", 409);
 
-    speechFeed?.emit({ type: "stop" });
-    cancelWriting();
+    talkVoice.emit({ type: "stop" });
+    writer.cancel();
     threadId = nextId;
     thread = created.thread;
     entries = [];
@@ -376,7 +297,7 @@ export function createLoveSpotTalk({
     error = "";
     stale = undefined;
     loaded = true;
-    writing = undefined;
+    writer.reset();
     sendingPage = undefined;
     publish();
     return { thread, permissions: created.permissions ?? input.permissions };
@@ -387,11 +308,7 @@ export function createLoveSpotTalk({
     /** Replies off: the reply she is writing stops, and her voice with it. */
     /** The one Matilda setting: on or off, and her model. Off also stops the reply she is writing. */
     async setMatilda(body: Record<string, unknown>) {
-      object(body, ["replies", "model", "provider"]);
-      if (body.replies !== undefined && typeof body.replies !== "boolean")
-        throw new BridgeError("Invalid Matilda setting");
-      for (const key of ["model", "provider"])
-        if (body[key] !== undefined && body[key] !== null) text(body[key], key, 200);
+      validateMatildaSettings(body);
       matilda = await store.matildaSettings(body);
       if (!matilda.replies) await this.stop();
       publish();
@@ -403,7 +320,7 @@ export function createLoveSpotTalk({
     },
     async stop() {
       await load();
-      speechFeed?.emit({ type: "stop" });
+      talkVoice.emit({ type: "stop" });
       if (threadId && activeTurnId) await client.interrupt(threadId, { turnId: activeTurnId });
       return snapshot();
     },
@@ -413,52 +330,31 @@ export function createLoveSpotTalk({
     },
     async voice() {
       await load();
-      return refreshVoice();
+      return talkVoice.refresh();
     },
     async setVoice(body: Record<string, unknown>) {
       object(body, ["enabled"]);
       if (typeof body.enabled !== "boolean") throw new BridgeError("Invalid Voice preference");
-      if (!audio.available) throw new BridgeError(audio.reason, 403);
+      talkVoice.requireAudio();
       await load();
-      if (!body.enabled) speechFeed?.emit({ type: "stop" });
-      for (const item of writing?.items.values() ?? []) item.buffer.discard();
-      await store.voice(!body.enabled);
-      await refreshVoice();
-      if (body.enabled && available && writing && !writing.done) {
-        for (const item of writing.items.values()) item.buffer.discard();
-        voiceError = "";
-        newSpeechFeed();
-      }
-      publish();
-      return voice();
+      return talkVoice.set(body.enabled, writer.now());
     },
     async speech() {
       await load();
-      if (!available) throw new BridgeError(voiceReason, 403);
-      if (muted) throw new BridgeError("Matilda Voice is off.", 409);
-      if (voiceError) throw new BridgeError(voiceError, 409);
-      if (!speechFeed) throw new BridgeError("Matilda has no new reply to speak.", 409);
-      return speechFeed;
+      return talkVoice.speech();
     },
     async conversation(persona = "") {
       if (persona) text(persona, "persona", 4000);
-      await refreshVoice();
-      if (!available) throw new BridgeError(voiceReason, 403);
-      if (muted) throw new BridgeError("Matilda Voice is off.", 409);
+      await talkVoice.refresh();
+      talkVoice.requireLive();
       const board = await store.read();
       return createLiveConversation({
         scene: board.scene,
         persona,
         store,
-        silenced: () => muted || closed,
+        silenced: () => talkVoice.silenced() || closed,
         saveReply: (turnId, words, preview) => {
-          work = work
-            .catch(() => {})
-            .then(() => store.reply(turnId, words, agentColor, board.scene.page, [], { preview }))
-            .catch(cause => {
-              error = cause.message;
-              publish();
-            });
+          queueReply([turnId, words, agentColor, board.scene.page, [], { preview }]);
         },
       });
     },
@@ -484,7 +380,7 @@ export function createLoveSpotTalk({
       try {
         await load();
         await work;
-        await refreshVoice();
+        await talkVoice.refresh();
         if (activeTurnId) throw new BridgeError("Love Spot is already replying. Wait for this turn.", 409);
         const settings = await client.settings(),
           model = body.model || settings.main.model;
@@ -515,18 +411,16 @@ export function createLoveSpotTalk({
             ? await store.currentPicture()
             : await store.boardPicture(body.revision);
         const picture = unchanged ? null : exported;
-        if (picture)
-          attachments.push({
-            id: "love-spot-picture",
-            name: "view.png",
-            type: "image",
-            mimeType: "image/png",
-            dataUrl: `data:image/png;base64,${picture}`,
-          });
+        if (picture) attachments.push(pictureAttachment(picture));
         // A synthetic drawing notice without a new picture gives her nothing new to look at. Wait silently;
         // actual written messages still go through, and the next changed picture can be sent normally.
         if (!picture && drawingOnly && body.text.trim() === "I drew something on the board.")
-          return { ...snapshot(), busy: false, turn: null, waitingForPicture: true };
+          return {
+            ...snapshot(),
+            busy: false,
+            turn: null,
+            waitingForPicture: true,
+          };
         if (!threadId) {
           threadId = await store.chat(
             async cwd => {
@@ -554,7 +448,7 @@ export function createLoveSpotTalk({
             .catch(cause => console.warn(`Love Spot stays at normal speed: ${cause.message}`));
         }
         sendingPage = board.scene.page;
-        begin(null);
+        writer.begin(null);
         const result = (await client.send(threadId, {
           text: body.text,
           model,
@@ -563,7 +457,7 @@ export function createLoveSpotTalk({
           automatic: true,
         })) as { turn: { id: string } };
         if (picture) seen.set(threadId!, drawn);
-        writing!.id ??= result.turn.id;
+        writer.now()!.id ??= result.turn.id;
         turnPages.set(result.turn.id, sendingPage);
         // Some local providers finish before send returns; do not revive their completed turn.
         if (finishedTurnId !== result.turn.id) activeTurnId = result.turn.id;
@@ -576,7 +470,7 @@ export function createLoveSpotTalk({
         return { ...snapshot(), busy: !!activeTurnId, turn: result.turn };
       } catch (cause) {
         error = (cause as Error).message;
-        speechFeed?.emit({ type: "stop" });
+        talkVoice.emit({ type: "stop" });
         throw cause;
       } finally {
         sending = false;
@@ -593,8 +487,8 @@ export function createLoveSpotTalk({
     idle: () => work,
     close() {
       closed = true;
-      speechFeed?.emit({ type: "stop" });
-      cancelWriting();
+      talkVoice.emit({ type: "stop" });
+      writer.cancel();
       client.off("event", event);
       listeners.clear();
     },

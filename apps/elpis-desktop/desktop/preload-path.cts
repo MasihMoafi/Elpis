@@ -7,6 +7,8 @@ const { stripTypeScriptTypes }: typeof import("node:module") = require("node:mod
 
 // Sandboxed Electron preloads run as scripts, so Node cannot strip their types on load.
 const names = new Set(["preload", "browser-page-preload", "quick-entry-preload", "screenshot-popup-preload"]);
+// A sandboxed preload cannot require its neighbours, so its local modules are bundled in front of it.
+const bundled: Record<string, string[]> = { "browser-page-preload": ["browser-page-locate"] };
 let directory: string | undefined;
 
 function preloadPathImpl(name: string): string {
@@ -18,8 +20,17 @@ function preloadPathImpl(name: string): string {
   }
   const target = path.join(directory, `${name}.cjs`);
   if (!fs.existsSync(target)) {
-    const source = fs.readFileSync(path.join(__dirname, `${name}.cts`), "utf8");
-    fs.writeFileSync(target, stripTypeScriptTypes(source), { mode: 0o600 });
+    const read = (file: string) => stripTypeScriptTypes(fs.readFileSync(path.join(__dirname, `${file}.cts`), "utf8"));
+    const modules = (bundled[name] ?? [])
+      .map(
+        file =>
+          `local["./${file}.cts"] = (() => { const module = { exports: {} }; ${read(file)}\nreturn module.exports; })();`,
+      )
+      .join("\n");
+    const source = modules
+      ? `const local = {};\n${modules}\n((require) => {${read(name)}\n})(id => local[id] ?? require(id));`
+      : read(name);
+    fs.writeFileSync(target, source, { mode: 0o600 });
   }
   return target;
 }

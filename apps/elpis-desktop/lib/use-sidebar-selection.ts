@@ -9,32 +9,19 @@ type Inputs = {
   openThread: (thread: Thread) => Promise<void>;
 };
 
-export function useSidebarSelection({
-  selected,
-  openSplit,
-  openThread,
-}: Inputs) {
+export function useSidebarSelection({ selected, openSplit, openThread }: Inputs) {
   /** Chats marked with Ctrl+click or Shift+click in the sidebar; `markAnchor` is where a Shift range starts. */
   const [marked, setMarked] = useState<string[]>([]);
   const markAnchor = useRef<string | null>(null);
   const threadList = useRef<HTMLDivElement>(null);
-  useSteadyRowList(
-    threadList,
-    ".thread-row, .project-row, .section-label-row, .sidebar-group-row, .thread-more",
-  );
+  useSteadyRowList(threadList, ".thread-row, .project-row, .section-label-row, .sidebar-group-row, .thread-more");
   /** The sidebar's chat buttons in screen order (a project's chats also appear under Recents). */
   const rowLinks = () => [
-    ...(threadList.current?.querySelectorAll<HTMLButtonElement>(
-      ".thread-row > .thread-link",
-    ) ?? []),
+    ...(threadList.current?.querySelectorAll<HTMLButtonElement>(".thread-row > .thread-link") ?? []),
   ];
-  const rowOf = (element: Element | null) =>
-    element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
+  const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
-  function clickRow(
-    thread: Thread,
-    event: React.MouseEvent<HTMLButtonElement>,
-  ) {
+  function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
     if (event.altKey) {
       event.preventDefault();
       openSplit(thread);
@@ -48,16 +35,8 @@ export function useSidebarSelection({
       ),
     ];
     if (event.ctrlKey || event.metaKey) {
-      const base = marked.length
-        ? marked
-        : selected && ids.includes(selected.id)
-          ? [selected.id]
-          : [];
-      setMarked(
-        base.includes(thread.id)
-          ? base.filter((id) => id !== thread.id)
-          : [...base, thread.id],
-      );
+      const base = marked.length ? marked : selected && ids.includes(selected.id) ? [selected.id] : [];
+      setMarked(base.includes(thread.id) ? base.filter(id => id !== thread.id) : [...base, thread.id]);
       markAnchor.current = thread.id;
     } else if (event.shiftKey) {
       const to = ids.indexOf(thread.id),

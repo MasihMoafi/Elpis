@@ -172,9 +172,22 @@ export declare const nativeBounds: typeof nativeBoundsImpl;
 export declare const loadFailure: typeof loadFailureImpl;
 export declare const pageSecurity: typeof pageSecurityImpl;
 export declare const zoomStep: typeof zoomStepImpl;
+export declare const isSignInPage: typeof isSignInPageImpl;
 export declare const popupWebPreferences: typeof popupWebPreferencesImpl;
 export declare const lockPopup: typeof lockPopupImpl;
+/** Sign-in pages only: Claude's, OpenAI's, and CloudRoom's desktop sign-in (1 Nov, bridge/cloudroom-vm.mts). */
+function isSignInPageImpl(url: string) {
+  const target = new URL(url);
+  const claude =
+    ["claude.com", "claude.ai", "console.anthropic.com", "platform.claude.com"].includes(target.hostname) &&
+    target.pathname.includes("oauth/authorize");
+  const openai = ["auth.openai.com", "chatgpt.com", "login.openai.com"].includes(target.hostname);
+  const cloudroom = target.hostname === "www.cloudroom.dev" && target.pathname === "/desktop";
+  return target.protocol === "https:" && (claude || openai || cloudroom);
+}
+
 module.exports = {
+  isSignInPage: isSignInPageImpl,
   browserUrl: browserUrlImpl,
   trustedBrowserSender: trustedBrowserSenderImpl,
   nativeBounds: nativeBoundsImpl,
