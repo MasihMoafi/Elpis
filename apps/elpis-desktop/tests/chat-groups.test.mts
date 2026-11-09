@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GROUPS_KEY, addGroup, chatSelectionRoots, chatSubtree, deleteGroup, emptyGroups, groupNameProblem, groupSections, holdChatOrder, isDefaultView, staysWithChatList, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, renameGroup, sidebarParents, sortChats, toggleCollapsed, writeGroups } from '../lib/chat-groups.ts';
+import { GROUPS_KEY, chatSelectionRoots, chatSubtree, emptyGroups, groupSections, holdChatOrder, isDefaultView, staysWithChatList, moveChats, placeChat, prioritizeChats, putChatsUnder, readGroups, sidebarParents, sortChats, writeGroups } from '../lib/chat-groups.ts';
 import type { ChatGroups } from '../lib/chat-groups.ts';
 
 const storage = (initial: Record<string, string> = {}) => { const values = new Map(Object.entries(initial)); return { values, getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) }; };
@@ -73,40 +73,8 @@ test('nothing saved, or something unreadable, is no groups, ungrouped and in las
   assert.equal(isDefaultView(emptyGroups()), true);
 });
 
-test('a new group comes last, trimmed, and switches the list to custom groups; a name must be new and not empty', () => {
-  const one = addGroup(emptyGroups(), '  Work ', 'g1');
-  assert.deepEqual(one.groups, [{ id: 'g1', name: 'Work' }]);
-  assert.equal(one.groupBy, 'custom');
-  assert.equal(isDefaultView(one), false);
-  const two = addGroup(one, 'Home', 'g2');
-  assert.deepEqual(two.groups.map(group => group.name), ['Work', 'Home']);
-  assert.equal(groupNameProblem(two, '   '), 'Name the group.');
-  assert.equal(groupNameProblem(two, ' work '), 'A group with this name already exists.');
-  assert.equal(groupNameProblem(two, 'Work', 'g1'), null, 'a group may keep its own name when renamed');
-  assert.equal(groupNameProblem(two, 'Errands'), null);
-  assert.equal(groupNameProblem(two, 'x'.repeat(61)), 'Use 60 characters or fewer.');
-});
-
-test('chats move into a group, to another, and out of it; renaming keeps them; deleting ungroups them and forgets its collapse', () => {
-  let state = addGroup(addGroup(emptyGroups(), 'Work', 'g1'), 'Home', 'g2');
-  state = moveChats(state, ['a', 'b'], 'g1');
-  assert.deepEqual(state.members, { a: 'g1', b: 'g1' });
-  state = moveChats(state, ['b'], 'g2');
-  assert.deepEqual(state.members, { a: 'g1', b: 'g2' });
-  state = moveChats(state, ['a'], null);
-  assert.deepEqual(state.members, { b: 'g2' });
-  assert.deepEqual(moveChats(state, ['c'], 'missing').members, { b: 'g2' }, 'an unknown group moves nothing');
-  state = renameGroup(state, 'g2', '  House ');
-  assert.deepEqual(state.groups, [{ id: 'g1', name: 'Work' }, { id: 'g2', name: 'House' }]);
-  assert.deepEqual(state.members, { b: 'g2' });
-  state = toggleCollapsed(state, 'g2');
-  assert.deepEqual(state.collapsed, ['g2']);
-  assert.deepEqual(toggleCollapsed(state, 'g2').collapsed, []);
-  state = deleteGroup(state, 'g2');
-  assert.deepEqual(state.groups, [{ id: 'g1', name: 'Work' }]);
-  assert.deepEqual(state.members, {});
-  assert.deepEqual(state.collapsed, []);
-});
+// Groups can no longer be created in the app; saved state with groups is built directly.
+const addGroup = (state: ChatGroups, name: string, id: string): ChatGroups => ({ ...state, groups: [...state.groups, { id, name }], groupBy: 'custom' });
 
 test('sort: last activity keeps the given order, date created is newest first, name is A to Z; ties keep their order', () => {
   const list = [chat('a', 'beta', 100), chat('b', 'Alpha 10', 300), chat('c', 'alpha 9', undefined), chat('d', 'Gamma', 200), chat('e', 'beta', 300)];

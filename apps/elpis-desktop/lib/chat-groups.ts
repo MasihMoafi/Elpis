@@ -23,7 +23,6 @@ export type ChatGroups = {
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 
 export const GROUPS_KEY = "elpis-chat-groups-v1";
-const NAME_LIMIT = 60;
 const SORT_BY: readonly SortBy[] = ["recency", "created", "name", "manual"];
 
 export const emptyGroups = (): ChatGroups => ({
@@ -176,40 +175,6 @@ export function writeGroups(state: ChatGroups, storage: Storage): boolean {
   }
 }
 
-/** Why `name` cannot name a group (empty, too long, or another group's, in any case), or null. `except` is the group
- * being renamed, which may keep its own name. */
-export function groupNameProblem(state: ChatGroups, name: string, except?: string): string | null {
-  const wanted = name.trim();
-  if (!wanted) return "Name the group.";
-  if (wanted.length > NAME_LIMIT) return `Use ${NAME_LIMIT} characters or fewer.`;
-  const taken = state.groups.some(
-    group => group.id !== except && group.name.toLocaleLowerCase() === wanted.toLocaleLowerCase(),
-  );
-  return taken ? "A group with this name already exists." : null;
-}
-
-/** A new group after the others. The list then shows groups, as Claude's does after "Create group". */
-export function addGroup(state: ChatGroups, name: string, id: string): ChatGroups {
-  return { ...state, groups: [...state.groups, { id, name: name.trim().slice(0, NAME_LIMIT) }], groupBy: "custom" };
-}
-
-export function renameGroup(state: ChatGroups, id: string, name: string): ChatGroups {
-  return {
-    ...state,
-    groups: state.groups.map(group => (group.id === id ? { ...group, name: name.trim().slice(0, NAME_LIMIT) } : group)),
-  };
-}
-
-/** The group goes; its chats are ungrouped, not deleted. */
-export function deleteGroup(state: ChatGroups, id: string): ChatGroups {
-  return {
-    ...state,
-    groups: state.groups.filter(group => group.id !== id),
-    members: Object.fromEntries(Object.entries(state.members).filter(([, group]) => group !== id)),
-    collapsed: state.collapsed.filter(group => group !== id),
-  };
-}
-
 /** Puts the chats in `groupId`, or takes them out of their groups with null. An unknown group moves nothing. */
 export function moveChats(state: ChatGroups, threadIds: string[], groupId: string | null): ChatGroups {
   if (groupId !== null && !state.groups.some(group => group.id === groupId)) return state;
@@ -219,13 +184,6 @@ export function moveChats(state: ChatGroups, threadIds: string[], groupId: strin
     else members[id] = groupId;
   }
   return { ...state, members };
-}
-
-export function toggleCollapsed(state: ChatGroups, id: string): ChatGroups {
-  return {
-    ...state,
-    collapsed: state.collapsed.includes(id) ? state.collapsed.filter(group => group !== id) : [...state.collapsed, id],
-  };
 }
 
 const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
