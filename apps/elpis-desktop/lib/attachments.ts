@@ -5,7 +5,7 @@ export type Attachment =
 type DraftStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 /** What the one "Add files or photos" chooser shows: pictures, PDFs and text. */
 export const ATTACHMENT_ACCEPT =
-  "image/png,image/jpeg,image/webp,image/gif,application/pdf,text/*,.txt,.md,.csv,.json,.yaml,.yml,.toml,.log,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.sh,.sql";
+  "image/png,image/jpeg,image/webp,image/gif,application/pdf,application/zip,.zip,text/*,.txt,.md,.csv,.json,.yaml,.yml,.toml,.log,.xml,.html,.css,.js,.jsx,.ts,.tsx,.py,.rs,.sh,.sql";
 const PREFIX = "elpis-attachments-v1:";
 const MiB = 1024 * 1024;
 /** What one message carries, the same numbers as bridge/attachments.mts (a test compares them).
@@ -205,7 +205,7 @@ export async function attachmentFromFile(
   file: File,
   extract?: (body: {
     name: string;
-    mimeType: "application/pdf";
+    mimeType: "application/pdf" | "application/zip";
     dataUrl: string;
   }) => Promise<{ attachment: Attachment }>,
 ): Promise<Attachment> {
@@ -245,11 +245,20 @@ export async function attachmentFromFile(
     });
     return validatedAttachment(result.attachment);
   }
+  if (file.type === "application/zip" || file.type === "application/x-zip-compressed" || /\.zip$/i.test(file.name)) {
+    if (!extract) throw Error("Zip files can\u2019t be unpacked here.");
+    const result = await extract({
+      name: file.name,
+      mimeType: "application/zip",
+      dataUrl: await fileDataUrl(file, "application/zip"),
+    });
+    return validatedAttachment(result.attachment);
+  }
   if (
     !file.type.startsWith("text/") &&
     !/\.(txt|md|markdown|csv|json|ya?ml|toml|log|xml|html?|css|[cm]?jsx?|tsx?|py|rs|sh|sql)$/i.test(file.name)
   )
-    throw Error(`${quoted(file.name)} can\u2019t be attached. Choose a PNG, JPEG, WebP, GIF, PDF, or text file.`);
+    throw Error(`${quoted(file.name)} can\u2019t be attached. Choose a PNG, JPEG, WebP, GIF, PDF, zip, or text file.`);
   const wordy = () =>
     Error(
       `${quoted(file.name)} has more text than a message takes: up to ${ATTACHMENT_LIMITS.textChars.toLocaleString("en-US")} characters, with its own words.`,

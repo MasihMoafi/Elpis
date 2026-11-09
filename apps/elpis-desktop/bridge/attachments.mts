@@ -261,3 +261,5 @@ export async function recordedMedia(input: { type?: unknown; path?: unknown } | 
     await file?.close();
   }
 }
+
+export { fields as attachmentFields, name as attachmentName, dataBytes as attachmentBytes };

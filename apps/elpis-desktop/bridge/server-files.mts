@@ -1,3 +1,4 @@
+import { extractZip } from "./attachment-zip.mts";
 import { BridgeError, object } from "./validate.mts";
 import { ATTACHMENT_BODY_LIMIT, PDF_BODY_LIMIT, extractPdf } from "./attachments.mts";
 import { devServerRequest } from "./dev-servers.mts";
@@ -87,7 +88,8 @@ export async function handleFileRoutes(
     return true;
   }
   if (url.pathname === "/api/attachments/extract" && method === "POST") {
-    json(response, 200, await extractPdf(await body(request, PDF_BODY_LIMIT)));
+    const upload = await body(request, PDF_BODY_LIMIT);
+    json(response, 200, await ((upload as { mimeType?: unknown }).mimeType === "application/zip" ? extractZip(upload) : extractPdf(upload)));
     return true;
   }
   if (url.pathname === "/api/folders" && method === "GET") {

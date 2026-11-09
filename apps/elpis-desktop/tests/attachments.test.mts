@@ -29,7 +29,7 @@ test('file snapshots preserve text, extract PDFs explicitly, and reject unknown 
   let calls = 0;
   assert.deepEqual(await attachmentFromFile(pdf, async body => { calls++; assert.equal(body.name, 'book.pdf'); assert.match(body.dataUrl, /^data:application\/pdf;base64,/); return { attachment: text }; }), text);
   assert.equal(calls, 1);
-  await assert.rejects(attachmentFromFile(new File(['binary'], 'archive.zip', { type: 'application/zip' })), /supported|text/i);
+  await assert.rejects(attachmentFromFile(new File(['binary'], 'archive.rar', { type: 'application/vnd.rar' })), /supported|text/i);
 });
 test('inline previews accept bounded matching data media and never remote URLs', () => {
   assert.equal(inlineMediaUrl(png, 'image'), png);
@@ -107,7 +107,7 @@ test('attachFiles adds each file that fits, names each that does not, and reads 
   assert.equal(added.length, 20); assert.deepEqual(added.map(part => part.name), files.slice(0, 20).map(file => file.name));
   assert.equal(problems.length, 1); const problem = problems[0]; assert.ok(problem); assert.match(problem, /20 files/); assert.match(problem, /file-20\.txt, file-21\.txt/);
   const huge = new File([new Uint8Array(30 * MiB + 1)], 'huge.bin', { type: 'application/octet-stream' });
-  const mixed = await lib.attachFiles([], [new File(['a'], 'a.txt', { type: 'text/plain' }), huge, new File(['zip'], 'x.zip', { type: 'application/zip' }), new File(['b'], 'b.md', { type: 'text/markdown' })]);
+  const mixed = await lib.attachFiles([], [new File(['a'], 'a.txt', { type: 'text/plain' }), huge, new File(['zip'], 'x.rar', { type: 'application/vnd.rar' }), new File(['b'], 'b.md', { type: 'text/markdown' })]);
   assert.deepEqual(mixed.added.map(part => part.name), ['a.txt', 'b.md']);
-  assert.equal(mixed.problems.length, 2); const [firstProblem, secondProblem] = mixed.problems; assert.ok(firstProblem && secondProblem); assert.match(firstProblem, /huge\.bin/); assert.match(firstProblem, /30 MB/); assert.match(secondProblem, /x\.zip/);
+  assert.equal(mixed.problems.length, 2); const [firstProblem, secondProblem] = mixed.problems; assert.ok(firstProblem && secondProblem); assert.match(firstProblem, /huge\.bin/); assert.match(firstProblem, /30 MB/); assert.match(secondProblem, /x\.rar/);
 });

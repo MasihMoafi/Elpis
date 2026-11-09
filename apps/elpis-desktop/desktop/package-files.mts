@@ -125,6 +125,7 @@ export const productionFiles = [
   "bridge/tools.mts",
   "bridge/runtime-paths.mts",
   "bridge/transcription.mts",
+  "bridge/attachment-zip.mts",
   "bridge/attachments.mts",
   "bridge/trash.mts",
   "bridge/workflow-presets.mts",
