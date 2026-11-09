@@ -1,171 +1,18 @@
 "use client";
 
-import { flushSync } from "react-dom";
-import { useEffect, useRef } from "react";
-import { newChatFolder } from "@/lib/preferences";
-import { useConversationTranscript } from "@/components/use-conversation-transcript";
-import { useSlashMenu } from "@/components/slash-menu";
-import { useMentionMenu } from "@/components/mention-menu";
-import { openFile, setFileView } from "@/lib/files-pane";
-import type { View } from "@/lib/workspace-types";
-import { usePersonal } from "@/components/personal-tip";
-import { type Thread } from "@/lib/api";
-import { createSlashCommands } from "@/lib/slash-commands";
-import { createChatSend } from "@/lib/chat-send";
-import { createProjectActions } from "@/lib/project-actions";
-import { createEarlierMessages } from "@/lib/earlier-messages";
-import { createMessageActions } from "@/lib/message-actions";
-import { createCommandActions } from "@/lib/command-actions";
-import { createConversationSettings } from "@/lib/conversation-settings";
-import { createConversationActions } from "@/lib/conversation-actions";
-import { createReplyActions } from "@/lib/reply-actions";
-import { createApprovalActions } from "@/lib/approval-actions";
-import { createShellSend } from "@/lib/shell-send";
-import { useDesktopEntryPoints } from "@/lib/use-desktop-entry-points";
-import { createSideChatActions } from "@/lib/side-chat-actions";
-import { sessionRows as makeSessionRows } from "@/lib/session-rows";
-import { useComposerPanelScope } from "@/lib/use-composer-panels";
-import { useLoveScreenshots } from "@/lib/use-love-screenshots";
-import { sessionWindowApi } from "@/lib/use-desktop-capabilities";
-import { createWorkspaceControls } from "@/lib/workspace-controls";
-import type { WorkspaceConversation } from "./use-workspace-conversation";
+import { useWorkspaceChatActions } from "./use-workspace-chat-actions";
+import { useWorkspaceCommands } from "./use-workspace-commands";
 
-export function useWorkspaceActions(previous: WorkspaceConversation) {
+export function useWorkspaceActions(props: Parameters<typeof useWorkspaceChatActions>[0]) {
   const {
-    setError,
-    projectState,
-    conversations,
-    runtime,
-    chatGroupsRef,
-    commitGroups,
-    setMarked,
-    viewRef,
-    selected,
-    openNewChat,
-    ready,
-    show,
-    selectedRef,
-    request,
-    setBusy,
-    loadThread,
-    loadChildren,
-    removeThreads,
-    noteKept,
-    options,
-    connected,
-    busy,
-    projectChanging,
-    planMode,
-    permissionMode,
-    composer,
-    attachmentState,
-    draftStore,
-    session,
-    readOnlyRun,
-    editDraft,
-    canSendFollowUp,
-    imageBlocked,
-    missingChoiceNotice,
-    needsModelId,
-    newDraftKey,
-    tabsRef,
-    activeTurn,
-    continues,
-    preferences,
-    newChoice,
-    newWorktree,
-    browser,
-    pending,
-    history,
-    stickToBottom,
-    rewindSwitch,
-    replacementOptions,
-    entries,
-    nextTurn,
-    submitDraft,
-    setRuntimeNotices,
-    setMessageEdits,
-    setNextTurn,
-    setEntries,
-    setThreads,
-    setRewindBusy,
-    setRewindActions,
-    setMessageVersions,
-    approvalDrafts,
-    approvalSubmissions,
-    setLoading,
-    scroll,
-    restoreScroll,
-    openThread,
-    threads,
-    related,
-    panels,
-    pages,
-    workspacePanels,
-    cwd,
-    newChat,
-    setRewindTurn,
-    messageVersions,
-    shownEntries,
-    desktop,
-    side,
-    messageEdits,
-    pendingDrafts,
-    replaceable,
-    replacementOptionsKey,
-    newestPrompt,
-    regenerate,
-    voiceBusy,
-    loveSpotAudioReason,
-    sideRequests,
-    setSideChat,
-    textRef,
-    turnEfforts,
-    turnEffort,
-    turnModel,
-    models,
-    providerSettings,
-    commandNoticeOwner,
-    fastNoticeOwner,
-    setSlashNotice,
-    setEffort,
-    setPanel,
-    queuedCompact,
-    setQueuedCompact,
-    selectedModel,
-    setRenameRequest,
-    clearChat,
-    setResumeOpen,
-    team,
-    panelShown,
-    openAgentsPanel,
-    text,
-    caret,
-    pickedMentions,
-    setCaret,
-    composerRef,
-    view,
     forward,
-  } = previous;
-  const openSessionWindow = (thread?: Thread) => {
-    void sessionWindowApi()?.(thread?.id).catch(cause => setError(String(cause)));
-  };
-  const projectActions = createProjectActions({
-    projectState,
-    conversations,
-    runtime,
-    chatGroupsRef,
-    commitGroups,
-    placementReveal: (...args) => forward.placementReveal(...args),
-    revealPlacement: (...args) => forward.revealPlacement(...args),
-    setMarked,
-    viewRef,
-    selected,
-    openNewChat,
-    setError,
-    getNativeParents: () => forward.nativeParents,
-  });
-  const {
+    rememberModes,
+    noteStartedMode,
+    send,
+    loadVersions,
+    previous,
+    openSessionWindow,
+    projectActions,
     assignProject,
     selectProject,
     newProjectFrom,
@@ -174,346 +21,39 @@ export function useWorkspaceActions(previous: WorkspaceConversation) {
     moveChat,
     moveChatToFolder,
     removeProject,
-  } = projectActions;
-  useLoveScreenshots(ready, show, setError);
-  const { forkFrom, continueHere, stop, deleteThread, renameThread, archiveThread, unarchived } =
-    createConversationActions({
-      conversations,
-      runtime,
-      selectedRef,
-      request,
-      setBusy,
-      setError,
-      loadThread,
-      loadChildren,
-      restoreComposerFocus: origin => restoreComposerFocus(origin),
-      removeThreads,
-      noteKept,
-    });
-  const conversationSettings = createConversationSettings({
-    selected,
-    selectedRef,
-    request,
-    runtime,
-    conversations,
-    options,
-    ready,
-    connected,
-    busy,
-    projectChanging,
-    planMode,
-    permissionMode,
-    setError,
-    focusComposer: () => focusComposer(),
-    restoreComposerFocus: origin => restoreComposerFocus(origin),
-  });
-  const { rememberModes, setPlan, answerPlan, noteStartedMode, saveEffort } = conversationSettings;
-  /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
-   * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
-  const send = createChatSend({
-    projectState,
-    composer,
-    conversations,
-    runtime,
-    attachments: attachmentState,
-    drafts: draftStore,
-    session,
-    options,
-    sendShell: () => sendShell(),
-    askSideQuestion: question => askSideQuestion(question),
-    restoreComposerFocus: origin => restoreComposerFocus(origin),
-    readOnlyRun,
-    editDraft,
-    canSendFollowUp,
-    imageBlocked,
-    missingChoiceNotice,
-    needsModelId,
-    setError,
-    newDraftKey,
-    tabsRef,
-    activeTurn,
-    continues,
-    preferences,
-    newChoice,
-    newWorktree,
-    noteStartedMode,
-    browser,
-    assignProject,
-    pending,
-    loadThread,
-  });
-  const sendShell = createShellSend({
-    composer,
-    attachments: attachmentState,
-    conversations,
-    drafts: draftStore,
-    projectState,
-    runtime,
-    session,
-    options,
-    newDraftKey,
-    tabsRef,
-    setError,
-    newChoice,
-    noteStartedMode,
-    assignProject,
-    browser,
-    focusComposer: () => focusComposer(),
-  });
-  const { replaceFrom, rewindFrom, deleteFrom, switchRewind, loadVersions, showVersion } = createMessageActions({
-    composer,
-    conversations,
-    drafts: draftStore,
-    history,
-    runtime,
-    selectedRef,
-    request,
-    stickToBottom,
-    rewindSwitch,
-    replacementOptions,
-    entries,
-    nextTurn,
-    submitDraft,
-    setRuntimeNotices,
-    setMessageEdits,
-    setNextTurn,
-    setEntries,
-    setThreads,
-    setRewindBusy,
-    setRewindActions,
-    setMessageVersions,
-    loadThread,
-    editDraft,
-    focusComposer: () => focusComposer(),
-    restoreComposerFocus: origin => restoreComposerFocus(origin),
-  });
-  const { approvalCardProps } = createApprovalActions({
-    approvals: approvalDrafts,
-    submissions: approvalSubmissions,
-    runtime,
-    request,
-    restoreComposerFocus: origin => restoreComposerFocus(origin),
-  });
-  const earlier = createEarlierMessages({
-    history,
-    selected,
-    selectedRef,
-    request,
-    setLoading,
-    setError,
-    setEntries,
-    stickToBottom,
-    scroll,
-    restoreScroll,
-  });
-  const openById = (id: string) => openThread(threads.find(thread => thread.id === id) || related[id] || { id });
-  // The sidebar's Elpis opens its chat like any chat; the panel is reached from that chat's header.
-  const showPage = (next: View) => {
-    const chat = next === "mother" ? threads.find(thread => thread.motherAgent) : undefined;
-    if (chat) void openThread(chat);
-    else show(next);
-  };
-  const { openInTui, openSettings, focusComposer, restoreComposerFocus, openComposerControl, closePanel } =
-    createWorkspaceControls({ session, composer, panels, pages, workspacePanels, cwd, loadThread });
-  const setDesktopPrompt = useDesktopEntryPoints({
-    pages,
-    composer,
-    attachments: attachmentState,
-    projectState,
-    runtime,
-    selected,
-    busy,
-    openById,
-    newChat,
-    send,
-  });
-  const { beginReply, beginImageReply, editQueued } = createReplyActions({
-    composer,
-    attachmentsState: attachmentState,
-    drafts: draftStore,
-    runtime,
-    selectedRef,
-    newDraftKey,
-    readOnlyRun,
-    focusComposer,
-    editDraft,
-  });
-  // The transcript is redrawn only when what it shows changes, not on every keystroke in the message box; its
-  // handlers call the current render's functions through a ref, so a reused row never calls a stale one.
-  const live = useRef({
-    openById,
-    focusComposer,
-    replaceFrom,
-    forkFrom,
-    showVersion,
-    setRewindTurn,
-    deleteFrom,
-    setMessageEdits,
-    setError,
-    beginReply,
-    beginImageReply,
-  });
-  live.current = {
-    openById,
-    focusComposer,
-    replaceFrom,
-    forkFrom,
-    showVersion,
-    setRewindTurn,
-    deleteFrom,
-    setMessageEdits,
-    setError,
-    beginReply,
-    beginImageReply,
-  };
-  const versionsShown = selected ? messageVersions[selected.id] : undefined;
-  const chatConversation = useConversationTranscript({
-    live,
-    selected,
-    shownEntries,
-    activeTurn,
-    desktop,
-    openChanges: side.openChanges,
-    threads,
-    messageEdits,
-    pendingDrafts,
-    replaceable,
-    replacementOptions,
-    replacementOptionsKey,
-    readOnlyRun,
-    versionsShown,
-    newestPrompt,
-    regenerate,
-    connected,
-    voiceBusy,
-    loveSpotAudioReason,
-  });
-  const { askSideQuestion, recapConversation } = createSideChatActions({
-    session,
-    readOnlyRun,
-    sideRequests,
-    setSideChat,
-    setError,
-  });
-  const lastTurn = entries.at(-1)?.turnId;
-  const idle = !busy && !activeTurn && selected?.status?.type !== "active";
-  const writable = !!selected && !continues;
-  const chatFolder = selected ? selected.cwd : newChatFolder(cwd);
-  // The profile opens as source: /personal is for editing it.
-  const personal = usePersonal(
-    ready && !selected,
-    path => {
-      const at = selected?.cwd || cwd;
-      void openFile(at, path);
-      setFileView(at, path, "source");
-      side.openFiles();
-    },
-    setError,
-  );
-  const conversationCommands = createCommandActions({
-    selected,
-    selectedRef,
-    textRef,
-    turnEfforts,
-    turnEffort,
-    turnModel,
-    models,
-    providerSettings,
-    newChoice,
-    commandNoticeOwner,
-    fastNoticeOwner,
-    side,
-    runtime,
-    conversations,
-    ready,
-    connected,
-    desktop,
-    setSlashNotice,
-    setEffort,
-    setPanel,
-    setError,
-    setBusy,
-    openComposerControl,
-    saveEffort,
-    focusComposer,
-    editDraft,
-  });
-  const { chooseEffort, startReview, compactChat, exportChat, turnSmartPruneOn, chooseFast, chooseGoal } =
-    conversationCommands;
-  useEffect(() => {
-    if (!queuedCompact) return;
-    if (selected?.id !== queuedCompact.threadId) {
-      setQueuedCompact(null);
-      return;
-    }
-    if (!idle) return;
-    setQueuedCompact(null);
-    setSlashNotice("");
-    compactChat(selected, queuedCompact.guidance);
-  }, [queuedCompact, selected, idle]);
-  const sessionRows = makeSessionRows(session, selectedModel, models, providerSettings, permissionMode, chatFolder);
-  const slashCommands = createSlashCommands({
-    selected,
-    askSideQuestion,
-    readOnlyRun,
-    recapConversation,
-    chooseGoal,
-    busy,
-    openComposerControl,
-    chooseFast,
-    turnEfforts,
-    chooseEffort,
-    openSettings,
-    personal,
-    writable,
-    idle,
-    startReview,
-    setPanel,
+    continueHere,
+    stop,
+    deleteThread,
     renameThread,
-    setError,
-    setRenameRequest,
-    newChat,
-    clearChat,
-    archiveChats: chats => forward.archiveChats(chats),
-    deleteChats: (ids, focusAt) => forward.deleteChats(ids, focusAt),
-    setResumeOpen,
-    lastTurn,
-    activeTurn,
-    forkFrom,
-    continues,
-    send,
-    compactChat,
-    setQueuedCompact,
-    setSlashNotice,
-    turnSmartPruneOn,
-    planMode,
-    setPlan,
-    team,
-    panelShown,
-    openAgentsPanel,
-    entries,
-    exportChat,
+    archiveThread,
+    unarchived,
+    conversationSettings,
+    answerPlan,
+    sendShell,
+    replaceFrom,
+    rewindFrom,
+    switchRewind,
+    approvalCardProps,
+    earlier,
+    openById,
+    showPage,
+    openInTui,
+    openSettings,
+    focusComposer,
+    restoreComposerFocus,
+    openComposerControl,
+    closePanel,
+    setDesktopPrompt,
+    editQueued,
+    chatConversation,
     chatFolder,
-  });
-  const slash = useSlashMenu(ready && connected ? text : "", slashCommands, () => {
-    editDraft("");
-    setPanel(null);
-    setSlashNotice("");
-  });
-  const mention = useMentionMenu({
-    text,
-    caret,
-    cwd: chatFolder || undefined,
-    threads,
-    currentId: selected?.id,
-    onPick: result => {
-      pickedMentions.current.set(result.mention.path, result.mention);
-      flushSync(() => editDraft(result.text));
-      setCaret(result.caret);
-      composerRef.current?.setSelectionRange(result.caret, result.caret);
-    },
-  });
-  useComposerPanelScope(panels, composer, selected?.id, view);
+    personal,
+    conversationCommands,
+    startReview,
+    sessionRows,
+    slash,
+    mention,
+  } = useWorkspaceCommands(useWorkspaceChatActions(props));
   forward.rememberModes = rememberModes;
   forward.noteStartedMode = noteStartedMode;
   forward.send = send;
