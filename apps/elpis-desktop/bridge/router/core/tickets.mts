@@ -1,48 +1,19 @@
 // Ported from dsh-superagent (MIT), src/core/tickets.ts
 /** Tickets: their lifecycle from an accept to their end, their Subscriptions and their Inputs. */
+import { readBefore } from "./ticket-lifecycle.mts";
+export { sameChannel, readBefore } from "./ticket-lifecycle.mts";
+import { runCreate, runAttach, runWake, runEnd } from "./ticket-lifecycle.mts";
 import { key } from "./ids.mts";
 import { UserError } from "./errors.mts";
-import {
-  latestAssignment,
-  liveTicket,
-  readUntil,
-  runningAssignment,
-  settled,
-  threadKey,
-  waitsForPerson,
-} from "./model.mts";
-import type {
-  Assignment,
-  ChannelRef,
-  Evaluation,
-  Follow,
-  Mandate,
-  PolicyEffect,
-  ThreadRef,
-  Ticket,
-  TicketEndBy,
-  TicketInput,
-  TicketOutcome,
-  Trigger,
-  TriggerDisposition,
-} from "./model.mts";
+import { latestAssignment, liveTicket, readUntil, runningAssignment, settled, threadKey, waitsForPerson } from "./model.mts";
+import type { Assignment, Evaluation, Follow, Mandate, PolicyEffect, ThreadRef, Ticket, TicketEndBy, TicketInput, TicketOutcome, Trigger } from "./model.mts";
 import type { AssessmentOutcome } from "./ports.mts";
 import { EnginePart, type EngineOptions } from "./part.mts";
 import type { Replies } from "./replies.mts";
 import { canRetry } from "./stage.mts";
-
-const sameChannel = (a: ChannelRef, b: ChannelRef): boolean => JSON.stringify(a) === JSON.stringify(b);
 /** Whether an Input is a message no person wrote, such as CI's, a bot's, or the main Session's note. */
 export const automatic = (input: TicketInput | undefined): boolean =>
   input?.kind === "note" || (input?.kind === "trigger" && !input.human);
-/**
- * Whether a ticket's worker read a Trigger Input before `until`, its latest report or turn end: its Session took the message
- * into a step before then. One delivered before reads were recorded counts as read once it reached the worker by then.
- */
-const readBefore = (input: Extract<TicketInput, { kind: "trigger" }>, until: string): boolean =>
-  input.readAt === undefined
-    ? (input.deliveredAt && input.deliveredAt > input.at ? input.deliveredAt : input.at) <= until
-    : !!input.readAt && input.readAt < until;
 const STATUS_REQUEST =
   "Report the current ticket status with orchestrator_report. This is a status-only request: do not resume implementation or perform external actions.";
 
@@ -53,7 +24,7 @@ const STATUS_REQUEST =
  * Intake, Evals, Assignments, and Engine delegate ticket and subscription mutations here.
  */
 export class Tickets extends EnginePart {
-  private readonly replies: Replies;
+  readonly replies: Replies;
   constructor(options: EngineOptions, replies: Replies) {
     super(options);
     this.replies = replies;
@@ -72,35 +43,7 @@ export class Tickets extends EnginePart {
     outcome: Extract<AssessmentOutcome, { kind: "accept" }>,
     at: string,
   ): void {
-    const { triggerIds } = evaluation;
-    // Fall back to the last trigger for Evals recorded before `primary` existed.
-    const primary = this.repo.triggers.get(evaluation.primary ?? triggerIds.at(-1)!);
-    const origin = { triggerId: primary?.id ?? triggerIds[0]!, triggerIds };
-    let ticket: Ticket = {
-      id,
-      title: outcome.title,
-      decisionId,
-      mandate,
-      channels: [],
-      assignments: [],
-      inputs: [],
-      undelivered: [],
-      createdAt: at,
-      updatedAt: at,
-      origin,
-    };
-    for (const triggerId of triggerIds) {
-      const channel = this.repo.triggers.get(triggerId)?.channel;
-      if (channel && !ticket.channels.some(item => sameChannel(item, channel))) ticket.channels.push(channel);
-    }
-    ticket = this.options.prepareTicket?.(ticket, outcome) ?? ticket;
-    const assignment = this.newAssignment(ticket);
-    this.repo.tickets.save(ticket);
-    for (const triggerId of triggerIds)
-      for (const ref of this.repo.triggers.get(triggerId)?.threads ?? []) this.subscribe(id, ref);
-    if (outcome.acknowledgement && primary) this.replies.acknowledgeAccepted(id, primary, outcome.acknowledgement);
-    this.options.executor.start(this.require(id), assignment);
-    this.emit("ticket.created", { ticketId: id, decisionId, strength: mandate.strength });
+    return runCreate.call(this, id, decisionId, mandate, evaluation, outcome, at);
   }
   /**
    * Subscribes an open ticket to `thread` and records it in `ticket.follows` (`own` when opened by the ticket).
@@ -173,41 +116,7 @@ export class Tickets extends EnginePart {
    * message as its ticket's takes it as a new Input, which wakes an ended ticket as any attached message does.
    */
   attach(ticketId: string, trigger: Trigger, note?: string): void {
-    for (const ref of trigger.threads) this.subscribe(ticketId, ref);
-    // A person's sending it to Eval, which routed it here, is over, and so is the ticket's reading it for context only.
-    const current: TriggerDisposition = this.repo.triggers.disposition(trigger.id) ?? { fanout: [], at: this.now() };
-    const { context, requeued, ...disposition } = current;
-    const followed = context?.filter(id => id !== ticketId);
-    this.repo.triggers.saveDisposition(trigger.id, {
-      ...disposition,
-      fanout: [...new Set([...disposition.fanout, ticketId])],
-      ...(followed?.length ? { context: followed } : {}),
-    });
-    const ticket = this.require(ticketId);
-    const id = key("input", ticketId, "trigger", trigger.id);
-    const existing = ticket.inputs.find(input => input.id === id);
-    const at = this.now();
-    const input = (inputId: string): TicketInput => ({
-      id: inputId,
-      kind: "trigger",
-      triggerId: trigger.id,
-      at,
-      ...(note ? { note } : {}),
-      ...(trigger.human ? { human: true } : {}),
-    });
-    if (existing?.kind !== "trigger") this.addInput(ticket, input(id));
-    else if (note && ticket.undelivered.includes(id)) {
-      existing.note = note;
-      ticket.updatedAt = at;
-      this.repo.tickets.save(ticket);
-    }
-    // A person sent it to Eval, or the ticket let it go before its worker took it up, read it for context only, or ended after
-    // its worker had it, so the worker gets it again.
-    else if (requeued || !current.fanout.includes(ticketId) || context?.includes(ticketId) || !liveTicket(ticket)) {
-      this.addInput(ticket, input(key("input", ticketId, "trigger", trigger.id, "attached", at)));
-    }
-    // The worker has the message already, so the note comes with it again.
-    else if (note) this.addInput(ticket, input(key("input", ticketId, "trigger", trigger.id, "note", note)));
+    return runAttach.call(this, ticketId, trigger, note);
   }
   /**
    * Ask a running worker whose latest report is `waiting` for a status report; leaves any other ticket alone.
@@ -334,38 +243,10 @@ export class Tickets extends EnginePart {
    * the ticket under the Policy then. Reads the ticket afresh, so it is idempotent and leaves an already-resumed ticket alone.
    */
   wake(ticketId: string): void {
-    const ticket = this.repo.tickets.get(ticketId);
-    if (!ticket || liveTicket(ticket) || ticket.ended?.by === "human" || !ticket.undelivered.length) return;
-    const policy = this.policy();
-    if (policy.paused) return;
-    if (!policy.revalidate(ticket.mandate)) {
-      this.refuse(ticket);
-      return;
-    }
-    // Only a human's message resumes an ended ticket; bot/CI triggers wait alongside inputs from before the ticket ended.
-    const first = ticket.undelivered
-      .map(id => ticket.inputs.find(input => input.id === id))
-      .find(input => input?.kind === "trigger" && input.human);
-    if (first?.kind !== "trigger") return;
-    const at = this.now();
-    delete ticket.ended;
-    ticket.updatedAt = at;
-    const assignment = this.newAssignment(ticket);
-    // Prepend the resumed marker so it is delivered ahead of the waiting messages.
-    const resumed: TicketInput = {
-      id: key("input", ticket.id, "resumed", first.triggerId),
-      kind: "resumed",
-      triggerId: first.triggerId,
-      at,
-    };
-    ticket.inputs.push(resumed);
-    ticket.undelivered.unshift(resumed.id);
-    this.repo.tickets.save(ticket);
-    this.options.executor.start(ticket, assignment);
-    this.emit("ticket.resumed", { ticketId, triggerId: first.triggerId });
+    return runWake.call(this, ticketId);
   }
   /** The Triggers of a ticket's trigger Inputs, or of those of them whose Input ids are `ids`. */
-  private triggersOf(ticket: Ticket, ids?: readonly string[]): Trigger[] {
+  triggersOf(ticket: Ticket, ids?: readonly string[]): Trigger[] {
     return ticket.inputs.flatMap(input =>
       input.kind === "trigger" && (!ids || ids.includes(input.id))
         ? (this.repo.triggers.get(input.triggerId) ?? [])
@@ -381,7 +262,7 @@ export class Tickets extends EnginePart {
     return acked ? acked.includes(ticket.id) : this.options.outbox.status(key("ack", trigger.id)) !== undefined;
   }
   /** The person's messages among a ticket's Inputs `ids` that it decides and its worker did not take up. */
-  private untaken(ticket: Ticket, ids: readonly string[]): Trigger[] {
+  untaken(ticket: Ticket, ids: readonly string[]): Trigger[] {
     return this.triggersOf(ticket, ids).filter(
       trigger => this.owners(trigger).includes(ticket.id) && !this.takenUp(ticket, trigger),
     );
@@ -392,7 +273,7 @@ export class Tickets extends EnginePart {
    * that no other ticket decides goes to Eval, as a person's message that reached no ticket does, unless a ticket took it
    * up, a Decision settled it, or it is the message a stop ended this ticket on.
    */
-  private letGo(ticketId: string, waiting: readonly Trigger[], left: readonly Trigger[]): void {
+  letGo(ticketId: string, waiting: readonly Trigger[], left: readonly Trigger[]): void {
     for (const trigger of [...waiting, ...left]) {
       const disposition = this.repo.triggers.disposition(trigger.id);
       if (disposition?.fanout.includes(ticketId)) {
@@ -412,7 +293,7 @@ export class Tickets extends EnginePart {
     }
   }
   /** An ended ticket that cannot resume takes none of the messages that waited for it (see `letGo`). */
-  private refuse(ticket: Ticket): void {
+  refuse(ticket: Ticket): void {
     const waiting = this.triggersOf(ticket, ticket.undelivered),
       left = this.untaken(ticket, ticket.undelivered);
     ticket.undelivered = [];
@@ -455,35 +336,7 @@ export class Tickets extends EnginePart {
    * the worker wrote the report that ends the ticket, or after its turn ended, and either way it can no longer hand it back.
    */
   end(ticketId: string, by: TicketEndBy, outcome: TicketOutcome, at = this.now(), reason?: string): void {
-    const ticket = this.require(ticketId);
-    if (!liveTicket(ticket)) return;
-    const stopping = ticket.assignments.filter(assignment => assignment.state !== "ended");
-    const why = reason && reason !== outcome ? { reason } : {};
-    const until = readUntil(ticket);
-    const waiting = this.triggersOf(ticket, ticket.undelivered);
-    const left = this.untaken(
-      ticket,
-      ticket.inputs.flatMap(input =>
-        input.kind === "trigger" && (!readBefore(input, until) || ticket.undelivered.includes(input.id))
-          ? [input.id]
-          : [],
-      ),
-    );
-    // An end dated earlier, such as a PR's merge, does not move the ticket's last change back.
-    ticket.ended = { at, by, outcome, ...why };
-    ticket.undelivered = [];
-    ticket.updatedAt = this.now();
-    delete ticket.attention;
-    delete ticket.delivery;
-    // The Assignments the end stops end with it; the ticket's end says why.
-    for (const assignment of stopping) {
-      assignment.state = "ended";
-      assignment.endedAt = at;
-    }
-    this.repo.tickets.save(ticket);
-    this.letGo(ticketId, waiting, left);
-    this.emit("ticket.ended", { ticketId, by, outcome, ...why });
-    for (const assignment of stopping) this.options.executor.stop(ticket, assignment, reason ?? outcome);
+    return runEnd.call(this, ticketId, by, outcome, at, reason);
   }
   /**
    * Whether a ticket's work has not finished at a close at `at`: its worker took up a person's message the ticket decides and
@@ -506,7 +359,7 @@ export class Tickets extends EnginePart {
     return report?.state !== "ready" || ticket.undelivered.length > 0 || later;
   }
   /** Add a pending Assignment; a failed delivery to the one before it no longer concerns the ticket. */
-  private newAssignment(ticket: Ticket): Assignment {
+  newAssignment(ticket: Ticket): Assignment {
     const assignment: Assignment = {
       id: key("assignment", ticket.id, String(ticket.assignments.length)),
       state: "pending",
@@ -548,7 +401,7 @@ export class Tickets extends EnginePart {
     return true;
   }
   /** Subscribe a ticket to a Thread; later Triggers on it reach the ticket as Inputs, as the ticket's own once it was for context. */
-  private subscribe(ticketId: string, ref: ThreadRef): void {
+  subscribe(ticketId: string, ref: ThreadRef): void {
     const thread = this.thread(ref);
     if (!thread.subscriptions.includes(ticketId)) {
       thread.subscriptions.push(ticketId);
