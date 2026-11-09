@@ -34,7 +34,7 @@ test('page picker keeps its place while opening, navigating and deleting pages',
     await remove.click();
     await f.page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
     await f.page.getByRole('menu').waitFor();
-    assert.equal(await f.page.getByRole('menuitem', { name: /^Page 10\b/ }).count(), 0);
+    await f.page.getByRole('menuitem', { name: /^Page 10\b/ }).waitFor({ state: 'detached' });
     assert.ok(Math.abs(await f.page.getByRole('menu').evaluate(node => node.scrollTop) - before) < 90, 'deleting keeps the list near its previous position');
     const kept = await f.page.getByRole('menu').evaluate(node => node.scrollTop);
     await f.page.keyboard.press('Escape'); await f.page.getByRole('menu').waitFor({ state: 'hidden' });
@@ -218,7 +218,7 @@ test('page-row delete confirms, keeps the current page, and shares the skip pref
     const dialog = f.page.getByRole('alertdialog');
     await dialog.getByText('Delete “Page 2”?', { exact: true }).waitFor();
     assert.equal((await f.scene()).page?.name, 'Page 3', 'the delete icon must not select its row');
-    await dialog.getByLabel('Don’t show me this again').check();
+    await dialog.getByRole('checkbox', { name: 'Don’t show me this again' }).click();
     await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
     assert.deepEqual(deletes, ['Page 2']);
