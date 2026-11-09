@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type React from "react";
 import type { Thread } from "@/lib/api";
-import { fitChatListEnd, useWholeRows } from "@/lib/whole-rows";
-
-const fittedLists = new WeakSet<HTMLElement>();
+import { useSteadyRowList } from "@/lib/whole-rows";
 
 type Inputs = {
   selected: Thread | null;
@@ -11,34 +9,32 @@ type Inputs = {
   openThread: (thread: Thread) => Promise<void>;
 };
 
-export function useSidebarSelection({ selected, openSplit, openThread }: Inputs) {
+export function useSidebarSelection({
+  selected,
+  openSplit,
+  openThread,
+}: Inputs) {
   /** Chats marked with Ctrl+click or Shift+click in the sidebar; `markAnchor` is where a Shift range starts. */
   const [marked, setMarked] = useState<string[]>([]);
   const markAnchor = useRef<string | null>(null);
   const threadList = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    // keep the chat list's end on a whole row as the window, the rows or their labels change
-    const list = threadList.current;
-    if (!list || fittedLists.has(list)) return; // the list mounts after the splash
-    fittedLists.add(list);
-    let frame = 0;
-    const fit = () => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => fitChatListEnd(list));
-    };
-    new ResizeObserver(fit).observe(list);
-    new MutationObserver(fit).observe(list, { childList: true, subtree: true, characterData: true });
-    fit();
-  });
-  // Async rows and viewport changes can leave the last chat painted only part way (lib/whole-rows.ts).
-  useWholeRows(threadList, ".thread-row", ".thread-row, .section-label-row, .sidebar-group-row, .thread-more");
+  useSteadyRowList(
+    threadList,
+    ".thread-row, .project-row, .section-label-row, .sidebar-group-row, .thread-more",
+  );
   /** The sidebar's chat buttons in screen order (a project's chats also appear under Recents). */
   const rowLinks = () => [
-    ...(threadList.current?.querySelectorAll<HTMLButtonElement>(".thread-row > .thread-link") ?? []),
+    ...(threadList.current?.querySelectorAll<HTMLButtonElement>(
+      ".thread-row > .thread-link",
+    ) ?? []),
   ];
-  const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
+  const rowOf = (element: Element | null) =>
+    element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
-  function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
+  function clickRow(
+    thread: Thread,
+    event: React.MouseEvent<HTMLButtonElement>,
+  ) {
     if (event.altKey) {
       event.preventDefault();
       openSplit(thread);
@@ -52,8 +48,16 @@ export function useSidebarSelection({ selected, openSplit, openThread }: Inputs)
       ),
     ];
     if (event.ctrlKey || event.metaKey) {
-      const base = marked.length ? marked : selected && ids.includes(selected.id) ? [selected.id] : [];
-      setMarked(base.includes(thread.id) ? base.filter(id => id !== thread.id) : [...base, thread.id]);
+      const base = marked.length
+        ? marked
+        : selected && ids.includes(selected.id)
+          ? [selected.id]
+          : [];
+      setMarked(
+        base.includes(thread.id)
+          ? base.filter((id) => id !== thread.id)
+          : [...base, thread.id],
+      );
       markAnchor.current = thread.id;
     } else if (event.shiftKey) {
       const to = ids.indexOf(thread.id),

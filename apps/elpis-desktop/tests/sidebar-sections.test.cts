@@ -52,7 +52,8 @@ test('long sidebar lists keep every visible chat row and heading whole at rest, 
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
     const checkRows = async (label: string) => {
       const geometry = await list.evaluate((element: HTMLElement) => {
-        const viewport = element.getBoundingClientRect();
+        const box = element.getBoundingClientRect();
+        const viewport = { top: box.top + (parseFloat(element.style.clipPath.match(/inset\(([\d.]+)/)?.[1] ?? '0')), bottom: box.bottom };
         const rows = [...element.querySelectorAll<HTMLElement>('.thread-row, .section-label-row, .sidebar-group-row, .thread-more')].map(row => ({
           id: row.dataset.threadId || (row.textContent?.trim() ?? ''),
           chat: row.matches('.thread-row'),
@@ -88,10 +89,14 @@ test('long sidebar lists keep every visible chat row and heading whole at rest, 
       if (height === 674 && process.env.SIDEBAR_FIT_SHOT) await page.screenshot({ path: process.env.SIDEBAR_FIT_SHOT });
       await checkRows(`expanded at ${height}px`);
       const maxScroll = await list.evaluate((element: HTMLElement) => Math.max(0, element.scrollHeight - element.clientHeight));
+      // 9 Nov recording: the list's bottom edge moved by a row at every stop.
+      const bottom = async () => list.evaluate((element: HTMLElement) => element.getBoundingClientRect().bottom);
+      const restingBottom = await bottom();
       for (const [position, scrollTop] of [['middle', Math.round(maxScroll / 2)], ['end', maxScroll]] as [string, number][]) {
         await list.evaluate((element: HTMLElement, top: number) => { element.scrollTop = top; }, scrollTop);
         await settledSidebar(page);
         await checkRows(`${position} at ${height}px`);
+        assert.equal(await bottom(), restingBottom, `${position} at ${height}px: bottom edge stays put`);
       }
       if (height === 534) {
         await page.evaluate(() => {
