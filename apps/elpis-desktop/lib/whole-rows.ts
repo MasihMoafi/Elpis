@@ -168,10 +168,9 @@ export function useWholeRows(
   }, [ref, rowSelector, targets]);
 }
 
-/** The sidebar's chat list keeps one height while it scrolls, so its bottom edge stays put (Masih, 9 Nov recording: the
- * list grew and shrank by a row at every stop). The height is set only when the window or the rows change: it ends on the
- * last row that fits from the top of the list. Rows snap to that edge (`.thread-list` in foundation.css), which keeps the
- * last row whole; a row cut by the top edge is hidden with a clip, which needs no layout and so cannot move the rows. */
+/** Neither edge of the sidebar's chat list moves while it scrolls (Masih, 9 Nov recording). Every row in the list is a
+ * whole number of `--row-h` (`.thread-list` in foundation.css) and the list's height is too, so each scroll stop starts and
+ * ends on a row. The height changes only when the window or the rows do. */
 export function useSteadyRowList(
   ref: RefObject<HTMLElement | null>,
   targets: string,
@@ -180,79 +179,38 @@ export function useSteadyRowList(
     const list = ref.current,
       sidebar = list?.parentElement;
     if (!list || !sidebar) return;
-    let sizeFrame = 0,
-      clipFrame = 0,
-      scrollTimer = 0;
-    const boxes = () =>
-      [...list.querySelectorAll<HTMLElement>(targets)]
-        .map((row) => row.getBoundingClientRect())
-        .filter((box) => box.height > 0);
-    const clipTop = () => {
-      clipFrame = 0;
-      const top = list.getBoundingClientRect().top;
-      const cut = Math.max(
-        0,
-        ...boxes()
-          .filter((box) => box.top < top - 0.5 && box.bottom > top + 0.5)
-          .map((box) => box.bottom - top),
-      );
-      list.style.clipPath = cut ? `inset(${cut}px 0 0 0)` : "";
-    };
+    let frame = 0;
     const size = () => {
-      sizeFrame = 0;
+      frame = 0;
       const scrolled = list.scrollTop;
       list.style.maxHeight = "";
       list.style.marginBottom = "";
-      const rows = boxes();
+      const heights = [...list.querySelectorAll<HTMLElement>(targets)]
+        .map((row) => row.getBoundingClientRect().height)
+        .filter((height) => height > 0);
+      if (!heights.length) return;
+      const row = Math.min(...heights);
       // Reserve the tallest row: a growing nav must scroll instead of shrinking the list below a whole row.
-      if (rows[0])
-        list.style.minHeight = `${Math.max(...rows.map((box) => box.height))}px`;
-      const view = list.getBoundingClientRect();
-      const fromTop = rows.map((box) => box.bottom - view.top + scrolled);
-      const fits = Math.max(
-        0,
-        ...fromTop.filter((bottom) => bottom <= view.height + 0.5),
-      );
-      if (
-        fits > 0 &&
-        fits < view.height - 0.5 &&
-        Math.max(...fromTop) > view.height + 0.5
-      ) {
-        list.style.maxHeight = `${fits}px`;
+      list.style.minHeight = `${Math.max(...heights)}px`;
+      const whole =
+        Math.floor((list.getBoundingClientRect().height + 0.5) / row) * row;
+      if (whole > 0) {
+        list.style.maxHeight = `${whole}px`;
         list.style.marginBottom = "auto";
       }
       list.scrollTop = scrolled;
-      clipTop();
     };
-    const scheduleSize = () => {
-      if (!sizeFrame) sizeFrame = window.requestAnimationFrame(size);
+    const schedule = () => {
+      if (!frame) frame = window.requestAnimationFrame(size);
     };
-    const scheduleClip = () => {
-      if (!clipFrame) clipFrame = window.requestAnimationFrame(clipTop);
-    };
-    const onScroll = () => {
-      list.style.clipPath = "";
-      window.clearTimeout(scrollTimer);
-      scrollTimer = window.setTimeout(scheduleClip, 160);
-    };
-    const onScrollEnd = () => {
-      window.clearTimeout(scrollTimer);
-      scheduleClip();
-    };
-    const layout = new ResizeObserver(scheduleSize);
+    const layout = new ResizeObserver(schedule);
     layout.observe(sidebar);
     if (list.nextElementSibling) layout.observe(list.nextElementSibling);
-    const rows = new MutationObserver(scheduleSize);
+    const rows = new MutationObserver(schedule);
     rows.observe(list, { childList: true, subtree: true, characterData: true });
-    list.addEventListener("scroll", onScroll, { passive: true });
-    list.addEventListener("scrollend", onScrollEnd);
     size();
     return () => {
-      window.cancelAnimationFrame(sizeFrame);
-      window.cancelAnimationFrame(clipFrame);
-      window.clearTimeout(scrollTimer);
-      list.removeEventListener("scroll", onScroll);
-      list.removeEventListener("scrollend", onScrollEnd);
+      window.cancelAnimationFrame(frame);
       layout.disconnect();
       rows.disconnect();
     };

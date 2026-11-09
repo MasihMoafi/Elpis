@@ -175,8 +175,12 @@ button:disabled { cursor:not-allowed; }
 .thread-list { overflow-x:hidden; overflow-y:auto; flex:1; min-height:0; margin:0 -4px 0 -8px; padding:0 4px 0 8px; scroll-snap-type:y mandatory; }
 /* Rows, the "More …" buttons and every section heading (Agent runs too) are snap points, so scrolling to the end can
    always reach the last of them, even when its section is folded. */
-.thread-list :is(.thread-row, .project-row, .thread-more, .section-label-row, section > :first-child) { scroll-snap-align:end; scroll-snap-stop:always; }
-.thread-list > section:first-child > .section-label-row { padding-top:0; }
+.thread-list :is(.thread-row, .project-row, .thread-more, .section-label-row, section > :first-child) { scroll-snap-align:start; scroll-snap-stop:always; }
+/* Every row is a whole number of --row-h, so a scroll stop never cuts one and neither list edge moves (useSteadyRowList). */
+.thread-list .section-label-row { height:var(--row-h); padding:0 8px; }
+.thread-list .thread-row:has(.thread-meta, .thread-subtitle, .thread-nickname, .agent-identity-text > :nth-child(2)) { min-height:calc(var(--row-h) * 2); }
+.thread-list .thread-more { min-height:var(--row-h); }
+.thread-list .project-group, .thread-list .sidebar-group { margin-bottom:0; }
 .thread-link { min-width:0; flex:1; text-align:left; background:none; border:0; padding:7px 4px 7px 8px; border-radius:7px; display:block; color:inherit; font-size:var(--text-sm); line-height:20px; }
 .thread-link span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block; }
 /* In the sidebar tree the agent mark follows the name, so names step by the same indent as their status dots. */

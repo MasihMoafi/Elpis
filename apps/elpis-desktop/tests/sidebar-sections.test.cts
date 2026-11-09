@@ -52,8 +52,7 @@ test('long sidebar lists keep every visible chat row and heading whole at rest, 
     await page.locator('.startup-splash').waitFor({ state: 'detached' });
     const checkRows = async (label: string) => {
       const geometry = await list.evaluate((element: HTMLElement) => {
-        const box = element.getBoundingClientRect();
-        const viewport = { top: box.top + (parseFloat(element.style.clipPath.match(/inset\(([\d.]+)/)?.[1] ?? '0')), bottom: box.bottom };
+        const viewport = element.getBoundingClientRect();
         const rows = [...element.querySelectorAll<HTMLElement>('.thread-row, .section-label-row, .sidebar-group-row, .thread-more')].map(row => ({
           id: row.dataset.threadId || (row.textContent?.trim() ?? ''),
           chat: row.matches('.thread-row'),
@@ -74,6 +73,7 @@ test('long sidebar lists keep every visible chat row and heading whole at rest, 
       });
       assert.ok(geometry.scrollWidth <= geometry.clientWidth + 1, `${label}: no horizontal overflow (${geometry.scrollWidth}/${geometry.clientWidth}, ${geometry.overflowX})`);
       const partial = geometry.visible.filter((row: { top: number; bottom: number }) => row.top < geometry.viewportTop - .5 || row.bottom > geometry.viewportBottom + .5);
+      assert.ok(Math.abs(geometry.visible[0].top - geometry.viewportTop) <= .5, `${label}: the top edge starts on a row (${geometry.visible[0].top}/${geometry.viewportTop})`);
       assert.ok(partial.length === 0, `${label}: partial=${JSON.stringify(partial)}, viewport=${geometry.viewportTop}-${geometry.viewportBottom}, scroll=${geometry.scrollTop}/${geometry.scrollHeight - geometry.clientHeight}`);
       assert.ok(geometry.visible.some((row: { top: number; bottom: number; chat: boolean }) => row.chat && row.top >= geometry.viewportTop - .5 && row.bottom <= geometry.viewportBottom + .5), `${label}: at least one whole chat row fits`);
     };
