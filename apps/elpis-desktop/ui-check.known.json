@@ -12,7 +12,7 @@
   "R4|components/resume-conversation.tsx|raw black/white; use a theme token so both themes work": 1,
   "R4|components/startup-splash.css|raw hex colour; use a theme token": 4,
   "R4|components/terminal-view.tsx|raw colour function; use a theme token": 3,
-  "R5|components/agents-iso.tsx|hand-written control; use the shadcn/ui component from components/ui": 3,
+  "R5|components/agents-iso-places.tsx|hand-written control; use the shadcn/ui component from components/ui": 3,
   "R5|components/appearance-settings.tsx|hand-written control; use the shadcn/ui component from components/ui": 1,
   "R5|components/approval-card.tsx|hand-written control; use the shadcn/ui component from components/ui": 1,
   "R5|components/archived-view.tsx|hand-written control; use the shadcn/ui component from components/ui": 2,
