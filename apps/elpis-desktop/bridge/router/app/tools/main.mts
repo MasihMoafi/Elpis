@@ -196,6 +196,16 @@ function route(
         ticketId: item.ticket_id!,
         reason: item.reason || { code: "humanStop" },
       });
+      // A person in the Elpis chat always gets an answer; on 11 Nov his "stop the ticket" was done in silence.
+      if (host.store.triggers.get(item.trigger_id)?.source === "elpis-chat") {
+        const title = host.store.tickets.get(item.ticket_id!)?.title;
+        host.engine.reply({
+          purpose: "answer",
+          text: title ? `Stopped “${title}”.` : "Stopped.",
+          triggerId: item.trigger_id,
+        });
+        void host.sendReplies();
+      }
       return { ...fromDecision(decision), triggerIds: decision.triggerIds };
     }
     case "ignore": {

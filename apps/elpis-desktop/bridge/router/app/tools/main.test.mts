@@ -21,6 +21,43 @@ function setup(alreadyShown: string[]) {
   return { sent, shown, run: (args: unknown) => reply.execute(args, new AbortController().signal) };
 }
 
+/** The route tool over an engine that stops any ticket it is asked to, for a trigger from `source`. */
+function stopping(source: string) {
+  const said: unknown[] = [];
+  const host = {
+    engine: {
+      decide: (triggerId: string) => ({ id: "d", kind: "stop", reason: { code: "humanStop" }, triggerIds: [triggerId] }),
+      reply: (request: unknown) => {
+        said.push(request);
+        return { id: "reply", status: "queued" };
+      },
+    },
+    store: {
+      triggers: { get: () => ({ source }) },
+      tickets: { get: (id: string) => (id === "k1" ? { title: "Count lines" } : undefined) },
+    },
+    context: { logger: { warn: () => {} } },
+    requestPass: () => {},
+    sendReplies: () => Promise.resolve(),
+  } as unknown as MainToolsHost;
+  const route = mainTools(host, { id: "main" }).find(tool => tool.name === "orchestrator_route")!;
+  const stop = () =>
+    route.execute({ decisions: [{ trigger_id: "t1", kind: "stop", ticket_id: "k1" }] }, new AbortController().signal);
+  return { said, stop };
+}
+
+it("tells a person in the Elpis chat that the ticket he asked to stop was stopped", async () => {
+  const { said, stop } = stopping("elpis-chat");
+  await stop();
+  expect(said).toEqual([{ purpose: "answer", text: "Stopped “Count lines”.", triggerId: "t1" }]);
+});
+
+it("leaves a stop from another Source to that Source's own notices", async () => {
+  const { said, stop } = stopping("github");
+  await stop();
+  expect(said).toEqual([]);
+});
+
 it("does not send a result the host already put in his chat", async () => {
   const { sent, run } = setup(["done"]);
   expect(await run({ purpose: "result", ticket_id: "done", text: "It has 141 lines." })).toEqual({
