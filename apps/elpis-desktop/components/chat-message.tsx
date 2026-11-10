@@ -31,14 +31,14 @@ export { CommandStep } from "./chat-message-parts";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SmartPruneLine } from "@/components/smart-prune";
 import { useRef } from "react";
-import { BranchIcon, BrowserIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
+import { BranchIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
 import { CircleCheck, CircleX, Signpost, RefreshCw, Volume2 } from "lucide-react";
 import { RightClickMenu } from "@/components/action-menu";
 
 import { MarkdownText } from "@/components/markdown-text";
-import { ImageThumb, fileKind } from "@/components/file-cards";
+import { ImageViewStep } from "@/components/image-view-step";
 
 import { FilePathText } from "@/components/file-ref";
 import { ItemEdits } from "@/components/edit-rows";
@@ -457,35 +457,14 @@ export function ChatMessage({
         <MarkdownText text={item.text || ""} />
       </section>
     );
-  if (item.type === "imageView") {
-    const name = fileKind(text(item.path)).name,
-      safeBase = mediaBase?.startsWith("/api/threads/") && !/[?#\\]/.test(mediaBase) ? mediaBase : null;
-    // Nothing to fold: the step is its picture.
-    return (
-      <div className="activity-card">
-        <div className="activity-heading">
-          <span className="activity-icon">
-            <BrowserIcon size={15} />
-          </span>
-          <span className="activity-title">Viewed an image</span>
-          <span className="activity-preview" title={text(item.path)}>
-            {name}
-          </span>
-        </div>
-        {safeBase && (
-          <div className="px-3 pb-2">
-            <ImageThumb src={`${safeBase}/0`} name={name} large />
-          </div>
-        )}
-      </div>
-    );
-  }
-  if (item.type === "contextCompaction") return <div className="context-event">{summarize([item])}</div>;
-  if (item.type === "routerNote") return <div className="context-event">{item.text}</div>;
-  if (item.type === "enteredReviewMode")
-    return (
-      <div className="context-event">{`Review started${typeof item.review === "string" && item.review ? `: ${item.review}` : ""}`}</div>
-    );
+  if (item.type === "imageView") return <ImageViewStep path={text(item.path)} mediaBase={mediaBase} />;
+  // One quiet line in the transcript: a compaction, a router note or the start of a review.
+  const event: Record<string, () => string | undefined> = {
+    contextCompaction: () => summarize([item]),
+    routerNote: () => item.text,
+    enteredReviewMode: () => `Review started${typeof item.review === "string" && item.review ? `: ${item.review}` : ""}`,
+  };
+  if (event[item.type]) return <div className="context-event">{event[item.type]!()}</div>;
   if (item.type === "exitedReviewMode")
     return (
       <article className={speaker === "Matilda" ? "message agent matilda-message flow-root" : "message agent"}>
