@@ -415,4 +415,12 @@ describe("replies", () => {
     expect(h.engine.reply({ purpose: "result", ticketId, text: "Done" })).toMatchObject({ status: "pending" });
     expect(h.outbox.at(-1)!.channel).toEqual(trigger("1").channel);
   });
+  it("lets the router answer a person directly once the ticket on that thread has ended", () => {
+    // 10 Nov: a stopped ticket on the Elpis chat claimed every later message, so the router's "Hi, Masih." was refused.
+    const h = harness();
+    const ticketId = accepted(h).ticketId!;
+    h.engine.stopTicket(ticketId);
+    h.engine.receive(trigger("2"));
+    expect(h.engine.reply({ purpose: "answer", triggerId: "2", text: "Hi" })).toMatchObject({ status: "pending" });
+  });
 });

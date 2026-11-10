@@ -94,7 +94,10 @@ export class Replies extends EnginePart {
     const ticket = request.ticketId
       ? this.require(request.ticketId)
       : trigger
-        ? this.repo.tickets.list().find(item => this.reaches(item, trigger))
+        ? // An ended ticket no longer owns a person's answer, so the router may answer directly (10 Nov).
+          this.repo.tickets
+            .list()
+            .find(item => (request.purpose !== "answer" || liveTicket(item)) && this.reaches(item, trigger))
         : undefined;
     if (request.purpose === "result") {
       const outcome = ticket && ticketOutcome(ticket);

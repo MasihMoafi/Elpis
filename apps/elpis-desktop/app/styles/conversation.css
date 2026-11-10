@@ -21,7 +21,8 @@
  * sidebar's row height (--row-h; Masih, 1 Nov: one role, one look), so short windows fit by spacing alone (27 Oct fit rule). */
 @media (max-height:1200px) {
  .settings-mode .settings-nav { padding:8px; gap:4px; }
- .settings-mode .settings-nav .settings-title { margin:4px 8px 0; }
+ /* 10 Nov: "Back to app", "Settings" and the search field sat too close; the title keeps room above and below. */
+ .settings-mode .settings-nav .settings-title { margin:12px 8px 8px; }
  .settings-mode .settings-nav .settings-section-link { height:auto; margin:6px 0 2px; padding:4px 8px; }
 }
 @media (max-height:800px) {
