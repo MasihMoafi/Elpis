@@ -130,6 +130,9 @@ function parse(raw: string | null): Preferences {
   }
   if (result.defaultFolder && !result.defaultFolder.startsWith("/")) result.defaultFolder = "";
   result.profileName = result.profileName.trim().slice(0, PROFILE_NAME_MAX);
+  // Silver became Ice on 10 Nov; a saved Silver theme or character opens as Ice.
+  if (result.selectedPalette === "palette-silver") result.selectedPalette = "palette-paper";
+  if (result.selectedCharacter === "palette-silver") result.selectedCharacter = "palette-paper";
   return result;
 }
 

@@ -49,27 +49,29 @@ export const STARTER_THEME: CustomTheme = {
 
 /** Built-in full palettes use the same saved-theme tokens as user-created palettes. */
 export const BUILT_IN_THEMES: CustomTheme[] = [
+  // Ice: Silver's colours under the Ice character (10 Nov, Masih: "ice theme should be current silver's"). The id
+  // stays, so a saved Ice choice keeps working; a saved Silver choice moves here (lib/preferences.ts).
   {
     id: "palette-paper",
-    name: "Paper",
+    name: "Ice",
     light: {
       ...STARTER_THEME.light,
-      background: "#faf7f0",
-      foreground: "#302a22",
-      muted: "#696158",
-      surface: "#fffefa",
-      sidebar: "#f1ede4",
-      accent: "#8c542c",
+      background: "#f7f8fa",
+      foreground: "#242930",
+      muted: "#5b626d",
+      surface: "#ffffff",
+      sidebar: "#eef0f4",
+      accent: "#3a414a",
     },
     dark: {
       ...STARTER_THEME.dark,
-      background: "#15120f",
-      foreground: "#eee5d8",
-      muted: "#b0a18e",
-      surface: "#201b16",
-      sidebar: "#100e0c",
-      accent: "#deb382",
-      accentForeground: "#17110b",
+      background: "#101215",
+      foreground: "#e9edf2",
+      muted: "#a2aab5",
+      surface: "#181c21",
+      sidebar: "#0c0e11",
+      accent: "#c7d0dc",
+      accentForeground: "#111418",
     },
   },
   {
@@ -185,29 +187,6 @@ export const BUILT_IN_THEMES: CustomTheme[] = [
       sidebar: "#0d0b15",
       accent: "#bea4f7",
       accentForeground: "#140e24",
-    },
-  },
-  {
-    id: "palette-silver",
-    name: "Silver",
-    light: {
-      ...STARTER_THEME.light,
-      background: "#f7f8fa",
-      foreground: "#242930",
-      muted: "#5b626d",
-      surface: "#ffffff",
-      sidebar: "#eef0f4",
-      accent: "#3a414a",
-    },
-    dark: {
-      ...STARTER_THEME.dark,
-      background: "#101215",
-      foreground: "#e9edf2",
-      muted: "#a2aab5",
-      surface: "#181c21",
-      sidebar: "#0c0e11",
-      accent: "#c7d0dc",
-      accentForeground: "#111418",
     },
   },
   {
