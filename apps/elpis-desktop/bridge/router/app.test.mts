@@ -52,6 +52,8 @@ test("routes through native tools, delivers the complete goal, and recovers a wo
     // Elpis sessions reach their tools through the tool server: the shared engine bridge never routes dynamic tool calls back
     // to the router (10 Nov).
     assert.equal(start.params.dynamicTools, undefined);
+    // As in DSH, the router and its workers run with the same Full access (not Bypass).
+    assert.equal(start.params.sandbox, "danger-full-access");
     // With approval policy "never" a tool that needs approval is refused, so the router's own tools are pre-approved.
     assert.equal(
       ((start.params.config as Record<string, unknown>)["mcp_servers.elpis_mother"] as Record<string, unknown>)

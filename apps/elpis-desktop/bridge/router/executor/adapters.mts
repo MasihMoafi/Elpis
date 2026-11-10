@@ -92,7 +92,9 @@ export class AppServerAdapter implements RuntimeAdapter {
         await conn.call("thread/start", {
           cwd: options.cwd,
           approvalPolicy: "never",
-          sandbox: options.role === "orchestrator" ? "read-only" : "workspace-write",
+          // As in DSH, the router and its workers have the same access: no sandbox, as your user (not root). This is Elpis's
+          // Full access, not Bypass, so Elpis's own refusals of dangerous commands still apply.
+          sandbox: "danger-full-access",
           ...route,
           config: {
             ...config,

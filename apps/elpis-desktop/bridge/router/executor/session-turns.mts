@@ -30,9 +30,10 @@ export async function runOpen(
     JSON.stringify(record.model) !== JSON.stringify(model)
   )
     await resetSession.call(this, record);
-  // An Elpis session made with dynamic tools cannot be served: the shared engine bridge sends its tool calls to whichever
-  // window owns the chat, never back to the router (10 Nov: every router and worker tool call failed or timed out).
-  if (record.runtime === "elpis" && record.threadId && !record.creating && record.tools !== "mcp" && this.options.tools)
+  // An older Elpis session is replaced: one made with dynamic tools cannot be served, because the shared engine bridge sends
+  // its tool calls to whichever window owns the chat (10 Nov: every router and worker tool call failed or timed out), and one
+  // made before Full access keeps its sandbox.
+  if (record.runtime === "elpis" && record.threadId && !record.creating && record.tools !== "full" && this.options.tools)
     await resetSession.call(this, record);
   if (!record.threadId && !record.creating) {
     record.model = model;
@@ -77,7 +78,7 @@ export async function runOpen(
     }
     record.threadId = remote.threadId;
     record.creating = false;
-    if (mcp) record.tools = "mcp";
+    if (mcp) record.tools = "full";
     this.options.store.saveSession(id, record);
   }
   if (this.disposed) throw new Error("The session manager stopped while attaching a worker");
@@ -331,8 +332,9 @@ export const RecordSchema = z.object({
   model: RoleModelSchema.nullable(),
   messages: z.array(MessageSchema).default([]),
   resultId: z.string().optional(),
-  /** How the session reaches Elpis tools: "mcp" through the tool server; absent for older sessions made with dynamic tools. */
-  tools: z.enum(["mcp"]).optional(),
+  /** "full": the session reaches Elpis tools through the tool server and runs with Full access. "mcp" (sandboxed) and absent
+   * (dynamic tools) are older sessions, replaced on the next open. */
+  tools: z.enum(["mcp", "full"]).optional(),
 });
 
 export type SessionRecord = z.infer<typeof RecordSchema>;
