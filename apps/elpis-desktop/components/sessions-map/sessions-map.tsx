@@ -52,19 +52,6 @@ export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpe
           <div className="canvas-board flex-1 min-h-0">
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
               defaultViewport={viewport.current ?? { x: 48, y: 48, zoom: 1 }}
-              onInit={instance => {
-                if (viewport.current || !nodes[0]) return;
-                const group = new Set([nodes[0].id]);
-                let previous = 0;
-                while (previous !== group.size) {
-                  previous = group.size;
-                  for (const edge of edges) if (group.has(edge.source)) group.add(edge.target);
-                }
-                const members = nodes.filter(node => group.has(node.id));
-                const right = Math.max(...members.map(node => node.position.x + 190));
-                const bottom = Math.max(...members.map(node => node.position.y + 90));
-                void instance.setCenter(right / 2, (nodes[0].position.y + bottom) / 2, { zoom: 1 });
-              }}
               onMoveEnd={(_, next) => { viewport.current = next; }}
               minZoom={0.86} maxZoom={2} nodesDraggable={false} nodesConnectable={false}
               onNodeClick={(_, node) => { if (node.data.threadId) onOpenChat(node.data.threadId); }}

@@ -30,7 +30,7 @@ import { eventNotice, followupNotice } from "./app/notices.mts";
 import { mainTools, type MainToolsHost } from "./app/tools/main.mts";
 import { chatToolsHost } from "./app/tools/chats.mts";
 import type { Chats } from "./chats.mts";
-import { watchChats } from "./watch.mts";
+import { ChatWatch, watchChats } from "./watch.mts";
 import { executorTools, type ExecutorToolsHost } from "./app/tools/executor.mts";
 import type { ResourceHost } from "./app/resources.mts";
 import { evalsHealth } from "./app/views/overview.mts";
@@ -75,6 +75,7 @@ export class MotherApp implements SourceHost {
   private closing = false;
   /** Tickets whose result is already in his chat, so the host and the main Session never both send it. */
   private readonly shown = new Set<string>();
+  private watch: ChatWatch | undefined;
   private stopped: Promise<void> | undefined;
   private quiet = 0;
   private started = false;
@@ -298,7 +299,7 @@ export class MotherApp implements SourceHost {
         get github() {
           return runtime.context(githubKind);
         },
-        chats: options.chats && chatToolsHost(options.chats, options, () => store.settings()),
+        chats: options.chats && chatToolsHost(this.announced(options.chats), options, () => store.settings()),
         results: { shown: ticketId => this.shown.has(ticketId), mark: ticketId => void this.shown.add(ticketId) },
         sendReplies: () => outbox.sent(),
         requestPass: () => this.passes.request(),
@@ -319,6 +320,27 @@ export class MotherApp implements SourceHost {
   }
   private paused(): boolean {
     return this.closing || this.store.settings().paused;
+  }
+  /** His chats as the chat tools use them: a turn the router starts in one is announced in the Elpis chat when it ends. */
+  private announced(chats: Chats): Chats {
+    const own = join(this.options.home, "router");
+    const watch = (this.watch = new ChatWatch({
+      chats,
+      skip: chat => chat.id === this.options.threadId || !!chat.folder?.startsWith(own),
+      say: (id, text) => this.options.transport.appendAssistant(this.options.threadId, { id, text }),
+    }));
+    return {
+      ...chats,
+      send: async (id, text) => {
+        await chats.send(id, text);
+        watch.expect(id);
+      },
+      start: async input => {
+        const chat = await chats.start(input);
+        watch.expect(chat.id);
+        return chat;
+      },
+    };
   }
   private environment(ticket: Ticket) {
     const trigger = sourceTrigger(this, ticket);
@@ -369,16 +391,7 @@ export class MotherApp implements SourceHost {
         if (candidate) this.assessor.request(candidate);
       }
       await this.workers.start();
-      if (this.options.chats) {
-        const own = join(this.options.home, "router");
-        this.stops.push(
-          watchChats({
-            chats: this.options.chats,
-            skip: chat => chat.id === this.options.threadId || !!chat.folder?.startsWith(own),
-            say: (id, text) => this.options.transport.appendAssistant(this.options.threadId, { id, text }),
-          }),
-        );
-      }
+      if (this.watch) this.stops.push(watchChats(this.watch));
       this.loops.push(
         watchElpisChat(
           this.context({ kind: "elpis-chat", health: ["elpis-chat"] }),

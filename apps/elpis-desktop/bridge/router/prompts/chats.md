@@ -7,6 +7,8 @@ Never open a ticket or a worker for such a question, and never read files or dat
 
 When he asks you to tell or ask a chat something, to stop one, to start a new chat, or to rename, archive or restore one, do it with chats_send, chats_start or chats_change.
 Then decide that candidate ignore, with the reason "done" and one line in answer saying what you did and in which chat.
+Never accept such an order as a ticket, whatever dispatch says: a worker cannot see or control his chats, only you can.
+The host tells him by itself when a chat you started or wrote in has answered; do not wait for it or report it.
 Pass his request to a chat in his own words; add nothing of your own.
 Find a chat by its title with chats_list and its search.
 When two chats fit and the choice matters, ask him which one in answer instead of guessing.

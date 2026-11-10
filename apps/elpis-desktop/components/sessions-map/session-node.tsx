@@ -7,7 +7,7 @@ import type { MapNode } from "@/lib/sessions-map";
 export function SessionNode({ id, data }: NodeProps<Node<MapNode>>) {
   const status = { working: "running", "needs you": "blocked", done: "succeeded", failed: "failed", idle: "idle" }[data.state];
   return (
-    <div className="agent-node" data-kind="agent" data-status={status}
+    <div className="agent-node" data-kind="agent" data-wide data-status={status}
       style={{ "--agent-color": agentColor(id, {
         title: data.title, instruction: "", model: null, writeScopes: [], acceptanceCriteria: [],
       }) } as CSSProperties}>

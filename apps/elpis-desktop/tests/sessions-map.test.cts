@@ -52,8 +52,9 @@ for (const colorScheme of ['light', 'dark']) test(`sessions map navigation and r
     }
     const pane = map.locator('.react-flow__pane');
     const box = await pane.boundingBox(); assert.ok(box);
-    await page.mouse.move(box.x + 30, box.y + 250); await page.mouse.down();
-    await page.mouse.move(box.x + 30, box.y + 120, { steps: 5 }); await page.mouse.up();
+    // The map opens with its newest group at the top, so drag it down: the cards stay inside the pane.
+    await page.mouse.move(box.x + 30, box.y + 320); await page.mouse.down();
+    await page.mouse.move(box.x + 30, box.y + 450, { steps: 5 }); await page.mouse.up();
     await fs.mkdir('/tmp/elpis-map-shots', { recursive: true });
     await page.screenshot({ path: `/tmp/elpis-map-shots/${colorScheme}.png` });
     await page.mouse.wheel(0, -120);

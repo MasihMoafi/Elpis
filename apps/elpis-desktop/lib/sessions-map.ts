@@ -13,7 +13,13 @@ export type SessionsGraph = {
   edges: { source: string; target: string }[];
 };
 
-/** Give each depth its own slots; groups are stacked with a clear gap. */
+/** The map's grid: a card is 260 px wide with a title of up to two lines (`.agent-node[data-wide]`). */
+const COLUMN = 330,
+  ROW = 130,
+  GROUP_GAP = 40,
+  SINGLES_PER_ROW = 3;
+
+/** Give each depth its own slots; groups are stacked with a clear gap, the most recently active first. */
 export function layoutSessions(graph: SessionsGraph) {
   const byId = new Map(graph.nodes.map(node => [node.id, node]));
   const children = new Map<string, string[]>(), incoming = new Set<string>();
@@ -39,15 +45,23 @@ export function layoutSessions(graph: SessionsGraph) {
     groups.push(group);
   }
   groups.sort((a, b) => b.activity - a.activity);
+  const place = (id: string, x: number, y: number) => ({ id, type: "session", position: { x, y }, data: byId.get(id)! });
   let top = 0;
-  return groups.flatMap(group => {
+  const trees = groups.filter(group => group.ids.length > 1).flatMap(group => {
     const slots = new Map<number, number>();
     const result = group.ids.map(({ id, depth }) => {
       const slot = slots.get(depth) ?? 0;
       slots.set(depth, slot + 1);
-      return { id, type: "session", position: { x: depth * 260, y: top + slot * 120 }, data: byId.get(id)! };
+      return place(id, depth * COLUMN, top + slot * ROW);
     });
-    top += Math.max(...slots.values()) * 120 + 40;
+    top += Math.max(...slots.values()) * ROW + GROUP_GAP;
     return result;
   });
+  // Sessions that started nobody sit together in rows, so a long history is not one tall column.
+  const singles = groups
+    .filter(group => group.ids.length === 1)
+    .map((group, index) =>
+      place(group.ids[0]!.id, (index % SINGLES_PER_ROW) * COLUMN, top + Math.floor(index / SINGLES_PER_ROW) * ROW),
+    );
+  return [...trees, ...singles];
 }

@@ -1,6 +1,6 @@
 import { AgentsCanvas } from "@/components/agents-canvas";
 import { SessionsMap } from "@/components/sessions-map/sessions-map";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Viewport } from "@xyflow/react";
 import { AutomationsView } from "@/components/automations-view";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
@@ -63,6 +63,12 @@ export function WorkflowPages({
     workflowPrefill,
     setWorkflowPrefill,
   } = pages;
+  // The board lays itself out when it first shows: mounted hidden behind the Map, it packed every agent into one
+  // corner. So it mounts the first time Board opens, and then stays, so its draft survives the other views.
+  const [boardOpened, setBoardOpened] = useState(workflowTab === "board");
+  useEffect(() => {
+    if (workflowTab === "board") setBoardOpened(true);
+  }, [workflowTab]);
   const { workflowCatalog } = sidebarModel;
   const { projects, workflowProject, projectChanging } = projectState;
   const { ready, connected, replays } = runtime;
@@ -80,7 +86,7 @@ export function WorkflowPages({
               onOpenChat={id => { show("chat"); openById(id); }}
             />
           )}
-          <div className="contents" hidden={workflowTab !== "board"}>
+          {boardOpened && <div className="contents" hidden={workflowTab !== "board"}>
             <CanvasGuideHelp onOpen={() => show("agentsGuide")}>
               <AgentsCanvas
                 threads={threads}
@@ -119,7 +125,7 @@ export function WorkflowPages({
                 onUseFolder={workIn}
               />
             </CanvasGuideHelp>
-          </div>
+          </div>}
           {workflowTab === "scheduled" && (
             <AutomationsView
               projects={projects}
