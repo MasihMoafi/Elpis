@@ -1,5 +1,7 @@
 import { announceScrollIntent } from "@/lib/scroll-intent";
+import { useCallback } from "react";
 import type React from "react";
+import { useChatPageKeys } from "@/lib/use-chat-page-keys";
 import { ArrowDown } from "lucide-react";
 import { ApprovalCard } from "@/components/approval-card";
 import { BrandWordmark } from "@/components/brand-wordmark";
@@ -118,6 +120,16 @@ export function WorkspaceTranscript({
   const workflowIdentity = selectedWorkflow ? workflowCatalog.identities[selectedWorkflow.id] : undefined;
   const failedTurn = selected ? failedTurns[selected.id] : undefined;
   const failedInput = failedTurn ? replacementOptions.get(failedTurn.turnId) : undefined;
+  useChatPageKeys(
+    scroll,
+    useCallback(
+      (toBottom: boolean) => {
+        followingBottom.current = false;
+        stickToBottom.current = toBottom;
+      },
+      [followingBottom, stickToBottom],
+    ),
+  );
   return (
     <div className="chat-scroll-wrap">
       <div

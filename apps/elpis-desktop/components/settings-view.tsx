@@ -40,6 +40,7 @@ import {
 } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { SearchField } from "@/components/ui/search-field";
+import { useSettingsRowFilter } from "@/lib/use-settings-row-filter";
 import { ViewBoundary } from "@/components/view-boundary";
 import { SettingRow, SettingsGroup, SettingsScope } from "@/components/settings/rows";
 import { configDestination, SECTIONS, type ConfigSectionId } from "@/lib/config-sections";
@@ -238,6 +239,8 @@ export function SettingsView({
   const list = useRef<HTMLDivElement>(null);
   useSteadyRowList(list, '[role="tab"], .settings-section-link');
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+  const settingsPage = useRef<HTMLDivElement>(null);
+  useSettingsRowFilter(settingsPage, terms);
   const shown = pages.filter(item =>
     terms.every(term =>
       `${item.label} ${item.words} ${groups.find(group => group.id === item.group)?.label}`
@@ -420,7 +423,7 @@ export function SettingsView({
           {!visibleGroups.length && <p className="settings-nav-empty">No setting matches.</p>}
         </div>
       </nav>
-      <div className="settings-page">
+      <div className="settings-page" ref={settingsPage}>
         {visited.map(section => (
           <div
             key={section}

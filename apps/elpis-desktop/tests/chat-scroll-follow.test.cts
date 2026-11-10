@@ -16,6 +16,7 @@ type Page = {
   getByRole(role: string, options?: object): Locator;
   evaluate<T>(fn: () => T): Promise<Awaited<T>>;
   waitForTimeout(ms: number): Promise<void>;
+  keyboard: { press(key: string): Promise<void> };
 };
 const view = (page: Page) => page.evaluate(() => {
   const s = document.querySelector('.chat-scroll') as HTMLElement;
@@ -95,6 +96,39 @@ test('switching chats keeps the reading place; sending pins to the bottom; the g
     await page.getByText('Pinned after sending', { exact: true }).waitFor();
     await page.waitForTimeout(600);
     assert.ok((await view(page)).gap <= 2, `C8: a sent message pins to the bottom (${JSON.stringify(await view(page))})`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('PageUp/PageDown move one screen less one line; End and Ctrl+End reach the newest message (C6)', async () => {
+  const chat = Array.from({ length: 30 }, (_, i) => [`k${i}`, `Key prompt ${i}`, `Key reply ${i}: ${'text that fills a line '.repeat(12)}`]);
+  const f = await fixture({ width: 1100, height: 750, chat });
+  try {
+    await f.open('chat-a');
+    const page: Page = f.page;
+    await page.getByText(/Key reply 29:/).waitFor();
+    await page.waitForTimeout(400);
+    const line = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.chat-scroll .message') as HTMLElement).lineHeight));
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    const start = await view(page);
+    await page.keyboard.press('PageUp'); await page.waitForTimeout(250);
+    const up = await view(page);
+    assert.ok(start.top - up.top >= (start.height - line) * 0.8, `PageUp moves about a screen (${start.top} -> ${up.top}, screen ${start.height})`);
+    // Turns below are already drawn, so PageDown's step is exact: the screen less one line.
+    await page.keyboard.press('PageDown'); await page.waitForTimeout(250);
+    const down = await view(page);
+    assert.ok(Math.abs(down.top - up.top - (up.height - line)) <= 2 || down.gap <= 2, `PageDown moves a screen less a line (${up.top} -> ${down.top}, line ${line})`);
+    await page.keyboard.press('PageUp'); await page.keyboard.press('PageUp'); await page.waitForTimeout(250);
+    await page.keyboard.press('End'); await page.waitForTimeout(400);
+    assert.ok((await view(page)).gap <= 2, 'End reaches the newest message');
+    // In the message box, Home moves its caret, not the chat; Ctrl+End still reaches the end.
+    await page.keyboard.press('PageUp'); await page.waitForTimeout(250);
+    await f.composer.fill('caret text');
+    const before = await view(page);
+    await f.composer.press('Home'); await page.waitForTimeout(200);
+    assert.equal((await view(page)).top, before.top, 'Home in the message box leaves the chat where it is');
+    await f.composer.press('Control+End'); await page.waitForTimeout(400);
+    assert.ok((await view(page)).gap <= 2, 'Ctrl+End from the message box reaches the newest message');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

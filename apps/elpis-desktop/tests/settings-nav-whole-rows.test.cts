@@ -60,3 +60,29 @@ test('Settings title and section headings keep room around them at every window 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// specs/settings.md S8: Search narrows the open page's rows as well as the list of pages, as the ChatGPT app's does.
+test('Settings search hides the open page rows that miss its words, and brings them back when cleared', async () => {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1100, height: 750 }), { page } = f;
+  try {
+    await f.open('chat-a');
+    await openSettings(page);
+    await page.getByRole('tab', { name: 'General', exact: true }).click();
+    const panel = page.locator('[role="tabpanel"]:not([hidden])');
+    type Row = { text: string; shown: boolean };
+    const rows = (): Promise<Row[]> => panel.locator('.settings-row:not(.settings-actions)').evaluateAll((list: HTMLElement[]) =>
+      list.map(row => ({ text: (row.textContent ?? '').toLowerCase(), shown: row.getClientRects().length > 0 })));
+    await panel.getByText('Send shortcut', { exact: true }).waitFor();
+    const all = await rows();
+    await page.getByRole('searchbox', { name: 'Search settings' }).or(page.getByLabel('Search settings')).first().fill('send');
+    await page.waitForTimeout(200);
+    const narrowed = await rows();
+    assert.ok(narrowed.some((row: Row) => row.shown), 'a matching row stays');
+    assert.ok(narrowed.filter((row: Row) => row.shown).every((row: Row) => row.text.includes('send')), 'every row left mentions the word');
+    assert.ok(narrowed.filter((row: Row) => row.shown).length < all.filter((row: Row) => row.shown).length, 'rows that miss it hide');
+    await page.getByRole('searchbox', { name: 'Search settings' }).or(page.getByLabel('Search settings')).first().fill('');
+    await page.waitForTimeout(200);
+    assert.deepEqual((await rows()).map((row: Row) => row.shown), all.map((row: Row) => row.shown), 'clearing brings every row back');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

@@ -92,3 +92,5 @@
   .settings-mode .settings-nav button[role="tab"] { width:auto; flex:0 0 auto; white-space:nowrap; }
   .settings-mode .settings-page { padding:24px 16px 48px; }
 }
+/* Settings search hides rows that miss its words (lib/use-settings-row-filter.ts, specs/settings.md S8). */
+.settings-page [data-search-miss] { display:none; }
