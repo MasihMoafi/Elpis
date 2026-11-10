@@ -155,18 +155,11 @@ test("handles follow-ups through their worker, hands unrelated work back, and re
     await h.app.pump();
     const first = h.app.store.tickets.list()[0]!,
       worker = h.app.workers.sessions.nativeId(`worker-${first.id}`)!;
+    // A new message in the chat is its own thread, as a new Feishu message is in dsh-superagent: it goes to the router,
+    // not to the open ticket's worker (10 Nov: the first ticket took every later message).
     const followup = h.message("followup", "Now fix an unrelated app");
     await h.app.pump();
-    assert.equal(h.app.engine.candidate(followup), undefined);
-    const denied = await h.server.tool(h.main(), "orchestrator_route", {
-      decisions: [{ kind: "ignore", trigger_id: followup, reason: "Ignore" }],
-    });
-    assert.match(JSON.stringify(denied.value), /refused/);
-    await h.call(worker, "orchestrator_trigger_handback", {
-      trigger_id: followup,
-      reason: "This asks for another app",
-    });
-    await h.app.pump();
+    assert.ok(h.app.engine.candidate(followup), "the router decides an unrelated message");
     await h.route(followup, "fix-other-app");
     await h.app.pump();
     assert.equal(h.app.store.tickets.list().length, 2);
