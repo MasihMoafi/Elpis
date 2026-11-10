@@ -2,3 +2,17 @@
 @import "./styles/foundation.css";
 @import "./styles/conversation.css";
 @import "./styles/panels.css";
+
+:root {
+  --annotation-blue:#2f6fed;
+  --annotation-ink:#fff;
+  --dictation-stop:oklch(70.4% 0.191 22.216);
+  --change-menu-shadow:#0002;
+  --matilda-face-shadow:rgb(0 0 0 / 0.22);
+  --resume-backdrop:rgb(0 0 0 / 0.45);
+  --splash-light-background:#fbfbfa;
+  --splash-light-foreground:#252524;
+  --splash-dark-background:#0a0b0d;
+  --splash-dark-foreground:#e6e0d3;
+  --splash-glow:#f2a6260d;
+}

@@ -202,7 +202,7 @@ export function Dictation({
           }
         >
           {phase === "recording" ? (
-            <StopIcon size={16} className="text-red-400" />
+            <StopIcon size={16} className="text-[var(--dictation-stop)]" />
           ) : active ? (
             <LoaderCircle size={16} className="animate-spin" />
           ) : (

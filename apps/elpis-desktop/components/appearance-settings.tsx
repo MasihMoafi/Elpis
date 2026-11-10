@@ -206,7 +206,7 @@ function ThemeEditor({
   const colorFields = (mode: "light" | "dark") =>
     THEME_COLORS.map(({ key, label }) => {
       const value = draft[mode][key],
-        color = /^#[\da-f]{6}$/i.test(value) ? value : "#000000";
+        color = /^#[\da-f]{6}$/i.test(value) ? value : "#000000"; // ui-check-ignore: fallback data for the native colour input
       const modeName = mode === "light" ? "Light" : "Dark";
       return (
         <label

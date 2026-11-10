@@ -172,7 +172,7 @@ export default function BrowserDrawing({
         elements,
         files,
         exportPadding: 0,
-        appState: { exportBackground: true, exportWithDarkMode: false, viewBackgroundColor: "#ffffff" },
+        appState: { exportBackground: true, exportWithDarkMode: false, viewBackgroundColor: "#ffffff" }, // ui-check-ignore: exported drawing background data
       });
       const [left, top] = getCommonBounds(elements),
         scale = Math.min(1, 2048 / Math.max(draft.width, draft.height));

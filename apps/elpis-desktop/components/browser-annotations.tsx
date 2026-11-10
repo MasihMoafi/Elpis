@@ -22,7 +22,7 @@ import { errorText } from "@/lib/error-text.mts";
 /** Gives comments to the chat: adds them to the composer and, for Send, sends the message. False when they could not be added. */
 export type AttachToChat = (parts: Attachment[], submit: boolean) => Promise<boolean>;
 
-const BLUE = "#2f6fed";
+const BLUE = "#2f6fed"; // ui-check-ignore: colour drawn into exported screenshot data
 const IMAGE_LIMIT = 3.8 * 1024 * 1024;
 const load = (src: string) =>
   new Promise<HTMLImageElement>((resolve, reject) => {
@@ -53,7 +53,7 @@ export async function screenshotSheet(images: { number: number; dataUrl: string 
   canvas.height = rows.reduce((sum, row) => sum + row + gap, gap);
   const context = canvas.getContext("2d");
   if (!context) throw Error("Screenshots cannot be combined on this computer.");
-  context.fillStyle = "#e9e9ec";
+  context.fillStyle = "#e9e9ec"; // ui-check-ignore: colour drawn into exported screenshot data
   context.fillRect(0, 0, canvas.width, canvas.height);
   let y = gap;
   rows.forEach((row, rowIndex) => {
@@ -64,7 +64,7 @@ export async function screenshotSheet(images: { number: number; dataUrl: string 
         height = measured - header;
       context.fillStyle = BLUE;
       context.fillRect(x, y, width, header);
-      context.fillStyle = "#fff";
+      context.fillStyle = "#fff"; // ui-check-ignore: colour drawn into exported screenshot data
       context.font = "600 16px system-ui, sans-serif";
       context.textBaseline = "middle";
       context.fillText(`Comment ${item.number}`, x + 10, y + header / 2);

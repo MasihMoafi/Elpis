@@ -12,7 +12,7 @@
 .browser-toolbar input:focus-visible { border-color:color-mix(in srgb, var(--primary) 50%, var(--border)); }
 /* Browser parity (16 Oct 2026): address states, Annotate, find bar, failure screen, options menu, annotation dock.
  * Page markers and comment numbers share one blue (--annotation) so a number in Elpis matches the one on the page. */
-.browser-panel { --annotation:#2f6fed; }
+.browser-panel { --annotation:var(--annotation-blue); }
 .browser-address { position:relative; display:flex; align-items:center; flex:1; min-width:180px; }
 .browser-address input { flex:1; }
 .browser-security { position:absolute; inset-inline-start:7px; z-index:1; display:flex; align-items:center; gap:4px; font-size:var(--text-small); color:var(--warning); pointer-events:none; }
@@ -22,7 +22,7 @@
 .browser-zoom:hover { color:var(--foreground); }
 .browser-annotate { gap:6px; color:var(--muted-foreground); }
 .browser-annotate[aria-pressed="true"] { color:var(--annotation); background:color-mix(in oklab, var(--annotation) 14%, transparent); }
-.browser-badge { min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--annotation); color:#fff; font-size:var(--text-small); line-height:16px; text-align:center; }
+.browser-badge { min-width:16px; height:16px; padding:0 4px; border-radius:8px; background:var(--annotation); color:var(--annotation-ink); font-size:var(--text-small); line-height:16px; text-align:center; }
 .browser-notice { padding:6px 12px; font-size:var(--text-xs); color:var(--muted-foreground); border-bottom:1px solid var(--hairline); }
 .browser-find { display:flex; align-items:center; gap:4px; padding:5px 6px; border-bottom:1px solid var(--hairline); background:var(--sidebar); }
 .browser-find input { max-width:280px; height:28px; font-size:var(--text-xs); border-color:var(--hairline); background:var(--recessed); }
@@ -43,7 +43,7 @@
 .annotation-editor { display:flex; align-items:flex-start; gap:8px; height:72px; padding:8px; border-bottom:1px solid var(--hairline); }
 .annotation-editor textarea { flex:1; min-height:0; height:56px; resize:none; field-sizing:fixed; font-size:var(--text-sm); border-color:var(--hairline); background:var(--recessed); }
 .annotation-target { display:flex; align-items:center; gap:6px; max-width:30%; padding-top:6px; font-size:var(--text-xs); color:var(--muted-foreground); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.annotation-target b, .annotation-chips button { flex-shrink:0; width:20px; height:20px; border-radius:10px; background:var(--annotation); color:#fff; font-size:var(--text-small); font-weight:700; line-height:20px; text-align:center; }
+.annotation-target b, .annotation-chips button { flex-shrink:0; width:20px; height:20px; border-radius:10px; background:var(--annotation); color:var(--annotation-ink); font-size:var(--text-small); font-weight:700; line-height:20px; text-align:center; }
 .annotation-editor-actions { display:flex; gap:4px; align-self:flex-end; }
 .annotation-hint { display:flex; align-items:center; gap:8px; margin:0; height:100%; padding-inline:4px; font-size:var(--text-sm); color:var(--muted-foreground); }
 .annotation-hint svg { color:var(--annotation); flex-shrink:0; }

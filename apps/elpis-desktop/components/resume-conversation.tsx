@@ -106,7 +106,7 @@ export function ResumeConversation({
       }}
     >
       <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/45" />
+        <Dialog.Backdrop className="fixed inset-0 z-50 bg-[var(--resume-backdrop)]" />
         <Dialog.Popup
           initialFocus={input}
           finalFocus={returnFocus}

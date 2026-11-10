@@ -64,7 +64,7 @@ function resolvedColour(value: string, alpha?: number) {
   const [r, g, b] = context.getImageData(0, 0, 1, 1).data;
   return alpha === undefined
     ? `#${[r, g, b].map(part => (part ?? 0).toString(16).padStart(2, "0")).join("")}`
-    : `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    : `rgba(${r}, ${g}, ${b}, ${alpha})`; // ui-check-ignore: xterm requires a resolved colour value
 }
 function theme(element: HTMLElement) {
   const style = getComputedStyle(element),

@@ -31,7 +31,7 @@
 .matilda-float, .matilda-float *, .matilda-mini-popup { app-region:no-drag; -webkit-app-region:no-drag; }
 /* While she is held, the pointer carries her and selects no text on the way. */
 html.matilda-dragging { user-select:none; -webkit-user-select:none; }
-.matilda-face { display:block; width:100%; height:100%; padding:0; border:0; border-radius:9999px; background:transparent; cursor:grab; filter:drop-shadow(0 4px 10px rgb(0 0 0 / 0.22)); }
+.matilda-face { display:block; width:100%; height:100%; padding:0; border:0; border-radius:9999px; background:transparent; cursor:grab; filter:drop-shadow(0 4px 10px var(--matilda-face-shadow)); }
 .matilda-face:active { cursor:grabbing; }
 .matilda-face img { position:absolute; inset:0; display:block; width:100%; height:100%; border-radius:9999px; }
 .matilda-face .matilda-avatar-dark { display:none; }
