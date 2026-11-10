@@ -185,6 +185,10 @@ printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-p
     "graceful-fs": {},
     retry: {},
     "signal-exit": {},
+    sharp: { "detect-libc": "1" },
+    "detect-libc": {},
+    [`@img/sharp-${process.platform}-${process.arch}`]: {},
+    [`@img/sharp-libvips-${process.platform}-${process.arch}`]: {},
   })) {
     await put(
       path.join(source, "node_modules", name, "package.json"),
@@ -193,6 +197,10 @@ printf 'app=%s\\nargument=%s\\nnode-bin=%s\\nnode-mode=%s\\npath-first=%s\\nno-p
     await put(path.join(source, "node_modules", name, "index.js"), "module.exports = {};");
     await put(path.join(source, "node_modules", name, "LICENSE"), "MIT fixture");
   }
+  // sharp's native addon and libvips, which the packaged app needs to decode portraits.
+  await put(path.join(source, "node_modules", `@img/sharp-${process.platform}-${process.arch}`, "lib", "sharp.node"), "addon");
+  await put(path.join(source, "node_modules", `@img/sharp-libvips-${process.platform}-${process.arch}`, "lib", "libvips-cpp.so.8.17.3"), "libvips");
+  await put(path.join(source, "node_modules", `@img/sharp-libvips-${process.platform}-${process.arch}`, "include", "vips.h"), "header");
   return {
     root,
     source,
@@ -247,7 +255,15 @@ test("production package runs after its source and dependency installations move
     "graceful-fs": "1.0.0",
     retry: "1.0.0",
     "signal-exit": "1.0.0",
+    sharp: "1.0.0",
+    "detect-libc": "1.0.0",
+    [`@img/sharp-${process.platform}-${process.arch}`]: "1.0.0",
+    [`@img/sharp-libvips-${process.platform}-${process.arch}`]: "1.0.0",
   });
+  const sharpNative = all.filter(name => name.startsWith("app/node_modules/@img/"));
+  assert(sharpNative.some(name => name.endsWith("/lib/sharp.node")), "sharp's addon ships");
+  assert(sharpNative.some(name => name.endsWith("/lib/libvips-cpp.so.8.17.3")), "libvips ships");
+  assert(!sharpNative.some(name => name.endsWith(".h")), "headers stay behind");
   assert.deepEqual(
     all.filter(name => name.startsWith("app/node_modules/rrule/")),
     [

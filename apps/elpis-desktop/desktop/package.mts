@@ -124,12 +124,18 @@ function routerDependencies(source: string) {
         `app/node_modules/${name}`,
         target =>
           !/(?:^|\/)(?:tests?|examples?)(?:\/|$)|\.test\./.test(target) &&
-          (!path.posix.extname(target) || /\.(?:[cm]?js|json)$|\/LICEN[CS]E[^/]*$/.test(target)),
+          (!path.posix.extname(target) || /\.(?:[cm]?js|json|node)$|\.so(?:\.\d+)*$|\/LICEN[CS]E[^/]*$/.test(target)),
       ),
     );
     for (const dependency of Object.keys(manifest.dependencies ?? {})) visit(dependency, directory);
   };
   for (const name of ["zod", "proper-lockfile"]) visit(name, source);
+  // Custom character portraits (bridge/character-image.mts) decode through sharp: its loader, and the native addon and
+  // libvips built for this machine, which npm installs as optional per-platform packages (10 Nov: without them the
+  // packaged app could not open).
+  visit("sharp", source);
+  const sharp = path.dirname(createRequire(path.join(source, "package.json")).resolve("sharp/package.json"));
+  for (const name of [`@img/sharp-${process.platform}-${process.arch}`, `@img/sharp-libvips-${process.platform}-${process.arch}`]) visit(name, sharp);
   return { files, versions };
 }
 

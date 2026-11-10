@@ -1,4 +1,3 @@
-import sharp from 'sharp';
 import { imageMime } from './attachments.mts';
 import { BridgeError } from './validate.mts';
 import { CHARACTER_LIMITS } from '../lib/custom-character-types.mts';
@@ -12,6 +11,8 @@ export async function characterImage(data: unknown): Promise<Buffer> {
   if (encoded.length > Math.ceil(CHARACTER_LIMITS.imageBytes / 3) * 4) throw new BridgeError('Portrait is too large (maximum 4 MiB).', 413);
   const bytes = Buffer.from(encoded, 'base64');
   if (!bytes.length || bytes.length > CHARACTER_LIMITS.imageBytes || bytes.toString('base64') !== encoded || imageMime(bytes) !== match[1]) throw new BridgeError('Portrait image data is invalid.');
+  // Loaded on first use: a native module missing from a package then fails this one feature, not the app's start (10 Nov).
+  const sharp = await import('sharp').then(module => module.default, () => { throw new BridgeError('Portrait decoding is not available in this build.', 503); });
   try {
     const decoder = sharp(bytes, { limitInputPixels: 4096 * 4096, failOn: 'warning' });
     const metadata = await decoder.metadata();
