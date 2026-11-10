@@ -61,7 +61,7 @@ test('an image that stops being readable adds no incomplete reply or image', () 
   await page.reload(); await f.open('chat-a'); await composer.fill('Keep this draft');
   await page.getByRole('button', { name: 'Reply to image: Logo', exact: true }).click();
   await page.getByText('This image could not be attached. Try again after it loads.', { exact: true }).waitFor();
-  assert.equal(await preview(page).count(), 0); assert.equal(await page.locator('.composer img').count(), 0);
+  assert.equal(await preview(page).count(), 0); assert.equal(await page.locator('.composer img:not(.model-logo)').count(), 0);
   assert.equal(await composer.inputValue(), 'Keep this draft');
 }));
 for (const colorScheme of ['light']) test(`reply to one picture sends that image, preserves the draft and cancels cleanly (${colorScheme})`, () => using({ colorScheme, chat: [['pictures', 'Make two logos', '![First logo](https://images.example/first.png)\n\n![Second logo](https://images.example/second.png)'], ['tail', 'Ready?', 'Pictures ready']] }, async f => {
@@ -78,7 +78,7 @@ for (const colorScheme of ['light']) test(`reply to one picture sends that image
   await preview(page).getByRole('img', { name: 'Second logo', exact: true }).waitFor();
   assert.equal(await preview(page).getByRole('img', { name: 'First logo', exact: true }).count(), 0);
   await preview(page).getByRole('button', { name: 'Cancel reply', exact: true }).click();
-  assert.equal(await page.locator('.composer img').count(), 0, 'cancel removes the reply image');
+  assert.equal(await page.locator('.composer img:not(.model-logo)').count(), 0, 'cancel removes the reply image');
   assert.equal(await composer.inputValue(), 'Keep my words!');
   assert.equal(await page.locator('.composer').getByText('notes.txt', { exact: true }).count(), 1);
   await page.getByRole('button', { name: 'Reply to image: Second logo', exact: true }).click();
