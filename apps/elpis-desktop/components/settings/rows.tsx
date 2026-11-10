@@ -250,8 +250,17 @@ export function MiddlePath({ text }: { text: string }) {
   const head = text.slice(0, text.length - tail.length);
   return (
     <bdi className="middle-path">
-      <span className="middle-path-head">{head}</span>
-      {tail && <span className="middle-path-tail">{tail}</span>}
+      {/* The two halves are flex items, which screen readers and a link's name would part with a space: the whole path is
+          read from one hidden copy instead (10 Nov: the config file's button lost its name). */}
+      <span className="sr-only">{text}</span>
+      <span className="middle-path-head" aria-hidden="true">
+        {head}
+      </span>
+      {tail && (
+        <span className="middle-path-tail" aria-hidden="true">
+          {tail}
+        </span>
+      )}
     </bdi>
   );
 }

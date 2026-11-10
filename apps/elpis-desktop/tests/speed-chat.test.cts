@@ -233,7 +233,8 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
     await t.test('typing budget', () => { const typing = report.typing; assert.ok(typing); assert.ok(typing.p95 < 100, `typing p95 ${typing.p95.toFixed(1)} ms >= 100 ms`); });
     await t.test('scroll budget', () => { const scroll = report.scroll; assert.ok(scroll && scroll.p95 !== undefined); assert.ok(scroll.p95 < 50, `scroll frame p95 ${scroll.p95.toFixed(1)} ms >= 50 ms`); });
     await t.test('streaming budget', () => { const streaming = report.streaming; assert.ok(streaming); assert.ok(streaming.p95 < 120, `streaming input p95 ${streaming.p95.toFixed(1)} ms >= 120 ms`); });
-    await t.test('idle budget', () => { const cpu = report.idleCpuPercent; assert.ok(cpu !== undefined); assert.ok(cpu < 2, `idle renderer CPU ${cpu.toFixed(2)}% >= 2%`); });
+    // 3%, not 2%: Masih chose the sidebar wordmark's light to sweep all the time (10 Nov), which measured 2.19% idle.
+    await t.test('idle budget', () => { const cpu = report.idleCpuPercent; assert.ok(cpu !== undefined); assert.ok(cpu < 3, `idle renderer CPU ${cpu.toFixed(2)}% >= 3%`); });
   } finally {
     await fs.writeFile(path.join(destination, `${label}.json`), JSON.stringify(report, null, 2));
     console.log('SPEED', JSON.stringify({ label, open: report.phases.open?.ms, typing: report.typing?.p95, scroll: report.scroll?.p95, streaming: report.streaming?.p95,
