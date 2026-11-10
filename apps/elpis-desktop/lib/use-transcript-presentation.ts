@@ -1,3 +1,4 @@
+import { SCROLL_INTENT } from "@/lib/scroll-intent";
 import { useEffect, useLayoutEffect, useMemo, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { isVoiceHandoff } from "@/bridge/voice-handoff.cts";
 import type { Entry, Thread } from "@/lib/api";
@@ -98,8 +99,12 @@ export function useTranscriptPresentation({
       content = element?.firstElementChild;
     if (!element || !content) return;
     const observer = new ResizeObserver(() => {
-      if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight });
-      else keep(element);
+      // A restored place wins over following the end while it is pinned: the cached copy shown first can be too short
+      // for the place, so the view clamps to the end and only looks "at the bottom" (10 Nov, his chat came back at the end).
+      if (pinned.current) {
+        keep(element);
+        stickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight <= 2;
+      } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight });
     });
     observer.observe(element);
     observer.observe(content);
@@ -107,7 +112,7 @@ export function useTranscriptPresentation({
     const release = () => {
       pinned.current = null;
     };
-    const intents = ["wheel", "pointerdown", "keydown", "elpis-scroll-intent"];
+    const intents = ["wheel", "pointerdown", "keydown", SCROLL_INTENT];
     for (const name of intents) element.addEventListener(name, release);
     return () => {
       observer.disconnect();

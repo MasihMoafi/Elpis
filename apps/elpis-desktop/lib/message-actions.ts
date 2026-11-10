@@ -1,3 +1,4 @@
+import { announceScrollIntent } from "@/lib/scroll-intent";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { RestoreMode } from "@/components/rewind-dialog";
 import { api, unreadable, type Entry, type Thread } from "@/lib/api";
@@ -110,6 +111,7 @@ export function createMessageActions({
     if (overrides) setNextTurn(prev => without(prev, thread.id));
     if (selectedRef.current?.id === thread.id) {
       stickToBottom.current = true;
+      announceScrollIntent();
       setEntries(prev => prev.filter(entry => !stale.has(entry.turnId)));
     }
     markTurnStarted(thread.id, startedTurn.id);

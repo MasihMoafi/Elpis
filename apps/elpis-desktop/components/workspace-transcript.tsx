@@ -1,3 +1,4 @@
+import { announceScrollIntent } from "@/lib/scroll-intent";
 import type React from "react";
 import { ArrowDown } from "lucide-react";
 import { ApprovalCard } from "@/components/approval-card";
@@ -282,7 +283,7 @@ export function WorkspaceTranscript({
           onNavigate={() => {
             followingBottom.current = false;
             stickToBottom.current = false;
-            scroll.current?.dispatchEvent(new Event("elpis-scroll-intent"));
+            announceScrollIntent();
           }}
         />
         {awayFromBottom && (

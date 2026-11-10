@@ -1,3 +1,4 @@
+import { announceScrollIntent } from "@/lib/scroll-intent";
 import { startThread } from "@/lib/start-thread";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import type { PermissionMode } from "@/components/composer-controls";
@@ -138,6 +139,7 @@ export function createChatSend({
     const queued = activeTurn && !continues && (followUp ?? preferences.followUp) === "queue";
     if (!queued) {
       stickToBottom.current = true;
+      announceScrollIntent();
       setSubmissions(previous => [
         ...previous.filter(sent => sent.scope === originalId),
         {
