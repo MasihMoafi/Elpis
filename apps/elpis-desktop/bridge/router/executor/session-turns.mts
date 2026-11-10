@@ -28,13 +28,12 @@ export async function runOpen(
     record.threadId &&
     !record.creating &&
     JSON.stringify(record.model) !== JSON.stringify(model)
-  ) {
-    await this.adapter(record.runtime)
-      .archive?.(record.threadId)
-      .catch(() => {});
-    record.threadId = null;
-    record.messages = [];
-  }
+  )
+    await resetSession.call(this, record);
+  // An Elpis session made with dynamic tools cannot be served: the shared engine bridge sends its tool calls to whichever
+  // window owns the chat, never back to the router (10 Nov: every router and worker tool call failed or timed out).
+  if (record.runtime === "elpis" && record.threadId && !record.creating && record.tools !== "mcp" && this.options.tools)
+    await resetSession.call(this, record);
   if (!record.threadId && !record.creating) {
     record.model = model;
     record.runtime = runtimeOf(model);
@@ -42,7 +41,7 @@ export async function runOpen(
   const adapter = this.adapter(record.runtime);
   const tools = this.options.tools?.(id);
   const mcp =
-    tools && (record.runtime === "claude" || record.runtime === "gemini")
+    tools && (record.runtime === "claude" || record.runtime === "gemini" || record.runtime === "elpis")
       ? await this.toolRuntime?.transport(id, tools, role)
       : undefined;
   let remote: WorkerSession;
@@ -78,6 +77,7 @@ export async function runOpen(
     }
     record.threadId = remote.threadId;
     record.creating = false;
+    if (mcp) record.tools = "mcp";
     this.options.store.saveSession(id, record);
   }
   if (this.disposed) throw new Error("The session manager stopped while attaching a worker");
@@ -314,6 +314,16 @@ export const MessageSchema = z.object({
   accepted: z.boolean().default(false),
 });
 
+/** A new session on the next open: the old one is archived, and the ticket store keeps what matters. */
+async function resetSession(this: Sessions, record: SessionRecord): Promise<void> {
+  await this.adapter(record.runtime)
+    .archive?.(record.threadId!)
+    .catch(() => {});
+  record.threadId = null;
+  record.messages = [];
+  delete record.tools;
+}
+
 export const RecordSchema = z.object({
   runtime: z.enum(["elpis", "codex", "claude", "gemini"]),
   threadId: z.string().nullable(),
@@ -321,6 +331,8 @@ export const RecordSchema = z.object({
   model: RoleModelSchema.nullable(),
   messages: z.array(MessageSchema).default([]),
   resultId: z.string().optional(),
+  /** How the session reaches Elpis tools: "mcp" through the tool server; absent for older sessions made with dynamic tools. */
+  tools: z.enum(["mcp"]).optional(),
 });
 
 export type SessionRecord = z.infer<typeof RecordSchema>;

@@ -49,8 +49,10 @@ test("routes through native tools, delivers the complete goal, and recovers a wo
     const full = await h.call(worker, "orchestrator_read", { resource: `trigger/${id}`, limit: 8000 });
     assert.match(JSON.stringify(full), /END_CONSTRAINT/);
     const start = h.server.calls.find(call => call.method === "thread/start")!;
-    assert.ok(Array.isArray(start.params.dynamicTools));
-    assert.match(JSON.stringify(start.params.dynamicTools), /orchestrator_eval_decide/);
+    // Elpis sessions reach their tools through the tool server: the shared engine bridge never routes dynamic tool calls back
+    // to the router (10 Nov).
+    assert.equal(start.params.dynamicTools, undefined);
+    assert.ok((start.params.config as Record<string, unknown>)["mcp_servers.elpis_mother"]);
     assert.match(
       JSON.stringify(h.server.calls.find(call => call.method === "turn/start")?.params.collaborationMode),
       /Assess proactive candidates yourself/,
