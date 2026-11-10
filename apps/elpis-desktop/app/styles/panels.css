@@ -297,4 +297,5 @@
 .observability-health > div { display:flex; gap:6px; }
 .observability-health dt::after { content:":"; }
 .observability-health dd { margin:0; color:var(--foreground); font-variant-numeric:tabular-nums; }
-.empty-state .empty-mark .light { animation-iteration-count:infinite; }
+/* The light keeps sweeping both E wordmarks, the sidebar's and the new chat's (Masih, 8 and 10 Nov). */
+.brand .size-wordmark .light, .empty-state .empty-mark .light { animation-iteration-count:infinite; }

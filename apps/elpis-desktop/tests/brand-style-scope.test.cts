@@ -21,7 +21,7 @@ test('in the light theme the flat Workflows board is drawn while the wordmark is
   } finally { await f.close(); }
 });
 
-test('the light on the new-chat wordmark keeps moving after its first sweep', async () => {
+test('the light on the new-chat and sidebar wordmarks keeps moving after its first sweep', async () => {
   const f = await openCanvas(); const { page } = f;
   try {
     await page.getByRole('button', { name: 'New chat', exact: true }).click();
@@ -49,6 +49,6 @@ test('the light on the new-chat wordmark keeps moving after its first sweep', as
       assert.notEqual(frames.first.transform, frames.second.transform, `${theme}: the light moves on its second pass`);
     }
     assert.equal(await page.locator('.brand .size-wordmark .light').evaluate((element: Element) =>
-      getComputedStyle(element).animationIterationCount), '1', 'the sidebar wordmark still plays once');
+      getComputedStyle(element).animationIterationCount), 'infinite', 'the sidebar wordmark keeps its light moving too (10 Nov)');
   } finally { await f.close(); }
 });
