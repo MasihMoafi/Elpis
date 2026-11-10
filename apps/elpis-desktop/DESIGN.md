@@ -56,3 +56,5 @@ Reconnect and error notices follow the last message inside `.chat-content`. Show
 4. Test: a UI test through `tests/parity-fixture.cts` (light and dark); anything the real server must serve or the real engine must do needs a test at that boundary.
 5. Retained tests change only through `scripts/renderer-artifact-gate.mts` (pin with Masih's words as approval).
 6. Follow [desktop verification](TESTING.md) before installation.
+
+The shared static UI check is owned by `skills/web-dev/ui-check/lint.mjs`; its copy is generated. After changing the owner, run `node scripts/ui-lint-sync.mts --write` from this app.

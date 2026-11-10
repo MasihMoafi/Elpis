@@ -88,6 +88,18 @@ jobs:
         run: node scripts/strict-baseline.mts
       - name: Ratchet tests
         run: node --test tests/strict-baseline.test.mts
+  ui-lint:
+    name: desktop shared UI rules
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/elpis-desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26.1.0'
+      - run: node scripts/ui-lint.mts
   rust-format:
     name: rust format
     runs-on: ubuntu-latest

@@ -13,7 +13,7 @@
     "predev": "node bridge/build-resources.mts",
     "dev": "next dev --webpack --hostname 127.0.0.1",
     "build": "next build --webpack",
-    "postbuild": "git rev-parse HEAD > out/.commit && test ! -f $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs || node $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs .",
+    "postbuild": "git rev-parse HEAD > out/.commit && node scripts/ui-lint-sync.mts --check && (test ! -f $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs || node $HOME/Desktop/p/skills/web-dev/ui-check/ui-check.mjs .)",
     "typecheck": "tsc --noEmit",
     "typecheck:strict": "node scripts/strict-baseline.mts types tsx",
     "lint": "node ../../scripts/js-guard.mts && node scripts/strict-baseline.mts lint",

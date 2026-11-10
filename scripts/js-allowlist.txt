@@ -1,3 +1,4 @@
+apps/elpis-desktop/scripts/ui-lint.generated.mjs
 apps/elpis-trajectory/dist/assets/index-D1-S_WPB.js
 codex-rs/code-mode-runtime/src/runtime/settled.js
 codex-rs/responses-api-proxy/npm/bin/codex-responses-api-proxy.js
