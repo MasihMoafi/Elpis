@@ -5,6 +5,7 @@
     "lib/router-worker-input.test.mts",
     "tests/strict-baseline.test.mts",
     "bridge/settled-status.test.mts",
+    "bridge/sessions-map.test.mts",
     "tests/accent-scope.test.mts",
     "tests/polish-source.test.cts",
     "tests/dialog-actions.test.cts",

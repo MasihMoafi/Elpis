@@ -1,6 +1,6 @@
 # Elpis desktop requirements
 
-These are the required behaviors, numbered 1–85 without gaps; refer to one as "SPEC item N". The IDs in parentheses are the older request IDs that code, tests and REQUESTS.md still cite. [ES.md](../../ES.md) records current state and open decisions; [REQUESTS.md](../../REQUESTS.md) records requests. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md), the design system in [DESIGN.md](DESIGN.md), and verification in [TESTING.md](TESTING.md).
+These are the required behaviors, numbered 1–86 without gaps; refer to one as "SPEC item N". The IDs in parentheses are the older request IDs that code, tests and REQUESTS.md still cite. [ES.md](../../ES.md) records current state and open decisions; [REQUESTS.md](../../REQUESTS.md) records requests. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md), the design system in [DESIGN.md](DESIGN.md), and verification in [TESTING.md](TESTING.md).
 
 ## Sidebar and chat list
 
@@ -91,6 +91,8 @@ These are the required behaviors, numbered 1–85 without gaps; refer to one as 
 67. A finished, stopped or failed run delivers one notification with its ID, status, result and script path to its originating chat when available. It is not a user prompt. An archived chat keeps the notice until restored; delivery does not unarchive it. (WR5)
 68. Workflow-run RPCs, desktop routes and updates are owned by [client.mjs](bridge/client.mjs) and [server.mts](bridge/server.mts). (WR7)
 69. The board and chat workflow tool use one runner: independent agents start together, dependents start after their inputs finish, and writers use isolated worktrees. (WR8)
+
+86. Workflows opens on a Map of the router, ticket chats, agent trees and workflow runs, with live states and clickable chats; Board and Scheduled remain available. Show all chats adds 30 recent standalone chats. The Map keeps its pan and zoom and remains readable at 1100 × 750. (W1–W4; planned)
 
 ## Permissions
 
