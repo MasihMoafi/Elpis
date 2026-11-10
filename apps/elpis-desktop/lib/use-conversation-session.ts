@@ -17,8 +17,8 @@ export function useConversationSession() {
   const followingBottom = useRef(false);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const restoreScroll = useRef<{ height: number; top: number; anchor?: Element; offset?: number } | null>(null);
-  const scrollPositions = useRef(new Map<string, { turn: number; offset: number; atBottom: boolean }>());
-  const pendingPosition = useRef<{ id: string; turn: number; offset: number; atBottom: boolean } | null>(null);
+  const scrollPositions = useRef(new Map<string, { turn: number; block: number; offset: number; atBottom: boolean }>());
+  const pendingPosition = useRef<{ id: string; turn: number; block: number; offset: number; atBottom: boolean } | null>(null);
   const saveScroll = () => {
     const id = selectedRef.current?.id,
       element = scroll.current;
@@ -27,10 +27,14 @@ export function useConversationSession() {
     // render at an estimated height until seen (content-visibility), and a chat reloads only its latest page (C5; 10 Nov).
     const box = element.getBoundingClientRect(),
       turns = [...element.querySelectorAll(".turn")],
-      index = turns.findIndex(turn => turn.getBoundingClientRect().bottom > box.top);
+      index = turns.findIndex(turn => turn.getBoundingClientRect().bottom > box.top),
+      blocks = index < 0 ? [] : [...turns[index]!.children],
+      block = Math.max(0, blocks.findIndex(child => child.getBoundingClientRect().bottom > box.top)),
+      anchor = blocks[block] ?? turns[index];
     scrollPositions.current.set(id, {
         turn: index < 0 ? 0 : turns.length - 1 - index,
-        offset: index < 0 ? 0 : turns[index]!.getBoundingClientRect().top - box.top,
+        block,
+        offset: anchor ? anchor.getBoundingClientRect().top - box.top : 0,
         // At it, not near it: a reader slightly above the end comes back to that place (specs/chat-scrolling.md C5).
         atBottom: element.scrollHeight - element.scrollTop - element.clientHeight <= 2,
       });

@@ -52,15 +52,26 @@ for (const colorScheme of ['light']) {
       await f.page.waitForTimeout(400);
       assert.deepEqual(await f.page.locator('.message.user').allTextContents(), latest, 'a refused page is not asked for again and again');
       await f.page.getByRole('button', { name: 'Dismiss error', exact: true }).click();
-      // specs/chat-scrolling.md C3: loading an earlier page keeps the message under the reader where it was.
+      // specs/chat-scrolling.md C3: loading an earlier page keeps the message under the reader where it was. Its place is
+      // recorded every frame; the last frame before the new messages arrived is compared with the settled place after.
       const anchorText = ((await f.page.locator('.message.user').first().textContent()) ?? '').trim();
-      const anchorTop = () => f.page.getByText(anchorText, { exact: true }).first().evaluate((e: HTMLElement) => e.getBoundingClientRect().top);
       const shownBefore = await f.page.locator('.message.user').count();
+      await f.page.evaluate((text: string) => {
+        const w = window as unknown as { __c3: [number, number][] };
+        w.__c3 = [];
+        const tick = () => {
+          const target = [...document.querySelectorAll('.message.user')].find(e => (e.textContent ?? '').trim() === text);
+          if (target) w.__c3.push([document.querySelectorAll('.message.user').length, target.getBoundingClientRect().top]);
+          if (w.__c3.length < 400) requestAnimationFrame(tick);
+        };
+        tick();
+      }, anchorText);
       await f.page.locator('.chat-scroll').evaluate((node: HTMLElement) => { node.scrollTop = 0; });
-      const before = await anchorTop();
       await f.page.waitForFunction((n: number) => document.querySelectorAll('.message.user').length > n, shownBefore);
-      await f.page.waitForTimeout(200);
-      assert.ok(Math.abs((await anchorTop()) - before) <= 1, `C3: the reader's message stays put (${before} -> ${await anchorTop()})`);
+      await f.page.waitForTimeout(500);
+      const frames: [number, number][] = await f.page.evaluate(() => (window as unknown as { __c3: [number, number][] }).__c3);
+      const before = frames.filter(([count]) => count === shownBefore).at(-1)?.[1] ?? NaN, after = frames.at(-1)?.[1] ?? NaN;
+      assert.ok(Math.abs(after - before) <= 1, `C3: the reader's message stays put (${before} -> ${after})`);
       for (let page = 0; page < 6 && await earlier.count(); page++) await scrollToLoadEarlier(f.page);
       assert.equal(await earlier.count(), 0, 'loading stops only at the first page');
       assert.equal(await f.page.getByText('History prompt 0', { exact: true }).isVisible(), true);

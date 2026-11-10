@@ -12,7 +12,7 @@ type Inputs = {
   newDraftKey: RefObject<string>;
   scroll: RefObject<HTMLDivElement | null>;
   restoreScroll: RefObject<{ height: number; top: number; anchor?: Element; offset?: number } | null>;
-  pendingPosition: RefObject<{ id: string; turn: number; offset: number; atBottom: boolean } | null>;
+  pendingPosition: RefObject<{ id: string; turn: number; block: number; offset: number; atBottom: boolean } | null>;
   stickToBottom: RefObject<boolean>;
   view: View;
 };
@@ -65,7 +65,7 @@ export function useTranscriptPresentation({
       const turns = element.querySelectorAll(".turn"),
         turn = turns[turns.length - 1 - position.turn];
       if (position.atBottom || !turn) element.scrollTop = element.scrollHeight;
-      else pin(element, turn, position.offset);
+      else pin(element, turn.children[position.block] ?? turn, position.offset);
     } else if (restoreScroll.current) {
       const previous = restoreScroll.current;
       restoreScroll.current = null;
