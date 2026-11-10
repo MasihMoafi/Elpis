@@ -25,13 +25,13 @@ Whole-app rules stay in [ui-behaviour.md](ui-behaviour.md); feature requirements
 
 | # | Item | Acceptance check | Status |
 | --- | --- | --- | --- |
-| S1 | The nav title is 18px/600 with at least 8px above and below it at every window height. | Measure Back, title, Search at heights 600–1300: gaps ≥ 8px (test: settings-nav-whole-rows). | todo |
-| S2 | Nav group headings are grey, sentence case, one row tall, with 12px extra above. | Measure each heading: case as written, gap to the row above ≥ 12px. | todo |
+| S1 | The nav title is 18px/600 with at least 8px above and below it at every window height. | Measure Back, title, Search at heights 600–1300: gaps ≥ 8px (test: settings-nav-whole-rows). | done: tests/settings-nav-whole-rows title gaps at 600–1300 px, passing on CI, 10 Nov |
+| S2 | Nav group headings are grey, sentence case, one row tall, with 12px extra above. | Measure each heading: case as written, gap to the row above ≥ 12px. | done: same test, heading gaps ≥ 12 px, passing on CI, 10 Nov |
 | S3 | Every row puts its control on the right, vertically centred; text never sits above a lone button. | On every page, each row's control box is right-aligned within the row. | done (CI test settings-row-layout, 10 Nov) |
 | S4 | Rows of one group share one container with hairlines between them; no card per item. | Count containers per group: one. | done (CI test settings-row-layout, 10 Nov) |
 | S5 | A page never waits silently: content or a loading line appears within 300 ms; a failure says what failed once. | Throttle the bridge: Import chats shows "Reading…" then counts or one error. | done: tests/settings-no-silent-wait (slow bridge shows "Reading…", then counts; empty says so), CI 42874493926, 10 Nov |
 | S6 | Every enabled control works now; a control that cannot is hidden, not shown greyed with no reason. | Click each enabled control: it acts. Disabled ones show why. | done: every page checked; a row whose controls are all off has a reason (same test), 10 Nov |
-| S7 | No CloudRoom VM anywhere in Settings or the app. | No "CloudRoom" text in the app. | todo |
+| S7 | No CloudRoom VM anywhere in Settings or the app. | No "CloudRoom" text in the app. | done: no "CloudRoom" text in the installed renderer (2fea02671), 10 Nov |
 | S8 | Search filters the nav and the visible rows by title and description. | Type "voice": only matching pages and rows remain. | done (CI test settings-nav-whole-rows, 10 Nov) |
 | S9 | Page width and text measure follow the content-width token; long paths ellipsize in the middle. | A 120-character path fits its row without wrapping the control. | done: paths cut in the middle (MiddlePath), seen with a 133-character path, 10 Nov |
 
