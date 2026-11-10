@@ -146,7 +146,9 @@ button:disabled { cursor:not-allowed; }
 .app-shell { display:grid; grid-template-columns:var(--sidebar-width, 256px) minmax(0,1fr); height:100dvh; overflow:hidden; background:var(--background); color:var(--foreground); }
 .sidebar { position:relative; background:var(--sidebar); border-right:1px solid var(--hairline); display:flex; flex-direction:column; min-height:0; padding:10px 8px 8px; gap:6px; }
 .brand { font-size:var(--text-base); font-weight:600; letter-spacing:-.01em; padding:4px 8px 8px; display:flex; align-items:center; gap:8px; }
-.nav-list { display:grid; gap:2px; min-height:0; overflow-y:auto; }
+/* Never a sideways scrollbar (10 Nov screenshot: at a 200px sidebar the shortcut labels were 4px too wide). */
+.nav-list { display:grid; gap:2px; min-height:0; overflow:hidden auto; }
+.nav-list button { min-width:0; overflow:hidden; }
 /* Navigation rows: the sidebar's and Settings' (which takes the sidebar's place) are one item. */
 .nav-list button, .settings-nav button[role="tab"], .back-link { justify-content:flex-start; width:100%; gap:8px; height:var(--row-h); padding:0 8px; border:0; background:none; color:var(--foreground); font-size:var(--text-sm); font-weight:450; text-align:left; }
 .nav-list button:hover, .settings-nav button[role="tab"]:hover, .back-link:hover { background:var(--hover); }
