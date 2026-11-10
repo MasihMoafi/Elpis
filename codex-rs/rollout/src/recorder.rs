@@ -1105,7 +1105,7 @@ impl RolloutRecorder {
     pub async fn load_rollout_items(
         path: &Path,
     ) -> std::io::Result<(Vec<RolloutItem>, Option<ThreadId>, usize)> {
-        Self::fold_rollout_items(path, Vec::new(), |items, item| items.push(item)).await
+        Self::fold_rollout_items(path, Vec::new(), Vec::push).await
     }
 
     /// Processes records one at a time, retaining only the consumer's accumulator.
