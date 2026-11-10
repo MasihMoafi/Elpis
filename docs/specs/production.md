@@ -50,13 +50,14 @@ workflows or chats that have multiple agents. The UI of it is good though." Item
 
 | # | Item | Acceptance check | Status |
 | --- | --- | --- | --- |
-| W1 | Workflows opens on a Map of his sessions: the router, its workers, every chat that has agents and every workflow run, joined by who started whom. | Open Workflows in the installed app: the Elpis router, its ticket chats and "Arash — manual review" with its agent are on the map, joined correctly. | doing: the router, its five worker chats, the ten Luna agents and 15 workflow runs are there and joined. "Arash — manual review" is not: find why |
+| W1 | Workflows opens on a Map of his sessions: the router, its workers, every chat that has agents and every workflow run, joined by who started whom. | Open Workflows in the installed app: the Elpis router, its ticket chats and "Arash — manual review" with its agent are on the map, joined correctly. | doing: the router, its worker chats, the ten Luna agents and 15 workflow runs are there and joined. "Arash — manual review" is not: the route keeps only runs that record their root chat, and that older run does not |
 | W2 | Each node shows its state at a glance: working, needs you, done or failed, in the board's own look. | A chat that is working shows as working on the map within 5 s of starting; a failed one shows failed. | doing: done, failed and idle show on his real runs (Voting 7, 8, 10, 11 failed); a state change is proven in the fixture test, not yet watched live |
 | W3 | A node opens its chat. | Click a node: that chat opens; Back returns to the map where it was. | doing: proven in the fixture test (`tests/sessions-map.test.cts`); not yet clicked in the installed app |
 | W4 | The map stays readable. | In an 1100×750 window names render at 12 px or more; chats without agents are left out unless asked for. | done: 14 px names on 260 px cards, titles on two lines, the newest group first |
 | W5 | A failed run says why and offers one next step. | Open each failed run in History: reason and next step are shown. | todo: 4 of the last 12 "Voting" runs failed; causes not yet read |
 | W6 | A first run still works end to end from the board. | Live: a two-agent report-only run in Sandbox on Luna ends `succeeded`. | todo. The Board itself opens laid out again: mounted hidden behind the Map it packed its agents into a corner (`bac610915`) |
 | W7 | The request reads as typed. | The saved request does not begin "sandboxIn the Elpis repo". | todo |
+| W8 | Keeping the Map fresh costs little. | With the Map open, the bridge does not page the whole chat list more than once in 15 s unless a chat changed. | todo: it pages every chat and agent run each 5 s; the first load took several seconds on his history |
 
 ## D. The shared system sticks
 
@@ -77,7 +78,7 @@ Rules: `~/Desktop/p/skills/shared-system/SKILL.md`.
 | --- | --- | --- | --- |
 | N1 | `ES.md` tells the truth. | Its branch, installed version and CI state match `git`, the launcher and `gh`. | done: rewritten 11 Nov |
 | N2 | Every top-level item is in the folder map or gone. | `lat.md/workspace.md` lists each. | done: local-only items listed under their own heading |
-| N3 | Merged branches are gone; the rest are listed with their purpose. | `git branch --merged` shows only the work branch and `main`. | doing: this task's three branches removed; older ones wait for his word |
+| N3 | Merged branches are gone; the rest are listed with their purpose. | `git branch --merged` shows only the work branch and `main`. | doing: 36 local branches whose work is in the work branch are deleted, with this task's three; 24 others and the remote `build/*` branches wait for his word |
 | N4 | Pointers resolve. | No doc names `install-desktop.mjs` or the old `Elpis-wt-install` path. | done |
 | N5 | Scratch is cleared. | `.agents/briefs/`, `test-results/` and `.tmp/` hold nothing older than the current task. | doing: cleared, except `.tmp/final-candidate` (1.1 GB, Oct): its sandbox folders belong to another user id and need root |
 
