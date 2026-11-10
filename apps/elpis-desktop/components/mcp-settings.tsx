@@ -51,7 +51,7 @@ const readMcp = (value: Mcp): Mcp => ({
   write: value?.write ?? { available: false },
 });
 
-export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
+export function McpSettings({ onOpenVoice, onCustomize }: { onOpenVoice?: () => void; onCustomize?: (() => void) | undefined }) {
   const [notice, setNotice] = useState("");
   const [data, setData] = useState<Mcp | null>(null);
   const [error, setError] = useState("");
@@ -141,7 +141,20 @@ export function McpSettings({ onOpenVoice }: { onOpenVoice?: () => void }) {
     <div aria-label="MCP servers">
       <SettingsHeader
         title="MCP servers"
-        description="Server choices apply to new chats; stored API keys stay on this device."
+        description={
+          <>
+            Server choices apply to new chats; stored API keys stay on this device.
+            {onCustomize && (
+              <>
+                {" "}Plugins and skills are in{" "}
+                <Button variant="link" className="h-auto p-0" onClick={onCustomize}>
+                  Customize
+                </Button>
+                .
+              </>
+            )}
+          </>
+        }
         action={
           <Button variant="outline" onClick={() => setAdding(true)} disabled={!data?.write?.available}>
             <PlusIcon />

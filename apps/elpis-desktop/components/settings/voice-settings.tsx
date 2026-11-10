@@ -376,14 +376,13 @@ export function VoiceSettings({
               />
             </details>
           ) : (
-            <SettingRow
-              title="WhisperType server"
-              description="Dictation uses the whispertype MCP server. Add it under MCP servers."
-            >
-              <Button variant="outline" onClick={onOpenMcp}>
-                Open MCP servers
+            <p className="text-xs text-muted-foreground">
+              Dictation uses the whispertype server. Add it under{" "}
+              <Button variant="link" className="h-auto p-0 text-xs" onClick={onOpenMcp}>
+                MCP servers
               </Button>
-            </SettingRow>
+              .
+            </p>
           )}
         </SettingsGroup>
       )}

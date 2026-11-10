@@ -220,18 +220,8 @@ export function GeneralSettings() {
           />
         </SettingRow>
         <SettingRow
-          title="Show workflows in the sidebar"
-          description="List each workflow's chats in the sidebar, folded under the workflow. Off hides the section; the Workflows page keeps every run."
-        >
-          <Switch
-            aria-label="Show workflows in the sidebar"
-            checked={preferences.sidebarWorkflows}
-            onCheckedChange={sidebarWorkflows => save({ sidebarWorkflows })}
-          />
-        </SettingRow>
-        <SettingRow
           title="Confirm before deleting chats"
-          description="Ask before deleting chats, pages, groups, skills or themes. “Don’t show me this again” turns this off."
+          description="Ask before deleting chats, pages, skills or themes. “Don’t show me this again” turns this off."
         >
           <Switch
             aria-label="Confirm before deleting chats"
@@ -242,15 +232,29 @@ export function GeneralSettings() {
         <Speed />
       </SettingsGroup>
       <SettingsGroup title="Sidebar">
+        {/* One row for the sidebar's optional sections (10 Nov, Masih). Hiding a section keeps its chats and runs. */}
         <SettingRow
-          title="Show Agent runs in sidebar"
-          description="Show background agent history as a separate group. Hiding it keeps the history."
+          title="Sidebar sections"
+          description="Workflows lists each workflow's chats; Agent runs lists background agents. Hidden sections keep their history."
         >
-          <Switch
-            aria-label="Show Agent runs in sidebar"
-            checked={preferences.showAgentRuns}
-            onCheckedChange={showAgentRuns => save({ showAgentRuns })}
-          />
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              Workflows
+              <Switch
+                aria-label="Show workflows in the sidebar"
+                checked={preferences.sidebarWorkflows}
+                onCheckedChange={sidebarWorkflows => save({ sidebarWorkflows })}
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              Agent runs
+              <Switch
+                aria-label="Show Agent runs in sidebar"
+                checked={preferences.showAgentRuns}
+                onCheckedChange={showAgentRuns => save({ showAgentRuns })}
+              />
+            </label>
+          </div>
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup title="Composer">

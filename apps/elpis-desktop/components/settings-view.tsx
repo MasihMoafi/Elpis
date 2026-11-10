@@ -328,20 +328,7 @@ export function SettingsView({
       case "mcp":
         return (
           <>
-            <McpSettings onOpenVoice={() => selectTab("voice")} />
-            {onCustomize && (
-              <SettingsGroup title="Plugins & skills">
-                <SettingRow
-                  title="Plugins & skills"
-                  description="Manage plugins and skills in Customize."
-                  scope="this device"
-                >
-                  <Button variant="outline" onClick={onCustomize}>
-                    Open Customize
-                  </Button>
-                </SettingRow>
-              </SettingsGroup>
-            )}
+            <McpSettings onOpenVoice={() => selectTab("voice")} onCustomize={onCustomize} />
           </>
         );
       case "usage":

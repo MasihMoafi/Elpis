@@ -14,18 +14,13 @@ export function BrowserSettings({ onOpen }: { onOpen?: (url?: string) => void })
     <>
       <SettingsHeader
         title="Browser"
-        description="Elpis has its own browser. Sign in to websites there; browser tabs belong to the current chat."
-      />
-      <SettingsGroup title="Built-in browser">
-        <SettingRow
-          title="Browse with Elpis"
-          description="Agents use Elpis’s native browser tools. A separate ChatGPT browser skill is not required."
-        >
+        description="Elpis has its own browser, which agents use too. Sign in to websites there; browser tabs belong to the current chat."
+        action={
           <Button variant="outline" disabled={!available || !onOpen} onClick={() => onOpen?.()}>
             Open browser
           </Button>
-        </SettingRow>
-      </SettingsGroup>
+        }
+      />
       {saved.pins.length > 0 && (
         <SettingsGroup title="Pinned websites">
           {saved.pins.map(pin => (
