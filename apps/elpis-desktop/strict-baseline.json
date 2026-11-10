@@ -451,7 +451,7 @@
   "tests/workflow-chat-races.test.cts:long": 5,
   "tests/workflow-expand-follow.test.cts:long": 3,
   "tests/workflow-identity-recovery.test.cts:long": 8,
-  "tests/workflow-identity-sidebar.test.cts:long": 18,
+  "tests/workflow-identity-sidebar.test.cts:long": 17,
   "tests/workflow-identity.fixtures.cts:long": 10,
   "tests/workflow-identity.test.mts:long": 2,
   "tests/workflow-notice-parse.test.mts:long": 4,

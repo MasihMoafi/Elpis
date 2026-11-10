@@ -1,6 +1,6 @@
 # Elpis desktop requirements
 
-These are the required behaviors, numbered 1–86 without gaps; refer to one as "SPEC item N". The IDs in parentheses are the older request IDs that code, tests and REQUESTS.md still cite. [ES.md](../../ES.md) records current state and open decisions; [REQUESTS.md](../../REQUESTS.md) records requests. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md), the design system in [DESIGN.md](DESIGN.md), and verification in [TESTING.md](TESTING.md).
+These are the required behaviors, numbered 1–90 without gaps; refer to one as "SPEC item N". The IDs in parentheses are the older request IDs that code, tests and REQUESTS.md still cite. [ES.md](../../ES.md) records current state and open decisions; [REQUESTS.md](../../REQUESTS.md) records requests. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md), the design system in [DESIGN.md](DESIGN.md), and verification in [TESTING.md](TESTING.md).
 
 ## Sidebar and chat list
 
@@ -93,6 +93,15 @@ These are the required behaviors, numbered 1–86 without gaps; refer to one as 
 69. The board and chat workflow tool use one runner: independent agents start together, dependents start after their inputs finish, and writers use isolated worktrees. (WR8)
 
 86. Workflows opens on a Map of the router, ticket chats, agent trees and workflow runs, with live states and clickable chats; Board and Scheduled remain available. Show all chats adds 30 recent standalone chats. The Map keeps its pan and zoom and remains readable at 1100 × 750. (W1–W4; installed-app proof pending)
+
+## Router (the Elpis tab)
+
+The requirements with their checks and evidence: [production.md](../../docs/specs/production.md) section B and [router-chats.md](specs/router-chats.md). The code map: [bridge/router/README.md](bridge/router/README.md).
+
+87. The Elpis tab is the one assistant he talks to. Every message he writes there gets an answer or an acknowledgement in that chat; none is left without a reply. (R6)
+88. It answers questions about his chats itself, with no ticket and no worker: what is running, what waits for him, what a chat said. When he asks, it acts on a chat: writes in it, starts a new one in a folder with a model, stops, renames, archives or restores it. It never deletes a chat, never acts on its own chats, and does nothing to his chats while a Source that carries outside text is on. (R11–R13)
+89. Work he wants done becomes a ticket with one worker chat, named by the ticket: an ordinary chat he can open and write in. When the worker finishes, the app itself puts the worker's result in the Elpis chat, once. (R1–R5, R7)
+90. It tells him in the Elpis chat when one of his chats finishes, fails or starts waiting for him. (R14)
 
 ## Permissions
 
