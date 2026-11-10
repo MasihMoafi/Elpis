@@ -481,6 +481,7 @@ export function ChatMessage({
     );
   }
   if (item.type === "contextCompaction") return <div className="context-event">{summarize([item])}</div>;
+  if (item.type === "routerNote") return <div className="context-event">{item.text}</div>;
   if (item.type === "enteredReviewMode")
     return (
       <div className="context-event">{`Review started${typeof item.review === "string" && item.review ? `: ${item.review}` : ""}`}</div>

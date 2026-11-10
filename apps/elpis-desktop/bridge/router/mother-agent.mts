@@ -94,7 +94,12 @@ export class MotherAgent {
   }
   decorate<T extends { id: string }>(thread: T): T & { motherAgent?: boolean } {
     const config = this.file.read();
-    if (config.threadId !== thread.id) return thread;
+    // A worker the router started is its own chat, never a subagent of Elpis: in DSH each Executor Session is an ordinary
+    // Session (specs/router-chats.md R2; Masih, 10 Nov: "not a subagent!").
+    if (config.threadId !== thread.id)
+      return (thread as { parentThreadId?: string | null }).parentThreadId === config.threadId
+        ? { ...thread, parentThreadId: null }
+        : thread;
     const model =
       this.app?.store.settings().eval.model ??
       readSettings(this.options.home).eval.model ??

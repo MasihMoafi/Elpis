@@ -405,6 +405,10 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .model-picker-trigger { gap:8px; max-width:360px; cursor:pointer; padding:0 9px; border-color:var(--hairline); background:var(--background); }
 .model-picker-trigger > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .model-trigger-label { color:var(--foreground); font-size:var(--text-xs); font-weight:500; }
+/* The model maker's logo (components/model-picker.tsx); one-colour marks turn light in the dark theme. */
+.model-logo { flex:none; width:14px; height:14px; object-fit:contain; }
+[role="option"] .model-logo { width:16px; height:16px; }
+.dark .model-logo.mono { filter:invert(1); }
 .model-trigger-provider { border-inline-start:1px solid var(--border); padding-inline-start:8px; color:var(--muted-foreground); font-size:var(--text-small); max-width:150px; }
 .model-picker-content { width:440px; max-width:calc(100vw - 24px); }
 .model-provider-tabs { display:flex; flex-wrap:wrap; gap:4px; padding:7px 4px; border-bottom:1px solid var(--border); }

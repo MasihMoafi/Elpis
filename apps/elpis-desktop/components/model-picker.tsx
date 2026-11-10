@@ -29,6 +29,13 @@ import {
 import { providerLogin } from "@/lib/provider-login";
 import { refreshModelCatalog, useModelCatalog } from "@/lib/model-catalog";
 import { errorText } from "@/lib/error-text.mts";
+import { modelLogo } from "@/lib/model-logos";
+
+/** The maker's logo before a model's name; nothing for a model of unknown make. */
+function Logo({ model, name }: { model: string; name?: string | undefined }) {
+  const logo = modelLogo(model, name);
+  return logo ? <img className={`model-logo${logo.mono ? " mono" : ""}`} src={logo.src} alt="" aria-hidden="true" /> : null;
+}
 type Choice = {
   key: string;
   model: string;
@@ -283,6 +290,7 @@ export function ModelPicker({
         title={[currentLabel, currentProvider].filter(Boolean).join(" · ")}
         className="model-picker-trigger model-select"
       >
+        {currentModel && <Logo model={currentModel} name={currentLabel} />}
         <span className="model-trigger-label">{currentModel ? currentLabel : "Choose model"}</span>
         {currentProvider && <span className="model-trigger-provider">{currentProvider}</span>}
         <ChevronDown size={16} />
@@ -375,6 +383,7 @@ export function ModelPicker({
             <ComboboxList>
               {(item: Choice) => (
                 <ComboboxItem key={item.key} value={item} data-value={item.model}>
+                  <Logo model={item.model} name={item.label} />
                   <span className="model-option-name">
                     {item.label}
                     {item.description && <small title={item.description}>{item.description}</small>}

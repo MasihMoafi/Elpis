@@ -2,6 +2,7 @@
   "fast": [
     "lib/router-message-text.test.mts",
     "lib/imported-tools.test.mts",
+    "lib/router-worker-input.test.mts",
     "tests/strict-baseline.test.mts",
     "bridge/settled-status.test.mts",
     "tests/accent-scope.test.mts",

@@ -263,8 +263,8 @@ export function useSidebarThreads({
   ];
   // The engine's search matches letter case exactly; a listed chat's title and first message match in any case here.
   const filtered = searchedThreads.filter(
+    // The Elpis router chat is listed like any chat, as DSH lists its main Session (specs/router-chats.md R1).
     t =>
-      !t.motherAgent &&
       isTreeChat(t) &&
       (matchedOnServer.has(t.id) ||
         `${title(t)} ${t.preview || ""} ${t.agentNickname || ""} ${t.model || ""} ${t.id}`
