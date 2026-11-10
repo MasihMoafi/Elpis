@@ -267,6 +267,7 @@ export const productionFiles = [
   "bridge/router/app/tools/chats.mts",
   "bridge/router/app/tools/executor.mts",
   "bridge/router/app/tools/main.mts",
+  "bridge/router/app/tools/own-work.mts",
   "bridge/router/app/tools/tool.mts",
   "bridge/router/app/versions.mts",
   "bridge/router/app/views/overview.mts",

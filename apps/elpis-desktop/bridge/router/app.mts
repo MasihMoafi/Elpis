@@ -29,6 +29,7 @@ import { candidateCard, repliedTo, sourceLink, type LinkHost } from "./app/links
 import { eventNotice, followupNotice } from "./app/notices.mts";
 import { mainTools, type MainToolsHost } from "./app/tools/main.mts";
 import { chatToolsHost } from "./app/tools/chats.mts";
+import { OwnWorkGate } from "./app/tools/own-work.mts";
 import type { Chats } from "./chats.mts";
 import { ChatWatch, watchChats } from "./watch.mts";
 import { executorTools, type ExecutorToolsHost } from "./app/tools/executor.mts";
@@ -301,6 +302,7 @@ export class MotherApp implements SourceHost {
         },
         chats: options.chats && chatToolsHost(this.announced(options.chats), options, () => store.settings()),
         results: { shown: ticketId => this.shown.has(ticketId), mark: ticketId => void this.shown.add(ticketId) },
+        ...(options.chats ? { ownWork: new OwnWorkGate() } : {}),
         sendReplies: () => outbox.sent(),
         requestPass: () => this.passes.request(),
         quietly: run => {

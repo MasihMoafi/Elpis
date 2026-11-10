@@ -249,6 +249,7 @@
     "bridge/router/watch.test.mts",
     "bridge/router/app/tools/chats.test.mts",
     "bridge/router/app/tools/main.test.mts",
+    "bridge/router/app/tools/own-work.test.mts",
     "bridge/router/app/setup.test.mts",
     "bridge/router/executor/acp-tools.test.mts",
     "bridge/router/executor/tool-runtime.test.mts",

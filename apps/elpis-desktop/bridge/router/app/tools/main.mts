@@ -23,6 +23,7 @@ import type { Settings } from "../settings.mts";
 import type { Store } from "../store.mts";
 import { AcknowledgementSchema, readTool, tool, type Tool } from "./tool.mts";
 import { chatTools, type ChatToolsHost } from "./chats.mts";
+import type { OwnWorkGate } from "./own-work.mts";
 
 const RoutingNoteSchema = z
   .string()
@@ -46,6 +47,8 @@ export interface MainToolsHost {
   readonly resources: ResourceHost;
   /** His chats, when the host lets the main Session see and change them. */
   readonly chats?: ChatToolsHost | undefined;
+  /** Stops an order to a chat, or a change of the router's own settings, from becoming a ticket no worker can do. */
+  readonly ownWork?: OwnWorkGate;
   /** Which tickets' results are already in his chat: the host shows a finished chat job's result itself. */
   readonly results?: { shown(ticketId: string): boolean; mark(ticketId: string): void };
   /** Schedules a pass to carry out work queued by an Engine command (such as an Eval or ticket resume). */
@@ -160,6 +163,9 @@ function route(
     return { refused: `Decided in this call with ${earlier}, whose Decision took its batch` };
   switch (item.kind) {
     case "accept": {
+      const asked = host.store.triggers.get(item.trigger_id);
+      const own = asked?.source === "elpis-chat" && host.ownWork?.check(item.trigger_id, item.title ?? "", asked.text);
+      if (own) return { refused: own };
       const before = host.store.triggers.disposition(item.trigger_id)?.decisionId;
       const decision = host.engine.decide(item.trigger_id, {
         kind: "accept",
