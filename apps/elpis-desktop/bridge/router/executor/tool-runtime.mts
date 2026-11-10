@@ -16,6 +16,8 @@ export interface McpRuntime {
   command: string;
   args: string[];
   env: Record<string, string>;
+  /** The engine's approval mode for this server's tools; the Elpis adapter sets "approve" for the router's own tools. */
+  default_tools_approval_mode?: "approve";
 }
 interface Entry {
   token: string;

@@ -52,7 +52,12 @@ test("routes through native tools, delivers the complete goal, and recovers a wo
     // Elpis sessions reach their tools through the tool server: the shared engine bridge never routes dynamic tool calls back
     // to the router (10 Nov).
     assert.equal(start.params.dynamicTools, undefined);
-    assert.ok((start.params.config as Record<string, unknown>)["mcp_servers.elpis_mother"]);
+    // With approval policy "never" a tool that needs approval is refused, so the router's own tools are pre-approved.
+    assert.equal(
+      ((start.params.config as Record<string, unknown>)["mcp_servers.elpis_mother"] as Record<string, unknown>)
+        .default_tools_approval_mode,
+      "approve",
+    );
     assert.match(
       JSON.stringify(h.server.calls.find(call => call.method === "turn/start")?.params.collaborationMode),
       /Assess proactive candidates yourself/,

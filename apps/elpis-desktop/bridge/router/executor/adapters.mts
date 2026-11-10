@@ -99,7 +99,7 @@ export class AppServerAdapter implements RuntimeAdapter {
             ...route.config,
             ...(options.tools ? roleConfig(options.role) : {}),
             ...(environment ? shellConfig(environment) : {}),
-            ...(options.mcp ? { "mcp_servers.elpis_mother": options.mcp } : {}),
+            ...(options.mcp ? { "mcp_servers.elpis_mother": this.toolServer(options.mcp) } : {}),
           },
           ...(options.instructions
             ? { developerInstructions: options.tools ? managedInstructions : options.instructions }
@@ -202,6 +202,11 @@ export class AppServerAdapter implements RuntimeAdapter {
     const conn = await this.connection(threadId);
     await conn.call("turn/interrupt", { threadId, turnId });
   }
+  /** Only the router's own Elpis tools skip approval; with approval policy "never" the engine refused them (10 Nov: "the
+   * tool requires approval, but this session's approval policy is never"). Other tools keep the session's rules. */
+  private toolServer(mcp: McpRuntime): McpRuntime {
+    return this.runtime === "elpis" ? { ...mcp, default_tools_approval_mode: "approve" } : mcp;
+  }
   async configure(threadId: string, mcp: McpRuntime, environment?: Record<string, string | undefined>): Promise<void> {
     if (this.runtime === "gemini")
       throw new Error(
@@ -212,7 +217,7 @@ export class AppServerAdapter implements RuntimeAdapter {
       threadId,
       excludeTurns: true,
       config: {
-        "mcp_servers.elpis_mother": mcp,
+        "mcp_servers.elpis_mother": this.toolServer(mcp),
         ...shellConfig({ ...environment, ELPIS_MOTHER_ROLE: mcp.env.ELPIS_MOTHER_ROLE ?? "worker" }),
       },
     });
