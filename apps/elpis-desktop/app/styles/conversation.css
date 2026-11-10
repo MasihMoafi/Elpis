@@ -31,6 +31,10 @@
 
 .settings-page { min-width:0; max-width:820px; }
 .provider-note { font-size:var(--text-sm); color:var(--muted-foreground); margin:0; }
+/* specs/settings.md S3, as in the ChatGPT and Claude apps: a provider's text on the left, its buttons on the right. */
+.provider-card:has(> .provider-actions) { display:grid; grid-template-columns:minmax(0, 1fr) auto; column-gap:16px; align-items:start; }
+.provider-card:has(> .provider-actions) > * { grid-column:1; }
+.provider-card > .provider-actions { grid-column:2; grid-row:1 / span 8; align-self:center; display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:8px; }
 .provider-note code, .mcp-server code { font-size:var(--text-xs); background:var(--muted); color:var(--foreground); padding:1px 5px; border-radius:5px; }
 .usage-list { display:grid; gap:8px; margin:0; padding:0; list-style:none; }
 .usage-bar { height:6px; border-radius:999px; background:var(--muted); overflow:hidden; margin-top:4px; }

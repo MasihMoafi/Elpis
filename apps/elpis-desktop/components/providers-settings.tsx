@@ -204,7 +204,7 @@ export function ProvidersSettings({
                   {data.openai.auth.plan ? ` · ${data.openai.auth.plan} plan` : ""}
                 </p>
               )}
-              <div className="flex flex-wrap gap-2">
+              <div className="provider-actions">
                 {data.openai.auth.state === "signedIn" ? (
                   <Button variant="outline" disabled={busy} onClick={() => void account("signOut")}>
                     Sign out
@@ -265,7 +265,7 @@ export function ProvidersSettings({
                       ? `${plural(data.claude.models.length, "Claude model")} available through your Claude Code connection.`
                       : "Sign in to Claude Code on this computer to connect your subscription."}
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="provider-actions">
                   {data.claude.signedOut ? (
                     <Button disabled={busy} onClick={() => void account("anthropicSignIn")}>
                       Sign in
