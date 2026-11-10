@@ -56,7 +56,7 @@ html { font-size:var(--interface-size, 16px); }
 /* The rest of the app follows the same ChatGPT scale (specs/chatgpt-chat-style.md, "Shared scale"): three text sizes (12, 13,
  * 14; Tailwind's text-xs/sm/base read them too), one icon size per row, 28px composer controls, a 52px header, and pages
  * in Settings' rhythm (48px top, 20px under the header, 24px between sections, one 860px column). */
-:root { --text-xs:0.75rem; --text-sm:0.8125rem; --text-base:0.875rem; --text-title:1.75rem; --icon-size:16px; --control-h:28px; --scrollbar-size:8px; --row-h:34px; --header-h:52px; --heading-row-gap:15px;
+:root { --text-xs:0.75rem; --text-sm:0.8125rem; --text-base:0.875rem; --text-heading:1.125rem; --text-title:1.75rem; --icon-size:16px; --control-h:28px; --scrollbar-size:8px; --row-h:34px; --header-h:52px; --heading-row-gap:15px;
   --page-pad:48px 32px 64px; --page-content-width:860px; --page-head-gap:20px; --page-section-gap:24px;
   --reply-line-height:1.45; --reply-paragraph-gap:.725em;
   --composer-edge:color-mix(in oklab, var(--foreground) 8%, transparent); --elevation-composer:0 2px 8px #0000000a, 0 4px 40px 8px #00000006; }

@@ -48,6 +48,17 @@ test("recent model labels open a 500 MB rollout without replaying its prefix", a
   );
   assert.equal(older[0]?.model, "original", "loading older history preserves its actual recorded model");
   await fs.appendFile(file, JSON.stringify({ type: "turn_context", payload: { turn_id: "partial" } }) + "\n");
+  // 10 Nov: a working 1.1 GB chat was searched again on every page because it kept growing; known turns are not.
+  if (process.platform === "linux") {
+    const before = await readBytes();
+    const again = await internal_withTurnModels<{ turnId: string; model?: string }>(state, file, [{ turnId: "oldest" }, { turnId: "unrecorded" }], true);
+    assert.equal(again[0]?.model, "original");
+    const searched = await internal_withTurnModels<{ turnId: string; model?: string }>(state, file, [{ turnId: "unrecorded" }], true);
+    assert.equal(searched[0]?.model, undefined);
+    const repeat = await internal_withTurnModels<{ turnId: string; model?: string }>(state, file, [{ turnId: "unrecorded" }], true);
+    assert.equal(repeat[0]?.model, undefined);
+    assert.ok((await readBytes()) - before < 600_000_000, "a grown transcript is searched at most once for the same turns");
+  }
   assert.deepEqual(
     await rolloutAgentModel(file, "thread"),
     { model: "recent", reasoningEffort: "high" },

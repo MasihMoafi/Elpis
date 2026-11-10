@@ -82,7 +82,8 @@ export async function rolloutTurnModels(file: unknown, limit = 1 << 28, wanted?:
     if (!file.endsWith(".zst") && wanted) {
       // Older pages may precede the recent suffix. Seek their labels without retaining
       // intervening messages; opening a chat still has a fixed recent-read budget.
-      for await (const line of reverseRolloutLines(file, older ? Infinity : Math.min(limit, 8 * 1024 * 1024))) {
+      // Only turn_context lines are decoded: decoding every line of a 1.1 GB chat froze the main process (10 Nov).
+      for await (const line of reverseRolloutLines(file, older ? Infinity : Math.min(limit, 8 * 1024 * 1024), '"turn_context"')) {
         const found = lineTurnModel(line);
         if (found && wanted.has(found.turnId) && !models.has(found.turnId)) models.set(found.turnId, found.model);
         if (models.size === wanted.size) break;

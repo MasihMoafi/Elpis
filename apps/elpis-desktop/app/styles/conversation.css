@@ -8,11 +8,12 @@
 /* The content column is centred in the space beside the navigation, as in ChatGPT and Claude (27 Oct). */
 .settings-mode .settings-page > :is([role="tabpanel"], .settings-page-header, .settings-group) { max-width:var(--settings-content-width); margin-inline:auto; }
 /* "Back to app" and "Back to Agents": one back row, its arrow on the content's left edge. */
-/* Title, search and the first section each get room of their own (Masih, 7 Nov: "the settings and search too cramped up
-   together"). */
-.settings-title { margin:14px 8px 10px; font:500 var(--text-base)/1.3 var(--ui-font); }
-.settings-nav > .search-field { margin-bottom:12px; }
-.settings-nav-group + .settings-nav-group { margin-top:10px; }
+/* Title, search and section headings as in the ChatGPT app's Settings: a bold title with room around it, grey sentence-case
+   headings with room above. One rule for every window height (7 and 10 Nov: "too cramped", "all titles in settings"). */
+.settings-nav .settings-title { margin:12px 8px; font:600 var(--text-heading)/1.3 var(--ui-font); }
+.settings-nav > .search-field { margin-bottom:4px; }
+.settings-nav .settings-section-link { height:auto; margin:16px 0 4px; padding:0 8px; font:400 var(--text-sm)/1.4 var(--ui-font);
+  letter-spacing:normal; text-transform:none; color:var(--subtle-foreground); }
 .settings-nav [role="tablist"] { display:grid; gap:2px; }
 .settings-nav-group { display:grid; gap:2px; }
 .settings-nav-empty { padding:8px; font-size:var(--text-xs); color:var(--muted-foreground); }
@@ -21,15 +22,10 @@
  * sidebar's row height (--row-h; Masih, 1 Nov: one role, one look), so short windows fit by spacing alone (27 Oct fit rule). */
 @media (max-height:1200px) {
  .settings-mode .settings-nav { padding:8px; gap:4px; }
- /* 10 Nov: "Back to app", "Settings" and the search field sat too close; the title keeps room above and below. */
- .settings-mode .settings-nav .settings-title { margin:12px 8px 8px; }
- .settings-mode .settings-nav .settings-section-link { height:auto; margin:6px 0 2px; padding:4px 8px; }
 }
 @media (max-height:800px) {
  .settings-mode .settings-nav, .settings-mode .settings-nav :is([role="tablist"], .settings-nav-group) { gap:0; }
  .settings-mode .settings-nav { padding:4px 8px; }
- .settings-mode .settings-nav .settings-title { margin:0 8px; line-height:1; }
- .settings-mode .settings-nav .settings-section-link { margin:1px 0 0; padding:0 8px; }
 }
 
 .settings-page { min-width:0; max-width:820px; }

@@ -32,3 +32,28 @@ for (const colorScheme of ['light']) test(`Settings navigation never shows a par
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// Masih, 10 Nov: "Back to app", "Settings" and Search touched in his 750 px window, and so did every section heading.
+test('Settings title and section headings keep room around them at every window height', async () => {
+  const f = await fixture({ staticDir: process.env.ELPIS_RENDERER_OUT, width: 1100, height: 750 }), { page } = f;
+  try {
+    await f.open('chat-a');
+    await openSettings(page);
+    for (const height of [600, 750, 1000, 1300]) {
+      await page.setViewportSize({ width: 1100, height });
+      await page.waitForTimeout(350);
+      const gaps = await page.locator('.settings-nav').evaluate((nav: HTMLElement) => {
+        const box = (el: Element | null) => el!.getBoundingClientRect();
+        const title = box(nav.querySelector('.settings-title'));
+        const headings = [...nav.querySelectorAll('.settings-section-link')].map(h => {
+          const above = h.parentElement!.previousElementSibling?.lastElementChild ?? h.parentElement!.previousElementSibling;
+          return above ? box(h).top - box(above).bottom : 99;
+        });
+        return { above: title.top - box(nav.querySelector('.back-link')).bottom, below: box(nav.querySelector('.search-field')).top - title.bottom, headings };
+      });
+      assert.ok(gaps.above >= 8 && gaps.below >= 8, `${height}px: title gaps ${JSON.stringify(gaps)}`);
+      assert.ok(gaps.headings.every((gap: number) => gap >= 12), `${height}px: heading gaps ${gaps.headings.join(', ')}`);
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
