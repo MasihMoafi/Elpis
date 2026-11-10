@@ -29,11 +29,11 @@ Whole-app rules stay in [ui-behaviour.md](ui-behaviour.md); feature requirements
 | S2 | Nav group headings are grey, sentence case, one row tall, with 12px extra above. | Measure each heading: case as written, gap to the row above ≥ 12px. | todo |
 | S3 | Every row puts its control on the right, vertically centred; text never sits above a lone button. | On every page, each row's control box is right-aligned within the row. | done (CI test settings-row-layout, 10 Nov) |
 | S4 | Rows of one group share one container with hairlines between them; no card per item. | Count containers per group: one. | done (CI test settings-row-layout, 10 Nov) |
-| S5 | A page never waits silently: content or a loading line appears within 300 ms; a failure says what failed once. | Throttle the bridge: Import chats shows "Reading…" then counts or one error. | todo |
-| S6 | Every enabled control works now; a control that cannot is hidden, not shown greyed with no reason. | Click each enabled control: it acts. Disabled ones show why. | todo |
+| S5 | A page never waits silently: content or a loading line appears within 300 ms; a failure says what failed once. | Throttle the bridge: Import chats shows "Reading…" then counts or one error. | partial: Import chats, Elpis and Quick Entry say what they read (10 Nov); no throttled test yet |
+| S6 | Every enabled control works now; a control that cannot is hidden, not shown greyed with no reason. | Click each enabled control: it acts. Disabled ones show why. | partial: disabled controls found by code search now say why (10 Nov); no click-every-control test yet |
 | S7 | No CloudRoom VM anywhere in Settings or the app. | No "CloudRoom" text in the app. | todo |
 | S8 | Search filters the nav and the visible rows by title and description. | Type "voice": only matching pages and rows remain. | done (CI test settings-nav-whole-rows, 10 Nov) |
-| S9 | Page width and text measure follow the content-width token; long paths ellipsize in the middle. | A 120-character path fits its row without wrapping the control. | todo |
+| S9 | Page width and text measure follow the content-width token; long paths ellipsize in the middle. | A 120-character path fits its row without wrapping the control. | done: paths cut in the middle (MiddlePath), seen with a 133-character path, 10 Nov |
 
 Non-goals: Claude's modal frame (Elpis keeps the full page, as ChatGPT); new settings.
 

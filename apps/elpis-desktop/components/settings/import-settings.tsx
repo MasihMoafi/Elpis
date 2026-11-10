@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { api, unreadable } from "@/lib/api";
-import { SettingRow, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
+import { SettingRow, SettingsEmpty, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { errorText } from "@/lib/error-text.mts";
 
 type Listing = { days: number; atATime: number; sources: { id: string; name: string; chats: number }[] };
@@ -53,6 +53,11 @@ export function ImportSettings({ active = true, onImported }: { active?: boolean
         description="Bring your Claude Code and Codex chats over as Elpis chats. They keep their full history, and your originals stay untouched."
       />
       {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
+      {/* The page never waits silently (Settings spec S5): it says what it is reading, or that nothing was found. */}
+      {!listing && !error && <SettingsNotice>Reading your Claude Code and Codex chats…</SettingsNotice>}
+      {listing && listing.sources.length === 0 && (
+        <SettingsEmpty title="No chats to import">No Claude Code or Codex chats were found on this computer.</SettingsEmpty>
+      )}
       {listing && listing.sources.length > 0 && (
         <SettingsGroup>
           {listing.sources.map(source => (

@@ -240,3 +240,18 @@ export function Choice<T extends string>({
     </OptionSelect>
   );
 }
+
+/** A long path cut in its middle, so both where it starts and the file or folder it ends in stay readable (S9). The tail is
+ * the last two segments, at most 32 characters; the head gives way first. */
+export function MiddlePath({ text }: { text: string }) {
+  const parts = text.split("/");
+  let tail = parts.length > 2 ? `/${parts.slice(-2).join("/")}` : "";
+  if (tail.length > 32 || tail.length >= text.length) tail = text.length > 32 ? text.slice(-24) : "";
+  const head = text.slice(0, text.length - tail.length);
+  return (
+    <bdi className="middle-path">
+      <span className="middle-path-head">{head}</span>
+      {tail && <span className="middle-path-tail">{tail}</span>}
+    </bdi>
+  );
+}

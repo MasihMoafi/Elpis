@@ -169,7 +169,11 @@ export function MotherAgentSettings({
       )}
       <SettingRow
         title="Enable Elpis"
-        description="On by default. Turning it off stops its workers; the chat and unfinished work are kept."
+        description={
+          value || error
+            ? "On by default. Turning it off stops its workers; the chat and unfinished work are kept."
+            : "Reading Elpis settings…"
+        }
       >
         <Switch
           aria-label="Enable Elpis"

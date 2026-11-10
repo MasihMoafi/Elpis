@@ -15,6 +15,7 @@ import {
   SettingsGroup,
   SettingsHeader,
   SettingsNotice,
+  MiddlePath,
 } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
@@ -69,7 +70,7 @@ function DefaultFolder({ folder, onSave }: { folder: string; onSave: (folder: st
       {editing === null ? (
         <>
           <span className={`settings-path${folder ? "" : " unset"}`} title={folder || undefined}>
-            <bdi>{folder || "Elpis default"}</bdi>
+            {folder ? <MiddlePath text={folder} /> : <bdi>Elpis default</bdi>}
           </span>
           <Button variant="outline" onClick={() => (desktop?.chooseFolder ? void choose() : setEditing(folder))}>
             Change

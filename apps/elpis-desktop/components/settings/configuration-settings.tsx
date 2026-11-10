@@ -11,6 +11,7 @@ import {
   SettingsActions,
   SettingsGroup,
   SettingsHeader,
+  MiddlePath,
 } from "@/components/settings/rows";
 import { useSaver } from "@/components/settings/use-saver";
 import { ConfigChoice, SettingsLoader } from "@/components/settings/config-choice";
@@ -94,7 +95,7 @@ function ConfigFile() {
       <span className={`settings-path${path ? "" : " unset"}`} title={path ?? undefined}>
         {path ? (
           <FileRefLink target={{ path }}>
-            <bdi>{path}</bdi>
+            <MiddlePath text={path} />
           </FileRefLink>
         ) : (
           "Not reported"

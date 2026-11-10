@@ -28,7 +28,11 @@
 .settings-row.stacked .settings-row-control { max-width:none; justify-content:flex-start; }
 .settings-row-control .settings-choice, .settings-row-control [data-slot="select-trigger"] { min-width:180px; max-width:100%; }
 /* Long paths keep their end visible: the start is clipped with an ellipsis. */
-.settings-row-control .settings-path { max-width:280px; font:var(--text-xs)/1.4 var(--mono); color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left; }
+.settings-row-control .settings-path { display:inline-flex; min-width:0; max-width:280px; font:var(--text-xs)/1.4 var(--mono); color:var(--muted-foreground); overflow:hidden; white-space:nowrap; }
+/* A path loses its middle, never its start or its last folder and file (MiddlePath in rows.tsx). */
+.middle-path { display:inline-flex; min-width:0; max-width:100%; }
+.middle-path-head { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.middle-path-tail { flex:none; white-space:nowrap; }
 .settings-row-control .settings-path.unset { font:inherit; font-size:var(--text-sm); direction:ltr; }
 .settings-notice { margin:8px 2px 0; font-size:var(--text-sm); color:var(--muted-foreground); }
 .settings-notice.alert { color:var(--destructive); }

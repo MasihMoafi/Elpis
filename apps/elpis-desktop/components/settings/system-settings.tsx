@@ -117,8 +117,11 @@ export function SystemSettings({
     </span>
   ) : unsupported ? (
     <span role="status">{status?.reason}</span>
-  ) : (
+  ) : status ? (
     "Quickly open Elpis from anywhere."
+  ) : (
+    // While the desktop reports whether shortcuts work here, the recorder is off; say why (Settings spec S6).
+    <span role="status">Checking whether this system allows a global shortcut…</span>
   );
   return (
     <SettingsGroup title="System">
