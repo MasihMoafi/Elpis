@@ -61,3 +61,40 @@ test('a streaming reply follows only a reader at the bottom', async () => {
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('switching chats keeps the reading place; sending pins to the bottom; the gutter is reserved', async () => {
+  const chat = Array.from({ length: 30 }, (_, i) => [`s${i}`, `Scroll prompt ${i}`, `Scroll reply ${i}: ${'text that fills a line '.repeat(12)}`]);
+  const f = await fixture({ width: 1100, height: 750, chat });
+  try {
+    await f.open('chat-a');
+    const page: Page = f.page;
+    await page.getByText(/Scroll reply 29:/).waitFor();
+    await page.waitForTimeout(400);
+    // C7: the scrollbar's gutter is always reserved, so text never shifts when it appears.
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.chat-scroll') as HTMLElement).scrollbarGutter), 'stable');
+    // C5: scrolled up, away and back, the same place.
+    await page.locator('.chat-scroll').evaluate((s: HTMLElement) => { s.scrollTop = Math.max(0, s.scrollTop - 300); });
+    await page.waitForTimeout(300);
+    // The place is the turn at the top of the view and its offset: pixel totals differ while unseen turns use estimates.
+    const firstShown = () => page.evaluate(() => {
+      const s = document.querySelector('.chat-scroll') as HTMLElement, top = s.getBoundingClientRect().top;
+      const turn = [...s.querySelectorAll('.turn')].find(t => t.getBoundingClientRect().bottom > top) as HTMLElement;
+      return { text: (turn.textContent ?? '').slice(0, 40), offset: Math.round(turn.getBoundingClientRect().top - top) };
+    });
+    const place = await firstShown();
+    await f.open('chat-b');
+    await page.waitForTimeout(400);
+    await f.open('chat-a');
+    await page.getByText(/Scroll reply 29:/).waitFor();
+    await page.waitForTimeout(500);
+    const back = await firstShown();
+    assert.ok(back.text === place.text && Math.abs(back.offset - place.offset) <= 1, `C5: back at the same place (${JSON.stringify(place)} -> ${JSON.stringify(back)})`);
+    // C8: sending from anywhere shows the new message at the bottom.
+    await f.composer.fill('Pinned after sending');
+    await f.composer.press('Enter');
+    await page.getByText('Pinned after sending', { exact: true }).waitFor();
+    await page.waitForTimeout(600);
+    assert.ok((await view(page)).gap <= 2, `C8: a sent message pins to the bottom (${JSON.stringify(await view(page))})`);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

@@ -46,7 +46,6 @@ export function useOpenConversation({
     restoreScroll,
     scrollPositions,
     pendingPosition,
-    saveScroll,
     setLoading,
     setEntries,
   } = session;
@@ -94,7 +93,7 @@ export function useOpenConversation({
       saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current);
       setText(savedDraft(thread.id));
       const switching = selectedRef.current?.id !== thread.id;
-      if (switching) saveScroll();
+      // The place was recorded as he scrolled (workspace-transcript.tsx); measured now it is already the next chat's.
       const id = ++request.current;
       followingBottom.current = false;
       restoreScroll.current = null;

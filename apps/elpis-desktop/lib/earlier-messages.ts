@@ -77,8 +77,16 @@ export function createEarlierMessages({
       heldEarlier.current.set(id, pages.slice(0, split));
       setError("");
       stickToBottom.current = false;
-      if (scroll.current)
-        restoreScroll.current = { height: scroll.current.scrollHeight, top: scroll.current.scrollTop };
+      if (scroll.current) {
+        const box = scroll.current.getBoundingClientRect();
+        // A message, not its turn: the first turn loses its date line when earlier turns arrive (10 Nov: 56px).
+        const anchor = [...scroll.current.querySelectorAll(".message")].find(item => item.getBoundingClientRect().bottom > box.top);
+        restoreScroll.current = {
+          height: scroll.current.scrollHeight,
+          top: scroll.current.scrollTop,
+          ...(anchor ? { anchor, offset: anchor.getBoundingClientRect().top - box.top } : {}),
+        };
+      }
       setEntries(prev => [...pages.slice(split), ...prev]);
       setItemCursor(cursor);
       setHeldCount(count => count + 1);

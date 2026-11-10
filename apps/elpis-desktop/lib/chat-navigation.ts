@@ -62,7 +62,6 @@ export function createChatNavigation({
     followingBottom,
     restoreScroll,
     pendingPosition,
-    saveScroll,
     setEntries,
     setLoading,
   } = session;
@@ -73,7 +72,6 @@ export function createChatNavigation({
   const { saveDraft, savedDraft } = drafts;
   const { restoreAttachments } = attachments;
   function openNewChat(draftKey = newDraftKey.current) {
-    saveScroll();
     saveDraft(selectedRef.current?.id || newDraftKey.current, textRef.current);
     newDraftKey.current = draftKey;
     request.current++;

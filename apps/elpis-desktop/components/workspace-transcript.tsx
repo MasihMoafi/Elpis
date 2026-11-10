@@ -104,6 +104,7 @@ export function WorkspaceTranscript({
     followingBottom,
     awayFromBottom,
     setAwayFromBottom,
+    saveScroll,
   } = session;
   const { ready, connected, stoppedTurns, failedTurns, approvals } = runtime;
   const { itemCursor, heldCount, historyGaps } = history;
@@ -120,6 +121,7 @@ export function WorkspaceTranscript({
     <div className="chat-scroll-wrap">
       <div
         className="chat-scroll"
+        data-thread={selected?.id ?? ""}
         aria-busy={awaitingTeam || undefined}
         ref={scroll}
         onClickCapture={event => {
@@ -151,6 +153,8 @@ export function WorkspaceTranscript({
           const gap = element.scrollHeight - element.scrollTop - element.clientHeight;
           stickToBottom.current = followingBottom.current || gap <= 2;
           setAwayFromBottom(gap > element.clientHeight / 3);
+          // Only while it shows that chat: the swap to another chat scrolls too, and must not overwrite its place (C5).
+          if (element.dataset.thread === (selected?.id ?? "")) saveScroll();
         }}
       >
         <div className="chat-content">
@@ -278,6 +282,7 @@ export function WorkspaceTranscript({
           onNavigate={() => {
             followingBottom.current = false;
             stickToBottom.current = false;
+            scroll.current?.dispatchEvent(new Event("elpis-scroll-intent"));
           }}
         />
         {awayFromBottom && (
