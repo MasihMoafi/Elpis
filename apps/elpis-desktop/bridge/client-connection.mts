@@ -237,6 +237,8 @@ function internal_receive(this: DesktopClient, clientState: ClientState, raw: un
   const id = message.params?.threadId ?? message.params?.thread?.id;
   if (id && ["turn/started", "turn/completed", "thread/status/changed"].includes(message.method))
     clientState.turnRevisions.set(id, (clientState.turnRevisions.get(id) ?? 0) + 1);
+  // A dynamic tool call belongs to the connection that registered the tool (the router's sessions); this window has none.
+  if (message.id !== undefined && message.method === "item/tool/call") return;
   if (message.id !== undefined) {
     const request = { ...message, id: message.id, method: message.method };
     if (clientState.owned.has(id)) internal_admitApproval.call(this, clientState, request, { ownerThreadId: id });

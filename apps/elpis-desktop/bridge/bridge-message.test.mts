@@ -139,6 +139,15 @@ test("approvals are only forwarded for owned roots and only accept exact offered
     JSON.stringify({ id: "future", method: "future/requestApproval", params: { threadId: CREATED } }),
   );
   assert.equal(required(required(socket.sent.at(-1)).error).code, -32601);
+  // 10 Nov: a router tool call on the same engine was answered "unsupported" here, which failed the router's tool and
+  // showed Masih an error. Only the connection that registered the tool answers it.
+  const sent = socket.sent.length;
+  socket.emit(
+    "message",
+    JSON.stringify({ id: "tool", method: "item/tool/call", params: { threadId: CREATED, tool: "x", arguments: {} } }),
+  );
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(socket.sent.length, sent, "a dynamic tool call is left to its own connection");
   client.close();
 });
 
