@@ -63,15 +63,17 @@ function attach(step: Item, output: string, failed: boolean) {
 /** The entries with each imported reply split into its text and its tool steps; a result joins the oldest call of the
  * same turn still without one (Claude answers calls in order, often in the next message). Other entries pass unchanged. */
 export function expandImportedTools(entries: Entry[]): Entry[] {
-  if (!entries.some(entry => entry.item.type === "agentMessage" && entry.item.text?.includes(MARK))) return entries;
+  // Only string text: a malformed reply (text not a string) must reach the transcript's own error boundary untouched.
+  const tagged = (item: Item) => item.type === "agentMessage" && typeof item.text === "string" && item.text.includes(MARK);
+  if (!entries.some(entry => tagged(entry.item))) return entries;
   const waiting = new Map<string, Item[]>();
   const out: Entry[] = [];
   for (const entry of entries) {
-    const body = entry.item.type === "agentMessage" ? entry.item.text : undefined;
-    if (!body?.includes(MARK)) {
+    if (!tagged(entry.item)) {
       out.push(entry);
       continue;
     }
+    const body = entry.item.text as string;
     const queue = waiting.get(entry.turnId) ?? [];
     waiting.set(entry.turnId, queue);
     let part = 0,

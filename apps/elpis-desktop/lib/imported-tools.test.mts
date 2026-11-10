@@ -34,6 +34,8 @@ test("an imported reply becomes its text and steps; a result in the next message
 test("a result without a call still shows as a step, and chats without tags pass through unchanged", () => {
   const plain = [reply("x", "Hello.")];
   assert.equal(expandImportedTools(plain), plain);
+  const malformed = [{ turnId: "t1", item: { id: "m", type: "agentMessage", text: { not: "a string" } } }] as never[];
+  assert.equal(expandImportedTools(malformed), malformed, "a reply whose text is not a string is left for the transcript's error boundary");
   const items = expandImportedTools([reply("r", "[external_agent_tool_result]\nok\n[/external_agent_tool_result]", "t2")]).map(e => e.item);
   assert.deepEqual(items.map(item => [item.type, item.tool]), [["dynamicToolCall", "Tool result"]]);
 });

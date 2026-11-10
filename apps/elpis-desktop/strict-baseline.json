@@ -2,7 +2,5 @@
  "types": {},
  "tsx": {},
  "lint": {},
- "dup": {
-  "love-spot-events.ts ~ love-spot-talk-events.ts": 2
- }
+ "dup": {}
 }

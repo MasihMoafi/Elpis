@@ -1,4 +1,7 @@
 "use strict";
+const fs: typeof import("node:fs/promises") = require("node:fs/promises");
+const path = require("node:path");
+const { directoryNames: names }: typeof import("./love-spot-watcher.cts") = require("./love-spot-watcher.cts");
 const {
   fail,
   record,
@@ -7,9 +10,6 @@ const {
   validate,
   merge: mergeImpl,
 }: import("./love-spot-store-shared.cts").Shared = require("./love-spot-store-shared.cts");
-const { directoryNames: names }: typeof import("./love-spot-watcher.cts") = require("./love-spot-watcher.cts");
-const fs: typeof import("node:fs/promises") = require("node:fs/promises");
-const path = require("node:path");
 
 // A closing editor may belong to the page another window just left.
 // Flush only its text to that exact archived page, without switching anyone.

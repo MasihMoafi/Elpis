@@ -1,7 +1,7 @@
 "use client";
 
 import { WorkflowMark } from "@/components/workflow-identity";
-import { type CSSProperties } from "react";
+import { type CSSProperties, type PointerEvent } from "react";
 import { CanvasTextEdit } from "@/components/canvas-text-edit";
 import { agentColor, MOTHER, type AgentData } from "@/lib/canvas";
 import { project, type Ground } from "@/lib/iso";
@@ -17,6 +17,16 @@ import {
   shapeOf,
   textWidth,
 } from "./agents-iso-shared";
+
+/** A left press on a port or wire end starts dragging a wire from it, keeping the pointer on the board. */
+function startWireDrag(scene: IsoScene, event: PointerEvent, drag: NonNullable<Parameters<IsoScene["setWireDrag"]>[0]>) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  scene.root.current?.focus({ preventScroll: true });
+  scene.root.current?.setPointerCapture(event.pointerId);
+  scene.setWireDrag(drag);
+}
 
 /** The agents, wires' labels, frames and notes placed over the drawing. */
 export function IsoPlaces({ scene }: { scene: IsoScene }) {
@@ -68,14 +78,7 @@ export function IsoPlaces({ scene }: { scene: IsoScene }) {
                   event.stopPropagation();
                   scene.onNodeMenu(event, place.id);
                 }}
-                onPointerDown={event => {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  scene.root.current?.focus({ preventScroll: true });
-                  scene.root.current?.setPointerCapture(event.pointerId);
-                  scene.setWireDrag({ id: place.id, end, from: at, to: at, alongside: event.altKey });
-                }}
+                onPointerDown={event => startWireDrag(scene, event, { id: place.id, end, from: at, to: at, alongside: event.altKey })}
                 onClick={event => {
                   event.stopPropagation();
                   if (event.detail === 0) {
@@ -103,20 +106,15 @@ export function IsoPlaces({ scene }: { scene: IsoScene }) {
                 key={`${edge.id}-${end}`}
                 aria-label={`Reconnect ${end} of wire`}
                 style={{ left: at.x, top: at.y - 18 }}
-                onPointerDown={event => {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  scene.root.current?.focus({ preventScroll: true });
-                  scene.root.current?.setPointerCapture(event.pointerId);
-                  scene.setWireDrag({
+                onPointerDown={event =>
+                  startWireDrag(scene, event, {
                     id: fixed.id,
                     end: end === "source" ? "target" : "source",
                     from: origin,
                     to: at,
                     edge,
-                  });
-                }}
+                  })
+                }
               />
             );
           }),

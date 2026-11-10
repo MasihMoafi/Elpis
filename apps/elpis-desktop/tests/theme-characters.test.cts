@@ -92,7 +92,7 @@ for (const colorScheme of ['light', 'dark']) test(`characters can be selected be
       assert.equal(await selected.count(), 1, 'one character is visibly chosen');
       assert.equal(await selected.getAttribute('data-character-id'), palette === 'palette-plum' ? 'elpis' : 'palette-plum');
       assert.equal(await menu.locator('svg').count(), 0, 'portraits replace the tick column');
-      assert.equal(await menu.locator('[data-character-id]').count(), 13);
+      assert.equal(await menu.locator('[data-character-id]').count(), ALL_CHARACTERS.length + 1, 'every character and Matilda');
       assert.equal(await menu.locator('[data-character-id]:not(:has(img))').count(), 0, 'every character keeps its portrait');
       const selectedStyle = await selected.evaluate((row: HTMLElement) => {
         const style = getComputedStyle(row);
