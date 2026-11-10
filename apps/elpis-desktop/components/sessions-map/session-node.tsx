@@ -1,5 +1,5 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
-import { Check, X } from "lucide-react";
+import { Bell, Check, X } from "lucide-react";
 import type { CSSProperties } from "react";
 import { agentColor } from "@/lib/canvas";
 import type { MapNode } from "@/lib/sessions-map";
@@ -18,7 +18,7 @@ export function SessionNode({ id, data }: NodeProps<Node<MapNode>>) {
         {[data.model, data.state].filter(Boolean).join(" · ")}
       </small>
       <span className="agent-node-mark" data-check={status} role="img" aria-label={data.state}>
-        {status === "succeeded" ? <Check size={12} /> : status === "failed" || status === "blocked" ? <X size={12} /> : null}
+        {status === "succeeded" ? <Check size={12} /> : status === "failed" ? <X size={12} /> : status === "blocked" ? <Bell size={12} /> : null}
       </span>
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>
