@@ -12,7 +12,14 @@ type Inputs = {
   newDraftKey: RefObject<string>;
   scroll: RefObject<HTMLDivElement | null>;
   restoreScroll: RefObject<{ height: number; top: number; anchor?: Element; offset?: number } | null>;
-  pendingPosition: RefObject<{ id: string; turn: number; block: number; offset: number; atBottom: boolean } | null>;
+  pendingPosition: RefObject<{
+    id: string;
+    turn: number;
+    block: number;
+    text: string;
+    offset: number;
+    atBottom: boolean;
+  } | null>;
   stickToBottom: RefObject<boolean>;
   view: View;
 };
@@ -65,7 +72,12 @@ export function useTranscriptPresentation({
       const turns = element.querySelectorAll(".turn"),
         turn = turns[turns.length - 1 - position.turn];
       if (position.atBottom || !turn) element.scrollTop = element.scrollHeight;
-      else pin(element, turn.children[position.block] ?? turn, position.offset);
+      else {
+        // The same block by its opening text (steps regroup when a turn re-renders), else by its place in the turn.
+        const blocks = [...turn.children],
+          same = position.text ? blocks.find(block => (block.textContent ?? "").slice(0, 80) === position.text) : undefined;
+        pin(element, same ?? blocks[position.block] ?? turn, position.offset);
+      }
     } else if (restoreScroll.current) {
       const previous = restoreScroll.current;
       restoreScroll.current = null;

@@ -17,8 +17,8 @@ export function useConversationSession() {
   const followingBottom = useRef(false);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const restoreScroll = useRef<{ height: number; top: number; anchor?: Element; offset?: number } | null>(null);
-  const scrollPositions = useRef(new Map<string, { turn: number; block: number; offset: number; atBottom: boolean }>());
-  const pendingPosition = useRef<{ id: string; turn: number; block: number; offset: number; atBottom: boolean } | null>(null);
+  const scrollPositions = useRef(new Map<string, { turn: number; block: number; text: string; offset: number; atBottom: boolean }>());
+  const pendingPosition = useRef<{ id: string; turn: number; block: number; text: string; offset: number; atBottom: boolean } | null>(null);
   const saveScroll = () => {
     const id = selectedRef.current?.id,
       element = scroll.current;
@@ -34,6 +34,7 @@ export function useConversationSession() {
     scrollPositions.current.set(id, {
         turn: index < 0 ? 0 : turns.length - 1 - index,
         block,
+        text: (anchor?.textContent ?? "").slice(0, 80),
         offset: anchor ? anchor.getBoundingClientRect().top - box.top : 0,
         // At it, not near it: a reader slightly above the end comes back to that place (specs/chat-scrolling.md C5).
         atBottom: element.scrollHeight - element.scrollTop - element.clientHeight <= 2,

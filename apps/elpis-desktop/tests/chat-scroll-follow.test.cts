@@ -79,7 +79,7 @@ test('switching chats keeps the reading place; sending pins to the bottom; the g
     const firstShown = () => page.evaluate(() => {
       const s = document.querySelector('.chat-scroll') as HTMLElement, top = s.getBoundingClientRect().top;
       const turn = [...s.querySelectorAll('.turn')].find(t => t.getBoundingClientRect().bottom > top) as HTMLElement;
-      return { text: (turn.textContent ?? '').slice(0, 40), offset: Math.round(turn.getBoundingClientRect().top - top) };
+      return { text: (turn.textContent ?? '').replace(/\d{1,2}:\d{2}\s?[AP]M/g, '').slice(0, 40), offset: Math.round(turn.getBoundingClientRect().top - top) };
     });
     const place = await firstShown();
     await f.open('chat-b');
