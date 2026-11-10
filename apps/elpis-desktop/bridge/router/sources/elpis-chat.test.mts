@@ -123,7 +123,9 @@ test("chat intake keeps order and identity, ignores assistant/other chats, and p
     );
     assert.deepEqual(f.received[0]?.actor, { source: "elpis-chat", id: "alice" });
     assert.equal(f.received[0]?.addressed, "direct");
-    assert.deepEqual(f.received[0]?.threads, [{ source: "elpis-chat", id: CHAT }]);
+    // Each request is its own thread, so an open ticket never takes the next, unrelated message (10 Nov).
+    assert.deepEqual(f.received[0]?.threads, [{ source: "elpis-chat", id: `${CHAT}:1` }]);
+    assert.deepEqual(f.received[1]?.threads, [{ source: "elpis-chat", id: `${CHAT}:2` }]);
     f.messages.push({ ...message("1"), text: "edited" });
     await pollElpisChat(f.ctx, f.transport);
     assert.equal(f.store().triggers.get(elpisChatTriggerId(CHAT, "1"))?.text, "message 1");
@@ -276,7 +278,12 @@ test("chat follow-ups reach executor-ended tickets but do not resume human-stopp
       f.messages.push(message("bot", "assistant"));
       await pollElpisChat(f.ctx, f.transport);
       assert.ok(f.store().tickets.get(decision.ticketId)?.ended);
-      f.messages.push({ ...message("2"), actorId: "guest" });
+      // A new, unrelated message is its own thread and leaves the ended ticket alone (10 Nov: one ticket took the whole chat).
+      f.messages.push({ ...message("new"), actorId: "guest" });
+      await pollElpisChat(f.ctx, f.transport);
+      assert.ok(f.store().tickets.get(decision.ticketId)?.ended, "a new message does not resume the ticket");
+      // A reply to the ticket's request joins its thread, as a Feishu reply joins its root (dsh-superagent feishu-trigger.ts).
+      f.messages.push({ ...message("2"), actorId: "guest", replyTo: "1" });
       await pollElpisChat(f.ctx, f.transport);
       assert.equal(!!f.store().tickets.get(decision.ticketId)?.ended, stopped);
     } finally {

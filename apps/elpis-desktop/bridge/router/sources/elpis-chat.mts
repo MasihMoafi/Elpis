@@ -77,11 +77,17 @@ export function createElpisChatKind(transport: ElpisChatTransport): SourceKind<E
   };
 }
 
+/** One conversation thread per request, as dsh-superagent's Feishu source keys a thread by the chat and its root message
+ * (src/sources/feishu-trigger.ts `feishuThreadId`): a new message starts its own thread; a reply joins the one it answers.
+ * Keyed by the whole chat, the first ticket owned every later message and the router never answered again (10 Nov). */
+export const elpisChatThreadId = (message: Pick<ElpisChatMessage, "threadId" | "id" | "replyTo">): string =>
+  `${message.threadId}:${message.replyTo ?? message.id}`;
+
 function trigger(message: ElpisChatMessage): Trigger {
   return {
     id: elpisChatTriggerId(message.threadId, message.id),
     source: SOURCE,
-    threads: [{ source: SOURCE, id: message.threadId }],
+    threads: [{ source: SOURCE, id: elpisChatThreadId(message) }],
     actor: { source: SOURCE, id: message.actorId },
     human: true,
     addressed: "direct",
