@@ -9,7 +9,6 @@ import { RewindHistory } from "./rewind-history.mts";
 import { RewindSnapshots } from "./rewind-snapshots.mts";
 import { SkillTrash } from "./skill-trash.mts";
 import { SpawnLinks } from "./spawn-links.mts";
-import { createCloudroomVm } from "./cloudroom-vm.mts";
 import { createGithubConnector } from "./github-connector.mts";
 import { createWorkflowHistory } from "./workflow-acp.mts";
 import os from "node:os";
@@ -63,7 +62,6 @@ export class DesktopClient extends EventEmitter {
       githubConnector,
       skillTrashOptions,
       workflowOptions,
-      cloudroom,
       reportAttempts = 4,
       reportRetryMs = 2000,
     }: DesktopClientOptions = {},
@@ -95,13 +93,8 @@ export class DesktopClient extends EventEmitter {
       if (method === "thread/archive") internal_forgetSubscription.call(this, this.#state, params.threadId);
       return result as Awaited<ReturnType<ConstructorParameters<typeof RewindHistory>[1]>>;
     });
-    // His CloudRoom VM (bridge/cloudroom-vm.mts): its sign-in lives in this profile's home, beside the provider keys.
-    cloudroom ??= (createCloudroomVm as (options: { home: string }) => ReturnType<typeof createCloudroomVm>)({
-      home: profileHome,
-    });
     const workflowRuns = createClientWorkflowRuns(this, () => this.#state, {
       profileHome,
-      cloudroom,
       workflowOptions,
       workflowEnv,
     });
@@ -120,7 +113,6 @@ export class DesktopClient extends EventEmitter {
       versions,
       githubConnector: githubConnector as ClientStateOptions["githubConnector"],
       customize,
-      cloudroom: cloudroom as ClientStateOptions["cloudroom"],
       workflowRuns: workflowRuns as unknown as ClientStateOptions["workflowRuns"],
       workflowHistory,
       reportAttempts,
@@ -390,9 +382,6 @@ export class DesktopClient extends EventEmitter {
   }
   async runWorkflow(body?: unknown) {
     return clientWorkflows.impl_runWorkflow.call(this, this.#state, body);
-  }
-  async cloudroom(input?: unknown) {
-    return clientWorkflows.impl_cloudroom.call(this, this.#state, input);
   }
   async createThread(body?: unknown) {
     return clientThreadActions.impl_createThread.call(this, this.#state, body);

@@ -4,7 +4,6 @@ import type { MessageVersions } from "./message-versions.mts";
 import type { RewindHistory } from "./rewind-history.mts";
 import type { RewindSnapshots } from "./rewind-snapshots.mts";
 import type { SpawnLinks } from "./spawn-links.mts";
-import type { createCloudroomVm } from "./cloudroom-vm.mts";
 import type { createGithubConnector } from "./github-connector.mts";
 import type { createWorkflowHistory, createWorkflowRuns } from "./workflow-acp.mts";
 import type { ElpisChatHistory } from "./router/sources/elpis-chat-history.mts";
@@ -71,7 +70,6 @@ export type ClientStateOptions = {
   versions: MessageVersions;
   githubConnector: ReturnType<typeof createGithubConnector>;
   customize: CustomizePage;
-  cloudroom: ReturnType<typeof createCloudroomVm>;
   workflowRuns: ReturnType<typeof createWorkflowRuns>;
   workflowHistory: ReturnType<typeof createWorkflowHistory>;
   reportAttempts: number;
@@ -96,7 +94,6 @@ export class ClientState {
     this.versions = options.versions;
     this.githubConnector = options.githubConnector;
     this.customize = options.customize;
-    this.cloudroom = options.cloudroom;
     this.workflowRuns = options.workflowRuns;
     this.workflowHistory = options.workflowHistory;
     this.reportAttempts = options.reportAttempts;

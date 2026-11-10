@@ -15,7 +15,6 @@ export type DesktopClientOptions = {
   githubConnector?: unknown;
   skillTrashOptions?: ConstructorParameters<typeof SkillTrash>[0] | undefined;
   workflowOptions?: (Record<string, unknown> & { env?: NodeJS.ProcessEnv | undefined }) | undefined;
-  cloudroom?: unknown;
   reportAttempts?: number | undefined;
   reportRetryMs?: number | undefined;
   socketPath?: string | undefined;

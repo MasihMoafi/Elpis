@@ -3,7 +3,7 @@ import type { createRunProgress } from "./create-run-progress.mts";
 import type { createRunStorage } from "./create-run-storage.mts";
 import { randomUUID } from "node:crypto";
 import { BridgeError } from "../validate.mts";
-import { runAcpNode, handoffText } from "../acp-nodes.mts";
+import { runAcpNode } from "../acp-nodes.mts";
 import { workflowRoute, quotaFailure } from "../workflow-models.mts";
 import type {
   RouteAttempt,
@@ -25,7 +25,6 @@ export function createNodeRouting({
   nodeSpec,
   env,
   onSession,
-  cloudroom,
 }: {
   modelRoutes: WorkflowOptions["modelRoutes"];
   routeSnapshots: Map<string, Promise<ModelRoute[]>>;
@@ -35,7 +34,6 @@ export function createNodeRouting({
   nodeSpec: NonNullable<WorkflowOptions["nodeSpec"]>;
   env: NonNullable<WorkflowOptions["env"]>;
   onSession: WorkflowOptions["onSession"];
-  cloudroom: WorkflowOptions["cloudroom"];
 }) {
   const lowEffort = (route: { efforts?: string[] | undefined }) =>
     ["low", "minimal", "none"].find(effort => route.efforts?.includes(effort));
@@ -183,65 +181,5 @@ export function createNodeRouting({
       )) as Error;
   }
 
-  /** "Runs on: CloudRoom VM" (1 Nov, Masih: "I asked if we can use cloud room's vms for our agents"): the agent's worktree
-   * is copied to his CloudRoom VM, the CLI its provider needs (Claude Code or Codex) runs there, and its changes come back
-   * into the worktree. The Mother's review and merge stay on this computer. Answers the same shape as runAcpNode. */
-  async function runOnCloudroom(
-    record: WorkflowRecord,
-    owner: StoredTask | Mother,
-    requested: RequestedRoute,
-    instructions: string,
-    input: NodeInput,
-    options: NodeOptions,
-  ) {
-    const route = workflowRoute(requested.model, requested.provider);
-    const attempt: RouteAttempt = {
-      model: route.model,
-      provider: route.provider,
-      runsOn: "cloudroom",
-      status: "running",
-      startedAt: Date.now(),
-    };
-    const routing = (owner.routing ??= { requested: route, actual: null, attempts: [] });
-    routing.actual = { model: route.model, provider: route.provider };
-    routing.attempts.push(attempt);
-    await save(record);
-    const say = (text: string) =>
-      progress(record, owner, {
-        sessionUpdate: "agent_message_chunk",
-        messageId: `cloudroom-${randomUUID()}`,
-        content: { type: "text", text },
-      });
-    // A connected agent's whole answer is in a file on this computer, which the VM cannot read: it gets the summary.
-    const prompt = handoffText(
-      input.task,
-      (input.inputs ?? []).map(({ name, answer }) => ({ name, answer })),
-      instructions,
-    );
-    try {
-      const result = await cloudroom!.runAgent({
-        localDir: options.cwd,
-        key: `${record.id}-${owner.id}-r${record.round}`,
-        provider: route.provider,
-        model: route.model,
-        effort: owner.reasoningEffort,
-        prompt,
-        signal: options.signal,
-        timeoutMs: options.timeoutMs,
-        onStatus: say,
-      });
-      say(
-        `CloudRoom VM: ${result.changed} changed and ${result.deleted} deleted ${result.changed + result.deleted === 1 ? "file" : "files"} copied back.`,
-      );
-      attempt.status = "succeeded";
-      attempt.endedAt = Date.now();
-      return { answer: result.answer };
-    } catch (error) {
-      attempt.status = "failed";
-      attempt.reason = (error as Error).message;
-      attempt.endedAt = Date.now();
-      throw error;
-    }
-  }
-  return { runNode, runOnCloudroom };
+  return { runNode };
 }

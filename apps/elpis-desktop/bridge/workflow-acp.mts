@@ -33,7 +33,6 @@ export function createWorkflowRuns(
     observeThread,
     listThreadDescendants,
     budget = workerBudget,
-    cloudroom,
   }: WorkflowOptions = {} as WorkflowOptions,
 ) {
   const records = new Map<string, WorkflowRecord>(),
@@ -48,7 +47,7 @@ export function createWorkflowRuns(
     checkpoints = new Map<string, CheckpointContext>();
   const { save, freeRun, load, gone } = createRunStorage({ stateDir, records });
   const { progress, permission, logLine } = createRunProgress({ save, progressTimers });
-  const { runNode, runOnCloudroom } = createNodeRouting({
+  const { runNode } = createNodeRouting({
     modelRoutes,
     routeSnapshots,
     exhaustedProviders,
@@ -57,7 +56,6 @@ export function createWorkflowRuns(
     nodeSpec,
     env,
     onSession,
-    cloudroom,
   });
   const { motherRoute, motherOf, askMother } = createMotherTurns({ runNode, progress });
   const { handed, spill } = createRunOutputs({ stateDir });
@@ -101,7 +99,6 @@ export function createWorkflowRuns(
   const { execute } = createExecution({
     handed,
     save,
-    runOnCloudroom,
     runNode,
     timeoutMs,
     permission,
@@ -131,7 +128,6 @@ export function createWorkflowRuns(
     mergingSources,
     load,
     records,
-    cloudroom,
     mergeControllers,
     stateDir,
     modelDefaults,

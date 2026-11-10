@@ -11,7 +11,6 @@ import type { FinishedWorkflow } from "./client-workflows.mts";
 
 type WorkflowRunSetup = {
   profileHome: string;
-  cloudroom: unknown;
   workflowOptions: DesktopClientOptions["workflowOptions"];
   workflowEnv: NodeJS.ProcessEnv;
 };
@@ -20,11 +19,10 @@ type WorkflowRunSetup = {
 export function createClientWorkflowRuns(
   client: DesktopClient,
   state: () => ClientState,
-  { profileHome, cloudroom, workflowOptions, workflowEnv }: WorkflowRunSetup,
+  { profileHome, workflowOptions, workflowEnv }: WorkflowRunSetup,
 ) {
   return (createWorkflowRuns as (options: Record<string, unknown>) => ReturnType<typeof createWorkflowRuns>)({
     stateDir: path.join(profileHome, "desktop-workflows"),
-    cloudroom,
     onSession: (_record: unknown, _task: unknown, id: string) => {
       state().known.add(id);
       return () => void internal_releaseNode.call(client, state(), id);

@@ -305,7 +305,6 @@ export async function impl_runWorkflow(this: DesktopClient, clientState: ClientS
     "next",
     "replan",
     "motherModel",
-    "runsOn",
   ]) as Record<string, unknown> & {
     motherModel?: { model?: unknown; provider?: unknown };
     next?: Record<string, unknown> & {
@@ -323,12 +322,6 @@ export async function impl_runWorkflow(this: DesktopClient, clientState: ClientS
   if (body.replan !== undefined) {
     if (typeof body.replan !== "boolean") throw new BridgeError("Invalid replan switch");
     params.replan = body.replan;
-  }
-  // "Runs on" (1 Nov): this computer, or his CloudRoom VM for every agent's task (the Mother stays here).
-  if (body.runsOn !== undefined) {
-    if (!["local", "cloudroom"].includes(body.runsOn as string))
-      throw new BridgeError("Choose where the agents run: this computer or the CloudRoom VM");
-    if (body.runsOn === "cloudroom") params.runsOn = "cloudroom";
   }
   // Her model, when he chose one for her on the board; otherwise the default (workflow-models.mjs MOTHER_ROUTE).
   if (body.motherModel !== undefined) {
@@ -375,20 +368,6 @@ export async function impl_runWorkflow(this: DesktopClient, clientState: ClientS
   });
 }
 
-/** CloudRoom VM sign-in for Settings → Models & accounts. Answers never carry a token. */
-export async function impl_cloudroom(this: DesktopClient, clientState: ClientState, raw?: unknown) {
-  const input = raw as { action?: unknown } | undefined;
-  if (input === undefined) return clientState.cloudroom.status();
-  object(input, ["action"]);
-  if (input.action === "signIn")
-    return { ...(await clientState.cloudroom.signIn()), ...(await clientState.cloudroom.status()) };
-  if (input.action === "status") return clientState.cloudroom.status({ check: true });
-  if (input.action === "signOut") {
-    await clientState.cloudroom.signOut();
-    return clientState.cloudroom.status();
-  }
-  throw new BridgeError("Unsupported CloudRoom action");
-}
 
 /** A run has ended. A stage that succeeded starts its `next` in a new chat; one that failed or stopped never does. A
  * run started that way (`report`) sends its report to the chat it came from. */

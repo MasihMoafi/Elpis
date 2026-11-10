@@ -1,6 +1,6 @@
 "use client";
 
-import { plural, State, Card, ConfiguredList, CloudroomCard } from "./providers-cards";
+import { plural, State, Card, ConfiguredList } from "./providers-cards";
 import "@/components/settings/settings.css";
 import { DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useState } from "react";
@@ -280,7 +280,6 @@ export function ProvidersSettings({
                 </div>
               </Card>
             )}
-            {!standalone && <CloudroomCard />}
             {!standalone && (
               <Card id="gemini" name="Antigravity" state={sub(data.gemini)}>
                 <p className="provider-note">

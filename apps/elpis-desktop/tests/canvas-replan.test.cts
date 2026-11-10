@@ -3,7 +3,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { openCanvas } = require('./canvas-fixture.cts');
-const { chooseOption } = require('./controls.cts');
 
 const graph = { name: 'Re-plan team', edges: [], nodes: ['a', 'b'].map((id, index) => ({ id, type: 'agent', position: { x: 260, y: 40 + index * 160 },
   data: { title: id === 'a' ? 'Section writer' : 'Index builder', instruction: `Write part ${id}.`, model: null, writeScopes: ['src'], acceptanceCriteria: ['It exists'] } })) };
@@ -55,22 +54,13 @@ test('her decisions are history lines; an added agent appears with its wire, a c
   } finally { await f.close(); }
 });
 
-// "Runs on" beside the switch (1 Nov, CloudRoom VM): this computer by default, the run says nothing; CloudRoom VM is sent.
-test('Runs on is this computer by default and CloudRoom VM reaches the run', async () => {
+// 10 Nov: CloudRoom VM was removed; the Mother panel offers no "Runs on" choice.
+test('the Mother panel has no Runs on choice', async () => {
   const f = await openCanvas({ graph, autoLayout: false });
   try {
     await f.canvas.getByRole('button', { name: 'Mother agent', exact: true }).click();
-    const where = f.canvas.getByRole('combobox', { name: 'Runs on', exact: true });
-    assert.equal(await where.getAttribute('data-value'), 'local');
-    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await f.canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor();
-    assert.equal(f.runs.at(-1).runsOn, undefined, 'a local run sends no runsOn');
-    await chooseOption(where, 'cloudroom');
-    await f.canvas.locator('aside[aria-label="Mother agent"]').screenshot({ path: '/tmp/cloudroom-shots/mother-panel.png' }).catch(() => {});
-    await f.canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await f.page.waitForFunction(() => document.querySelectorAll('.canvas-header [role="status"]').length > 0);
-    await f.page.waitForTimeout(300);
-    assert.equal(f.runs.at(-1).runsOn, 'cloudroom');
+    await f.canvas.locator('aside[aria-label="Mother agent"]').waitFor();
+    assert.equal(await f.canvas.getByRole('combobox', { name: 'Runs on', exact: true }).count(), 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

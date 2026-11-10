@@ -94,8 +94,7 @@ export type CanvasGraph = {
   roundLimit?:
     | number
     | undefined; /** "Mother re-plans" (1 Nov): she may add, cancel or steer agents when one succeeds; on unless turned off. */
-  replan?: boolean; /** "Runs on" (1 Nov): every agent's task on this computer, or on his CloudRoom VM; the Mother stays here. */
-  runsOn?: "local" | "cloudroom";
+  replan?: boolean;
 };
 /** A task's state from /api/workflows, shared by ACP runs and retained native history. */
 export type TaskStatus = "pending" | "running" | "succeeded" | "failed" | "blocked" | "cancelled";

@@ -71,7 +71,7 @@ const TABS = [
     group: "personal",
     scope: "this device",
     Icon: ChatIcon,
-    words: "import claude code codex cloudroom bring chats history sessions",
+    words: "import claude code codex bring chats history sessions",
   },
   {
     id: "appearance",

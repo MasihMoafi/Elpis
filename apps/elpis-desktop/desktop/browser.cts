@@ -347,7 +347,7 @@ function createBrowserImpl({
         break;
       case "external-url": {
         const url = browserUrl(input.url, origin);
-        if (!isSignInPage(url) || !openExternal) throw Error("Choose a Claude, OpenAI, or CloudRoom sign-in page.");
+        if (!isSignInPage(url) || !openExternal) throw Error("Choose a Claude or OpenAI sign-in page.");
         await openExternal(url);
         break;
       }

@@ -87,7 +87,6 @@ function internal_disconnect(this: DesktopClient, clientState: ClientState) {
     );
   }
   clientState.workflowRuns.close();
-  clientState.cloudroom.close();
   clientState.pending.clear();
   clientState.approvals.clear();
   clientState.checkingApprovals.clear();

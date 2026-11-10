@@ -151,7 +151,6 @@ export function canvasRun({
       ...runPayload(rootThreadId, name, tasks, limit, repository),
       runLimitSeconds: (graph.timeLimit ?? RUN_MINUTES) * 60,
       replan: graph.replan !== false,
-      ...(graph.runsOn === "cloudroom" ? { runsOn: "cloudroom" } : {}),
       ...(mother.model
         ? { motherModel: { model: mother.model, ...(mother.provider ? { provider: mother.provider } : {}) } }
         : {}),

@@ -16,7 +16,6 @@ export function createRunApi({
   mergingSources,
   load,
   records,
-  cloudroom,
   mergeControllers,
   stateDir,
   modelDefaults,
@@ -35,7 +34,6 @@ export function createRunApi({
   mergingSources: Set<string>;
   load: ReturnType<typeof createRunStorage>["load"];
   records: Map<string, WorkflowRecord>;
-  cloudroom: WorkflowOptions["cloudroom"];
   mergeControllers: Map<string, AbortController>;
   stateDir: NonNullable<WorkflowOptions["stateDir"]>;
   modelDefaults: WorkflowOptions["modelDefaults"];
@@ -61,10 +59,6 @@ export function createRunApi({
     async start(params: WorkflowParams, root: Root): Promise<StartedRun> {
       validateWorkflow(params.tasks, params.roundLimit);
       await load();
-      if (params.runsOn === "cloudroom") {
-        if (!cloudroom) throw new BridgeError("CloudRoom is not available in this Elpis.", 503);
-        cloudroom.ready();
-      }
       if (mergeControllers.has(params.rootThreadId))
         throw new BridgeError("Mother agent is reviewing this workflow", 409);
       if (!path.isAbsolute(root.cwd ?? "")) throw new BridgeError("Choose a project folder before running a workflow");

@@ -237,18 +237,4 @@ export type WorkflowOptions = {
     nextCursor?: string | null;
   }>;
   budget?: typeof workerBudget;
-  cloudroom?: {
-    ready: () => unknown;
-    runAgent: (options: {
-      localDir: string | undefined;
-      key: string;
-      provider: string;
-      model: string;
-      effort: string | undefined;
-      prompt: string;
-      signal: AbortSignal | undefined;
-      timeoutMs: number | undefined;
-      onStatus: (text: string) => void;
-    }) => Promise<{ answer: string; changed: number; deleted: number }>;
-  };
 };

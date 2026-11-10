@@ -339,7 +339,7 @@ test("stopping a navigation does not turn its rejected load promise into a page 
   browser.dispose();
 });
 
-test("external-url opens Claude, OpenAI, and CloudRoom sign-in URLs and refuses unrelated URLs", async () => {
+test("external-url opens Claude and OpenAI sign-in URLs and refuses unrelated URLs", async () => {
   const origin = "http://127.0.0.1:4000",
     opened: string[] = [],
     handlers = new Map<string, (event: unknown, input: unknown) => Promise<unknown>>();
@@ -397,14 +397,12 @@ test("external-url opens Claude, OpenAI, and CloudRoom sign-in URLs and refuses 
     handlers.get("elpis:browser")!({ sender: root, senderFrame: root.mainFrame }, { action: "external-url", url });
   await invoke("https://auth.openai.com/oauth/authorize?client_id=test");
   await invoke("https://claude.ai/oauth/authorize?client_id=test");
-  await invoke("https://www.cloudroom.dev/desktop");
   assert.deepEqual(opened, [
     "https://auth.openai.com/oauth/authorize?client_id=test",
     "https://claude.ai/oauth/authorize?client_id=test",
-    "https://www.cloudroom.dev/desktop",
   ]);
   const refused = (await invoke("https://example.com/phishing")) as { error?: string };
-  assert.match(refused.error ?? "", /Claude, OpenAI, or CloudRoom/);
-  assert.equal(opened.length, 3);
+  assert.match(refused.error ?? "", /Claude or OpenAI/);
+  assert.equal(opened.length, 2);
   browser.dispose();
 });

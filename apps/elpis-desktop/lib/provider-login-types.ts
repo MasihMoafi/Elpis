@@ -1,7 +1,7 @@
 import { type ProviderType } from "@/lib/provider-form";
 import { type Providers } from "@/components/provider-usage";
 export type ProviderId =
-  "openai" | "claude" | "openrouter" | "anthropic" | "google-gemini" | "gemini" | "local" | "cloudroom" | string;
+  "openai" | "claude" | "openrouter" | "anthropic" | "google-gemini" | "gemini" | "local" | string;
 export type Method = "api-key" | "chatgpt-subscription" | "claude-subscription" | "openrouter-key" | "local";
 export type AccountId = string;
 export type SetKeyOptions = {

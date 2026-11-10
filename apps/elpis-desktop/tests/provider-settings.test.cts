@@ -106,7 +106,7 @@ for (const response of ['rejected', 'empty']) test(`provider cards and key check
   const panel = app.page.getByRole('tabpanel', { name: 'Models & accounts', exact: true });
   const key = panel.getByRole('group', { name: 'Use OpenRouter for', exact: true });
   for (const name of ["Chat settings can't be saved here.", 'Read aloud settings unavailable.', 'Dictation settings unavailable.']) await key.getByText(name, { exact: true }).waitFor();
-  for (const name of ['openai', 'claude', 'cloudroom', 'gemini', 'openrouter']) await panel.locator(`[data-provider="${name}"]`).waitFor();
+  for (const name of ['openai', 'claude', 'gemini', 'openrouter']) await panel.locator(`[data-provider="${name}"]`).waitFor();
   await panel.getByText('Advanced API connections', { exact: true }).waitFor();
   assert.deepEqual(app.errors, []);
  } finally { await app.close(); }

@@ -17,7 +17,6 @@ import { projectFolder } from "./validation.mts";
 export function createExecution({
   handed,
   save,
-  runOnCloudroom,
   runNode,
   timeoutMs,
   permission,
@@ -44,7 +43,6 @@ export function createExecution({
 }: {
   handed: ReturnType<typeof createRunOutputs>["handed"];
   save: ReturnType<typeof createRunStorage>["save"];
-  runOnCloudroom: ReturnType<typeof createNodeRouting>["runOnCloudroom"];
   runNode: ReturnType<typeof createNodeRouting>["runNode"];
   timeoutMs: WorkflowOptions["timeoutMs"];
   permission: ReturnType<typeof createRunProgress>["permission"];
@@ -197,7 +195,7 @@ export function createExecution({
                 );
                 return { result: { answer: `Joined ${task.parts!.length} parts into ${task.output}.` }, changes: {} };
               }
-              const result = await (record.runsOn === "cloudroom" ? runOnCloudroom : runNode)(
+              const result = await runNode(
                 record,
                 task,
                 requested,

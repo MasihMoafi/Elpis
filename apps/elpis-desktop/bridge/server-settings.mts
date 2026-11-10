@@ -50,10 +50,6 @@ export async function handleSettingsRoutes(
     json(response, 200, method === "GET" ? await client.providers() : await client.signIn(await body(request)));
     return true;
   }
-  if (url.pathname === "/api/providers/cloudroom") {
-    json(response, 200, method === "GET" ? await client.cloudroom() : await client.cloudroom(await body(request)));
-    return true;
-  }
   if (url.pathname === "/api/providers/claude-accounts") {
     json(
       response,

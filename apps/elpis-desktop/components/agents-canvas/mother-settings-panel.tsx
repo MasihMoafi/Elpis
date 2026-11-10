@@ -110,22 +110,6 @@ export function MotherSettingsPanel({
           onCheckedChange={on => setGraph(current => ({ ...current, replan: on }))}
         />
       </label>
-      {/* Per run (1 Nov): each agent's task runs on his CloudRoom VM (sign in under Settings → Models & accounts); her review and merge stay here. */}
-      <label title="CloudRoom VM: each agent's worktree is copied to your CloudRoom VM, its Claude Code or Codex runs there, and the changes come back. The Mother's review and merge stay on this computer.">
-        Runs on
-        <OptionSelect
-          aria-label="Runs on"
-          value={graph.runsOn ?? "local"}
-          disabled={Boolean(run && !over(run))}
-          onChange={event => {
-            const runsOn = event.target.value as "local" | "cloudroom";
-            setGraph(current => ({ ...current, runsOn }));
-          }}
-        >
-          <option value="local">This computer</option>
-          <option value="cloudroom">CloudRoom VM</option>
-        </OptionSelect>
-      </label>
       <div className="canvas-mother-counts">
         <CountField
           label="Time limit (min)"

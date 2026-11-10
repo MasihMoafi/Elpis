@@ -126,7 +126,6 @@
     "bridge/bounded-cache.test.mts"
   ],
   "bridge": [
-    "bridge/cloudroom-vm-code.test.mts",
     "bridge/schedule.test.mts",
     "bridge/live-model-catalogue.test.mts",
     "bridge/subscription-models.test.mts",
@@ -290,7 +289,6 @@
     "desktop/main-error-guard.test.cts"
   ],
   "ui": [
-    "tests/cloudroom-settings.test.cts",
     "tests/automations.test.cts",
     "tests/memory-count.test.cts",
     "tests/audio-file-links.test.cts",
