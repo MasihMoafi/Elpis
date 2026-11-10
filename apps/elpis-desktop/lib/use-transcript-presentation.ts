@@ -21,6 +21,7 @@ type Inputs = {
     atBottom: boolean;
   } | null>;
   stickToBottom: RefObject<boolean>;
+  loading: boolean;
   view: View;
 };
 
@@ -34,6 +35,7 @@ export function useTranscriptPresentation({
   restoreScroll,
   pendingPosition,
   stickToBottom,
+  loading,
   view,
 }: Inputs) {
   // A restored place stays on its element for a moment: turns near it finish rendering from their estimated height
@@ -67,7 +69,8 @@ export function useTranscriptPresentation({
     if (!element) return;
     const position = pendingPosition.current;
     if (position && position.id === selected?.id && entries.length) {
-      pendingPosition.current = null;
+      // Kept until the fresh copy has loaded: the cached copy shows first, and the fresh one rebuilds the turns (C5).
+      if (!loading) pendingPosition.current = null;
       stickToBottom.current = position.atBottom;
       const turns = element.querySelectorAll(".turn"),
         turn = turns[turns.length - 1 - position.turn];
@@ -87,7 +90,7 @@ export function useTranscriptPresentation({
         pin(element, previous.anchor, previous.offset);
       else element.scrollTop = previous.top + element.scrollHeight - previous.height;
     } else if (stickToBottom.current) element.scrollTo({ top: element.scrollHeight });
-  }, [entries, submissions, selected?.id]);
+  }, [entries, submissions, selected?.id, loading]);
 
   // A chat that was at its end stays there when its box changes size (full view turns the column into a card).
   useEffect(() => {

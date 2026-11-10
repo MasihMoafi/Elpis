@@ -42,6 +42,7 @@ export function useConversationView({
     restoreScroll,
     pendingPosition,
     stickToBottom,
+    loading,
   } = session;
   const { ready, liveError } = runtime,
     { loadChildren } = children;
@@ -63,6 +64,7 @@ export function useConversationView({
     restoreScroll,
     pendingPosition,
     stickToBottom,
+    loading,
     view,
   });
   return { selectedLiveError, related, shownEntries, newestPrompt };
