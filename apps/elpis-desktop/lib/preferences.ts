@@ -47,7 +47,9 @@ export type Preferences = {
   customThemes: string;
   /** Selected Appearance palette id, or "elpis" for the built-in palette. */
   selectedPalette: string;
-  /** JSON encoded map from Love Spot chat id to the palette id of the character it was started with. */
+  /** Explicit character id; empty follows the palette for existing built-in selections. */
+  selectedCharacter: string;
+  /** JSON encoded map from Love Spot chat id to its built-in or custom character id. */
   loveChatCharacters: string;
   /** Opening a Love Spot chat switches to that chat's character and theme. */
   themeFollowsLoveChat: boolean;
@@ -68,6 +70,7 @@ export type Preferences = {
   shortcutBindings: string;
 };
 export const DEFAULT_PREFERENCES: Preferences = {
+  selectedCharacter: "",
   loveChatCharacters: "{}",
   themeFollowsLoveChat: true,
   speakMatildaReplies: true,

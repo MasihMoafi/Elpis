@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef } from "react";
 import type { Thread } from "@/lib/api";
 import { savePreferences, type Preferences } from "@/lib/preferences";
 import { THEME_CHARACTERS } from "@/lib/theme-characters";
+import { useCustomCharacters } from "@/lib/custom-characters";
+import { characterChoice } from "./character-choice.mts";
 
 /** The name the app gives a Love Spot conversation; the character it was started with is what a person reads. */
 export const LOVE_SPOT_CHAT = "Love Spot";
@@ -35,27 +37,40 @@ export function assignCharacters(
 export function useLoveChatCharacters(
   threads: Thread[],
   selected: Thread | null,
-  preferences: Pick<Preferences, "loveChatCharacters" | "selectedPalette" | "themeFollowsLoveChat">,
+  preferences: Pick<
+    Preferences,
+    "loveChatCharacters" | "selectedPalette" | "selectedCharacter" | "themeFollowsLoveChat"
+  >,
 ) {
+  const { characters, loaded } = useCustomCharacters();
   const saved = useMemo(() => savedCharacters(preferences.loveChatCharacters), [preferences.loveChatCharacters]);
   const chats = useMemo(() => threads.filter(thread => thread.name === LOVE_SPOT_CHAT), [threads]);
   const latest = useRef({ saved, preferences });
   latest.current = { saved, preferences };
   useEffect(() => {
-    const assigned = assignCharacters(chats, latest.current.saved, latest.current.preferences.selectedPalette);
+    const assigned = assignCharacters(
+      chats,
+      latest.current.saved,
+      latest.current.preferences.selectedCharacter || latest.current.preferences.selectedPalette,
+    );
     if (assigned) savePreferences({ loveChatCharacters: JSON.stringify(assigned) });
   }, [chats]);
   // Only on opening a chat, so choosing another theme while in it is not undone.
   const character = selected ? saved[selected.id] : undefined;
   useEffect(() => {
     const { preferences: now } = latest.current;
-    if (
-      character &&
-      now.themeFollowsLoveChat &&
-      character !== now.selectedPalette &&
-      (character === MATILDA || THEME_CHARACTERS[character])
-    )
-      savePreferences({ selectedPalette: character });
-  }, [selected?.id, character]);
-  return (thread: Pick<Thread, "id">) => THEME_CHARACTERS[saved[thread.id] ?? MATILDA]?.name ?? "Matilda";
+    if (!character || (character.startsWith("custom-") && !loaded)) return;
+    if (character === MATILDA || THEME_CHARACTERS[character] || character.startsWith("custom-")) {
+      const patch = characterChoice(character, characters, now.themeFollowsLoveChat);
+      if (
+        patch.selectedCharacter !== now.selectedCharacter ||
+        (patch.selectedPalette && patch.selectedPalette !== now.selectedPalette)
+      )
+        savePreferences(patch);
+    }
+  }, [selected?.id, character, loaded]);
+  return (thread: Pick<Thread, "id">) =>
+    characters.find(item => item.id === saved[thread.id])?.name ??
+    THEME_CHARACTERS[saved[thread.id] ?? MATILDA]?.name ??
+    "Matilda";
 }

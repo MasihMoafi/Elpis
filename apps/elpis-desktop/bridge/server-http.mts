@@ -45,6 +45,8 @@ export type ServerState = {
   };
   readAloud: ReturnType<typeof import("./read-aloud-provider.mts").createReadAloudProvider>;
   importChats: ReturnType<typeof import("./import-chats.mts").createImportChats>;
+  characters: ReturnType<typeof import("./custom-characters.mts").createCharacters>;
+  characterGeneration: ReturnType<typeof import("./character-generation.mts").createCharacterGeneration>;
 };
 
 export const COOKIE = "elpis_desktop";
@@ -89,6 +91,7 @@ export const ERROR_AREAS = new Set([
   "dev-servers",
   "love-spot",
   "import-chats",
+  "characters",
 ]);
 
 /** Only fixed categories and numeric runtime codes enter this bounded log. Never serialize an error or request. */

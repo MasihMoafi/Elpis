@@ -1,5 +1,9 @@
 import { usePreferences } from "@/lib/preferences";
 import { THEME_CHARACTER_IMAGES } from "@/lib/theme-character-images";
+import { useCustomCharacters } from "@/lib/custom-characters";
+import { BUILT_IN_THEMES, parseCustomThemes } from "@/lib/theme-palettes";
+import { MATILDA_SHOTS } from "../bridge/matilda-face.cts";
+import type { CustomCharacter } from "./custom-character-types.mts";
 
 export type ThemeCharacter = { id: string; theme: string; name: string; image: string };
 
@@ -26,10 +30,15 @@ export const THEME_CHARACTERS: Record<string, { name: string; image: string; the
 );
 
 export const OPEN_CHARACTER_PICKER = "elpis-open-character-picker";
+export function customCharacterImage(character: CustomCharacter) {
+  return "url" in character.portrait ? character.portrait.url : THEME_CHARACTERS[character.portrait.builtin]?.image ?? MATILDA_SHOTS.softSmile;
+}
 /** The selected palette's character, or null for Matilda herself. */
 export function useThemeCharacter() {
-  const { selectedPalette } = usePreferences();
-  return THEME_CHARACTERS[selectedPalette] ?? null;
+  const { selectedPalette, selectedCharacter, customThemes } = usePreferences(), { characters } = useCustomCharacters();
+  const custom = characters.find(item => item.id === selectedCharacter);
+  if (custom) return { name: custom.name, image: customCharacterImage(custom), theme: [...BUILT_IN_THEMES, ...parseCustomThemes(customThemes)].find(theme => theme.id === custom.themeId)?.name ?? "Current theme" };
+  return THEME_CHARACTERS[selectedCharacter || selectedPalette] ?? null;
 }
 /** Who the person is talking to in Love Spot. */
 export const useCompanionName = () => useThemeCharacter()?.name ?? "Matilda";

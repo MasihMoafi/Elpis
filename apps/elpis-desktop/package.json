@@ -54,6 +54,7 @@
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
     "rrule": "2.8.1",
+    "sharp": "0.34.5",
     "tailwind-merge": "3.6.0",
     "ws": "8.18.3",
     "zod": "4.4.3",

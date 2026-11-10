@@ -13,6 +13,9 @@ import { createVoice } from "./voice.mts";
 import { createKokoro } from "./kokoro.mts";
 import { createReadAloudProvider } from "./read-aloud-provider.mts";
 import { createImportChats } from "./import-chats.mts";
+import { createCharacters } from "./custom-characters.mts";
+import { createCharacterGeneration } from "./character-generation.mts";
+import { handleCharacterRoutes } from "./server-characters.mts";
 import { createTrash } from "./trash.mts";
 import { createLoveSpot } from "./love-spot-store.cts";
 import { createLoveSpotTalk } from "./love-spot-talk.mts";
@@ -182,6 +185,8 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     elpisHome: options.elpisHome ?? elpisHome(),
     ...(options.codexHome ? { codexHome: options.codexHome } : {}),
   });
+  const characters = createCharacters(options.elpisHome ?? elpisHome());
+  const characterGeneration = createCharacterGeneration(client);
   client.on("event", event);
   // A chat Masih starts is named from its first message, as the TUI names it.
   const titles = createThreadTitles(client);
@@ -212,6 +217,8 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     kokoro,
     readAloud,
     importChats,
+    characters,
+    characterGeneration,
   };
   let origin = "";
   /** @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */
@@ -267,6 +274,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
           request.on("close", () => listeners.delete(response));
           return;
         }
+        if (await handleCharacterRoutes(state, request, response, url, method)) return;
         if (await handleLoveSpotRoutes(state, request, response, url, method)) return;
         if (await handleVoiceRoutes(state, request, response, url, method)) return;
         if (await handleFileRoutes(state, request, response, url, method)) return;

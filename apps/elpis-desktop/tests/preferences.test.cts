@@ -46,6 +46,17 @@ test('the history shortcut remains a generated copy of its shared source', () =>
   const source = path.join(homedir(), 'Desktop/p/skills/web-dev/behavior/history-shortcut.ts');
   if (fs.existsSync(source)) assert.equal(body, fs.readFileSync(source, 'utf8'), 'run behavior/sync.mjs --write');
 });
+
+test('custom chat characters restore independently of the optional theme and fall back safely after deletion', async () => {
+  const { characterChoice } = await import('../lib/character-choice.mts');
+  const lyra = { id: 'custom-lyra', name: 'Lyra', description: 'Astronomer', personality: 'Explain patiently.', themeId: null, portrait: { builtin: 'elpis' } };
+  assert.deepEqual(characterChoice(lyra.id, [lyra]), { selectedCharacter: lyra.id }, 'keep current never supplies a palette patch');
+  const themed = { ...lyra, themeId: 'palette-violet' };
+  assert.deepEqual(characterChoice(lyra.id, [themed]), { selectedCharacter: lyra.id, selectedPalette: 'palette-violet' });
+  assert.deepEqual(characterChoice(lyra.id, [themed], false), { selectedCharacter: lyra.id }, 'theme follows chat off still restores her');
+  assert.deepEqual(characterChoice(lyra.id, []), { selectedCharacter: 'elpis' }, 'deleted character returns to Matilda without changing a theme');
+  assert.deepEqual(characterChoice('palette-gold', [], false), { selectedCharacter: 'palette-gold' });
+});
 function loader() {
   const cache = new Map<string, { exports: Record<string, unknown> }>();
   const load = (file: string): Record<string, unknown> => {

@@ -1,6 +1,8 @@
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { agentColor } from "@/lib/love-spot";
 import { appStorage } from "@/lib/projects";
+import { readPreferences } from "@/lib/preferences";
+import { readCustomCharacters, updateCharacterPersonality } from "@/lib/custom-characters";
 
 export const MATILDA_CHANGED = "elpis:matilda-changed";
 /** Sent with `detail: true` while her small chat is open on screen and `false` when it closes: her answers there are read. */
@@ -18,18 +20,18 @@ export const PROTOCOL = [
 
 const PERSONA_KEY = "elpis-matilda-persona";
 export const savedPersona = () => {
+  const character = readCustomCharacters().find(item => item.id === readPreferences().selectedCharacter);
+  if (character) return `You are ${character.name}.\n\n${character.personality}`;
   try {
     return appStorage().getItem(PERSONA_KEY) || PROTOCOL;
   } catch {
     return PROTOCOL;
   }
 };
-export const keepPersona = (value: string) => {
-  try {
-    appStorage().setItem(PERSONA_KEY, value);
-  } catch {
-    /* Who she is is a convenience. */
-  }
+export const keepPersona = async (value: string) => {
+  const character = readCustomCharacters().find(item => item.id === readPreferences().selectedCharacter);
+  if (character) return updateCharacterPersonality(character.id, value.replace(`You are ${character.name}.\n\n`, ""));
+  appStorage().setItem(PERSONA_KEY, value);
 };
 
 /** The model she runs on: empty means the app's main model (Settings), anything else is the person's choice in "Who Matilda is". */

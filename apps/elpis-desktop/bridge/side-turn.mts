@@ -2,12 +2,21 @@ import { BridgeError, threadId } from "./validate.mts";
 import type { DesktopClient } from "./client.mts";
 
 type SideClient = Pick<DesktopClient, "settings" | "sideRpc" | "on" | "off">;
+type SideItem = {
+  type?: string;
+  text?: string;
+  phase?: string;
+  result?: string;
+  status?: string;
+  savedPath?: string;
+  error?: unknown;
+};
 type SideEvent = {
   method?: string;
   params?: {
     threadId?: string;
-    item?: { type?: string; text?: string; phase?: string };
-    turn?: { status?: string; error?: { message?: string }; items?: { type?: string; text?: string }[] };
+    item?: SideItem;
+    turn?: { status?: string; error?: { message?: string }; items?: SideItem[] };
   };
 };
 type Options = {
@@ -22,7 +31,47 @@ type Options = {
   model?: { model?: string | null | undefined; provider?: string | null | undefined };
   config?: Record<string, unknown>;
   effort?: string | undefined;
+  onItem?: (item: SideItem) => void;
 };
+
+/** Short background turns have no tools, external instructions or MCP servers unless their caller enables image generation. */
+export function backgroundConfig(servers: Record<string, unknown>, images = false) {
+  return {
+    ...Object.fromEntries(
+      [
+        "features.apps",
+        "features.code_mode",
+        "features.code_mode_only",
+        "features.context_management",
+        "features.current_time_reminder",
+        "features.deferred_executor",
+        "features.enable_fanout",
+        "features.goals",
+        "features.hooks",
+        "features.image_generation",
+        "features.memories",
+        "features.multi_agent",
+        "features.multi_agent_v2",
+        "features.plugins",
+        "features.request_permissions_tool",
+        "features.shell_snapshot",
+        "features.shell_tool",
+        "features.standalone_web_search",
+        "features.token_budget",
+        "features.tool_suggest",
+        "features.unified_exec",
+        "features.view_image",
+        "cloud.skills.enabled",
+        "skills.include_instructions",
+        "tools.experimental_request_user_input.enabled",
+        "tools.update_plan.enabled",
+      ].map(key => [key, false]),
+    ),
+    "features.image_generation": images,
+    web_search: "disabled",
+    mcp_servers: Object.fromEntries(Object.keys(servers).map(name => [name, { enabled: false }])),
+  };
+}
 
 /** One turn in an ephemeral side conversation with no approvals and no chat in the app: the canvas planner and chat
  * titles. It runs on `model` ({ model, provider }) when given, else the background model (the main model when none is
@@ -30,7 +79,7 @@ type Options = {
  * text, shaped by `schema`. `failed` starts the error when the turn fails; `late` is the error after `timeoutMs`. */
 export async function askBackground(
   client: SideClient,
-  { prompt, schema, cwd, permissions, timeoutMs, failed, late, model, config, effort, signal }: Options,
+  { prompt, schema, cwd, permissions, timeoutMs, failed, late, model, config, effort, signal, onItem }: Options,
 ) {
   signal?.throwIfAborted();
   const choice =
@@ -44,7 +93,7 @@ export async function askBackground(
     ...(config ? { config } : {}),
   })) as { thread: { id?: unknown; ephemeral?: boolean } };
   const id = threadId(started.thread?.id);
-  const turn = follow(client, id, timeoutMs, failed, late, signal);
+  const turn = follow(client, id, timeoutMs, failed, late, signal, onItem);
   let turnId;
   try {
     signal?.throwIfAborted();
@@ -63,7 +112,15 @@ export async function askBackground(
 }
 
 /** Follows one side conversation to the end of its turn. `stop` must be called when done; `ended` tells whether the turn finished. */
-function follow(client: SideClient, id: string, timeoutMs: number, failed: string, late: string, signal?: AbortSignal) {
+function follow(
+  client: SideClient,
+  id: string,
+  timeoutMs: number,
+  failed: string,
+  late: string,
+  signal?: AbortSignal,
+  onItem?: Options["onItem"],
+) {
   const state = { ended: false } as { ended: boolean; answer: Promise<string>; stop: () => void };
   let abort: () => void = () => {};
   let listener: (event: SideEvent) => void,
@@ -73,6 +130,7 @@ function follow(client: SideClient, id: string, timeoutMs: number, failed: strin
   state.answer = new Promise<string>((resolve, reject) => {
     listener = ({ method, params }) => {
       if (params?.threadId !== id) return;
+      if (method === "item/completed" && params.item) onItem?.(params.item);
       if (method === "item/completed" && params.item?.type === "agentMessage" && typeof params.item.text === "string") {
         last = params.item.text;
         if (params.item.phase !== "commentary") final = params.item.text;

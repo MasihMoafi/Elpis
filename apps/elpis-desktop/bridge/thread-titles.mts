@@ -1,5 +1,5 @@
 import { isAgentRun, agentParentId } from "../lib/agent-runs.mts";
-import { askBackground } from "./side-turn.mts";
+import { askBackground, backgroundConfig } from "./side-turn.mts";
 import type { DesktopClient } from "./client.mts";
 
 type TitleEvent = {
@@ -28,37 +28,6 @@ const TITLE_SCHEMA = {
   required: ["title"],
   additionalProperties: false,
 };
-// The TUI's temporary thread: no tools, extensions or MCP servers, since the prompt carries untrusted text.
-const NO_TOOLS = Object.fromEntries(
-  [
-    "features.apps",
-    "features.code_mode",
-    "features.code_mode_only",
-    "features.context_management",
-    "features.current_time_reminder",
-    "features.deferred_executor",
-    "features.enable_fanout",
-    "features.goals",
-    "features.hooks",
-    "features.image_generation",
-    "features.memories",
-    "features.multi_agent",
-    "features.multi_agent_v2",
-    "features.plugins",
-    "features.request_permissions_tool",
-    "features.shell_snapshot",
-    "features.shell_tool",
-    "features.standalone_web_search",
-    "features.token_budget",
-    "features.tool_suggest",
-    "features.unified_exec",
-    "features.view_image",
-    "cloud.skills.enabled",
-    "skills.include_instructions",
-    "tools.experimental_request_user_input.enabled",
-    "tools.update_plan.enabled",
-  ].map(key => [key, false]),
-);
 
 /** The request part of a message an IDE wrapped in context (tui/src/ide_context/prompt.rs). */
 const request = (text: string) => {
@@ -123,11 +92,7 @@ export function createThreadTitles(client: DesktopClient) {
       timeoutMs: TIMEOUT_MS,
       failed: "Elpis could not name the chat",
       late: "Elpis did not name the chat in time",
-      config: {
-        ...NO_TOOLS,
-        web_search: "disabled",
-        mcp_servers: Object.fromEntries(Object.keys(servers).map(name => [name, { enabled: false }])),
-      },
+      config: backgroundConfig(servers),
     });
     const title = parseTitle(answer);
     if (!title || ticket.cancelled) return;

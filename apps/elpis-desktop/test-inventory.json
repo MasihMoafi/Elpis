@@ -126,6 +126,7 @@
     "bridge/bounded-cache.test.mts"
   ],
   "bridge": [
+    "bridge/custom-characters.test.mts",
     "bridge/schedule.test.mts",
     "bridge/live-model-catalogue.test.mts",
     "bridge/subscription-models.test.mts",

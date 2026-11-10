@@ -4,7 +4,7 @@ type Model = {
   model: string;
   displayName: string;
   description?: string;
-  architecture?: { input_modalities: string[] };
+  architecture?: { input_modalities: string[]; output_modalities?: string[] };
   voices?: string[];
 };
 type ResponseLike = {
@@ -179,6 +179,19 @@ function requestHeaders(definition: Definition, env: NodeJS.ProcessEnv, savedKey
   return headers;
 }
 
+/** Trusted bridge consumers reuse the catalogue's URL/auth validation; this never reaches a renderer response. */
+export function providerRequest(
+  definition: Definition,
+  { env = process.env, savedKey = null }: Pick<Options, "env" | "savedKey"> = {},
+) {
+  return {
+    modelsUrl: endpoint(definition),
+    headers: gatewayRouted(definition)
+      ? requestHeaders({ ...definition, env_key: null, experimental_bearer_token: null }, env, null)
+      : requestHeaders(definition, env, savedKey),
+  };
+}
+
 function withAbort<T>(promise: PromiseLike<T> | T, signal: AbortSignal) {
   return new Promise<T>((resolve, reject) => {
     const cleanup = () => signal.removeEventListener("abort", abort);
@@ -260,7 +273,7 @@ function label(value: unknown, length: number) {
 }
 
 /** Gemini lists `{models: [{name: "models/…", displayName, inputTokenLimit, supportedGenerationMethods}]}`. */
-function geminiRows(catalogue: unknown) {
+function geminiRows(catalogue: unknown, images = false) {
   if (!record(catalogue) || !Array.isArray(catalogue.models))
     throw unavailable("This connection did not return a Gemini model list.");
   return catalogue.models
@@ -268,13 +281,24 @@ function geminiRows(catalogue: unknown) {
       row =>
         record(row) &&
         Array.isArray(row.supportedGenerationMethods) &&
-        row.supportedGenerationMethods.includes("generateContent") &&
+        row.supportedGenerationMethods.some(
+          method => method === "generateContent" || (images && method === "predict"),
+        ) &&
         typeof row.name === "string",
     )
     .map(row => ({
       id: row.name.replace(/^models\//, ""),
       name: row.displayName,
       context_length: row.inputTokenLimit,
+      ...(Array.isArray(row.outputModalities) || /(?:image|imagen)/i.test(row.name)
+        ? {
+            architecture: {
+              output_modalities: Array.isArray(row.outputModalities)
+                ? row.outputModalities.map(String).map((value: string) => value.toLowerCase())
+                : ["image"],
+            },
+          }
+        : {}),
     }));
 }
 
@@ -288,7 +312,7 @@ function gatewayRows(catalogue: unknown) {
 }
 
 function choices(catalogue: unknown, wire: unknown = "responses", inputModality?: string, outputModality?: string) {
-  if (wire === "gemini_generate_content") catalogue = { data: geminiRows(catalogue) };
+  if (wire === "gemini_generate_content") catalogue = { data: geminiRows(catalogue, outputModality === "image") };
   if (wire === "gateway") catalogue = { data: gatewayRows(catalogue) };
   if (!record(catalogue) || !Array.isArray(catalogue.data))
     throw unavailable("This connection did not return an OpenAI-compatible model list.");
@@ -305,10 +329,22 @@ function choices(catalogue: unknown, wire: unknown = "responses", inputModality?
     )
       continue;
     seen.add(row.id);
-    const architecture = row.architecture as { input_modalities?: unknown } | null | undefined;
+    const architecture = row.architecture as
+      { input_modalities?: unknown; output_modalities?: unknown } | null | undefined;
     const inputModalities = Array.isArray(architecture?.input_modalities)
       ? architecture.input_modalities.filter((value: unknown): value is string => typeof value === "string")
       : null;
+    const outputModalities = Array.isArray(architecture?.output_modalities)
+      ? architecture.output_modalities.filter((value: unknown): value is string => typeof value === "string")
+      : null;
+    if (
+      outputModality === "image" &&
+      !(
+        outputModalities?.includes("image") ||
+        (!outputModalities && /(?:^|[/_-])(?:gpt-image|dall-e|imagen)(?:[/_.-]|$)/i.test(row.id))
+      )
+    )
+      continue;
     // Agent models need tools; transcription models only need to accept audio.
     // Rerankers are listed by what they output and need no tools.
     if (
@@ -335,7 +371,14 @@ function choices(catalogue: unknown, wire: unknown = "responses", inputModality?
       model: row.id,
       displayName,
       ...(description ? { description } : {}),
-      ...(inputModalities ? { architecture: { input_modalities: inputModalities } } : {}),
+      ...(inputModalities || outputModalities
+        ? {
+            architecture: {
+              input_modalities: inputModalities ?? [],
+              ...(outputModalities ? { output_modalities: outputModalities } : {}),
+            },
+          }
+        : {}),
       ...(voices ? { voices } : {}),
     });
   }
@@ -377,15 +420,14 @@ export async function providerModels(
   { env = process.env, fetchImpl = fetch, signal, savedKey = null, inputModality, outputModality }: Options = {},
 ) {
   const definition = input as Definition;
-  const listing = new URL(endpoint(definition));
+  const connection = providerRequest(definition, { env, savedKey });
+  const listing = new URL(connection.modelsUrl);
   // OpenRouter lists its rerankers apart: GET /models?output_modalities=rerank (29 Oct, Masih: "we want real call and showing of real options").
   if (outputModality) listing.searchParams.set("output_modalities", outputModality);
   const url = listing.href;
   const gateway = gatewayRouted(definition);
   // Through the gateway only its own headers go along; it adds the vendor key itself.
-  const headers = gateway
-    ? requestHeaders({ ...definition, env_key: null, experimental_bearer_token: null }, env, null)
-    : requestHeaders(definition, env, savedKey);
+  const headers = connection.headers;
   if (signal?.aborted) throw unavailable("Model loading was cancelled.");
   const timeout = new AbortController();
   const requestSignal = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;

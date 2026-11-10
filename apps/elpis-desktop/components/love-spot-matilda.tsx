@@ -15,6 +15,8 @@ import { api } from "@/lib/api";
 import { PROTOCOL, keepPersona, savedPersona } from "@/lib/matilda";
 import { appStorage } from "@/lib/projects";
 import { errorText } from "@/lib/error-text.mts";
+import { useCustomCharacters } from "@/lib/custom-characters";
+import { usePreferences } from "@/lib/preferences";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
 const QUIET = 300;
@@ -93,6 +95,11 @@ export function useMatilda({
 }) {
   const [persona, setPersona] = useState(savedPersona),
     [replying, setReplying] = useState(false);
+  const { selectedCharacter } = usePreferences(),
+    { characters } = useCustomCharacters();
+  useEffect(() => {
+    setPersona(savedPersona());
+  }, [selectedCharacter, characters]);
   const latest = useRef({ ready, enabled, context, told, drawingOnly, send, onError, persona });
   latest.current = { ready, enabled, context, told, drawingOnly, send, onError, persona };
   const ids = useRef(new Set<string>()),
@@ -356,7 +363,9 @@ export function useMatilda({
     persona,
     keep: (value: string) => {
       setPersona(value);
-      keepPersona(value);
+      void keepPersona(value).catch(cause =>
+        latest.current.onError(errorText(cause, "Personality could not be saved.")),
+      );
     },
     replying,
     notice,

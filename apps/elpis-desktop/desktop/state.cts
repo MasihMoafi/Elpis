@@ -23,6 +23,7 @@ const textJournalPatch = (value: unknown) =>
   !Array.isArray(value) &&
   Object.entries(value).every(([id, entry]) => id.length > 0 && id.length < 500 && typeof entry === "string");
 const preferenceTypes: Record<string, string | readonly string[]> = {
+  selectedCharacter: "string",
   loveChatCharacters: "string",
   themeFollowsLoveChat: "boolean",
   speakMatildaReplies: "boolean",

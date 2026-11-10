@@ -27,6 +27,7 @@ import * as clientConnection from "./client-connection.mts";
 import * as clientThreadList from "./client-thread-list.mts";
 import * as clientModels from "./client-models.mts";
 import * as clientSettings from "./client-settings.mts";
+import { impl_characterConnections } from "./client-characters.mts";
 import * as clientVoice from "./client-voice.mts";
 import * as clientMcp from "./client-mcp.mts";
 import * as clientContext from "./client-context.mts";
@@ -195,6 +196,9 @@ export class DesktopClient extends EventEmitter {
   }
   async providerSettings() {
     return clientSettings.impl_providerSettings.call(this, this.#state);
+  }
+  async characterConnections() {
+    return impl_characterConnections.call(this, this.#state);
   }
   async readAloudProvider(id?: unknown) {
     return clientSettings.impl_readAloudProvider.call(this, this.#state, id);
