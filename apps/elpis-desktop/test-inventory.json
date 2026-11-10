@@ -434,6 +434,7 @@
     "tests/browser-identity-electron.test.cts",
     "tests/settings-nav-whole-rows.test.cts",
     "tests/settings-row-layout.test.cts",
+    "tests/settings-no-silent-wait.test.cts",
     "tests/observability.test.cts",
     "tests/background-refusal.test.cts",
     "tests/theme-characters.test.cts",
