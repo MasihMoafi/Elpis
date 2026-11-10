@@ -43,3 +43,18 @@ test('the brief introduction fades and real mouse clicks pass through it', async
   await page.clock.runFor(300);
   assert.equal(await page.locator('.startup-splash').count(), 0, 'The brief splash is removed after its fade');
 });
+
+test('the E is on screen from the first frame and makes one whole turn before the splash fades', async (t: import('node:test').TestContext) => {
+  // 10 Nov: the old 5 s loop was cut halfway by the 700 ms introduction, and the logo arrived late.
+  for (const reducedMotion of ['no-preference', 'reduce']) {
+    const { page } = await starting(t, { reducedMotion });
+    const logo = page.locator('.splash-logo');
+    assert.equal(await logo.evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth > 0), true, 'The E is loaded');
+    const turn = await logo.evaluate((el: Element) => {
+      const timing = el.getAnimations()[0]!.effect!.getComputedTiming();
+      return { iterations: timing.iterations, end: Number(timing.endTime) };
+    });
+    assert.equal(turn.iterations, 1, reducedMotion);
+    assert.ok(turn.end <= 940, `${reducedMotion}: the turn ends within the introduction and its fade (${turn.end} ms)`);
+  }
+});
