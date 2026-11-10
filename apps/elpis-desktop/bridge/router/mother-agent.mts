@@ -13,6 +13,7 @@ import { runtimeAdapters, type RuntimeAdapter } from "./executor/adapters.mts";
 import { readSettings, type RoleModel } from "./executor/settings.mts";
 import { createElpisChatTransport } from "./sources/elpis-chat-transport.mts";
 import { modelCatalog } from "./model.mts";
+import { createChats } from "./chats.mts";
 import { subprocess } from "./subprocess.mts";
 import type { ListedThread, ThreadListOptions } from "../client-thread-list.mts";
 import { handleMotherHttp } from "./app/http.mts";
@@ -280,6 +281,7 @@ export class MotherAgent {
         adapters,
         subprocess,
         transport: createElpisChatTransport(client),
+        chats: createChats(client),
         settings: () => {
           const value = readSettings(home);
           return {
@@ -389,6 +391,7 @@ export class MotherAgent {
           executor: { ...initial.executor, model: config.roles.worker ?? initial.executor.model },
         }),
         transport: createElpisChatTransport(this.options.client),
+        chats: createChats(this.options.client),
         models: modelCatalog(this.options.client),
         routerModelChanged: () => {
           void this.start();

@@ -28,6 +28,8 @@ import { Passes } from "./app/passes.mts";
 import { candidateCard, repliedTo, sourceLink, type LinkHost } from "./app/links.mts";
 import { eventNotice, followupNotice } from "./app/notices.mts";
 import { mainTools, type MainToolsHost } from "./app/tools/main.mts";
+import { chatToolsHost } from "./app/tools/chats.mts";
+import type { Chats } from "./chats.mts";
 import { executorTools, type ExecutorToolsHost } from "./app/tools/executor.mts";
 import type { ResourceHost } from "./app/resources.mts";
 import { evalsHealth } from "./app/views/overview.mts";
@@ -44,6 +46,8 @@ export interface MotherAppOptions {
   transport: ElpisChatTransport;
   models?: () => Promise<ModelCatalog>;
   routerModelChanged?: () => void;
+  /** His chats; with them the main Session gets the chat tools. */
+  chats?: Chats;
 }
 export class MotherApp implements SourceHost {
   readonly store: ExecutorStore;
@@ -285,6 +289,7 @@ export class MotherApp implements SourceHost {
         get github() {
           return runtime.context(githubKind);
         },
+        chats: options.chats && chatToolsHost(options.chats, options, () => store.settings()),
         sendReplies: () => outbox.sent(),
         requestPass: () => this.passes.request(),
         quietly: run => {

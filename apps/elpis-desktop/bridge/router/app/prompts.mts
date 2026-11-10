@@ -45,6 +45,7 @@ const PART_KEYS = [
   "runtime/subscriptions",
   "runtime/replies",
   "runtime/dispatch",
+  "runtime/chats",
   "runtime/work",
   "runtime/admission",
   "runtime/handoff/orchestrator",
@@ -120,6 +121,7 @@ export const builtInParts = (): Readonly<Record<PartKey, BuiltInPart>> =>
     "runtime/subscriptions": { roles: BOTH, text: `## subscriptions\n${guides.subscriptions}` },
     "runtime/replies": { roles: BOTH, text: `## replies\n${guides.replies}` },
     "runtime/dispatch": { roles: MAIN, text: `## dispatch\n${guides.dispatch}` },
+    "runtime/chats": { roles: MAIN, text: `## chats\n${guides.chats}` },
     "runtime/work": { roles: WORKER, text: `## work\n${guides.work}` },
     "runtime/admission": { roles: MAIN, text: mainAdmissionPolicy },
     "runtime/handoff/orchestrator": { roles: MAIN, text: handoffPolicy("orchestrator") },
@@ -209,7 +211,7 @@ export function promptParts(
     ...["subscriptions", "replies", role === "orchestrator" ? "dispatch" : "work"].map(name =>
       fixed(`runtime/${name}`),
     ),
-    ...(role === "orchestrator" ? [fixed("runtime/admission")] : []),
+    ...(role === "orchestrator" ? [fixed("runtime/chats"), fixed("runtime/admission")] : []),
     fixed("runtime/handoff", `runtime/handoff/${role}`),
     ...(environment
       ? [{ name: "runtime/environment", kind: "generated" as const, key: "runtime/environment", text: environment }]

@@ -98,7 +98,7 @@ it("assembles every role from fixed sections around the team sections, whatever 
       "runtime/subscriptions",
       "runtime/replies",
       role === "orchestrator" ? "runtime/dispatch" : "runtime/work",
-      ...(role === "orchestrator" ? ["runtime/admission"] : []),
+      ...(role === "orchestrator" ? ["runtime/chats", "runtime/admission"] : []),
       "runtime/handoff",
       "runtime/environment",
     ]);

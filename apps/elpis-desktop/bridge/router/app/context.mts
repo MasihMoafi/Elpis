@@ -10,7 +10,7 @@ export const masterPrompt = promptFile("orchestrator");
 export const workerPrompt = promptFile("worker");
 /** Built-in policy sections referenced by role prompts; a team may override them. */
 export const guides: Readonly<Record<string, string>> = Object.fromEntries(
-  ["subscriptions", "replies", "dispatch", "work"].map(name => [name, promptFile(name)]),
+  ["subscriptions", "replies", "dispatch", "work", "chats"].map(name => [name, promptFile(name)]),
 );
 /** Bundled Source skills registered by dsh-superagent; a team may override their text. */
 export const sourceSkills: Readonly<Record<"elpis-chat" | "github", string>> = {

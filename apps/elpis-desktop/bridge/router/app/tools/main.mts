@@ -22,6 +22,7 @@ import type { Sessions } from "../../executor/sessions.mts";
 import type { Settings } from "../settings.mts";
 import type { Store } from "../store.mts";
 import { AcknowledgementSchema, readTool, tool, type Tool } from "./tool.mts";
+import { chatTools, type ChatToolsHost } from "./chats.mts";
 
 const RoutingNoteSchema = z
   .string()
@@ -43,6 +44,8 @@ export interface MainToolsHost {
   readonly settings: Pick<Settings, "view" | "block" | "save" | "pause" | "sync">;
   readonly assessor: Pick<MasterAssessor, "context" | "read" | "decide">;
   readonly resources: ResourceHost;
+  /** His chats, when the host lets the main Session see and change them. */
+  readonly chats?: ChatToolsHost | undefined;
   /** Schedules a pass to carry out work queued by an Engine command (such as an Eval or ticket resume). */
   requestPass(): void;
   sendReplies(): Promise<void>;
@@ -474,5 +477,6 @@ export function mainTools(host: MainToolsHost, agent: Pick<Agent, "id">): Tool[]
         return saved;
       },
     }),
+    ...(host.chats ? chatTools(host.chats) : []),
   ];
 }
