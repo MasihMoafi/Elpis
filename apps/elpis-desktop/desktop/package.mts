@@ -107,7 +107,10 @@ function routerDependencies(source: string) {
     versions: Record<string, string> = {};
   const visit = (name: string, from: string) => {
     const require = createRequire(path.join(from, "package.json"));
-    const directory = path.dirname(require.resolve(`${name}/package.json`));
+    // Found on Node's lookup path, not through require.resolve: sharp's platform packages do not export package.json.
+    const found = (require.resolve.paths(name) ?? []).map(dir => path.join(dir, name)).find(dir => fs.existsSync(path.join(dir, "package.json")));
+    if (!found) throw new Error(`Runtime dependency not installed: ${name}`);
+    const directory = fs.realpathSync(found);
     const manifest = JSON.parse(fs.readFileSync(path.join(directory, "package.json"), "utf8")) as {
       name: string;
       version: string;
@@ -134,8 +137,7 @@ function routerDependencies(source: string) {
   // libvips built for this machine, which npm installs as optional per-platform packages (10 Nov: without them the
   // packaged app could not open).
   visit("sharp", source);
-  const sharp = path.dirname(createRequire(path.join(source, "package.json")).resolve("sharp/package.json"));
-  for (const name of [`@img/sharp-${process.platform}-${process.arch}`, `@img/sharp-libvips-${process.platform}-${process.arch}`]) visit(name, sharp);
+  for (const name of [`@img/sharp-${process.platform}-${process.arch}`, `@img/sharp-libvips-${process.platform}-${process.arch}`]) visit(name, path.join(source, "node_modules/sharp"));
   return { files, versions };
 }
 
