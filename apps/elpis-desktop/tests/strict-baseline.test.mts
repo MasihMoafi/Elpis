@@ -26,6 +26,35 @@ test('a staged-files check judges only the files it linted', () => {
   assert.deepEqual(compare(baseline, { 'bridge/a.mjs:no-unused-vars': 2 }, ['bridge/a.mjs']).worse, ['bridge/a.mjs:no-unused-vars: 1 -> 2']);
 });
 
+test('long lines ratchet per file, excluding generated files', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-long-probe-'));
+  try {
+    fs.mkdirSync(path.join(root, 'tooling'));
+    fs.mkdirSync(path.join(root, 'app'));
+    fs.mkdirSync(path.join(root, 'bridge/resources'), { recursive: true });
+    fs.symlinkSync(path.resolve('node_modules'), path.join(root, 'node_modules'), 'dir');
+    fs.copyFileSync(path.resolve('scripts/strict-baseline.mts'), path.join(root, 'tooling/strict-baseline.mts'));
+    fs.writeFileSync(path.join(root, 'strict-baseline.json'), JSON.stringify({ long: { 'app/debt.ts:long': 2 } }));
+    fs.writeFileSync(path.join(root, 'app/debt.ts'), `${'x'.repeat(181)}\n`);
+    fs.writeFileSync(path.join(root, 'app/clean.ts'), `${'x'.repeat(180)}\n`);
+    fs.writeFileSync(path.join(root, 'app/skip.generated.ts'), `${'x'.repeat(200)}\n`);
+    fs.writeFileSync(path.join(root, 'bridge/resources/skip.ts'), `${'x'.repeat(200)}\n`);
+    const run = () => spawnSync(process.execPath, ['tooling/strict-baseline.mts', 'long'], { cwd: root, encoding: 'utf8' });
+    const better = run();
+    assert.equal(better.status, 0, better.stderr);
+    assert.match(better.stderr, /app\/debt.ts:long: 2 -> 1/);
+    const update = spawnSync(process.execPath, ['tooling/strict-baseline.mts', 'long', '--update'], { cwd: root, encoding: 'utf8' });
+    assert.equal(update.status, 0, update.stderr);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'strict-baseline.json'), 'utf8')).long, { 'app/debt.ts:long': 1 });
+    fs.writeFileSync(path.join(root, 'app/clean.ts'), `${'x'.repeat(181)}\n`);
+    const worse = run();
+    assert.equal(worse.status, 1);
+    assert.match(worse.stderr, /app\/clean.ts:long: 0 -> 1/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the linter reports a dropped promise and passes an awaited one', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-lint-probe-'));
   try {

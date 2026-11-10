@@ -19,6 +19,7 @@ const baselineFile = path.join(app, 'strict-baseline.json');
 const bin = (name: string) => path.join(app, 'node_modules/.bin', name);
 
 type Counts = Record<string, number>;
+const lintTargets = ['bridge', 'desktop', 'lib', 'scripts', 'app', 'components', 'tests'];
 
 /**
  * Compares a check's counts with its baseline.
@@ -83,7 +84,7 @@ function typeCounts(config: string) {
 
 /** @param {string[] | null} files */
 export function lintCounts(files: string[] | null) {
-  const targets = files ?? ['bridge', 'desktop', 'lib', 'scripts', 'app', 'components', 'tests'];
+  const targets = files ?? lintTargets;
   if (!targets.length) return {};
   const counts: Counts = {};
   for (const line of run(bin('oxlint'), ['--type-aware', '-f', 'unix', '--no-error-on-unmatched-pattern', ...targets]).split('\n')) {
@@ -94,6 +95,28 @@ export function lintCounts(files: string[] | null) {
       counts[key] = (counts[key] ?? 0) + 1;
     }
   }
+  return counts;
+}
+
+function longCounts(files: string[] | null) {
+  const counts: Counts = {};
+  const extensions = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.mts', '.cts']);
+  function visit(file: string) {
+    const relative = path.relative(app, path.resolve(app, file)).split(path.sep).join('/');
+    if (relative === 'bridge/resources' || relative.startsWith('bridge/resources/') || /\.generated\./.test(relative)) return;
+    const stat = fs.statSync(path.resolve(app, file), { throwIfNoEntry: false });
+    if (!stat) return;
+    if (stat.isDirectory()) {
+      for (const entry of fs.readdirSync(path.resolve(app, file), { withFileTypes: true })) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules' || entry.isSymbolicLink()) continue;
+        visit(path.join(file, entry.name));
+      }
+    } else if (stat.isFile() && extensions.has(path.extname(file))) {
+      const count = fs.readFileSync(path.resolve(app, file), 'utf8').split(/\r?\n/).filter(line => line.length > 180).length;
+      if (count) counts[`${relative}:long`] = count;
+    }
+  }
+  for (const target of files ?? lintTargets) visit(target);
   return counts;
 }
 
@@ -119,6 +142,7 @@ const checks: Record<string, (files: string[] | null) => Counts> = {
   tsx: () => typeCounts('tsconfig.json'),
   lint: files => lintCounts(files),
   dup: () => dupCounts(),
+  long: files => longCounts(files),
 };
 
 /** @param {Counts} counts */
@@ -155,7 +179,7 @@ function main() {
     }
     if (better.length && !files) {
       console.error(`strict-baseline ${name}: fewer findings than recorded; lock them in with\n  node scripts/strict-baseline.mts ${name} --update\n  ${better.join('\n  ')}`);
-      failed = true;
+      if (name !== 'long') failed = true;
     }
   }
   if (update && !failed) fs.writeFileSync(baselineFile, `${JSON.stringify(baseline, null, 1)}\n`);
