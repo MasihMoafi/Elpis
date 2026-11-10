@@ -1,5 +1,6 @@
 {
   "fast": [
+    "lib/router-message-text.test.mts",
     "tests/strict-baseline.test.mts",
     "bridge/settled-status.test.mts",
     "tests/accent-scope.test.mts",

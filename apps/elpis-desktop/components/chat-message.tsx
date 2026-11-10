@@ -1,5 +1,6 @@
 "use client";
 
+import { routerMessageText } from "@/lib/router-message-text";
 import { CollabAgentStep, SubAgentStep } from "@/components/chat-message-agent-steps";
 import {
   copyAction,
@@ -148,10 +149,12 @@ export function ChatMessage({
           ))}
         </ul>
       ) : undefined;
-    const originalBody = content
-        .filter(part => part.type === "text" && !fileAttachment(part))
-        .map(part => text(part.text))
-        .join("\n"),
+    const originalBody = routerMessageText(
+        content
+          .filter(part => part.type === "text" && !fileAttachment(part))
+          .map(part => text(part.text))
+          .join("\n"),
+      ),
       answers = questionReplies(originalBody);
     const body = answers ? questionReplyText(answers) : originalBody;
     const evidence = answers ? null : promptEvidence(originalBody);
