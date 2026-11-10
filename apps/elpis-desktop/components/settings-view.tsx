@@ -2,7 +2,7 @@
 
 import "@/components/settings/settings.css";
 import { useEffect, useRef, useState } from "react";
-import { useWholeRows } from "@/lib/whole-rows";
+import { useSteadyRowList } from "@/lib/whole-rows";
 import { AppearanceSettings, type ThemeChoice } from "@/components/appearance-settings";
 import { ArchivedView } from "@/components/archived-view";
 import { McpSettings } from "@/components/mcp-settings";
@@ -233,9 +233,10 @@ export function SettingsView({
   const groups = SECTIONS,
     pages = TABS;
   const [query, setQuery] = useState("");
-  // A short window scrolls the navigation; its tabs stay whole, as the sidebar's chats do.
-  const nav = useRef<HTMLElement>(null);
-  useWholeRows(nav, '[role="tab"]', '[role="tab"], .settings-section-link, .back-link, .settings-title, .search-field');
+  // As in the ChatGPT app, Back, the title and Search stay put and only the list scrolls, on the sidebar's steady
+  // whole-row grid (10 Nov recording: the list jumped at its end under the old snapping).
+  const list = useRef<HTMLDivElement>(null);
+  useSteadyRowList(list, '[role="tab"], .settings-section-link');
   const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const shown = pages.filter(item =>
     terms.every(term =>
@@ -375,7 +376,7 @@ export function SettingsView({
   };
   return (
     <div className="settings-layout">
-      <nav ref={nav} className="settings-nav" aria-label="Settings navigation">
+      <nav className="settings-nav" aria-label="Settings navigation">
         {onBack && (
           <button data-slot="nav-row" type="button" className="back-link" onClick={onBack}>
             <ArrowLeft size={18} aria-hidden="true" />
@@ -390,7 +391,7 @@ export function SettingsView({
           maxLength={80}
           onChange={event => setQuery(event.target.value)}
         />
-        <div role="tablist" aria-label="Settings sections" aria-orientation="vertical">
+        <div ref={list} role="tablist" aria-label="Settings sections" aria-orientation="vertical">
           {visibleGroups.map(group => {
             const items = shown.filter(item => item.group === group.id);
             return (
