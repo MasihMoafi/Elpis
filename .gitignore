@@ -25,6 +25,8 @@ package-lock.json
 !tools/elpis-claude/package-lock.json
 tools/elpis-claude/node_modules
 website/node_modules/
+apps/elpis-trajectory/node_modules/
+apps/elpis-desktop/test-results/
 
 # IDE
 .vscode/

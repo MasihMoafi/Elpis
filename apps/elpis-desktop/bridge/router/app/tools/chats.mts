@@ -60,7 +60,9 @@ function listTool(host: ChatToolsHost): Tool {
   return tool({
     name: "chats_list",
     description:
-      "His chats in Elpis with their state: needs you (waits for his approval or answer), working, failed or idle. Those that need him come first, then working ones, then the most recent. Use it to answer what is running, what waits for him, or to find a chat's id by its title.",
+      "His chats in Elpis with their state: needs you (waits for his approval or answer), working, failed " +
+      "or idle. Those that need him come first, then working ones, then the most recent. Use it to answer " +
+      "what is running, what waits for him, or to find a chat's id by its title.",
     schema: z
       .object({
         show: z.enum(["open", "archived"]).default("open").describe("open: the sidebar's chats; archived: the archive."),
@@ -84,7 +86,8 @@ function readTool(host: ChatToolsHost): Tool {
   return tool({
     name: "chats_read",
     description:
-      "The last messages of one chat, oldest first: what he asked and what the agent answered. Use it to say what a chat concluded or what it is waiting for.",
+      "The last messages of one chat, oldest first: what he asked and what the agent answered. Use it to " +
+      "say what a chat concluded or what it is waiting for.",
     schema: z.object({ chat: ChatId, last: z.number().int().min(1).max(30).default(6) }).strict(),
     execute: async ({ chat, last }) => {
       allowed(host);
@@ -98,7 +101,8 @@ function sendTool(host: ChatToolsHost): Tool {
   return tool({
     name: "chats_send",
     description:
-      "Write a message in one of his chats, as he would: it starts that chat's next turn. Use it only when he asks you to tell or ask a chat something; pass his request in his own words.",
+      "Write a message in one of his chats, as he would: it starts that chat's next turn. Use it only when " +
+      "he asks you to tell or ask a chat something; pass his request in his own words.",
     schema: z.object({ chat: ChatId, text: z.string().trim().min(1).max(8000) }).strict(),
     execute: async ({ chat, text }) => {
       const found = await target(host, chat);
@@ -112,7 +116,9 @@ function startTool(host: ChatToolsHost): Tool {
   return tool({
     name: "chats_start",
     description:
-      "Start a new chat with a first message, when he asks for a new chat or a new agent. It runs on its own; its result does not come back to you, so use orchestrator_route for work whose result he wants here.",
+      "Start a new chat with a first message, when he asks for a new chat or a new agent. It runs on its " +
+      "own; its result does not come back to you, so use orchestrator_route for work whose result he wants " +
+      "here.",
     schema: z
       .object({
         text: z.string().trim().min(1).max(8000).describe("The first message, in his words."),
@@ -134,7 +140,8 @@ function changeTool(host: ChatToolsHost): Tool {
   return tool({
     name: "chats_change",
     description:
-      "Change one of his chats when he asks: stop its running turn, rename it, archive it (it leaves the sidebar and can be restored) or restore it from the archive.",
+      "Change one of his chats when he asks: stop its running turn, rename it, archive it (it leaves the " +
+      "sidebar and can be restored) or restore it from the archive.",
     schema: z
       .object({
         chat: ChatId,

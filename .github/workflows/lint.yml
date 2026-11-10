@@ -1,6 +1,6 @@
 name: Lint
-# Fast checks on every push and pull request, so a broken workflow, script, format or a known-vulnerable crate fails
-# in a minute or two instead of after the 45-minute engine build.
+# Fast checks on every push and pull request, so a broken workflow, script, format or shared UI rule fails in a minute
+# or two instead of after the 45-minute engine build. Known-vulnerable crates: security-check.yml.
 on:
   push:
   pull_request:
@@ -108,15 +108,3 @@ jobs:
       - name: cargo fmt --check
         working-directory: codex-rs
         run: cargo fmt --check
-  audit:
-    name: cargo audit
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-audit
-      - name: Audit dependencies
-        working-directory: codex-rs
-        # codex-rs/.cargo/audit.toml lists the accepted advisories, each with its reason.
-        run: cargo audit

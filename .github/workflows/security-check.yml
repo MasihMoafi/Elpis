@@ -1,8 +1,8 @@
 name: Security Check
+# The one place cargo audit runs: on every push and pull request, and weekly on a tree that did not change.
 
 on:
   push:
-    branches: [main]
   pull_request:
   schedule:
     # Advisories land after a build passes, so re-check on a fixed tree weekly.
@@ -18,11 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
       - name: Audit dependencies
         working-directory: codex-rs
-        # codex-rs/.cargo/audit.toml lists the advisories that upstream accepted, with reasons.
+        # codex-rs/.cargo/audit.toml lists the accepted advisories, each with its reason.
         run: cargo audit
