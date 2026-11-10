@@ -244,6 +244,7 @@
     "bridge/router/sources/sources.test.mts",
     "bridge/router/model.test.mts",
     "bridge/router/chats.test.mts",
+    "bridge/router/watch.test.mts",
     "bridge/router/app/tools/chats.test.mts",
     "bridge/router/app/tools/main.test.mts",
     "bridge/router/app/setup.test.mts",

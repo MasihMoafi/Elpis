@@ -30,6 +30,7 @@ import { eventNotice, followupNotice } from "./app/notices.mts";
 import { mainTools, type MainToolsHost } from "./app/tools/main.mts";
 import { chatToolsHost } from "./app/tools/chats.mts";
 import type { Chats } from "./chats.mts";
+import { watchChats } from "./watch.mts";
 import { executorTools, type ExecutorToolsHost } from "./app/tools/executor.mts";
 import type { ResourceHost } from "./app/resources.mts";
 import { evalsHealth } from "./app/views/overview.mts";
@@ -368,6 +369,16 @@ export class MotherApp implements SourceHost {
         if (candidate) this.assessor.request(candidate);
       }
       await this.workers.start();
+      if (this.options.chats) {
+        const own = join(this.options.home, "router");
+        this.stops.push(
+          watchChats({
+            chats: this.options.chats,
+            skip: chat => chat.id === this.options.threadId || !!chat.folder?.startsWith(own),
+            say: (id, text) => this.options.transport.appendAssistant(this.options.threadId, { id, text }),
+          }),
+        );
+      }
       this.loops.push(
         watchElpisChat(
           this.context({ kind: "elpis-chat", health: ["elpis-chat"] }),

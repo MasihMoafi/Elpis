@@ -375,5 +375,6 @@ export const productionFiles = [
   "bridge/router/sources/registry.mts",
   "bridge/router/sources/settings.mts",
   "bridge/router/subprocess.mts",
+  "bridge/router/watch.mts",
   "bridge/router/worktree-name.mts",
 ];
