@@ -43,6 +43,8 @@ export interface SessionOptions {
 /** Persistent logical worker IDs mapped to native runtime IDs. One session owns each delivery receipt. */
 export class Sessions implements Context {
   readonly agents = new Map<string, WorkerAgent>();
+  /** Threads this app run started; an Elpis thread from an earlier run has lost its tool server. */
+  readonly startedThreads = new Set<string>();
   readonly subprocess: SubprocessRuntime;
   readonly jobs?: Jobs;
   readonly subagents?: Subagents;

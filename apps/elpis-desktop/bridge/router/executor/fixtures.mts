@@ -108,6 +108,7 @@ export class FakeServer {
         const threadId = String(params.threadId),
           thread = this.threads.get(threadId);
         if (!thread) throw Object.assign(new Error("Thread not found"), { code: -32600 });
+        if (method === "thread/archive" || method === "thread/unarchive") return {};
         if (method === "thread/resume" || method === "thread/read")
           return { thread: { id: threadId, model: thread.model, turns: thread.turns } };
         if (method === "thread/turns/list") return { data: [...thread.turns].reverse(), nextCursor: null };

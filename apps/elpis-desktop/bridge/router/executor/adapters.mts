@@ -148,6 +148,10 @@ export class AppServerAdapter implements RuntimeAdapter {
     await conn.call("thread/archive", { threadId });
     this.connections.delete(threadId);
   }
+  async reload(threadId: string): Promise<void> {
+    await this.archive(threadId);
+    await (await this.connection(threadId)).call("thread/unarchive", { threadId });
+  }
   async read(threadId: string): Promise<WorkerSession> {
     return runRead.call(this, threadId);
   }

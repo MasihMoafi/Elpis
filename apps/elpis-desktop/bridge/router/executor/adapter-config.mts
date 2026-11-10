@@ -98,6 +98,8 @@ export interface RuntimeAdapter {
   open(options: OpenOptions): Promise<WorkerSession>;
   read(threadId: string): Promise<WorkerSession>;
   archive?(threadId: string): Promise<void>;
+  /** Unloads the session from the engine and restores it, so the next resume applies its settings. */
+  reload?(threadId: string): Promise<void>;
   send(
     threadId: string,
     id: string,

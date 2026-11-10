@@ -71,6 +71,25 @@ test("routes through native tools, delivers the complete goal, and recovers a wo
       2,
       "Router and worker sessions are reused",
     );
+    // Each is unloaded and restored first, so the engine takes the new tool server instead of the dead one (10 Nov).
+    const reloaded = h.server.calls
+      .filter(call => call.method === "thread/unarchive")
+      .map(call => call.params.threadId);
+    assert.ok(reloaded.includes(worker), "The worker session is reloaded after a restart");
+    const unarchived = h.server.calls.findIndex(
+      call => call.method === "thread/unarchive" && call.params.threadId === worker,
+    );
+    assert.ok(
+      h.server.calls
+        .slice(unarchived)
+        .some(
+          call =>
+            call.method === "thread/resume" &&
+            call.params.threadId === worker &&
+            (call.params.config as Record<string, unknown> | undefined)?.["mcp_servers.elpis_mother"],
+        ),
+      "The reloaded worker gets the new tool server",
+    );
     await h.call(worker, "orchestrator_report", { state: "ready", summary: "Focused checks passed." });
     await h.app.pump();
     assert.equal(h.app.store.tickets.get(ticket.id)?.ended?.outcome, "completed");

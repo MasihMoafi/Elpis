@@ -35,6 +35,17 @@ export async function runOpen(
   // made before Full access keeps its sandbox.
   if (record.runtime === "elpis" && record.threadId && !record.creating && record.tools !== "full" && this.options.tools)
     await resetSession.call(this, record);
+  // A session from an earlier app run is unloaded first. After a restart the shared bridge loads the chat before the router
+  // opens it, and the engine ignores a new tool server sent to a loaded chat; the old one died with the old app (10 Nov: the
+  // router said "orchestrator_route is unavailable" to every message). Archiving unloads it and keeps its history.
+  if (record.runtime === "elpis" && record.threadId && !record.creating && this.options.tools) {
+    const threadId = record.threadId;
+    if (!this.startedThreads.has(threadId))
+      await this.adapter(record.runtime)
+        .reload?.(threadId)
+        .catch(() => resetSession.call(this, record));
+    if (record.threadId) this.startedThreads.add(record.threadId);
+  }
   if (!record.threadId && !record.creating) {
     record.model = model;
     record.runtime = runtimeOf(model);
@@ -77,6 +88,7 @@ export async function runOpen(
       throw error;
     }
     record.threadId = remote.threadId;
+    this.startedThreads.add(remote.threadId);
     record.creating = false;
     if (mcp) record.tools = "full";
     this.options.store.saveSession(id, record);
