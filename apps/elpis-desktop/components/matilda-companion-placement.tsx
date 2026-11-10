@@ -34,11 +34,12 @@ export function useCompanionPlacement(previous: CompanionState) {
     const whole = (value: number, min: number, max: number) =>
       Math.min(Math.max(Math.round(value), min), Math.max(min, Math.floor(max)));
     const chrome = chromeBottom();
-    let left = whole(innerWidth - right - size, 0, innerWidth - size),
-      top = whole(innerHeight - bottom - size, chrome, innerHeight - size);
+    let left = whole(innerWidth - right - size, 0, innerWidth - size);
+    const top = whole(innerHeight - bottom - size, chrome, innerHeight - size);
     // While she is dragged the page steps aside (browser-panel.tsx), so she follows the pointer over it; on release she
     // settles beside it (10 Nov recording: she jumped away from the pointer and slid under the page).
-    const pages = drag.current?.moved ? [] : document.querySelectorAll(".browser-viewport");
+    // She keeps clear of the whole panel: above its page is the panel's own toolbar, where she sat half-hidden (10 Nov).
+    const pages = drag.current?.moved ? [] : document.querySelectorAll(".browser-panel");
     for (const element of pages) {
       const pane = element.getBoundingClientRect();
       if (
@@ -50,8 +51,7 @@ export function useCompanionPlacement(previous: CompanionState) {
         top + size <= pane.top
       )
         continue;
-      if (pane.top - size - 4 >= chrome) top = Math.floor(pane.top - size - 4);
-      else left = Math.max(0, Math.floor(pane.left - size - 4));
+      left = Math.max(0, Math.floor(pane.left - size - 4));
     }
     let under = 0;
     for (const element of document.querySelectorAll(BEHIND)) {
@@ -186,7 +186,7 @@ export function useCompanionPlacement(previous: CompanionState) {
     let panes: Element[] = [];
     const resized = new ResizeObserver(() => fit());
     const discover = () => {
-      const next = [...document.querySelectorAll(`.browser-viewport, ${BEHIND}`)];
+      const next = [...document.querySelectorAll(`.browser-panel, ${BEHIND}`)];
       if (next.length === panes.length && next.every((pane, i) => pane === panes[i])) return;
       panes = next;
       resized.disconnect();

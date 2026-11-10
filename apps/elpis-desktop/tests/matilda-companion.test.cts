@@ -209,7 +209,9 @@ for (const colorScheme of ['light'] as const) test(`Matilda mini chat, mute and 
   assert.deepEqual(await presence.boundingBox(), sized, 'size survives a reload');
   await page.evaluate(() => (window as TestWindow).__push({ visible: true, activeId: 'page-proof', fullView: 0, tabs: [{ id: 'page-proof', url: 'https://example.invalid/', title: 'Native page', comments: 0, zoom: 100 }] }));
   const viewport = page.locator('.browser-viewport'); await viewport.waitFor();
-  const browser = await viewport.boundingBox(), grip = await avatar.boundingBox();
+  // The startup splash mounts once the desktop bridge is seen and covers her for its moment; wait it out.
+  await page.waitForFunction(() => !document.querySelector('.startup-splash'));
+  const browser = await page.locator('.browser-panel').boundingBox(), grip = await avatar.boundingBox();
   assert.ok(browser && grip);
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2); await page.mouse.down();
   await page.mouse.move(browser.x + browser.width / 2, browser.y + browser.height / 2, { steps: 8 });
