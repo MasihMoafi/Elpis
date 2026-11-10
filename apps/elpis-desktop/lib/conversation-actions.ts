@@ -20,6 +20,9 @@ type Inputs = {
   noteKept: (message: string) => void;
 };
 
+/** Chats being archived now, across re-renders (the actions are re-created each render). */
+const archiving = new Set<string>();
+
 export function createConversationActions({
   conversations,
   runtime,
@@ -104,14 +107,23 @@ export function createConversationActions({
     const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/rename`, { name });
     patchThread(thread.id, { name: result.thread.name ?? name });
   }
-  // Elpis archives the chat with the agents it spawned; hide every loaded one.
+  // Elpis archives the chat with the agents it spawned; hide every loaded one. A chat with many agents takes the engine a
+  // minute (10 Nov: "Pointt: book OCR", 58 sub-chats); a second Archive meanwhile found it gone and reported a failure,
+  // so it says at once that it is archiving, ignores a repeat, and a chat already archived just leaves the list.
   async function archiveThread(thread: Thread) {
+    if (archiving.has(thread.id)) return;
+    archiving.add(thread.id);
+    const slow = setTimeout(() => noteKept(`Archiving “${title(thread)}” and its agents…`), 800);
     try {
       const result = await api<{ worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/archive`, {});
       removeThreads(new Set([thread.id]), false);
       noteKept(keptNotice(title(thread), "archived", result.worktree));
     } catch (e) {
-      setError(`Could not archive “${title(thread)}”: ${errorText(e)}`);
+      if (/no rollout found for thread id/.test(errorText(e))) removeThreads(new Set([thread.id]), false);
+      else setError(`Could not archive “${title(thread)}”: ${errorText(e)}`);
+    } finally {
+      clearTimeout(slow);
+      archiving.delete(thread.id);
     }
   }
   /** A chat back from Archived chats, with the agents archived with it (`restored`), which show under it again. */

@@ -337,7 +337,8 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .chat-scroll-wrap::after { bottom:0; background:linear-gradient(to top, var(--background), transparent); animation-name:thread-edge-out; animation-range:calc(100% - var(--thread-edge-fade)) 100%; }
 @keyframes thread-edge-in { from { opacity:0; } to { opacity:1; } }
 @keyframes thread-edge-out { from { opacity:1; } to { opacity:0; } }
-.scroll-to-bottom { position:absolute; left:50%; bottom:24px; width:32px; height:32px; min-width:32px; transform:translateX(-50%); z-index:5; corner-shape:round; border-radius:9999px; border-color:var(--border); background:var(--background); box-shadow:0 2px 8px rgb(0 0 0 / .12); }
+/* Centred on the message column, which leaves the transcript's scrollbar gutter on the right (.composer-wrap). */
+.scroll-to-bottom { position:absolute; left:calc(50% - var(--scrollbar-size) / 2); bottom:24px; width:32px; height:32px; min-width:32px; transform:translateX(-50%); z-index:5; corner-shape:round; border-radius:9999px; border-color:var(--border); background:var(--background); box-shadow:0 2px 8px rgb(0 0 0 / .12); }
 /* The prompt rail sits just left of the transcript column (in the 32 px gutter when the pane is narrow), centred vertically, with one 10 px slot per prompt, a 2 px dash
  * 6 px long in the tertiary ink at 40%; dashes in view at 60% of the ink; the hovered one 26 px in full ink, its neighbours
  * 20, 14 and 10 px. At most min(70vh, 40rem) tall, then it scrolls. */
