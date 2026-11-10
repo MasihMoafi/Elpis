@@ -6,9 +6,7 @@ import { ThreadActions } from "@/components/thread-actions";
 import { Button } from "@/components/ui/button";
 import { agentState, attentionLine, stateLabels } from "@/lib/agents";
 import { isAgent, isAgentRun, title, type Thread } from "@/lib/api";
-import { errorText } from "@/lib/error-text.mts";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
-import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import type { useLoveActivity } from "@/lib/use-love-activity";
 import type { useRuntimeState } from "@/lib/use-runtime-state";
 import type { useChatAttention } from "@/lib/use-sidebar-state";
@@ -33,12 +31,8 @@ type Inputs = {
   childCursors: Record<string, string | null>;
   searchTerm: string;
   agentColours: ReturnType<typeof agentColourSlots>;
-  preferences: ReturnType<typeof useAppPreferences>;
-  agentRunsOpen: boolean;
-  setAgentRunsOpen: Setter<boolean>;
   setExpanded: Setter<Record<string, boolean>>;
   checkedChildren: React.RefObject<Set<string>>;
-  setError: Setter<string>;
   loadChildren: (id: string, cursor?: string, expand?: boolean) => Promise<void>;
   chatReorder: ReturnType<typeof useReorder>;
   desktop: boolean;
@@ -81,12 +75,8 @@ export function createSidebarThreadRow({
   childCursors,
   searchTerm,
   agentColours,
-  preferences,
-  agentRunsOpen,
-  setAgentRunsOpen,
   setExpanded,
   checkedChildren,
-  setError,
   loadChildren,
   chatReorder,
   desktop,
@@ -181,23 +171,6 @@ export function createSidebarThreadRow({
         {...organizationActions(thread)}
         attention={attentionFor(thread.id)}
         {...(selection ? { selection } : {})}
-        {...(!depth && !isAgent(thread) && hasAgents && !searchTerm
-          ? {
-              agents: {
-                shown: preferences.showAgentRuns && agentRunsOpen,
-                onToggle: () => {
-                  try {
-                    if (!preferences.showAgentRuns) savePreferences({ showAgentRuns: true });
-                  } catch (cause) {
-                    setError(String(errorText(cause)));
-                    return;
-                  }
-                  setAgentRunsOpen(!preferences.showAgentRuns || !agentRunsOpen);
-                  if (!preferences.showAgentRuns || !agentRunsOpen) void loadChildren(thread.id, undefined, false);
-                },
-              },
-            }
-          : {})}
         area={
           <ReorderItem
             reorder={chatReorder}

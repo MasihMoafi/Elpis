@@ -20,7 +20,6 @@
 .settings-row-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:0 8px; }
 .settings-scope { display:inline-block; color:var(--muted-foreground); font-size:var(--text-small); font-weight:400; white-space:nowrap; }
 .settings-scope::before { content:"· "; }
-.settings-nav .settings-section-link { width:100%; height:30px; justify-content:flex-start; padding:0 8px; margin-top:8px; text-align:left; }
 .settings-section-link[aria-current="page"] { color:var(--accent-text); background:var(--selected); }
 .settings-row-description { font-size:var(--text-xs); line-height:1.45; color:var(--muted-foreground); margin-top:2px; overflow-wrap:anywhere; }
 /* A control keeps the width its content needs (max-width still caps it); a long description wraps instead of squeezing it. */

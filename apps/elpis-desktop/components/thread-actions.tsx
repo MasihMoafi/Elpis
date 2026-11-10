@@ -5,7 +5,7 @@ export { message } from "./delete-chats-dialog";
 import { DeleteChatsDialog } from "./delete-chats-dialog";
 export { DeleteChatsDialog } from "./delete-chats-dialog";
 import { cloneElement, useEffect, useState, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
-import { AgentsIcon, ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
+import { ArchiveIcon, PinIcon, TerminalIcon } from "@/components/elpis-icons";
 import { Bookmark, BookmarkMinus, CircleCheck, Columns2, Eye, EyeOff, FolderInput, FolderPlus, Palette, Pencil, SquareArrowOutUpRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,8 +35,6 @@ type Props = {
   onPin?: (thread: Thread) => void;
   bookmarked?: boolean;
   onBookmark?: (thread: Thread) => void;
-  /** The sidebar's list of this chat's agents, under its row. */
-  agents?: { shown: boolean; onToggle: () => void };
   /** Set by the rename shortcut; the rename dialog opens once. */
   renameRequested?: boolean;
   onRenameRequestHandled?: () => void;
@@ -69,7 +67,6 @@ export function ThreadActions({
   onPin,
   bookmarked,
   onBookmark,
-  agents,
   renameRequested,
   onRenameRequestHandled,
   label,
@@ -276,14 +273,6 @@ export function ThreadActions({
                   hint: "U",
                   run: attention.onToggleRead,
                 }
-            : undefined,
-          agents
-            ? {
-                id: "agents",
-                label: agents.shown ? "Hide agents" : "Show agents",
-                icon: <AgentsIcon size={14} />,
-                run: agents.onToggle,
-              }
             : undefined,
           openItems.length
             ? {

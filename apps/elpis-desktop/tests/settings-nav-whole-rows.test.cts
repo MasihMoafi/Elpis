@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 const { openSettings } = require('./controls.cts');
 
-const cutTabs = (page: { locator: (selector: string) => { evaluate: (fn: (nav: HTMLElement) => string[]) => Promise<string[]> } }) => page.locator('.settings-nav').evaluate((nav: HTMLElement) => {
+const cutTabs = (page: { locator: (selector: string) => { evaluate: (fn: (nav: HTMLElement) => string[]) => Promise<string[]> } }) => page.locator('.settings-nav [role="tablist"]').evaluate((nav: HTMLElement) => {
   const view = nav.getBoundingClientRect();
   return [...nav.querySelectorAll('[role="tab"]')].map(tab => ({ name: (tab.textContent ?? '').trim(), box: tab.getBoundingClientRect() }))
     .filter(({ box }) => box.height && box.bottom > view.top + .5 && box.top < view.bottom - .5 && (box.top < view.top - .5 || box.bottom > view.bottom + .5))
@@ -21,9 +21,9 @@ for (const colorScheme of ['light']) test(`Settings navigation never shows a par
       await page.setViewportSize({ width: 1130, height });
       await page.waitForTimeout(350);
       assert.deepEqual(await cutTabs(page), [], `at rest, ${height}px`);
-      const max = await page.locator('.settings-nav').evaluate((nav: HTMLElement) => nav.scrollHeight - nav.clientHeight);
+      const max = await page.locator('.settings-nav [role="tablist"]').evaluate((nav: HTMLElement) => nav.scrollHeight - nav.clientHeight);
       for (const top of [Math.round(max / 2), max]) {
-        await page.locator('.settings-nav').evaluate((nav: HTMLElement, value: number) => { nav.scrollTop = value; }, top);
+        await page.locator('.settings-nav [role="tablist"]').evaluate((nav: HTMLElement, value: number) => { nav.scrollTop = value; }, top);
         await page.waitForTimeout(450);
         assert.deepEqual(await cutTabs(page), [], `scrolled to ${top} of ${max}, ${height}px`);
       }
@@ -45,9 +45,12 @@ test('Settings title and section headings keep room around them at every window 
       const gaps = await page.locator('.settings-nav').evaluate((nav: HTMLElement) => {
         const box = (el: Element | null) => el!.getBoundingClientRect();
         const title = box(nav.querySelector('.settings-title'));
+        // The room above a heading's text: from the row above to the text (a heading is one row, its text at the foot).
         const headings = [...nav.querySelectorAll('.settings-section-link')].map(h => {
-          const above = h.parentElement!.previousElementSibling?.lastElementChild ?? h.parentElement!.previousElementSibling;
-          return above ? box(h).top - box(above).bottom : 99;
+          const above = h.parentElement!.previousElementSibling?.lastElementChild;
+          const range = document.createRange();
+          range.selectNodeContents(h);
+          return above ? range.getBoundingClientRect().top - box(above).bottom : 99;
         });
         return { above: title.top - box(nav.querySelector('.back-link')).bottom, below: box(nav.querySelector('.search-field')).top - title.bottom, headings };
       });

@@ -2,7 +2,7 @@
 .app-shell.settings-mode .workspace-header:not(:has(.pending-input-anchor)) { display:none; }
 .settings-mode .page-scroll:has(> .settings-layout) { padding:0; overflow:hidden; }
 .settings-mode .settings-layout { height:100%; max-width:none; gap:0; grid-template-columns:256px minmax(0,1fr); }
-.settings-mode .settings-nav { position:static; height:100%; overflow:hidden; display:flex; flex-direction:column; background:var(--sidebar); border-right:1px solid var(--hairline); padding:10px 8px 16px; gap:6px; }
+.settings-mode .settings-nav { position:static; height:100%; overflow:auto; align-content:start; background:var(--sidebar); border-right:1px solid var(--hairline); padding:10px 8px 16px; gap:6px; }
 .settings-mode .settings-page { max-width:none; height:100%; overflow:auto; padding:48px 32px 64px; }
 .settings-mode .settings-page { --settings-content-width:860px; }
 /* The content column is centred in the space beside the navigation, as in ChatGPT and Claude (27 Oct). */
@@ -14,12 +14,17 @@
 .settings-nav > .search-field { margin-bottom:4px; }
 /* Measured in the ChatGPT app (10 Nov): 18px/600 title; a heading is 14px/500 grey with room above. Here it is exactly one
    row with its text at the foot, so the list stays on the whole-row grid (useSteadyRowList) and the room falls above. */
-.settings-nav .settings-section-link { height:var(--row-h); margin:0; padding:0 8px 6px; align-items:flex-end; font:500 var(--text-base)/1 var(--ui-font);
+.settings-nav .settings-section-link { width:100%; height:var(--row-h); margin:0; padding:0 8px 6px; align-items:flex-end; justify-content:flex-start; text-align:left; font:500 var(--text-base)/1 var(--ui-font);
   letter-spacing:normal; text-transform:none; color:var(--muted-foreground); }
-.settings-mode .settings-nav > :not([role="tablist"]) { flex:none; }
-.settings-mode .settings-nav > [role="tablist"] { display:block; flex:1 1 auto; min-height:0; overflow:hidden auto; scroll-snap-type:y mandatory; }
-.settings-mode .settings-nav > [role="tablist"] .settings-nav-group { display:block; }
-.settings-mode .settings-nav > [role="tablist"] :is([role="tab"], .settings-section-link) { display:flex; width:100%; height:var(--row-h); scroll-snap-align:start; scroll-snap-stop:always; }
+/* Wide windows: Back, the title and Search stay put and only the list scrolls (narrow windows lay the list out sideways,
+   components/settings/settings.css). */
+@media (min-width:761px) {
+ .settings-mode .settings-nav { overflow:hidden; display:flex; flex-direction:column; }
+ .settings-mode .settings-nav > :not([role="tablist"]) { flex:none; }
+ .settings-mode .settings-nav > [role="tablist"] { display:block; flex:1 1 auto; min-height:0; overflow:hidden auto; scroll-snap-type:y mandatory; }
+ .settings-mode .settings-nav > [role="tablist"] .settings-nav-group { display:block; }
+ .settings-mode .settings-nav > [role="tablist"] :is([role="tab"], .settings-section-link) { display:flex; width:100%; height:var(--row-h); scroll-snap-align:start; scroll-snap-stop:always; }
+}
 .settings-nav [role="tablist"] { display:grid; gap:2px; }
 .settings-nav-group { display:grid; gap:2px; }
 .settings-nav-empty { padding:8px; font-size:var(--text-xs); color:var(--muted-foreground); }
