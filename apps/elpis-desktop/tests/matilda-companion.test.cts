@@ -212,7 +212,13 @@ for (const colorScheme of ['light'] as const) test(`Matilda mini chat, mute and 
   const browser = await viewport.boundingBox(), grip = await avatar.boundingBox();
   assert.ok(browser && grip);
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2); await page.mouse.down();
-  await page.mouse.move(browser.x + browser.width / 2, browser.y + browser.height / 2, { steps: 8 }); await page.mouse.up();
+  await page.mouse.move(browser.x + browser.width / 2, browser.y + browser.height / 2, { steps: 8 });
+  // 10 Nov recording: held over the page she follows the pointer, and the native page steps aside so she is not under it.
+  const held = await presence.boundingBox();
+  assert.ok(held && held.x < browser.x + browser.width / 2 && held.x + held.width > browser.x + browser.width / 2, JSON.stringify({ held, browser }));
+  assert.equal((await page.evaluate(() => (window as unknown as { __layouts: { obscured: boolean }[] }).__layouts.at(-1)))?.obscured, true, 'the page steps aside while she is held');
+  await page.mouse.up();
+  await page.waitForFunction(() => (window as unknown as { __layouts: { obscured: boolean }[] }).__layouts.at(-1)?.obscured === false);
   const kept = await presence.boundingBox();
   assert.ok(kept);
   assert.ok(kept.y + kept.height <= browser.y || kept.x + kept.width <= browser.x || kept.x >= browser.x + browser.width, JSON.stringify({ kept, browser }));

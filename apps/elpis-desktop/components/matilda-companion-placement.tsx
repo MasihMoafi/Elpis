@@ -36,7 +36,10 @@ export function useCompanionPlacement(previous: CompanionState) {
     const chrome = chromeBottom();
     let left = whole(innerWidth - right - size, 0, innerWidth - size),
       top = whole(innerHeight - bottom - size, chrome, innerHeight - size);
-    for (const element of document.querySelectorAll(".browser-viewport")) {
+    // While she is dragged the page steps aside (browser-panel.tsx), so she follows the pointer over it; on release she
+    // settles beside it (10 Nov recording: she jumped away from the pointer and slid under the page).
+    const pages = drag.current?.moved ? [] : document.querySelectorAll(".browser-viewport");
+    for (const element of pages) {
       const pane = element.getBoundingClientRect();
       if (
         !pane.width ||
@@ -137,6 +140,7 @@ export function useCompanionPlacement(previous: CompanionState) {
     if (!start?.moved) return;
     setHeldSide(null);
     document.documentElement.classList.remove("matilda-dragging");
+    fit();
     suppressClick.current = true;
     requestAnimationFrame(() => {
       suppressClick.current = false;

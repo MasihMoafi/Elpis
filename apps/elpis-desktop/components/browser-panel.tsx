@@ -49,16 +49,20 @@ export function BrowserPanel({
     address = useRef<HTMLInputElement>(null);
   const active = state?.tabs.find(tab => tab.id === state.activeId);
   useEffect(() => {
+    // The native page is drawn above the app, so it steps aside while something must show over it: a menu or dialog, or
+    // Matilda while she is dragged (10 Nov recording: she slid under the page). On release she settles beside it.
     const refresh = () =>
       setModal(
-        [
-          ...document.querySelectorAll(
-            '[role="dialog"],[role="alertdialog"],[role="listbox"],[role="menu"],[data-slot="popover-content"],[data-slot="combobox-content"]',
-          ),
-        ].some(element => element.getClientRects().length > 0),
+        document.documentElement.classList.contains("matilda-dragging") ||
+          [
+            ...document.querySelectorAll(
+              '[role="dialog"],[role="alertdialog"],[role="listbox"],[role="menu"],[data-slot="popover-content"],[data-slot="combobox-content"]',
+            ),
+          ].some(element => element.getClientRects().length > 0),
       );
     const observer = new MutationObserver(refresh);
     observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     refresh();
     return () => observer.disconnect();
   }, []);
