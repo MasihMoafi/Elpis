@@ -1,4 +1,5 @@
 import { SCROLL_INTENT } from "@/lib/scroll-intent";
+import { expandImportedTools } from "@/lib/imported-tools";
 import { useEffect, useLayoutEffect, useMemo, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { isVoiceHandoff } from "@/bridge/voice-handoff.cts";
 import type { Entry, Thread } from "@/lib/api";
@@ -54,7 +55,7 @@ export function useTranscriptPresentation({
   };
   const shownScope = selected?.id ?? newDraftKey.current;
   const shownEntries = useMemo(
-    () => withSubmittedMessages(entries, submissions, shownScope).filter(entry => !isVoiceHandoff(entry.item)),
+    () => expandImportedTools(withSubmittedMessages(entries, submissions, shownScope).filter(entry => !isVoiceHandoff(entry.item))),
     [entries, submissions, shownScope],
   );
   // Rewinding to the newest prompt would undo nothing he can see, so it has no Rewind (Masih, 29 Oct: "rewind what?").

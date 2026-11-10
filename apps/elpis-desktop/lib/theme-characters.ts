@@ -9,7 +9,7 @@ export type ThemeCharacter = { id: string; theme: string; name: string; image: s
 
 /** Matilda's look follows the colour palette (5–7 Nov, Masih: "we added new characters that should change with the theme").
  * Every built-in palette has its own character in the pixel style he chose (#32 on the "Matilda's sisters" Love Spot page).
- * Elpis (the default) and custom palettes keep Matilda. Sources and prompts: ~/Work/tries/theme-characters. */
+ * Elpis (the default), Silver and custom palettes keep Matilda; Ice took Silver's portrait (10 Nov, Masih). Sources and prompts: ~/Work/tries/theme-characters. */
 export const THEME_CHARACTER_LIST: readonly ThemeCharacter[] = [
   { id: "palette-plum", theme: "Plum", name: "Punk rocker", image: THEME_CHARACTER_IMAGES.plum },
   { id: "palette-midnight", theme: "Midnight", name: "Detective", image: THEME_CHARACTER_IMAGES.midnight },
@@ -17,7 +17,6 @@ export const THEME_CHARACTER_LIST: readonly ThemeCharacter[] = [
   { id: "palette-teal", theme: "Teal", name: "Teal", image: THEME_CHARACTER_IMAGES.teal },
   { id: "palette-gold", theme: "Gold", name: "Gold", image: THEME_CHARACTER_IMAGES.gold },
   { id: "palette-violet", theme: "Violet", name: "Violet", image: THEME_CHARACTER_IMAGES.violet },
-  { id: "palette-silver", theme: "Silver", name: "Silver", image: THEME_CHARACTER_IMAGES.silver },
   { id: "palette-coral", theme: "Coral", name: "Coral", image: THEME_CHARACTER_IMAGES.coral },
   { id: "palette-green", theme: "Green", name: "Green", image: THEME_CHARACTER_IMAGES.green },
   { id: "palette-blue", theme: "Blue", name: "Blue", image: THEME_CHARACTER_IMAGES.blue },

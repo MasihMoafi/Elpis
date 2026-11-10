@@ -12,7 +12,6 @@ const ALL_CHARACTERS = [
   ['palette-teal', 'Teal'],
   ['palette-gold', 'Gold'],
   ['palette-violet', 'Violet'],
-  ['palette-silver', 'Silver'],
   ['palette-coral', 'Coral'],
   ['palette-green', 'Green'],
   ['palette-blue', 'Blue'],
@@ -20,7 +19,7 @@ const ALL_CHARACTERS = [
   ['palette-ink', 'Ink'],
 ];
 
-test('Matilda takes each palette\'s character across all 12 themes, is selectable directly in Love Spot, and returns to Matilda on the Elpis palette', async () => {
+test('Matilda takes each palette\'s character across all 11 character themes, is selectable directly in Love Spot, and returns to Matilda on the Elpis palette', async () => {
   const f = await loveSpotFixture();
   try {
     const { page } = f;
@@ -44,7 +43,7 @@ test('Matilda takes each palette\'s character across all 12 themes, is selectabl
     assert.equal(await pinned.locator('img[data-character]').getAttribute('data-character'), 'Ice');
     assert.equal(await pinned.locator('.matilda-avatar-light, .matilda-avatar-dark').count(), 0, 'no Matilda portrait under her');
 
-    // Open Love Spot and switch through all 12 characters + Matilda using Love Spot's Character selector.
+    // Open Love Spot and switch through all 11 characters + Matilda using Love Spot's Character selector.
     await f.open(page);
     const picker = page.locator('.love-spot-tools').getByRole('button', { name: 'Character', exact: true });
     await picker.waitFor();
