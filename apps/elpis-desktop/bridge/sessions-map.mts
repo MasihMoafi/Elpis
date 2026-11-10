@@ -1,26 +1,18 @@
 import { agentParentId } from "../lib/agent-runs.mts";
 import { isArchivedThread } from "./client-thread-decorate.mts";
+import type { MapNode, MapState } from "../lib/sessions-map.ts";
 
-export type MapState = "working" | "needs you" | "done" | "failed" | "idle";
-export type MapNode = {
-  id: string;
-  kind: "router" | "worker" | "chat" | "agent" | "workflow";
-  title: string;
-  state: MapState;
-  model?: string;
-  threadId?: string;
-};
 export type MapThread = {
   id: string;
-  name?: string | null;
-  preview?: string | null;
-  model?: string | null;
-  archived?: boolean;
-  path?: string | null;
-  parentThreadId?: string | null;
+  name?: string | null | undefined;
+  preview?: string | null | undefined;
+  model?: string | null | undefined;
+  archived?: boolean | undefined;
+  path?: string | null | undefined;
+  parentThreadId?: string | null | undefined;
   source?: unknown;
-  status?: { type?: string; activeFlags?: string[] };
-  updatedAt?: number;
+  status?: { type?: string; activeFlags?: string[] } | undefined;
+  updatedAt?: number | undefined;
 };
 type Member = { title?: string; status?: string; model?: string; assignedThreadId?: string | null; threads?: string[] };
 type Workflow = {
@@ -44,6 +36,7 @@ function state(status?: string, flags: string[] = []): MapState {
   if (["succeeded", "completed", "done"].includes(status ?? "")) return "done";
   return "idle";
 }
+const parentId = (thread: MapThread) => agentParentId({ parentThreadId: thread.parentThreadId ?? null, source: thread.source });
 
 /** Assemble a read-only graph from the existing thread, router and workflow records. */
 export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; edges: { source: string; target: string }[] } {
@@ -96,7 +89,7 @@ export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; 
   }
   const children = new Map<string, MapThread[]>();
   for (const thread of threads) {
-    const parent = agentParentId(thread);
+    const parent = parentId(thread);
     if (!parent || !byId.has(parent) || parent === thread.id) continue;
     const list = children.get(parent) ?? [];
     list.push(thread);
@@ -115,7 +108,7 @@ export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; 
     visiting.delete(thread.id);
   };
   for (const thread of threads) {
-    if (!children.has(thread.id) || agentParentId(thread)) continue;
+    if (!children.has(thread.id) || parentId(thread)) continue;
     const existing = `thread:${thread.id}`;
     const workflow = (input.workflows ?? []).find(run => run.rootThreadId === thread.id);
     const parent = included.has(existing) ? existing : workflow ? `workflow:${workflow.id}` : addThread(thread, "chat");
@@ -123,7 +116,7 @@ export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; 
   }
   if (input.showAllChats) {
     const workflowRoots = new Set((input.workflows ?? []).map(run => run.rootThreadId));
-    threads.filter(thread => !included.has(`thread:${thread.id}`) && !agentParentId(thread) && !workflowRoots.has(thread.id))
+    threads.filter(thread => !included.has(`thread:${thread.id}`) && !parentId(thread) && !workflowRoots.has(thread.id))
       .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
       .slice(0, 30)
       .forEach(thread => addThread(thread, "chat"));

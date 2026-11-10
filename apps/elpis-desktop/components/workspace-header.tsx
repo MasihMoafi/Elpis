@@ -155,6 +155,7 @@ export function WorkspaceHeader({
             value={workflowTab}
             onChange={setWorkflowTab}
             options={[
+              { value: "map", label: "Map" },
               { value: "board", label: "Board" },
               { value: "scheduled", label: "Scheduled" },
             ]}

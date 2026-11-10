@@ -102,6 +102,7 @@ async function fixtureImpl({ staticDir = out, cwd = CWD, width = 1130, height = 
     if (chat && /\/media\/\d+$/.test(url.pathname)) { res.setHeader('content-type', 'image/png'); res.end(PNG); return; }
     if (chat && url.pathname.endsWith('/prompts')) return json({ data: chat.id === 'chat-a' ? turns.map(([turnId, text]) => ({ turnId, text })) : [] });
     if (chat && req.method === 'GET') return json({ thread: chat, data: chat.id === 'chat-a' ? entries().reverse() : [], nextCursor: null });
+    if (url.pathname === '/api/sessions-map') return json({ nodes: [], edges: [] });
     if (url.pathname.startsWith('/api/')) return json({});
     try {
       const file = path.join(staticDir, url.pathname === '/' ? 'index.html' : url.pathname), content = await fs.readFile(file);

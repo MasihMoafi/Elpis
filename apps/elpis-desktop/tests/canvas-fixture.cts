@@ -88,6 +88,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
         return graph;
       }) });
     }
+    if (url.pathname === '/api/sessions-map') return json({ nodes: [], edges: [] });
     if (url.pathname.startsWith('/api/')) return json({});
     const relative = url.pathname === '/' ? 'index.html' : url.pathname.slice(1);
     try { const content = await fs.readFile(path.join(__dirname, '../out', relative)); res.setHeader('content-type', relative.endsWith('.js') ? 'text/javascript' : relative.endsWith('.css') ? 'text/css' : relative.endsWith('.svg') ? 'image/svg+xml' : 'text/html'); res.end(content); }
@@ -106,6 +107,7 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
   if (autoLayout !== undefined) await page.addInitScript(on => localStorage.setItem('elpis-canvas-auto', on ? 'on' : 'off'), autoLayout);
   const address = server.address(); if (!address || typeof address === 'string') throw Error('Fixture server unavailable'); await page.goto(`http://127.0.0.1:${address.port}`);
   await page.getByRole('button', { name: 'Workflows', exact: true }).click();
+  await page.getByRole('radio', { name: 'Board', exact: true }).click();
   const canvas = page.getByRole('region', { name: 'Workflows', exact: true }); await canvas.waitFor();
   const node = (title: string) => canvas.locator('.react-flow__node').filter({ hasText: title });
   return {

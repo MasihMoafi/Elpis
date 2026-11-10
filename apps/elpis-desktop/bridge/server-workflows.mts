@@ -4,6 +4,7 @@ import { elpisHome } from "./client-paths.mts";
 import { planCanvas } from "./canvas-plan.mts";
 import { workflowWorkspace } from "./folders.mts";
 import { body, json } from "./server-http.mts";
+import { buildSessionsMap, type MapThread, type SessionsMapInputs } from "./sessions-map.mts";
 
 const START_WAIT = 15 * 60_000;
 
@@ -94,7 +95,30 @@ export async function handleWorkflowRoutes(
   url: URL,
   method: string,
 ) {
-  const { client, options, experimentLab, automations, workflowDispatcher } = state;
+  const { client, options, experimentLab, automations, workflowDispatcher, mother } = state;
+  if (url.pathname === "/api/sessions-map" && method === "GET") {
+    const threads: MapThread[] = [];
+    let cursor: string | null | undefined;
+    do {
+      const page = await client.listThreads({ limit: 100, includeAgentRuns: true, ...(cursor ? { cursor } : {}) });
+      threads.push(...page.data);
+      cursor = page.nextCursor;
+    } while (cursor);
+    const listed = await mother.list(threads as Parameters<typeof mother.list>[0], { includeAgentRuns: true });
+    const history = await client.workflowHistory();
+    const graph = buildSessionsMap({
+      threads: listed,
+      router: mother.sessionLinks(),
+      workflows: history.data.filter(run => typeof run.rootThreadId === "string") as NonNullable<SessionsMapInputs["workflows"]>,
+      showAllChats: url.searchParams.get("all") === "1",
+    });
+    const updated = new Map(listed.map(thread => [thread.id, thread.updatedAt]));
+    json(response, 200, {
+      ...graph,
+      nodes: graph.nodes.map(node => ({ ...node, updatedAt: node.threadId ? updated.get(node.threadId) : undefined })),
+    });
+    return true;
+  }
   if (url.pathname === "/api/canvas/plan" && method === "POST") {
     // Stop in the app closes this request, which ends the planner's background turn.
     const stop = new AbortController();

@@ -16,7 +16,7 @@ export function useWorkspacePagesState() {
   );
   const viewRef = useRef(view);
   viewRef.current = view;
-  const [workflowTab, setWorkflowTab] = useState<"board" | "scheduled">("board");
+  const [workflowTab, setWorkflowTab] = useState<"map" | "board" | "scheduled">("map");
   const [workflowPrefill, setWorkflowPrefill] = useState<WorkflowPrefill | null>(null);
   const [settingsSection, setSettingsSection] = useState<SettingsDestination>("general");
   return {

@@ -19,6 +19,7 @@ import type { ListedThread, ThreadListOptions } from "../client-thread-list.mts"
 import { handleMotherHttp } from "./app/http.mts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Health } from "./sources/host.mts";
+import { workerSessionId } from "./executor/messages.mts";
 
 interface Options {
   client: DesktopClient;
@@ -92,6 +93,15 @@ export class MotherAgent {
   }
   owns(id: string): boolean {
     return this.file.read().threadId === id;
+  }
+  sessionLinks() {
+    const { enabled, threadId } = this.file.read();
+    const store = this.app?.store;
+    const tickets = (store?.tickets.list() ?? []).flatMap(ticket => {
+      const session = store?.session(workerSessionId(ticket.id)) as { threadId?: unknown } | undefined;
+      return typeof session?.threadId === "string" ? [{ title: ticket.title, threadId: session.threadId }] : [];
+    });
+    return { enabled, threadId, tickets };
   }
   decorate<T extends { id: string }>(thread: T): T & { motherAgent?: boolean } {
     const config = this.file.read();

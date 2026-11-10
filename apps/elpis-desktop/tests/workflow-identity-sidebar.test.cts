@@ -14,7 +14,12 @@ for (const colorScheme of ['light']) test(`workflow history keeps running work v
     '/api/workflows/history/undo': () => ({ restored: removed.pop(), canUndo: removed.length > 0 }),
   });
   const { page } = f;
-  const show = async () => { await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click(); await page.getByRole('button', { name: 'History', exact: true }).click(); return page.getByRole('region', { name: 'Workflow history', exact: true }); };
+  const show = async () => {
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    await page.getByRole('button', { name: 'History', exact: true }).click();
+    return page.getByRole('region', { name: 'Workflow history', exact: true });
+  };
   try {
     let history = await show();
     const active = history.locator('li').filter({ hasText: 'Fix a bug' });
@@ -171,6 +176,7 @@ test('workflow names reject duplicates; canvas colour and separate sidebar names
   const f = await open('light'), { page } = f;
   try {
     await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
     const canvas = page.getByRole('region', { name: 'Workflows', exact: true }), name = canvas.getByRole('textbox', { name: 'Graph name', exact: true });
     await name.waitFor();
     await name.fill('Research pricing'); await name.press('Tab');
@@ -220,12 +226,14 @@ test('workflow names reject duplicates; canvas colour and separate sidebar names
     await eventually(async () => assert.equal(await name.inputValue(), 'Fix checkout 2'));
     assert.notEqual(await markColor(canvas.locator('.canvas-header .workflow-mark').first()), chosenColour, 'the duplicated canvas gets its own intentional colour');
     await page.reload(); await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
     await eventually(async () => assert.equal(await name.inputValue(), 'Fix checkout 2'));
     assert.equal(await row(page, 'chat-a').locator('.thread-title').innerText(), 'Fix checkout');
     assert.equal(await row(page, 'root-1').locator('.thread-title').innerText(), 'Fix an import');
     assert.equal(await row(page, 'root-1').locator('.workflow-mark').count(), 0);
     await name.fill('Typed without leaving the field');
     await page.reload(); await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
     await eventually(async () => assert.equal(await name.inputValue(), 'Typed without leaving the field', 'workflow-name typing survives reload before blur'));
     const storedBefore = await page.evaluate(() => localStorage.getItem('elpis-workflow-identities-v1'));
     await page.evaluate(() => { const storage = window.elpisDesktop?.storage; if (!storage) throw Error('Desktop storage unavailable'); const set = storage.setItem; storage.setItem = (key, value) => { if (key === 'elpis-workflow-identities-v1') throw Error('Identity write refused'); set(key, value); }; });
@@ -242,6 +250,7 @@ test('a rename in the sidebar is no board edit: Ctrl+Z on the board undoes his m
   const f = await open('light'), { page } = f;
   try {
     await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
     const canvas = page.getByRole('region', { name: 'Workflows', exact: true }), name = canvas.getByRole('textbox', { name: 'Graph name', exact: true });
     const saved = () => page.evaluate(() => { const value = localStorage.getItem('elpis-workflow-draft-v1'); if (value === null) throw Error('Workflow draft is missing'); return JSON.parse(value) as { name: string; nodes: { id: string; data: { muted?: boolean } }[] }; });
     const muted = async () => { const node = (await saved()).nodes.find(node => node.id === 'writer'); assert.ok(node); return node.data.muted; };

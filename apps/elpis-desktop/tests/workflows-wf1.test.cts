@@ -103,6 +103,7 @@ for (const iso of [false, true]) for (const color of ['light']) {
       assert.notEqual(await transform(), scrolledFrom, 'scroll also pans in both views');
       assert.deepEqual((await f.saved()).nodes.map((n: NodePosition) => ({ id: n.id, position: n.position })), initial);
       await f.page.reload(); await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
+      await f.page.getByRole('radio', { name: 'Board', exact: true }).click();
       assert.deepEqual((await f.saved()).nodes.map((n: NodePosition) => ({ id: n.id, position: n.position })), initial, 'selection and pan never change saved positions');
       // A board with no agents still accepts both window directions and cancellation.
       if (iso) await f.canvas.getByRole('radio', { name: 'Isometric', exact: true }).click();

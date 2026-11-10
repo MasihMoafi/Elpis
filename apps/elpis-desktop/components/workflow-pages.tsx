@@ -1,4 +1,7 @@
 import { AgentsCanvas } from "@/components/agents-canvas";
+import { SessionsMap } from "@/components/sessions-map/sessions-map";
+import { useRef, useState } from "react";
+import type { Viewport } from "@xyflow/react";
 import { AutomationsView } from "@/components/automations-view";
 import { CanvasGuideHelp } from "@/components/canvas-guide-help";
 import { ProjectMenu } from "@/components/project-picker";
@@ -49,6 +52,8 @@ export function WorkflowPages({
   workIn,
   finishReplay,
 }: Props) {
+  const mapViewport = useRef<Viewport | null>(null);
+  const [showAllChats, setShowAllChats] = useState(false);
   const {
     view,
     workflowTab,
@@ -63,11 +68,18 @@ export function WorkflowPages({
   const { ready, connected, replays } = runtime;
   return (
     <>
-      {/* 6 Nov, Masih: "automation is kind of a workflow, isn't it? couldn't we have merged those?" Workflows has two views:
-          the board and its Scheduled automations (components/automations-view.tsx). The board stays mounted, so its draft
-          survives a look at the schedule. */}
       {view === "canvas" && (
         <ViewBoundary label="Workflows">
+          {workflowTab === "map" && (
+            <SessionsMap
+              threads={threads}
+              dark={dark}
+              viewport={mapViewport}
+              showAll={showAllChats}
+              onShowAll={setShowAllChats}
+              onOpenChat={id => { show("chat"); openById(id); }}
+            />
+          )}
           <div className="contents" hidden={workflowTab !== "board"}>
             <CanvasGuideHelp onOpen={() => show("agentsGuide")}>
               <AgentsCanvas

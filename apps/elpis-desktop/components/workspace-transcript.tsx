@@ -112,7 +112,7 @@ export function WorkspaceTranscript({
   const { ready, connected, stoppedTurns, failedTurns, approvals } = runtime;
   const { itemCursor, heldCount, historyGaps } = history;
   const { project, projects } = projectState;
-  const { setRecordedWorkflow } = pages;
+  const { setRecordedWorkflow, setWorkflowTab } = pages;
   const { workflowCatalog, selectedWorkflow } = sidebarModel;
   const { selectedChoice } = selectedModel;
   const { replaceable, replacementOptions } = replacement;
@@ -203,6 +203,7 @@ export function WorkspaceTranscript({
               onOpenChat={id => void openById(id)}
               onOpenCanvas={run => {
                 setRecordedWorkflow({ id: run.id, rootThreadId: run.rootThreadId });
+                setWorkflowTab("board");
                 show("canvas");
               }}
             />
