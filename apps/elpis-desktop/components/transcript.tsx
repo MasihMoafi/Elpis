@@ -295,7 +295,8 @@ function Turn({
     );
   }
   // Only prompts at the start head the turn. A partial history can start with work before a later steer.
-  const leading = ordered.findIndex(entry => entry.item.type !== "userMessage");
+  // A router note opens its turn with the prompts, so it stays in view instead of folding into the work (router-chats R4).
+  const leading = ordered.findIndex(entry => entry.item.type !== "userMessage" && entry.item.type !== "routerNote");
   const users = ordered.slice(0, leading < 0 ? ordered.length : leading);
   const work = ordered.slice(users.length);
   // A proposed plan is the turn's answer as much as its last reply, so neither folds away.
