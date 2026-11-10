@@ -146,7 +146,7 @@ export function followupRelay(
   };
 }
 /** Formats a worker report relay for the main Session (truncating summaries over 600 characters behind `ticket/<id>/result`); `replyTo` names the human question trigger it answers. */
-export function resultRelay(ticket: Ticket, state: string, text: string, replyTo?: string): Relay {
+export function resultRelay(ticket: Ticket, state: string, text: string, replyTo?: string, shown = false): Relay {
   const id = key("worker-result", ticket.id, ticket.updatedAt, text);
   const summary = text.length > 600 ? { summary: text.slice(0, 600), chars: text.length } : { summary: text };
   const report = {
@@ -155,6 +155,8 @@ export function resultRelay(ticket: Ticket, state: string, text: string, replyTo
     trigger_id: ticket.origin.triggerId,
     state,
     ...(replyTo ? { answer_to: replyTo } : {}),
+    // The host put this result in his chat itself, so it cannot be lost; the main Session must not send it again.
+    ...(shown ? { shown_to_person: true } : {}),
     ...summary,
     read: `ticket/${ticket.id}/result`,
   };

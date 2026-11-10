@@ -9,7 +9,10 @@ import type { ExecutorHost } from "./dsh.mts";
 const BACKGROUND_LIMIT_MS = 30 * 60000,
   SHUTDOWN_STOP_MS = 10000;
 export class WorkerSettlement {
-  private readonly host: Pick<ExecutorHost, "context" | "store" | "engine" | "sessions" | "lifetime" | "closing">;
+  private readonly host: Pick<
+    ExecutorHost,
+    "context" | "store" | "engine" | "sessions" | "lifetime" | "closing" | "deliverChatResult"
+  >;
   private readonly background: (work: Promise<void>) => Promise<void>;
   private readonly retrying: (id: string) => boolean;
   private readonly resetRetry: (id: string) => void;
@@ -152,7 +155,7 @@ export class WorkerSettlement {
     if (handedOff(before) && !(report && person && person > report.at)) {
       this.host.engine.turnEnded(ticket.id, idle.id);
       this.handOff(ticket.id, agent);
-      if (report?.state === "ready") this.finishChat(ticket.id);
+      if (report?.state === "ready") this.finishChat(ticket.id, report.summary);
       return;
     }
     // Its turn ends once nothing runs for it in the background, which holds its slot meanwhile: at most for the limit from
@@ -225,7 +228,7 @@ export class WorkerSettlement {
       const before = latestReport(current)?.summary ?? "";
       const updated = this.host.engine.report(ticket.id, { state: "waiting", summary: said || before });
       // A quiet final after orchestrator_report is not a new status or an empty handoff.
-      if (said) this.relay(resultRelay(updated, "waiting", said));
+      if (said) this.relay(resultRelay(updated, "waiting", said, undefined, this.showsResult(updated)));
       else if (!before.trim()) {
         this.relay(
           resultRelay(
@@ -236,10 +239,20 @@ export class WorkerSettlement {
         );
       }
     });
-    if (said) this.finishChat(ticket.id);
+    if (said) this.finishChat(ticket.id, said);
   }
-  private finishChat(ticketId: string): void {
+  /** Whether the host itself shows this ticket's result to the person: a finished job he asked for in the Elpis chat. */
+  private showsResult(ticket: Ticket): boolean {
+    return !!this.host.deliverChatResult && chatWorkDone(ticket);
+  }
+  /**
+   * Ends a finished Elpis chat job and puts the worker's last words in his chat. The host does this itself: on 10 Nov
+   * the main Session answered a finished job in its own hidden session, so the result never reached him.
+   */
+  private finishChat(ticketId: string, said: string): void {
     const stored = this.host.store.tickets.get(ticketId);
-    if (stored && chatWorkDone(stored)) this.host.engine.completeChatTicket(ticketId);
+    if (!stored || !chatWorkDone(stored)) return;
+    this.host.engine.completeChatTicket(ticketId);
+    this.host.deliverChatResult?.(ticketId, said);
   }
 }

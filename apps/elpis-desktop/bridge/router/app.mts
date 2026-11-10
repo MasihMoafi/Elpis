@@ -72,6 +72,8 @@ export class MotherApp implements SourceHost {
   private readonly loops: Promise<void>[] = [];
   private readonly contexts = new Map<string, SourceContext>();
   private closing = false;
+  /** Tickets whose result is already in his chat, so the host and the main Session never both send it. */
+  private readonly shown = new Set<string>();
   private stopped: Promise<void> | undefined;
   private quiet = 0;
   private started = false;
@@ -146,6 +148,12 @@ export class MotherApp implements SourceHost {
         paused: () => this.paused(),
         prompts,
         processEnvironment: () => this.setup.workerEnvironment(),
+        deliverChatResult: (ticketId, text) => {
+          if (this.shown.has(ticketId)) return;
+          this.shown.add(ticketId);
+          this.engine.reply({ purpose: "result", ticketId, text });
+          void this.outbox.sent();
+        },
         sessionEnvironment: id => {
           const ticketId = ticketOfSession(id),
             ticket = ticketId ? store.tickets.get(ticketId) : undefined;
@@ -290,6 +298,7 @@ export class MotherApp implements SourceHost {
           return runtime.context(githubKind);
         },
         chats: options.chats && chatToolsHost(options.chats, options, () => store.settings()),
+        results: { shown: ticketId => this.shown.has(ticketId), mark: ticketId => void this.shown.add(ticketId) },
         sendReplies: () => outbox.sent(),
         requestPass: () => this.passes.request(),
         quietly: run => {

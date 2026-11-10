@@ -25,6 +25,7 @@ interface Options {
   environment?: ExecutorHost["environment"];
   sourceLink?: ExecutorHost["sourceLink"];
   repliedTo?: ExecutorHost["repliedTo"];
+  deliverChatResult?: ExecutorHost["deliverChatResult"];
   instructions?: (sessionId: string) => string;
   relay?: (id: string, text: string) => Promise<void>;
   tools?: (sessionId: string) => Tool[];
@@ -80,6 +81,7 @@ export class ExecutorService {
       machine: { stateDir: options.stateDir },
       lifetime: this.lifetime.signal,
       ...(options.processEnvironment ? { processEnvironment: options.processEnvironment } : {}),
+      ...(options.deliverChatResult ? { deliverChatResult: options.deliverChatResult } : {}),
       closing: () => this.closing,
       paused: options.paused,
       environment:

@@ -46,6 +46,8 @@ export interface MainToolsHost {
   readonly resources: ResourceHost;
   /** His chats, when the host lets the main Session see and change them. */
   readonly chats?: ChatToolsHost | undefined;
+  /** Which tickets' results are already in his chat: the host shows a finished chat job's result itself. */
+  readonly results?: { shown(ticketId: string): boolean; mark(ticketId: string): void };
   /** Schedules a pass to carry out work queued by an Engine command (such as an Eval or ticket resume). */
   requestPass(): void;
   sendReplies(): Promise<void>;
@@ -358,6 +360,9 @@ export function mainTools(host: MainToolsHost, agent: Pick<Agent, "id">): Tool[]
         })
         .strict(),
       execute: async args => {
+        const result = args.purpose === "result" ? args.ticket_id : undefined;
+        if (result && host.results?.shown(result))
+          return { status: "sent", note: "He already has this result in his chat; nothing more to send." };
         const reply = host.engine.reply({
           purpose: args.purpose,
           text: args.text,
@@ -365,6 +370,7 @@ export function mainTools(host: MainToolsHost, agent: Pick<Agent, "id">): Tool[]
           ...(args.ticket_id ? { ticketId: args.ticket_id } : {}),
           ...(args.human_action ? { question: args.human_action } : {}),
         });
+        if (result) host.results?.mark(result);
         await host.sendReplies();
         return { status: host.store.replyStatus(reply.id) ?? reply.status };
       },

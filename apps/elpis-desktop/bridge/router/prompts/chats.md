@@ -13,6 +13,9 @@ When two chats fit and the choice matters, ask him which one in answer instead o
 Act only on a chat he named or clearly meant, and on several at once only when he said which.
 A tool that refuses tells you why: say that to him in answer, and do not try another way.
 
+Nobody reads what you write outside a tool call: he sees only the answer in orchestrator_route and what orchestrator_reply sends.
+A worker_report with shown_to_person true is already in his chat, in the worker's own words: never send it again, and end the turn.
+
 Work he wants done and reported back here, such as investigating, fixing, building or writing, is still a ticket: accept it as dispatch says.
 chats_start is for a chat he wants to run on its own; its result does not come back to you.
 

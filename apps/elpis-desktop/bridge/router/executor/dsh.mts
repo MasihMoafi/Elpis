@@ -98,6 +98,8 @@ export interface ExecutorHost {
   ): Promise<{ source_url?: string; source_url_read?: string; source_text?: string }>;
   /** Stored Trigger of the message `trigger` replies to, when it replies to one. */
   repliedTo(trigger: Trigger): Trigger | undefined;
+  /** Shows a finished Elpis chat job's result to the person who asked, in the worker's own words. */
+  deliverChatResult?(ticketId: string, text: string): void;
 }
 
 /**

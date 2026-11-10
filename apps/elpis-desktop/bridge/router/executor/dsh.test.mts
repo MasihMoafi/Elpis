@@ -271,6 +271,34 @@ it("launches once, delivers and reads a follow-up, reports waiting and stops onl
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.sessions.agents.get(other.sessionId)?.status, "running");
 });
+it("shows a finished Elpis chat job's result to the person itself, once, and tells the router it did", async t => {
+  const h = await fixture();
+  t.after(h.stop);
+  const shown: [string, string][] = [];
+  h.host.deliverChatResult = (ticketId, text) => void shown.push([ticketId, text]);
+  const asked: Trigger = {
+    ...h.trigger("count"),
+    source: "elpis-chat",
+    threads: [{ source: "elpis-chat", id: "count" }],
+    actor: { source: "elpis-chat", id: "local-user" },
+    channel: { source: "elpis-chat", thread: "elpis-chat:count", address: {} },
+  };
+  h.engine.receive(asked);
+  const decision = h.engine.decide("count", { kind: "accept", name: "count", title: "Count", scope: "small", reason: "asked" });
+  await h.effects.idle();
+  const ticket = h.store.tickets.get(decision.ticketId!)!;
+  const threadId = String((h.store.session(`worker-${ticket.id}`) as { threadId: string }).threadId);
+  h.server.finish(threadId, "completed", "It has 141 lines.");
+  await waitFor(() => assert.deepEqual(shown, [[ticket.id, "It has 141 lines."]]));
+  assert.equal(h.store.tickets.get(ticket.id)!.ended?.outcome, "completed");
+  assert.ok(h.relays.some(text => text.includes("It has 141 lines.") && text.includes('"shown_to_person":true')));
+  // A job that did not come from the Elpis chat keeps the reference's way: the router relays its result.
+  const other = await h.accept("2");
+  h.server.finish(other.threadId, "completed", "Fixed elsewhere");
+  await waitFor(() => assert.ok(h.relays.some(text => text.includes("Fixed elsewhere"))));
+  assert.ok(!h.relays.some(text => text.includes("Fixed elsewhere") && text.includes("shown_to_person")));
+  assert.equal(shown.length, 1);
+});
 it("does not cancel a worker when the ending transaction rolls back", async t => {
   const h = await fixture();
   t.after(h.stop);
