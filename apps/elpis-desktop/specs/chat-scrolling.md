@@ -23,10 +23,10 @@ Whole-app rules: [ui-behaviour.md](ui-behaviour.md) items 8–10.
 
 | # | Item | Acceptance check | Status |
 | --- | --- | --- | --- |
-| C1 | At the bottom, a streaming reply keeps its last line in view with no visible jump or jitter. | Record 5 s of streaming at 60 fps: the last line's bottom edge moves only with the text, never back. | todo |
-| C2 | Scrolled up even one line, nothing moves: streaming, tool rows opening, images loading. | Scroll up 40px during streaming; the first visible message's top stays within 1px for 10 s. | todo |
+| C1 | At the bottom, a streaming reply keeps its last line in view with no visible jump or jitter. | Record 5 s of streaming at 60 fps: the last line's bottom edge moves only with the text, never back. | pass (tests/chat-scroll-follow.test.cts, 10 Nov) |
+| C2 | Scrolled up even one line, nothing moves: streaming, tool rows opening, images loading. | Scroll up 40px during streaming; the first visible message's top stays within 1px for 10 s. | pass (tests/chat-scroll-follow.test.cts, 10 Nov) |
 | C3 | Loading earlier messages keeps the message under the reader in place. | Scroll to the top, load more: the previously first message keeps its screen position (±1px). | todo |
-| C4 | "Scroll to bottom" is one round button centred above the composer; hidden at the bottom, shown once scrolled up more than one screen-third; click returns to the bottom smoothly and re-pins. | Measure its box and visibility at bottom, at −300px; click: at bottom and C1 holds. | todo |
+| C4 | "Scroll to bottom" is one round button centred above the composer; hidden at the bottom, shown once scrolled up more than one screen-third; click returns to the bottom smoothly and re-pins. | Measure its box and visibility at bottom, at −300px; click: at bottom and C1 holds. | pass (tests/chat-scroll-follow.test.cts, 10 Nov) |
 | C5 | Opening a chat shows the newest message; returning to a chat restores where the reader was. | Open, scroll up, switch away and back: same first visible message. | todo |
 | C6 | Wheel and keyboard scroll at the platform's speed; PageUp/PageDown move one screen less one line; Home/End reach the ends. | Key presses move by clientHeight − line height. | todo |
 | C7 | The scrollbar is thin and reserves its gutter, so text never shifts when it appears. | Message left edge equal with a short and a long chat. | todo |

@@ -289,6 +289,7 @@
     "desktop/main-error-guard.test.cts"
   ],
   "ui": [
+    "tests/chat-scroll-follow.test.cts",
     "tests/automations.test.cts",
     "tests/memory-count.test.cts",
     "tests/audio-file-links.test.cts",

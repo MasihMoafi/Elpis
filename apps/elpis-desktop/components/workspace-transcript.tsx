@@ -146,9 +146,11 @@ export function WorkspaceTranscript({
         }}
         onScroll={event => {
           const element = event.currentTarget;
-          const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
-          stickToBottom.current = followingBottom.current || atBottom;
-          setAwayFromBottom(!atBottom);
+          // At the bottom means at it: a reader who scrolls up even a little is not pulled back by streaming text
+          // (specs/chat-scrolling.md C2; 10 Nov: 40px up was yanked 635px down). The button shows a third of a screen away (C4).
+          const gap = element.scrollHeight - element.scrollTop - element.clientHeight;
+          stickToBottom.current = followingBottom.current || gap <= 2;
+          setAwayFromBottom(gap > element.clientHeight / 3);
         }}
       >
         <div className="chat-content">

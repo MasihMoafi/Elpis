@@ -25,7 +25,8 @@ export function useConversationSession() {
     if (id && element)
       scrollPositions.current.set(id, {
         top: element.scrollTop,
-        atBottom: element.scrollHeight - element.scrollTop - element.clientHeight < 80,
+        // At it, not near it: a reader slightly above the end comes back to that place (specs/chat-scrolling.md C5).
+        atBottom: element.scrollHeight - element.scrollTop - element.clientHeight <= 2,
       });
   };
   const request = useRef(0);
