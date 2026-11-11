@@ -41,6 +41,24 @@ router and Luna as its workers (his words, 10 Nov); his own worker setting (Sol,
 | R14 | It tells him when a session finishes or needs him, so he need not watch tabs. | Start a chat through the router: one line appears in the Elpis tab when that chat answers. | done: "Finished: “Watch test 2”. watch works." 34 s after asking. A long turn in any chat, a failure and "needs you" are covered by tests, not yet seen live |
 | R15 | An order to a chat, or a change of the router's own settings, is never handed to a worker. | Ask it to archive five named chats: done directly, no new ticket. | done: the request that opened a ticket on 11 Nov is now done directly in 40 s (`38ba44df5`); accepting such a request is refused once with what to do instead |
 
+Added 11 Nov, from his words that morning: "I can't clear the router chat up … the ultimate test would be for the router
+to organize all the chats, archive the ones that are garbage, and be able to handle the chats all by its own", and, on
+how the tidy-up should start: "via the pinned agent, say matilda, it should ping me whenever it feels the side-bar is
+full, say 10 conversation without a project or sth and three chats with like 1 message in them. This logic hasn't been
+thought of yet properly."
+
+| # | Item | Acceptance check | Status |
+| --- | --- | --- | --- |
+| R16 | Delete on the Elpis chat clears it: that conversation goes to the trash and the router carries on at once in a fresh one. | Delete the Elpis chat in the sidebar: a new empty Elpis chat is there and answers a prompt, with no app restart. | doing: fixed in `ef63fdb3a` and covered by a test; after the restart the Elpis tab opened on a fresh chat. The no-restart path is not yet tried live. Before the fix the tab was dead until the app restarted |
+| R17 | It can tidy all his chats: it reads every one, page by page, and archives garbage many at a time by the written rule in `prompts/chats.md`; nothing is deleted. | Ask it what it would archive: it answers by kind with counts; on his yes it archives them and each can be restored. | doing: paging and batch archive are built and tested (`25984fafa`); the live proposal on his 141 open chats is not yet run |
+| R18 | The pinned agent pings him when the sidebar is full, and offers the tidy-up. | With 10 chats outside any project, or 3 chats of one message, the pinned agent says so once and offers to tidy; on his yes the router does R17. | todo: the rule is his first sketch and needs his thresholds; project membership lives in the window, so the count belongs there |
+
+On 11 Nov the assistant deleted his real Elpis chat in the installed app to prove R16 and then restarted the app, which
+empties the trash for good: that conversation (8 to 11 Nov) and its 11 agent chats are lost. What the router's own
+records still held, his 56 messages with their times and the 42 replies it sent, is in
+`~/.elpis-next/router/recovered-elpis-chat-20261111.md`. A fix that deletes is proven in a throwaway instance
+(`verify-elpis-desktop`), never in his app.
+
 ## C. Workflows: a map he can use
 
 Masih, 10 Nov: "The workflow page must be user-friendly and actually solve a problem … it could just be for
