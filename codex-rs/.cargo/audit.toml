@@ -9,6 +9,11 @@ ignore = [
     "RUSTSEC-2025-0141", # bincode via syntect; remove when syntect drops or updates it
     "RUSTSEC-2026-0118", # hickory-proto via rama-dns/rama-tcp; remove when rama updates to hickory 0.26.1 or hickory-net
     "RUSTSEC-2026-0119", # hickory-proto via rama-dns/rama-tcp; remove when rama updates to hickory 0.26.1 or hickory-net
+    # Reviewed 2026-11-11: hickory-proto 0.25.2 via rama-dns/rama-tcp =0.3.0-alpha.4 (codex-network-proxy); the fix needs rama 0.3.0+, which uses hickory 0.26; remove when rama is upgraded to hickory >=0.26.2.
+    "RUSTSEC-2026-0487", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
+    "RUSTSEC-2026-0489", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
+    "RUSTSEC-2026-0490", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
+    "RUSTSEC-2026-0491", # REACHABLE on Linux/Windows: the proxy resolves hostnames with rama's default HickoryDns and decodes DNS replies; a reply from the DNS server's address can force a short ~18 MB allocation (DoS)
     "RUSTSEC-2026-0194", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     "RUSTSEC-2026-0195", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     # Reviewed 2026-11-10: sqlx-sqlite 0.9 requires libsqlite3-sys 0.37; remove when sqlx permits >=0.39.
