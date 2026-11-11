@@ -500,3 +500,15 @@ it("prepares independent workers concurrently without blocking trigger intake", 
   await h.effects.idle();
   assert.ok(h.store.tickets.open().every(ticket => latestAssignment(ticket)?.state === "running"));
 });
+it("creates a ticket's worker on the model the router chose for it, and others on the default", async t => {
+  const h = await fixture();
+  t.after(h.stop);
+  const small = { provider: "openai", model: "gpt-6-luna", reasoningEffort: "low" };
+  h.engine.receive(h.trigger("easy"));
+  const decision = h.engine.decide("easy", { kind: "accept", name: "easy-job", title: "Easy", scope: "easy", reason: "asked" });
+  h.sessions.prefer(`worker-${decision.ticketId}`, small);
+  await h.effects.idle();
+  assert.deepEqual((h.store.session(`worker-${decision.ticketId}`) as { model: unknown }).model, small);
+  const other = await h.accept("hard");
+  assert.notDeepEqual((h.store.session(other.sessionId) as { model: unknown }).model, small);
+});

@@ -489,7 +489,8 @@
     "tests/live-submissions.test.cts",
     "tests/matilda-live-voice.test.cts",
     "tests/file-opening-performance.test.cts",
-    "tests/rendering-performance.test.cts"
+    "tests/rendering-performance.test.cts",
+    "tests/elpis-single-entry.test.cts"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cts",

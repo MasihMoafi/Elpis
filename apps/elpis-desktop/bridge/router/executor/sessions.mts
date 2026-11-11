@@ -1,4 +1,5 @@
 // Ported from dsh-superagent (MIT), src/app/sessions.ts (worker delivery and persistence)
+import type { RoleModel } from "./settings.mts";
 import { RecordSchema, WorkerAgent } from "./session-turns.mts";
 export { RecordSchema, WorkerAgent } from "./session-turns.mts";
 export type { SessionRecord } from "./session-turns.mts";
@@ -43,6 +44,11 @@ export interface SessionOptions {
 /** Persistent logical worker IDs mapped to native runtime IDs. One session owns each delivery receipt. */
 export class Sessions implements Context {
   readonly agents = new Map<string, WorkerAgent>();
+  /** The model the router chose for a ticket's worker: a session not yet created starts on it, not on the default. */
+  readonly preferred = new Map<string, RoleModel>();
+  prefer(sessionId: string, model: RoleModel): void {
+    this.preferred.set(sessionId, model);
+  }
   /** Threads this app run started; an Elpis thread from an earlier run has lost its tool server. */
   readonly startedThreads = new Set<string>();
   readonly subprocess: SubprocessRuntime;

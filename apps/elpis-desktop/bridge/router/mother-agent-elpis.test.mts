@@ -402,3 +402,28 @@ test("the bound Elpis chat respects archive, trash exclusions, undo and permanen
     rmSync(h.home, { recursive: true, force: true });
   }
 });
+
+test("live updates about the router's own Sessions never reach the sidebar; its workers' do", async () => {
+  const h = fixture();
+  const mother = h.create();
+  const started = (id: string, cwd: string) => ({
+    type: "message",
+    data: { method: "thread/started", params: { thread: { id, cwd } } },
+  });
+  const changed = (id: string) => ({
+    type: "message",
+    data: { method: "thread/status/changed", params: { threadId: id } },
+  });
+  try {
+    assert.equal(mother.hides(changed("session")), false, "A Session is unknown until it is seen in the router's folder");
+    assert.equal(mother.hides(started("session", join(h.home, "router"))), true);
+    assert.equal(mother.hides(changed("session")), true, "Its later updates stay hidden too");
+    assert.equal(mother.hides(started("worker", join(h.home, "router", "work", "count-lines-1"))), false);
+    assert.equal(mother.hides(started("chat", "/home/u/project")), false);
+    assert.equal(mother.hides({ type: "connection", data: { connected: true } }), false);
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});

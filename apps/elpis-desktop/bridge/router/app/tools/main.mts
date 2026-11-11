@@ -24,6 +24,7 @@ import type { Store } from "../store.mts";
 import { AcknowledgementSchema, readTool, tool, type Tool } from "./tool.mts";
 import { chatTools, type ChatToolsHost } from "./chats.mts";
 import type { OwnWorkGate } from "./own-work.mts";
+import { workerSessionId } from "../../executor/messages.mts";
 
 const RoutingNoteSchema = z
   .string()
@@ -41,7 +42,7 @@ export interface MainToolsHost {
     EngineForPeople;
   readonly store: Pick<Store, "tickets" | "triggers" | "threads" | "atomic" | "replyStatus" | "settings">;
   readonly prompts: Pick<Prompts, "preview" | "save">;
-  readonly sessions: Pick<Sessions, "status" | "notify" | "delivery" | "modelRetry">;
+  readonly sessions: Pick<Sessions, "status" | "notify" | "delivery" | "modelRetry" | "prefer">;
   readonly settings: Pick<Settings, "view" | "block" | "save" | "pause" | "sync">;
   readonly assessor: Pick<MasterAssessor, "context" | "read" | "decide">;
   readonly resources: ResourceHost;
@@ -94,6 +95,18 @@ const RouteItemSchema = z
       .string()
       .nullish()
       .describe(`accept: ${WorktreeNameSchema.description ?? ""}`),
+    worker_model: z
+      .string()
+      .nullish()
+      .describe(
+        "accept: the model for this ticket's worker, chosen by the job: the smallest model of the workers' provider " +
+          "for a lookup, a count or another one-step job, a middle one for ordinary work; leave it out for hard " +
+          "engineering, which keeps the default.",
+      ),
+    worker_effort: z
+      .string()
+      .nullish()
+      .describe("accept: the worker's thinking level with worker_model: low or medium for an easy job."),
     acknowledgement: z
       .string()
       .nullish()
@@ -121,6 +134,8 @@ const FIELDS: Record<Field, { check: z.ZodType; reads: readonly Kind[]; needs: r
   ticket_id: { check: z.string(), reads: ["attach", "stop"], needs: ["attach", "stop"] },
   title: { check: z.string().max(200), reads: ["accept"], needs: ["accept"] },
   worktree_name: { check: WorktreeNameSchema, reads: ["accept"], needs: ["accept"] },
+  worker_model: { check: z.string().max(200), reads: ["accept"], needs: [] },
+  worker_effort: { check: z.enum(["low", "medium", "high", "xhigh", "max"]), reads: ["accept"], needs: [] },
   acknowledgement: { check: AcknowledgementSchema, reads: ["accept"], needs: ["accept"] },
   note: { check: RoutingNoteSchema, reads: ["accept", "attach"], needs: [] },
   reason: { check: z.string().max(500), reads: ["ignore", "stop"], needs: ["ignore"] },
@@ -186,6 +201,14 @@ function route(
           ticketId: decision.ticketId,
         };
       }
+      // The router sizes the worker to the job; without its choice the worker runs on the default model.
+      const base = host.store.settings().executor.model;
+      if (item.worker_model && base)
+        host.sessions.prefer(workerSessionId(decision.ticketId), {
+          ...base,
+          model: item.worker_model,
+          ...(item.worker_effort ? { reasoningEffort: item.worker_effort } : {}),
+        });
       return { ...fromDecision(decision), triggerIds: decision.triggerIds };
     }
     case "attach": {

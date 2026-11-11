@@ -36,6 +36,8 @@ export class MotherAgent {
   private error: string | undefined;
   private closed = false;
   private archived = false;
+  /** The router's own Sessions seen so far: they run in its state folder and the sidebar never shows them. */
+  private readonly sessions = new Set<string>();
   private roles: { dispatch: RoleModel; worker: RoleModel } | undefined;
   constructor(options: Options) {
     this.options = options;
@@ -150,6 +152,19 @@ export class MotherAgent {
   resumed<T extends { thread?: { id: string } }>(id: string, live: T): T {
     return live.thread && this.owns(id) ? { ...live, thread: this.decorate(live.thread) } : live;
   }
+  /**
+   * Whether a live update is about one of the router's own Sessions. The list leaves them out; on 11 Nov one that
+   * started while the window was open still arrived as a live update and showed as a second "Elpis" row with the
+   * router's raw messages.
+   */
+  hides(event: { type?: string; data?: unknown }): boolean {
+    if (event.type !== "message") return false;
+    const params = (event.data as { params?: { threadId?: unknown; thread?: { id?: unknown; cwd?: unknown } } })?.params;
+    const thread = params?.thread;
+    if (typeof thread?.id === "string" && thread.cwd === join(this.options.home, "router")) this.sessions.add(thread.id);
+    const id = typeof thread?.id === "string" ? thread.id : params?.threadId;
+    return typeof id === "string" && this.sessions.has(id);
+  }
   /** Native lists omit chats without a native preview; Elpis owns her history in the bridge. */
   async list(
     threads: ListedThread[],
@@ -159,6 +174,7 @@ export class MotherAgent {
     const id = this.file.read().threadId;
     // Every router session runs in the router's state folder, current and replaced ones alike. The sidebar shows one Elpis.
     const routerDirectory = join(this.options.home, "router");
+    for (const thread of threads) if (thread.cwd === routerDirectory) this.sessions.add(thread.id);
     const rows = threads
       .filter(thread => thread.cwd !== routerDirectory && !excluded(thread.id))
       .map(thread => this.decorate(thread));

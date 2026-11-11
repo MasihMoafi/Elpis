@@ -188,7 +188,10 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   });
   const characters = createCharacters(options.elpisHome ?? elpisHome());
   const characterGeneration = createCharacterGeneration(client);
-  client.on("event", event);
+  const shown = (value: Parameters<typeof event>[0]) => {
+    if (!mother.hides(value)) event(value);
+  };
+  client.on("event", shown);
   // A chat Masih starts is named from its first message, as the TUI names it.
   const titles = createThreadTitles(client);
   client.on("event", (value: { type?: string; data?: unknown }) => {
@@ -306,7 +309,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   } catch (error) {
     await mother.close();
     await loveSpot.close();
-    client.off("event", event);
+    client.off("event", shown);
     client.off("event", motherConnection);
     client.close();
     throw error;
@@ -361,7 +364,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
       listeners.clear();
       // Quitting deletes the sidebar's deleted chats for good; what does not finish in time goes at the next start.
       await Promise.race([trash.purge().catch(() => {}), new Promise(resolve => setTimeout(resolve, 5000).unref())]);
-      client.off("event", event);
+      client.off("event", shown);
       client.close();
       await new Promise<void>(resolve => {
         server.close(() => resolve());

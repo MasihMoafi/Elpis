@@ -16,8 +16,8 @@ export async function runOpen(
   role: "worker" | "orchestrator",
 ): Promise<WorkerAgent> {
   const stored = this.options.store.session(id);
-  const model =
-    role === "worker" ? this.options.store.settings().executor.model : this.options.store.settings().eval.model;
+  const settings = this.options.store.settings();
+  const model = role === "worker" ? (this.preferred.get(id) ?? settings.executor.model) : settings.eval.model;
   const record: SessionRecord =
     stored === undefined
       ? ({ runtime: runtimeOf(model), threadId: null, creating: false, model, messages: [] } satisfies SessionRecord)

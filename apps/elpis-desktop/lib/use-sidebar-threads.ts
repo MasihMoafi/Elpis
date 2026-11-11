@@ -278,8 +278,10 @@ export function useSidebarThreads({
     !Object.hasOwn(chatGroups.parents ?? {}, thread.id) &&
     !!agentParentId(thread) &&
     !ordinaryIds.has(agentParentId(thread)!);
+  // The router's chat has one entry, Elpis in the navigation: it is never a second row among the chats (11 Nov, Masih:
+  // "there shouldn't be a row of Elpis other than the main elpis inside the side-bar").
   const roots = filtered
-    .filter(t => !isOrphan(t) && (!!searchTerm || !sidebarParent(t)))
+    .filter(t => !t.motherAgent && !isOrphan(t) && (!!searchTerm || !sidebarParent(t)))
     .filter(t => searchTerm || (ownChat(t) ? !projectChats[t.id] || pins.includes(t.id) : originOf(t) === "Workflows"));
   // Agents and chats that cannot nest under a listed maker (missing or a broken lineage) join Background runs.
   const unlinked = searchTerm

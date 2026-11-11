@@ -79,3 +79,57 @@ it("still sends a question for him on a ticket whose result is shown", async () 
   await run({ purpose: "attention", ticket_id: "done", human_action: "Which branch?", text: "Which branch?" });
   expect(sent).toEqual([{ purpose: "attention", ticketId: "done", question: "Which branch?", text: "Which branch?" }]);
 });
+
+/** The route tool over an engine that accepts every request as ticket `k9`. */
+function accepting() {
+  const preferred: unknown[][] = [];
+  const host = {
+    engine: {
+      decide: (triggerId: string) => ({
+        id: "d",
+        kind: "accept",
+        ticketId: "k9",
+        reason: { code: "explicitRouted" },
+        triggerIds: [triggerId],
+      }),
+    },
+    store: {
+      triggers: { get: () => ({ source: "elpis-chat", text: "count the lines of readme.md" }), disposition: () => undefined },
+      tickets: { get: () => undefined },
+      settings: () => ({ executor: { model: { provider: "openai", model: "gpt-6.1-sol", reasoningEffort: "xhigh" } } }),
+    },
+    sessions: { prefer: (...args: unknown[]) => void preferred.push(args) },
+    context: { logger: { warn: () => {} } },
+    requestPass: () => {},
+  } as unknown as MainToolsHost;
+  const route = mainTools(host, { id: "main" }).find(tool => tool.name === "orchestrator_route")!;
+  const accept = (extra: object) =>
+    route.execute(
+      {
+        decisions: [
+          {
+            trigger_id: "t1",
+            kind: "accept",
+            title: "Count the lines of readme.md",
+            worktree_name: "count-readme-lines",
+            acknowledgement: "A worker will count the lines of readme.md.",
+            ...extra,
+          },
+        ],
+      },
+      new AbortController().signal,
+    );
+  return { preferred, accept };
+}
+
+it("starts an easy job's worker on the small model the router chose, with its thinking level", async () => {
+  const { preferred, accept } = accepting();
+  await accept({ worker_model: "gpt-6-luna", worker_effort: "low" });
+  expect(preferred).toEqual([["worker-k9", { provider: "openai", model: "gpt-6-luna", reasoningEffort: "low" }]]);
+});
+
+it("leaves a worker on the default model when the router names none", async () => {
+  const { preferred, accept } = accepting();
+  await accept({});
+  expect(preferred).toEqual([]);
+});
