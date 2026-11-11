@@ -1,8 +1,8 @@
 # elpis-cli
 
-The Elpis terminal app, installed with npm. Elpis is an agent harness for Linux, built on OpenAI's Codex: you decide what every agent sees and touches.
+This package installs the Elpis terminal app with npm. Elpis is an agent harness for Linux, built on OpenAI's Codex: you decide what every agent sees and touches.
 
-This package is alpha, like Elpis 0.5.1 itself, and runs on Linux x86_64 only.
+The package is alpha, like Elpis 0.5.1 itself, and runs on Linux x86_64 only.
 
 ## Quick start
 
@@ -27,10 +27,14 @@ The files go to `~/.local/share/elpis-npm/<version>/`. Set `ELPIS_NPM_HOME` to u
 
 Limits:
 
-- Linux x86_64 only. Other platforms get a message that says so.
+- A platform other than Linux x86_64 gets a message that says so.
 - The terminal app only. The desktop app installs with the script in the [Elpis README](https://github.com/MasihMoafi/Elpis#quick-start).
 - The package version is the Elpis release it downloads. A new release needs a new package version.
 
 ## Evidence
 
-`npm test` runs three tests against a stand-in release server: a first run downloads, checks and runs the app and passes its arguments and exit status through; a second run downloads nothing; a file with a wrong checksum is refused; another platform gets the message.
+`npm test` runs three tests against a stand-in release server:
+
+- A first run downloads and checks the three files, then runs the app and passes its arguments and exit status through. A second run downloads nothing.
+- A file with a wrong checksum is refused.
+- Another platform gets the message.
