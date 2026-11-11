@@ -13,7 +13,7 @@ checks on GitHub. Where there is no evidence, this review says so.
 ## 1. Does the code hold up
 
 **The mechanical checks are strong.** Strict types, lint and duplication sit at zero. Long lines and the shared UI
-rules are now ratcheted on GitHub. 900 router tests and 190 UI test files run on every push.
+rules are now ratcheted on GitHub. 535 router tests and 194 UI test files run on every push.
 
 **The seams are weak.** In two days of real use the router showed ten faults that no test caught. Every one sat at a
 join between the router, the bridge and the window:

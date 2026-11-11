@@ -117,7 +117,7 @@ The state of each item, with its check and evidence: [production.md](docs/specs/
 
 The tradeoff: outside a Git project the folders are instructions, not enforced.
 
-**What Elpis builds on, and what it adds.** Elpis is a fork of [OpenAI's Codex](https://github.com/openai/codex) (Apache-2.0). Its engine, about 2.3 million lines in `codex-rs/`, carries Elpis's changes but stays close to upstream. Elpis's own code is about 214,000 lines, 8% of the repository: the desktop app, the bridge, the Context Ledger, workflows, the terminal additions and their tests. Elpis keeps the attribution and notices of upstream Codex ([LICENSE](LICENSE)). The Observability page is a port of the Trajectory view from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT); thank you to its authors.
+**What Elpis builds on, and what it adds.** Elpis is a fork of [OpenAI's Codex](https://github.com/openai/codex) (Apache-2.0). Its engine, about 2.3 million lines in `codex-rs/`, carries Elpis's changes but stays close to upstream. Outside the engine the repository holds about 360,000 lines, 13% of its code: the desktop app with its bridge, the workflows, the tools, the website and the scripts. The Context Ledger and the other terminal additions live inside `codex-rs/`. Elpis keeps the attribution and notices of upstream Codex ([LICENSE](LICENSE)). The Observability page is a port of the Trajectory view from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT); thank you to its authors.
 
 ## Evidence
 

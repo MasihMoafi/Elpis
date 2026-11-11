@@ -18,7 +18,7 @@ These are the confirmed product requirements. Implementation state belongs in [E
 
 **R5. Memory** and **R6. Creator and project rules** — [Memory and checkpoints](context.md#3-memory-and-checkpoints).
 
-**R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search comes from an MCP server the user registers. Voice capture and transcription belong to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may offer a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
+**R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search comes from an MCP server the user registers. Voice capture and transcription belong to an external program such as [WhisperType](https://github.com/MasihMoafi/WhisperType), which may offer a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
 
 **R11. Explicit Claude provider and subscription paths** — Preserve two paths: the native Anthropic API, and the Claude subscription ACP bridge the user selects, [`tools/elpis-claude/acp-bridge.mts`](../tools/elpis-claude/acp-bridge.mts). Authentication and provider selection stay explicit. Separately, `elpis claude` starts Claude Code through a loopback Smart Prune proxy. [`claude-accounts.mts`](../tools/elpis-claude/claude-accounts.mts) switches accounts.
 
@@ -65,7 +65,7 @@ Preserve these seams and their tests when changing the foundation. Paths are rel
 | --- | --- |
 | Permission types and profiles | `protocol/src/protocol.rs`, `protocol/src/models.rs`, `utils/approval-presets/` |
 | Patch safety and writable-root checks | `core/src/safety.rs`, `core/src/tools/handlers/apply_patch.rs`, `apply-patch/` |
-| Shell lifecycle and running processes | `core/src/tools/handlers/shell.rs`, `core/src/tools/runtimes/shell/`, `exec/` |
+| Shell lifecycle and running processes | `core/src/tools/handlers/unified_exec.rs`, `core/src/tools/runtimes/unified_exec/`, `exec/` |
 | Sandbox enforcement | `core/src/tools/sandboxing.rs`, `sandboxing/`, `linux-sandbox/`, `execpolicy/` |
 | Command event rendering | `tui/src/chatwidget/command_lifecycle.rs`, `exec_cell/`, `exec_state.rs` |
 | File/patch event rendering | `tui/src/chatwidget/tool_lifecycle.rs`, `history_cell/patches.rs`, `diff_render.rs` |
