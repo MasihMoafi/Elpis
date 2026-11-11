@@ -21,6 +21,8 @@ test('Transcribe images comes first, asks for its folder, keeps all it writes th
       window.elpisDesktop.openFile = async target => { (window as TestWindow).__opened.push(target); }; });
     const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
     await pattern.click();
+    // The list mounts in a portal after the click: read it once its first two options are there (CI read [] once).
+    await f.page.getByRole('option').nth(1).waitFor();
     assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 2).map((text: string) => text.trim()),
       ['Auto · Elpis chooses', 'Transcribe images'], 'Auto leads, then the ready-made workflow');
     const tall = await f.page.getByRole('option').evaluateAll((options: Element[]) => options.map(option => option.firstElementChild ?? option)

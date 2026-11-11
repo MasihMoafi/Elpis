@@ -314,6 +314,7 @@
     "tests/workflow-identity-sidebar.test.cts",
     "tests/workflow-identity-recovery.test.cts",
     "tests/workflow-expand-follow.test.cts",
+    "tests/workflow-history-failures.test.cts",
     "tests/speed-chat.test.cts",
     "tests/voice.test.cts",
     "tests/effort-shortcuts.test.cts",

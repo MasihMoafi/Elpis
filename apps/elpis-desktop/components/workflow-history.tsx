@@ -8,13 +8,11 @@ import { api, unreadable } from "@/lib/api";
 import { WorkflowMark } from "@/components/workflow-identity";
 import type { WorkflowCatalog, WorkflowRun as CatalogRun } from "@/lib/workflow-identity";
 import { errorText } from "@/lib/error-text.mts";
+import { runFailure, type FailedRun } from "@/lib/workflow-failure";
 
-type WorkflowRun = {
+type WorkflowRun = FailedRun & {
   id: string;
-  rootThreadId: string;
   name?: string;
-  status: string;
-  tasks?: { status: string }[];
   removable?: boolean;
   removalReason?: string;
 };
@@ -107,6 +105,9 @@ export function WorkflowHistory({
             {runs.map(run => {
               const identity = catalog?.identities[run.id],
                 name = identity?.name || run.name || "Workflow";
+              const openFolder = typeof window === "undefined" ? undefined : window.elpisDesktop?.openFolder;
+              const failure = runFailure(run, Boolean(openFolder)),
+                step = failure?.step;
               return (
                 <li key={run.id}>
                   <div>
@@ -121,6 +122,26 @@ export function WorkflowHistory({
                         : ""}
                       {run.removalReason && ` · ${run.removalReason}`}
                     </small>
+                    {failure && step && (
+                      <>
+                        <p className="workflow-history-reason">{failure.reason}</p>
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          className="justify-self-start"
+                          onClick={() => {
+                            if ("folder" in step) {
+                              openFolder?.(step.folder).catch(cause => setError(errorText(cause)));
+                              return;
+                            }
+                            setOpen(false);
+                            onOpenChat(step.chat);
+                          }}
+                        >
+                          {step.label}
+                        </Button>
+                      </>
+                    )}
                   </div>
                   <Button
                     variant="outline"

@@ -260,6 +260,7 @@
 .workflow-history-list li > div { display:grid; min-width:0; gap:4px; }
 .workflow-history-list strong { overflow-wrap:anywhere; }
 .workflow-history-list small, .workflow-history-list p { color:var(--muted-foreground); }
+.workflow-history-list .workflow-history-reason { margin:0; color:var(--foreground); font-size:var(--text-xs); overflow-wrap:anywhere; }
 
 .nav-list button[data-nav-page="loveSpot"]:has(.love-unread) { background:color-mix(in oklab, var(--love-red) 12%, transparent); box-shadow:inset 2px 0 var(--love-red); }
 .nav-list button[data-nav-page="loveSpot"]:has(.love-unread):hover:not([aria-current="page"]) { background:color-mix(in oklab, var(--love-red) 18%, transparent); }

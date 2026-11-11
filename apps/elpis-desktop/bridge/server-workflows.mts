@@ -11,6 +11,53 @@ const START_WAIT = 15 * 60_000;
 /** How long one reading of the map is shared: it pages every chat and agent run, so refreshes close together reuse it. */
 const MAP_SHARED_MS = 1500;
 const maps = new WeakMap<object, Map<boolean, { at: number; graph: Promise<unknown> }>>();
+/** The whole chat list is paged at most once in this time (W8: the open Map paged every chat each 5 s), unless a chat
+ * changed: a chat that starts, ends a turn, changes state, is renamed, archived or deleted is read again at once. */
+const CHATS_KEPT_MS = 15_000;
+const CHAT_CHANGES = new Set([
+  "thread/started",
+  "thread/status/changed",
+  "thread/name/updated",
+  "thread/archived",
+  "thread/unarchived",
+  "thread/deleted",
+  "thread/closed",
+  "turn/started",
+  "turn/completed",
+  "turn/aborted",
+]);
+type ChatList = { at: number; changed: boolean; threads?: Promise<MapThread[]> };
+const chatLists = new WeakMap<object, ChatList>();
+
+function chatList(client: import("./server-http.mts").ServerState["client"]): Promise<MapThread[]> {
+  const list: ChatList = chatLists.get(client) ?? { at: 0, changed: true };
+  if (!chatLists.has(client)) {
+    chatLists.set(client, list);
+    client.on("event", (value: { type?: string; data?: { method?: string } }) => {
+      if (value.type === "connection" || (value.type === "message" && CHAT_CHANGES.has(value.data?.method ?? "")))
+        list.changed = true;
+    });
+  }
+  if (list.threads && !list.changed && Date.now() - list.at < CHATS_KEPT_MS) return list.threads;
+  const threads = pageChats(client);
+  Object.assign(list, { at: Date.now(), changed: false, threads });
+  // A reading that failed is not kept: the next refresh pages again.
+  threads.catch(() => {
+    if (list.threads === threads) list.changed = true;
+  });
+  return threads;
+}
+
+async function pageChats(client: import("./server-http.mts").ServerState["client"]) {
+  const threads: MapThread[] = [];
+  let cursor: string | null | undefined;
+  do {
+    const page = await client.listThreads({ limit: 100, includeAgentRuns: true, ...(cursor ? { cursor } : {}) });
+    threads.push(...page.data);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return threads;
+}
 
 /** The map of his sessions: the router and its workers, chats with their agents, and workflow runs. */
 function sessionsMap(state: import("./server-http.mts").ServerState, all: boolean): Promise<unknown> {
@@ -27,14 +74,8 @@ function sessionsMap(state: import("./server-http.mts").ServerState, all: boolea
 
 async function readSessionsMap(state: import("./server-http.mts").ServerState, all: boolean) {
   const { client, mother } = state;
-  const threads: MapThread[] = [];
-  let cursor: string | null | undefined;
-  do {
-    const page = await client.listThreads({ limit: 100, includeAgentRuns: true, ...(cursor ? { cursor } : {}) });
-    threads.push(...page.data);
-    cursor = page.nextCursor;
-  } while (cursor);
-  const listed = await mother.list(threads as Parameters<typeof mother.list>[0], { includeAgentRuns: true });
+  const threads = await chatList(client);
+  const listed = await mother.list([...threads] as Parameters<typeof mother.list>[0], { includeAgentRuns: true });
   const history = await client.workflowHistory();
   const graph = buildSessionsMap({
     threads: listed,
