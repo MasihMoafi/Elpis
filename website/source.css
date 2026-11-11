@@ -2,6 +2,14 @@
 @source "./index.html";
 @source "./technical.html";
 
+/* The shared spacing unit comes from ~/Desktop/p/shared-system/design/design.json, written between the design markers
+   by `shared-design build`. The site's colours and corners are its own (the daisyUI themes below and in brand.css). */
+/* design:start: generated from ~/Desktop/p/skills/web-dev/design/design.json. Change a value with `design set`, not here. */
+:root {
+  --spacing: 0.25rem;
+}
+/* design:end */
+
 .current-media { margin: 1.5rem 0; }
 .current-media img, .motion-preview video { display:block; width:100%; max-width:1052px; margin:auto; border:1px solid #3b3528; border-radius:12px; background:#111214; }
 .current-media figcaption, .current-gallery figcaption, .motion-preview p, .motion-preview figcaption { margin-top:.8rem; color:#c8c0ae; font-size:.9rem; line-height:1.6; }

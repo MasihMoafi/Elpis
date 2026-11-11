@@ -28,3 +28,21 @@ test("the generated copy of the UI lint matches its source", () => {
   const sync = spawnSync(process.execPath, [path.join(site, "../apps/elpis-desktop/scripts/ui-lint-sync.mts"), "--check"], { encoding: "utf8" });
   assert.equal(sync.status, 0, sync.stdout + sync.stderr);
 });
+
+// SHARED_SYSTEM points the check below at another copy of the shared folder (to try a change in isolation).
+const shared = process.env.SHARED_SYSTEM ?? path.join(os.homedir(), "Desktop/p/shared-system");
+const name = "Elpis/website";
+
+test("the shared spacing in source.css is the one design.json writes", async t => {
+  const json = path.join(shared, "design/design.json");
+  if (!fs.existsSync(json)) return t.skip("shared folder absent; source.css is used as it is");
+  if (!JSON.parse(fs.readFileSync(json, "utf8")).sites[name]) return t.skip(`${name} is not registered in design.json yet`);
+  // Build into a throwaway copy, so the check never writes into a checkout.
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "elpis-site-design-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const file = path.join(home, name, "source.css");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.copyFileSync(path.join(site, "source.css"), file);
+  const { build } = await import(pathToFileURL(path.join(shared, "design/design.mjs")).href) as { build(json: string, home: string, only: string[]): Promise<string[]> };
+  assert.deepEqual(await build(json, home, [name]), [], "source.css differs from design.json; run `shared-design build`, never edit the region by hand");
+});
