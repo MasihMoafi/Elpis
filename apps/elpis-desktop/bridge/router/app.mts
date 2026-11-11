@@ -1,7 +1,7 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/runtime.ts.
 /** Composition root. All domain commands, receipts, versions and side effects share one profile database. */
 import { join } from "node:path";
-import { Engine, key, type Ticket, type Trigger } from "./core/index.mts";
+import { Engine, chatTicket, key, type Ticket, type Trigger } from "./core/index.mts";
 import { ExecutorStore } from "./executor/store.mts";
 import { ExecutorService } from "./executor/service.mts";
 import { ticketOfSession, sourceTrigger } from "./executor/messages.mts";
@@ -318,6 +318,13 @@ export class MotherApp implements SourceHost {
   }
   private paused(): boolean {
     return this.closing || this.store.settings().paused;
+  }
+  /** Whether the router is at work for him: a message of his awaits its decision, or a job he asked for is running. */
+  working(): boolean {
+    return (
+      this.store.threads.active().length > 0 ||
+      this.store.tickets.open().some(ticket => chatTicket(ticket) && !ticket.attention)
+    );
   }
   /** Puts a finished chat job's result in his chat, once: the host does it, so no model turn can lose it. */
   private showResult(ticketId: string, text: string): void {

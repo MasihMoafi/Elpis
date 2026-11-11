@@ -36,12 +36,38 @@ export class MotherAgent {
   private error: string | undefined;
   private closed = false;
   private archived = false;
+  /** The turn the window was told of while the router works; nothing while it rests. */
+  private workingTurn: string | undefined;
+  private readonly pulse: ReturnType<typeof setInterval>;
   /** The router's own Sessions seen so far: they run in its state folder and the sidebar never shows them. */
   private readonly sessions = new Set<string>();
   private roles: { dispatch: RoleModel; worker: RoleModel } | undefined;
   constructor(options: Options) {
     this.options = options;
     this.file = new MotherSettingsFile(options.home);
+    this.pulse = setInterval(() => this.beat(), 1000);
+    this.pulse.unref();
+  }
+  /**
+   * Shows the Working mark in the Elpis chat while the router or one of its workers is at work for him, as any chat
+   * shows it while its turn runs. The Elpis chat has no turn of its own: the router works in its hidden session and
+   * writes its replies in. So the window is told of a turn that starts when work starts and ends when it ends
+   * (11 Nov, Masih: "shows 0 progress bar, that animation lacks").
+   */
+  private beat(): void {
+    const busy = this.active && !!this.app?.working();
+    if (busy === !!this.workingTurn) return;
+    const threadId = this.file.read().threadId;
+    if (!threadId) return;
+    const id = busy ? `router-${randomUUID()}` : this.workingTurn;
+    this.workingTurn = busy ? id : undefined;
+    this.options.client.emit("event", {
+      type: "message",
+      data: {
+        method: busy ? "turn/started" : "turn/completed",
+        params: { threadId, turn: { id, status: busy ? "inProgress" : "completed", items: [] } },
+      },
+    });
   }
   private serialized<T>(work: () => Promise<T>): Promise<T> {
     const next = this.queue.then(work);
@@ -150,7 +176,9 @@ export class MotherAgent {
   }
   /** Reopening the chat reports the model it was created with; Elpis's chat shows the model that routes it now. */
   resumed<T extends { thread?: { id: string } }>(id: string, live: T): T {
-    return live.thread && this.owns(id) ? { ...live, thread: this.decorate(live.thread) } : live;
+    if (!live.thread || !this.owns(id)) return live;
+    // Reopening the chat while the router works keeps the Working mark.
+    return { ...live, thread: this.decorate(live.thread), ...(this.workingTurn ? { activeTurnId: this.workingTurn } : {}) };
   }
   /**
    * Whether a live update is about one of the router's own Sessions. The list leaves them out; on 11 Nov one that
@@ -454,6 +482,7 @@ export class MotherAgent {
   }
   close(): Promise<void> {
     this.closed = true;
+    clearInterval(this.pulse);
     return this.serialized(() => this.stop());
   }
 }

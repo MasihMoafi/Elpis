@@ -427,3 +427,39 @@ test("live updates about the router's own Sessions never reach the sidebar; its 
     rmSync(h.home, { recursive: true, force: true });
   }
 });
+
+test("the Elpis chat shows the Working mark while the router works for him, and drops it when the work ends", async () => {
+  const h = fixture();
+  const mother = h.create();
+  const turns: { method: string; id: string; status: string; threadId: string }[] = [];
+  h.client.on("event", (event: { type?: string; data?: { method?: string; params?: { threadId: string; turn: { id: string; status: string } } } }) => {
+    const { method, params } = event.data ?? {};
+    if (params && (method === "turn/started" || method === "turn/completed"))
+      turns.push({ method, id: params.turn.id, status: params.turn.status, threadId: params.threadId });
+  });
+  const beat = () => (mother as unknown as { beat(): void }).beat();
+  const app = () => (mother as unknown as { app: { working(): boolean } }).app;
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    beat();
+    assert.equal(turns.length, 0, "A resting router shows nothing");
+    let working = true;
+    app().working = () => working;
+    beat();
+    beat();
+    assert.equal(turns.length, 1, "One start, however long the work lasts");
+    const [started] = turns as [(typeof turns)[number]];
+    assert.deepEqual({ ...started, id: "" }, { method: "turn/started", id: "", status: "inProgress", threadId: CHAT });
+    const reopened = mother.resumed(CHAT, { thread: { id: CHAT } }) as { activeTurnId?: string };
+    assert.equal(reopened.activeTurnId, started.id, "Reopening the chat keeps the mark");
+    working = false;
+    beat();
+    assert.deepEqual(turns.at(-1), { method: "turn/completed", id: started.id, status: "completed", threadId: CHAT });
+    assert.equal((mother.resumed(CHAT, { thread: { id: CHAT } }) as { activeTurnId?: string }).activeTurnId, undefined);
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});
