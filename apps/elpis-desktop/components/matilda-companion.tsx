@@ -1,5 +1,8 @@
 "use client";
 
+import { useState } from "react";
+import { errorText } from "@/lib/error-text.mts";
+import { useSidebarNudge } from "@/lib/use-sidebar-nudge";
 import { useCompanionState } from "./matilda-companion-state";
 import { useCompanionPlacement } from "./matilda-companion-placement";
 import { MOODS, HerVoiceControls } from "./matilda-voice";
@@ -56,6 +59,42 @@ export function MatildaCompanion() {
       {error}
     </p>
   ) : null;
+  // What she has to say about the sidebar (11 Nov, Masih: "via the pinned agent, say matilda, it should ping me
+  // whenever it feels the side-bar is full"): a note beside her with what to do, and no model call for it.
+  const nudge = useSidebarNudge();
+  const [nudgeError, setNudgeError] = useState("");
+  const note = nudge && !chatOpen && (
+    <div
+      className="hud-popover matilda-note-popup"
+      role="status"
+      aria-label="Matilda says"
+      data-side={side}
+      style={chatPlace()}
+    >
+      <p>{nudge.text}</p>
+      {nudgeError && (
+        <p role="alert" className="matilda-alert">
+          {nudgeError}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="xs" onClick={nudge.later}>
+          {nudge.tidy ? "Later" : "OK"}
+        </Button>
+        {nudge.tidy && (
+          <Button
+            size="xs"
+            onClick={() => {
+              setNudgeError("");
+              nudge.tidy?.().catch((cause: unknown) => setNudgeError(errorText(cause)));
+            }}
+          >
+            Tidy
+          </Button>
+        )}
+      </div>
+    </div>
+  );
   const floating = state?.pinned && (
     <section
       ref={floatRef}
@@ -184,6 +223,7 @@ export function MatildaCompanion() {
           </div>
         )
       )}
+      {!alert && note}
       <button
         type="button"
         className="matilda-resize"

@@ -7,6 +7,9 @@ import { type Thread } from "@/lib/api";
 import { createChatDeletion } from "@/lib/chat-deletion";
 import { useChatReorder } from "@/lib/use-chat-reorder";
 import { useSidebarThreads } from "@/lib/use-sidebar-threads";
+import { reportSidebar } from "@/lib/use-sidebar-nudge";
+import { agentState } from "@/lib/agents";
+import { useEffect } from "react";
 import { createSidebarPlacement } from "@/lib/sidebar-placement";
 import { useWorkspaceShortcuts } from "@/lib/use-workspace-shortcuts";
 import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
@@ -167,6 +170,14 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     recentChats,
     ordered,
   } = sidebarModel;
+  // His pinned agent offers a tidy when Recents fills up with chats at rest (lib/sidebar-fill.ts).
+  const loose = recentChats.filter(thread => !["working", "waiting"].includes(agentState(thread))).length,
+    elpisId = threads.find(thread => thread.motherAgent)?.id ?? null;
+  // Before his chats have loaded the list is empty, and that is no report: it would wipe what she already said.
+  const loaded = threads.length > 0;
+  useEffect(() => {
+    if (loaded) reportSidebar(loose, elpisId);
+  }, [loaded, loose, elpisId]);
   useWorkspaceShortcuts({
     shortcutAction,
     selected,

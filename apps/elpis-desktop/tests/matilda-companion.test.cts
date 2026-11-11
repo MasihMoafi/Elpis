@@ -341,3 +341,40 @@ test('the sound control shows only while music plays', { timeout: 60000 }, async
   assert.equal(await presence.getByRole('button', { name: 'Unpin Matilda', exact: true }).count(), 1);
   assert.deepEqual(f.errors, []);
 });
+
+// 11 Nov, Masih: "via the pinned agent, say matilda, it should ping me whenever it feels the side-bar is full, say 10
+// conversation without a project". She says so in a note beside her, once; Tidy asks Elpis, Later is remembered.
+test('pinned Matilda says when the sidebar is full, and Tidy asks Elpis', async () => {
+  const { fixture }: { fixture(options: Options): Promise<ParityFixture> } = require('./parity-fixture.cts');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
+  const chat = (id: string, name: string, extra: object = {}) => ({
+    id, name, preview: name, cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
+    desktopAccess: { writable: true, mode: 'direct' }, ...extra,
+  });
+  const loose = Array.from({ length: 11 }, (_, n) => chat(`loose-${n}`, `Loose chat ${n}`));
+  const working = chat('busy', 'A chat at work', { status: { type: 'active', activeFlags: [] } });
+  const asked: { text: string }[] = [];
+  const more = { threads: [chat('elpis', 'Elpis', { motherAgent: true }), working, ...loose], readyThreadId: 'loose-0' };
+  const f = await fixture({ width: 1100, height: 800, ...more,
+    routes: {
+      '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: null, favorite: null, music: null, reason: '' }),
+      '/api/threads/elpis/turns': body => { asked.push({ text: body?.text ?? '' }); return { turn: { id: 'router-1' }, routed: true }; },
+    } });
+  try {
+    const { page } = f;
+    await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).waitFor();
+    const note = page.getByRole('status', { name: 'Matilda says', exact: true });
+    await note.waitFor();
+    assert.match(await note.innerText(), /Your sidebar is filling up: 11 chats outside a project\. Shall Elpis tidy it\?/, 'the chat at work is not counted');
+    await note.getByRole('button', { name: 'Tidy', exact: true }).click();
+    await page.waitForFunction(() => /I asked Elpis to tidy/.test(document.querySelector('[aria-label="Matilda says"]')?.textContent ?? ''));
+    assert.deepEqual(asked, [{ text: 'Tidy my chats: archive the leftovers and tell me what you archived.' }]);
+    await note.getByRole('button', { name: 'OK', exact: true }).click();
+    await note.waitFor({ state: 'detached' });
+    await page.reload();
+    await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).waitFor();
+    await page.waitForTimeout(1200);
+    assert.equal(await note.count(), 0, 'she said it once: the same sidebar is not news after a restart');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
