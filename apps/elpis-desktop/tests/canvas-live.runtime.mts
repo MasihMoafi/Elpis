@@ -115,6 +115,8 @@ try {
   await page.addInitScript(({ cwd, board }) => {
     if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'canvas-live', name: 'canvas-live', cwd }], selectedId: 'canvas-live' }));
     if (board) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(board));
+    // Workflows opens on the Map since 10 Nov; this run drives the Board.
+    localStorage.setItem('elpis-workflows-view-v1', 'board');
   }, { cwd: project, board: savedBoard });
   await page.goto(app.url);
   // The profile is his real one, where Matilda may be pinned over the board's panel buttons; she is not under test here.
@@ -277,10 +279,16 @@ try {
   assert.match(await canvas.locator('.canvas-chip[role=status]:has(.canvas-dot)').innerText(), new RegExp(`Finished · ${agentCount} of ${agentCount} done`));
   // The last agent got every answer it waits for: each one's reported summary is in its first message.
   const last_ = graph.tasks.find(task => task.kind === 'implement' && task.dependsOn.length === Math.max(...graph.tasks.map(item => item.dependsOn.length))); assert.ok(last_);
+  // The chat is read until its first message is there: right after the run ends the bridge can still return an empty page
+  // (11 Nov: a run that succeeded failed here on a transcript of zero items).
   const pages: ThreadPage['data'] = [];
-  for (let cursor: string | null = null, n = 0; n < 20; n++) {
-    const items: ThreadPage = await api<ThreadPage>(`/threads/${encodeURIComponent(last_.assignedThreadId)}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
-    pages.push(...items.data); cursor = items.nextCursor; if (!cursor) break;
+  for (let attempt = 0; attempt < 15 && !pages.some(row => row.item?.type === 'userMessage'); attempt++) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 1000));
+    pages.length = 0;
+    for (let cursor: string | null = null, n = 0; n < 20; n++) {
+      const items: ThreadPage = await api<ThreadPage>(`/threads/${encodeURIComponent(last_.assignedThreadId)}?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`);
+      pages.push(...items.data); cursor = items.nextCursor; if (!cursor) break;
+    }
   }
   await fs.writeFile(path.join(evidence, `${plan}-last-agent-items.json`), JSON.stringify(pages, null, 1));
   const asked = JSON.stringify(pages.filter(row => row.item?.type === 'userMessage'));

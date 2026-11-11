@@ -74,6 +74,8 @@ export const TERM_TEXT = {
   "reason.subscription_removed": ["订阅已移除", "Subscription removed"],
   "reason.issue_awaiting_eligibility": ["等待 Issue 满足资格", "Waiting for Issue eligibility"],
   "reason.timeout": ["评估超时未决定", "Eval timed out"],
+  "reason.modelUsageLimit": ["模型已达用量上限：{message}", "The model reached its usage limit: {message}"],
+  "reason.modelFailed": ["模型出错：{message}", "The model failed: {message}"],
   "reason.policyChanged": ["评估期间策略已变更", "Policy changed during the Eval"],
   "reason.noAdmissible": ["没有可准入的触发", "No admissible Trigger"],
   "reason.startedTicket": ["已经开过工单 {ticket}", "Already started Ticket {ticket}"],

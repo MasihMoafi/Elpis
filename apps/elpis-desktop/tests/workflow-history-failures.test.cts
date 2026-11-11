@@ -55,7 +55,7 @@ test('History says why each failed run ended and offers the next step that fits;
     assert.deepEqual(scope.reason, ['Quillon · Answer 1 changed files it was not given: answer-1.md. Its work is kept.']);
     assert.equal(scope.steps[0], 'Open kept work');
     const git = await read('Voting 10');
-    assert.deepEqual(git.reason, ["Elpis could not prepare Nuvani · Tally's branch: a branch named 'elpis/run/candidate-agent-1q-r1' " +
+    assert.deepEqual(git.reason, ["Elpis could not prepare the branch for Nuvani · Tally: a branch named 'elpis/run/candidate-agent-1q-r1' " +
       "already exists. The agent's work was not the cause."]);
     assert.equal(git.steps[0], "Open the run's chat");
     const limit = await read('Long survey');

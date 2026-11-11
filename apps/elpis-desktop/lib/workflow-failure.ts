@@ -35,7 +35,7 @@ export function runFailure(run: FailedRun, canOpenFolder: boolean): { reason: st
   const git = error.match(/^Workflow Git operation failed: (?:fatal: )?(.+)$/s);
   if (git)
     return {
-      reason: `Elpis could not prepare ${who}'s branch: ${sentence(git[1]!)} The agent's work was not the cause.`,
+      reason: `Elpis could not prepare the branch for ${who}: ${sentence(git[1]!)} The agent's work was not the cause.`,
       step: runChat,
     };
   if (/time limit/.test(error)) return { reason: sentence(error), step: runChat };

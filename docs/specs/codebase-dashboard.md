@@ -8,7 +8,7 @@ Invariants: the page reads a project and writes nothing in it. A project without
 
 | # | Item | Acceptance check | Status |
 | --- | --- | --- | --- |
-| D1 | The page is in the app, for the project of the chat he picks. | Observability, then Codebase, for a chat in a Git folder: the sections show that project's numbers. | doing: built, and proven in the window test with a stand-in project (`tests/codebase-page.test.cts`). He has not yet seen it in his app |
+| D1 | The page is in the app, for the project of the chat he picks. | Observability, then Codebase, for a chat in a Git folder: the sections show that project's numbers. | done: in the installed app (`6226b2860`), from a second window on 11 Nov, Observability, then Codebase, for a chat in the Rustidian folder: "rustidian holds 142,515 lines of code and data", with Code, Churn, Docs, Worktrees (14.8 GB), Readiness (9 of 20) and Duplicates, in the app's dark theme. `tests/codebase-page.test.cts` holds the page with a stand-in project |
 | D2 | Code by area: lines of code and data in each top-level folder. Markdown, lock files, media and build output are left out. | In a test repository the numbers equal the line counts of its tracked files. | done: `bridge/codebase.test.mts`; on Elpis itself it read 2.33 million lines under codex-rs and 246,438 under apps in about 11 seconds |
 | D3 | Documents by folder: Markdown lines. | Same test repository. | done: same test |
 | D4 | Churn: lines added and removed in each file, for all time, six months, three months or two dates he picks. | A test repository with dated commits: a range counts only the commits inside it. | done: same test for the dates; the window test picks 30 days and All time |
