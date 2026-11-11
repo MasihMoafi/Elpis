@@ -196,7 +196,7 @@ export function WorkspaceComposer({
         children
       )}
       <div className="composer-meta">
-        {selected && (
+        {selected && !selected.motherAgent && (
           <ProjectMenu
             variant="chip"
             label="Change folder"
@@ -212,7 +212,7 @@ export function WorkspaceComposer({
             onAdd={() => void moveChatToFolder()}
           />
         )}
-        {selected?.cwd && (
+        {selected?.cwd && !selected.motherAgent && (
           <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />
         )}
         <span className="composer-hint">

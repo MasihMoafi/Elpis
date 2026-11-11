@@ -172,6 +172,7 @@ export function PlusMenu({
   attachDisabled,
   slashDisabled,
   plan,
+  plain,
   returnFocus,
   onAttach,
   onMention,
@@ -184,6 +185,8 @@ export function PlusMenu({
   attachDisabled?: boolean;
   slashDisabled?: boolean;
   plan: boolean;
+  /** Only files and mentions: for a chat that takes no commands, plan mode, shell or Fast mode. */
+  plain?: boolean;
   returnFocus: RefObject<HTMLElement | null>;
   fast?: { on: boolean; disabled: boolean; onChange: () => void; unavailable?: string };
 }) {
@@ -252,7 +255,7 @@ export function PlusMenu({
             afterClose.current = onMention;
           },
         })}
-        {item(
+        {!plain && item(
           SquareSlash,
           "Slash commands",
           slashDisabled ? "Clear the message box first" : "Run a command such as /model or /review",
@@ -263,19 +266,20 @@ export function PlusMenu({
             },
           },
         )}
-        {item(
+        {!plain && item(
           PlanIcon,
           "Plan mode",
           plan ? "Turn plan mode off" : "Turn plan mode on",
           { onClick: () => onPlan(!plan) },
           plan,
         )}
-        {item(TerminalIcon, "Run as a shell command", "Run a command directly in this project's shell", {
+        {!plain && item(TerminalIcon, "Run as a shell command", "Run a command directly in this project's shell", {
           onClick: () => {
             afterClose.current = onShell;
           },
         })}
-        {compact &&
+        {!plain &&
+          compact &&
           fast &&
           item(
             Zap,

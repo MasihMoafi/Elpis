@@ -122,6 +122,8 @@ export function ComposerControls({
           attachDisabled={shellMode || attaching || attachments.length >= ATTACHMENT_LIMITS.count}
           slashDisabled={!!text}
           plan={planMode}
+          // The Elpis chat takes files and mentions; commands, plan mode and the shell belong to an ordinary chat.
+          plain={!!selected?.motherAgent}
           returnFocus={composerRef}
           fast={{
             ...(!fastAvailable ? { unavailable: "Not offered for this model" } : {}),
@@ -148,17 +150,17 @@ export function ComposerControls({
           }}
         />
         {planMode && <PlanPill disabled={!ready || busy} onOff={() => setPlan(false)} />}
-        {
+        {!selected?.motherAgent && (
           <PermissionsMenu
             mode={permissionMode}
             disabled={permissionsLocked}
             {...(settingsSnapshot?.managed ? { managed: settingsSnapshot.managed } : {})}
             onChange={choosePermissions}
           />
-        }
+        )}
       </div>
       <div className="composer-right">
-        {<ContextUsage {...(selected ? { threadId: selected.id } : {})} />}
+        {!selected?.motherAgent && <ContextUsage {...(selected ? { threadId: selected.id } : {})} />}
         <ModelPicker
           choices={modelChoices}
           models={models}
@@ -200,7 +202,7 @@ export function ComposerControls({
             ))}
           </OptionSelect>
         )}
-        {
+        {!selected?.motherAgent && (
           <Button
             type="button"
             variant="ghost"
@@ -221,7 +223,7 @@ export function ComposerControls({
           >
             <Zap size={16} fill={fastAvailable && fastOn ? "currentColor" : "none"} aria-hidden="true" />
           </Button>
-        }
+        )}
         <div className="composer-actions">
           {ready && selected && (
             <Voice

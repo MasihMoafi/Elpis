@@ -73,6 +73,7 @@ export function ChatMessage({
   onDelete,
   time,
   editBlockedReason,
+  editNote,
   editDraft,
   onEditDraftChange,
   editPending,
@@ -99,6 +100,7 @@ export function ChatMessage({
   onRewind?: () => void;
   time?: number;
   editBlockedReason?: string;
+  editNote?: string;
   editDraft?: string;
   onEditDraftChange?: (value: string | null) => void;
   editPending?: boolean;
@@ -212,6 +214,7 @@ export function ChatMessage({
         onRewind={onRewind}
         onDelete={onDelete}
         editBlockedReason={reason}
+        editNote={editNote}
         editDraft={editDraft}
         onEditDraftChange={onEditDraftChange}
         editPending={editPending}

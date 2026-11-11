@@ -183,12 +183,15 @@ export function ThreadActions({
         }
       : undefined,
   ];
-  const organizationItems = organization.filter((action): action is MenuAction => !!action);
+  // The Elpis chat belongs to no project and has no turns for the TUI to open.
+  const organizationItems = thread.motherAgent
+    ? []
+    : organization.filter((action): action is MenuAction => !!action);
   const organize: MenuAction | undefined = organizationItems.length
     ? { id: "organize", label: "Organize", icon: <FolderInput size={14} />, run: () => {}, items: organizationItems }
     : undefined;
   const openIn: (MenuAction | undefined)[] = [
-    onOpenInTui
+    onOpenInTui && !thread.motherAgent
       ? { id: "tui", label: "Elpis TUI", icon: <TerminalIcon size={14} />, run: () => onOpenInTui(thread) }
       : undefined,
     onOpenSplit

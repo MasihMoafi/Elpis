@@ -4,6 +4,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import type { DesktopClient } from "../client.mts";
 import { BridgeError, object } from "../validate.mts";
+import { replacementEligibility } from "../../lib/turn-replacement.ts";
+import type { ChatMessage } from "./sources/elpis-chat-history.mts";
 import { elpisHome, existingSocket } from "../client-paths.mts";
 import { profileEnvironment } from "../profile-env.mts";
 import { MotherApp } from "./app.mts";
@@ -27,6 +29,45 @@ interface Options {
   socketPath?: string;
   adapters?: () => Promise<RuntimeAdapter[]>;
 }
+/**
+ * What the Elpis chat does with each change the window can ask of a chat (the last part of `/api/threads/<id>/…`).
+ * Its messages are the router's, not turns the engine holds, so only what is named here as done goes through; the
+ * rest is refused in words, and so is anything this list has never heard of. Nothing passes silently to a chat the
+ * engine holds empty (11 Nov, Masih: Edit there failed with "The complete input for this turn is unavailable").
+ */
+const ELPIS_CHAT_DOES = new Set([
+  "turns",
+  "steer",
+  "interrupt",
+  "effort",
+  "revert",
+  "resume",
+  "rename",
+  "archive",
+  "unarchive",
+  "delete",
+  "versions",
+]);
+const ELPIS_CHAT_REFUSES: Record<string, string> = {
+  rewind:
+    "The Elpis chat is the record of what Elpis did, so it is not rewound. Edit a message to send it again, or delete the chat to clear it.",
+  fork: "There is one Elpis, so its chat is not forked. Start a new chat instead.",
+  compact: "The Elpis chat needs no compacting: Elpis reads back only what it needs.",
+  review: "Ask Elpis for the review in your own words; the review command works in an ordinary chat.",
+  continue: "The Elpis chat is always yours to write in.",
+  permissions: "Elpis and the chats it starts for work run with Full access; this choice does not apply to its chat.",
+  "service-tier": "Fast mode does not apply to the Elpis chat.",
+  folder: "The Elpis chat has no folder of its own: name the project in your message.",
+  shell: "Shell commands run in an ordinary chat: ask Elpis in words, or open a chat in the project.",
+  "side-chat": "A side chat needs an ordinary chat; ask Elpis here.",
+  goal: "The Elpis chat keeps no goal of its own: give the goal in your message.",
+  "context-files": "Context files are chosen in an ordinary chat.",
+};
+export function elpisChatRefusal(request: string): string | undefined {
+  if (ELPIS_CHAT_DOES.has(request)) return undefined;
+  return ELPIS_CHAT_REFUSES[request] ?? "The Elpis chat does not take this; use an ordinary chat.";
+}
+
 export class MotherAgent {
   private readonly file: MotherSettingsFile;
   private readonly options: Options;
@@ -407,9 +448,7 @@ export class MotherAgent {
     });
   }
   async send(id: string, raw: unknown) {
-    if (this.closed || !this.file.read().enabled)
-      throw new BridgeError("Turn Elpis on in Settings → Configuration to send a goal.", 409);
-    if (!this.owns(id)) throw new BridgeError("This is not the Elpis chat", 409);
+    this.writable(id);
     const input = object(raw, [
       "text",
       "model",
@@ -419,11 +458,55 @@ export class MotherAgent {
       "mentions",
       "expectedTurnId",
     ]) as Record<string, unknown>;
+    return this.deliver(id, input, () => attachmentInput(input.text, input.attachments, input.mentions));
+  }
+  /**
+   * An edited message of the Elpis chat goes to Elpis as a new message, with what the first one carried (pictures,
+   * files, mentions). Nothing above it changes: the chat is the record of what Elpis did with the first wording, and
+   * work it handed out carries on. The engine holds no turn of this chat to replace.
+   */
+  async resend(id: string, raw: unknown) {
+    this.writable(id);
+    const input = object(raw, ["beforeTurnId", "text", "model", "effort"]) as Record<string, unknown>;
+    const turnId = typeof input.beforeTurnId === "string" ? input.beforeTurnId : "";
+    const original = await this.entry(id, turnId);
+    const first = replacementEligibility(original ? [original] : [], turnId, { historyComplete: true });
+    if (!first.allowed)
+      throw new BridgeError("That message is no longer in the Elpis chat, so it cannot be sent again.", 409);
+    if (typeof input.text !== "string" || !input.text.trim()) throw new BridgeError("Write a message");
+    const text = input.text;
+    const sent = await this.deliver(id, input, () => [
+      ...attachmentInput(text),
+      ...(first.kept as NonNullable<ChatMessage["content"]>),
+    ]);
+    return { ...sent, kept: true };
+  }
+  private writable(id: string): void {
+    if (this.closed || !this.file.read().enabled)
+      throw new BridgeError("Turn Elpis on in Settings → Configuration to send a goal.", 409);
+    if (!this.owns(id)) throw new BridgeError("This is not the Elpis chat", 409);
+  }
+  /** One message of the Elpis chat, by its turn. */
+  private async entry(id: string, turnId: string) {
+    let cursor: string | undefined;
+    for (let pages = 0; turnId && pages < 50; pages++) {
+      const page = await this.options.client.readThread(id, { limit: 100, ...(cursor ? { cursor } : {}) });
+      const found = page.data.find(entry => entry.turnId === turnId);
+      if (found || !page.nextCursor) return found;
+      cursor = page.nextCursor;
+    }
+    return undefined;
+  }
+  private async deliver(
+    id: string,
+    input: Record<string, unknown>,
+    blocks: () => NonNullable<ChatMessage["content"]>,
+  ) {
     await this.chooseRouter(input);
     await this.start();
     const app = this.app;
     if (!app) throw new BridgeError(this.error ?? "Elpis is unavailable", 503);
-    const content = attachmentInput(input.text, input.attachments, input.mentions);
+    const content = blocks();
     const message =
       content
         .flatMap(block =>

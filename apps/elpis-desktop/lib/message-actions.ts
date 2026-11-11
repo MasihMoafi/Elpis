@@ -89,7 +89,7 @@ export function createMessageActions({
     const stale = new Set(entries.slice(Math.max(index, 0)).map(entry => entry.turnId));
     const overrides = retryModel ? { ...nextTurn[thread.id], model: retryModel } : nextTurn[thread.id];
     const sendReplacement = () =>
-      api<{ turn?: { id: string }; rewound?: boolean; sendError?: string }>(
+      api<{ turn?: { id: string }; rewound?: boolean; sendError?: string; kept?: boolean }>(
         `/threads/${encodeURIComponent(thread.id)}/revert`,
         { beforeTurnId: turnId, text: replacement, ...(overrides?.model ? { model: overrides.model } : {}) },
       );
@@ -112,7 +112,8 @@ export function createMessageActions({
     if (selectedRef.current?.id === thread.id) {
       stickToBottom.current = true;
       announceScrollIntent();
-      setEntries(prev => prev.filter(entry => !stale.has(entry.turnId)));
+      // The Elpis chat sends an edit as a new message and keeps what is above it.
+      if (!result.kept) setEntries(prev => prev.filter(entry => !stale.has(entry.turnId)));
     }
     markTurnStarted(thread.id, startedTurn.id);
     loadVersions(thread.id);

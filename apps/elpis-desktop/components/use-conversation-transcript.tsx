@@ -112,6 +112,9 @@ export function useConversationTranscript({
           mediaOf={e => (selected ? mediaUrl(selected.id, e) : undefined)}
           renderItem={e => {
             const editKey = JSON.stringify([selected?.id, e.turnId, e.item.id]);
+            // The Elpis chat's messages are the router's: an edit sends the message again, and it has no turn to
+            // rewind, delete from or fork at.
+            const elpis = !!selected?.motherAgent;
             const model = e.item.type === "agentMessage" ? e.model : undefined;
             const onReply =
               selected &&
@@ -148,15 +151,15 @@ export function useConversationTranscript({
                 : undefined;
             const time = e.item.type === "userMessage" ? e.startedAtMs : undefined;
             const onFork =
-              selected && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn
+              selected && !elpis && !readOnlyRun && e.item.type === "agentMessage" && e.turnId !== activeTurn
                 ? () => void live.current.forkFrom(selected, e.turnId, e.item.id)
                 : undefined;
             const onRewind =
-              !e.clientPending && replaceable && e.item.type === "userMessage" && e.item.id !== newestPrompt
+              !elpis && !e.clientPending && replaceable && e.item.type === "userMessage" && e.item.id !== newestPrompt
                 ? () => live.current.setRewindTurn(e.turnId)
                 : undefined;
             const onDelete =
-              !e.clientPending && replaceable && e.item.type === "userMessage"
+              !elpis && !e.clientPending && replaceable && e.item.type === "userMessage"
                 ? {
                     label: e.item.id === newestPrompt ? "Delete message" : "Delete from here",
                     run: () => {
@@ -198,6 +201,9 @@ export function useConversationTranscript({
                 }}
                 {...(onEdit ? { onEdit } : {})}
                 {...(editBlockedReason !== undefined ? { editBlockedReason } : {})}
+                {...(elpis
+                  ? { editNote: "Sending puts this to Elpis as a new message; the messages above stay." }
+                  : {})}
                 {...(version ? { version } : {})}
                 {...(time !== undefined ? { time } : {})}
                 {...(onFork ? { onFork } : {})}

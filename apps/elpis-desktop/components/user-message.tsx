@@ -145,6 +145,7 @@ export function UserMessage({
   onRewind,
   onDelete,
   editBlockedReason,
+  editNote,
   editDraft,
   onEditDraftChange,
   editPending,
@@ -167,6 +168,8 @@ export function UserMessage({
   onEdit?: ((text: string) => Promise<void>) | undefined;
   onRewind?: (() => void) | undefined;
   editBlockedReason?: string | undefined;
+  /** What sending an edit does, where it is not the usual replacement. */
+  editNote?: string | undefined;
   editDraft?: string | undefined;
   onEditDraftChange?: ((value: string | null) => void) | undefined;
   editPending?: boolean | undefined;
@@ -238,10 +241,12 @@ export function UserMessage({
           }}
         />
         <p className="text-xs text-muted-foreground">
-          {attachments.length
-            ? "Sending replaces this message and everything after it; its attachments stay with it."
-            : "Sending replaces this message and everything after it."}{" "}
-          The earlier version stays one click away.
+          {editNote ??
+            `${
+              attachments.length
+                ? "Sending replaces this message and everything after it; its attachments stay with it."
+                : "Sending replaces this message and everything after it."
+            } The earlier version stays one click away.`}
         </p>
         {error && (
           <p role="alert" className="text-sm text-destructive">

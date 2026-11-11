@@ -8,6 +8,7 @@ import { once } from "node:events";
 import type { StateView } from "./app/http.mts";
 import { WebSocketServer } from "ws";
 import { CHAT, panel, fixture, roles } from "./mother-agent.fixtures.mts";
+import { elpisChatRefusal } from "./mother-agent.mts";
 
 test("an offline executor remains paused until Elpis is enabled, independently of the saved processing pause", async () => {
   const h = fixture(),
@@ -481,4 +482,50 @@ test("Stop in the Elpis chat stops his running jobs, and is quiet when there is 
     h.client.close();
     rmSync(h.home, { recursive: true, force: true });
   }
+});
+
+// 11 Nov, Masih: "I tried to go back and it didn't work": Edit in the Elpis chat failed with "The complete input for
+// this turn is unavailable". Its messages are the router's, not the engine's turns, so the engine had nothing to replace.
+test("an edited message of the Elpis chat is sent again as a new message with what it carried, and nothing above it goes", async () => {
+  const h = fixture();
+  const mother = h.create();
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    const url = "data:image/png;base64,iVBORw0KGgo=";
+    const first = await mother.send(CHAT, {
+      text: "send it this",
+      attachments: [{ id: "shot", name: "shot.png", type: "image", mimeType: "image/png", dataUrl: url }],
+    });
+    const again = await mother.resend(CHAT, { beforeTurnId: first.turn.id, text: "send the note chat this" });
+    assert.equal(again.routed, true);
+    assert.equal(again.kept, true, "the window keeps the messages above");
+    const mine = (await h.client.readThread(CHAT)).data
+      .filter(entry => entry.item.type === "userMessage")
+      .map(entry => (entry.item as { content: { type: string; text?: string; url?: string }[] }).content)
+      .map(content => content.map(part => part.text ?? part.url));
+    assert.deepEqual(
+      mine.sort((a, b) => String(a[0]).localeCompare(String(b[0]))),
+      [
+        ["send it this", url],
+        ["send the note chat this", url],
+      ],
+      "both wordings are in the chat, each with the picture",
+    );
+    await assert.rejects(mother.resend(CHAT, { beforeTurnId: "router-gone", text: "again" }), /no longer in the Elpis chat/);
+    await assert.rejects(mother.resend(CHAT, { beforeTurnId: again.turn.id, text: "  " }), /Write a message/);
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});
+
+test("what the Elpis chat does not do is refused in words, and a request it has never heard of is refused too", () => {
+  for (const done of ["turns", "steer", "interrupt", "effort", "revert", "rename", "archive", "unarchive", "delete"])
+    assert.equal(elpisChatRefusal(done), undefined, done);
+  for (const refused of ["rewind", "fork", "compact", "review", "permissions", "service-tier", "folder", "shell", "side-chat"])
+    assert.match(elpisChatRefusal(refused) ?? "", /^[A-Z].+\.$/, refused);
+  assert.match(elpisChatRefusal("rewind") ?? "", /Edit a message to send it again/);
+  assert.match(elpisChatRefusal("something-new") ?? "", /does not take this/);
 });

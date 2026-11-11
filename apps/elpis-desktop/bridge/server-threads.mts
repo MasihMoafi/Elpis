@@ -1,3 +1,4 @@
+import { elpisChatRefusal } from "./router/mother-agent.mts";
 import { createHash } from "node:crypto";
 import { BridgeError, object } from "./validate.mts";
 import { ATTACHMENT_BODY_LIMIT } from "./attachments.mts";
@@ -83,6 +84,17 @@ export async function handleThreadRoutes(
   method: string,
 ) {
   const { client, options, trash, loveSpot, historyCursors } = state;
+  // A change asked of the Elpis chat is done by the router, done as for any chat, or refused in words (see
+  // `elpisChatRefusal`): its messages are not turns the engine holds.
+  const asked = method === "POST" ? url.pathname.match(/^\/api\/threads\/([^/]+)\/([a-z-]+)$/) : null;
+  if (asked && state.mother.owns(decodeURIComponent(asked[1] ?? ""))) {
+    const refusal = elpisChatRefusal(asked[2] ?? "");
+    if (refusal) throw new BridgeError(refusal, 409);
+    if (asked[2] === "revert") {
+      json(response, 200, await state.mother.resend(decodeURIComponent(asked[1] ?? ""), await body(request, 65536)));
+      return true;
+    }
+  }
   const media = url.pathname.match(/^\/api\/threads\/([^/]+)\/turns\/([^/]+)\/items\/([^/]+)\/media\/(\d{1,3})$/);
   if (media && method === "GET") {
     const [threadId, turnId, itemId] = media.slice(1, 4).map(decodeURIComponent);
