@@ -245,6 +245,8 @@ button:disabled { cursor:not-allowed; }
 @media(max-width:760px) { .panel-open > .workspace-content { display:none; } .side-panel { width:100%!important; max-width:none; min-width:0; } .side-resize { display:none; } }
 .workspace-header { padding:0 16px; min-height:var(--header-h); border-bottom:1px solid var(--hairline); display:flex; align-items:center; gap:12px; flex-shrink:0; background:var(--background); position:relative; z-index:5; }
 .header-titles { display:flex; align-items:baseline; flex-wrap:wrap; column-gap:12px; padding:6px 0; }
+/* Beside the taller view switch the title is centred, so it sits where every other page's title sits. */
+.header-titles:has(> .workflow-view-switch) { align-items:center; }
 .workspace-header h1 { font-size:var(--text-base); line-height:1.4; font-weight:600; letter-spacing:-.01em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .workspace-header p { font-size:var(--text-xs); margin:0; color:var(--muted-foreground); }
 .mobile-menu { display:none; }

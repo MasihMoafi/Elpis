@@ -21,7 +21,8 @@
 /* One line, always: a wrapped bar made the board shorter than 500 px in a short window, and Excalidraw then switched to its
    phone layout (toolbar at the bottom, no zoom bar). The page picker shrinks instead; its name truncates. */
 .love-spot-tools { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 8px; flex-shrink: 0; min-height: 44px; padding: 4px 16px; border-bottom: 1px solid var(--border); background: var(--background); color: var(--foreground); }
-.workspace-header:has(> .love-spot-toolbar-host) { gap: 8px; padding-inline: 12px; }
+/* The title keeps the shared left edge of every page (16 px); only the toolbar's side is tighter. */
+.workspace-header:has(> .love-spot-toolbar-host) { gap: 8px; padding-inline: 16px 12px; }
 .workspace-header:has(> .love-spot-toolbar-host) > .header-titles { flex: 0 1 auto; }
 .love-spot-toolbar-host { flex: 1; min-width: 0; order: 2; }
 .love-spot-toolbar-host .love-spot-tools { padding-inline: 0; border: 0; }

@@ -303,6 +303,7 @@
   ],
   "ui": [
     "tests/sessions-map.test.cts",
+    "tests/page-frame.test.cts",
     "tests/chat-scroll-follow.test.cts",
     "tests/automations.test.cts",
     "tests/memory-count.test.cts",
