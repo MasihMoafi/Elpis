@@ -3,10 +3,23 @@ import { initializeRoleModel } from "./role-models.mts";
 import { liveTicket } from "../core/index.mts";
 import type { Sessions, Mode } from "./sessions.mts";
 
+import { createHash } from "node:crypto";
 import { z } from "zod";
 
 import type { Agent } from "./runtime.mts";
 import { RoleModelSchema } from "./settings.mts";
+
+/** What a router session was made from: its instructions and its tools, as the model is given them. */
+export function sessionBuild(
+  instructions: string | undefined,
+  tools: readonly { name: string; description: string; schema: z.ZodType }[] | undefined,
+): string {
+  const shape = (tools ?? []).map(tool => [tool.name, tool.description, z.toJSONSchema(tool.schema, { io: "input" })]);
+  return createHash("sha256")
+    .update(JSON.stringify([instructions ?? "", shape]))
+    .digest("hex")
+    .slice(0, 16);
+}
 
 export async function runOpen(
   this: Sessions,
@@ -30,6 +43,12 @@ export async function runOpen(
     JSON.stringify(record.model) !== JSON.stringify(model)
   )
     await resetSession.call(this, record);
+  // So does a session made from other instructions or tools, as after an update: resumed, it answers from its old
+  // context (11 Nov: "I can only give a new chat text, not pictures", without trying the tool that had just learned to).
+  const built =
+    role === "orchestrator" ? sessionBuild(this.options.instructions?.(id), this.options.tools?.(id)) : undefined;
+  if (built && record.threadId && !record.creating && record.built !== built) await resetSession.call(this, record);
+  if (built) record.built = built;
   // An older Elpis session is replaced: one made with dynamic tools cannot be served, because the shared engine bridge sends
   // its tool calls to whichever window owns the chat (10 Nov: every router and worker tool call failed or timed out), and one
   // made before Full access keeps its sandbox.
@@ -347,6 +366,8 @@ export const RecordSchema = z.object({
   /** "full": the session reaches Elpis tools through the tool server and runs with Full access. "mcp" (sandboxed) and absent
    * (dynamic tools) are older sessions, replaced on the next open. */
   tools: z.enum(["mcp", "full"]).optional(),
+  /** The instructions and tools a router session was made from (`sessionBuild`); another build replaces the session. */
+  built: z.string().optional(),
 });
 
 export type SessionRecord = z.infer<typeof RecordSchema>;

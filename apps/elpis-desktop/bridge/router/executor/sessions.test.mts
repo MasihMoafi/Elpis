@@ -5,6 +5,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Sessions, type SessionOptions } from "./sessions.mts";
+import { sessionBuild } from "./session-turns.mts";
+import { z } from "zod";
 import { ExecutorStore } from "./store.mts";
 import { ElpisAdapter } from "./adapters.mts";
 import { SettingsSchema } from "./settings.mts";
@@ -169,4 +171,51 @@ it("flushes a queued input when the preceding turn ends, preserving its identity
     all.messages.map(message => message.id),
     ["router:first", "router:second"],
   );
+});
+
+it("replaces a router session made from other instructions at the next open, and keeps one made from the same", async t => {
+  const home = mkdtempSync(join(tmpdir(), "router-build-")),
+    server = new FakeServer();
+  let store = new ExecutorStore(home),
+    instructions = "Pass text to a chat.",
+    sessions: Sessions | undefined;
+  const open = async () => {
+    sessions?.dispose();
+    store.close();
+    store = new ExecutorStore(home);
+    sessions = new Sessions({
+      store,
+      adapters: [new ElpisAdapter(server.connect)],
+      subprocess: {
+        spawn: () => {
+          throw new Error("No subprocess expected");
+        },
+      },
+      instructions: () => instructions,
+    });
+    await sessions.ensure("main", "/project", "Main", "orchestrator");
+    await sessions.ensure("worker-one", "/project", "One", "worker");
+    return (store.session("main") as { threadId: string }).threadId;
+  };
+  t.after(() => {
+    sessions?.dispose();
+    store.close();
+    rmSync(home, { recursive: true, force: true });
+  });
+  const first = await open();
+  assert.equal(await open(), first, "the same instructions keep the session");
+  instructions = "Pass text and pictures to a chat.";
+  const second = await open();
+  assert.notEqual(second, first, "other instructions start a new session");
+  assert.equal(await open(), second);
+  // The router's session was started twice; the worker's, once: a worker keeps its session through an update.
+  assert.equal(server.calls.filter(call => call.method === "thread/start").length, 3);
+});
+
+it("tells a router session's build by its tools too: a tool that learns a field is another build", () => {
+  const tool = (schema: z.ZodType) => [{ name: "chats_send", description: "Write in a chat", schema }];
+  const text = z.object({ text: z.string() }),
+    pictures = z.object({ text: z.string(), images: z.array(z.string()).optional() });
+  assert.equal(sessionBuild("same", tool(text)), sessionBuild("same", tool(text)));
+  assert.notEqual(sessionBuild("same", tool(text)), sessionBuild("same", tool(pictures)));
 });
