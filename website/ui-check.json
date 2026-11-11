@@ -1,4 +1,5 @@
 {
   "src": ["."],
-  "ignore": ["^styles\\.css$", "^technical\\.html$", "^candidates/", "^prototypes/", "^evidence/"]
+  "ignore": ["^styles\\.css$", "^technical\\.html$", "^candidates/", "^prototypes/", "^evidence/"],
+  "controls": ["btn"]
 }

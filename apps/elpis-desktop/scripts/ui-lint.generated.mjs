@@ -1,5 +1,5 @@
 // @ts-nocheck
-// Generated from skills/web-dev/ui-check/lint.mjs; node scripts/ui-lint-sync.mts --write; sha256=e09fa73bbd0b1930a27d0442d921d8657881ba8e833461448eb68f4d187072e2
+// Generated from skills/web-dev/ui-check/lint.mjs; node scripts/ui-lint-sync.mts --write; sha256=d0e0a11f980770535dccc9f0831e301781792b0960a261cfe3a63d0874643fcd
 // Static half of ui-check: finds UI-RULES.md violations in source text, no browser needed.
 // shadcn's own components/ui source is the standard, so only R1 and R6 apply inside it.
 // A line that must break a rule on purpose carries the marker `ui-check-ignore` and a reason.
@@ -10,7 +10,7 @@ const EXTS = new Set([".tsx", ".jsx", ".css", ".scss", ".html"]);
 const ICON_LIBS = ["lucide-react", "@phosphor-icons/react", "react-icons", "@heroicons/react", "@tabler/icons-react", "@radix-ui/react-icons"];
 const PALETTE = "slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose";
 
-// [rule, applies to file?, pattern, message]
+// [rule, applies to file?, pattern (or a test of the line and file), message]
 const CHECKS = [
   ["R1", () => true, /\b(min-h|max-h|h)-screen\b/, "h-screen is 100vh and overflows on mobile; use h-dvh"],
   ["R1", () => true, /\b100vh\b/, "100vh overflows on mobile; use 100dvh"],
@@ -21,10 +21,19 @@ const CHECKS = [
   ["R4", f => !f.uiKit, /\b(rgba?|hsla?|oklch|oklab|lch|lab)\((?!\s*var\()/, "raw colour function; use a theme token"],
   ["R4", f => !f.css && !f.uiKit, new RegExp(`(?<![\\w-])(bg|text|border|ring|fill|stroke|from|via|to|outline|divide|accent|caret|decoration)-(${PALETTE})-\\d{2,3}\\b`), "raw palette colour; use a theme token such as bg-card or text-muted-foreground"],
   ["R4", f => !f.css && !f.uiKit, /(?<![\w-])(bg|text|border)-(black|white)\b/, "raw black/white; use a theme token so both themes work"],
-  ["R5", f => f.markup && !f.uiKit, /<(button|input|select|textarea|dialog)\b/, "hand-written control; use the shadcn/ui component from components/ui"],
+  ["R5", f => f.markup && !f.uiKit, (text, f) => handWritten(text, f.controls), "hand-written control; use the shadcn/ui component from components/ui"],
   ["R6", () => true, /[▼▶▾▸◀▲►◄▴▿]/, "disclosure triangle; Masih bans them"],
   ["R6", f => f.markup, /<details\b/, "<details> draws a disclosure triangle; use the shadcn Collapsible"],
 ];
+
+// R5: a control tag on the line that does not carry one of the project's own control classes (ui-check.json "controls").
+const CONTROL = /<(button|input|select|textarea|dialog)\b[^>]*/g;
+function handWritten(text, controls) {
+  return [...text.matchAll(CONTROL)].some(([tag]) => {
+    const classes = /\bclass(?:Name)?\s*=\s*["']([^"']*)["']/.exec(tag)?.[1].split(/\s+/) ?? [];
+    return !classes.some(name => controls.has(name));
+  });
+}
 
 async function* walk(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
@@ -44,6 +53,7 @@ export async function lint(projectDir, config) {
   config ??= (await readConfig(projectDir)) ?? {};
   const themeFiles = new Set(config.themeFiles ?? []);
   const ignore = (config.ignore ?? []).map(p => new RegExp(p));
+  const controls = new Set(config.controls ?? []);
   const findings = [];
 
   const pkg = JSON.parse(await readFile(join(projectDir, "package.json"), "utf8").catch(() => "{}"));
@@ -55,12 +65,18 @@ export async function lint(projectDir, config) {
       const file = relative(projectDir, path);
       if (themeFiles.has(file) || ignore.some(re => re.test(file))) continue;
       const ext = extname(file);
-      const kind = { css: ext === ".css" || ext === ".scss", markup: ext !== ".css" && ext !== ".scss", uiKit: /(^|\/)components\/ui\//.test(file) };
+      const kind = { css: ext === ".css" || ext === ".scss", markup: ext !== ".css" && ext !== ".scss", uiKit: /(^|\/)components\/ui\//.test(file), controls };
       const lines = (await readFile(path, "utf8")).split("\n");
+      let inStyle = false; // a line inside the <style> block of an .html file gets the CSS checks too
       lines.forEach((text, i) => {
+        const opens = ext === ".html" ? text.lastIndexOf("<style") : -1, closes = ext === ".html" ? text.lastIndexOf("</style>") : -1;
+        const kinds = inStyle || opens >= 0 ? [kind, { ...kind, css: true }] : [kind];
+        if (opens >= 0 || closes >= 0) inStyle = opens > closes;
         if (text.includes("ui-check-ignore")) return;
         for (const [rule, applies, pattern, msg] of CHECKS) {
-          if (applies(kind) && pattern.test(text)) findings.push({ rule, file, line: i + 1, msg });
+          if (!kinds.some(applies)) continue;
+          const matches = typeof pattern === "function" ? pattern(text, kind) : pattern.test(text);
+          if (matches) findings.push({ rule, file, line: i + 1, msg });
         }
       });
     }
