@@ -231,7 +231,19 @@ test('3,000-item chat stays responsive when opening, typing, scrolling, streamin
     assert.deepEqual(f.errors, []);
     // Deliberately generous wall-time budgets; both input cases include a whole paint interval.
     await t.test('typing budget', () => { const typing = report.typing; assert.ok(typing); assert.ok(typing.p95 < 100, `typing p95 ${typing.p95.toFixed(1)} ms >= 100 ms`); });
-    await t.test('scroll budget', () => { const scroll = report.scroll; assert.ok(scroll && scroll.p95 !== undefined); assert.ok(scroll.p95 < 50, `scroll frame p95 ${scroll.p95.toFixed(1)} ms >= 50 ms`); });
+    // Frames come in steps of 16.7 ms and a scroll records about 95 of them, so p95 is the fifth-slowest frame: it sat
+    // exactly on the old limit of 50 and flipped to 66.7 on one more slow frame. This morning's build and tonight's both
+    // measured 50.0 in ten alternated runs here; GitHub passed or failed by its runner's load (11 Nov). The budget is now
+    // on shares, which move with the work a scroll does: in those ten runs the median was one step, 9 to 12% of frames
+    // took over two steps and 1 to 4% took four or more.
+    await t.test('scroll budget', () => {
+      const scroll = report.scroll; assert.ok(scroll && scroll.samples.length > 50, 'the scroll recorded too few frames');
+      const sorted = [...scroll.samples].sort((a, b) => a - b), median = sorted[Math.floor(sorted.length / 2)]!;
+      const share = (over: number) => scroll.samples.filter(ms => ms > over).length / scroll.samples.length;
+      assert.ok(median < 20, `the median scroll frame took ${median.toFixed(1)} ms; one frame step is 16.7`);
+      assert.ok(share(34) < 0.2, `${Math.round(share(34) * 100)}% of scroll frames took over two steps (under 20% allowed)`);
+      assert.ok(share(60) < 0.1, `${Math.round(share(60) * 100)}% of scroll frames took four steps or more (under 10% allowed)`);
+    });
     await t.test('streaming budget', () => { const streaming = report.streaming; assert.ok(streaming); assert.ok(streaming.p95 < 120, `streaming input p95 ${streaming.p95.toFixed(1)} ms >= 120 ms`); });
     // 3%, not 2%: Masih chose the sidebar wordmark's light to sweep all the time (10 Nov), which measured 2.19% idle.
     await t.test('idle budget', () => { const cpu = report.idleCpuPercent; assert.ok(cpu !== undefined); assert.ok(cpu < 3, `idle renderer CPU ${cpu.toFixed(2)}% >= 3%`); });

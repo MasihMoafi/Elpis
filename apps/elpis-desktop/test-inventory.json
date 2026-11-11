@@ -17,6 +17,7 @@
     "tests/agents.test.mts",
     "tests/api-errors.test.mts",
     "tests/canvas-isolation.test.mts",
+    "tests/canvas-live-cleanup.test.mts",
     "tests/model-catalog.test.mts",
     "tests/dictation.test.mts",
     "tests/diff.test.mts",

@@ -419,7 +419,7 @@
   "tests/slash-commands.test.cts:long": 29,
   "tests/slash-helpers.test.mts:long": 1,
   "tests/smart-prune.test.mts:long": 2,
-  "tests/speed-chat.test.cts:long": 19,
+  "tests/speed-chat.test.cts:long": 18,
   "tests/startup-archive.test.cts:long": 37,
   "tests/startup-responsive.test.cts:long": 6,
   "tests/startup-splash.test.cts:long": 1,

@@ -15,6 +15,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { startDesktopServer } from '../bridge/server.mts';
+import { runChats, withoutRunTrust } from './canvas-live-cleanup.mts';
 import type { Browser, BrowserType, Locator, Page } from 'playwright-core';
 type Plan = { template?: RegExp; ready?: string; agents: number | null; folders: string[]; goal: string };
 type Task = { id: string; title: string; status: string; model: string; kind: string; dependsOn: string[]; assignedThreadId: string; result?: { summary?: string }; failureReason?: string };
@@ -92,6 +93,11 @@ const log = await fs.open(bridgeLog, 'a');
 const bridge = spawn(process.execPath, [bridgeScript], { cwd: process.env.HOME, stdio: ['ignore', log.fd, log.fd],
   env: { ...process.env, ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_STORE: path.join(root, 'elpis-claude', 'sessions.json'), NODE_USE_ENV_PROXY: '1' } });
 const bridgeExit = once(bridge, 'exit');
+// The workflow agents are ACP agent processes (bridge/love-agents.mts loveNodeSpec) that find their bridge on their own:
+// without an endpoint they join the one bridge of this ELPIS_HOME, his running app's. On 11 Nov they did, ran their turns
+// there (on Claude, after the ChatGPT limit), and the transcripts stayed in his bridge's store; this run's bridge then read
+// the agents' chats as empty. `socketPath` below connects only this app's client, so the agents are pointed here too.
+process.env.ELPIS_APP_BRIDGE_SOCKET = socketPath;
 const created: string[] = [], runs: Run[] = [], submitted: { isolation: string; tasks: { model: string }[] }[] = [], worktrees = new Set<string>();
 let app: Awaited<ReturnType<typeof startDesktopServer>> | undefined, browser: Browser | undefined, page: Page | undefined, failure: unknown;
 try {
@@ -279,8 +285,8 @@ try {
   assert.match(await canvas.locator('.canvas-chip[role=status]:has(.canvas-dot)').innerText(), new RegExp(`Finished · ${agentCount} of ${agentCount} done`));
   // The last agent got every answer it waits for: each one's reported summary is in its first message.
   const last_ = graph.tasks.find(task => task.kind === 'implement' && task.dependsOn.length === Math.max(...graph.tasks.map(item => item.dependsOn.length))); assert.ok(last_);
-  // The chat is read until its first message is there: right after the run ends the bridge can still return an empty page
-  // (11 Nov: a run that succeeded failed here on a transcript of zero items).
+  // The chat is read through this run's bridge, the one its agents ran on (ELPIS_APP_BRIDGE_SOCKET above), until its first
+  // message is there.
   const pages: ThreadPage['data'] = [];
   for (let attempt = 0; attempt < 15 && !pages.some(row => row.item?.type === 'userMessage'); attempt++) {
     if (attempt) await new Promise(resolve => setTimeout(resolve, 1000));
@@ -291,6 +297,7 @@ try {
     }
   }
   await fs.writeFile(path.join(evidence, `${plan}-last-agent-items.json`), JSON.stringify(pages, null, 1));
+  assert.ok(pages.length, `${last_.title}'s chat reads empty through this run's bridge: did its agent run on another bridge?`);
   const asked = JSON.stringify(pages.filter(row => row.item?.type === 'userMessage'));
   for (const id of last_.dependsOn) {
     const summary = graph.tasks.find(task => task.id === id)?.result?.summary;
@@ -316,6 +323,15 @@ finally {
       const listed = await page.evaluate(async id => (await (await fetch(`/api/workflows?threadId=${encodeURIComponent(id)}`)).json()), run.threadId).catch(() => ({ data: [] }));
       for (const item of listed.data ?? []) for (const task of item.tasks) if (task.assignedThreadId && !ids.includes(task.assignedThreadId)) ids.push(task.assignedThreadId);
     }
+    // And every chat in the run's own folders, agents and checks included (11 Nov: the Mother's and the checks' chats
+    // were left in his sidebar).
+    for (let cursor: string | null = null, n = 0; n < 30; n++) {
+      const query = `/api/threads?includeAgentRuns=true&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const listed: { data?: { id: string; cwd?: unknown }[]; nextCursor?: string | null } =
+        await page.evaluate(async query => (await fetch(query)).json(), query).catch(() => ({}));
+      for (const id of runChats(listed.data ?? [], project)) if (!ids.includes(id)) ids.push(id);
+      cursor = listed.nextCursor ?? null; if (!cursor) break;
+    }
     const archived = [];
     for (const id of ids) {
       const ok = await page.evaluate(async id => (await fetch(`/api/threads/${encodeURIComponent(id)}/archive`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, id).catch(error => String(error));
@@ -326,6 +342,18 @@ finally {
   } catch (error) { say(`archiving failed: ${error instanceof Error ? error.message : String(error)}; chats ${ids.join(', ')}`); }
   await browser?.close(); await app?.close();
   bridge.kill('SIGTERM'); await Promise.race([bridgeExit, new Promise(resolve => setTimeout(resolve, 15000))]); await log.close();
+  // The engine trusts the throwaway folder in his config.toml; only the run's own entries go, by exact key, unprinted.
+  if (!trustedBefore && await trusted()) {
+    try {
+      const file = realpathSync(userConfig), stat = await fs.stat(file);
+      const { text, removed } = withoutRunTrust(await fs.readFile(file, 'utf8'), project);
+      if (removed.length) {
+        const temporary = `${file}.canvas-live-${process.pid}`;
+        await fs.writeFile(temporary, text, { mode: stat.mode & 0o777 }); await fs.rename(temporary, file);
+      }
+      say(`removed ${removed.length} trusted-project entr${removed.length === 1 ? 'y' : 'ies'} of this run from ${userConfig}`);
+    } catch (error) { say(`removing the trusted-project entry failed: ${error instanceof Error ? error.message : String(error)}`); }
+  }
   if (!trustedBefore && await trusted()) say(`WARNING: the engine wrote [projects.${JSON.stringify(project)}] into ${userConfig}; remove that entry`);
   say(`project ${project}; bridge log ${bridgeLog}; evidence ${evidence}`);
   process.exitCode = failure ? 1 : 0;
