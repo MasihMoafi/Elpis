@@ -20,3 +20,5 @@ codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-transport.mjs
 codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-cache.mjs
 codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-outline.mjs
 codex-rs/skills/src/assets/samples/openai-docs/scripts/manual-fetch.mjs
+packaging/npm/bin/elpis.js
+packaging/npm/test/launcher.test.mjs

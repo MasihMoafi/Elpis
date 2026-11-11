@@ -112,6 +112,7 @@ Rules: `~/Desktop/p/skills/shared-system/SKILL.md`.
 | --- | --- | --- | --- |
 | X1 | The work branch is merged into `main`. | `git rev-list main..work` is empty; CI green on `main`. | his call |
 | X2 | A tagged release with packages. | The GitHub release lists the packages; a fresh install starts and answers a prompt. | his call |
+| X3 | Elpis installs with npm (11 Nov, Masih: "npm for elpis I meant"). | `npm install -g elpis-cli`, then `elpis --version` prints the release's version. | doing: the package is in `packaging/npm` (the name `elpis` is taken on npm; `elpis-cli` is free). It holds a launcher that downloads the release's three files, checks each against its published SHA-256 and runs the terminal app. Proven from the packed file on 11 Nov: installed into a scratch folder, it downloaded v0.5.1 and printed `elpis 0.5.1`; three tests run on every push. Not on npm: no npm sign-in exists on this machine or in the repository's secrets |
 
 Non-goals: new features (the Orca list, Agent readiness, Matilda as manager); any use of the VPN.
 Stop and ask: a change that deletes or re-parents saved chats; a push to `main`, a tag, a release or a deploy; a model

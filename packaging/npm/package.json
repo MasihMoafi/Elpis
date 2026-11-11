@@ -1,0 +1,31 @@
+{
+  "name": "elpis-cli",
+  "version": "0.5.1",
+  "description": "The Elpis terminal app: an agent harness for Linux, built on OpenAI's Codex, where you decide what every agent sees and touches.",
+  "license": "Apache-2.0",
+  "bin": {
+    "elpis": "bin/elpis.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MasihMoafi/Elpis.git",
+    "directory": "packaging/npm"
+  },
+  "homepage": "https://elpis.masihmoafi.com",
+  "scripts": {
+    "test": "node --test test/launcher.test.mjs"
+  }
+}

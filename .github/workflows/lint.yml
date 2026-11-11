@@ -88,6 +88,9 @@ jobs:
         run: node scripts/strict-baseline.mts
       - name: Ratchet tests
         run: node --test tests/strict-baseline.test.mts
+      - name: npm launcher tests
+        working-directory: packaging/npm
+        run: node --test test/launcher.test.mjs
   ui-lint:
     name: desktop shared UI rules
     runs-on: ubuntu-latest
