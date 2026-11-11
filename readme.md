@@ -8,7 +8,7 @@
 <p align="center"><b>The ultimate harness: the perfect home for your agents.</b></p>
 <p align="center"><i>You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.</i></p>
 
-<p align="center">A coding agent should see only what you chose to show it, and a team of agents should touch only what each was given. Elpis is an agent harness for Linux, built on OpenAI's Codex: a terminal and a desktop app where you decide what every agent knows, design teams of agents on a board, and watch every step they take.</p>
+<p align="center">A coding agent should see only what you chose to show it, and a team of agents should touch only what each was given. Elpis is an agent harness for Linux, built on OpenAI's Codex, for people who run coding agents: a terminal app and a desktop app where you decide what every agent knows, design teams of agents on a board, and watch every step they take.</p>
 
 <p align="center">Alpha · v0.5.1 · Linux x86_64 · in daily use by its author</p>
 
@@ -16,13 +16,13 @@
 
 ## Quick start
 
-Install both apps, the desktop app and the terminal app, on Linux x86_64:
+This command installs both apps, the desktop app and the terminal app, on Linux x86_64:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install.sh | bash
 ```
 
-Then run `elpis-app` for the desktop app or `elpis` for the terminal app, and sign in with ChatGPT or Claude, or set up a provider. Claude models run through your own [Claude Code](https://code.claude.com) install.
+Then run `elpis-app` for the desktop app or `elpis` for the terminal app. Sign in with ChatGPT or Claude, or set up a provider. Claude models run through your own [Claude Code](https://code.claude.com) install. Open a chat and look at its Context Ledger before you send the first message.
 
 <details>
 <summary>Other ways to install</summary>
@@ -43,30 +43,28 @@ Both apps share one engine and one state folder, `~/.elpis-next`.
 
 <p align="center"><img src="website/assets/technical/workflows-team.gif" alt="Workflows: the Mother agent designs a code-review team of eight agents in four waves, shown flat and in isometric, runs it and checks each agent's work"></p>
 
-## What it is
+## The problem
 
-Elpis is a home for coding agents. It keeps Codex's engine, its tools and its sandbox, and adds the controls around them: a ledger of what each agent was told, a board for teams of agents, a page that shows every request and tool call, and one place for every model you pay for, from GPT and Claude to Gemini and OpenRouter.
+Without Elpis, a coding agent loads every instruction file it finds and keeps the whole conversation until the window fills. You cannot see what it was told, and you cannot take it back. Several agents on one task make it worse: they write over each other's files, nobody checks the work, and you merge the result by hand.
 
-## Why it exists
-
-Today's coding agents load every instruction file they find and keep the whole conversation until the window fills. You cannot see what they were told, and you cannot take it back. Put several on one task and it gets worse: they write over each other's files, nobody checks the work, and you merge the result by hand.
-
-Elpis treats both as one problem, the context an agent works in, and answers it with two rules:
+Elpis treats both as one problem: the context an agent works in. With Elpis, two rules apply:
 
 - **You choose what each agent sees.** The Context Ledger lists every instruction file, chosen file and memory with its token cost, and you include or exclude each one.
 - **Each agent owns what it writes.** In a workflow every agent has its own folder, a second agent checks its work, and the Mother agent reviews the combined result before anything reaches your project.
 
-## Core features
+## How it works
 
-- **Context Ledger.** Every instruction file, file and memory an agent receives, with its token cost; include or exclude each.
+Elpis keeps Codex's Rust engine, its tools and its sandbox, and adds its controls around the chosen model:
+
+- **Context Ledger.** It shows every instruction file, file and memory an agent receives, with its token cost. You include or exclude each one.
   <img src="website/assets/technical/context-ledger.webp" alt="The Context Ledger in the Elpis terminal app: each instruction file with its token cost and an INCLUDED mark" width="420">
-- **Workflows.** Describe a job; the Mother agent does it herself or designs a team on a board you can edit. Patterns: Sequential, Parallel, Kahn graph waves, Recursive and Voting.
+- **Workflows.** You describe a job. The Mother agent does it herself, or designs a team on a board you can edit. Patterns: Sequential, Parallel, Kahn graph waves, Recursive and Voting.
 
   ![Workflows: the Mother agent designs a team, runs it and checks each agent's work](website/assets/technical/workflows.gif)
 
-- **Observability.** Every request, tool call, token and cache hit of a chat on one timeline, in the desktop app's Observability page and the terminal's `/dashboard` (next release).
-- **One app for every model.** GPT, Claude and Gemini, through your ChatGPT or Claude subscription or an API key; switch models without losing the thread, and import chats from Claude Code and Codex.
-- **Two apps, one engine.** A desktop app (four themes, light and dark) and a terminal app, sharing sessions and state. In the terminal, the Agent command center shows each helper under its parent chat.
+- **Observability.** Every request, tool call, token and cache hit of a chat sits on one timeline: in the desktop app's Observability page, and in the terminal's `/dashboard` (next release).
+- **One app for every model.** GPT, Claude, Gemini and OpenRouter, through your ChatGPT or Claude subscription or an API key. You can switch models without losing the thread, and import chats from Claude Code and Codex.
+- **Two apps, one engine.** A desktop app (four themes, light and dark) and a terminal app share sessions and state. In the terminal, the Agent command center shows each helper under its parent chat.
 
   ![The Agent command center in the Elpis terminal app, with example tasks: GPT and Claude helpers under their parent chat, each model in its own colour](website/assets/technical/tui-agent-command-center.webp)
 
@@ -76,11 +74,9 @@ Elpis treats both as one problem, the context an agent works in, and answers it 
 
 ![One Elpis desktop chat in six themes: Elpis dark and light, Midnight dark, Paper light, Plum dark and Midnight light](website/assets/technical/themes.gif)
 
-## How it works
+The desktop app is Electron with a Node bridge, which drives each agent over the Agent Client Protocol. No model weights are bundled. State lives in `~/.elpis-next`, or in the folder that `ELPIS_HOME` names.
 
-Elpis keeps Codex's Rust engine and sandbox and adds its controls around the chosen model. The desktop app is Electron with a Node bridge that drives each agent over the Agent Client Protocol. No model weights are bundled. State lives in `~/.elpis-next`, or in the folder `ELPIS_HOME` names.
-
-**How a workflow orders its steps.** Elpis sorts the board with Kahn's algorithm: an agent starts once everything it waits for, and that work's check, has passed. Agents in one wave run side by side. A loop is refused before any agent starts, unless you choose the Recursive pattern and a round limit. The Voting team runs in four waves:
+**How a workflow orders its steps.** Elpis sorts the board with Kahn's algorithm. An agent starts when everything it waits for has passed, and the check of that work has passed too. Agents in one wave run side by side. Elpis refuses a loop before any agent starts, unless you choose the Recursive pattern and a round limit. The Voting team runs in four waves:
 
 ```mermaid
 %% id: voting-waves
@@ -95,34 +91,45 @@ flowchart LR
   CT --> R([Mother agent reviews and merges])
 ```
 
+<img src="website/assets/technical/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+
+Details: [technical guide](docs/GUIDE.md#runtime-architecture), [context](docs/context.md), [sessions](docs/sessions.md).
+
+## Current state
+
+The state of each item, with its check and evidence: [production.md](docs/specs/production.md).
+
+- **Verified:** the Voting workflow on two models, and the release checks of each terminal release (both under [Evidence](#evidence)).
+- **Under acceptance:** Smart Prune and reasoning expiry are experimental. The codebase dashboard (size, churn, duplicates and agent readiness for any Git project open in Elpis) is built and installed but not yet in a release; its items are in [codebase-dashboard.md](docs/specs/codebase-dashboard.md).
+- **Planned:** see [Next](#next).
+- **Unsupported:** macOS and Windows builds. Not claimed: the whole inherited Codex test suite.
+
+## What sets it apart
+
 **Who may write what: ownership, as in Rust.** Rust lets many readers or one writer hold a value, never both, and checks this before the program runs. Elpis applies the same rule to agents:
 
 | Rust | Elpis workflow |
 | --- | --- |
-| A value has one owner | Each agent owns `agents/<its name>` and the folders you give it; in a Git project it works in its own worktree, and a step that changed files outside its folders fails. |
-| Shared borrows read, never write | Every writer is followed by a check that reads its work and writes only `agents/<name>/check`. |
+| A value has one owner | Each agent owns `agents/<its name>` and the folders you give it. In a Git project it works in its own worktree, and a step that changed files outside its folders fails. |
+| Shared borrows read, never write | A check follows every writer. It reads the writer's work and writes only `agents/<name>/check`. |
 | No two mutable borrows at once | Two agents linked to work alongside may not share a folder. |
-| The owner decides what lives | The Mother agent reviews the combined commit and must pass it with evidence before Elpis fast-forwards your project. |
+| The owner decides what lives | The Mother agent reviews the combined commit. It must pass it with evidence before Elpis fast-forwards your project. |
 
-A Voting team (three answering agents and one tally agent, each with its own check) finished on GPT-6 Luna and on Claude Haiku 5.5 in 74 to 100 seconds; the test is [`tests/canvas-live.runtime.mts`](apps/elpis-desktop/tests/canvas-live.runtime.mts). Outside a Git project the folders are instructions, not enforced.
+The tradeoff: outside a Git project the folders are instructions, not enforced.
 
-<img src="website/assets/technical/workflows-voting-dark.png" alt="A finished Voting workflow in the Elpis desktop app: the Mother agent starts three answering agents, each checked, and a tally agent joins their answers">
+**What Elpis builds on, and what it adds.** Elpis is a fork of [OpenAI's Codex](https://github.com/openai/codex) (Apache-2.0). Its engine, about 2.3 million lines in `codex-rs/`, carries Elpis's changes but stays close to upstream. Elpis's own code is about 214,000 lines, 8% of the repository: the desktop app, the bridge, the Context Ledger, workflows, the terminal additions and their tests. Elpis keeps the attribution and notices of upstream Codex ([LICENSE](LICENSE)). The Observability page is a port of the Trajectory view from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT); thank you to its authors.
 
-**What Elpis builds on, and what it adds.** Elpis is a fork of [OpenAI's Codex](https://github.com/openai/codex) (Apache-2.0): its engine, about 2.3 million lines in `codex-rs/`, carries Elpis's changes but stays close to upstream. Elpis's own code is about 214,000 lines, 8% of the repository: the desktop app, the bridge, the Context Ledger, workflows, the terminal additions and their tests. The Observability page is a port of the Trajectory view from [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT); thank you to its authors. Details: [technical guide](docs/GUIDE.md#runtime-architecture), [context](docs/context.md), [sessions](docs/sessions.md).
+## Evidence
 
-## Where it's going
+- **Workflows:** a Voting team (three answering agents and one tally agent, each with its own check) finished on GPT-6 Luna and on Claude Haiku 5.5 in 74 to 100 seconds. The test is [`tests/canvas-live.runtime.mts`](apps/elpis-desktop/tests/canvas-live.runtime.mts).
+- **Releases:** [Release CI](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml) gates each terminal release on Elpis's Rust checks, runtime evals with failing controls and clean offline installs. These checks do not prove that Elpis writes better code.
+
+## Next
 
 - **Matilda as the one agent you talk to.** She routes work to the right agents, sets up workflows, keeps schedules and reminds you, on the model of DeepSeek Harness's super agent.
 - **Automations.** Prompts and workflows that run on a schedule, set with a calendar or asked for in one sentence.
-- **A code-health dashboard.** Size, churn, duplicates and agent readiness for any Git project open in Elpis.
 
-Smart Prune and reasoning expiry are experimental. Not claimed: the whole inherited Codex test suite; macOS and Windows builds. [Release CI](https://github.com/MasihMoafi/Elpis/actions/workflows/embedded-elpis-linux.yml) gates each terminal release on Elpis's Rust checks, runtime evals with failing controls and clean offline installs; these checks do not prove that Elpis writes better code.
-
-## Summary
-
-Elpis gives you the two controls today's coding agents lack: you decide what each agent sees, and each agent may change only what it was given. Install it from the [latest release](https://github.com/MasihMoafi/Elpis/releases/latest), open a chat, and look at its Context Ledger before you send the first message.
-
-[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build, test and report a bug. Upstream Codex is Apache-2.0; Elpis keeps its attribution and notices ([LICENSE](LICENSE)).
+[CONTRIBUTING.md](CONTRIBUTING.md) explains how to build, test and report a bug.
 
 <!-- more-projects:start -->
 ## More projects
