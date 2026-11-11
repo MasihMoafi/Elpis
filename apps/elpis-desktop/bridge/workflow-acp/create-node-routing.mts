@@ -4,7 +4,7 @@ import type { createRunStorage } from "./create-run-storage.mts";
 import { randomUUID } from "node:crypto";
 import { BridgeError } from "../validate.mts";
 import { runAcpNode } from "../acp-nodes.mts";
-import { workflowRoute, quotaFailure } from "../workflow-models.mts";
+import { workflowRoute, quotaFailure, quotaStopLine } from "../workflow-models.mts";
 import type {
   RouteAttempt,
   StoredTask,
@@ -67,118 +67,92 @@ export function createNodeRouting({
     const available = await routesFor(record),
       routes = options.lowEffort ? available.filter(lowEffort) : available,
       requestedRoute = workflowRoute(requested.model, requested.provider);
-    const desired = {
+    // The requested route only, with what the snapshot knows of it (its quota, efforts). An agent never moves to another
+    // subscription on its own (E17, 11 Nov, Masih: "I never permitted opus"): without quota it stops and says why.
+    const route = {
       ...routes.find(route => route.provider === requestedRoute.provider),
       ...routes.find(route => route.model === requestedRoute.model && route.provider === requestedRoute.provider),
       ...requestedRoute,
     };
-    const candidates = [desired, ...routes.filter(route => route.provider !== desired.provider)],
-      seen = new Set();
+    // Routes ("provider:model") that answered with a quota error earlier in this run: later agents asking for one stop
+    // without a call. Kept per model, so the Mother's Sonnet fallback on the same subscription is still tried.
     const unavailable = exhaustedProviders.get(record.id) ?? new Set();
     exhaustedProviders.set(record.id, unavailable);
+    const key = `${route.provider}:${route.model}`;
     const routing = (owner.routing ??= { requested: requestedRoute, actual: null, attempts: [] });
-    let previousError: unknown;
-    for (const route of candidates) {
-      if (seen.has(route.provider)) continue;
-      seen.add(route.provider);
-      const attempt: RouteAttempt = {
-        model: route.model,
-        provider: route.provider,
-        status: "running",
-        startedAt: Date.now(),
-      };
-      routing.attempts.push(attempt);
-      if (route.exhausted || unavailable.has(route.provider)) {
-        attempt.status = "skipped";
-        attempt.reason = route.reason || "This subscription reached its usage limit";
-        attempt.endedAt = Date.now();
-        progress(record, owner, {
-          sessionUpdate: "agent_message_chunk",
-          messageId: `route-${randomUUID()}`,
-          content: { type: "text", text: `Skipped ${route.model || route.provider}: ${attempt.reason}` },
-        });
-        continue;
-      }
-      routing.actual = { model: route.model, provider: route.provider };
-      if (route.model !== requestedRoute.model || route.provider !== requestedRoute.provider) {
-        attempt.reason =
-          (previousError as { message?: string } | undefined)?.message || "The requested subscription is unavailable";
-        progress(record, owner, {
-          sessionUpdate: "agent_message_chunk",
-          messageId: `route-${randomUUID()}`,
-          content: { type: "text", text: `Continuing with ${route.model} (${route.provider}). ${attempt.reason}` },
-        });
-      }
-      await save(record);
-      let sessionEnded: (() => void) | undefined; // what onSession returned, called once this attempt's ACP agent has left
-      try {
-        const recovery = previousError
-          ? "\n\nA previous attempt reached its subscription limit. Continue in this same workspace. Inspect existing files before acting; preserve completed work and do not repeat actions already evidenced there. Previous progress:\n" +
-            (owner.progress ?? [])
-              .filter(entry => entry.kind === "text")
-              .slice(-3)
-              .map(entry => entry.text)
-              .join("\n")
-              .slice(-3000)
-          : "";
-        const spec = fullAccess(
-          nodeSpec({ name: owner.title, prompt: instructions, model: route.model, provider: route.provider }, env),
-        );
-        const effort = options.lowEffort
-          ? lowEffort(route)
-          : owner.reasoningEffort && Array.isArray(route.efforts) && !route.efforts.includes(owner.reasoningEffort)
-            ? route.defaultEffort
-            : owner.reasoningEffort;
-        if (effort) spec.reasoningEffort = effort;
-        spec.meta = {
-          ...spec.meta,
-          elpis: {
-            ...spec.meta?.elpis,
-            name: `Workflows · ${owner.title}`,
-            workflow: {
-              kind: owner.kind ?? "verify",
-              writeScopes: owner.writeScopes ?? [],
-              ...(effort ? { reasoningEffort: effort } : {}),
-              ...(owner.serviceTier ? { serviceTier: owner.serviceTier } : {}),
-            },
-          },
-        };
-        const result = await runAcpNode(
-          spec,
-          { ...input, task: input.task + recovery },
-          {
-            ...options,
-            // Every chat a step or Mother opens is kept, not only the latest (28 Oct: earlier review and retry chats fell out of
-            // their workflow and lay loose in the sidebar: "currently they are all merged").
-            onSession: id => {
-              owner.assignedThreadId = spec.elpis ? id : null;
-              owner.sessionId = id;
-              if (spec.elpis) owner.threads = [...new Set([...(owner.threads ?? []), id])];
-              sessionEnded = onSession?.(record, owner, id) as (() => void) | undefined;
-              void save(record).catch(() => {});
-            },
-          },
-        );
-        attempt.status = "succeeded";
-        attempt.endedAt = Date.now();
-        return result;
-      } catch (error) {
-        attempt.status = "failed";
-        attempt.reason = (error as Error).message;
-        attempt.endedAt = Date.now();
-        if (options.signal?.aborted || !quotaFailure(error)) throw error;
-        unavailable.add(route.provider);
-        previousError = error;
-        await save(record);
-      } finally {
-        sessionEnded?.();
-      }
+    const attempt: RouteAttempt = {
+      model: route.model,
+      provider: route.provider,
+      status: "running",
+      startedAt: Date.now(),
+    };
+    routing.attempts.push(attempt);
+    const stop = (during: boolean) => {
+      const line = quotaStopLine(route, during, during ? null : route.resetsAt);
+      progress(record, owner, {
+        sessionUpdate: "agent_message_chunk",
+        messageId: `route-${randomUUID()}`,
+        content: { type: "text", text: line },
+      });
+      return Object.assign(new BridgeError(line, 409), { quotaStop: true });
+    };
+    if (route.exhausted || unavailable.has(key)) {
+      attempt.status = "skipped";
+      attempt.reason = route.reason || "This model reached its usage limit earlier in this run";
+      attempt.endedAt = Date.now();
+      throw stop(false);
     }
-    throw (previousError ??
-      new BridgeError(
-        "No connected subscription has available quota. Choose another connected model and resume this workflow; completed work is preserved.",
-        409,
-      )) as Error;
+    routing.actual = { model: route.model, provider: route.provider };
+    await save(record);
+    let sessionEnded: (() => void) | undefined; // what onSession returned, called once this attempt's ACP agent has left
+    try {
+      const spec = fullAccess(
+        nodeSpec({ name: owner.title, prompt: instructions, model: route.model, provider: route.provider }, env),
+      );
+      const effort = options.lowEffort
+        ? lowEffort(route)
+        : owner.reasoningEffort && Array.isArray(route.efforts) && !route.efforts.includes(owner.reasoningEffort)
+          ? route.defaultEffort
+          : owner.reasoningEffort;
+      if (effort) spec.reasoningEffort = effort;
+      spec.meta = {
+        ...spec.meta,
+        elpis: {
+          ...spec.meta?.elpis,
+          name: `Workflows · ${owner.title}`,
+          workflow: {
+            kind: owner.kind ?? "verify",
+            writeScopes: owner.writeScopes ?? [],
+            ...(effort ? { reasoningEffort: effort } : {}),
+            ...(owner.serviceTier ? { serviceTier: owner.serviceTier } : {}),
+          },
+        },
+      };
+      const result = await runAcpNode(spec, input, {
+        ...options,
+        // Every chat a step or Mother opens is kept, not only the latest (28 Oct: earlier review and retry chats fell out of
+        // their workflow and lay loose in the sidebar: "currently they are all merged").
+        onSession: id => {
+          owner.assignedThreadId = spec.elpis ? id : null;
+          owner.sessionId = id;
+          if (spec.elpis) owner.threads = [...new Set([...(owner.threads ?? []), id])];
+          sessionEnded = onSession?.(record, owner, id) as (() => void) | undefined;
+          void save(record).catch(() => {});
+        },
+      });
+      attempt.status = "succeeded";
+      attempt.endedAt = Date.now();
+      return result;
+    } catch (error) {
+      attempt.status = "failed";
+      attempt.reason = (error as Error).message;
+      attempt.endedAt = Date.now();
+      if (options.signal?.aborted || !quotaFailure(error)) throw error;
+      unavailable.add(key);
+      throw stop(true);
+    } finally {
+      sessionEnded?.();
+    }
   }
 
   return { runNode };

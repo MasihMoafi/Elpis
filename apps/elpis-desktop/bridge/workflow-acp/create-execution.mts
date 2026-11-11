@@ -245,6 +245,9 @@ export function createExecution({
               task.failureReason = (error as Error).message;
               // A failed check goes back to its step first (below); Mother is asked only once that fix is spent.
               if (fixable(task, error)) throw error;
+              // A subscription without quota is his decision (wait, or choose another model); the Mother cannot change it,
+              // and asking her would spend another subscription's quota (E17).
+              if ((error as { quotaStop?: boolean }).quotaStop) throw error;
               if (!(await supervise(record, task, error, root, controller))) {
                 // When the Mother cannot decide, a file saved outside the agent's folders still gets one plain correction
                 // (1 Nov live run: Haiku saved answer-1.md at the project root, she gave up, and the whole Voting run failed).

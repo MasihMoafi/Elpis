@@ -80,7 +80,6 @@
   "bridge/trajectory-projection.test.mts:long": 1,
   "bridge/transcription.fixtures.mts:long": 2,
   "bridge/workflow-acp/create-execution.mts:long": 2,
-  "bridge/workflow-acp/create-node-routing.mts:long": 1,
   "bridge/workflow-acp/create-replanning.mts:long": 5,
   "bridge/workflow-acp/create-review.mts:long": 1,
   "bridge/workflow-acp/create-supervision.mts:long": 2,

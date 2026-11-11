@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { workflowModelRoutes } from "./workflow-models.mts";
-import { required, logParams, TEST_ROOT, FAKE, task, until, fixture, leftovers, NOTHING, ROOT, desktopClient } from "./workflow-coding.fixtures.mts";
+import { required, TEST_ROOT, FAKE, task, until, fixture, leftovers, NOTHING, ROOT, desktopClient } from "./workflow-coding.fixtures.mts";
 
 test(
   "isolated results expose commits and diff; final review merges only a successful run into its unchanged clean source",
@@ -174,7 +174,7 @@ test(
 );
 
 test(
-  "Default workflow nodes skip an exhausted subscription and record their actual healthy route",
+  "Default workflow nodes stop on an exhausted subscription and never move to another (E17)",
   { timeout: 20000 },
   async t => {
     const routes = [
@@ -187,16 +187,17 @@ test(
       { cwd: f.cwd, model: "claude/opus", modelProvider: "claude" },
     );
     const completed = await f.finished(run.graphId);
-    assert.equal(completed.status, "succeeded", completed.error ?? undefined);
+    assert.equal(completed.status, "failed");
     const routing = required(required(completed.tasks[0]).routing);
     assert.deepEqual(routing.requested, { model: "claude/opus", provider: "claude" });
-    assert.deepEqual(routing.actual, { model: "m-fast", provider: "openai" });
-    assert.equal(
-      f.log("default-node").some(row => row.method === "session/set_config_option" && logParams(row).value === "opus"),
-      false,
-      "known exhausted Claude never receives a model turn",
+    assert.equal(routing.actual, null, "no route ran: not Claude, and not ChatGPT in its place");
+    assert.deepEqual(
+      routing.attempts.map(attempt => [attempt.provider, attempt.status]),
+      [["claude", "skipped"]],
     );
+    assert.equal(f.log("default-node").length, 0, "no agent starts on any subscription");
     assert.match(required(required(routing.attempts[0]).reason), /Weekly/);
+    assert.match(required(completed.error), /^claude\/opus on Claude did not run because the Claude usage limit/);
   },
 );
 
@@ -262,13 +263,15 @@ test("subscription recovery routes exclude API billing, expired limits and manag
   );
 });
 
-for (const [error, kind, recovers] of [
+// E17: a quota error stops the agent on its own subscription with one plain line (before, it moved to ChatGPT and
+// succeeded there). Unrelated failures keep their own message; neither is replayed.
+for (const [error, kind, quota] of [
   ["Weekly usage limit reached", "usage_limit_reached", true],
   ["Claude (ACP) error: You have hit your weekly limit.", "provider_error", true],
   ["Weekly report failed because the file is missing", "provider_error", false],
   ["Please review the weekly limit documentation", "provider_error", false],
 ] as const)
-  test(`quota recovery classifies ${error} without replaying unrelated failures`, { timeout: 20000 }, async t => {
+  test(`"${error}" ${quota ? "stops the agent on its own subscription" : "keeps its own message"}`, { timeout: 20000 }, async t => {
     const preservesPartialWork = error === "Claude (ACP) error: You have hit your weekly limit.";
     const f: ReturnType<typeof fixture> = fixture(t, {
       runner: {
@@ -298,14 +301,7 @@ for (const [error, kind, recovers] of [
                     : { FAKE_ACP_PROMPT_ERROR: error }),
                   FAKE_ACP_ERROR_KIND: kind,
                 }
-              : preservesPartialWork
-                ? {
-                    FAKE_ACP_EXPECT: JSON.stringify({
-                      file: "src/quota-partial",
-                      text: "work from the exhausted subscription",
-                    }),
-                  }
-                : {}),
+              : {}),
           },
         }),
       },
@@ -314,37 +310,27 @@ for (const [error, kind, recovers] of [
     const completed = await f.finished(started.graphId),
       node = required(completed.tasks[0]);
     const routing = required(node.routing);
-    assert.equal(completed.status, recovers ? "succeeded" : "failed", completed.error ?? undefined);
+    assert.equal(completed.status, "failed");
     assert.deepEqual(
       routing.attempts.map(attempt => [attempt.provider, attempt.status]),
-      recovers
-        ? [
-            ["claude", "failed"],
-            ["openai", "succeeded"],
-          ]
-        : [["claude", "failed"]],
+      [["claude", "failed"]],
+      "no attempt on another subscription",
     );
-    assert.deepEqual(
-      routing.actual,
-      recovers ? { model: "m-fast", provider: "openai" } : { model: "claude/opus", provider: "claude" },
-    );
+    assert.deepEqual(routing.actual, { model: "claude/opus", provider: "claude" });
     assert.ok(required(required(routing.attempts[0]).reason).includes(error));
-    assert.equal(
-      f.log("limited").filter(row => row.method === "session/prompt").length,
-      recovers ? 2 : 1,
-      "only quota failures reach another subscription",
-    );
-    if (preservesPartialWork)
-      assert.match(
-        required(node.result).summary,
-        /Read planted result: work from the exhausted subscription/,
-        "the fallback continues in the same workspace with the first subscription's work",
-      );
-    if (recovers)
+    assert.equal(f.log("limited").filter(row => row.method === "session/prompt").length, 1, "nothing is replayed");
+    if (quota) {
       assert.equal(
-        completed.mother,
-        undefined,
-        "successful quota recovery does not create an unnecessary supervisor turn",
+        node.failureReason,
+        "claude/opus on Claude stopped because the Claude usage limit was reached during its work; wait for the reset, or choose another model for this agent and resume.",
+      );
+      assert.equal(completed.mother, undefined, "a quota stop does not ask the Mother");
+    } else assert.ok(required(node.failureReason).includes(error), "an unrelated failure keeps its own message");
+    if (preservesPartialWork)
+      assert.equal(
+        fs.readFileSync(path.join(f.cwd, "src/quota-partial"), "utf8"),
+        "work from the exhausted subscription",
+        "the stopped agent's partial work stays in its workspace",
       );
   });
 

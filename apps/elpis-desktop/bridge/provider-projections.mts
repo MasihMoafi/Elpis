@@ -42,6 +42,15 @@ export const usageLimit = (
         primary: usageWindow(value.primary),
         secondary: usageWindow(value.secondary),
         reached: string(value.rateLimitReachedType),
+        // Whether credits carry on past a full window (workflow routing, E17); the balance itself stays in the engine.
+        ...(value.credits && typeof value.credits === "object"
+          ? {
+              credits: {
+                hasCredits: boolean((value.credits as RecordValue).hasCredits),
+                unlimited: boolean((value.credits as RecordValue).unlimited),
+              },
+            }
+          : {}),
       }
     : null;
 /** Each provider's own sign-in and usage. Subscription limits arrive keyed by limit ID from the Elpis bridge.

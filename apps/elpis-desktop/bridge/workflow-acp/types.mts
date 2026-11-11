@@ -211,6 +211,8 @@ export type ModelRoute = {
   provider: string;
   exhausted?: boolean;
   reason?: string;
+  /** When an exhausted subscription resets, in seconds, if its usage data says. */
+  resetsAt?: number;
   efforts?: string[] | undefined;
   defaultEffort?: string | null | undefined;
 };

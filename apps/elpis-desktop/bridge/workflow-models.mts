@@ -1,5 +1,6 @@
 type UsageWindow = { usedPercent?: number | null; resetsAt?: number | null };
-type Usage = ({ primary?: UsageWindow | null; secondary?: UsageWindow | null } | null)[];
+type Credits = { hasCredits?: boolean | null; unlimited?: boolean | null } | null;
+type Usage = ({ primary?: UsageWindow | null; secondary?: UsageWindow | null; credits?: Credits } | null)[];
 type Provider = {
   state?: string;
   signedOut?: boolean;
@@ -20,6 +21,22 @@ export function workflowRoute(model: string = "", provider: string = "") {
     provider: model.startsWith("claude/") ? "claude" : model.startsWith("agy/") ? "agy" : provider || "openai",
   };
 }
+const providerName = (provider: string) =>
+  provider === "claude" ? "Claude" : provider === "agy" ? "Antigravity" : provider === "openai" ? "ChatGPT" : provider;
+
+/** The one line an agent's chat and its run's record show when its subscription has no quota left. An agent never moves
+ * to another subscription (E17, 11 Nov, Masih: "I never permitted opus"), so the line says what he can do. `resetsAt` in
+ * seconds, when the usage data has it; `during`: the limit was reached while the agent worked. */
+export function quotaStopLine(route: { model: string; provider: string }, during: boolean, resetsAt?: number | null) {
+  const name = providerName(route.provider);
+  const until = resetsAt
+    ? ` until ${new Date(resetsAt * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+    : "";
+  const why = during
+    ? `stopped because the ${name} usage limit was reached during its work`
+    : `did not run because the ${name} usage limit is reached${until}`;
+  return `${route.model || name} on ${name} ${why}; wait for the reset, or choose another model for this agent and resume.`;
+}
 export function quotaFailure(error: unknown) {
   const details = error as { errorKind?: string; message?: string } | null | undefined;
   return (
@@ -38,15 +55,19 @@ export function workflowModelRoutes(
   requirements?: { modelProvider?: string } | null,
 ) {
   const now = Date.now() / 1000;
-  const exhausted = (usage: Usage | undefined) =>
-    usage?.some(limit =>
-      [limit!.primary, limit!.secondary].some(
-        window =>
-          window != null &&
-          (window.usedPercent ?? 0) >= 100 &&
-          (window.resetsAt === null || window.resetsAt === undefined || window.resetsAt > now),
-      ),
-    );
+  // A full plan window blocks the subscription only when it has no credits to go on with (E17, 11 Nov, Masih: "chatpgt
+  // limit is reached; but I have credits so luna is still the option"). The engine reports credits beside each limit.
+  const blocking = (usage: Usage | undefined) =>
+    usage?.some(limit => limit?.credits?.hasCredits || limit?.credits?.unlimited)
+      ? []
+      : (usage ?? []).flatMap(limit =>
+          [limit?.primary, limit?.secondary].filter(
+            (window): window is UsageWindow =>
+              window != null &&
+              (window.usedPercent ?? 0) >= 100 &&
+              (window.resetsAt === null || window.resetsAt === undefined || window.resetsAt > now),
+          ),
+        );
   const subscriptions = [
     {
       id: "openai",
@@ -70,14 +91,17 @@ export function workflowModelRoutes(
     const listed = models
       .filter(item => workflowRoute(item.model).provider === subscription.id)
       .sort((a, b) => Number(!!b.isDefault) - Number(!!a.isDefault));
+    const full = blocking(subscription.usage),
+      // When it can be used again: the last of its full windows to reset, if each says when.
+      resetsAt = full.every(window => typeof window.resetsAt === "number")
+        ? Math.max(...full.map(window => window.resetsAt as number))
+        : null;
     return listed.map(item => ({
       model: item.model,
       provider: subscription.id,
-      exhausted: !!exhausted(subscription.usage),
-      ...(exhausted(subscription.usage)
-        ? {
-            reason: `${subscription.id === "claude" ? "Claude" : subscription.id === "agy" ? "Antigravity" : "ChatGPT"} usage limit reached`,
-          }
+      exhausted: full.length > 0,
+      ...(full.length
+        ? { reason: `${providerName(subscription.id)} usage limit reached`, ...(resetsAt ? { resetsAt } : {}) }
         : {}),
       efforts: item.supportedReasoningEfforts?.map(option => option.reasoningEffort).filter(Boolean),
       defaultEffort: item.defaultReasoningEffort,

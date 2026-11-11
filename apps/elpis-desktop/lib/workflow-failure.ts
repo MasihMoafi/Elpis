@@ -38,6 +38,16 @@ export function runFailure(run: FailedRun, canOpenFolder: boolean): { reason: st
       reason: `Elpis could not prepare the branch for ${who}: ${sentence(git[1]!)} The agent's work was not the cause.`,
       step: runChat,
     };
+  // A subscription without quota stops its agent rather than moving it to another (E17); the run's chat resumes it, on
+  // another model or after the reset. The line is bridge/workflow-models.mts quotaStopLine.
+  const quota = error.match(
+    /^(.+?) on .+? (did not run|stopped) because (the .+? usage limit (?:is|was) reached.*?); wait for the reset/,
+  );
+  if (quota)
+    return {
+      reason: `${who} ${quota[2] === "stopped" ? "stopped on" : "could not run"} ${quota[1]}: ${quota[3]}. Finished work is kept.`,
+      step: { label: "Choose another model or wait, then resume", chat: run.rootThreadId },
+    };
   if (/time limit/.test(error)) return { reason: sentence(error), step: runChat };
   if (!error) return { reason: "It ended without saying why.", step: runChat };
   // An agent's own error, often its provider's reply as JSON: "Quillon · Answer 1: {"error":{"message":"…"}}".
