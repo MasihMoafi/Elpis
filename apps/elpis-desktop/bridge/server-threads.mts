@@ -1,3 +1,5 @@
+import { cachedCodebaseReport } from "./codebase.mts";
+import { elpisHome } from "./client-paths.mts";
 import { elpisChatRefusal } from "./router/mother-agent.mts";
 import { createHash } from "node:crypto";
 import { BridgeError, object } from "./validate.mts";
@@ -152,6 +154,23 @@ export async function handleThreadRoutes(
         ? client.sendSideChat(sideId, await body(request))
         : client.closeSideChat(sideId, await body(request))),
     );
+    return true;
+  }
+  // The Codebase page of Observability: the project of the chat he picked (docs/specs/codebase-dashboard.md).
+  const codebase = url.pathname.match(/^\/api\/threads\/([^/]+)\/codebase$/);
+  if (codebase && method === "GET") {
+    const thread = await client.readThreadMetadata(decodeURIComponent(codebase[1] ?? ""));
+    if (typeof thread.cwd !== "string" || !thread.cwd) throw new BridgeError("This chat has no folder.", 409);
+    const report = await cachedCodebaseReport(thread.cwd, options.elpisHome ?? elpisHome()).catch((cause: unknown) => {
+      const said = String((cause as { stderr?: unknown }).stderr ?? cause);
+      throw new BridgeError(
+        /not a git repository/i.test(said)
+          ? "This chat's folder is not a Git project, so there is nothing to measure."
+          : `Could not read the project: ${said.trim().split("\n")[0]}`,
+        409,
+      );
+    });
+    json(response, 200, report);
     return true;
   }
   const contextFiles = url.pathname.match(/^\/api\/threads\/([^/]+)\/context-files$/);

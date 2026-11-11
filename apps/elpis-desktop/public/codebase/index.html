@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codebase</title>
+<style>
+  :root {
+    --bg: #09090b; --page: #09090b; --card: #09090b; --raise: #27272a; --track: #27272a;
+    --ink: #fafafa; --ink-2: #d4d4d8; --ink-3: #a1a1aa; --line: #27272a; --grid: rgba(250,250,250,.08);
+    --base: #71717a; --c1: #d6781d; --c2: #e23670; --c3: #2662d9; --c4: #22a477;
+    --sans: Geist, Inter, system-ui, sans-serif; --mono: "Geist Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace; --ease: cubic-bezier(.2,.7,.2,1);
+  }
+  /* In the app the page wears the app's theme. */
+  :root[data-theme="light"] {
+    --bg: #ffffff; --page: #ffffff; --card: #ffffff; --raise: #e4e4e7; --track: #e4e4e7;
+    --ink: #18181b; --ink-2: #3f3f46; --ink-3: #71717a; --line: #e4e4e7; --grid: rgba(24,24,27,.08);
+    --base: #a1a1aa;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/20px var(--sans); }
+  .shell { display: grid; grid-template-columns: 272px 1fr; min-height: 100vh; }
+  aside { background: #0c0c0e; border-right: 1px solid var(--line); padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  .brand svg { width: 20px !important; height: 20px; flex: none; }
+  .item .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 500; padding: 0 8px 16px; }
+  .group { padding: 24px 8px 0; }
+  .group h3 { margin: 0 0 8px; font: 400 12px/16px var(--mono); color: var(--ink-3); }
+  .nav { display: flex; align-items: center; gap: 10px; width: calc(100% + 16px); height: 36px; padding: 0 8px; margin: 0 -8px 2px;
+         border: 0; border-radius: 6px; background: none; color: var(--ink-2); font: inherit; text-align: left; cursor: pointer;
+         transition: background-color .15s var(--ease), color .15s var(--ease); }
+  .nav:hover { background: rgba(237,237,236,.04); color: var(--ink); }
+  .nav[aria-current="true"] { background: var(--raise); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+  .nav:focus-visible { outline: 2px solid var(--c3); outline-offset: 1px; }
+  .nav .n, .item .n { white-space: nowrap; flex: none; margin-left: auto; font: 400 12px var(--mono); color: var(--ink-3); }
+  .item { display: flex; align-items: center; gap: 10px; height: 32px; color: var(--ink-2); }
+  .item i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .note { color: var(--ink-3); font-size: 12px; line-height: 16px; padding-top: 12px; }
+  main { background: var(--page); padding: 40px 48px 80px; min-width: 0; }
+  .eyebrow { font: 400 12px/16px var(--mono); color: var(--ink-3); margin-bottom: 8px; }
+  h1 { font-size: 32px; line-height: 40px; font-weight: 500; margin: 0 0 8px; max-width: 900px; }
+  .what { color: var(--ink-2); margin: 0 0 24px; max-width: 820px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.3); padding: 24px; margin-bottom: 16px; }
+  .card h2 { font-size: 15px; line-height: 22px; font-weight: 500; margin: 0 0 4px; }
+  .card .sub { color: var(--ink-3); font-size: 13px; margin: 0 0 16px; }
+  .toggle { display: inline-flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin-bottom: 8px; }
+  .toggle button { border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 6px; cursor: pointer; }
+  .toggle button[aria-pressed="true"] { background: var(--raise); color: var(--ink); }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { font: 400 11px var(--mono); fill: var(--ink-3); }
+  svg .val { fill: var(--ink); font-weight: 500; }
+  svg .gl { stroke: var(--grid); }
+  svg rect.col { transition: opacity .15s var(--ease); }
+  svg g.c:hover rect.col { opacity: .8; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th { text-align: left; font: 400 12px var(--mono); color: var(--ink-3); padding: 0 8px 8px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.f { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+  td .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; }
+  .pair td.f div + div { color: var(--ink-2); }
+  #tip { position: fixed; pointer-events: none; background: var(--raise); border: 1px solid var(--line); color: var(--ink); padding: 8px 12px;
+         border-radius: 8px; font-size: 12px; line-height: 18px; opacity: 0; transition: opacity .1s; max-width: 420px; z-index: 2; }
+  [hidden] { display: none !important; }
+  @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    main { padding: 24px 16px 64px; } .scroll { overflow-x: auto; } .scroll svg { min-width: 720px; } }
+  .range { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 16px; }
+  .range input, .range button { font: inherit; padding: 4px 8px; border: 1px solid var(--line, #ccc); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand" id="brand">Codebase</div>
+    <div class="group">
+      <h3>Sections</h3>
+      <nav id="nav"></nav>
+    </div>
+    <div class="group">
+      <h3 id="side-title"></h3>
+      <div id="side"></div>
+      <p class="note" id="side-note"></p>
+    </div>
+  </aside>
+  <main id="main"><p class="what" id="state" role="status">Reading the project…</p></main>
+</div>
+<div id="tip" role="tooltip"></div>
+<script>
+// The Codebase page (docs/specs/codebase-dashboard.md): what a project's code holds, how it changes and how ready it is
+// for coding agents. The bridge reads the project of the chat named in the address; this page only draws it.
+let CODE = [], CHURN_FILES = [], CHURN_LOG = [], DOCS = [], DUPS = [], WT = [], PILLARS = [], REPORT = null;
+// Inside the app the page follows the app's light or dark theme, also when he switches it; opened alone it is dark.
+const wearTheme = () => { try { document.documentElement.dataset.theme = parent.document.documentElement.classList.contains('dark') ? 'dark' : 'light'; } catch { /* another origin holds this page */ } };
+if (parent !== window) { wearTheme(); try { new MutationObserver(wearTheme).observe(parent.document.documentElement, { attributes: true, attributeFilter: ['class'] }); } catch { /* as above */ } }
+const fmt = n => n.toLocaleString('en-US');
+const kb = b => b >= 1e6 ? (b / 1e6).toFixed(1) + ' MB' : b >= 1e3 ? Math.round(b / 1e3) + ' KB' : b + ' B';
+const gb = mb => mb >= 1000 ? (mb / 1000).toFixed(1) + ' GB' : mb + ' MB';
+const short = p => p.split('/').pop();
+const tip = document.getElementById('tip');
+const showTip = (e, h) => { tip.innerHTML = h; tip.style.left = Math.min(e.clientX + 16, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = e.clientY + 16 + 'px'; tip.style.opacity = 1; };
+const hideTip = () => { tip.style.opacity = 0; };
+
+// Vertical column chart. rows: {label, value, color, text, tip}
+function columns(rows, { unit = '', valueText = v => fmt(v), rotate = false, height = 360, group = 1 } = {}) {
+  const W = 1000, padB = rotate ? 120 : 48, padT = 28, H = height, base = H - padB;
+  const max = Math.max(...rows.map(r => r.value)), n = rows.length / group, slot = (W - 56) / n, bw = Math.min(64, slot * .62 / group);
+  const step = (() => { const raw = max / 4, p = 10 ** Math.floor(Math.log10(raw)); return [1, 2, 2.5, 5, 10].map(k => k * p).find(k => k >= raw); })();
+  const nice = Math.ceil(max / step) * step;
+  const y = v => base - (base - padT) * v / nice;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${unit} by item">`;
+  for (let v = 0; v <= nice + 1e-9; v += step) { s += `<line class="gl" x1="56" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="48" y="${y(v) + 4}" text-anchor="end">${v === 0 ? '0' : valueText(v)}</text>`; }
+  rows.forEach((r, i) => {
+    const gi = Math.floor(i / group), off = group === 2 ? (i % 2 ? bw / 2 + 1 : -bw / 2 - 1) : 0, gx = 56 + slot * gi + slot / 2, cx = gx + off, top = y(r.value), h = Math.max(base - top, 1.5);
+    s += `<g class="c" data-i="${i}"><rect x="${cx - slot / (2 * group)}" y="${padT}" width="${slot / group}" height="${base - padT}" fill="transparent"/>` +
+         `<rect class="col" x="${cx - bw / 2}" y="${base - h}" width="${bw}" height="${h}" rx="4" fill="${r.color || 'var(--base)'}"/>` +
+         (r.inner != null ? `<rect x="${cx - bw / 2}" y="${y(r.inner)}" width="${bw}" height="${Math.max(base - y(r.inner), 0)}" rx="4" fill="${r.innerColor}"/>` : '') +
+         `<text class="val" x="${cx}" y="${base - h - 8}" text-anchor="middle">${r.text ?? valueText(r.value)}</text>`;
+    s += rotate ? (r.label ? `<text x="${gx + 4}" y="${base + 14}" text-anchor="end" transform="rotate(-38 ${gx + 4} ${base + 14})">${r.label}</text>` : '')
+                : `<text x="${cx}" y="${base + 18}" text-anchor="middle">${r.label}</text>${r.label2 ? `<text x="${cx}" y="${base + 34}" text-anchor="middle">${r.label2}</text>` : ''}`;
+    s += '</g>';
+  });
+  s += '</svg>';
+  const wrap = document.createElement('div'); wrap.className = 'scroll'; wrap.innerHTML = s;
+  wrap.querySelectorAll('g.c').forEach(g => { const r = rows[+g.dataset.i]; g.addEventListener('mousemove', e => showTip(e, r.tip)); g.addEventListener('mouseleave', hideTip); });
+  return wrap;
+}
+const today = () => new Date().toISOString().slice(0, 10);
+const lastDays = days => [new Date(Date.now() - days * 864e5).toISOString().slice(0, 10), today()];
+// Sum each file's churn and commits between two dates (inclusive); the 12 most changed.
+function churnIn(from, to) {
+  const sums = new Map();
+  for (const [date, changes] of CHURN_LOG) if (date >= from && date <= to) for (const [i, ch] of changes) { const e = sums.get(i) || [0, 0]; e[0] += ch; e[1]++; sums.set(i, e); }
+  return [...sums].sort((a, b) => b[1][0] - a[1][0]).slice(0, 12).map(([i, [ch, n]]) => [CHURN_FILES[i][0], CHURN_FILES[i][1], ch, n, '']);
+}
+const card = (title, sub) => { const c = document.createElement('section'); c.className = 'card'; c.innerHTML = `<h2>${title}</h2>${sub ? `<p class="sub">${sub}</p>` : ''}`; return c; };
+const table = (head, rows) => { const t = document.createElement('table'); t.innerHTML = `<tr>${head.map(h => `<th${h.n ? ' class="n"' : ''}>${h.t}</th>`).join('')}</tr>` + rows.join(''); return t; };
+
+const mark = v => v === 1 ? ['✓', 'var(--c4)', 'Met'] : ['✗', 'var(--c2)', 'Not met'];
+const passed = ch => ch.filter(c => c[1] === 1).length;
+const big = v => v >= 1e6 ? (v / 1e6).toFixed(2) + 'M' : v >= 1e3 ? Math.round(v / 1e3) + 'K' : String(v);
+const dupExtra = list => list.reduce((a, d) => a + d.bytes * (d.files.length - 1), 0);
+
+function sections() {
+  const name = REPORT.name, total = CODE.reduce((a, x) => a + x.v, 0), allChecks = PILLARS.flatMap(p => p[1]), passedAll = passed(allChecks);
+  const wtTotal = WT.reduce((a, w) => a + Math.max(w[1], 0), 0), first = CHURN_LOG.length ? CHURN_LOG.at(-1)[0] : today();
+  return {
+    code: {
+      nav: 'Code', n: big(total) + ' lines',
+      side: ['Where the code is', CODE.map(c => [c.k, big(c.v)]), 'Lines of code and data. Markdown, lock files, media and build output are left out.'],
+      render(m) {
+        const top = CODE[0];
+        m.innerHTML = `<div class="eyebrow">Code</div><h1>${name} holds ${fmt(total)} lines of code and data${top ? `; ${Math.round(100 * top.v / Math.max(total, 1))}% is in ${top.k}` : ''}</h1><p class="what">Tracked files at ${REPORT.commit} (${REPORT.date}), by top-level folder. Markdown, lock files, media and build output are left out.</p>`;
+        if (!CODE.length) { m.insertAdjacentHTML('beforeend', '<p class="what">No code is tracked in this project.</p>'); return; }
+        const c = card('Lines of code and data by folder', 'Hover a column for the number of files.');
+        c.append(columns(CODE.map((x, i) => ({ label: x.k.length > 18 ? x.k.slice(0, 17) + '…' : x.k, value: x.v, color: i === 0 ? 'var(--c1)' : 'var(--base)', text: big(x.v), tip: `<b>${x.k}</b>: ${fmt(x.v)} lines<br>${x.d}` })), { valueText: big, rotate: true, height: 400 })); m.append(c);
+        const t = card('By folder'); t.append(table([{ t: 'Folder' }, { t: 'Files' }, { t: 'Lines', n: 1 }], CODE.map(x => `<tr><td class="f">${x.k}</td><td>${x.d}</td><td class="n">${fmt(x.v)}</td></tr>`))); m.append(t);
+      },
+    },
+    churn: {
+      nav: 'Churn', n: 'any dates',
+      side: ['Most rewritten, 30 days', churnIn(...lastDays(30)).slice(0, 6).map(c => [short(c[0]), (c[2] / c[1]).toFixed(1) + '×']), 'Times over: lines changed in the dates divided by the file’s size today.'],
+      render(m) {
+        m.innerHTML = `<div class="eyebrow">Churn</div><h1 id="churn-h1"></h1><p class="what">Churn is lines added plus lines removed, by the date each change was written. Pick the dates.</p>
+          <div class="range"><label>From <input type="date" id="churn-from"></label><label>To <input type="date" id="churn-to"></label>
+          <button data-d="30">30 days</button><button data-d="91">3 months</button><button data-d="182">6 months</button><button data-d="all">All time</button></div><div id="churn-body"></div>`;
+        const from = m.querySelector('#churn-from'), to = m.querySelector('#churn-to');
+        [from.min, to.max] = [first, today()]; [from.max, to.min] = [today(), first];
+        const show = () => {
+          const top = churnIn(from.value, to.value), body = m.querySelector('#churn-body'); body.innerHTML = '';
+          const over = top.filter(c => c[2] >= 1.5 * c[1]).length;
+          m.querySelector('#churn-h1').textContent = top.length ? `${over} of the ${top.length} most changed files were rewritten at least one and a half times over, ${from.value} to ${to.value}` : `No code changed from ${from.value} to ${to.value}`;
+          if (!top.length) { body.textContent = 'No changes in these dates.'; return; }
+          const c = card('Size today against churn', '<span style="color:var(--base)">■</span> size today &nbsp; <span style="color:var(--c1)">■</span> churn');
+          const rows = []; top.forEach(([f, s, ch]) => {
+            rows.push({ label: '', value: s, color: 'var(--base)', text: '', tip: `<b>${f}</b><br>size today ${fmt(s)} lines` });
+            rows.push({ label: short(f), value: ch, color: 'var(--c1)', text: fmt(ch), tip: `<b>${f}</b><br>churn ${fmt(ch)} lines · ${(ch / s).toFixed(1)}× its size` }); });
+          c.append(columns(rows, { rotate: true, height: 420, group: 2, valueText: big })); body.append(c);
+          const t = card('By file'); t.append(table([{ t: 'File' }, { t: 'Size', n: 1 }, { t: 'Churn', n: 1 }, { t: 'Changes', n: 1 }, { t: 'Times over', n: 1 }],
+            top.map(([f, s, ch, n]) => `<tr><td class="f">${f}</td><td class="n">${fmt(s)}</td><td class="n">${fmt(ch)}</td><td class="n">${n}</td><td class="n">${(ch / s).toFixed(1)}×</td></tr>`))); body.append(t);
+        };
+        const pick = days => { [from.value, to.value] = days === 'all' ? [first, today()] : lastDays(Number(days)); show(); };
+        m.querySelectorAll('.range button').forEach(b => b.onclick = () => pick(b.dataset.d));
+        from.onchange = to.onchange = show; pick(30);
+      },
+    },
+    docs: {
+      nav: 'Docs', n: fmt(DOCS.reduce((a, d) => a + d[2], 0)) + ' lines',
+      side: ['Where the docs are', DOCS.slice(0, 6).map(d => [d[0], fmt(d[2])]), 'Markdown lines by folder.'],
+      render(m) {
+        const lines = DOCS.reduce((a, d) => a + d[2], 0), files = DOCS.reduce((a, d) => a + d[1], 0);
+        m.innerHTML = `<div class="eyebrow">Docs</div><h1>${name} has ${fmt(lines)} lines of Markdown in ${fmt(files)} files${DOCS[0] ? `; ${Math.round(100 * DOCS[0][2] / Math.max(lines, 1))}% is in ${DOCS[0][0]}` : ''}</h1><p class="what">Tracked Markdown, by folder.</p>`;
+        if (!DOCS.length) return;
+        const c = card('Lines of Markdown by folder');
+        c.append(columns(DOCS.map(d => ({ label: d[0].length > 18 ? d[0].slice(0, 17) + '…' : d[0], value: d[2], color: 'var(--base)', tip: `<b>${d[0]}</b>: ${fmt(d[2])} lines in ${d[1]} files` })), { rotate: true, height: 400, valueText: big })); m.append(c);
+      },
+    },
+    worktrees: {
+      nav: 'Worktrees', n: gb(wtTotal),
+      side: ['Largest copies', WT.slice(0, 5).map(w => [short(w[0]), w[1] < 0 ? '?' : gb(w[1])]), `${WT.length} checkouts of this project on disk.`],
+      render(m) {
+        m.innerHTML = `<div class="eyebrow">Worktrees</div><h1>${WT.length} ${WT.length === 1 ? 'copy' : 'copies'} of ${name} take ${gb(wtTotal)} of disk</h1><p class="what">Every checkout of this project: its size on disk with build output, its branch, its last commit and its unsaved files.</p>`;
+        if (WT.length > 1) { const c = card('Disk used per copy'); c.append(columns(WT.filter(w => w[1] > 0).slice(0, 12).map((w, i) => ({ label: short(w[0]), value: w[1], color: i === 0 ? 'var(--c1)' : 'var(--base)', text: gb(w[1]), tip: `<b>${w[0]}</b><br>branch ${w[2]}<br>last commit ${w[3]} · ${w[4]} unsaved` })), { valueText: v => gb(v), rotate: true, height: 400 })); m.append(c); }
+        const t = card('All copies'); t.append(table([{ t: 'Folder' }, { t: 'Branch' }, { t: 'Last commit' }, { t: 'Unsaved', n: 1 }, { t: 'Size', n: 1 }],
+          WT.map(w => `<tr><td class="f">${w[0]}</td><td class="f">${w[2]}</td><td>${w[3]}</td><td class="n">${w[4]}</td><td class="n">${w[1] < 0 ? 'not measured' : gb(w[1])}</td></tr>`))); m.append(t);
+      },
+    },
+    ready: {
+      nav: 'Readiness', n: `${passedAll} of ${allChecks.length}`,
+      side: ['Checks met, by pillar', PILLARS.map(p => [p[0], `${passed(p[1])} of ${p[1].length}`]), 'Each check is read from the tracked files. Nothing is built or run.'],
+      render(m) {
+        const weakest = PILLARS.map(p => [p[0], passed(p[1]) / p[1].length]).sort((a, b) => a[1] - b[1]).filter(p => p[1] < 1).slice(0, 2).map(p => p[0].toLowerCase());
+        m.innerHTML = `<div class="eyebrow">Agent readiness</div><h1>${name} meets ${passedAll} of ${allChecks.length} readiness checks${weakest.length ? `; ${weakest.join(' and ')} ${weakest.length > 1 ? 'are' : 'is'} weakest` : ''}</h1><p class="what">Yes-or-no checks of what a coding agent needs from a project, each with its evidence. They are read from the tracked files; nothing is built or run.</p>`;
+        if (REPORT.previous) {
+          const moved = card(REPORT.changed.length ? `Changed since the report of ${REPORT.previous.slice(0, 10)}` : `Nothing changed since the report of ${REPORT.previous.slice(0, 10)}`);
+          if (REPORT.changed.length) moved.append(table([{ t: 'Check' }, { t: 'Was' }, { t: 'Is now' }], REPORT.changed.map(c => `<tr><td>${c.check}</td><td style="color:${mark(c.from)[1]}">${mark(c.from)[2]}</td><td style="color:${mark(c.to)[1]};font-weight:500">${mark(c.to)[2]}</td></tr>`)));
+          m.append(moved);
+        }
+        const c = card('Checks met per pillar', 'Each column is one pillar: its full height is the number of checks, the green part the checks met');
+        c.append(columns(PILLARS.map(([pillar, ch]) => ({ label: pillar, value: ch.length, color: 'var(--raise)', inner: passed(ch), innerColor: 'var(--c4)', text: `${passed(ch)} of ${ch.length}`, tip: `<b>${pillar}</b><br>${passed(ch)} of ${ch.length} checks met` })), { rotate: true, height: 380, valueText: v => v })); m.append(c);
+        for (const [pillar, ch] of PILLARS) {
+          const k = card(`${pillar} · ${passed(ch)} of ${ch.length}`);
+          k.append(table([{ t: 'Result' }, { t: 'Check' }, { t: 'Evidence' }], ch.map(([t, v, e]) => { const [ic, col, word] = mark(v); return `<tr><td style="width:96px;white-space:nowrap;color:${col};font-weight:500">${ic} ${word}</td><td>${t}</td><td>${e}</td></tr>`; })));
+          m.append(k);
+        }
+      },
+    },
+    dups: {
+      nav: 'Duplicates', n: kb(dupExtra(DUPS)),
+      side: ['Copies by kind', ['media', 'docs', 'other'].map(k => [k[0].toUpperCase() + k.slice(1), kb(dupExtra(DUPS.filter(d => d.kind === k)))]), `${DUPS.length} sets of byte-identical files.`],
+      render(m) {
+        m.innerHTML = `<div class="eyebrow">Duplicates</div><h1>${DUPS.length ? `${kb(dupExtra(DUPS))} of ${name}'s tracked files are exact copies, in ${DUPS.length} sets` : `${name} has no exact copies among its tracked files`}</h1><p class="what">Byte-identical tracked files.</p>`;
+        if (!DUPS.length) return;
+        const t = card('Every set, largest first', 'Each row is one file and its copies');
+        t.append(table([{ t: 'Files' }, { t: 'Kind' }, { t: 'Copies', n: 1 }, { t: 'Each', n: 1 }], DUPS.map(d => `<tr class="pair"><td class="f">${d.files.map(f => `<div>${f}</div>`).join('')}</td><td>${d.kind}</td><td class="n">${d.files.length}</td><td class="n">${kb(d.bytes)}</td></tr>`)));
+        m.append(t);
+      },
+    },
+  };
+}
+
+const nav = document.getElementById('nav'), main = document.getElementById('main');
+async function start() {
+  const thread = new URLSearchParams(location.search).get('thread');
+  if (!thread) { document.getElementById('state').textContent = 'Choose a chat to see its project.'; return; }
+  const response = await fetch(`/api/threads/${encodeURIComponent(thread)}/codebase`);
+  const report = await response.json().catch(() => ({}));
+  if (!response.ok) { document.getElementById('state').textContent = report.error || 'Could not read the project.'; return; }
+  REPORT = report;
+  [CODE, CHURN_FILES, CHURN_LOG, DOCS, DUPS, WT, PILLARS] = [report.code, report.churnFiles, report.churnLog, report.docs, report.dups, report.worktrees, report.pillars];
+  document.getElementById('brand').textContent = report.name;
+  document.title = `${report.name} codebase · ${report.date} ${report.commit}`;
+  const SECTIONS = sections();
+  const show = key => {
+    const s = SECTIONS[key];
+    nav.querySelectorAll('.nav').forEach(b => b.setAttribute('aria-current', b.dataset.k === key));
+    document.getElementById('side-title').textContent = s.side[0];
+    document.getElementById('side').innerHTML = s.side[1].map(([a, b]) => `<div class="item"><span class="lab" title="${a}">${a}</span><span class="n">${b}</span></div>`).join('');
+    document.getElementById('side-note').textContent = s.side[2];
+    main.replaceChildren(); s.render(main); history.replaceState(null, '', location.search + '#' + key); hideTip();
+  };
+  for (const [k, s] of Object.entries(SECTIONS)) {
+    const b = document.createElement('button'); b.className = 'nav'; b.dataset.k = k; b.innerHTML = `${s.nav}<span class="n">${s.n}</span>`;
+    b.addEventListener('click', () => show(k)); nav.append(b);
+  }
+  show(SECTIONS[location.hash.slice(1)] ? location.hash.slice(1) : 'code');
+}
+start().catch(error => { document.getElementById('state').textContent = `Could not read the project: ${error.message}`; });
+</script>
+</body>
+</html>

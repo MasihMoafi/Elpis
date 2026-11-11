@@ -217,8 +217,8 @@ export function applyFrameHeaders(url: URL, response: import("node:http").Server
       ),
     );
   }
-  // Observability frames the Trajectory page; only the application itself may embed it.
-  if (url.pathname.startsWith("/trajectory/")) {
+  // Observability frames the Trajectory and Codebase pages; only the application itself may embed them.
+  if (url.pathname.startsWith("/trajectory/") || url.pathname.startsWith("/codebase/")) {
     response.setHeader("X-Frame-Options", "SAMEORIGIN");
     response.setHeader(
       "Content-Security-Policy",

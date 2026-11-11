@@ -278,7 +278,7 @@ export function MatildaCompanion() {
           className="matilda-pin"
           data-speaking={voice.speaking || undefined}
           aria-label="Pin Matilda"
-          title="Pin Matilda"
+          title={nudge ? "Matilda has a message for you. Pin her to read it." : "Pin Matilda"}
           disabled={busy}
           onClick={pin}
         >
@@ -297,6 +297,13 @@ export function MatildaCompanion() {
               </>
             )}
             {voice.speaking && <span className="matilda-speaking-ring" aria-hidden="true" />}
+            {/* A message of hers shows on her button by itself (11 Nov, Masih: "the pin should show like 1 message
+              for me, proactively not when I click on it"); pinning her opens it. */}
+            {nudge && (
+              <span className="matilda-pin-count" role="status" aria-label="1 message from Matilda">
+                1
+              </span>
+            )}
           </>
         </Button>
       )}

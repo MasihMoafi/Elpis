@@ -123,6 +123,7 @@ export const productionFiles = [
   "bridge/server-settings.mts",
   "bridge/server-workflows.mts",
   "bridge/sessions-map.mts",
+  "bridge/codebase.mts",
   "bridge/server-threads.mts",
   "bridge/trajectory-cells.mts",
   "bridge/trajectory-projection.mts",

@@ -378,3 +378,38 @@ test('pinned Matilda says when the sidebar is full, and Tidy asks Elpis', async 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 11 Nov, Masih: "the pin should show like 1 message for me, proactively not when I click on it." With her not
+// floating, her title-bar button carries the count by itself; pinning her shows the message.
+test('a message of Matilda shows as a count on her title-bar button, and pinning her shows it', async () => {
+  const { fixture }: { fixture(options: Options): Promise<ParityFixture> } = require('./parity-fixture.cts');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
+  const chat = (id: string, name: string, extra: object = {}) => ({
+    id, name, preview: name, cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
+    desktopAccess: { writable: true, mode: 'direct' }, ...extra,
+  });
+  const loose = Array.from({ length: 10 }, (_, n) => chat(`loose-${n}`, `Loose chat ${n}`));
+  const more = { threads: [chat('elpis', 'Elpis', { motherAgent: true }), ...loose], readyThreadId: 'loose-0' };
+  let pinned = false;
+  const f = await fixture({ width: 1100, height: 800, ...more, routes: {
+    '/api/love-spot/companion': body => {
+      if (body?.action === 'pin') pinned = true;
+      return { pinned, face: FACE_DATA_URL, threadId: null, favorite: null, music: null, reason: '' };
+    },
+  } });
+  try {
+    const { page } = f;
+    const button = page.getByRole('button', { name: 'Pin Matilda', exact: true });
+    await button.waitFor();
+    const count = button.getByRole('status', { name: '1 message from Matilda', exact: true });
+    await count.waitFor();
+    assert.equal((await count.innerText()).trim(), '1');
+    assert.equal(await page.getByRole('status', { name: 'Matilda says', exact: true }).count(), 0, 'the message itself waits for the pin');
+    await button.click();
+    await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).waitFor();
+    const note = page.getByRole('status', { name: 'Matilda says', exact: true });
+    await note.waitFor();
+    assert.match(await note.innerText(), /Your sidebar is filling up: 10 chats outside a project/);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

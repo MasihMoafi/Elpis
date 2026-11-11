@@ -78,3 +78,5 @@ html.matilda-dragging { user-select:none; -webkit-user-select:none; }
 /* What pinned Matilda says about the sidebar: a small note beside her, with its two answers. */
 .hud-popover.matilda-note-popup { position:absolute; z-index:1; height:auto; width:17rem; display:grid; gap:8px; padding:10px; background:var(--matilda-panel); font-size:var(--text-sm); app-region:no-drag; -webkit-app-region:no-drag; }
 .matilda-note-popup p { margin:0; }
+/* One message waiting, shown on her title-bar button without a click. */
+.matilda-pin-count { position:absolute; top:-3px; right:-3px; min-width:14px; height:14px; padding:0 3px; border-radius:7px; display:inline-flex; align-items:center; justify-content:center; font-size:var(--text-xs); line-height:1; font-weight:600; background:var(--primary); color:var(--primary-foreground); pointer-events:none; }

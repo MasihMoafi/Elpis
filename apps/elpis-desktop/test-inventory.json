@@ -129,6 +129,7 @@
     "tests/love-spot-events.test.mts",
     "tests/transcript-cache.test.mts",
     "bridge/bounded-cache.test.mts",
+    "bridge/codebase.test.mts",
     "tests/workflows-view.test.mts",
     "tests/sidebar-fill.test.mts"
   ],
@@ -304,6 +305,7 @@
   "ui": [
     "tests/sessions-map.test.cts",
     "tests/page-frame.test.cts",
+    "tests/codebase-page.test.cts",
     "tests/chat-scroll-follow.test.cts",
     "tests/automations.test.cts",
     "tests/memory-count.test.cts",

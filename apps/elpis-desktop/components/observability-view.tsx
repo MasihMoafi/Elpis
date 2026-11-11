@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { SettingsNotice } from "@/components/settings/rows";
+import { Segmented, SettingsNotice } from "@/components/settings/rows";
 import { SearchField } from "@/components/ui/search-field";
 import {
   Combobox,
@@ -80,6 +80,8 @@ function ProjectHealth({ threadId }: { threadId: string }) {
 export function ObservabilityView({ threadId, chats }: { threadId?: string; chats: Thread[] }) {
   const [picked, setPicked] = useState(threadId);
   const [query, setQuery] = useState("");
+  // Trajectory shows what the chat did; Codebase shows the project it works in (11 Nov, Masih: "see that to the end").
+  const [page, setPage] = useState<"trajectory" | "codebase">("trajectory");
   useEffect(() => {
     if (threadId) setPicked(threadId);
   }, [threadId]);
@@ -125,12 +127,25 @@ export function ObservabilityView({ threadId, chats }: { threadId?: string; chat
             </ComboboxList>
           </ComboboxContent>
         </Combobox>
+        <Segmented
+          label="Observability page"
+          value={page}
+          onChange={setPage}
+          options={[
+            { value: "trajectory", label: "Trajectory" },
+            { value: "codebase", label: "Codebase" },
+          ]}
+        />
         {picked && <ProjectHealth threadId={picked} />}
       </div>
       {picked ? (
-        <iframe key={picked} title="Trajectory" src={`/trajectory/index.html?thread=${encodeURIComponent(picked)}`} />
+        page === "codebase" ? (
+          <iframe key={`codebase:${picked}`} title="Codebase" src={`/codebase/index.html?thread=${encodeURIComponent(picked)}`} />
+        ) : (
+          <iframe key={picked} title="Trajectory" src={`/trajectory/index.html?thread=${encodeURIComponent(picked)}`} />
+        )
       ) : (
-        <SettingsNotice>Choose a chat to see its trajectory.</SettingsNotice>
+        <SettingsNotice>Choose a chat to see its trajectory or its project.</SettingsNotice>
       )}
     </div>
   );
