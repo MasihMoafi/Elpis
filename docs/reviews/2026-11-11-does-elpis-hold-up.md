@@ -34,8 +34,10 @@ delete, restart) against the stand-in model would have caught seven of them. Tha
 **Three design risks remain in the router.**
 1. A model decides what each message is. Five host-side guarantees now catch its wrong turns; a new kind of wrong
    turn is still possible.
-2. The router starts a new session at every app start and re-reads its own instructions with tool calls first (seen
-   in every session). It has no memory of the Elpis chat beyond what it reads back.
+2. The router's session outlives an app restart, and a resumed session answers from its old context. Found
+   live later on 11 Nov: after an update that taught a tool to pass pictures, it refused without trying. A session
+   made from other instructions or tools is now replaced (`c892f6cc5`). It still has no memory of the Elpis chat
+   beyond what it reads back.
 3. Its instructions are 50 KB written for a team's GitHub bot (pull requests, reviewers, merge notices). His use is
    one person and his chats, with the GitHub source off. Most of that text is cost and confusion on every turn.
 
