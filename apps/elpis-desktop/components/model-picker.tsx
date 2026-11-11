@@ -1,5 +1,5 @@
 "use client";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useRef, useState } from "react";
 import { Tabs } from "@base-ui/react/tabs";
 import { ChevronDown } from "lucide-react";
@@ -395,7 +395,7 @@ export function ModelPicker({
           </Tabs.Panel>
         </Tabs.Root>
         {allowCustom && configured.length > 0 && (
-          <details className="model-custom">
+          <Disclosure className="model-custom">
             <DisclosureSummary>Advanced: use an unlisted model</DisclosureSummary>
             <div className="grid gap-2 pt-2">
               <OptionSelect
@@ -426,7 +426,7 @@ export function ModelPicker({
                 Use model
               </Button>
             </div>
-          </details>
+          </Disclosure>
         )}
       </ComboboxContent>
     </Combobox>

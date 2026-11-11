@@ -1,6 +1,6 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { FolderIcon, PlusIcon, SettingsIcon } from "@/components/elpis-icons";
@@ -333,7 +333,7 @@ export function CustomizeView({
             ))}
           </ul>
           {(data.skills.errors?.length ?? 0) > 0 && (
-            <details className="customize-errors">
+            <Disclosure className="customize-errors">
               <DisclosureSummary>
                 {data.skills.errors!.length} {data.skills.errors!.length === 1 ? "skill" : "skills"} could not be read
               </DisclosureSummary>
@@ -347,7 +347,7 @@ export function CustomizeView({
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
         </section>
       )}

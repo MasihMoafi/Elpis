@@ -1,6 +1,6 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useState } from "react";
 import {
   AlertDialog,
@@ -146,7 +146,7 @@ export function RewindDialog({
                   <ChangeCounts added={preview.added ?? 0} removed={preview.removed ?? 0} />
                 </p>
                 {preview.diff && (
-                  <details className="min-w-0">
+                  <Disclosure className="min-w-0">
                     <DisclosureSummary className="cursor-pointer">View changes</DisclosureSummary>
                     <pre className="mt-2 max-h-44 overflow-auto whitespace-pre-wrap break-all rounded-md border bg-background p-2 text-xs leading-relaxed">
                       {preview.diff.split("\n").map((line, index) => (
@@ -159,7 +159,7 @@ export function RewindDialog({
                       ))}
                     </pre>
                     {preview.truncated && <p>Showing the first part of the diff.</p>}
-                  </details>
+                  </Disclosure>
                 )}
                 <p>Commits stay in place.</p>
               </>

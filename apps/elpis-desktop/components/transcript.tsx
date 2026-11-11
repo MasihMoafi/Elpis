@@ -3,7 +3,7 @@
 import { isReply, isCompaction } from "./transcript-activity";
 export { isReply, isCompaction } from "./transcript-activity";
 import { Flow, LiveStep } from "./transcript-activity";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 
 import { Fragment, createContext, useContext, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -316,7 +316,7 @@ function Turn({
     <section ref={section} className="turn" aria-label="Turn" data-prompt={users.length > 0 ? "" : undefined}>
       {users.map(renderItem)}
       {folded.length > 0 && (
-        <details
+        <Disclosure
           className="worked-for"
           onToggle={event => {
             if (event.target === event.currentTarget) setWorkOpen(event.currentTarget.open);
@@ -335,7 +335,7 @@ function Turn({
               <Flow entries={folded} renderItem={renderItem} mediaOf={mediaOf} wrapItem={wrapItem} />
             </div>
           )}
-        </details>
+        </Disclosure>
       )}
       <Flow
         entries={visible}

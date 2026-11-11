@@ -1,6 +1,6 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, type Thread } from "@/lib/api";
@@ -444,14 +444,14 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
           )}
           {change?.truncated && <p className="text-sm">The diff is truncated. Review the full diff in the worktree.</p>}
           {change?.checks?.commands.map((command, index) => (
-            <details key={index} open={command.code !== 0} className="text-sm">
+            <Disclosure key={index} open={command.code !== 0} className="text-sm">
               <DisclosureSummary>
                 {command.command} · exit {command.code}
               </DisclosureSummary>
               <pre className="elpis-improve-log">
                 {command.output || (command.code !== 0 ? `Check exited with code ${command.code} without output.` : "")}
               </pre>
-            </details>
+            </Disclosure>
           ))}
           {(error || change?.error) && (
             <p role="alert" className="text-sm text-destructive">

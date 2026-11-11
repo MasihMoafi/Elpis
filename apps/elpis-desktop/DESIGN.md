@@ -58,3 +58,46 @@ Reconnect and error notices follow the last message inside `.chat-content`. Show
 6. Follow [desktop verification](TESTING.md) before installation.
 
 The shared static UI check is owned by `skills/web-dev/ui-check/lint.mjs`; its copy is generated. After changing the owner, run `node scripts/ui-lint-sync.mts --write` from this app.
+
+## 8. Known UI exceptions
+What `ui-check.known.json` still allows, one row per key (rule, then file or page); the list only shrinks. A disclosure is `Disclosure` with `DisclosureSummary` (`components/ui/disclosure-summary.tsx`, the one native `details`), so it has no row. An R5 row stays where `Button` or `Input` would change the look: their base classes add the bevel clip, a 1 px transparent border, medium weight, a 1 px press shift and the focus ring. Matching a control to the pixel needs an unstyled shared variant and a look check for that control.
+
+| Rule | File or page | Why it stays; what would change it |
+| --- | --- | --- |
+| R2 | `/` brand row | The 73×36 wordmark and the 28 px Close sidebar button share a centre line; equal boxes means clipping the wordmark or a 38 px hover box on Close |
+| R3 | `/` brand row | The same pair: their tops differ by 5 px because they are centred; top-aligning moves the toggle off the wordmark's centre |
+| R4 | `components/agents-canvas.css` | The board's kind, sticky-note and iso-face colours have no theme token; adding them is a theme change in `design/design.json` |
+| R5 | `components/agents-iso-places.tsx` | Ports, wire ends and flow labels are marks placed on the board; Button's box and clip would move them |
+| R5 | `components/appearance-settings.tsx` | The native colour swatch; Input's bevel clip and padding would crop it |
+| R5 | `components/approval-card.tsx` | A native checkbox in the accent colour; the shared Checkbox draws a different box |
+| R5 | `components/archived-view.tsx` | The same native checkboxes (select all and one per row) |
+| R5 | `components/browser-annotations.tsx` | A numbered comment pin on the page; Button's size and clip would change the pin |
+| R5 | `components/browser-panel-chrome.tsx` | The zoom value reads as text and resets on click; Button adds padding and weight |
+| R5 | `components/browser-panel.tsx` | The same zoom value in the older toolbar |
+| R5 | `components/chat-team-panel.tsx` | Team rows are list rows with a state dot; Button's centring and clip would change them |
+| R5 | `components/composer-controls.tsx` | The 12 px × inside the Plan pill; the smallest Button is 24 px |
+| R5 | `components/context-files.tsx` | A file name that reads as a link; Button adds padding and weight |
+| R5 | `components/context-ledger.tsx` | The ledger's full-width heading row; Button centres it and clips its corners |
+| R5 | `components/decision-card.tsx` | Choice rows with a second line; Button is one centred line |
+| R5 | `components/edit-rows.tsx` | The Changes row with its counts; Button's centring and clip would change it |
+| R5 | `components/elpis-features.tsx` | The feature chips under the composer (dot and label); Button adds height and weight |
+| R5 | `components/experiment-lab.tsx` | Saved-experiment rows with two lines; Button is one centred line |
+| R5 | `components/file-cards.tsx` | A native dialog for a full-size image; the app has no shared dialog other than the alert dialog |
+| R5 | `components/file-editor.tsx` | The editor's find field and code area keep the editor's mono look; Input and Textarea add the bevel and border |
+| R5 | `components/file-ref.tsx` | An inline file link inside message text; Button would break the line |
+| R5 | `components/file-tree.tsx` | The tree's filter field in the panel's own style; Input adds the bevel and height |
+| R5 | `components/improve-elpis.tsx` | A menu item placed in another owner's context menu; `menu-row` needs its owner's keys |
+| R5 | `components/matilda-companion.tsx` | Matilda's face and resize grip are a drawn character and a drag handle |
+| R5 | `components/mcp-settings.tsx` | A native checkbox in the import list |
+| R5 | `components/message-reply.tsx` | The quoted message is a two-line block; Button is one centred line |
+| R5 | `components/prompt-rail.tsx` | Rail ticks are 28 px marks in a 32 px gutter; the bookmark sits in the preview card |
+| R5 | `components/provider-usage.tsx` | The usage bars as one clickable block; Button centres and clips it |
+| R5 | `components/queued-follow-ups.tsx` | A full-width queued row with preview text |
+| R5 | `components/settings-view.tsx` | "Back to app" is a sidebar row (`--row-h`), not a button size |
+| R5 | `components/sidebar-group.tsx` | A group header row with its chevron at `--row-h` |
+| R5 | `components/sidebar-thread-row.tsx` | The status dot and the chat row; both are sidebar rows, not buttons |
+| R5 | `components/tab-strip.tsx` | A tab with icon and label; Button's centring and clip would change it |
+| R7 | `/` composer `.model-controls` | Real: the plus is drawn at 2.3 px and the lock at 0.9 px beside the 1.3 px chevron; evening them means redrawing approved Elpis glyphs (the plus and the whole second sheet) |
+| R7 | `/` sidebar `.nav-list` | The check reads 1 px on filled Elpis glyphs; drawn, the outlined ones match lucide (1.2–1.3 px), but the Elpis mark is a solid 2 px mark; evening it means redrawing his logo mark |
+| R7 | `/` composer `.composer-tray` | Drawn the same (folder 1.04 px, laptop 1.08 px at 13 px), but the folder is filled, so the check reads 1 px; declaring a stroke on Elpis glyphs would also hide the real cases above |
+| R7 | `/` composer `.composer-right` | The context ring beside the model picker is drawn at 2 px and its neighbours at 1.3 px. It is a gauge, not an icon: its line carries how full the context is, and at 1.3 px in the border colour it is faint in the light theme. Evening it is a change to how the gauge looks, which waits for Masih |

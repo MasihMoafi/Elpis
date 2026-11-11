@@ -3,7 +3,7 @@
 import { runCard } from "@/lib/run-card";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
 import { api, title, type Entry, type Thread } from "@/lib/api";
 import { agentParentId } from "@/lib/agent-runs.mts";
@@ -343,7 +343,7 @@ export function WorkflowProgress({
         </div>
       )}
       {!!team.agents.length && (
-        <details open={!compact && active > 0}>
+        <Disclosure open={!compact && active > 0}>
           <DisclosureSummary>Live team · {team.agents.length}</DisclosureSummary>
           <ol className="space-y-2 pt-2">
             {prioritizeChats(team.agents, thread => (workflowThreadActive(thread) ? "working" : "idle")).map(thread => (
@@ -367,7 +367,7 @@ export function WorkflowProgress({
               </li>
             ))}
           </ol>
-        </details>
+        </Disclosure>
       )}
     </section>
   );

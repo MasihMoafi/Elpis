@@ -1,6 +1,6 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { CollapseDetails } from "@/components/step";
 import { WorkingMark } from "@/components/working-mark";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -83,7 +83,7 @@ export function ActivityGroup({
     .slice(0, 3);
   const edits = running ? null : turnEdits(items);
   return (
-    <details
+    <Disclosure
       className="activity-group"
       onToggle={event => {
         if (event.target === event.currentTarget) setOpen(event.currentTarget.open);
@@ -127,7 +127,7 @@ export function ActivityGroup({
           <CollapseDetails label="Collapse tool calls" />
         </div>
       )}
-    </details>
+    </Disclosure>
   );
 }
 

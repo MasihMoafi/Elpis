@@ -48,7 +48,7 @@ import { SearchField } from "@/components/ui/search-field";
 import { Segmented } from "@/components/settings/rows";
 import { Switch as ElpisSwitch } from "@/components/ui/switch";
 import { Tooltip } from "@/components/ui/tooltip";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -328,7 +328,7 @@ export function DisclosureRow({
   children?: ReactNode | undefined;
 }) {
   return (
-    <details className="dt-disclosure" open={open}>
+    <Disclosure className="dt-disclosure" open={open}>
       <DisclosureSummary
         onClick={event => {
           event.preventDefault();
@@ -340,7 +340,7 @@ export function DisclosureRow({
         {!open && collapsedContent}
       </DisclosureSummary>
       {open && children}
-    </details>
+    </Disclosure>
   );
 }
 export function Modal({

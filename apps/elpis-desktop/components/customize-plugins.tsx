@@ -6,7 +6,7 @@ import { PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SettingsEmpty, SettingsNotice } from "@/components/settings/rows";
 import { CustomizeRow } from "@/components/customize-row";
 import { api, unreadable } from "@/lib/api";
@@ -316,7 +316,7 @@ function PluginCatalog({
         <div className="customize-title">
           <h2>Marketplaces</h2>
         </div>
-        <details className="grid gap-3">
+        <Disclosure className="grid gap-3">
           <DisclosureSummary className="cursor-pointer">Advanced: add from Git URL or folder</DisclosureSummary>
           <p className="customize-note">
             A Git URL (or owner/repo) or a folder on this computer that holds a Codex or Claude Code marketplace.
@@ -341,7 +341,7 @@ function PluginCatalog({
             </Button>
           </form>
           {!source.trim() && <SettingsNotice>Enter a Git URL or folder to add a marketplace.</SettingsNotice>}
-        </details>
+        </Disclosure>
         {changing && <SettingsNotice>Updating marketplaces…</SettingsNotice>}
         {actionErrors.add && <SettingsNotice tone="alert">{actionErrors.add}</SettingsNotice>}
         {catalog && !catalog.marketplaces.length && <SettingsEmpty title="No marketplaces added" />}

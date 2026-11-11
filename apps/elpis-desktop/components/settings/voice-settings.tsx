@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { api, unreadable, type Model } from "@/lib/api";
 import { SettingRow, SettingsActions, SettingsGroup, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import { errorText } from "@/lib/error-text.mts";
@@ -139,7 +139,7 @@ function WhisperTypeSettings({
           <span id="openrouter-transcription-status" role="status" className="text-xs text-muted-foreground">
             {catalogStatus}
           </span>
-          <details>
+          <Disclosure>
             <DisclosureSummary className="cursor-pointer">Advanced: custom model</DisclosureSummary>
             <Input
               aria-label="Custom OpenRouter transcription model"
@@ -151,7 +151,7 @@ function WhisperTypeSettings({
               maxLength={200}
               disabled={disabled || busy}
             />
-          </details>
+          </Disclosure>
         </div>
       </SettingRow>
       <SettingRow
@@ -363,7 +363,7 @@ export function VoiceSettings({
             </span>
           </SettingRow>
           {server ? (
-            <details>
+            <Disclosure>
               <DisclosureSummary className="cursor-pointer px-4 py-3 text-sm text-muted-foreground">
                 Advanced: transcription
               </DisclosureSummary>
@@ -374,7 +374,7 @@ export function VoiceSettings({
                 disabled={!config.write?.available || loading}
                 save={save}
               />
-            </details>
+            </Disclosure>
           ) : (
             <p className="text-xs text-muted-foreground">
               Dictation uses the whispertype server. Add it under{" "}

@@ -8,7 +8,7 @@ import { BranchIcon, FolderIcon, PlusIcon } from "@/components/elpis-icons";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
 import { AlertDialog, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader } from "@/components/ui/alert-dialog";
@@ -306,7 +306,7 @@ export function ProjectDialog({
               Choose folder…
             </Button>
           )}
-          <details>
+          <Disclosure>
             <DisclosureSummary>Advanced: custom folder</DisclosureSummary>
             <label className="field">
               Working folder
@@ -322,7 +322,7 @@ export function ProjectDialog({
                 disabled={busy}
               />
             </label>
-          </details>
+          </Disclosure>
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}

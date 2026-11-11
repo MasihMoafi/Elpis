@@ -1,5 +1,5 @@
 import type { CanvasController } from "./use-canvas-controller";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { WORKFLOWS, TEMPLATES } from "@/lib/canvas";
 import { Shape } from "./fields";
@@ -34,7 +34,7 @@ export function Architectures({
 >) {
   return (
     <aside className="canvas-side" aria-label="Architectures">
-      <details
+      <Disclosure
         open={morePatterns}
         onToggle={event => {
           if (event.target === event.currentTarget) setMorePatterns(event.currentTarget.open);
@@ -105,7 +105,7 @@ export function Architectures({
             ))}
           </section>
         ))}
-      </details>
+      </Disclosure>
     </aside>
   );
 }

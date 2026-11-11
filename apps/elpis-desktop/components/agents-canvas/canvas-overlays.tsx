@@ -1,5 +1,5 @@
 import type { CanvasController } from "./use-canvas-controller";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MenuRow } from "@/components/ui/menu-row";
@@ -14,7 +14,7 @@ export function CanvasOverlays({ view }: { view: CanvasController }) {
     <>
       {view.run &&
         (view.recordedRun ? (
-          <details className="canvas-log-panel" aria-label={over(view.run) ? "Previous attempt" : "Run record"}>
+          <Disclosure className="canvas-log-panel" aria-label={over(view.run) ? "Previous attempt" : "Run record"}>
             <DisclosureSummary>
               {over(view.run) ? "Previous attempt" : "Run record"} · {view.run.status} ·{" "}
               {view.savedRecord?.tasks?.filter(task => ["succeeded", "completed"].includes(task.status ?? "")).length ??
@@ -24,7 +24,7 @@ export function CanvasOverlays({ view }: { view: CanvasController }) {
             {view.telemetry}
             {view.historicalNotice && <p className="text-destructive">{view.notice}</p>}
             {view.capturedLog}
-          </details>
+          </Disclosure>
         ) : (
           <section className="canvas-log-panel" aria-label="Run capture">
             <p className="hud-menu-title">Run log · {view.log.length} events</p>

@@ -1,4 +1,4 @@
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import data from "@/lib/workflow-sources.json";
 import { Button } from "@/components/ui/button";
 import styles from "./experiment-lab.module.css";
@@ -46,10 +46,10 @@ export function WorkflowSources({ id, onBack }: { id: string; onBack: () => void
             <a href={source.read} target="_blank" rel="noreferrer">
               Read the results
             </a>
-            <details>
+            <Disclosure>
               <DisclosureSummary className={styles.muted}>Authors</DisclosureSummary>
               <p className={styles.muted}>{source.authors}</p>
-            </details>
+            </Disclosure>
           </article>
         );
       })}

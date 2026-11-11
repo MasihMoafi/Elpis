@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
 import { AgentIdentity, agentColourSlots } from "@/components/agent-identity";
 import { ModelPicker } from "@/components/model-picker";
@@ -333,7 +333,7 @@ export function WorkflowChat({
         </p>
       )}
       {!tasks.length && <p>No task details have been recorded for this run.</p>}
-      <details open={!working}>
+      <Disclosure open={!working}>
         <DisclosureSummary>Saved attempt · {record.status}</DisclosureSummary>
         {record.error && !tasks.some(task => task.failureReason === record.error) && (
           <p className="text-destructive">{record.error}</p>
@@ -369,7 +369,7 @@ export function WorkflowChat({
                   </p>
                 )}
               {!!task.routing?.attempts?.length && (
-                <details>
+                <Disclosure>
                   <DisclosureSummary>Model attempts</DisclosureSummary>
                   <ol>
                     {task.routing.attempts.map((attempt, index) => (
@@ -379,10 +379,10 @@ export function WorkflowChat({
                       </li>
                     ))}
                   </ol>
-                </details>
+                </Disclosure>
               )}
               {task.result && (
-                <details>
+                <Disclosure>
                   <DisclosureSummary>Result</DisclosureSummary>
                   <MarkdownText
                     text={
@@ -392,7 +392,7 @@ export function WorkflowChat({
                     }
                     allowImages={false}
                   />
-                </details>
+                </Disclosure>
               )}
               {task.assignedThreadId && (
                 <Button variant="ghost" size="sm" onClick={() => onOpenChat(task.assignedThreadId!)}>
@@ -402,7 +402,7 @@ export function WorkflowChat({
             </li>
           ))}
         </ol>
-      </details>
+      </Disclosure>
       {record.mother?.status && (
         <p>
           Mother agent: {record.mother.status}
@@ -410,7 +410,7 @@ export function WorkflowChat({
         </p>
       )}
       {!!record.mother?.decisions?.length && (
-        <details>
+        <Disclosure>
           <DisclosureSummary>Mother agent decisions</DisclosureSummary>
           <ol>
             {record.mother.decisions.map((decision, index) => (
@@ -424,7 +424,7 @@ export function WorkflowChat({
               </li>
             ))}
           </ol>
-        </details>
+        </Disclosure>
       )}
     </section>
   );

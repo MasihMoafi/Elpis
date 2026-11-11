@@ -1,6 +1,6 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useRef, useState } from "react";
 import {
   api,
@@ -154,7 +154,7 @@ export function ModelChoice({
           {catalogStatus}
         </span>
       )}
-      <details>
+      <Disclosure>
         <DisclosureSummary className="cursor-pointer">Advanced: custom model</DisclosureSummary>
         <p className="text-xs text-muted-foreground">
           {models.length
@@ -169,7 +169,7 @@ export function ModelChoice({
           maxLength={200}
           disabled={disabled}
         />
-      </details>
+      </Disclosure>
     </div>
   );
 }

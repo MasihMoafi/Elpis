@@ -5,6 +5,7 @@ import { MentionMenu, type useMentionMenu } from "@/components/mention-menu";
 import { PromptStatusLine } from "@/components/prompt-status";
 import { SlashMenu, type useSlashMenu } from "@/components/slash-menu";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { Thread } from "@/lib/api";
 import { ATTACHMENT_ACCEPT, transferFiles } from "@/lib/attachments";
@@ -84,7 +85,7 @@ export function ComposerForm({
           <MentionMenu menu={mention} />
         </>
       )}
-      <input
+      <Input
         ref={filePickerRef}
         type="file"
         multiple

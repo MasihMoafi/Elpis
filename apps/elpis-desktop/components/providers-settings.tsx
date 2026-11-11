@@ -2,7 +2,7 @@
 
 import { plural, State, Card, ConfiguredList } from "./providers-cards";
 import "@/components/settings/settings.css";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { OptionSelect } from "@/components/ui/option-select";
@@ -333,7 +333,7 @@ export function ProvidersSettings({
             )}
           </>
         )}
-        <details className="provider-advanced settings-card">
+        <Disclosure className="provider-advanced settings-card">
           <DisclosureSummary>Advanced API connections</DisclosureSummary>
           <p className="provider-note">Connect OpenRouter, a local server or another compatible service.</p>
           <Button
@@ -355,7 +355,7 @@ export function ProvidersSettings({
           >
             Add API provider
           </Button>
-        </details>
+        </Disclosure>
         {editing && (
           <form
             className="settings-card"

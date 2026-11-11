@@ -3,7 +3,7 @@
 import { message } from "./mcp-credentials";
 export { message, LOCAL_RERANKERS, providerName } from "./mcp-credentials";
 import { Key, CredentialSettings, RagSettings } from "./mcp-credentials";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { PlusIcon } from "@/components/elpis-icons";
@@ -166,10 +166,10 @@ export function McpSettings({ onOpenVoice, onCustomize }: { onOpenVoice?: () => 
         {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
         {notice && <SettingsNotice>{notice}</SettingsNotice>}
         {data?.configPath && (
-          <details className="text-xs text-muted-foreground">
+          <Disclosure className="text-xs text-muted-foreground">
             <DisclosureSummary className="cursor-pointer">Configuration file</DisclosureSummary>
             <p className="mt-2 break-all">{data.configPath}</p>
-          </details>
+          </Disclosure>
         )}
         <Button variant="outline" disabled={importing || !data?.write?.available} onClick={() => void previewImport()}>
           Import from Claude Code

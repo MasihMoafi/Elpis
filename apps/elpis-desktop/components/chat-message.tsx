@@ -28,7 +28,7 @@ import {
   CommandStep,
 } from "./chat-message-parts";
 export { CommandStep } from "./chat-message-parts";
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { SmartPruneLine } from "@/components/smart-prune";
 import { useRef } from "react";
 import { BranchIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
@@ -138,12 +138,12 @@ export function ChatMessage({
               {file === BROWSER_COMMENTS ? (
                 <BrowserComments text={text(part.text).slice(`File: ${file}\n`.length)} />
               ) : file ? (
-                <details className="max-w-full rounded-md border border-border p-2">
+                <Disclosure className="max-w-full rounded-md border border-border p-2">
                   <DisclosureSummary className="cursor-pointer break-all">{file}</DisclosureSummary>
                   <pre className="mt-2 max-h-80 max-w-full overflow-auto whitespace-pre-wrap break-words text-left">
                     {text(part.text).slice(`File: ${file}\n`.length)}
                   </pre>
-                </details>
+                </Disclosure>
               ) : (
                 <RecordedAttachment part={part} index={index} mediaBase={mediaBase} />
               )}
@@ -165,12 +165,12 @@ export function ChatMessage({
         <p className="whitespace-pre-wrap" dir="auto">
           {evidence.text}
         </p>
-        <details>
+        <Disclosure>
           <DisclosureSummary>{evidence.label}</DisclosureSummary>
           <pre className="step-output">
             <code>{evidence.json}</code>
           </pre>
-        </details>
+        </Disclosure>
       </div>
     ) : answers ? (
       <div className="space-y-3">
@@ -377,10 +377,10 @@ export function ChatMessage({
         time={typeof item.durationMs === "number" ? item.durationMs : undefined}
       >
         {item.arguments !== undefined && (
-          <details className="step-input">
+          <Disclosure className="step-input">
             <DisclosureSummary>Input</DisclosureSummary>
             <TextOutput value={item.arguments} />
-          </details>
+          </Disclosure>
         )}
         {output ? (
           <TextOutput value={output} />
@@ -476,10 +476,10 @@ export function ChatMessage({
     );
   return (
     <Activity label={readable(item.type)}>
-      <details className="step-input">
+      <Disclosure className="step-input">
         <DisclosureSummary>Recorded details</DisclosureSummary>
         <TextOutput value={item} />
-      </details>
+      </Disclosure>
     </Activity>
   );
 }

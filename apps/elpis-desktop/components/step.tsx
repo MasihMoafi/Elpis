@@ -1,6 +1,6 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Children, useState, type ReactNode } from "react";
 import { ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -64,7 +64,7 @@ export function Step({
       </div>
     );
   return (
-    <details className={className} open={open} onToggle={event => setShown(event.currentTarget.open)}>
+    <Disclosure className={className} open={open} onToggle={event => setShown(event.currentTarget.open)}>
       <DisclosureSummary className="step-head">{head}</DisclosureSummary>
       {shown && (
         <div className="step-card">
@@ -72,6 +72,6 @@ export function Step({
           <CollapseDetails label="Collapse details" />
         </div>
       )}
-    </details>
+    </Disclosure>
   );
 }

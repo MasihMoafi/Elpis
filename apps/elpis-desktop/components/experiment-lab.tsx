@@ -1,6 +1,6 @@
 "use client";
 
-import { DisclosureSummary } from "@/components/ui/disclosure-summary";
+import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -348,7 +348,7 @@ function Lab({ graph }: { graph: CanvasGraph }) {
             cannot establish general superiority; model sampling and service load vary. Pair order alternates.
           </p>
           {record.trials.map((trial, index) => (
-            <details key={index} className={styles.trial}>
+            <Disclosure key={index} className={styles.trial}>
               <DisclosureSummary>
                 Trial {trial.repetition} · {trial.arm === "baseline" ? "Single agent" : "Pattern"} ·{" "}
                 {!trial.endedAt ? "Running" : trial.passed ? "Pass" : "Fail"}
@@ -356,15 +356,15 @@ function Lab({ graph }: { graph: CanvasGraph }) {
               {trial.error && <p className={styles.error}>{trial.error}</p>}
               <pre>{trial.answer || "No final answer"}</pre>
               {trial.steps.map((step, index) => (
-                <details key={index}>
+                <Disclosure key={index}>
                   <DisclosureSummary>
                     {step.title} · {(step.elapsedMs / 1000).toFixed(2)} s ·{" "}
                     {step.usage ? `${step.usage.totalTokens} tokens` : "tokens unknown"}
                   </DisclosureSummary>
                   <pre>{JSON.stringify(step, null, 2)}</pre>
-                </details>
+                </Disclosure>
               ))}
-            </details>
+            </Disclosure>
           ))}
         </section>
       )}
