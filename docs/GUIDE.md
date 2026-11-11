@@ -1,14 +1,14 @@
 # Elpis Technical Guide
 
-Architecture and contracts. The [README](../readme.md) introduces the product; [ES.md](../ES.md) holds current state and acceptance, [REQUESTS.md](../REQUESTS.md) open requests. A behaviour is accepted through its feature's user-visible checks.
+This guide holds the architecture of Elpis and the contracts its parts keep. The [README](../readme.md) introduces the product; [ES.md](../ES.md) holds the current state and acceptance, and [REQUESTS.md](../REQUESTS.md) the open requests. A behaviour is accepted through the user-visible checks of its feature.
 
 ## Requirements
 
-Confirmed product requirements. Implementation state belongs in [ES.md](../ES.md). Feature-level requirements: [terminal](TUI_SPEC.md) and [desktop](../apps/elpis-desktop/SPEC.md).
+These are the confirmed product requirements. Implementation state belongs in [ES.md](../ES.md). Requirements per feature: [terminal](TUI_SPEC.md) and [desktop](../apps/elpis-desktop/SPEC.md).
 
 ### Confirmed Requirements
 
-**R1. Provider-neutral Elpis environment** — Elpis owns the interface (terminal and desktop), provider/runtime selection, context projection, durable memory, provider-neutral continuity, behavioral policy, permissions bridge, and evidence. A selected runtime may own its low-level model loop and native tools, but authentication must never silently transfer Elpis-owned state or product identity to that runtime.
+**R1. Provider-neutral Elpis environment** — Elpis owns the interface (terminal and desktop), provider/runtime selection, context projection, durable memory, provider-neutral continuity, behavioral policy, permissions bridge, and evidence. A selected runtime may own its low-level model loop and native tools. Authentication must never silently transfer Elpis-owned state or product identity to that runtime.
 
 **R2. Visible and controlled agency** — Commands and file changes follow explicit permission and sandbox policies. The interface preserves changed paths, diffs, command status, failures, and verification evidence.
 
@@ -18,19 +18,19 @@ Confirmed product requirements. Implementation state belongs in [ES.md](../ES.md
 
 **R5. Memory** and **R6. Creator and project rules** — [Memory and checkpoints](context.md#3-memory-and-checkpoints).
 
-**R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search comes from an MCP server the user registers. Voice capture and transcription belong to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may expose a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
+**R8. Expensive capabilities are plugged in, not built in** — Workspace semantic search comes from an MCP server the user registers. Voice capture and transcription belong to an external program such as [WhisperType](https://github.com/MasihMoafi/Voice-commander), which may offer a transcription tool through MCP. Never add a machine-learning dependency to this repository for those capabilities.
 
-**R11. Explicit Claude provider and subscription paths** — Preserve the native Anthropic API path and the user-selected Claude subscription ACP bridge, [`tools/elpis-claude/acp-bridge.mts`](../tools/elpis-claude/acp-bridge.mts). Authentication and provider selection stay explicit. `elpis claude` separately starts Claude Code through a loopback Smart Prune proxy. [`claude-accounts.mts`](../tools/elpis-claude/claude-accounts.mts) switches accounts.
+**R11. Explicit Claude provider and subscription paths** — Preserve two paths: the native Anthropic API, and the Claude subscription ACP bridge the user selects, [`tools/elpis-claude/acp-bridge.mts`](../tools/elpis-claude/acp-bridge.mts). Authentication and provider selection stay explicit. Separately, `elpis claude` starts Claude Code through a loopback Smart Prune proxy. [`claude-accounts.mts`](../tools/elpis-claude/claude-accounts.mts) switches accounts.
 
 **R12. Deterministic multi-agent orchestration** — [Work-graph contract](WORK_GRAPHS.md).
 
 ### State Layout
 
-The runtime home and its override: [README](../readme.md#how-it-works). Checkpoint layout: [session reference](sessions.md#3-portable-checkpoint-layout). Provider transcripts and workspace artifacts remain evidence sources.
+The runtime home and its override: [README](../readme.md#how-it-works). Checkpoint layout: [session reference](sessions.md#3-portable-checkpoint-layout). Provider transcripts and workspace artifacts stay sources of evidence.
 
 ### Product Scope Decisions
 
-- UI changes preserve Codex-quality content, rendering, and interactions unless a behaviour change is explicitly approved.
+- UI changes keep Codex-quality content, rendering and interactions, unless a change of behaviour is explicitly approved.
 - Dictation: [desktop README](../apps/elpis-desktop/README.md).
 - Add no slash command unless Masih explicitly selects it.
 
@@ -42,9 +42,16 @@ Treat upstream behaviour as evidence: read its committed source, not memory. An 
 
 Source: [openai/codex](https://github.com/openai/codex). Key areas: app-server and protocol (`codex-rs/app-server`, `codex-rs/app-server-protocol`), Rust TUI (`codex-rs/tui`), core runtime (`codex-rs/core`).
 
-Codex is the contained foundation for thread/turn semantics, streaming, file changes, commands, approvals, sandboxing, sessions, and TUI ergonomics. Elpis never loads code from or requires the donor clone at runtime.
+Codex is the contained foundation for thread/turn semantics, streaming, file changes, commands, approvals, sandboxing, sessions, and TUI ergonomics. At runtime, Elpis never loads code from the donor clone and never requires it.
 
-The foundation strategy is **vendor and carry**: pin an unmodified upstream Codex release; carry Elpis as copied Elpis-owned modules and crates plus a few small, marked seams in upstream files; switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, rather than deleting them; absorb a new release by rebasing the Elpis commits onto a new vendor commit. Non-Responses providers reach Codex through an Elpis-owned local Responses gateway.
+The foundation strategy is **vendor and carry**:
+
+- Pin an unmodified upstream Codex release.
+- Carry Elpis as copied Elpis-owned modules and crates, plus a few small, marked seams in upstream files.
+- Switch unwanted upstream surfaces off by configuration, proven by a network-capture eval, instead of deleting them.
+- Absorb a new release by rebasing the Elpis commits onto a new vendor commit.
+
+Providers that do not speak Responses reach Codex through an Elpis-owned local Responses gateway.
 
 ### Codex Import Provenance
 
@@ -70,7 +77,7 @@ Preserve these seams and their tests when changing the foundation. Paths are rel
 
 ### Stable Task Boundaries
 
-Action rendering, permissions, and mouse selection and copy (terminal-native selection, copy-faithful raw scrollback) each own their files in the table above; keep their colocated tests and snapshots. `chatwidget.rs` and `chatwidget/protocol.rs` are shared seams, not general cleanup areas.
+Action rendering, permissions, and mouse selection and copy (terminal-native selection, copy-faithful raw scrollback) each own their files in the table above. Keep their colocated tests and snapshots. `chatwidget.rs` and `chatwidget/protocol.rs` are shared seams, not areas for general cleanup.
 
 ### Permission Baseline
 
@@ -78,7 +85,7 @@ Action rendering, permissions, and mouse selection and copy (terminal-native sel
 - **Default:** may read/edit within the workspace and run commands; internet or work outside the workspace requires approval.
 - **Full Access:** no approval prompts; filesystem and internet restrictions are off.
 
-A confirmed permission change governs later tool dispatches in the active turn. Switching Claude or Gemini (Antigravity) out of Full Access stops the active turn, so its provider process cannot keep bypass permissions; the next message uses the selected mode. Environment-owner restrictions remain authoritative for attached environments.
+A confirmed permission change governs later tool dispatches in the active turn. Switching Claude or Gemini (Antigravity) out of Full Access stops the active turn, so its provider process cannot keep bypass permissions. The next message uses the selected mode. For attached environments, the restrictions of the environment's owner stay authoritative.
 
 ## Runtime Architecture
 
@@ -93,14 +100,14 @@ User
   -> Workspace + durable Elpis state ($ELPIS_HOME)
 ```
 
-The `elpis` executable is built from the contained `codex-rs/` foundation. When Codex is selected, it may own the low-level model loop, native tools, native thread, and native compaction; Elpis keeps everything R1 lists. The active model, provider, and runtime owner must be visible.
+The `elpis` executable is built from the contained `codex-rs/` foundation. When Codex is selected, it may own the low-level model loop, native tools, native thread, and native compaction; Elpis keeps everything R1 lists. The active model, the provider and the owner of the runtime must be visible.
 
 ## Authentication Boundary
 
 Authentication alone must never select a runtime.
 
-- Status-only Codex authentication uses the app-server account RPCs and must not start threads, turns, commands, approvals, or tools. `scripts/codex-auth-status-smoke.sh` checks this without starting a model turn or printing account or token data.
-- An Elpis-owned direct OpenAI path may reuse the contained Codex login component for compatible credentials and refresh. Bearer tokens must never be rendered, logged, returned to the TUI, or persisted in a second Elpis credential store.
+- Status-only Codex authentication uses the app-server account RPCs. It must not start threads, turns, commands, approvals or tools. `scripts/codex-auth-status-smoke.sh` checks this without starting a model turn and without printing account or token data.
+- An Elpis-owned direct OpenAI path may reuse the contained Codex login component for compatible credentials and refresh. Bearer tokens must never be rendered, logged, returned to the TUI, or stored in a second Elpis credential store.
 - A path dependency on the donor clone is never a finished runtime boundary.
 
 ## Providers
@@ -109,7 +116,7 @@ Provider changes must not discard Elpis-owned state. Routes, credentials, BYOK s
 
 ## Session Semantics
 
-Elpis keeps its own provider-neutral continuity state even when a provider offers thread IDs. Resume, fork, rollback, compaction, and provider changes therefore have Elpis semantics; provider thread IDs are adapter state, not project truth. Exact resume and lean continuation, including `GOAL.md` and `ES.md`: [sessions.md](sessions.md).
+Elpis keeps its own provider-neutral continuity state, even when a provider offers thread IDs. Resume, fork, rollback, compaction and provider changes therefore have Elpis semantics. Provider thread IDs are adapter state, not project truth. Exact resume and lean continuation, including `GOAL.md` and `ES.md`: [sessions.md](sessions.md).
 
 ## UI Identity
 
@@ -117,7 +124,7 @@ Elpis-specific controls keep context, memory, provider, and permission state leg
 
 ### Acceptance
 
-A user watches one task cross compaction or provider change and can explain which runtime performed each turn; which goal, context, and memories survived; what expired; what changed and was verified; and where exact evidence can be inspected.
+A user watches one task cross a compaction or a provider change. Afterwards the user can explain which runtime performed each turn; which goal, context and memories survived; what expired; what changed and was verified; and where the exact evidence can be inspected.
 
 ## Engineering Rules
 
