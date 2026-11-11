@@ -11,7 +11,7 @@ function setup(skip: (chat: Pick<Chat, "id" | "folder">) => boolean = () => fals
   const ids: string[] = [];
   const watch = new ChatWatch({
     chats: {
-      list: () => Promise.resolve(chats),
+      list: () => Promise.resolve({ chats }),
       read: id =>
         id === "unreadable"
           ? Promise.reject(new Error("gone"))

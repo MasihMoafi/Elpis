@@ -343,12 +343,16 @@ export class MotherAgent {
         }
         throw error;
       }
-      if (
-        owned &&
-        operation === "deleteThread" &&
-        !(result && typeof result === "object" && "archived" in result && result.archived)
-      ) {
+      // Deleting the Elpis chat clears it: the router carries on at once in a fresh one. A chat that has agents is
+      // archived instead of deleted, and then stays in the archive as an ordinary chat. On 11 Nov he could not clear
+      // it: the router stayed off until the app restarted or the old chat came back.
+      if (owned && operation === "deleteThread") {
         this.file.write({ ...this.file.read(), threadId: null, creating: false });
+        try {
+          await this.reconcile();
+        } catch (restart) {
+          this.error = restart instanceof Error ? restart.message : "Elpis could not restart";
+        }
       }
       if (owned && operation === "unarchiveThread") await this.reconcile();
       return result;

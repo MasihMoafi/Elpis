@@ -28,7 +28,13 @@ export interface ChatStart {
   effort?: string | undefined;
 }
 export interface Chats {
-  list(options: { archived?: boolean; search?: string | undefined; limit: number }): Promise<Chat[]>;
+  /** One page of his chats, newest first; `next` continues after it when there are more. */
+  list(options: {
+    archived?: boolean;
+    search?: string | undefined;
+    limit: number;
+    cursor?: string | undefined;
+  }): Promise<{ chats: Chat[]; next?: string }>;
   read(id: string, limit: number): Promise<{ chat: Chat; messages: ChatMessage[] }>;
   send(id: string, text: string): Promise<void>;
   start(input: ChatStart): Promise<Chat>;
@@ -40,8 +46,8 @@ export interface Chats {
 
 /** The part of the desktop client the router's chat tools use. */
 export interface ChatsClient {
-  listThreads(options: { limit: number; searchTerm?: string }): Promise<unknown>;
-  listArchivedThreads(options: { limit: number }): Promise<unknown>;
+  listThreads(options: { limit: number; searchTerm?: string; cursor?: string }): Promise<unknown>;
+  listArchivedThreads(options: { limit: number; cursor?: string }): Promise<unknown>;
   readThread(id: string, options: { limit: number }): Promise<unknown>;
   createThread(body: { cwd?: string; model?: string; name?: string }): Promise<unknown>;
   send(id: string, body: { text: string; effort?: string }): Promise<unknown>;
@@ -63,7 +69,7 @@ const ThreadSchema = z.looseObject({
   status: z.looseObject({ type: z.string().optional(), activeFlags: z.array(z.string()).optional() }).nullish(),
 });
 type Thread = z.infer<typeof ThreadSchema>;
-const ListSchema = z.looseObject({ data: z.array(ThreadSchema) });
+const ListSchema = z.looseObject({ data: z.array(ThreadSchema), nextCursor: z.string().nullish() });
 const EntrySchema = z.looseObject({
   startedAtMs: z.number().nullish(),
   item: z.looseObject({ type: z.string(), text: z.string().optional(), content: z.unknown().optional() }),
@@ -121,11 +127,17 @@ export function createChats(client: ChatsClient): Chats {
     return { chat: chat(page.thread), messages: page.data.flatMap(message).reverse() };
   };
   return {
-    async list({ archived, search, limit }) {
-      const listed = archived
-        ? await client.listArchivedThreads({ limit })
-        : await client.listThreads({ limit, ...(search ? { searchTerm: search } : {}) });
-      return ListSchema.parse(listed).data.map(thread => ({ ...chat(thread), ...(archived ? { archived: true } : {}) }));
+    async list({ archived, search, limit, cursor }) {
+      const page = { limit, ...(cursor ? { cursor } : {}) };
+      const listed = ListSchema.parse(
+        archived
+          ? await client.listArchivedThreads(page)
+          : await client.listThreads({ ...page, ...(search ? { searchTerm: search } : {}) }),
+      );
+      return {
+        chats: listed.data.map(thread => ({ ...chat(thread), ...(archived ? { archived: true } : {}) })),
+        ...(listed.nextCursor ? { next: listed.nextCursor } : {}),
+      };
     },
     read,
     async send(id, text) {

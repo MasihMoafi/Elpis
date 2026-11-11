@@ -37,6 +37,8 @@ export function chatToolsHost(
 }
 
 const MESSAGE_CHARS = 2000;
+/** How many chats one call may archive or restore. */
+const BATCH = 50;
 const ORDER: Record<Chat["state"], number> = { "needs you": 0, working: 1, failed: 2, idle: 3 };
 const ChatId = z.string().min(1).describe("The chat's id, copied from chats_list.");
 
@@ -68,16 +70,27 @@ function listTool(host: ChatToolsHost): Tool {
         show: z.enum(["open", "archived"]).default("open").describe("open: the sidebar's chats; archived: the archive."),
         search: z.string().trim().max(200).optional().describe("Words from the chat's title or first message."),
         limit: z.number().int().min(1).max(50).default(20),
+        cursor: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("next_cursor of the page before, to read the next one; the pages together hold every chat."),
       })
       .strict(),
-    execute: async ({ show, search, limit }) => {
+    execute: async ({ show, search, limit, cursor }) => {
       allowed(host);
-      const listed = await host.chats.list({ archived: show === "archived", search, limit });
-      const chats = listed
+      const listed = await host.chats.list({ archived: show === "archived", search, limit, cursor });
+      const chats = listed.chats
         .filter(chat => !host.own(chat))
         .sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.updated ?? "").localeCompare(a.updated ?? ""));
       const count = (state: Chat["state"]) => chats.filter(chat => chat.state === state).length;
-      return { needs_you: count("needs you"), working: count("working"), failed: count("failed"), chats };
+      return {
+        needs_you: count("needs you"),
+        working: count("working"),
+        failed: count("failed"),
+        chats,
+        ...(listed.next ? { next_cursor: listed.next } : {}),
+      };
     },
   });
 }
@@ -136,20 +149,52 @@ function startTool(host: ChatToolsHost): Tool {
   });
 }
 
+/**
+ * Archives or restores several chats, each on its own: one the router may not touch, or one that fails, is named
+ * with its reason and the others still go through.
+ */
+async function many(host: ChatToolsHost, ids: string[], action: "archive" | "restore") {
+  const done: string[] = [];
+  const refused: { chat: string; why: string }[] = [];
+  for (const id of [...new Set(ids)]) {
+    try {
+      const found = await target(host, id);
+      if (action === "archive") await host.chats.archive(found.id);
+      else await host.chats.restore(found.id);
+      done.push(found.title);
+    } catch (error) {
+      refused.push({ chat: id, why: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return { [action === "archive" ? "archived" : "restored"]: done.length, chats: done, refused };
+}
 function changeTool(host: ChatToolsHost): Tool {
   return tool({
     name: "chats_change",
     description:
       "Change one of his chats when he asks: stop its running turn, rename it, archive it (it leaves the " +
-      "sidebar and can be restored) or restore it from the archive.",
+      "sidebar and can be restored) or restore it from the archive. To archive or restore many at once, as " +
+      "when tidying, pass their ids in chats.",
     schema: z
       .object({
-        chat: ChatId,
+        chat: ChatId.optional(),
+        chats: z
+          .array(ChatId)
+          .min(1)
+          .max(BATCH)
+          .optional()
+          .describe(`Several chats at once, for archive and restore only, ${BATCH} at most.`),
         action: z.enum(["stop", "rename", "archive", "restore"]),
         name: z.string().trim().min(1).max(120).optional().describe("The new title, for rename."),
       })
       .strict(),
-    execute: async ({ chat, action, name }) => {
+    execute: async ({ chat, chats, action, name }) => {
+      if (chats) {
+        if (chat) throw new Error("Give chat or chats, not both");
+        if (action !== "archive" && action !== "restore") throw new Error(`${action} takes one chat at a time`);
+        return many(host, chats, action);
+      }
+      if (!chat) throw new Error("Give chat, the chat's id");
       const found = await target(host, chat);
       if (action === "rename") {
         if (!name) throw new Error("rename needs name, the new title");

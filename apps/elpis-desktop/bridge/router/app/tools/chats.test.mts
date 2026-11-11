@@ -24,7 +24,7 @@ function setup(sources: Record<string, { enabled: boolean }> = { "elpis-chat": {
       return Promise.resolve();
     };
   const chats: Chats = {
-    list: () => Promise.resolve(CHATS),
+    list: ({ cursor }) => Promise.resolve(cursor ? { chats: [] } : { chats: CHATS, next: "more" }),
     read: (id, limit) => {
       const chat = CHATS.find(item => item.id === id);
       if (!chat) return Promise.reject(new Error("No such chat"));
@@ -137,4 +137,42 @@ it("offers no way to delete a chat", () => {
     "chats_start",
     "chats_change",
   ]);
+});
+
+it("hands on the cursor to the next page until there is none", async () => {
+  const { run } = setup();
+  const first = (await run("chats_list", { limit: 50 })) as { next_cursor?: string; chats: Chat[] };
+  expect(first.next_cursor).toBe("more");
+  const second = (await run("chats_list", { limit: 50, cursor: "more" })) as { next_cursor?: string; chats: Chat[] };
+  expect(second).toEqual({ needs_you: 0, working: 0, failed: 0, chats: [] });
+});
+
+it("archives many chats in one call, names the ones it may not touch, and still does the rest", async () => {
+  const { run, actions } = setup();
+  const result = await run("chats_change", { chats: ["idle-old", "elpis", "missing", "idle-new", "idle-old"], action: "archive" });
+  expect(result).toEqual({
+    archived: 2,
+    chats: ["Old notes", "Check email"],
+    refused: [
+      { chat: "elpis", why: "This is the router's own chat; it does not act on itself" },
+      { chat: "missing", why: "No such chat" },
+    ],
+  });
+  expect(actions).toEqual([
+    ["archive", "idle-old"],
+    ["archive", "idle-new"],
+  ]);
+});
+
+it("restores many chats in one call, and takes one chat at a time for stop and rename", async () => {
+  const { run, actions } = setup();
+  expect(await run("chats_change", { chats: ["idle-old"], action: "restore" })).toEqual({
+    restored: 1,
+    chats: ["Old notes"],
+    refused: [],
+  });
+  await expect(run("chats_change", { chats: ["working"], action: "stop" })).rejects.toThrow("one chat at a time");
+  await expect(run("chats_change", { chat: "working", chats: ["working"], action: "archive" })).rejects.toThrow("not both");
+  await expect(run("chats_change", { action: "archive" })).rejects.toThrow("Give chat");
+  expect(actions).toEqual([["restore", "idle-old"]]);
 });

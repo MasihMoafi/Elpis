@@ -382,10 +382,9 @@ test("the bound Elpis chat respects archive, trash exclusions, undo and permanen
     assert.equal((await mother.list([], {}))[0]?.id, CHAT);
     assert.deepEqual(await mother.list([], {}, id => id === CHAT), []);
     await mother.mutate(CHAT, "deleteThread", () => h.client.deleteThread(CHAT, {}));
-    assert.equal(mother.snapshot().threadId, null);
-    await mother.start();
     assert.equal(mother.snapshot().error, undefined);
-    assert.equal(mother.snapshot().threadId, CHAT);
+    assert.equal(mother.snapshot().threadId, CHAT, "Deleting the Elpis chat clears it: a fresh one starts at once");
+    assert.ok(h.workers.connections.size > 0, "The router carries on in the fresh chat without an app restart");
     assert.equal(h.calls.filter(call => call.method === "thread/start").length, 2);
   } finally {
     await mother.close();

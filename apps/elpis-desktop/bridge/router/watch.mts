@@ -40,7 +40,8 @@ export class ChatWatch {
   }
   /** One look at his chats: says what changed since the last look. The first look only remembers. */
   async look(): Promise<void> {
-    const chats = (await this.options.chats.list({ limit: LIMIT })).filter(chat => !this.options.skip(chat));
+    const listed = await this.options.chats.list({ limit: LIMIT });
+    const chats = listed.chats.filter(chat => !this.options.skip(chat));
     const before = this.seen;
     this.seen = new Map(
       chats.map(chat => [

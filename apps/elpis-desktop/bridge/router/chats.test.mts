@@ -48,8 +48,9 @@ it("reads a chat's state as the sidebar shows it: waiting for him counts before 
 
 it("lists chats with a title, a state and where they work; an unnamed chat takes its first line", async () => {
   const { fake, calls } = client();
-  const chats = await createChats(fake).list({ search: "scraper", limit: 5 });
+  const { chats, next } = await createChats(fake).list({ search: "scraper", limit: 5 });
   expect(calls).toEqual([["listThreads", { limit: 5, searchTerm: "scraper" }]]);
+  expect(next).toBeUndefined();
   expect(chats).toEqual([
     { id: "a", title: "Fix the scraper", state: "idle", folder: "/work/legal", model: "gpt-6-luna", updated: "2026-11-06T21:20:00.000Z" },
     { id: "b", title: "count the lines", state: "needs you" },
@@ -58,9 +59,9 @@ it("lists chats with a title, a state and where they work; an unnamed chat takes
 
 it("lists the archive from the archive, and marks every chat there archived", async () => {
   const { fake, calls } = client();
-  expect(await createChats(fake).list({ archived: true, limit: 3 })).toEqual([
-    { id: "z", title: "Old plan", state: "idle", archived: true },
-  ]);
+  expect(await createChats(fake).list({ archived: true, limit: 3 })).toEqual({
+    chats: [{ id: "z", title: "Old plan", state: "idle", archived: true }],
+  });
   expect(calls).toEqual([["listArchivedThreads", { limit: 3 }]]);
 });
 
@@ -103,4 +104,21 @@ it("sends, stops, renames, archives and restores through the same client actions
 it("passes a refused action on as the client said it", async () => {
   const { fake } = client({ interrupt: () => Promise.reject(new Error("This agent is not running")) });
   await expect(createChats(fake).stop("a")).rejects.toThrow("This agent is not running");
+});
+
+it("reads his chats page after page: the cursor of one page asks for the next", async () => {
+  const { fake, calls } = client({
+    listThreads: (options: { cursor?: string }) =>
+      Promise.resolve(
+        options.cursor === "p2"
+          ? { data: [{ id: "c", name: "Third" }], nextCursor: null }
+          : { data: [{ id: "a", name: "First" }], nextCursor: "p2" },
+      ),
+  });
+  const chats = createChats(fake);
+  const first = await chats.list({ limit: 1 });
+  expect(first.next).toBe("p2");
+  const second = await chats.list({ limit: 1, cursor: first.next });
+  expect(second).toEqual({ chats: [{ id: "c", title: "Third", state: "idle" }] });
+  expect(calls).toEqual([]);
 });
