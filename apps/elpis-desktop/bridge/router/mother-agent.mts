@@ -328,7 +328,7 @@ export class MotherAgent {
   mutate<T>(id: string, operation: string, work: () => Promise<T>): Promise<T> {
     return this.serialized(async () => {
       const owned = this.owns(id),
-        lifecycle = ["archiveThread", "unarchiveThread", "deleteThread"].includes(operation);
+        lifecycle = ["archiveThread", "unarchiveThread", "deleteThread", "trashThread"].includes(operation);
       if (owned && lifecycle) await this.stop();
       let result: T;
       try {
@@ -343,10 +343,10 @@ export class MotherAgent {
         }
         throw error;
       }
-      // Deleting the Elpis chat clears it: the router carries on at once in a fresh one. A chat that has agents is
-      // archived instead of deleted, and then stays in the archive as an ordinary chat. On 11 Nov he could not clear
-      // it: the router stayed off until the app restarted or the old chat came back.
-      if (owned && operation === "deleteThread") {
+      // Deleting the Elpis chat clears it: the router carries on at once in a fresh one. The sidebar's Delete puts a
+      // chat in the trash (`trashThread`: archived now, Undo brings it back as an ordinary chat). On 11 Nov he could
+      // not clear it: the router stayed tied to the trashed chat and the Elpis tab was dead until the app restarted.
+      if (owned && (operation === "deleteThread" || operation === "trashThread")) {
         this.file.write({ ...this.file.read(), threadId: null, creating: false });
         try {
           await this.reconcile();

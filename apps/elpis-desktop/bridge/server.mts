@@ -84,7 +84,8 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   const trash = await createTrash({
     client: {
       listThreads: query => client.listThreads(query),
-      archiveThread: (id, body) => mother.mutate(id, "archiveThread", () => client.archiveThread(id, body)),
+      // The trash archives a deleted chat; for the Elpis chat that means "clear it", not "put the router away".
+      archiveThread: (id, body) => mother.mutate(id, "trashThread", () => client.archiveThread(id, body)),
       unarchiveThread: (id, body) => mother.mutate(id, "unarchiveThread", () => client.unarchiveThread(id, body)),
       deleteThread: (id, body) => mother.mutate(id, "deleteThread", () => client.deleteThread(id, body)),
     },

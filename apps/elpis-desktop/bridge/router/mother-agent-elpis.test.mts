@@ -381,11 +381,21 @@ test("the bound Elpis chat respects archive, trash exclusions, undo and permanen
     assert.ok(h.workers.connections.size > 0);
     assert.equal((await mother.list([], {}))[0]?.id, CHAT);
     assert.deepEqual(await mother.list([], {}, id => id === CHAT), []);
+    const started = () => h.calls.filter(call => call.method === "thread/start").length;
+    const before = started();
+    // The fixture gives every chat one id, so the trash's archive is played by the engine alone here.
+    await mother.mutate(CHAT, "trashThread", () => {
+      h.archiveExternally();
+      return Promise.resolve({ archived: true });
+    });
+    assert.equal(mother.snapshot().error, undefined);
+    assert.equal(started(), before + 1, "Delete in the sidebar clears the Elpis chat: a fresh one starts at once");
+    assert.ok(h.workers.connections.size > 0, "The router carries on in the fresh chat without an app restart");
     await mother.mutate(CHAT, "deleteThread", () => h.client.deleteThread(CHAT, {}));
     assert.equal(mother.snapshot().error, undefined);
-    assert.equal(mother.snapshot().threadId, CHAT, "Deleting the Elpis chat clears it: a fresh one starts at once");
-    assert.ok(h.workers.connections.size > 0, "The router carries on in the fresh chat without an app restart");
-    assert.equal(h.calls.filter(call => call.method === "thread/start").length, 2);
+    assert.equal(mother.snapshot().threadId, CHAT, "Deleting it for good also leaves a fresh chat");
+    assert.ok(h.workers.connections.size > 0);
+    assert.equal(started(), before + 2);
   } finally {
     await mother.close();
     h.client.close();

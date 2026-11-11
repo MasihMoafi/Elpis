@@ -94,6 +94,8 @@ export function fixture({ fresh = false, native = false } = {}) {
           break;
         case "thread/start":
           created = true;
+          // A chat that has just been started is not in the archive.
+          archived = false;
           result = {
             thread: { id: CHAT, name, status: { type: "idle" } },
             model: request.params.model,
