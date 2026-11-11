@@ -76,3 +76,44 @@ test("a step completed again in the same round replaces its candidate instead of
     "fixed after its check",
   );
 });
+
+// A review stopped after its integration worktree was made (a cancel, a cherry-pick conflict) leaves
+// elpis/<run>/integration behind; recovering the run built it again with `worktree add -b` and failed with
+// "a branch named …/integration already exists". The rebuild replaces its own branch; other branches stay.
+test("a recovered run rebuilds its own integration branch; branches outside elpis/<run>/ are left alone", async t => {
+  const f = fixture(t);
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync(
+      "git",
+      ["-c", "core.hooksPath=/dev/null", "-c", "user.name=Test", "-c", "user.email=test@example.test", ...args],
+      { cwd, encoding: "utf8" },
+    ).trim();
+  git(f.dir, "init", "-q");
+  fs.mkdirSync(path.join(f.dir, "src"));
+  fs.writeFileSync(path.join(f.dir, "src/seed"), "seed");
+  git(f.dir, "add", "src/seed");
+  git(f.dir, "commit", "-qm", "baseline");
+  const id = "0b2d6c1e-5f3a-4c7e-9a10-2b3c4d5e6f70",
+    other = "1c3e7d2f-6a4b-4d8f-8b21-3c4d5e6f7a81";
+  const base = git(f.dir, "rev-parse", "HEAD");
+  for (const foreign of [`elpis/${other}/integration`, `mine/${id}/integration`]) git(f.dir, "branch", foreign);
+  const isolation = await workflowWorktrees(f.dir, id);
+  const writer = { ...task("writer"), kind: "implement", writeScopes: ["src"] };
+  fs.writeFileSync(path.join(await isolation.prepare(writer, 1), "src/answer.md"), "answer");
+  const done = await isolation.complete(writer, 1);
+  assert.ok("candidateCommit" in done);
+  const stopped = new AbortController();
+  stopped.abort();
+  await assert.rejects(isolation.review(stopped.signal), /cancelled before integration/);
+  assert.ok(git(f.dir, "branch", "--list", `elpis/${id}/integration`), "the stopped review left its branch");
+  const recovered = await workflowWorktrees(f.dir, id, {
+    worktreeBase: isolation.base,
+    worktrees: isolation.paths(),
+    tasks: [{ ...writer, status: "succeeded", result: { candidateCommit: done.candidateCommit } }],
+  });
+  const review = await recovered.review();
+  assert.equal(review.status, "ready");
+  assert.equal(git(f.dir, "show", `${review.commit}:src/answer.md`), "answer");
+  for (const foreign of [`elpis/${other}/integration`, `mine/${id}/integration`])
+    assert.equal(git(f.dir, "rev-parse", foreign), base, `${foreign} is not Elpis's for this run`);
+});

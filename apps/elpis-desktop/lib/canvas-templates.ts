@@ -80,14 +80,16 @@ export const TEMPLATES: [Template, ...Template[]] = [
     description:
       "Three agents answer the same question on their own, each in a file; a fourth writes the majority answer.",
     build: () => {
+      // The report is the answer file: an unnamed "file in your folder" became answer-1.md outside the agent's
+      // folders when the planner had also given it a folder named answer-1 (Voting 8 and 11, 1 Nov).
       const voters = [1, 2, 3].map(index =>
-        agent(`Answer ${index}`, `Answer the question on your own, with evidence, ${NOTE}.`, {
-          acceptanceCriteria: ["The answer file exists, with evidence"],
+        agent(`Answer ${index}`, "Answer the question on your own. Your report is your answer, with its evidence.", {
+          acceptanceCriteria: ["The report gives the answer, with evidence"],
         }),
       );
       const tally = agent(
         "Tally the answers",
-        `Compare the three answers and write the majority answer, with reasons, ${NOTE}.`,
+        "Compare the three answers. Your report is the majority answer, with reasons.",
         { acceptanceCriteria: ["The result names the majority and why"] },
       );
       return graphOf("Voting", [...voters, tally], fan(voters, [tally]));

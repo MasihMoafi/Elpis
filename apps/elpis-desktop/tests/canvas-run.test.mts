@@ -34,6 +34,29 @@ test('Voting: the tally waits for all three answers and their checks; each task 
   assert.equal(new Set(tasks.map(task => task.writeScopes.at(-1))).size, tasks.length, 'every task has a folder of its own');
 });
 
+// Voting 8 and 11 (1 Nov): the planner gave each answer agent the project folder answer-N beside its own folder; told to
+// write "a markdown file in your folder", Haiku read answer-N as a file name and saved answer-N.md outside both.
+test('Voting: every file a writer is asked for is named, inside its own write scopes', () => {
+  const template = TEMPLATES.find(template => template.id === 'voting');
+  assert.ok(template);
+  const graph = template.build();
+  const planned = ['answer-1', 'answer-2', 'answer-3', 'tally'];
+  graph.nodes.filter(node => node.type === 'agent').forEach((node, index) => {
+    if (node.type === 'agent') node.data.writeScopes = [planned[index]!];
+  });
+  const result = runTasks(graph);
+  assert.ok('tasks' in result);
+  const writers = result.tasks.filter(task => task.kind === 'implement');
+  assert.equal(writers.length, 4);
+  for (const writer of writers) {
+    assert.doesNotMatch(writer.instruction, /\ba (markdown )?file\b/i, `${writer.title} is asked for a file it is not told the path of`);
+    const named = writer.instruction.match(/[\w./-]+\.md\b/g) ?? [];
+    assert.ok(named.length, `${writer.title} is told where to write`);
+    for (const file of named)
+      assert.ok(writer.writeScopes.some(scope => file.startsWith(`${scope}/`)), `${writer.title}: ${file} is inside ${writer.writeScopes.join(', ')}`);
+  }
+});
+
 test('Transcribe images: one reader per page (at most eight, shared evenly, in natural order); Elpis joins their pages', async () => {
   const { transcriptionTeam } = await import('../lib/canvas.ts');
   const files = ['notes.txt', ...Array.from({ length: 10 }, (_, i) => `screen-${i + 1}.png`).reverse()];

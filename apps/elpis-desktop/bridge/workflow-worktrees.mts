@@ -158,9 +158,16 @@ export async function workflowWorktrees(project: string, id: string, saved?: Sav
   const places = new Map<string, Workspace>(),
     commits = new Map<string, string>();
   await fs.mkdir(home, { recursive: true });
-  const create = async (key: string): Promise<Workspace> => {
+  const create = async (key: string, rebuild = false): Promise<Workspace> => {
     const root = path.join(home, key),
       branch = `elpis/${id}/${key}`;
+    // The integration worktree holds only cherry-picked candidates. One an earlier review of this run left (stopped by a
+    // cancel or a conflict, then recovered) is this run's own and is made again; nothing outside elpis/<id>/ is touched.
+    if (rebuild && (await git(source, ["branch", "--list", branch]))) {
+      const registered = (await git(source, ["worktree", "list", "--porcelain", "-z"])).split("\0");
+      if (registered.includes(`worktree ${root}`)) await git(source, ["worktree", "remove", "--force", root]);
+      await git(source, ["branch", "-D", branch]);
+    }
     await git(source, ["worktree", "add", "-q", "--no-track", "-b", branch, root, base]);
     return { root, branch, cwd: path.join(root, relative), inherited: new Set() };
   };
@@ -312,7 +319,7 @@ export async function workflowWorktrees(project: string, id: string, saved?: Sav
     },
     async review(signal?: AbortSignal) {
       if (!commits.size) return { status: "empty", source, base };
-      const merged = await create("integration");
+      const merged = await create("integration", true);
       places.set("integration", merged);
       for (const sha of commits.values()) await git(merged.root, ["cherry-pick", "--no-gpg-sign", sha]);
       if (signal?.aborted) throw new BridgeError("Workflow cancelled before integration", 409);
