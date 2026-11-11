@@ -3,15 +3,19 @@
 Asked by Masih, 11 Nov: "Do a local code review and functionality review to see if the code actually holds up and ask
 the important questions of what makes Elpis exceptional? Or whether each of the other features needed?"
 
-Evidence here is from two days of using the installed app as he does, his own data in `~/.elpis-next`, and the
-checks on GitHub. Where there is no evidence, it says so.
+The short answer: the mechanical checks are strong, but the joins between the router, the bridge and the window are
+weak; real use found ten faults there that no test caught. On what makes Elpis exceptional, his use and his requests point
+to one assistant that runs his sessions, not to the continuity layer of its thesis; only he can decide which it is.
+
+The evidence comes from two days of using the installed app as he does, his own data in `~/.elpis-next`, and the
+checks on GitHub. Where there is no evidence, this review says so.
 
 ## 1. Does the code hold up
 
-**The mechanical checks are strong.** Strict types, lint and duplication sit at zero; long lines and the shared UI
-rules are now ratcheted on GitHub; 900 router tests and 190 UI test files run on every push.
+**The mechanical checks are strong.** Strict types, lint and duplication sit at zero. Long lines and the shared UI
+rules are now ratcheted on GitHub. 900 router tests and 190 UI test files run on every push.
 
-**The seams are weak.** In two days of real use the router showed ten faults that no test caught, every one at a
+**The seams are weak.** In two days of real use the router showed ten faults that no test caught. Every one sat at a
 join between the router, the bridge and the window:
 
 | Fault he would have met | Where it sat |
@@ -27,31 +31,31 @@ join between the router, the bridge and the window:
 | The map re-read every chat each 5 s | window to bridge |
 | Every worker ran on the largest model | router to worker |
 
-All ten are fixed and each has a test now. The lesson is the missing test, not the ten fixes: **there is no
-end-to-end test of the Elpis tab.** One scripted run (ask, acknowledge, worker reports both ways, result shows, stop,
-delete, restart) against the stand-in model would have caught seven of them. That is the next thing to build.
+All ten are fixed, and each has a test now. The lesson is the missing test, not the ten fixes: **there is no
+end-to-end test of the Elpis tab.** One scripted run against the stand-in model (ask, acknowledge, worker reports both
+ways, result shows, stop, delete, restart) would have caught seven of them. That test is the next thing to build.
 
 **Three design risks remain in the router.**
-1. A model decides what each message is. Five host-side guarantees now catch its wrong turns; a new kind of wrong
-   turn is still possible.
-2. The router's session outlives an app restart, and a resumed session answers from its old context. Found
-   live later on 11 Nov: after an update that taught a tool to pass pictures, it refused without trying. A session
-   made from other instructions or tools is now replaced (`c892f6cc5`). It still has no memory of the Elpis chat
-   beyond what it reads back.
-3. Its instructions are 50 KB written for a team's GitHub bot (pull requests, reviewers, merge notices). His use is
-   one person and his chats, with the GitHub source off. Most of that text is cost and confusion on every turn.
+1. A model decides what each message is. Five host-side guarantees now catch its wrong turns, but a new kind of
+   wrong turn is still possible.
+2. The router's session outlives an app restart, and a resumed session answers from its old context. This was found
+   live later on 11 Nov: after an update that taught a tool to pass pictures, the router refused without trying. Now
+   a session made from other instructions or tools is replaced (`c892f6cc5`). The router still has no memory of the
+   Elpis chat beyond what it reads back.
+3. Its instructions are 50 KB, written for a team's GitHub bot (pull requests, reviewers, merge notices). His use is
+   one person and his chats, with the GitHub source off. On every turn, most of that text is cost and confusion.
 
 Findings of the code review of the new files are in section 5.
 
 ## 2. What makes Elpis exceptional
 
-`AGENTS.md` says: a continuity layer, so a person can change provider or model without losing the working agreement.
-His data does not show that need: of 262 chats, 229 ran on GPT, 30 on Claude, 3 on Gemini; the context folder was
-last touched in July; no handoff was ever saved.
+`AGENTS.md` says Elpis is a continuity layer, so a person can change provider or model without losing the working
+agreement. His data does not show that need. Of 262 chats, 229 ran on GPT, 30 on Claude and 3 on Gemini; the context
+folder was last touched in July; no handoff was ever saved.
 
-What he asked for on 8, 10 and 11 Nov, three times, is something else: **one assistant he talks to, which starts,
+What he asked for three times, on 8, 10 and 11 Nov, is something else: **one assistant he talks to, which starts,
 sizes, watches, controls and reports his agents, so he does not manage ten tabs.** That is DeepSeek's super-agent
-idea ("sessions should be an implementation detail of the system, not a mental burden on its users"), and no desktop
+idea ("sessions should be an implementation detail of the system, not a mental burden on its users"). No desktop
 coding app he compares against does it.
 
 The questions only he can answer:
@@ -61,7 +65,7 @@ The questions only he can answer:
 3. How far may the router act without asking: archive garbage on its own, or always ping first (his 11 Nov sketch)?
 
 **His answer, 11 Nov:** "The smart-pruning too I think, dynamic workflows, love-spot, though none has been rigorously
-tested and proven to be positive." So three more candidates, each unproven. What would prove each, in one test:
+tested and proven to be positive." That makes three more candidates, each unproven. One test would settle each:
 
 | Candidate | The test that would settle it |
 | --- | --- |
@@ -90,16 +94,17 @@ None of the three tests has been run.
 | Context ledger, Smart Prune | Folder untouched since July | The thesis features; the least used. He counts Smart Prune as a candidate (11 Nov); unproven until the test in section 2 is run. |
 | Lab, Observability, Customize | No evidence either way | Observability overlaps the Map: merge or cut. |
 
-## 4. Workflows: what I would do
+## 4. Workflows: what this review proposes
 
 He said: "it's still not easy to set a workflow, maybe we should default it to a mother agent? Just tell it three
 subagents and what have you, but the graph itself should be a source of visibility."
 
-I agree, and most of it exists already under "Auto · Elpis chooses" (he approved this section on 11 Nov: "1) yes"):
+This review agrees, and most of it exists already under "Auto · Elpis chooses" (he approved this section on 11 Nov:
+"1) yes"):
 - **One way in:** a sentence to the Mother ("three agents: one reads, one writes, one checks"). Auto is now the first
   option; the other patterns belong behind "More".
 - **The graph is for watching, then for changing.** During a run it shows who works, who waits and who failed. Editing
-  wires and names stays; it is not the way to start.
+  wires and names stays, but it is not the way to start.
 - **Per-agent prompt and model forms:** no evidence anyone fills them in. Keep them one click away, off the first
   screen. The router now picks a worker's model by the job; the Mother should do the same for her team.
 - **Gates and guardrails around tool calls:** not now. Elpis already has Hooks for that at the engine. A gate is worth
@@ -107,16 +112,16 @@ I agree, and most of it exists already under "Auto · Elpis chooses" (he approve
 - **Auto-arrange, notes and the command bar** are on the page although SPEC item 57 says to leave them out. Remove
   them or change the item.
 
-Done on 11 Nov after his yes: the field now reads "Tell the Mother agent what you want" with a team as its example;
-the bar under the board only adds an agent, and notes, the command bar and arranging stay on the right-click menu
-(item 57 says so now). One fault was found on the way: the Mother ignored a team size he gave ("Use 2 agents" came back
-as one agent, 3 times of 3, on a small model); a rule in her planning instructions fixes it (2 agents, 3 of 3) without
-growing a plain request. A worked example added with the rule made a plain rename grow to four agents, so it was left
-out. The short pattern list keeps Parallel, Sequential and Research: a test and item 56 ask for them there.
+Done on 11 Nov after his yes: the field now reads "Tell the Mother agent what you want", with a team as its example.
+The bar under the board only adds an agent; notes, the command bar and arranging stay on the right-click menu (item 57
+says so now). One fault was found on the way: the Mother ignored a team size he gave ("Use 2 agents" came back as one
+agent, 3 times of 3, on a small model). A rule in her planning instructions fixes it (2 agents, 3 of 3) without growing
+a plain request. A worked example added with the rule made a plain rename grow to four agents, so the example was left
+out. The short pattern list keeps Parallel, Sequential and Research, because a test and item 56 ask for them there.
 
 ## 5. Code review of the new files
 
-A separate review read the seven new files (the chat tools, the watch, the gate, the map) and found ten faults that
+A separate review read the seven new files (the chat tools, the watch, the gate, the map). It found ten faults that
 no test had caught. All are fixed, each with a test:
 
 | Fault | What he would have met |
@@ -132,6 +137,6 @@ no test had caught. All are fixed, each with a test:
 | Old workflow runs whose chat was archived stayed on the map | Cards that open nothing. |
 | The gate against ticketing an order read only one word order | "In the Rust chat, tell the agent to rebase" still went to a worker. |
 
-The gate stays a second line: it reads prose, so it will miss orders worded another way and will cost one round trip
-when a real job sounds like one. The lasting answer is for the router to state what kind of request it accepts as a
-field of the accept itself, not for the host to guess from words.
+The gate stays a second line of defence. It reads prose, so it will miss orders worded another way, and it will cost
+one round trip when a real job sounds like an order. The lasting answer is for the router to state the kind of
+request it accepts as a field of the accept itself, instead of the host guessing from words.
