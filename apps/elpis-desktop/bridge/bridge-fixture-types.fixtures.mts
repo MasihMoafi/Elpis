@@ -14,6 +14,8 @@ export type FixtureThread = {
   modelProvider?: string;
   status: { type: string };
   archived?: boolean;
+  /** A temporary side conversation, never a chat. */
+  ephemeral?: boolean;
   parentThreadId?: string | null;
   forkedFromId?: string;
   canAcceptDirectInput?: boolean;
