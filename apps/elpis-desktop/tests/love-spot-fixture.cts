@@ -82,6 +82,7 @@ async function loveSpotFixture({ threadId, colorScheme = 'light', reply = 'I am 
   const newPage = async (url = server.url) => {
     const page = await context.newPage(); page.setDefaultTimeout(10000);
     await guardDesktopStore(page); await page.addInitScript(fakeDesktop);
+    await page.addInitScript(() => { if (!localStorage.getItem('elpis-workflows-view-v1')) localStorage.setItem('elpis-workflows-view-v1', 'board'); });
     page.on('pageerror', e => errors.push(e.message));
     page.on('request', r => requests.push(r.url()));
     page.on('response', r => responses.push({ url: r.url(), status: r.status() }));

@@ -120,7 +120,10 @@ async function fixtureImpl({ staticDir = out, cwd = CWD, width = 1130, height = 
   const page = await activeBrowser.newPage({ viewport: { width, height }, colorScheme, deviceScaleFactor }); page.setDefaultTimeout(6000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await guardDesktopStore(page);
-  await page.addInitScript(values => { for (const [key, value] of Object.entries(values)) if (localStorage.getItem(key) === null) localStorage.setItem(key, value); }, storage);
+  // Workflows remembers its last view; the board tests start where they always did, on the Board.
+  await page.addInitScript(values => {
+    for (const [key, value] of Object.entries(values)) if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
+  }, { 'elpis-workflows-view-v1': 'board', ...storage });
   if (desktop) await page.addInitScript(fakeDesktop);
   if (nativeClipboard) await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   else await page.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => { (window as ClipboardWindow).__copied = text; } } }); });

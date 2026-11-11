@@ -103,11 +103,11 @@ async function openCanvas({ width = 1440, height = 900, repository = false, grap
   await page.addInitScript(saved => {
     if (!localStorage.getItem('elpis-projects-v1')) localStorage.setItem('elpis-projects-v1', JSON.stringify({ projects: [{ id: 'p1', name: 'demo', cwd: '/tmp/demo' }], selectedId: 'p1' }));
     if (saved && !localStorage.getItem('elpis-workflow-draft-v1')) localStorage.setItem('elpis-workflow-draft-v1', JSON.stringify(saved));
+    if (!localStorage.getItem('elpis-workflows-view-v1')) localStorage.setItem('elpis-workflows-view-v1', 'board');
   }, graph);
   if (autoLayout !== undefined) await page.addInitScript(on => localStorage.setItem('elpis-canvas-auto', on ? 'on' : 'off'), autoLayout);
   const address = server.address(); if (!address || typeof address === 'string') throw Error('Fixture server unavailable'); await page.goto(`http://127.0.0.1:${address.port}`);
   await page.getByRole('button', { name: 'Workflows', exact: true }).click();
-  await page.getByRole('radio', { name: 'Board', exact: true }).click();
   const canvas = page.getByRole('region', { name: 'Workflows', exact: true }); await canvas.waitFor();
   const node = (title: string) => canvas.locator('.react-flow__node').filter({ hasText: title });
   return {

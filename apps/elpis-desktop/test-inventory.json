@@ -128,7 +128,8 @@
     "tests/model-settings.test.mts",
     "tests/love-spot-events.test.mts",
     "tests/transcript-cache.test.mts",
-    "bridge/bounded-cache.test.mts"
+    "bridge/bounded-cache.test.mts",
+    "tests/workflows-view.test.mts"
   ],
   "bridge": [
     "bridge/custom-characters.test.mts",

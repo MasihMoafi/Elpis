@@ -21,7 +21,7 @@ const graph = {
 
 for (const colorScheme of ['light', 'dark']) test(`sessions map navigation and readability (${colorScheme})`, async () => {
   let currentGraph = graph;
-  const f = await fixture({ width: 1100, height: 750, colorScheme, routes: {
+  const f = await fixture({ width: 1100, height: 750, colorScheme, storage: { 'elpis-workflows-view-v1': 'map' }, routes: {
     '/api/sessions-map': () => currentGraph, '/api/workflows/workspace': () => ({ cwd: '/tmp/parity-fixture' }),
   } });
   const { page } = f;
@@ -75,7 +75,7 @@ for (const colorScheme of ['light', 'dark']) test(`sessions map navigation and r
 });
 
 test('empty map keeps its switch and can show independent chats', async () => {
-  const f = await fixture({ routes: { '/api/sessions-map': (_body: unknown, url: URL) =>
+  const f = await fixture({ storage: { 'elpis-workflows-view-v1': 'map' }, routes: { '/api/sessions-map': (_body: unknown, url: URL) =>
     url.searchParams.get('all') ? { nodes: [graph.nodes[2]], edges: [] } : { nodes: [], edges: [] } } });
   try {
     await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();

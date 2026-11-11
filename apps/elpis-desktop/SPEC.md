@@ -92,7 +92,7 @@ These are the required behaviors, numbered 1–90 without gaps; refer to one as 
 68. Workflow-run RPCs, desktop routes and updates are owned by [client.mjs](bridge/client.mjs) and [server.mts](bridge/server.mts). (WR7)
 69. The board and chat workflow tool use one runner: independent agents start together, dependents start after their inputs finish, and writers use isolated worktrees. (WR8)
 
-86. Workflows opens on a Map of the router, ticket chats, agent trees and workflow runs, with live states and clickable chats; Board and Scheduled remain available. Show all chats adds 30 recent standalone chats. The Map keeps its pan and zoom and remains readable at 1100 × 750. (W1–W4; installed-app proof pending)
+86. Workflows opens on a Map of the router, ticket chats, agent trees and workflow runs, with live states and clickable chats; Board and Scheduled remain available, and the page reopens on the view he last used. Show all chats adds 30 recent standalone chats. The Map keeps its pan and zoom and remains readable at 1100 × 750. (W1–W4)
 
 ## Router (the Elpis tab)
 
