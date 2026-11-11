@@ -144,7 +144,7 @@ it("hands on the cursor to the next page until there is none", async () => {
   const first = (await run("chats_list", { limit: 50 })) as { next_cursor?: string; chats: Chat[] };
   expect(first.next_cursor).toBe("more");
   const second = (await run("chats_list", { limit: 50, cursor: "more" })) as { next_cursor?: string; chats: Chat[] };
-  expect(second).toEqual({ needs_you: 0, working: 0, failed: 0, chats: [] });
+  expect(second).toEqual({ chats: [] });
 });
 
 it("archives many chats in one call, names the ones it may not touch, and still does the rest", async () => {
@@ -175,4 +175,22 @@ it("restores many chats in one call, and takes one chat at a time for stop and r
   await expect(run("chats_change", { chat: "working", chats: ["working"], action: "archive" })).rejects.toThrow("not both");
   await expect(run("chats_change", { action: "archive" })).rejects.toThrow("Give chat");
   expect(actions).toEqual([["restore", "idle-old"]]);
+});
+
+it("counts a chat that waits for him even when it sits far down the list by date", async () => {
+  const far: Chat = { id: "far", title: "Old deploy", state: "needs you" };
+  const chats: Chats = {
+    list: ({ cursor }) =>
+      Promise.resolve(cursor ? { chats: [far, { id: "quiet", title: "Quiet", state: "idle" }] } : { chats: CHATS.slice(0, 1), next: "p2" }),
+  } as Chats;
+  const [list] = chatTools(chatToolsHost(chats, ROUTER, () => ({ sources: {} })));
+  const listed = (await list!.execute({ limit: 1 }, new AbortController().signal)) as { needs_you: number; chats: Chat[] };
+  expect(listed.needs_you).toBe(1);
+  expect(listed.chats.map(chat => chat.id)).toEqual(["far", "idle-new"]);
+});
+
+it("says once that the tools are off when many chats are asked for", async () => {
+  const { run, actions } = setup({ "elpis-chat": { enabled: true }, github: { enabled: true } });
+  await expect(run("chats_change", { chats: ["idle-old", "idle-new"], action: "archive" })).rejects.toThrow("outside text");
+  expect(actions).toEqual([]);
 });

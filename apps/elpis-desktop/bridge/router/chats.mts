@@ -48,7 +48,7 @@ export interface Chats {
 export interface ChatsClient {
   listThreads(options: { limit: number; searchTerm?: string; cursor?: string }): Promise<unknown>;
   listArchivedThreads(options: { limit: number; cursor?: string }): Promise<unknown>;
-  readThread(id: string, options: { limit: number }): Promise<unknown>;
+  readThread(id: string, options: { limit: number; cursor?: string }): Promise<unknown>;
   createThread(body: { cwd?: string; model?: string; name?: string }): Promise<unknown>;
   send(id: string, body: { text: string; effort?: string }): Promise<unknown>;
   interrupt(id: string, body: Record<string, never>): Promise<unknown>;
@@ -66,6 +66,7 @@ const ThreadSchema = z.looseObject({
   updatedAt: z.number().nullish(),
   recencyAt: z.number().nullish(),
   archivedAt: z.number().nullish(),
+  archived: z.boolean().nullish(),
   status: z.looseObject({ type: z.string().optional(), activeFlags: z.array(z.string()).optional() }).nullish(),
 });
 type Thread = z.infer<typeof ThreadSchema>;
@@ -74,11 +75,18 @@ const EntrySchema = z.looseObject({
   startedAtMs: z.number().nullish(),
   item: z.looseObject({ type: z.string(), text: z.string().optional(), content: z.unknown().optional() }),
 });
-const PageSchema = z.looseObject({ thread: ThreadSchema, data: z.array(z.unknown()) });
+const PageSchema = z.looseObject({
+  thread: ThreadSchema,
+  data: z.array(z.unknown()),
+  nextCursor: z.string().nullish(),
+});
 const CreatedSchema = z.looseObject({ thread: z.looseObject({ id: z.string() }) });
 const BlocksSchema = z.array(z.looseObject({ type: z.string(), text: z.string().optional() }));
 const WAITING = ["waitingOnApproval", "waitingOnUserInput"];
 const TITLE_CHARS = 80;
+/** How many history entries one reading takes, and how many readings at most, to find a chat's last messages. */
+const READ_PAGE = 50;
+const READ_PAGES = 6;
 
 /** A chat's state as the sidebar shows it: waiting for him counts before working. */
 export function chatState(status: Thread["status"]): ChatState {
@@ -101,7 +109,7 @@ function chat(thread: Thread): Chat {
     ...(thread.cwd ? { folder: thread.cwd } : {}),
     ...(thread.model ? { model: thread.model } : {}),
     ...(updated ? { updated } : {}),
-    ...(thread.archivedAt ? { archived: true } : {}),
+    ...(thread.archivedAt || thread.archived ? { archived: true } : {}),
   };
 }
 
@@ -121,10 +129,22 @@ function message(raw: unknown): ChatMessage[] {
 
 /** The router's view of his chats, over the desktop client. */
 export function createChats(client: ChatsClient): Chats {
+  /** The last `limit` messages. A chat's history is mostly tool steps, so it reads on until it has them. */
   const read = async (id: string, limit: number) => {
-    const page = PageSchema.parse(await client.readThread(id, { limit }));
-    // The desktop pages a chat newest first; a reader wants it in the order it was said.
-    return { chat: chat(page.thread), messages: page.data.flatMap(message).reverse() };
+    const messages: ChatMessage[] = [];
+    let cursor: string | undefined;
+    let thread: Thread | undefined;
+    for (let pages = 0; pages < READ_PAGES && messages.length < limit; pages++) {
+      const page = PageSchema.parse(await client.readThread(id, { limit: READ_PAGE, ...(cursor ? { cursor } : {}) }));
+      thread ??= page.thread;
+      // The desktop pages a chat newest first.
+      messages.push(...page.data.flatMap(message));
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+    }
+    if (!thread) throw new Error("No such chat");
+    // A reader wants it in the order it was said.
+    return { chat: chat(thread), messages: messages.slice(0, limit).reverse() };
   };
   return {
     async list({ archived, search, limit, cursor }) {
@@ -134,10 +154,12 @@ export function createChats(client: ChatsClient): Chats {
           ? await client.listArchivedThreads(page)
           : await client.listThreads({ ...page, ...(search ? { searchTerm: search } : {}) }),
       );
-      return {
-        chats: listed.data.map(thread => ({ ...chat(thread), ...(archived ? { archived: true } : {}) })),
-        ...(listed.nextCursor ? { next: listed.nextCursor } : {}),
-      };
+      // The archive has no search of its own: its page is narrowed here, so a search never returns the whole page.
+      const term = archived ? search?.trim().toLowerCase() : undefined;
+      const chats = listed.data
+        .map(thread => ({ ...chat(thread), ...(archived ? { archived: true } : {}) }))
+        .filter(item => !term || item.title.toLowerCase().includes(term));
+      return { chats, ...(listed.nextCursor ? { next: listed.nextCursor } : {}) };
     },
     read,
     async send(id, text) {
@@ -151,8 +173,23 @@ export function createChats(client: ChatsClient): Chats {
           ...(name ? { name } : {}),
         }),
       );
-      await client.send(created.thread.id, { text, ...(effort ? { effort } : {}) });
-      return (await read(created.thread.id, 1)).chat;
+      const id = created.thread.id;
+      try {
+        await client.send(id, { text, ...(effort ? { effort } : {}) });
+      } catch (error) {
+        // A chat whose first message was refused would stay in his sidebar empty: it goes to the archive.
+        await client.archiveThread(id, {}).catch(() => {});
+        throw error;
+      }
+      // The chat exists and runs: nothing read after this may fail the start, or a retry would open a second one.
+      const first = text.trim().split("\n")[0] ?? "";
+      return {
+        id,
+        title: name ?? (first.slice(0, TITLE_CHARS) || "Untitled chat"),
+        state: "working",
+        ...(folder ? { folder } : {}),
+        ...(model ? { model } : {}),
+      };
     },
     async stop(id) {
       await client.interrupt(id, {});

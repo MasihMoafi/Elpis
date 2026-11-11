@@ -1,7 +1,15 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/runtime.ts.
 /** Composition root. All domain commands, receipts, versions and side effects share one profile database. */
 import { join } from "node:path";
-import { Engine, chatTicket, key, type Ticket, type Trigger } from "./core/index.mts";
+import {
+  Engine,
+  chatTicket,
+  key,
+  runningAssignment,
+  waitsForPerson,
+  type Ticket,
+  type Trigger,
+} from "./core/index.mts";
 import { ExecutorStore } from "./executor/store.mts";
 import { ExecutorService } from "./executor/service.mts";
 import { ticketOfSession, sourceTrigger } from "./executor/messages.mts";
@@ -319,18 +327,32 @@ export class MotherApp implements SourceHost {
   private paused(): boolean {
     return this.closing || this.store.settings().paused;
   }
+  /** He pressed Stop in the Elpis chat: every job of his that is running stops. Returns how many there were. */
+  stopChatWork(): number {
+    const running = this.store.tickets.open().filter(ticket => chatTicket(ticket) && !!runningAssignment(ticket));
+    for (const ticket of running) this.engine.stopTicket(ticket.id);
+    if (running.length) this.passes.request();
+    return running.length;
+  }
   /** Whether the router is at work for him: a message of his awaits its decision, or a job he asked for is running. */
   working(): boolean {
     return (
       this.store.threads.active().length > 0 ||
-      this.store.tickets.open().some(ticket => chatTicket(ticket) && !ticket.attention)
+      // A job that waits for him, or whose worker stopped blocked or failed, is not at work: the mark must not stay on.
+      this.store.tickets.open().some(ticket => chatTicket(ticket) && !!runningAssignment(ticket) && !waitsForPerson(ticket))
     );
   }
   /** Puts a finished chat job's result in his chat, once: the host does it, so no model turn can lose it. */
   private showResult(ticketId: string, text: string): void {
     if (this.shown.has(ticketId)) return;
     this.shown.add(ticketId);
-    this.engine.reply({ purpose: "result", ticketId, text });
+    try {
+      this.engine.reply({ purpose: "result", ticketId, text });
+    } catch {
+      // The host could not queue it: the main Session, which is told of every ended job, may still send it.
+      this.shown.delete(ticketId);
+      return;
+    }
     void this.outbox.sent();
   }
   /** His chats as the chat tools use them: a turn the router starts in one is announced in the Elpis chat when it ends. */

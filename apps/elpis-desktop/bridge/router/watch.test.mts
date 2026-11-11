@@ -137,3 +137,48 @@ it("gives each change its own id, so a line repeated after a restart is not writ
   await look([chat("a", "idle", { updated: "2026-11-10T21:00:00.000Z" })]);
   expect(new Set(ids).size).toBe(2);
 });
+
+it("says a line again at the next look when writing it failed, and loses none", async () => {
+  let chats: Chat[] = [];
+  let failing = true;
+  const said: string[] = [];
+  const watch = new ChatWatch({
+    chats: {
+      list: () => Promise.resolve({ chats }),
+      read: id => Promise.resolve({ chat: chats.find(item => item.id === id)!, messages: [{ from: "agent" as const, text: `Done ${id}.` }] }),
+    },
+    skip: () => false,
+    say: (_id, text) => (failing ? Promise.reject(new Error("bridge busy")) : Promise.resolve(void said.push(text))),
+  });
+  const look = (next: Chat[]) => {
+    chats = next;
+    return watch.look();
+  };
+  await look([]);
+  for (let n = 0; n < LONG_LOOKS; n++) await look([chat("a", "working"), chat("b", "working")]);
+  await expect(look([chat("a", "idle"), chat("b", "idle")])).rejects.toThrow("bridge busy");
+  failing = false;
+  await look([chat("a", "idle"), chat("b", "idle")]);
+  expect(said).toEqual(["Finished: “Chat a”. Done a.", "Finished: “Chat b”. Done b."]);
+});
+
+it("counts a long turn as long even when it stopped for his approval near its end", async () => {
+  const { look, said } = setup();
+  await look([]);
+  for (let n = 0; n < LONG_LOOKS; n++) await look([chat("a", "working")]);
+  await look([chat("a", "needs you")]);
+  await look([chat("a", "working")]);
+  await look([chat("a", "idle")]);
+  expect(said).toEqual(["Needs you: “Chat a” is waiting for your approval or answer.", "Finished: “Chat a”. Result of a."]);
+});
+
+it("forgets a turn the router started once it failed, so his own short turn there later is not news", async () => {
+  const { watch, look, said } = setup();
+  await look([chat("a", "idle")]);
+  watch.expect("a");
+  await look([chat("a", "working")]);
+  await look([chat("a", "failed")]);
+  await look([chat("a", "working")]);
+  await look([chat("a", "idle", { updated: "2026-11-11T09:00:00.000Z" })]);
+  expect(said).toEqual(["Failed: “Chat a” stopped with an error."]);
+});

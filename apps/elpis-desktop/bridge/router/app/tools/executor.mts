@@ -171,13 +171,14 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
             ...(args.reply_to_trigger_id ? { answers: args.reply_to_trigger_id } : {}),
           };
           const updated = host.engine.report(ticketId, report);
-          const relay = reportRelay(updated, report);
+          const owed = resultOwed(args.state, updated);
+          const relay = reportRelay(updated, report, owed);
           if (relay) host.sessions.relay(relay.id, relay.text);
           const notification = relay ? "orchestrator" : "internal_only";
           return {
             answer: { reported: true, notification, ...(updated.attention ? { attention: updated.attention } : {}) },
             // A ready report ends a job he asked for in the Elpis chat, so its result is owed to him now.
-            owed: resultOwed(args.state, updated),
+            owed,
           };
         });
         // On 11 Nov a worker reported "201 lines" as ready and the router only said it in its hidden session.

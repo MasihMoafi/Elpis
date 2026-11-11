@@ -368,6 +368,10 @@ export class MotherAgent {
       throw error;
     }
   }
+  /** Stop in the Elpis chat: the jobs he asked for there stop. The chat has no turn of its own to interrupt. */
+  interrupt(): Promise<{ interrupted: boolean }> {
+    return this.serialized(() => Promise.resolve({ interrupted: (this.app?.stopChatWork() ?? 0) > 0 }));
+  }
   /** Sidebar lifecycle stops sessions while retaining tickets, receipts and work history. */
   mutate<T>(id: string, operation: string, work: () => Promise<T>): Promise<T> {
     return this.serialized(async () => {

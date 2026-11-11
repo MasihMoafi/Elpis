@@ -463,3 +463,22 @@ test("the Elpis chat shows the Working mark while the router works for him, and 
     rmSync(h.home, { recursive: true, force: true });
   }
 });
+
+test("Stop in the Elpis chat stops his running jobs, and is quiet when there is none", async () => {
+  const h = fixture();
+  const mother = h.create();
+  try {
+    assert.deepEqual(await mother.interrupt(), { interrupted: false }, "A router that is off has nothing to stop");
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    const app = (mother as unknown as { app: { stopChatWork(): number } }).app;
+    assert.equal(app.stopChatWork(), 0, "No job of his is running");
+    assert.deepEqual(await mother.interrupt(), { interrupted: false });
+    app.stopChatWork = () => 2;
+    assert.deepEqual(await mother.interrupt(), { interrupted: true });
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});

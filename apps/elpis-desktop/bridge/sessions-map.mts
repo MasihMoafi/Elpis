@@ -56,9 +56,12 @@ export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; 
     });
     return id;
   };
+  const linked = new Set<string>();
   const link = (source: string, target: string) => {
-    if (source !== target && !edges.some(edge => edge.source === source && edge.target === target))
-      edges.push({ source, target });
+    const pair = `${source}>${target}`;
+    if (source === target || linked.has(pair)) return;
+    linked.add(pair);
+    edges.push({ source, target });
   };
   const router = input.router;
   const root = router?.enabled && router.threadId ? byId.get(router.threadId) : undefined;
@@ -72,8 +75,10 @@ export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; 
   for (const run of input.workflows ?? []) {
     const id = `workflow:${run.id}`;
     if (included.has(id)) continue;
-    included.add(id);
     const rootThread = byId.get(run.rootThreadId);
+    // A finished run whose chat he archived or deleted is history, not a session: a card that opens nothing is noise.
+    if (!rootThread && state(run.status) !== "working") continue;
+    included.add(id);
     nodes.push({
       id, kind: "workflow", title: run.name || "Workflow", state: state(run.status),
       ...(rootThread ? { threadId: rootThread.id } : {}), ...(rootThread?.model ? { model: rootThread.model } : {}),

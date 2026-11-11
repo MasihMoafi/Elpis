@@ -171,6 +171,7 @@ export function resultRelay(ticket: Ticket, state: string, text: string, replyTo
 export function reportRelay(
   ticket: Ticket,
   report: Pick<WorkerReport, "state" | "summary" | "question" | "answers">,
+  shown = false,
 ): Relay | undefined {
   const asked = report.question ? ticket.attention : undefined;
   if (asked) {
@@ -185,5 +186,5 @@ export function reportRelay(
     };
   }
   if (report.state === "progress" && !report.answers) return undefined;
-  return resultRelay(ticket, report.state, report.summary, report.answers);
+  return resultRelay(ticket, report.state, report.summary, report.answers, shown);
 }

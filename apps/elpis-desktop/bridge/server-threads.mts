@@ -233,6 +233,10 @@ export async function handleThreadRoutes(
         json(response, 200, await state.mother.send(id, input));
         return true;
       }
+      if (operation === "interrupt" && state.mother.owns(id)) {
+        json(response, 200, await state.mother.interrupt());
+        return true;
+      }
       if (operation === "setEffort" && state.mother.owns(id)) {
         await state.mother.chooseRouter(input as { effort?: unknown });
         json(response, 200, {});

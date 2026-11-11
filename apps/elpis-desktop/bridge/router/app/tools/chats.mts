@@ -39,6 +39,8 @@ export function chatToolsHost(
 const MESSAGE_CHARS = 2000;
 /** How many chats one call may archive or restore. */
 const BATCH = 50;
+/** How many further pages a first listing reads to find chats that work or wait for him (1,000 chats). */
+const SCAN_PAGES = 20;
 const ORDER: Record<Chat["state"], number> = { "needs you": 0, working: 1, failed: 2, idle: 3 };
 const ChatId = z.string().min(1).describe("The chat's id, copied from chats_list.");
 
@@ -58,6 +60,16 @@ async function target(host: ChatToolsHost, id: string): Promise<Chat> {
 const clip = (text: string): string =>
   text.length > MESSAGE_CHARS ? `${text.slice(0, MESSAGE_CHARS)}… (${text.length - MESSAGE_CHARS} more characters)` : text;
 
+/** His chats past the first page that are at work, failed or waiting for him, so the counts hold for all of them. */
+async function busyBeyond(host: ChatToolsHost, have: Set<string>, cursor: string | undefined): Promise<Chat[]> {
+  const busy: Chat[] = [];
+  for (let pages = 0; cursor && pages < SCAN_PAGES; pages++) {
+    const listed = await host.chats.list({ limit: BATCH, cursor });
+    busy.push(...listed.chats.filter(chat => chat.state !== "idle" && !have.has(chat.id) && !host.own(chat)));
+    cursor = listed.next;
+  }
+  return busy;
+}
 function listTool(host: ChatToolsHost): Tool {
   return tool({
     name: "chats_list",
@@ -79,18 +91,18 @@ function listTool(host: ChatToolsHost): Tool {
       .strict(),
     execute: async ({ show, search, limit, cursor }) => {
       allowed(host);
-      const listed = await host.chats.list({ archived: show === "archived", search, limit, cursor });
-      const chats = listed.chats
-        .filter(chat => !host.own(chat))
-        .sort((a, b) => ORDER[a.state] - ORDER[b.state] || (b.updated ?? "").localeCompare(a.updated ?? ""));
+      const archived = show === "archived";
+      const listed = await host.chats.list({ archived, search, limit, cursor });
+      const page = listed.chats.filter(chat => !host.own(chat));
+      const next = listed.next ? { next_cursor: listed.next } : {};
+      const byNeed = (a: Chat, b: Chat) =>
+        ORDER[a.state] - ORDER[b.state] || (b.updated ?? "").localeCompare(a.updated ?? "");
+      // Only the first page of all his open chats can say what needs him: a search or a later page is a part.
+      if (archived || search || cursor) return { chats: page.sort(byNeed), ...next };
+      // A chat that works or waits for him may sit far down the list by date: the rest is read for those.
+      const chats = [...page, ...(await busyBeyond(host, new Set(page.map(chat => chat.id)), listed.next))].sort(byNeed);
       const count = (state: Chat["state"]) => chats.filter(chat => chat.state === state).length;
-      return {
-        needs_you: count("needs you"),
-        working: count("working"),
-        failed: count("failed"),
-        chats,
-        ...(listed.next ? { next_cursor: listed.next } : {}),
-      };
+      return { needs_you: count("needs you"), working: count("working"), failed: count("failed"), chats, ...next };
     },
   });
 }
@@ -154,6 +166,8 @@ function startTool(host: ChatToolsHost): Tool {
  * with its reason and the others still go through.
  */
 async function many(host: ChatToolsHost, ids: string[], action: "archive" | "restore") {
+  // Said once, not once per chat.
+  allowed(host);
   const done: string[] = [];
   const refused: { chat: string; why: string }[] = [];
   for (const id of [...new Set(ids)]) {

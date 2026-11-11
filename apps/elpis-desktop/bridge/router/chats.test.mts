@@ -122,3 +122,41 @@ it("reads his chats page after page: the cursor of one page asks for the next", 
   expect(second).toEqual({ chats: [{ id: "c", title: "Third", state: "idle" }] });
   expect(calls).toEqual([]);
 });
+
+it("reads on past pages of tool steps until it has the messages asked for", async () => {
+  const step = (id: string) => ({ turnId: "t", item: { id, type: "commandExecution", text: "ls" } });
+  const pages: Record<string, unknown> = {
+    first: { thread: { id: "a", name: "Busy" }, data: [step("3"), step("2")], nextCursor: "older" },
+    older: {
+      thread: { id: "a", name: "Busy" },
+      data: [step("1"), { turnId: "t", item: { id: "0", type: "agentMessage", text: "Started." } }],
+      nextCursor: null,
+    },
+  };
+  const { fake } = client({ readThread: (_id: string, options: { cursor?: string }) => Promise.resolve(pages[options.cursor ?? "first"]) });
+  const read = await createChats(fake).read("a", 1);
+  expect(read.messages).toEqual([{ from: "agent", text: "Started." }]);
+});
+
+it("narrows the archive by the words searched for, since the archive has no search of its own", async () => {
+  const { fake } = client({
+    listArchivedThreads: () => Promise.resolve({ data: [{ id: "x", name: "Billing export" }, { id: "y", name: "Holiday plan" }] }),
+  });
+  const { chats } = await createChats(fake).list({ archived: true, search: "billing", limit: 50 });
+  expect(chats.map(chat => chat.id)).toEqual(["x"]);
+});
+
+it("marks a chat archived when the desktop says so either way", async () => {
+  const { fake } = client({ readThread: () => Promise.resolve({ thread: { id: "a", name: "Old", archived: true }, data: [] }) });
+  expect((await createChats(fake).read("a", 1)).chat.archived).toBe(true);
+});
+
+it("leaves no empty chat behind when the first message is refused, and reads nothing after a good start", async () => {
+  const refused = client({ send: () => Promise.reject(new Error("Unknown model")) });
+  await expect(createChats(refused.fake).start({ text: "hi", name: "Hello" })).rejects.toThrow("Unknown model");
+  expect(refused.calls.at(-1)).toEqual(["archiveThread", "new", {}]);
+  const started = client();
+  const chat = await createChats(started.fake).start({ text: "say hi\nplease", folder: "/work/legal" });
+  expect(chat).toEqual({ id: "new", title: "say hi", state: "working", folder: "/work/legal" });
+  expect(started.calls.map(call => call[0])).toEqual(["createThread", "send"]);
+});
