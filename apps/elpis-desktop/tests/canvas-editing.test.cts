@@ -111,7 +111,9 @@ async function added(f: CanvasFixture, iso: boolean, count: number, source?: str
   assert.equal(await name.inputValue(), made.data.title);
   if (wanted) {
     const at = iso ? made.isoPosition : { x: made.position.x + 105, y: made.position.y + 48 }; assert.ok(at);
-    const retained = Math.abs(at.x - wanted.x) < 15 && Math.abs(at.y - wanted.y) < 15;
+    // The board snaps to a 20 px grid, so a new agent lands within one step of the pointer. The bound was 15, which
+    // held only for pointer positions that happened to fall near a grid line (11 Nov: a shorter bar moved the board).
+    const retained = Math.abs(at.x - wanted.x) <= 20 && Math.abs(at.y - wanted.y) <= 20;
     assert.ok(retained, `free-space creation preserves the pointer position with auto-arrange on${retained ? '' : ` ${JSON.stringify({ wanted, actual: at, made, geometry: await placementGeometry(f, iso) })}`}`);
   }
   if (source) assert.ok(saved.edges.some(edge => edge.source === source && edge.target === made.id), 'already wired');

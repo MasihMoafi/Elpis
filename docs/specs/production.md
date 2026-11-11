@@ -77,6 +77,8 @@ workflows or chats that have multiple agents. The UI of it is good though." Item
 | W6 | A first run still works end to end from the board. | Live: a two-agent report-only run in Sandbox on Luna ends `succeeded`. | todo. The Board itself opens laid out again: mounted hidden behind the Map it packed its agents into a corner (`bac610915`) |
 | W7 | The request reads as typed. | The saved request does not begin "sandboxIn the Elpis repo". | todo |
 | W8 | Keeping the Map fresh costs little. | With the Map open, the bridge does not page the whole chat list more than once in 15 s unless a chat changed. | todo: it pages every chat and agent run each 5 s; the first load took several seconds on his history |
+| W9 | The Mother builds the team he names. | Write "… Use 2 agents" or "three agents: one studies, one builds, one reviews": the plan has exactly those agents; a plain small request stays one agent. | doing: on a real small model (gpt-6-luna) a named count came back as one agent 3 times of 3 before the rule and as two agents 3 of 3 after; named roles gave three chained agents (5 of 5) and a plain rename stayed one agent (3 of 3). Not yet run from the Board of the installed app |
+| W10 | The Board's first screen is the sentence to the Mother and the graph. | Open the Board: the field says to tell the Mother what you want, with a team as its example; the bar under the board only adds an agent; notes and arranging are on the right-click menu. | doing: built, with a test (`tests/canvas-controls.test.cts`); not yet seen in the installed app |
 
 ## D. The shared system sticks
 

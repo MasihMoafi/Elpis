@@ -105,6 +105,13 @@ I agree, and most of it exists already under "Auto · Elpis chooses" (he approve
 - **Auto-arrange, notes and the command bar** are on the page although SPEC item 57 says to leave them out. Remove
   them or change the item.
 
+Done on 11 Nov after his yes: the field now reads "Tell the Mother agent what you want" with a team as its example;
+the bar under the board only adds an agent, and notes, the command bar and arranging stay on the right-click menu
+(item 57 says so now). One fault was found on the way: the Mother ignored a team size he gave ("Use 2 agents" came back
+as one agent, 3 times of 3, on a small model); a rule in her planning instructions fixes it (2 agents, 3 of 3) without
+growing a plain request. A worked example added with the rule made a plain rename grow to four agents, so it was left
+out. The short pattern list keeps Parallel, Sequential and Research: a test and item 56 ask for them there.
+
 ## 5. Code review of the new files
 
 A separate review read the seven new files (the chat tools, the watch, the gate, the map) and found ten faults that

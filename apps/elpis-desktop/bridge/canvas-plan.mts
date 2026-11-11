@@ -139,6 +139,12 @@ export function promptFor(
   const rules = [
     `mode: first decide. "direct" when one agent can finish the goal in one sitting (one file, one small change, one answer): then agents holds exactly one agent, whose prompt is the goal, word for word. "team" when the goal has independent parts, or the board already has agents. why: one line that says which and why.`,
     `Use at most ${maxAgents} agents.`,
+    // 11 Nov, Masih: "Just tell it three subagents and what have you". Without this rule a count he gave was ignored:
+    // "Use 2 agents" came back as one agent, three times of three, on gpt-6-luna.
+    "The team the goal names wins. When the goal says how many agents to use, or what each one does, build exactly " +
+      "that team: one agent for each one it names, with the job and the order it gives, even where a rule below " +
+      'would merge or drop them; mode is then "team". An agent it names that only reads or checks writes what it ' +
+      "finds to a markdown file.",
     "Every agent writes: code or, for research and decisions, a markdown file in its own folder. No agent only reads or reports.",
     "Split by independent parts, not by role. An agent handling a feature also handles its tests. Never add a separate tester, reviewer or planner agent.",
     'folders: copy them from the folder list, the narrowest ones the agent writes; never the whole project, except "." for an agent that must write a file directly in the project root (such as a file the goal names there), which then runs alone. Two agents that run at the same time must not share a folder. Every agent also gets its own folder for its report, so an agent that changes no project files needs none.',
@@ -179,7 +185,7 @@ export function promptFor(
 const PRIORITIES = `Priorities, in this order:
 1. A result anyone can check: every agent's doneWhen can be verified from what it wrote.
 2. Speed: independent parts run side by side. Questions or areas that each need their own study of the code are independent parts, one agent each, even when each is small; an agent waits only for work it really builds on.
-3. No waste: one agent per independent part, never one per role or step; one change or one answer that needs no separate studies is "direct".
+3. No waste: one agent per independent part, never one per role or step, unless the goal names the team; one change or one answer that needs no separate studies is "direct".
 4. Each agent the model and level its own job needs, weighing only its complexity, the cost and the user's preferences: work that must be right from reading code deeply (rules nobody wrote down, causes of bugs, design) gets the highest levels; mechanical work gets low ones.`;
 
 /** Worked examples (few-shot). Model names here are placeholders: a real plan uses ids from the model list. */

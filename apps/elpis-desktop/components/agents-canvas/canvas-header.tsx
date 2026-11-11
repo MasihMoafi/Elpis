@@ -35,13 +35,15 @@ export function CanvasHeader({ view }: { view: CanvasController }) {
             void view.letElpis(view.requestText, undefined, true);
           }}
         >
+          {/* The one way in (11 Nov, Masih: "default it to a mother agent? Just tell it three subagents"): a sentence
+            to the Mother, who builds the team it names. */}
           <label className="field canvas-request">
-            What should the workflow do?
+            Tell the Mother agent what you want
             <Input
               aria-label="Workflow request"
               value={view.requestText}
               maxLength={8000}
-              placeholder="Describe what you want to achieve"
+              placeholder="Fix the failing login test. Three agents: one reads, one fixes, one checks."
               onChange={event => view.setGraph(current => ({ ...current, request: event.target.value }))}
             />
           </label>

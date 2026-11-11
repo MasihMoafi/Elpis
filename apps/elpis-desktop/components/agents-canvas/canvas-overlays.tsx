@@ -32,7 +32,7 @@ export function CanvasOverlays({ view }: { view: CanvasController }) {
           </section>
         ))}
       {/* Under the board, not floating on it, so it never covers the zoom buttons or the minimap. */}
-      <CanvasToolbar addAgent={view.addAgent} addNote={view.addNote} openAdder={view.openAdder} tidy={view.tidy} />
+      <CanvasToolbar addAgent={view.addAgent} />
       {view.graph.template === "recursive" && (
         <label className="canvas-round-limit">
           Round limit{" "}

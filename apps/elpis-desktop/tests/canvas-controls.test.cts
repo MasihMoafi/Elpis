@@ -46,3 +46,25 @@ test('in a short window with a run log and an error, the board stays visible and
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 11 Nov, Masih: "it's still not easy to set a workflow, maybe we should default it to a mother agent? Just tell it
+// three subagents". The sentence to the Mother leads the first screen; the bar under the board only adds an agent,
+// and notes and arranging are on the board's right-click menu.
+test('the first screen leads with the sentence to the Mother, and the bar under the board only adds an agent', async () => {
+  const f = await openCanvas();
+  try {
+    const { page, canvas } = f;
+    await canvas.getByText('Tell the Mother agent what you want', { exact: true }).waitFor();
+    const request = canvas.getByRole('textbox', { name: 'Workflow request', exact: true });
+    assert.match(await request.getAttribute('placeholder') ?? '', /Three agents: one reads, one fixes, one checks/);
+    const bar = canvas.getByRole('toolbar', { name: 'Add to Workflows', exact: true });
+    await bar.getByRole('button', { name: 'Add agent', exact: true }).waitFor();
+    const names = await bar.getByRole('button').evaluateAll((buttons: HTMLElement[]) => buttons.map(button => button.innerText.replace(/\s+/g, ' ').trim()));
+    assert.ok(!names.some((name: string) => /Note|Command|Arrange/.test(name)), `the bar holds no note, command or arrange button: ${names.join(', ')}`);
+    const pane = await canvas.locator('.react-flow__pane').boundingBox(); assert.ok(pane);
+    await page.mouse.click(pane.x + 40, pane.y + 40, { button: 'right' });
+    await canvas.getByRole('menuitem', { name: /^Add a note/ }).waitFor();
+    await canvas.getByRole('menuitem', { name: /^Arrange by run order/ }).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
