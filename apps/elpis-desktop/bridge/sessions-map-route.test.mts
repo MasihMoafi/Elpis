@@ -32,6 +32,30 @@ test("sessions map route joins owner records and excludes unrelated chats by def
   assert((await mapOf(client, "?all=1")).nodes.some((node: { threadId?: string }) => node.threadId === "other"));
 });
 
+// W1: an older run that recorded no root chat was dropped by the route, so it and its agents were missing from the Map.
+test("a workflow run with no recorded root chat is its own group; a run with one stays joined to it", async () => {
+  const client = Object.assign(new EventEmitter(), {
+    listThreads: async () => ({ data: [{ id: "chat" }, { id: "joined" }, { id: "alone" }], nextCursor: null }),
+    workflowHistory: async () => ({ data: [
+      { id: "old", name: "Manual review", status: "succeeded", tasks: [{ title: "Read", assignedThreadId: "alone" }] },
+      { id: "new", name: "Count", rootThreadId: "chat", status: "succeeded", tasks: [{ title: "Do", assignedThreadId: "joined" }] },
+      { id: "empty", name: "Nothing listed", status: "succeeded", tasks: [{ title: "Gone", assignedThreadId: "deleted" }] },
+    ] }),
+  });
+  const graph = await mapOf(client);
+  const node = (id: string) => graph.nodes.find((item: { id: string }) => item.id === id);
+  const edge = (source: string, target: string) =>
+    graph.edges.some((item: { source: string; target: string }) => item.source === source && item.target === target);
+  assert.equal(node("workflow:old")?.title, "Manual review");
+  assert.equal(node("workflow:old")?.threadId, undefined, "a run without its chat opens nothing it cannot prove");
+  assert.equal(node("thread:alone")?.title, "Read");
+  assert(edge("workflow:old", "thread:alone"), "the run's agent is joined to the run");
+  assert(!graph.edges.some((item: { target: string }) => item.target === "workflow:old"), "the run is joined to nothing");
+  assert.equal(node("workflow:new")?.threadId, "chat");
+  assert(edge("workflow:new", "thread:joined"));
+  assert.equal(node("workflow:empty"), undefined, "a finished run with nothing to open is not a card");
+});
+
 // W8: with the Map open the bridge paged every chat each 5 s. Over 15 s of no change it pages the list once; a chat
 // that starts working is read again at once, so the Map's next refresh (within 5 s) shows it working.
 test("the open Map pages the chat list once in 15 s unless a chat changed", async () => {

@@ -80,7 +80,8 @@ async function readSessionsMap(state: import("./server-http.mts").ServerState, a
   const graph = buildSessionsMap({
     threads: listed,
     router: mother.sessionLinks(),
-    workflows: history.data.filter(run => typeof run.rootThreadId === "string") as NonNullable<
+    // A run is kept without its root chat: older runs did not record one (W1).
+    workflows: history.data.filter(run => typeof run.id === "string") as NonNullable<
       SessionsMapInputs["workflows"]
     >,
     showAllChats: all,

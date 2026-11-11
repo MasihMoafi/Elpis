@@ -36,24 +36,30 @@ test('Voting: the tally waits for all three answers and their checks; each task 
 
 // Voting 8 and 11 (1 Nov): the planner gave each answer agent the project folder answer-N beside its own folder; told to
 // write "a markdown file in your folder", Haiku read answer-N as a file name and saved answer-N.md outside both.
-test('Voting: every file a writer is asked for is named, inside its own write scopes', () => {
-  const template = TEMPLATES.find(template => template.id === 'voting');
-  assert.ok(template);
-  const graph = template.build();
-  const planned = ['answer-1', 'answer-2', 'answer-3', 'tally'];
-  graph.nodes.filter(node => node.type === 'agent').forEach((node, index) => {
-    if (node.type === 'agent') node.data.writeScopes = [planned[index]!];
-  });
-  const result = runTasks(graph);
-  assert.ok('tasks' in result);
-  const writers = result.tasks.filter(task => task.kind === 'implement');
-  assert.equal(writers.length, 4);
-  for (const writer of writers) {
-    assert.doesNotMatch(writer.instruction, /\ba (markdown )?file\b/i, `${writer.title} is asked for a file it is not told the path of`);
-    const named = writer.instruction.match(/[\w./-]+\.md\b/g) ?? [];
-    assert.ok(named.length, `${writer.title} is told where to write`);
-    for (const file of named)
-      assert.ok(writer.writeScopes.some(scope => file.startsWith(`${scope}/`)), `${writer.title}: ${file} is inside ${writer.writeScopes.join(', ')}`);
+// The same sentence stood in five other teams (E9, 11 Nov): every ready-made team is held to it.
+test('Every ready-made team (Voting and the rest): every file a writer is asked for is named, inside its own write scopes', () => {
+  const teams = TEMPLATES.filter(template => template.id !== 'blank');
+  for (const id of ['voting', 'plan-build', 'hierarchical', 'debate', 'research', 'deep-research'])
+    assert.ok(teams.some(template => template.id === id), `${id} is covered`);
+  for (const template of teams) {
+    const graph = template.build();
+    const agents = graph.nodes.filter(node => node.type === 'agent');
+    // The planner gives each agent a second folder named after its part, as it named answer-1 in Voting.
+    agents.forEach((node, index) => {
+      if (node.type === 'agent') node.data.writeScopes = [`part-${index + 1}`];
+    });
+    const result = runTasks(graph);
+    assert.ok('tasks' in result, template.name);
+    const writers = result.tasks.filter(task => task.kind === 'implement');
+    assert.equal(writers.length, agents.length, `${template.name}: every agent writes`);
+    for (const writer of writers) {
+      const who = `${template.name} / ${writer.title}`;
+      assert.doesNotMatch(writer.instruction, /\ba (markdown )?file\b|\bin your folder\b/i, `${who} is asked for a file it is not told the path of`);
+      const named = writer.instruction.match(/[\w./-]+\.md\b/g) ?? [];
+      assert.ok(named.length, `${who} is told where to write`);
+      for (const file of named)
+        assert.ok(writer.writeScopes.some(scope => file.startsWith(`${scope}/`)), `${who}: ${file} is inside ${writer.writeScopes.join(', ')}`);
+    }
   }
 });
 

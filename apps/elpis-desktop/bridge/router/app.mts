@@ -330,6 +330,11 @@ export class MotherApp implements SourceHost {
           }
         },
       };
+      this.stops.push(
+        sessions.on("agent/error", ({ agent, error }) => {
+          if (agent.id === this.masterId) this.mainModelFailed(error);
+        }),
+      );
     } catch (error) {
       for (const stop of this.stops.reverse()) stop();
       store.close();
@@ -383,14 +388,50 @@ export class MotherApp implements SourceHost {
     const since = new Date(Date.now() - 3_600_000).toISOString();
     for (const { thread, decision } of unjudged(this.store, since)) {
       if (thread.ref.source !== "elpis-chat") continue;
+      const limit = decision.reason.find(reason => reason.code === "modelUsageLimit"),
+        failed = decision.reason.find(reason => reason.code === "modelFailed");
       const why = decision.reason.some(reason => reason.code === "timeout")
         ? "the model did not answer in time"
-        : reasonText(decision.reason);
+        : limit
+          ? `the model for Elpis reached its usage limit (${limit.values?.message})`
+          : failed
+            ? `the model for Elpis failed (${failed.values?.message})`
+            : reasonText(decision.reason);
+      const next = limit ? "Wait for the limit to reset" : "Send it again";
       this.say(
         `undecided:${decision.id}`,
-        `I could not act on ${this.quoted(decision.triggerIds[0] ?? "")}: ${why}. Send it again, or choose another model for Elpis in the message box.`,
+        `I could not act on ${this.quoted(decision.triggerIds[0] ?? "")}: ${why}. ${next}, or choose another model for Elpis in the message box.`,
       );
     }
+  }
+  /**
+   * The main Session's model failed, and the engine will not retry: a usage limit, or another model error. Its messages
+   * that wait on a decision end now with the reason, said in his chat, instead of waiting out their deadline and then
+   * saying the model did not answer in time (R9). The engine reports one failure twice (its error, then the failed turn);
+   * the second finds nothing waiting.
+   */
+  private mainModelFailed(error: unknown): void {
+    if (this.closing) return;
+    const info = (error as { codexErrorInfo?: unknown } | null)?.codexErrorInfo;
+    const message = (error instanceof Error ? error.message : String(error)).replace(/\s+/g, " ").trim().slice(0, 300);
+    const usageLimit = info === "usageLimitExceeded" || (!info && /usage limit/i.test(message));
+    const reason = { code: usageLimit ? "modelUsageLimit" : "modelFailed", values: { message: message || "no reason given" } };
+    const waiting = this.store.threads
+      .active()
+      .filter(thread => thread.ref.source === "elpis-chat" && thread.evaluating?.delivered);
+    let ended = false;
+    for (const thread of waiting) {
+      const { id: evalId, primary, triggerIds } = thread.evaluating!;
+      try {
+        this.engine.decide(primary ?? triggerIds[0] ?? "", { kind: "unavailable", reason, evalId });
+        ended = true;
+      } catch {
+        // It was decided in the meantime.
+      }
+    }
+    if (!ended) return;
+    this.sayUndecided();
+    this.passes.request();
   }
   /** Whether the router is at work for him: a message of his awaits its decision, or a job he asked for is running. */
   working(): boolean {

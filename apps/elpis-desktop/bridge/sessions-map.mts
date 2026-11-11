@@ -17,7 +17,8 @@ export type MapThread = {
 type Member = { title?: string; status?: string; model?: string; assignedThreadId?: string | null; threads?: string[] };
 type Workflow = {
   id: string;
-  rootThreadId: string;
+  /** Older runs did not record the chat that started them. */
+  rootThreadId?: string;
   name?: string;
   status: string;
   tasks?: Member[];
@@ -75,22 +76,24 @@ export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; 
   for (const run of input.workflows ?? []) {
     const id = `workflow:${run.id}`;
     if (included.has(id)) continue;
-    const rootThread = byId.get(run.rootThreadId);
+    const rootThread = run.rootThreadId ? byId.get(run.rootThreadId) : undefined;
+    const agents = (run.tasks ?? []).map(task => ({
+      task,
+      threads: [...new Set([...(task.threads ?? []), ...(task.assignedThreadId ? [task.assignedThreadId] : [])])]
+        .map(threadId => byId.get(threadId))
+        .filter((child): child is MapThread => !!child && child.id !== run.rootThreadId),
+    }));
     // A finished run whose chat he archived or deleted is history, not a session: a card that opens nothing is noise.
-    if (!rootThread && state(run.status) !== "working") continue;
+    if (run.rootThreadId && !rootThread && state(run.status) !== "working") continue;
+    // A run that recorded no chat is its own group, the run and its agents, joined to nothing it cannot prove (W1).
+    if (!run.rootThreadId && state(run.status) !== "working" && !agents.some(agent => agent.threads.length)) continue;
     included.add(id);
     nodes.push({
       id, kind: "workflow", title: run.name || "Workflow", state: state(run.status),
       ...(rootThread ? { threadId: rootThread.id } : {}), ...(rootThread?.model ? { model: rootThread.model } : {}),
     });
-    for (const task of run.tasks ?? []) {
-      const ids = new Set([...(task.threads ?? []), ...(task.assignedThreadId ? [task.assignedThreadId] : [])]);
-      for (const threadId of ids) {
-        const child = byId.get(threadId);
-        if (child && child.id !== run.rootThreadId)
-          link(id, addThread(child, "agent", task.title, task.status, task.model));
-      }
-    }
+    for (const { task, threads: children } of agents)
+      for (const child of children) link(id, addThread(child, "agent", task.title, task.status, task.model));
   }
   const children = new Map<string, MapThread[]>();
   for (const thread of threads) {
@@ -115,7 +118,7 @@ export function buildSessionsMap(input: SessionsMapInputs): { nodes: MapNode[]; 
   for (const thread of threads) {
     if (!children.has(thread.id) || parentId(thread)) continue;
     const existing = `thread:${thread.id}`;
-    const workflow = (input.workflows ?? []).find(run => run.rootThreadId === thread.id);
+    const workflow = (input.workflows ?? []).find(run => run.rootThreadId && run.rootThreadId === thread.id);
     const parent = included.has(existing) ? existing : workflow ? `workflow:${workflow.id}` : addThread(thread, "chat");
     visit(thread, parent);
   }

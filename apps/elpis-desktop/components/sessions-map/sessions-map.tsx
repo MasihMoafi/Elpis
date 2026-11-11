@@ -16,23 +16,32 @@ const MIN_ZOOM = 0.15;
 /** A change in his chats refreshes the map at once; this beat catches what sends no event, such as a workflow run. */
 const REFRESH_MS = 5000;
 
-export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpenChat }: {
+export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpenChat, runNames }: {
   threads: Thread[];
   dark: boolean;
   viewport: RefObject<Viewport | null>;
   showAll: boolean;
   onShowAll: (value: boolean) => void;
   onOpenChat: (id: string) => void;
+  /** The names he gave his workflow runs, by run id. A run's card shows that name, as History and the sidebar do. */
+  runNames?: Record<string, { name: string }>;
 }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<MapNode>>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const refresh = useRef<() => void>(() => {});
+  const named = useRef(runNames);
+  // A run he renames shows its new name at once, without restarting a reading that is under way.
+  useEffect(() => { named.current = runNames; refresh.current(); }, [runNames]);
   useEffect(() => {
     let disposed = false, pending = false, again = false, shown = "";
-    const show = (value: SessionsGraph) => {
+    const show = (read: SessionsGraph) => {
       setError(""); setLoading(false);
+      const value = { ...read, nodes: read.nodes.map(node => {
+        const own = node.kind === "workflow" ? named.current?.[node.id.slice("workflow:".length)]?.name : undefined;
+        return own ? { ...node, title: own } : node;
+      }) };
       // A reading that says the same as the one on screen changes nothing.
       const reading = JSON.stringify(value);
       if (reading === shown) return;

@@ -84,6 +84,7 @@ export function WorkflowPages({
               showAll={showAllChats}
               onShowAll={setShowAllChats}
               onOpenChat={id => { show("chat"); openById(id); }}
+              runNames={workflowCatalog?.identities}
             />
           )}
           {boardOpened && <div className="contents" hidden={workflowTab !== "board"}>

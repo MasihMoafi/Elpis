@@ -110,3 +110,20 @@ test('empty map keeps its switch and can show independent chats', async () => {
     await f.page.getByText('Research chat', { exact: true }).waitFor();
   } finally { await f.close(); }
 });
+
+// 11 Nov: a run he had named "Arash — manual review" was on the Map under the engine's name, so he could not find it.
+test('a workflow run is on the Map under the name he gave it', async () => {
+  const given = { run: { id: 'run', name: 'Arash — manual review', colour: 'blue', rootThreadId: 'chat-c' } };
+  const f = await fixture({ width: 1100, height: 750, storage: { 'elpis-workflows-view-v1': 'map', 'elpis-workflow-identities-v1': JSON.stringify(given) }, routes: {
+    '/api/sessions-map': () => graph, '/api/workflows/workspace': () => ({ cwd: '/tmp/parity-fixture' }),
+    '/api/workflows/history': () => ({ data: [{ id: 'run', rootThreadId: 'chat-c', name: 'Review workflow', status: 'running', tasks: [] }] }),
+  } });
+  try {
+    await f.page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    const map = f.page.getByRole('region', { name: 'Sessions map' });
+    await map.getByText('Arash — manual review', { exact: true }).waitFor();
+    assert.equal(await map.getByText('Review workflow', { exact: true }).count(), 0, 'his name replaces the engine name');
+    // Negative: a card that is not a run keeps its own title.
+    assert.equal(await map.getByText('Ticket worker', { exact: true }).count(), 1);
+  } finally { await f.close(); }
+});

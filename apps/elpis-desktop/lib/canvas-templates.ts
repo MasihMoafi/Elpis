@@ -4,7 +4,8 @@ export const ANTHROPIC = "Anthropic, Building effective agents";
 /** Anthropic's caution about splitting work by role (claude.com/blog/building-multi-agent-systems-when-and-how-to-use-them). */
 export const BY_ROLE =
   "Split by role: Anthropic finds each handoff loses context, so this often does worse than split by parts.";
-export const NOTE = "as a markdown file in your folder";
+/* No team asks for "a file in your folder": the run names each agent's report file inside its own folder, and the
+ * report is what the next agent reads. An unnamed file went outside the agent's folders in Voting 8 and 11 (1 Nov). */
 export const TEMPLATES: [Template, ...Template[]] = [
   // The default: split by parts, as Anthropic advises (context isolation and parallelism, not roles).
   {
@@ -49,7 +50,8 @@ export const TEMPLATES: [Template, ...Template[]] = [
     build: () => {
       const plan = agent(
         "Write the plan",
-        `Find the code involved and write a numbered plan ${NOTE}: the files to change and the checks that prove it works.`,
+        "Find the code involved and write a numbered plan: the files to change and the checks that prove it works. " +
+          "Your report is the plan.",
         { acceptanceCriteria: ["The plan names the files and the checks"] },
       );
       const builders = ["first", "second"].map(half =>
@@ -105,11 +107,11 @@ export const TEMPLATES: [Template, ...Template[]] = [
     build: () => {
       const lead = agent(
         "Lead: split the work",
-        `Split the work into areas A and B ${NOTE}, with a brief for each team lead.`,
+        "Split the work into areas A and B, with a brief for each team lead. Your report is the split and the briefs.",
         { acceptanceCriteria: ["Each area has a brief"] },
       );
       const teams = ["A", "B"].map(team => ({
-        lead: agent(`Team ${team} lead`, `Plan area ${team} for your two workers ${NOTE}.`, {
+        lead: agent(`Team ${team} lead`, `Plan area ${team} for your two workers. Your report is the plan.`, {
           acceptanceCriteria: ["The plan gives each worker a part"],
         }),
         workers: [1, 2].map(index => agent(`Team ${team} worker ${index}`, `Build your part of area ${team}.`)),
@@ -140,11 +142,11 @@ export const TEMPLATES: [Template, ...Template[]] = [
     description: "Two agents each write the strongest case for one design; a judge writes the decision, with reasons.",
     build: () => {
       const sides = ["A", "B"].map(side =>
-        agent(`Case for ${side}`, `Write the strongest case for design ${side} ${NOTE}.`, {
-          acceptanceCriteria: ["The case file exists, with evidence"],
+        agent(`Case for ${side}`, `Write the strongest case for design ${side}. Your report is the case.`, {
+          acceptanceCriteria: ["The report makes the case, with evidence"],
         }),
       );
-      const judge = agent("Judge", `Weigh both cases and write the decision, with reasons, ${NOTE}.`, {
+      const judge = agent("Judge", "Weigh both cases and decide. Your report is the decision, with reasons.", {
         acceptanceCriteria: ["The decision picks one design and says why"],
       });
       return graphOf("Debate + judge", [...sides, judge], fan(sides, [judge]));
@@ -158,17 +160,17 @@ export const TEMPLATES: [Template, ...Template[]] = [
     description:
       "A lead writes the research plan; four agents research in parallel, each writing findings; one writes the report; one checks its citations.",
     build: () => {
-      const lead = agent("Lead researcher", `Split the question into four parts, one per researcher, ${NOTE}.`, {
+      const lead = agent("Lead researcher", "Split the question into four parts, one per researcher. Your report is the four parts.", {
         acceptanceCriteria: ["Four parts, each with its question"],
       });
       const parts = [1, 2, 3, 4].map(index =>
         agent(
           `Research part ${index}`,
-          `Research part ${index} of the lead's plan and write the findings, citing every source, ${NOTE}.`,
+          `Research part ${index} of the lead's plan. Your report is the findings, citing every source.`,
           { acceptanceCriteria: ["Every finding cites its source"] },
         ),
       );
-      const report = agent("Write the report", `Synthesize the four findings into one report ${NOTE}.`, {
+      const report = agent("Write the report", "Synthesize the four findings into one report. Your report is that report.", {
         acceptanceCriteria: ["The report covers all four parts"],
       });
       const cite = agent(
@@ -193,18 +195,18 @@ export const TEMPLATES: [Template, ...Template[]] = [
     build: () => {
       const scope = agent(
         "Scope the brief",
-        `Write the research brief: the question, what is in and out of scope, ${NOTE}.`,
+        "Write the research brief: the question, what is in and out of scope. Your report is the brief.",
         { acceptanceCriteria: ["The brief states the question and the scope"] },
       );
-      const supervisor = agent("Supervisor", `Split the brief into three research topics ${NOTE}.`, {
+      const supervisor = agent("Supervisor", "Split the brief into three research topics. Your report is the three topics.", {
         acceptanceCriteria: ["Three topics, each with its question"],
       });
       const researchers = [1, 2, 3].map(index =>
-        agent(`Researcher ${index}`, `Research topic ${index} and write compressed findings with sources ${NOTE}.`, {
+        agent(`Researcher ${index}`, `Research topic ${index}. Your report is the compressed findings, with sources.`, {
           acceptanceCriteria: ["Every finding cites its source"],
         }),
       );
-      const report = agent("Final report", `Write the final report from the findings, with sources, ${NOTE}.`, {
+      const report = agent("Final report", "Write the final report from the findings. Your report is that report, with sources.", {
         acceptanceCriteria: ["The report answers the brief, with sources"],
       });
       return graphOf(

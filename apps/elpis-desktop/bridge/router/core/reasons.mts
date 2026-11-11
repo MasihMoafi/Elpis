@@ -6,6 +6,8 @@
 export const REASONS = {
   said: "{text}",
   timeout: "Assessment timed out",
+  modelUsageLimit: "The model reached its usage limit: {message}",
+  modelFailed: "The model failed: {message}",
   policyChanged: "Policy changed during assessment",
   noAdmissible: "No admissible trigger",
   startedTicket: "Already started ticket {ticket}",

@@ -569,6 +569,60 @@ test("a message of his that got no decision is said in his chat in one plain lin
   }
 });
 
+/** The router's own model fails the way the engine reports it: an `error` notice it will not retry, then the failed turn. */
+function failMainTurn(h: ReturnType<typeof fixture>, main: string, error: { message: string; codexErrorInfo: unknown }) {
+  const turn = h.workers.threads.get(main)!.turns.findLast(turn => turn.status === "inProgress")!;
+  h.workers.emit(main, "error", { error, willRetry: false, turnId: turn.id });
+  Object.assign(turn, { status: "failed", error });
+  h.workers.emit(main, "turn/completed", { turn });
+}
+async function afterModelFailure(error: { message: string; codexErrorInfo: unknown }) {
+  const h = fixture();
+  const mother = h.create();
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    await mother.send(CHAT, { text: "Fix the failing login test in the desktop app" });
+    const { main } = await candidateOf(h);
+    const app = (mother as unknown as { app: { working(): boolean; pump(): Promise<void> } }).app;
+    assert.equal(app.working(), true, "his message awaits its decision");
+    failMainTurn(h, main, error);
+    await waitFor(async () => assert.equal((await replies(h)).length, 1));
+    await app.pump();
+    return { lines: await replies(h), working: app.working() };
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+}
+
+// R9: a usage-limit error of the router's model waited out the decision's deadline in silence (two re-sends of 120 s
+// each), and then said "the model did not answer in time", which is not why.
+test("a usage-limit error of the router's model is said in his chat in one line, and the chat is not left working", async () => {
+  const { lines, working } = await afterModelFailure({
+    message: "You've hit your usage limit. Try again at 3:00 PM.",
+    codexErrorInfo: "usageLimitExceeded",
+  });
+  assert.deepEqual(lines, [
+    "I could not act on “Fix the failing login test in the desktop app”: the model for Elpis reached its usage limit " +
+      "(You've hit your usage limit. Try again at 3:00 PM.). Wait for the limit to reset, or choose another model for Elpis in the message box.",
+  ]);
+  assert.equal(working, false);
+});
+
+test("another error of the router's model is said in his chat in one line, and the chat is not left working", async () => {
+  const { lines, working } = await afterModelFailure({
+    message: "unexpected status 400 Bad Request: The requested model does not exist.",
+    codexErrorInfo: "badRequest",
+  });
+  assert.deepEqual(lines, [
+    "I could not act on “Fix the failing login test in the desktop app”: the model for Elpis failed " +
+      "(unexpected status 400 Bad Request: The requested model does not exist.). Send it again, or choose another model for Elpis in the message box.",
+  ]);
+  assert.equal(working, false);
+});
+
 test("Stop also stops a message that still awaits its decision, says so, and the Working mark ends", async () => {
   const h = fixture();
   const mother = h.create();
