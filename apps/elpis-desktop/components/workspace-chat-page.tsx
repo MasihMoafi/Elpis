@@ -1,5 +1,6 @@
 "use client";
 
+import { ElpisBand } from "@/components/elpis-band";
 import type { ReactNode } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { WorkspaceTranscript } from "@/components/workspace-transcript";
@@ -113,6 +114,7 @@ export function WorkspaceChatPage({
           className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}
           data-team-loading={awaitingTeam || undefined}
         >
+          {selected?.motherAgent && <ElpisBand threads={workspace.threads} />}
           <WorkspaceTranscript
             session={session}
             runtime={runtime}

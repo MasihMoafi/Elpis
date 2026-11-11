@@ -132,13 +132,15 @@ export function WorkspaceComposerInput({
   }
   const composerPlaceholder = shellMode
     ? "Run a shell command…"
-    : continues
-      ? `Message ${title(selected!)}…`
-      : selected && activeTurn
-        ? followUpHint(preferences)
-        : selected
-          ? "Ask for a follow-up"
-          : "Ask Elpis to build, fix or explain something";
+    : selected?.motherAgent
+      ? "Ask Elpis about your chats, or hand it a job"
+      : continues
+        ? `Message ${title(selected!)}…`
+        : selected && activeTurn
+          ? followUpHint(preferences)
+          : selected
+            ? "Ask for a follow-up"
+            : "Ask Elpis to build, fix or explain something";
   const composerNotice = [fileNotice, imageBlocked ? TEXT_ONLY_NOTICE : "", !shellMode ? missingChoiceNotice : ""]
     .filter(Boolean)
     .join("\n");

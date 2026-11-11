@@ -467,3 +467,11 @@
 .thread-row:has(.thread-bookmark) .thread-actions { opacity:0; }
 .thread-row:has(.thread-bookmark):is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-actions { opacity:1; }
 .thread-row:is(:hover, :focus-within, [data-popup-open], :has(.thread-actions[aria-expanded="true"])) .thread-bookmark { visibility:hidden; }
+
+/* The Elpis chat is the assistant's own place (11 Nov, Masih: "a different more attractive look ... so it's different
+   from the rest"): a band with its name and what his chats are doing, on a soft wash of the one accent (R28). Nothing
+   moves (R9). */
+.workspace.elpis-chat .chat-view { background-image:linear-gradient(to bottom, color-mix(in oklab, var(--primary) 9%, transparent), transparent 260px); }
+.elpis-band { flex:none; display:flex; align-items:center; gap:8px; padding:10px 24px; border-bottom:1px solid var(--hairline); font-size:var(--text-sm); color:var(--muted-foreground); }
+.elpis-band svg { color:var(--primary); }
+.elpis-band strong { font-weight:600; color:var(--accent-text); }

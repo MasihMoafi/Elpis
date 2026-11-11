@@ -233,7 +233,9 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
               />
             </WorkspaceSidebar>
             <main
-              className={`workspace${workspace.view === "chat" && workspace.selectedLoveChat ? " love-chat accent-scope" : ""}`}
+              className={`workspace${workspace.view === "chat" && workspace.selectedLoveChat ? " love-chat accent-scope" : ""}${
+                workspace.view === "chat" && workspace.selected?.motherAgent ? " elpis-chat" : ""
+              }`}
               style={
                 workspace.panelShown && !workspace.fullView
                   ? ({
