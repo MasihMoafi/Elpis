@@ -21,7 +21,7 @@ type Inputs = {
   grouped: { groups: { group: ChatGroup; chats: Thread[] }[] } | null;
   movingIds: (id: string) => string[];
   canNest: (ids: string[], parent: string) => boolean;
-  assignProject: ReturnType<typeof createProjectActions>["assignProject"];
+  moveChats: ReturnType<typeof createProjectActions>["moveChats"];
   nestChats: (ids: string[], parent: string) => Promise<void>;
   searchTerm: string;
   needsYou: (thread: Thread) => boolean;
@@ -42,7 +42,7 @@ export function useChatReorder({
   grouped,
   movingIds,
   canNest,
-  assignProject,
+  moveChats,
   nestChats,
   searchTerm,
   needsYou,
@@ -88,7 +88,7 @@ export function useChatReorder({
     if (parent && !canNest(moving, parent)) return;
     try {
       const ids = ordinaryThreads.map(thread => thread.id);
-      await assignProject(moving, section === "pinned" ? undefined : destination, parent, (state, roots) => {
+      await moveChats(moving, section === "pinned" ? undefined : destination, parent, (state, roots) => {
         let next = state,
           order = ids;
         for (const movingId of place?.after ? [...roots].reverse() : roots) {

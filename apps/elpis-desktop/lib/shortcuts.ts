@@ -34,9 +34,10 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "undo-delete",
     group: "Chat",
-    label: "Bring back the last deleted chat (outside text fields)",
+    label: "Undo the last rename, move, archive or delete of a chat (outside text fields)",
     keys: ["Ctrl+Z"],
   },
+  { id: "redo-chat", group: "Chat", label: "Redo that chat action (outside text fields)", keys: ["Ctrl+Shift+Z", "Ctrl+Y"] },
   { id: "command-menu", group: "Navigation", label: "Command menu", keys: ["Ctrl+K"] },
   { id: "go-loveSpot", group: "Navigation", label: "Open Love Spot", keys: ["Ctrl+L"] },
   { id: "go-mother", group: "Navigation", label: "Open Elpis", keys: ["Ctrl+E"] },
@@ -93,6 +94,7 @@ const APP_BINDINGS = new Set([
   "chat-to-top",
   "chat-to-bottom",
   "undo-delete",
+  "redo-chat",
   "command-menu",
   "search",
   "previous-chat",
@@ -211,11 +213,11 @@ export function shortcutSearchKey(event: KeyPress): string | null {
   return keyCombination(event);
 }
 
-/** Chat deletion is not the undo history of another page, panel or popup. */
+/** The chat actions' undo history (lib/chat-undo.ts) is not the undo history of another page, panel or popup. */
 export function shortcutInScope(id: string, view: string, inSidebar: boolean, inOtherSurface = false): boolean {
   // The browser's address bar and the terminal keep Ctrl+L, Ctrl+U and the rest while the focus is there.
   if (id.startsWith("go-")) return !inOtherSurface;
-  return id !== "undo-delete" || (!inOtherSurface && (inSidebar || view === "chat"));
+  return (id !== "undo-delete" && id !== "redo-chat") || (!inOtherSurface && (inSidebar || view === "chat"));
 }
 
 const normalized = (keys: string) =>
@@ -262,7 +264,7 @@ export function shortcutFor(
     pressed = keyCombination(event);
   for (const [id, binding] of Object.entries(bindings)) {
     if (binding && pressed && normalized(binding) === normalized(pressed)) {
-      return typing && (id === "undo-delete" || id === "copy-folder") ? null : { id };
+      return typing && (id === "undo-delete" || id === "redo-chat" || id === "copy-folder") ? null : { id };
     }
   }
   const hit = defaultShortcutFor(event, typing);
@@ -272,11 +274,12 @@ export function shortcutFor(
 function defaultShortcutFor(event: KeyPress, typing: boolean): { id: string; index?: number } | null {
   const ctrl = event.ctrlKey || event.metaKey,
     key = event.key.toLowerCase();
+  // The shared undo/redo rule; in a text field both stay the field's own.
+  const history = typing ? null : historyShortcut(event, typeof navigator === "undefined" ? "" : navigator.platform);
+  if (history) return { id: history === "undo" ? "undo-delete" : "redo-chat" };
   if (ctrl && !event.altKey && !event.shiftKey) {
     if (key === "n") return { id: "new-chat" };
     if (key === ";") return { id: "side-chat" };
-    // In a text field Ctrl+Z stays the field's own undo.
-    if (shortcutLetter(event, "z") && !typing) return { id: "undo-delete" };
     if (key === "k") return { id: "command-menu" };
     if (shortcutLetter(event, "l")) return { id: "go-loveSpot" };
     if (shortcutLetter(event, "e")) return { id: "go-mother" };

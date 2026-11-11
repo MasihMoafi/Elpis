@@ -42,7 +42,8 @@ export function WorkspaceAlertArea({
   switchRewind,
   editDraft,
 }: Props) {
-  const { error, setError, deletedNotice, setDeletedNotice, worktreeNotice, setWorktreeNotice } = notices;
+  const { error, setError, deletedNotice, setDeletedNotice, historyNotice, setHistoryNotice } = notices;
+  const { worktreeNotice, setWorktreeNotice } = notices;
   const { selected } = session,
     { connected, ready, connectionStatus, runtimeNotices, setRuntimeNotices } = runtime;
   const { rewindActions, rewindBusy } = rewind,
@@ -56,6 +57,8 @@ export function WorkspaceAlertArea({
       deleted={deletedNotice}
       onUndoDelete={() => void undoDelete()}
       onDismissDeleted={() => setDeletedNotice(null)}
+      history={historyNotice}
+      onDismissHistory={() => setHistoryNotice("")}
       rewind={
         selected &&
         rewindActions[selected.id] && (

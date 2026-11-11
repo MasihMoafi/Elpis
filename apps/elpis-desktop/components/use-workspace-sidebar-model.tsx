@@ -204,7 +204,8 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     stop,
     focusComposer,
     focusSearch,
-    undoDelete: () => undoDelete(),
+    undoChat: () => undoChat(),
+    redoChat: () => redoChat(),
     showSidebar: open => showSidebar(open),
     narrow: () => narrow(),
     show: showPage,
@@ -221,7 +222,7 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
   const togglePin = (thread: Thread) => togglePinned(thread.id);
   const toggleBookmark = (thread: Thread) => toggleBookmarked(thread.id);
   const { chatsOf, chosenChats, withNested } = createSidebarChatSelection(sidebarModel, selection, selected, find);
-  const { archiveChats, deleteChats, trashChats, undoDelete } = createChatDeletion({
+  const { archiveChats, deleteChats, trashChats, undoDelete, undoChat, redoChat } = createChatDeletion({
     conversations,
     preferences,
     selectedRef,
@@ -234,6 +235,7 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     setDeleteRunHistory,
     setDeleteTargets,
     setDeletedNotice,
+    setHistoryNotice: previous.notices.setHistoryNotice,
     setError,
     noteKept,
     removeThreads,
@@ -280,7 +282,7 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     grouped,
     movingIds,
     canNest,
-    assignProject,
+    moveChats: previous.projectActions.moveChats,
     nestChats,
     searchTerm,
     needsYou,

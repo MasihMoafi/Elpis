@@ -1,5 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { api, title, type Thread } from "@/lib/api";
+import { recordChatStep, stepChatHistory, type ChatStep } from "@/lib/chat-undo";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { errorText } from "@/lib/error-text.mts";
 import type { useAppPreferences } from "@/lib/preferences";
@@ -19,6 +20,7 @@ type Inputs = {
   setDeleteRunHistory: Setter<boolean>;
   setDeleteTargets: Setter<Thread[] | null>;
   setDeletedNotice: Setter<string | null>;
+  setHistoryNotice: Setter<string>;
   setError: Setter<string>;
   noteKept: (text: string) => void;
   removeThreads: (ids: Set<string>, permanent: boolean) => void;
@@ -38,6 +40,7 @@ export function createChatDeletion({
   setDeleteRunHistory,
   setDeleteTargets,
   setDeletedNotice,
+  setHistoryNotice,
   setError,
   noteKept,
   removeThreads,
@@ -82,8 +85,17 @@ export function createChatDeletion({
       e => setError(String(errorText(e))),
     );
   }
-  /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mts). */
+  /** The bridge archives them now and deletes them for good when Elpis quits (bridge/trash.mts). One step Ctrl+Z undoes. */
   async function trashChats(targets: Thread[]) {
+    await trash(targets);
+    recordChatStep({
+      kind: "delete",
+      label: targets.length === 1 ? `deleted “${title(targets[0]!)}”` : `deleted ${targets.length} chats`,
+      undo: restoreDeleted,
+      redo: () => trash(targets),
+    });
+  }
+  async function trash(targets: Thread[]) {
     const ids = targets.map(thread => thread.id);
     if (selectedRef.current && ids.includes(selectedRef.current.id))
       shownWhenDeleted.current.add(selectedRef.current.id);
@@ -99,21 +111,41 @@ export function createChatDeletion({
     removeThreads(new Set([...trashed, ...ids]), false);
     setDeletedNotice(targets.length === 1 ? `Deleted “${title(targets[0]!)}”` : `Deleted ${targets.length} chats`);
   }
-  /** Ctrl+Z and the notice's Undo: the newest deletion comes back, with the chat that was open opened again. */
-  async function undoDelete() {
+  /** The bridge's newest deletion comes back, with the chat that was open opened again. */
+  async function restoreDeleted() {
+    const { threads: back, restored } = await api<{ threads: Thread[]; restored?: string[] }>("/trash/undo", {});
+    if (!back.length) return false;
+    setDeletedNotice(null);
+    for (const id of restored ?? back.map(thread => thread.id)) hidden.current.delete(id);
+    for (const thread of back) upsertThread(remember(thread));
+    await refreshThreads();
+    const reopen = back.find(thread => shownWhenDeleted.current.has(thread.id));
+    for (const thread of back) shownWhenDeleted.current.delete(thread.id);
+    if (reopen) await loadThread(reopen);
+    return true;
+  }
+  /** Ctrl+Z, Ctrl+Shift+Z and the Deleted notice's Undo (`pick` the newest deletion) through the one history
+   * (lib/chat-undo.ts), with a line saying what changed. With nothing recorded in this window, Ctrl+Z still brings back a
+   * deletion the bridge kept from before a reload. */
+  async function chatHistory(direction: "undo" | "redo", pick?: (step: ChatStep) => boolean) {
     try {
-      const { threads: back, restored } = await api<{ threads: Thread[]; restored?: string[] }>("/trash/undo", {});
-      if (!back.length) return;
-      setDeletedNotice(null);
-      for (const id of restored ?? back.map(thread => thread.id)) hidden.current.delete(id);
-      for (const thread of back) upsertThread(remember(thread));
-      await refreshThreads();
-      const reopen = back.find(thread => shownWhenDeleted.current.has(thread.id));
-      for (const thread of back) shownWhenDeleted.current.delete(thread.id);
-      if (reopen) await loadThread(reopen);
+      const step = await stepChatHistory(direction, pick);
+      if (step) setHistoryNotice(`${direction === "undo" ? "Undone" : "Redone"}: ${step.label}`);
+      else if (direction === "undo") await restoreDeleted();
     } catch (e) {
-      setError(`Could not bring back the deleted chat: ${errorText(e)}`);
+      setError(
+        pick
+          ? `Could not bring back the deleted chat: ${errorText(e)}`
+          : `Could not ${direction} the last chat action: ${errorText(e)}`,
+      );
     }
   }
-  return { archiveChats, deleteChats, trashChats, undoDelete };
+  return {
+    archiveChats,
+    deleteChats,
+    trashChats,
+    undoDelete: () => chatHistory("undo", step => step.kind === "delete"),
+    undoChat: () => chatHistory("undo"),
+    redoChat: () => chatHistory("redo"),
+  };
 }

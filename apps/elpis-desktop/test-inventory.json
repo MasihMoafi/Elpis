@@ -407,6 +407,7 @@
     "tests/task-list.test.cts",
     "tests/terminal.test.cts",
     "tests/undo-delete.test.cts",
+    "tests/chat-undo.test.cts",
     "tests/usability.test.cts",
     "tests/ux-everyday.test.cts",
     "tests/view-errors.test.cts",

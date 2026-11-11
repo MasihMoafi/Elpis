@@ -38,6 +38,8 @@ export function WorkspaceNotices({
   deleted,
   onUndoDelete,
   onDismissDeleted,
+  history,
+  onDismissHistory,
   rewind,
   error,
   onDismissError,
@@ -52,6 +54,9 @@ export function WorkspaceNotices({
   deleted: string | null;
   onUndoDelete: () => void;
   onDismissDeleted: () => void;
+  /** What Ctrl+Z or Ctrl+Shift+Z just did to a chat ("Undone: renamed …"). */
+  history: string;
+  onDismissHistory: () => void;
   rewind?: ReactNode;
   error?: string;
   onDismissError: () => void;
@@ -79,6 +84,11 @@ export function WorkspaceNotices({
             <X size={15} />
           </Button>
         </div>
+      )}
+      {history && (
+        <Notice key={history} tone="quiet" label="Dismiss" onDismiss={onDismissHistory}>
+          {history}
+        </Notice>
       )}
       {rewind}
       {/* A quiet line, not a red band, and it fades on its own (6 Nov, Masih: "even if there is an error I like it shown gracefully"). */}

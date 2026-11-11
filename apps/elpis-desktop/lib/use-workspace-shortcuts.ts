@@ -32,7 +32,8 @@ type Inputs = {
   stop: (thread: Thread) => Promise<unknown>;
   focusComposer: () => void;
   focusSearch: () => void;
-  undoDelete: () => Promise<unknown>;
+  undoChat: () => Promise<unknown>;
+  redoChat: () => Promise<unknown>;
   showSidebar: (open: boolean) => void;
   narrow: () => boolean;
   show: (view: View) => void;
@@ -73,7 +74,8 @@ export function useWorkspaceShortcuts({
   stop,
   focusComposer,
   focusSearch,
-  undoDelete,
+  undoChat,
+  redoChat,
   showSidebar,
   narrow,
   show,
@@ -114,7 +116,8 @@ export function useWorkspaceShortcuts({
       );
       if (sideChat?.open) focusComposer();
     } else if (id === "search") focusSearch();
-    else if (id === "undo-delete") void undoDelete();
+    else if (id === "undo-delete") void undoChat();
+    else if (id === "redo-chat") void redoChat();
     else if (id === "sidebar") showSidebar(narrow() ? !sidebar : sidebarCollapsed);
     else if (id === "settings") {
       setSettingsSection("general");

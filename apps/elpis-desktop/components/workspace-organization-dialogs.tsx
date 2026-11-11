@@ -42,7 +42,7 @@ export function WorkspaceOrganizationDialogs({
   } = projectState;
   const { ordinaryThreads } = model;
   const { canNest, nestChats } = placement,
-    { saveProjectFromChats, saveProject, assignProject } = actions;
+    { saveProjectFromChats, saveProject, moveChats } = actions;
   return (
     <>
       <ProjectDialog
@@ -79,7 +79,7 @@ export function WorkspaceOrganizationDialogs({
         }
         onMove={id =>
           projectMove
-            ? assignProject(
+            ? moveChats(
                 projectMove.map(chat => chat.id),
                 id,
               )

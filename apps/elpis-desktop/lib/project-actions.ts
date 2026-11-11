@@ -1,6 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { chooseProject, projectAt } from "@/components/project-picker";
-import { api, type Thread } from "@/lib/api";
+import { api, title, type Thread } from "@/lib/api";
 import {
   chatSelectionRoots,
   chatSubtree,
@@ -9,6 +9,7 @@ import {
   writeGroups,
   type ChatGroups,
 } from "@/lib/chat-groups";
+import { recordChatStep } from "@/lib/chat-undo";
 import { errorText } from "@/lib/error-text.mts";
 import { appStorage, saveProjectChats, saveProjects, type Project } from "@/lib/projects";
 import type { useConversationList } from "@/lib/use-conversation-list";
@@ -76,7 +77,7 @@ export function createProjectActions({
     setWorkflowProjectId,
     setProjectEdit,
   } = projectState;
-  const { patchThread } = conversations;
+  const { patchThread, threadsRef } = conversations;
   const { ready, connected } = runtime;
   function assignProject(
     threadIds: string | string[],
@@ -133,6 +134,48 @@ export function createProjectActions({
       });
     projectChatSave.current = saved;
     return saved;
+  }
+  /** A move into or out of a project, from Move to project… or a drag, as one step Ctrl+Z takes back (lib/chat-undo.ts):
+   * each moved chat returns to its project and sidebar parent. A move that changes no chat's project (a reorder) is not
+   * recorded. */
+  async function moveChats(
+    threadIds: string[],
+    destination: string | null | undefined,
+    parentId?: string,
+    arrangeGroups?: (state: ChatGroups, roots: string[]) => ChatGroups,
+  ) {
+    await projectChatSave.current.catch(() => {});
+    const nativeParents = getNativeParents();
+    const parents = sidebarParents(Object.keys(nativeParents), chatGroupsRef.current, nativeParents);
+    const before = chatSelectionRoots(threadIds, parents).map(id => ({
+      id,
+      project: projectChatsRef.current[id] ?? null,
+      parent: parents[id] ?? null,
+    }));
+    await assignProject(threadIds, destination, parentId, arrangeGroups);
+    if (destination === undefined || before.every(item => item.project === destination)) return;
+    const name = (id: string | null) => projects.find(item => item.id === id)?.name ?? "a project";
+    const chat = before.length === 1 ? threadsRef.current.find(item => item.id === before[0]!.id) : undefined;
+    const what = chat ? `“${title(chat)}”` : `${before.length} chats`;
+    recordChatStep({
+      kind: "move",
+      label: destination ? `moved ${what} to ${name(destination)}` : `moved ${what} out of ${name(before[0]!.project)}`,
+      undo: () => putBack(before),
+      redo: () => assignProject(threadIds, destination, parentId, arrangeGroups),
+    });
+  }
+  async function putBack(places: { id: string; project: string | null; parent: string | null }[]) {
+    const together = new Map<string, typeof places>();
+    for (const place of places) {
+      const key = JSON.stringify([place.project, place.parent]);
+      together.set(key, [...(together.get(key) ?? []), place]);
+    }
+    for (const group of together.values())
+      await assignProject(
+        group.map(place => place.id),
+        group[0]!.project,
+        group[0]!.parent ?? undefined,
+      );
   }
   async function selectProject(next: Project | null) {
     setProjectChanging(true);
@@ -235,6 +278,7 @@ export function createProjectActions({
   }
   return {
     assignProject,
+    moveChats,
     selectProject,
     saveProject,
     newProjectFrom,

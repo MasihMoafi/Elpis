@@ -1,5 +1,6 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { api, title, unreadable, type Thread } from "@/lib/api";
+import { recordChatStep } from "@/lib/chat-undo";
 import { keptNotice, type WorktreeOutcome } from "@/lib/chat-worktree";
 import { errorText } from "@/lib/error-text.mts";
 import { scanDeletionThreads } from "@/lib/thread-deletion";
@@ -103,28 +104,64 @@ export function createConversationActions({
     removeThreads(ids, true);
     noteKept(keptNotice(title(thread), "deleted", result.worktree));
   }
+  async function setName(id: string, name: string) {
+    const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(id)}/rename`, { name });
+    const named = result.thread.name ?? name;
+    patchThread(id, { name: named });
+    return named;
+  }
+  /** Ctrl+Z gives the chat the name it showed before; a chat that had no name of its own gets the title it showed, since
+   * the engine cannot clear a name. */
   async function renameThread(thread: Thread, name: string) {
-    const result = await api<{ thread: Thread }>(`/threads/${encodeURIComponent(thread.id)}/rename`, { name });
-    patchThread(thread.id, { name: result.thread.name ?? name });
+    const before = thread.name?.trim() || title(thread),
+      after = await setName(thread.id, name);
+    if (before !== after)
+      recordChatStep({
+        kind: "rename",
+        label: `renamed “${before}” to “${after}”`,
+        undo: () => setName(thread.id, before),
+        redo: () => setName(thread.id, after),
+      });
   }
   // Elpis archives the chat with the agents it spawned; hide every loaded one. A chat with many agents takes the engine a
   // minute (10 Nov: "Pointt: book OCR", 58 sub-chats); a second Archive meanwhile found it gone and reported a failure,
   // so it says at once that it is archiving, ignores a repeat, and a chat already archived just leaves the list.
   async function archiveThread(thread: Thread) {
-    if (archiving.has(thread.id)) return;
+    if (await archive(thread))
+      recordChatStep({
+        kind: "archive",
+        label: `archived “${title(thread)}”`,
+        undo: () => unarchive(thread),
+        redo: () => archive(thread, true),
+      });
+  }
+  /** True when the engine archived it now. `strict` (a redo) passes a failure on instead of showing it. */
+  async function archive(thread: Thread, strict = false) {
+    if (archiving.has(thread.id)) return false;
     archiving.add(thread.id);
     const slow = setTimeout(() => noteKept(`Archiving “${title(thread)}” and its agents…`), 800);
     try {
       const result = await api<{ worktree?: WorktreeOutcome }>(`/threads/${encodeURIComponent(thread.id)}/archive`, {});
       removeThreads(new Set([thread.id]), false);
       noteKept(keptNotice(title(thread), "archived", result.worktree));
+      return true;
     } catch (e) {
+      if (strict) throw e;
       if (/no rollout found for thread id/.test(errorText(e))) removeThreads(new Set([thread.id]), false);
       else setError(`Could not archive “${title(thread)}”: ${errorText(e)}`);
+      return false;
     } finally {
       clearTimeout(slow);
       archiving.delete(thread.id);
     }
+  }
+  /** Ctrl+Z after Archive: the same route as Settings › Archived chats › Unarchive, with the agents archived with it. */
+  async function unarchive(thread: Thread) {
+    const result = await api<{ thread: Thread; restored?: string[] }>(
+      `/threads/${encodeURIComponent(thread.id)}/unarchive`,
+      {},
+    );
+    unarchived(result.thread, result.restored ?? []);
   }
   /** A chat back from Archived chats, with the agents archived with it (`restored`), which show under it again. */
   function unarchived(thread: Thread, restored: string[] = []) {

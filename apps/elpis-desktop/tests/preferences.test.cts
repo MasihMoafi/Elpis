@@ -197,6 +197,11 @@ test('focused text keeps native undo and redo even when app bindings conflict', 
   assert.equal(shortcuts.shortcutFor({ ...press('z', 'KeyZ', { ctrlKey: true }), isComposing: true }, false), null, 'an input method owns unfinished composition');
   preferences.savePreferences({ shortcutBindings: '{}' });
   assert.deepEqual(shortcuts.shortcutFor(press('ظ', 'KeyZ', { ctrlKey: true }), false), { id: 'undo-delete' });
+  // Outside a text field the shared rule's redo keys redo the last chat action; inside one they stay the field's.
+  for (const event of [press('Z', 'KeyZ', { ctrlKey: true, shiftKey: true }), press('y', 'KeyY', { ctrlKey: true }), press('ظ', 'KeyZ', { ctrlKey: true, shiftKey: true })]) {
+    assert.deepEqual(shortcuts.shortcutFor(event, false), { id: 'redo-chat' });
+    assert.equal(shortcuts.shortcutFor(event, true), null);
+  }
 });
 
 test('shortcut search preserves native text keys across keyboard layouts', () => {
@@ -230,6 +235,8 @@ test('deleted-chat undo stays in chat or the focused chat sidebar', () => {
   assert.equal(shortcuts.shortcutInScope('undo-delete', 'canvas', false), false);
   assert.equal(shortcuts.shortcutInScope('undo-delete', 'chat', false, true), false, 'the focused side panel keeps its own history');
   assert.equal(shortcuts.shortcutInScope('undo-delete', 'chat', true, true), false, 'a focused menu owns its keys even if opened from the sidebar');
+  assert.equal(shortcuts.shortcutInScope('redo-chat', 'chat', false), true);
+  assert.equal(shortcuts.shortcutInScope('redo-chat', 'canvas', false), false, 'Workflows keeps its own redo');
   assert.equal(shortcuts.shortcutInScope('new-chat', 'loveSpot', false), true);
 });
 
