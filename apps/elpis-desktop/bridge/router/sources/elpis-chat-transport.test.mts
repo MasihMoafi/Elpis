@@ -11,7 +11,7 @@ import { ElpisChatHistory } from "./elpis-chat-history.mts";
 import { createElpisChatTransport } from "./elpis-chat-transport.mts";
 import { mergeLiveItem } from "../../../lib/live-events.ts";
 import type { Entry } from "../../../lib/api.ts";
-import { chatContext } from "./elpis-chat-read.mts";
+import { chatContext, chatPictures, chatRead } from "./elpis-chat-read.mts";
 import { issueTrigger } from "./github-trigger.mts";
 import { Commands } from "../infra/commands.mts";
 import { testDeployment } from "../infra/fixtures.mts";
@@ -287,4 +287,24 @@ test("real DesktopClient append and read keep one assistant reply after a restar
     for (const value of clients) value.close();
     rmSync(home, { recursive: true, force: true });
   }
+});
+
+test("a picture sent before the words about it is opened and passed on by an id of its own in the chat", async () => {
+  const url = "data:image/png;base64,iVBORw0KGgo=";
+  const picture = (id: string) => ({ turnId: `turn-${id}`, item: { id, type: "userMessage", content: [{ type: "image", url }] } });
+  // The desktop returns the newest first.
+  const data = [{ ...user("c0ffee00-3"), turnId: "turn-words" }, picture("bbbbbbbb-2"), picture("aaaaaaaa-1")];
+  const transport = createElpisChatTransport({
+    readThread: async () => ({ thread: { id: CHAT }, data }),
+    appendAssistant: async () => "sent",
+  });
+  const messages = await transport.read(CHAT, undefined);
+  assert.deepEqual(messages.map(message => message.text), ["[image:aaaaaaaa-0]", "[image:bbbbbbbb-0]", "user c0ffee00-3"]);
+  const trigger = { id: "t1", source: "elpis-chat", meta: { threadId: CHAT, messageId: messages[2]!.id } } as never;
+  assert.deepEqual(await chatRead(transport, trigger, "elpis-chat/t1/image/bbbbbbbb-0"), { image_url: url });
+  assert.deepEqual(await chatPictures(transport, CHAT, ["aaaaaaaa-0", "bbbbbbbb-0", "aaaaaaaa-0"]), [
+    { id: "aaaaaaaa-0", name: "Chat image", type: "image", mimeType: "image/png", dataUrl: url },
+    { id: "bbbbbbbb-0", name: "Chat image", type: "image", mimeType: "image/png", dataUrl: url },
+  ]);
+  await assert.rejects(chatPictures(transport, CHAT, ["image-0"]), /“image-0” is unavailable/);
 });

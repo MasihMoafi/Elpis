@@ -20,8 +20,17 @@ export interface ChatMessage {
   text: string;
   at?: string;
 }
+/** A picture to attach to a message, as the desktop's send takes it. */
+export interface ChatPicture {
+  id: string;
+  name: string;
+  type: "image";
+  mimeType: string;
+  dataUrl: string;
+}
 export interface ChatStart {
   text: string;
+  pictures?: ChatPicture[] | undefined;
   name?: string | undefined;
   folder?: string | undefined;
   model?: string | undefined;
@@ -36,7 +45,7 @@ export interface Chats {
     cursor?: string | undefined;
   }): Promise<{ chats: Chat[]; next?: string }>;
   read(id: string, limit: number): Promise<{ chat: Chat; messages: ChatMessage[] }>;
-  send(id: string, text: string): Promise<void>;
+  send(id: string, text: string, pictures?: ChatPicture[]): Promise<void>;
   start(input: ChatStart): Promise<Chat>;
   stop(id: string): Promise<void>;
   rename(id: string, name: string): Promise<void>;
@@ -50,7 +59,7 @@ export interface ChatsClient {
   listArchivedThreads(options: { limit: number; cursor?: string }): Promise<unknown>;
   readThread(id: string, options: { limit: number; cursor?: string }): Promise<unknown>;
   createThread(body: { cwd?: string; model?: string; name?: string }): Promise<unknown>;
-  send(id: string, body: { text: string; effort?: string }): Promise<unknown>;
+  send(id: string, body: { text: string; effort?: string; attachments?: ChatPicture[] }): Promise<unknown>;
   interrupt(id: string, body: Record<string, never>): Promise<unknown>;
   renameThread(id: string, body: { name: string }): Promise<unknown>;
   archiveThread(id: string, body: Record<string, never>): Promise<unknown>;
@@ -128,6 +137,7 @@ function message(raw: unknown): ChatMessage[] {
 }
 
 /** The router's view of his chats, over the desktop client. */
+const attached = (pictures?: ChatPicture[]) => (pictures?.length ? { attachments: pictures } : {});
 export function createChats(client: ChatsClient): Chats {
   /** The last `limit` messages. A chat's history is mostly tool steps, so it reads on until it has them. */
   const read = async (id: string, limit: number) => {
@@ -162,10 +172,10 @@ export function createChats(client: ChatsClient): Chats {
       return { chats, ...(listed.nextCursor ? { next: listed.nextCursor } : {}) };
     },
     read,
-    async send(id, text) {
-      await client.send(id, { text });
+    async send(id, text, pictures) {
+      await client.send(id, { text, ...attached(pictures) });
     },
-    async start({ text, name, folder, model, effort }) {
+    async start({ text, name, folder, model, effort, pictures }) {
       const created = CreatedSchema.parse(
         await client.createThread({
           ...(folder ? { cwd: folder } : {}),
@@ -175,7 +185,7 @@ export function createChats(client: ChatsClient): Chats {
       );
       const id = created.thread.id;
       try {
-        await client.send(id, { text, ...(effort ? { effort } : {}) });
+        await client.send(id, { text, ...(effort ? { effort } : {}), ...attached(pictures) });
       } catch (error) {
         // A chat whose first message was refused would stay in his sidebar empty: it goes to the archive.
         await client.archiveThread(id, {}).catch(() => {});

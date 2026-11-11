@@ -1,5 +1,6 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/sources/feishu-read.ts and feishu-image.ts.
 import { attachmentInput } from "../../attachments.mts";
+import type { ChatPicture } from "../chats.mts";
 import type { Trigger } from "../core/index.mts";
 import type { ContextPartName, ThreadContext } from "./kind.mts";
 import type { ElpisChatConfig, ElpisChatMessage, ElpisChatTransport } from "./elpis-chat.mts";
@@ -42,22 +43,42 @@ export function chatContext(transport: ElpisChatTransport): ThreadContext<ElpisC
     read: (_commands, trigger, part, cursor) => page(transport, trigger, part, cursor),
     images: text => [...text.matchAll(/\[image:([^\]]+)\]/g)].map(match => match[1]!),
     image: (_agent, _commands, trigger, message, key, _stateDir, signal) =>
-      readImage(transport, trigger, message.id, key, signal),
+      readImage(transport, trigger, key, signal, message.id),
   };
+}
+const IMAGE_DATA = /^data:(image\/(?:png|jpeg|webp|gif));base64,/;
+/**
+ * Pictures he attached in a chat, by the ids his messages show them under, ready to attach to another message.
+ * Without `messageId` the whole chat is searched: he often sends the picture first and the words about it after.
+ */
+export async function chatPictures(
+  transport: ElpisChatTransport,
+  threadId: string,
+  keys: string[],
+  signal?: AbortSignal,
+  messageId?: string,
+): Promise<ChatPicture[]> {
+  const messages = await transport.read(threadId, undefined, signal);
+  const images = messages.filter(item => !messageId || item.id === messageId).flatMap(item => item.images ?? []);
+  const pictures = [...new Set(keys)].map(key => {
+    const image = images.findLast(item => item.id === key);
+    const mimeType = image && IMAGE_DATA.exec(image.url)?.[1];
+    if (!image || !mimeType) throw new Error(`The image \u201c${key}\u201d is unavailable`);
+    return { id: key, name: "Chat image", type: "image" as const, mimeType, dataUrl: image.url };
+  });
+  // The same check a message's attachments get, so a picture that would be refused later is refused here.
+  attachmentInput("", pictures);
+  return pictures;
 }
 async function readImage(
   transport: ElpisChatTransport,
   trigger: Trigger,
-  messageId: string,
   key: string,
   signal?: AbortSignal,
+  messageId?: string,
 ) {
-  const messages = await transport.read(metaId(trigger, "threadId"), undefined, signal);
-  const image = messages.find(item => item.id === messageId)?.images?.find(item => item.id === key);
-  const mimeType = image && /^data:(image\/(?:png|jpeg|webp|gif));base64,/.exec(image.url)?.[1];
-  if (!image || !mimeType) throw new Error("This image is unavailable");
-  attachmentInput("", [{ id: "image", name: "Chat image", type: "image", mimeType, dataUrl: image.url }]);
-  return { image_url: image.url };
+  const [picture] = await chatPictures(transport, metaId(trigger, "threadId"), [key], signal, messageId);
+  return { image_url: picture!.dataUrl };
 }
 export async function chatRead(
   transport: ElpisChatTransport,
@@ -69,7 +90,7 @@ export async function chatRead(
   if (section === "image") {
     const parts = resource.split("/");
     if (parts.length !== 4 || !parts[3]) throw new Error("An image reference is required");
-    return readImage(transport, trigger, metaId(trigger, "messageId"), parts[3], signal);
+    return readImage(transport, trigger, parts[3], signal);
   }
   if (section === "thread" || section === "root" || section === "parent")
     return page(transport, trigger, section, undefined, signal);

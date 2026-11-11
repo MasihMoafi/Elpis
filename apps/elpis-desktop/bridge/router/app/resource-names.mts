@@ -71,7 +71,7 @@ export const RESOURCES: readonly { name: string; holds: string; executor?: true 
   { name: "models/<provider>", holds: "one provider's models" },
   {
     name: "elpis-chat/<trigger-id>/…",
-    holds: "an Elpis chat message, parent, thread, or image/<image-id> from that message",
+    holds: "an Elpis chat message, parent, thread, or image/<image-id> for a picture in any message of that chat",
     executor: true,
   },
   { name: "github/…", holds: "a GitHub original, as the mother-github skill describes", executor: true },

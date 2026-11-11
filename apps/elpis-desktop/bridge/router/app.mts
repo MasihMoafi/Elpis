@@ -37,6 +37,7 @@ import { candidateCard, repliedTo, sourceLink, type LinkHost } from "./app/links
 import { eventNotice, followupNotice } from "./app/notices.mts";
 import { mainTools, type MainToolsHost } from "./app/tools/main.mts";
 import { chatToolsHost } from "./app/tools/chats.mts";
+import { chatPictures } from "./sources/elpis-chat-read.mts";
 import { OwnWorkGate } from "./app/tools/own-work.mts";
 import type { Chats } from "./chats.mts";
 import { ChatWatch, watchChats } from "./watch.mts";
@@ -303,7 +304,14 @@ export class MotherApp implements SourceHost {
         get github() {
           return runtime.context(githubKind);
         },
-        chats: options.chats && chatToolsHost(this.announced(options.chats), options, () => store.settings()),
+        chats:
+          options.chats &&
+          chatToolsHost(
+            this.announced(options.chats),
+            options,
+            () => store.settings(),
+            (ids, signal) => chatPictures(options.transport, options.threadId, ids, signal),
+          ),
         results: { shown: ticketId => this.shown.has(ticketId), mark: ticketId => void this.shown.add(ticketId) },
         showResult: (ticketId, text) => this.showResult(ticketId, text),
         ...(options.chats ? { ownWork: new OwnWorkGate() } : {}),
@@ -365,8 +373,8 @@ export class MotherApp implements SourceHost {
     }));
     return {
       ...chats,
-      send: async (id, text) => {
-        await chats.send(id, text);
+      send: async (id, text, pictures) => {
+        await chats.send(id, text, pictures);
         watch.expect(id);
       },
       start: async input => {

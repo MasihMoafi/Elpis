@@ -4,7 +4,7 @@
  */
 import { join } from "node:path";
 import { z } from "zod";
-import type { Chat, Chats } from "../../chats.mts";
+import type { Chat, ChatPicture, Chats } from "../../chats.mts";
 import { tool, type Tool } from "./tool.mts";
 
 export interface ChatToolsHost {
@@ -13,6 +13,8 @@ export interface ChatToolsHost {
   own(chat: Pick<Chat, "id" | "folder">): boolean;
   /** Why the chat tools are off right now; nothing when they may run. */
   refusal(): string | undefined;
+  /** Pictures he attached in the Elpis chat, by the ids his messages show them under, ready to attach elsewhere. */
+  pictures?: ((ids: string[], signal: AbortSignal) => Promise<ChatPicture[]>) | undefined;
 }
 
 /**
@@ -24,10 +26,12 @@ export function chatToolsHost(
   chats: Chats,
   router: { home: string; threadId: string },
   settings: () => { sources: Record<string, { enabled: boolean } | undefined> },
+  pictures?: ChatToolsHost["pictures"],
 ): ChatToolsHost {
   const home = join(router.home, "router");
   return {
     chats,
+    pictures,
     own: chat => chat.id === router.threadId || chat.folder === home,
     refusal: () =>
       Object.entries(settings().sources).some(([name, source]) => name !== "elpis-chat" && source?.enabled)
@@ -55,6 +59,20 @@ async function target(host: ChatToolsHost, id: string): Promise<Chat> {
   const { chat } = await host.chats.read(id, 1);
   if (host.own(chat)) throw new Error("This is the router's own chat; it does not act on itself");
   return chat;
+}
+
+const Images = z
+  .array(z.string().trim().min(1).max(100))
+  .min(1)
+  .max(10)
+  .optional()
+  .describe("Pictures from his messages to attach, each by the id inside its [image:<id>] mark.");
+
+/** The pictures named, taken from his messages; nothing when none was named. */
+async function attachments(host: ChatToolsHost, images: string[] | undefined, signal: AbortSignal) {
+  if (!images) return undefined;
+  if (!host.pictures) throw new Error("Pictures cannot be passed on here");
+  return host.pictures(images, signal);
 }
 
 const clip = (text: string): string =>
@@ -127,12 +145,14 @@ function sendTool(host: ChatToolsHost): Tool {
     name: "chats_send",
     description:
       "Write a message in one of his chats, as he would: it starts that chat's next turn. Use it only when " +
-      "he asks you to tell or ask a chat something; pass his request in his own words.",
-    schema: z.object({ chat: ChatId, text: z.string().trim().min(1).max(8000) }).strict(),
-    execute: async ({ chat, text }) => {
+      "he asks you to tell or ask a chat something; pass his request in his own words, with any picture he " +
+      "attached for it in images.",
+    schema: z.object({ chat: ChatId, text: z.string().trim().min(1).max(8000), images: Images }).strict(),
+    execute: async ({ chat, text, images }, signal) => {
       const found = await target(host, chat);
-      await host.chats.send(found.id, text);
-      return { sent: true, chat: found.title };
+      const pictures = await attachments(host, images, signal);
+      await host.chats.send(found.id, text, ...(pictures ? [pictures] : []));
+      return { sent: true, chat: found.title, ...(pictures ? { pictures: pictures.length } : {}) };
     },
   });
 }
@@ -151,11 +171,13 @@ function startTool(host: ChatToolsHost): Tool {
         folder: z.string().startsWith("/").optional().describe("The project folder to work in, as an absolute path."),
         model: z.string().trim().min(1).max(200).optional().describe("A model id he named; the default otherwise."),
         effort: z.string().trim().min(1).max(20).optional().describe("A thinking level he named."),
+        images: Images,
       })
       .strict(),
-    execute: async input => {
+    execute: async ({ images, ...input }, signal) => {
       allowed(host);
-      const chat = await host.chats.start(input);
+      const pictures = await attachments(host, images, signal);
+      const chat = await host.chats.start({ ...input, ...(pictures ? { pictures } : {}) });
       return { started: true, chat };
     },
   });

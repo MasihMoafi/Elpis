@@ -160,3 +160,17 @@ it("leaves no empty chat behind when the first message is refused, and reads not
   expect(chat).toEqual({ id: "new", title: "say hi", state: "working", folder: "/work/legal" });
   expect(started.calls.map(call => call[0])).toEqual(["createThread", "send"]);
 });
+
+it("attaches pictures to a message it writes or starts a chat with, and nothing when there are none", async () => {
+  const picture = { id: "aaaaaaaa-0", name: "Chat image", type: "image" as const, mimeType: "image/png", dataUrl: "data:image/png;base64,iVBORw0KGgo=" };
+  const { fake, calls } = client();
+  const chats = createChats(fake);
+  await chats.send("a", "look at this", [picture]);
+  await chats.send("a", "no picture", []);
+  await chats.start({ text: "what is wrong here", pictures: [picture] });
+  expect(calls.filter(call => call[0] === "send")).toEqual([
+    ["send", "a", { text: "look at this", attachments: [picture] }],
+    ["send", "a", { text: "no picture" }],
+    ["send", "new", { text: "what is wrong here", attachments: [picture] }],
+  ]);
+});

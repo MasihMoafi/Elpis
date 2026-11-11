@@ -48,8 +48,10 @@ export function createElpisChatTransport(client: ChatClient): ElpisChatTransport
           if (entry.item.type !== "userMessage" && entry.item.type !== "agentMessage") continue;
           const role = entry.item.type === "userMessage" ? "user" : "assistant";
           const content = role === "user" ? ContentSchema.parse(entry.item.content) : [];
+          // A picture's id starts with its message's, so it names one picture of the whole chat, not of one message.
+          const stem = entry.item.id.replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
           const images = content.flatMap((block, index) =>
-            block.type === "image" && block.url ? [{ id: `image-${index}`, url: block.url }] : [],
+            block.type === "image" && block.url ? [{ id: `${stem}-${index}`, url: block.url }] : [],
           );
           const text =
             role === "user"

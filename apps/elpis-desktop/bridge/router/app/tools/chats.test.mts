@@ -1,6 +1,6 @@
 import { it } from "node:test";
 import { expect } from "expect";
-import type { Chat, Chats } from "../../chats.mts";
+import type { Chat, ChatPicture, Chats } from "../../chats.mts";
 import { chatTools, chatToolsHost } from "./chats.mts";
 
 const ROUTER = { home: "/home/u/.elpis", threadId: "elpis" };
@@ -13,6 +13,11 @@ const CHATS: Chat[] = [
   { id: "idle-old", title: "Old notes", state: "idle", updated: "2026-11-01T08:00:00.000Z" },
   { id: "worker", title: "Count lines", state: "idle", folder: "/home/u/.elpis/router/work/count-lines-1" },
 ];
+
+const PICTURE: ChatPicture = { id: "aaaaaaaa-0", name: "Chat image", type: "image", mimeType: "image/png", dataUrl: "data:image/png;base64,iVBORw0KGgo=" };
+/** The pictures of the Elpis chat: one, under its id. */
+const pictures = (ids: string[]) =>
+  ids.every(id => id === PICTURE.id) ? Promise.resolve([PICTURE]) : Promise.reject(new Error("The image is unavailable"));
 
 /** The tools over fixed chats, recording every action taken on them. */
 function setup(sources: Record<string, { enabled: boolean }> = { "elpis-chat": { enabled: true } }) {
@@ -43,7 +48,7 @@ function setup(sources: Record<string, { enabled: boolean }> = { "elpis-chat": {
     archive: act("archive"),
     restore: act("restore"),
   };
-  const tools = new Map(chatTools(chatToolsHost(chats, ROUTER, () => ({ sources }))).map(tool => [tool.name, tool]));
+  const tools = new Map(chatTools(chatToolsHost(chats, ROUTER, () => ({ sources }), pictures)).map(tool => [tool.name, tool]));
   const run = (name: string, args: unknown) => tools.get(name)!.execute(args, new AbortController().signal);
   return { run, actions };
 }
@@ -193,4 +198,28 @@ it("says once that the tools are off when many chats are asked for", async () =>
   const { run, actions } = setup({ "elpis-chat": { enabled: true }, github: { enabled: true } });
   await expect(run("chats_change", { chats: ["idle-old", "idle-new"], action: "archive" })).rejects.toThrow("outside text");
   expect(actions).toEqual([]);
+});
+
+it("passes a picture he attached on to the chat it writes in or starts, and sends nothing when the picture is gone", async () => {
+  const { run, actions } = setup();
+  expect(await run("chats_send", { chat: "working", text: "fix what this shows", images: ["aaaaaaaa-0"] })).toEqual({
+    sent: true,
+    chat: "Review scraper",
+    pictures: 1,
+  });
+  await run("chats_start", { text: "what is wrong here", images: ["aaaaaaaa-0"] });
+  await expect(run("chats_send", { chat: "working", text: "and this", images: ["image-0"] })).rejects.toThrow("unavailable");
+  expect(actions).toEqual([
+    ["send", "working", "fix what this shows", [PICTURE]],
+    ["start", { text: "what is wrong here", pictures: [PICTURE] }],
+  ]);
+});
+
+it("refuses a picture where the router has no chat of its own to take it from", async () => {
+  const chats = { read: () => Promise.resolve({ chat: CHATS[0]!, messages: [] }), send: () => Promise.resolve() } as unknown as Chats;
+  const tools = chatTools(chatToolsHost(chats, ROUTER, () => ({ sources: {} })));
+  const send = tools.find(tool => tool.name === "chats_send")!;
+  await expect(send.execute({ chat: "idle-new", text: "see", images: ["aaaaaaaa-0"] }, new AbortController().signal)).rejects.toThrow(
+    "cannot be passed on",
+  );
 });
