@@ -1,0 +1,9 @@
+{
+  "R4|assets/branding/brand.css|raw hex colour; use a theme token": 13,
+  "R4|index.html|raw hex colour; use a theme token": 1,
+  "R4|source.css|raw colour function; use a theme token": 3,
+  "R4|source.css|raw hex colour; use a theme token": 47,
+  "R4|technical-template.html|raw hex colour; use a theme token": 1,
+  "R5|index.html|hand-written control; use the shadcn/ui component from components/ui": 3,
+  "R5|technical-template.html|hand-written control; use the shadcn/ui component from components/ui": 1
+}

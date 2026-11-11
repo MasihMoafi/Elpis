@@ -1,0 +1,4 @@
+{
+  "src": ["."],
+  "ignore": ["^styles\\.css$", "^technical\\.html$", "^candidates/", "^prototypes/", "^evidence/"]
+}
