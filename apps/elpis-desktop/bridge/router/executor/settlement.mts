@@ -153,9 +153,16 @@ export class WorkerSettlement {
       person = this.personal.get(ticket.id);
     // The worker read what reached it before a turn that ended: one it handed off with, or one whose background work ended.
     if (handedOff(before) && !(report && person && person > report.at)) {
+      // Decided on the ticket as it was: ending the turn below may already end a chat job, and a job that has ended
+      // no longer reads as one whose result is owed (11 Nov: a worker reported "201 lines" as ready, and nothing came).
+      const result = report?.state === "ready" && chatWorkDone(before) ? report.summary : undefined;
       this.host.engine.turnEnded(ticket.id, idle.id);
       this.handOff(ticket.id, agent);
-      if (report?.state === "ready") this.finishChat(ticket.id, report.summary);
+      if (result !== undefined) {
+        const stored = this.host.store.tickets.get(ticket.id);
+        if (stored && chatWorkDone(stored)) this.host.engine.completeChatTicket(ticket.id);
+        this.host.deliverChatResult?.(ticket.id, result);
+      }
       return;
     }
     // Its turn ends once nothing runs for it in the background, which holds its slot meanwhile: at most for the limit from

@@ -1,7 +1,7 @@
 // Adapted from DeepSeek dsh-superagent-prototype (MIT), src/app/tools/executor.ts.
 /** Executor Session tools for reading ticket context, acknowledging requests, managing threads, handing back out-of-scope triggers, and reporting status. */
 import { z } from "zod";
-import { liveTicket, type EngineForExecutor, type Ticket } from "../../core/index.mts";
+import { liveTicket, resultOwed, type EngineForExecutor, type Ticket } from "../../core/index.mts";
 import { IM_WORDS } from "../../infra/text.mts";
 import { claimPull, readPull } from "../../sources/github-pull.mts";
 import type { SourceContext } from "../../sources/host.mts";
@@ -19,6 +19,8 @@ export interface ExecutorToolsHost {
   /** GitHub Source context whose pull-request rules govern claiming a reported PR. */
   readonly github: SourceContext;
   sendReplies(): Promise<void>;
+  /** Shows a finished Elpis chat job's result to the person who asked; the host does it, not a model. */
+  showResult?(ticketId: string, text: string): void;
 }
 
 export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
@@ -158,7 +160,7 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
           throw new Error("Ticket ended (PR was closed or work finished); do not resume it");
         const pull = args.pr_number != null ? await readPull(host.github, args.pr_number, signal) : undefined;
         // Claim the PR, record the report, and queue the relay atomically so a rejected PR claim or invalid report leaves no partial state, and a recorded report always reaches the main Session.
-        return host.store.atomic(() => {
+        const reported = host.store.atomic(() => {
           const refused = pull && claimPull(host.github, ticketId, pull);
           if (refused) throw new Error(refused);
           const report = {
@@ -172,8 +174,15 @@ export function executorTools(host: ExecutorToolsHost, ticket: Ticket): Tool[] {
           const relay = reportRelay(updated, report);
           if (relay) host.sessions.relay(relay.id, relay.text);
           const notification = relay ? "orchestrator" : "internal_only";
-          return { reported: true, notification, ...(updated.attention ? { attention: updated.attention } : {}) };
+          return {
+            answer: { reported: true, notification, ...(updated.attention ? { attention: updated.attention } : {}) },
+            // A ready report ends a job he asked for in the Elpis chat, so its result is owed to him now.
+            owed: resultOwed(args.state, updated),
+          };
         });
+        // On 11 Nov a worker reported "201 lines" as ready and the router only said it in its hidden session.
+        if (reported.owed) host.showResult?.(ticketId, args.summary);
+        return reported.answer;
       },
     }),
   ];

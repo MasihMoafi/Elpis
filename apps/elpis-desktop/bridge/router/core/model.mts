@@ -371,11 +371,14 @@ export const liveTicket = (ticket: Pick<Ticket, "ended">): boolean => !ticket.en
  * can close it, and while it stays open every later message in that chat goes to its idle worker (Masih, 9 Nov: "ho?" got no
  * answer). A question for a person keeps it open, because the next message is the answer.
  */
+/** A job he asked for in the Elpis chat and nowhere else. */
+export const chatTicket = (ticket: Pick<Ticket, "channels">): boolean =>
+  !!ticket.channels.length && ticket.channels.every(item => item.source === "elpis-chat");
 export const chatWorkDone = (ticket: Pick<Ticket, "channels" | "attention" | "ended">): boolean =>
-  !ticket.ended &&
-  !ticket.attention &&
-  !!ticket.channels.length &&
-  ticket.channels.every(item => item.source === "elpis-chat");
+  !ticket.ended && !ticket.attention && chatTicket(ticket);
+/** Whether a worker's report just ended a job he asked for in the Elpis chat: its result is owed to him now. */
+export const resultOwed = (state: string, ticket: Pick<Ticket, "channels" | "ended">): boolean =>
+  state === "ready" && ticket.ended?.outcome === "completed" && chatTicket(ticket);
 /** How a ticket ended. */
 export const ticketOutcome = (ticket: Pick<Ticket, "ended">): TicketOutcome | undefined => ticket.ended?.outcome;
 export const runningAssignment = (ticket: Ticket): Assignment | undefined =>

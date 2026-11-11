@@ -151,12 +151,7 @@ export class MotherApp implements SourceHost {
         paused: () => this.paused(),
         prompts,
         processEnvironment: () => this.setup.workerEnvironment(),
-        deliverChatResult: (ticketId, text) => {
-          if (this.shown.has(ticketId)) return;
-          this.shown.add(ticketId);
-          this.engine.reply({ purpose: "result", ticketId, text });
-          void this.outbox.sent();
-        },
+        deliverChatResult: (ticketId, text) => this.showResult(ticketId, text),
         sessionEnvironment: id => {
           const ticketId = ticketOfSession(id),
             ticket = ticketId ? store.tickets.get(ticketId) : undefined;
@@ -302,6 +297,7 @@ export class MotherApp implements SourceHost {
         },
         chats: options.chats && chatToolsHost(this.announced(options.chats), options, () => store.settings()),
         results: { shown: ticketId => this.shown.has(ticketId), mark: ticketId => void this.shown.add(ticketId) },
+        showResult: (ticketId, text) => this.showResult(ticketId, text),
         ...(options.chats ? { ownWork: new OwnWorkGate() } : {}),
         sendReplies: () => outbox.sent(),
         requestPass: () => this.passes.request(),
@@ -322,6 +318,13 @@ export class MotherApp implements SourceHost {
   }
   private paused(): boolean {
     return this.closing || this.store.settings().paused;
+  }
+  /** Puts a finished chat job's result in his chat, once: the host does it, so no model turn can lose it. */
+  private showResult(ticketId: string, text: string): void {
+    if (this.shown.has(ticketId)) return;
+    this.shown.add(ticketId);
+    this.engine.reply({ purpose: "result", ticketId, text });
+    void this.outbox.sent();
   }
   /** His chats as the chat tools use them: a turn the router starts in one is announced in the Elpis chat when it ends. */
   private announced(chats: Chats): Chats {
