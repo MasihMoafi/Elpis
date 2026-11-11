@@ -45,7 +45,7 @@ test('Observability shows the selected chat as the Trajectory page, names it, an
     const nav = page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true });
     // Negative: no chat selected, so the page asks for one instead of showing another chat's history.
     await nav.click();
-    await page.getByText('Choose a chat to see its trajectory.').waitFor();
+    await page.getByText('Choose a chat to see its trajectory or its project.').waitFor();
     assert.equal(await page.locator('.observability iframe').count(), 0);
 
     // A second, newer chat with its own rollout, for the Chat menu.
