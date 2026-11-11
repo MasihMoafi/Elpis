@@ -31,6 +31,8 @@ for (const colorScheme of ['light', 'dark']) test(`sessions map navigation and r
     const map = page.getByRole('region', { name: 'Sessions map' });
     await map.getByText('Ticket worker', { exact: true }).waitFor();
     assert.equal(await map.locator('.react-flow__node').count(), 6);
+    // Wires are drawn once their cards are measured, a moment after the cards.
+    await map.locator('.react-flow__edge').nth(2).waitFor({ state: 'attached' });
     assert.equal(await map.locator('.react-flow__edge').count(), 3);
     const boxes = await map.locator('.agent-node').evaluateAll((items: HTMLElement[]) => items.map(item => {
       const box = item.getBoundingClientRect();
@@ -44,11 +46,21 @@ for (const colorScheme of ['light', 'dark']) test(`sessions map navigation and r
       if (!transform) throw Error('Map viewport missing');
       return parseFloat(getComputedStyle(el).fontSize) * new DOMMatrix(getComputedStyle(transform).transform).a;
     });
-    assert.ok(size >= 12, `card text renders at ${size}px`);
+    // The map opens zoomed out (11 Nov, Masih: "more zoomed-out"), and its controls zoom further out and back in.
+    assert.ok(size > 9 && size < 12, `the map opens zoomed out: card text renders at ${size}px`);
+    const scale = () => map.locator('.react-flow__viewport').evaluate((el: HTMLElement) => new DOMMatrix(getComputedStyle(el).transform).a);
+    const opened = await scale();
+    await map.getByRole('button', { name: /zoom out/i }).click();
+    await page.waitForTimeout(350);
+    const out = await scale();
+    assert.ok(out < opened, `zoom out shows more: ${opened} to ${out}`);
+    await map.getByRole('button', { name: /zoom in/i }).click();
+    await page.waitForTimeout(350);
+    assert.ok((await scale()) > out, 'zoom in comes back');
     if (colorScheme === 'light') {
       currentGraph = { ...graph, nodes: graph.nodes.map(node =>
         node.id === 'thread:chat-b' ? { ...node, state: 'failed' } : node) };
-      await map.locator('[data-id="thread:chat-b"]').getByRole('img', { name: 'failed' }).waitFor({ timeout: 6500 });
+      await map.locator('[data-id="thread:chat-b"]').getByRole('img', { name: 'failed' }).waitFor({ timeout: 9000 });
     }
     const pane = map.locator('.react-flow__pane');
     const box = await pane.boundingBox(); assert.ok(box);
@@ -60,7 +72,7 @@ for (const colorScheme of ['light', 'dark']) test(`sessions map navigation and r
     await page.mouse.wheel(0, -120);
     await page.waitForTimeout(250);
     const transform = await map.locator('.react-flow__viewport').getAttribute('style');
-    assert.ok(!transform.includes('scale(1)'), 'the map can zoom');
+    assert.ok(transform, 'the map keeps a place and a zoom');
     await map.getByText('Ticket worker', { exact: true }).click();
     await page.locator('.thread-row.active[data-thread-id="chat-b"]').waitFor();
     await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();

@@ -15,10 +15,11 @@ export const OVERVIEW = { padding: 0.08, maxZoom: 1 };
 // React Flow lifts a selected agent to z-index 1000; a selected wire goes just above it.
 export const ABOVE_AGENTS = 1001;
 
-// The ready-made workflow comes first (28 Oct, Masih: "move it on top").
+// Auto comes first (11 Nov, Masih: "The Auto option should come on top"), then the ready-made workflows, which led
+// the list from 28 Oct ("move it on top").
 export const ENTRY_PATTERNS = [
-  ...WORKFLOWS.map(workflow => ({ id: workflow.id, label: workflow.name })),
   { id: "auto", label: "Auto · Elpis chooses" },
+  ...WORKFLOWS.map(workflow => ({ id: workflow.id, label: workflow.name })),
   { id: "split-parts", label: "Parallel" },
   { id: "sequential", label: "Sequential" },
   { id: "research", label: "Research" },

@@ -8,6 +8,49 @@ import { buildSessionsMap, type MapThread, type SessionsMapInputs } from "./sess
 
 const START_WAIT = 15 * 60_000;
 
+/** How long one reading of the map is shared: it pages every chat and agent run, so refreshes close together reuse it. */
+const MAP_SHARED_MS = 1500;
+const maps = new WeakMap<object, Map<boolean, { at: number; graph: Promise<unknown> }>>();
+
+/** The map of his sessions: the router and its workers, chats with their agents, and workflow runs. */
+function sessionsMap(state: import("./server-http.mts").ServerState, all: boolean): Promise<unknown> {
+  const shared = maps.get(state.client) ?? new Map<boolean, { at: number; graph: Promise<unknown> }>();
+  maps.set(state.client, shared);
+  const recent = shared.get(all);
+  if (recent && Date.now() - recent.at < MAP_SHARED_MS) return recent.graph;
+  const graph = readSessionsMap(state, all);
+  shared.set(all, { at: Date.now(), graph });
+  // A reading that failed is not kept: the next refresh tries again.
+  graph.catch(() => shared.delete(all));
+  return graph;
+}
+
+async function readSessionsMap(state: import("./server-http.mts").ServerState, all: boolean) {
+  const { client, mother } = state;
+  const threads: MapThread[] = [];
+  let cursor: string | null | undefined;
+  do {
+    const page = await client.listThreads({ limit: 100, includeAgentRuns: true, ...(cursor ? { cursor } : {}) });
+    threads.push(...page.data);
+    cursor = page.nextCursor;
+  } while (cursor);
+  const listed = await mother.list(threads as Parameters<typeof mother.list>[0], { includeAgentRuns: true });
+  const history = await client.workflowHistory();
+  const graph = buildSessionsMap({
+    threads: listed,
+    router: mother.sessionLinks(),
+    workflows: history.data.filter(run => typeof run.rootThreadId === "string") as NonNullable<
+      SessionsMapInputs["workflows"]
+    >,
+    showAllChats: all,
+  });
+  const updated = new Map(listed.map(thread => [thread.id, thread.updatedAt]));
+  return {
+    ...graph,
+    nodes: graph.nodes.map(node => ({ ...node, updatedAt: node.threadId ? updated.get(node.threadId) : undefined })),
+  };
+}
+
 export type ScheduledWorkflowJob = {
   taskId: string;
   title: string;
@@ -95,28 +138,9 @@ export async function handleWorkflowRoutes(
   url: URL,
   method: string,
 ) {
-  const { client, options, experimentLab, automations, workflowDispatcher, mother } = state;
+  const { client, options, experimentLab, automations, workflowDispatcher } = state;
   if (url.pathname === "/api/sessions-map" && method === "GET") {
-    const threads: MapThread[] = [];
-    let cursor: string | null | undefined;
-    do {
-      const page = await client.listThreads({ limit: 100, includeAgentRuns: true, ...(cursor ? { cursor } : {}) });
-      threads.push(...page.data);
-      cursor = page.nextCursor;
-    } while (cursor);
-    const listed = await mother.list(threads as Parameters<typeof mother.list>[0], { includeAgentRuns: true });
-    const history = await client.workflowHistory();
-    const graph = buildSessionsMap({
-      threads: listed,
-      router: mother.sessionLinks(),
-      workflows: history.data.filter(run => typeof run.rootThreadId === "string") as NonNullable<SessionsMapInputs["workflows"]>,
-      showAllChats: url.searchParams.get("all") === "1",
-    });
-    const updated = new Map(listed.map(thread => [thread.id, thread.updatedAt]));
-    json(response, 200, {
-      ...graph,
-      nodes: graph.nodes.map(node => ({ ...node, updatedAt: node.threadId ? updated.get(node.threadId) : undefined })),
-    });
+    json(response, 200, await sessionsMap(state, url.searchParams.get("all") === "1"));
     return true;
   }
   if (url.pathname === "/api/canvas/plan" && method === "POST") {

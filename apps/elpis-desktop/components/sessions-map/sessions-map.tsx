@@ -1,7 +1,7 @@
 "use client";
 
-import { Background, BackgroundVariant, ReactFlow, type Viewport } from "@xyflow/react";
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import { Background, BackgroundVariant, Controls, ReactFlow, type Viewport } from "@xyflow/react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Switch } from "@/components/ui/switch";
 import { EDGE_TYPES } from "@/components/agents-canvas/edges";
 import { api, type Thread } from "@/lib/api";
@@ -10,6 +10,12 @@ import { SessionNode } from "./session-node";
 
 const NODE_TYPES = { session: SessionNode };
 const EMPTY: SessionsGraph = { nodes: [], edges: [] };
+/** The map opens zoomed out, to show more of his sessions at once, and zooms out far enough to see them all
+ * (11 Nov, Masih: "I like the map to be more zoomed-out, to have that option"); the controls zoom in, out and to fit. */
+const OPEN_ZOOM = 0.7;
+const MIN_ZOOM = 0.15;
+/** A change in his chats refreshes the map at once; this beat catches what sends no event, such as a workflow run. */
+const REFRESH_MS = 5000;
 
 export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpenChat }: {
   threads: Thread[];
@@ -22,21 +28,29 @@ export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpe
   const [graph, setGraph] = useState<SessionsGraph>(EMPTY);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const refresh = useRef<() => void>(() => {});
   useEffect(() => {
-    let disposed = false, pending = false;
-    const refresh = () => {
-      if (pending) return;
+    let disposed = false, pending = false, again = false;
+    const read = () => {
+      // A change that comes while a reading runs is read once more after it, not dropped and not run beside it.
+      if (pending) { again = true; return; }
       pending = true;
       void api<SessionsGraph>(`/sessions-map${showAll ? "?all=1" : ""}`).then(value => {
         if (!disposed) { setGraph(value); setError(""); setLoading(false); }
       }, reason => {
         if (!disposed) { setError(String(reason)); setLoading(false); }
-      }).finally(() => { pending = false; });
+      }).finally(() => {
+        pending = false;
+        if (again && !disposed) { again = false; read(); }
+      });
     };
-    refresh();
-    const timer = setInterval(refresh, 5000);
+    refresh.current = read;
+    read();
+    const timer = setInterval(read, REFRESH_MS);
     return () => { disposed = true; clearInterval(timer); };
-  }, [showAll, threads]);
+  }, [showAll]);
+  // A change in his chats refreshes the map without restarting a reading that is under way.
+  useEffect(() => { refresh.current(); }, [threads]);
   const nodes = useMemo(() => layoutSessions(graph), [graph]);
   const edges = useMemo(() => graph.edges.map(edge => ({ ...edge, id: `${edge.source}:${edge.target}` })), [graph]);
   return (
@@ -51,12 +65,13 @@ export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpe
         ) : (
           <div className="canvas-board flex-1 min-h-0">
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
-              defaultViewport={viewport.current ?? { x: 48, y: 48, zoom: 1 }}
+              defaultViewport={viewport.current ?? { x: 48, y: 48, zoom: OPEN_ZOOM }}
               onMoveEnd={(_, next) => { viewport.current = next; }}
-              minZoom={0.86} maxZoom={2} nodesDraggable={false} nodesConnectable={false}
+              minZoom={MIN_ZOOM} maxZoom={2} nodesDraggable={false} nodesConnectable={false}
               onNodeClick={(_, node) => { if (node.data.threadId) onOpenChat(node.data.threadId); }}
               colorMode={dark ? "dark" : "light"} proOptions={{ hideAttribution: true }}>
               <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} />
+              <Controls showInteractive={false} fitViewOptions={{ padding: 0.08, maxZoom: 1 }} />
             </ReactFlow>
           </div>
         )}

@@ -122,6 +122,8 @@ async function fixtureImpl({ staticDir = out, cwd = CWD, width = 1130, height = 
   await guardDesktopStore(page);
   // Workflows remembers its last view; the board tests start where they always did, on the Board.
   await page.addInitScript(values => {
+    // A sandboxed preview frame has no storage of its own and throws on reading it: only the app's page is seeded.
+    if (window.top !== window) return;
     for (const [key, value] of Object.entries(values)) if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
   }, { 'elpis-workflows-view-v1': 'board', ...storage });
   if (desktop) await page.addInitScript(fakeDesktop);
