@@ -78,6 +78,8 @@
 /* Shared inner spacing for text-bearing surfaces. */
 @utility card-body { padding: clamp(24px, 2.5vw, 32px); gap: 14px; }
 @utility btn { min-height: 44px; height: auto; padding: 12px 22px; }
+/* An icon button keeps the 44px height of its row: the block padding above would make it 46px. */
+@utility btn-square { padding-block: 0; }
 
 .install-terminal { padding: 76px 0 24px; }
 .install-terminal::before { position: absolute; top: 28px; left: 28px; margin: 0; }
@@ -312,7 +314,7 @@ figure img { display: block; width: 100%; height: auto; }
   border: 1px solid var(--color-base-300);
 }
 .hero-content .btn:not(.btn-primary) { box-shadow: none; }
-[data-theme="elpis"] :is(.install-terminal, .hero-content .btn:not(.btn-primary)) { border-color: #47544b; color: #f1ede5; }
+[data-theme="elpis"] :is(.install-terminal, .hero-content .btn:not(.btn-primary)) { border-color: #47544b; color: var(--color-base-content); }
 .footer-title { opacity: 1; color: var(--color-base-content); }
 /* The desktop app's themes, driven by scroll: the section takes each theme's colours while the
    next screenshot wipes in from the left behind a line in that theme's accent. app.js sets the
