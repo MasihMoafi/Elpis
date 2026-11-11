@@ -53,6 +53,9 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
     sourceKinds: includeAgentRuns ? SOURCE_KINDS : CHAT_SOURCE_KINDS,
     ...(options.ancestorThreadId ? { ancestorThreadId: threadId(options.ancestorThreadId) } : {}),
   });
+  // A side conversation (a workflow plan, a title, a side question) is temporary and no chat of his: the Claude route
+  // lists it while it lives, and it showed in his sidebar as a chat that could not be archived (11 Nov).
+  result.data = (result.data ?? []).filter((thread: { ephemeral?: unknown }) => thread.ephemeral !== true);
   // The engine's search matches a chat's first message in exact letter case and misses a name given later, so "main" did
   // not find the chat named main once it was past the loaded page. Match names and first messages in any case over the
   // whole list, as the Codex resume picker matches its rows (tui/src/resume_picker.rs, matches_query).
@@ -69,6 +72,7 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
       });
       for (const thread of listed.data ?? [])
         if (
+          thread.ephemeral !== true &&
           !seen.has(thread.id) &&
           `${thread.name ?? ""} ${thread.preview ?? ""} ${(thread.agentNickname as string | undefined) ?? ""}`
             .toLowerCase()

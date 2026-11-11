@@ -417,3 +417,23 @@ test("the auto-review reviewer's own threads are never listed as chats", async (
     client.close();
   }
 });
+
+// 11 Nov: a workflow plan made on a Claude model left its temporary conversation in his sidebar as a chat named "You are
+// the Mother agent, given this goal on a canvas…", which could not be archived. A side conversation is no chat.
+test("a temporary side conversation is never listed as a chat, in the list or in a search", async () => {
+  const { client, threads } = fixture();
+  await client.initialize();
+  threads.set(FORK, {
+    id: FORK,
+    source: "vscode",
+    name: "You are the Mother agent, given this goal on a canvas",
+    ephemeral: true,
+    status: { type: "idle" },
+  });
+  try {
+    for (const options of [{}, { searchTerm: "Mother agent" }, { includeAgentRuns: true }])
+      assert.ok(!(await client.listThreads(options)).data.some(thread => thread.id === FORK), JSON.stringify(options));
+  } finally {
+    client.close();
+  }
+});
