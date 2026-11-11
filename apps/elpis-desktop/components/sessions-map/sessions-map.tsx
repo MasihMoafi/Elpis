@@ -1,15 +1,14 @@
 "use client";
 
-import { Background, BackgroundVariant, Controls, ReactFlow, type Viewport } from "@xyflow/react";
-import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Background, BackgroundVariant, Controls, ReactFlow, useNodesState, type Edge, type Node, type Viewport } from "@xyflow/react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { Switch } from "@/components/ui/switch";
 import { EDGE_TYPES } from "@/components/agents-canvas/edges";
 import { api, type Thread } from "@/lib/api";
-import { layoutSessions, type SessionsGraph } from "@/lib/sessions-map";
+import { keepMeasured, layoutSessions, type MapNode, type SessionsGraph } from "@/lib/sessions-map";
 import { SessionNode } from "./session-node";
 
 const NODE_TYPES = { session: SessionNode };
-const EMPTY: SessionsGraph = { nodes: [], edges: [] };
 /** The map opens zoomed out, to show more of his sessions at once, and zooms out far enough to see them all
  * (11 Nov, Masih: "I like the map to be more zoomed-out, to have that option"); the controls zoom in, out and to fit. */
 const OPEN_ZOOM = 0.7;
@@ -25,18 +24,28 @@ export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpe
   onShowAll: (value: boolean) => void;
   onOpenChat: (id: string) => void;
 }) {
-  const [graph, setGraph] = useState<SessionsGraph>(EMPTY);
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<MapNode>>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const refresh = useRef<() => void>(() => {});
   useEffect(() => {
-    let disposed = false, pending = false, again = false;
+    let disposed = false, pending = false, again = false, shown = "";
+    const show = (value: SessionsGraph) => {
+      setError(""); setLoading(false);
+      // A reading that says the same as the one on screen changes nothing.
+      const reading = JSON.stringify(value);
+      if (reading === shown) return;
+      shown = reading;
+      setNodes(current => keepMeasured<Node<MapNode>>(layoutSessions(value), current));
+      setEdges(value.edges.map(edge => ({ ...edge, id: `${edge.source}:${edge.target}` })));
+    };
     const read = () => {
       // A change that comes while a reading runs is read once more after it, not dropped and not run beside it.
       if (pending) { again = true; return; }
       pending = true;
       void api<SessionsGraph>(`/sessions-map${showAll ? "?all=1" : ""}`).then(value => {
-        if (!disposed) { setGraph(value); setError(""); setLoading(false); }
+        if (!disposed) show(value);
       }, reason => {
         if (!disposed) { setError(String(reason)); setLoading(false); }
       }).finally(() => {
@@ -48,11 +57,9 @@ export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpe
     read();
     const timer = setInterval(read, REFRESH_MS);
     return () => { disposed = true; clearInterval(timer); };
-  }, [showAll]);
+  }, [showAll, setNodes]);
   // A change in his chats refreshes the map without restarting a reading that is under way.
   useEffect(() => { refresh.current(); }, [threads]);
-  const nodes = useMemo(() => layoutSessions(graph), [graph]);
-  const edges = useMemo(() => graph.edges.map(edge => ({ ...edge, id: `${edge.source}:${edge.target}` })), [graph]);
   return (
     <section className="flex min-h-0 flex-1 flex-col" aria-label="Sessions map">
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
@@ -65,6 +72,8 @@ export function SessionsMap({ threads, dark, viewport, showAll, onShowAll, onOpe
         ) : (
           <div className="canvas-board flex-1 min-h-0">
             <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES}
+              // The map keeps what it measures of its cards, and nothing else: a card is not moved or selected.
+              onNodesChange={changes => onNodesChange(changes.filter(change => change.type === "dimensions"))}
               defaultViewport={viewport.current ?? { x: 48, y: 48, zoom: OPEN_ZOOM }}
               onMoveEnd={(_, next) => { viewport.current = next; }}
               minZoom={MIN_ZOOM} maxZoom={2} nodesDraggable={false} nodesConnectable={false}

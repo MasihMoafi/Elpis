@@ -21,7 +21,8 @@ test('Transcribe images comes first, asks for its folder, keeps all it writes th
       window.elpisDesktop.openFile = async target => { (window as TestWindow).__opened.push(target); }; });
     const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
     await pattern.click();
-    assert.equal((await f.page.getByRole('option').first().innerText()).trim(), 'Transcribe images', 'the ready-made workflow is on top');
+    assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 2).map((text: string) => text.trim()),
+      ['Auto · Elpis chooses', 'Transcribe images'], 'Auto leads, then the ready-made workflow');
     const tall = await f.page.getByRole('option').evaluateAll((options: Element[]) => options.map(option => option.firstElementChild ?? option)
       .filter(label => label.getBoundingClientRect().height > 2.4 * parseFloat(getComputedStyle(label).fontSize)).map(label => label.textContent));
     assert.deepEqual(tall, [], 'every label keeps one line');

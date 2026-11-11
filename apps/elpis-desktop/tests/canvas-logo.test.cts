@@ -18,7 +18,7 @@ test('Logo is one Sol agent in Fast mode that draws three directions and traces 
     const pattern = f.canvas.getByRole('combobox', { name: 'Workflow pattern', exact: true });
     await pattern.click();
     await f.page.getByRole('option', { name: 'Transcribe images', exact: true }).waitFor();
-    assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 3).map((text: string) => text.trim()), ['Transcribe images', 'Translate', 'Logo'], 'the ready-made workflows are on top');
+    assert.deepEqual((await f.page.getByRole('option').allInnerTexts()).slice(0, 4).map((text: string) => text.trim()), ['Auto · Elpis chooses', 'Transcribe images', 'Translate', 'Logo'], 'Auto leads, then the ready-made workflows are on top');
     await f.page.keyboard.press('Escape');
     await chooseOption(pattern, 'logo');
     await f.page.waitForFunction(() => JSON.parse(localStorage.getItem('elpis-workflow-draft-v1') ?? 'null')?.result === 'logo/1.svg');

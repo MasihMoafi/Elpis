@@ -58,9 +58,23 @@ for (const colorScheme of ['light', 'dark']) test(`sessions map navigation and r
     await page.waitForTimeout(350);
     assert.ok((await scale()) > out, 'zoom in comes back');
     if (colorScheme === 'light') {
+      // A re-reading never hides the cards, not for a moment: a hidden card that misses its re-measuring stays
+      // hidden (GitHub, 11 Nov: "Ticket worker" was hidden for 6 s after two readings landed together).
+      await page.evaluate(() => {
+        const seen = window as unknown as { hiddenCards: number };
+        seen.hiddenCards = 0;
+        new MutationObserver(records => {
+          for (const { target } of records) {
+            const card = target as HTMLElement;
+            if (card.classList.contains('react-flow__node') && card.style.visibility === 'hidden') seen.hiddenCards++;
+          }
+        }).observe(document.querySelector('.react-flow__viewport')!, { subtree: true, attributes: true, attributeFilter: ['style'] });
+      });
       currentGraph = { ...graph, nodes: graph.nodes.map(node =>
         node.id === 'thread:chat-b' ? { ...node, state: 'failed' } : node) };
       await map.locator('[data-id="thread:chat-b"]').getByRole('img', { name: 'failed' }).waitFor({ timeout: 9000 });
+      assert.equal(await page.evaluate(() => (window as unknown as { hiddenCards: number }).hiddenCards), 0,
+        'a re-reading does not hide the cards');
     }
     const pane = map.locator('.react-flow__pane');
     const box = await pane.boundingBox(); assert.ok(box);

@@ -58,6 +58,17 @@ The questions only he can answer:
 2. Should a worker's chat be visible at all? The super-agent hides workers; he said on 11 Nov that visible is "okay".
 3. How far may the router act without asking: archive garbage on its own, or always ping first (his 11 Nov sketch)?
 
+**His answer, 11 Nov:** "The smart-pruning too I think, dynamic workflows, love-spot, though none has been rigorously
+tested and proven to be positive." So three more candidates, each unproven. What would prove each, in one test:
+
+| Candidate | The test that would settle it |
+| --- | --- |
+| Smart Prune | The same ten long tasks with pruning on and off: tokens spent, and whether each result still passes its check. Positive if the checks hold and tokens fall. |
+| Dynamic workflows | The same five jobs done by one chat and by a workflow the Mother designs: time, cost, and whether the result passes its check. Positive if a workflow wins on at least one without losing the check. |
+| Love Spot | His own use over two weeks: days opened and what he made there. It is his plan to make it a separate app, so the measure is use, not a benchmark. |
+
+None of the three tests has been run.
+
 ## 3. Each feature: evidence and verdict
 
 | Feature | Evidence of use | Verdict |
@@ -74,7 +85,7 @@ The questions only he can answer:
 | Rewind | Last used 3 Nov | Keep. |
 | Memories | Last changed 4 Nov | No evidence it changes answers. Ask. |
 | Handoffs | Never used | Cut. |
-| Context ledger, Smart Prune | Folder untouched since July | The thesis features; the least used. Decide with question 1. |
+| Context ledger, Smart Prune | Folder untouched since July | The thesis features; the least used. He counts Smart Prune as a candidate (11 Nov); unproven until the test in section 2 is run. |
 | Lab, Observability, Customize | No evidence either way | Observability overlaps the Map: merge or cut. |
 
 ## 4. Workflows: what I would do
@@ -82,7 +93,7 @@ The questions only he can answer:
 He said: "it's still not easy to set a workflow, maybe we should default it to a mother agent? Just tell it three
 subagents and what have you, but the graph itself should be a source of visibility."
 
-I agree, and most of it exists already under "Auto · Elpis chooses":
+I agree, and most of it exists already under "Auto · Elpis chooses" (he approved this section on 11 Nov: "1) yes"):
 - **One way in:** a sentence to the Mother ("three agents: one reads, one writes, one checks"). Auto is now the first
   option; the other patterns belong behind "More".
 - **The graph is for watching, then for changing.** During a run it shows who works, who waits and who failed. Editing

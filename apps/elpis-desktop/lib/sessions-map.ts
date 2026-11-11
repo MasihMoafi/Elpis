@@ -65,3 +65,18 @@ export function layoutSessions(graph: SessionsGraph) {
     );
   return [...trees, ...singles];
 }
+
+/**
+ * The cards of a new reading, each keeping the size the map measured for it. A card laid out again without its size
+ * is hidden until it is measured again, and stays hidden when a second reading lands before that.
+ */
+export function keepMeasured<Card extends { id: string; measured?: { width?: number; height?: number } }>(
+  next: Card[],
+  current: Card[],
+): Card[] {
+  const sizes = new Map(current.map(card => [card.id, card.measured]));
+  return next.map(card => {
+    const measured = sizes.get(card.id);
+    return measured ? { ...card, measured } : card;
+  });
+}
