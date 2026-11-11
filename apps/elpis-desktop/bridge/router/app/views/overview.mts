@@ -11,7 +11,7 @@ import { ticketRow, type ExecutorLoad } from "./tickets.mts";
 import { preview } from "./text.mts";
 
 /** Threads whose latest decision since `since` is an undismissed `unavailable` eval and that are neither evaluating nor queued. */
-function unjudged(store: Store, since: string): { thread: Thread; decision: Decision }[] {
+export function unjudged(store: Store, since: string): { thread: Thread; decision: Decision }[] {
   const seen = new Set<string>();
   const queue = { store, owners: ownersOf(store) };
   return store.read

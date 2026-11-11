@@ -43,7 +43,8 @@ import type { Chats } from "./chats.mts";
 import { ChatWatch, watchChats } from "./watch.mts";
 import { executorTools, type ExecutorToolsHost } from "./app/tools/executor.mts";
 import type { ResourceHost } from "./app/resources.mts";
-import { evalsHealth } from "./app/views/overview.mts";
+import { evalsHealth, unjudged } from "./app/views/overview.mts";
+import { reasonText } from "./core/reasons.mts";
 import type { HttpHost } from "./app/http.mts";
 import type { AppContext, ModelCatalog } from "./app/host.mts";
 import { KV } from "./sources/kv.mts";
@@ -85,6 +86,8 @@ export class MotherApp implements SourceHost {
   private closing = false;
   /** Tickets whose result is already in his chat, so the host and the main Session never both send it. */
   private readonly shown = new Set<string>();
+  /** The host's own lines already written in his chat, by id. */
+  private readonly said = new Set<string>();
   private watch: ChatWatch | undefined;
   private stopped: Promise<void> | undefined;
   private quiet = 0;
@@ -284,6 +287,7 @@ export class MotherApp implements SourceHost {
           evaluateDue: () => {
             this.engine.evaluateDue();
             evals.set(evalsHealth(store));
+            this.sayUndecided();
           },
         },
         effects: workers.effects,
@@ -335,12 +339,58 @@ export class MotherApp implements SourceHost {
   private paused(): boolean {
     return this.closing || this.store.settings().paused;
   }
-  /** He pressed Stop in the Elpis chat: every job of his that is running stops. Returns how many there were. */
+  /**
+   * He pressed Stop in the Elpis chat: every job of his that is running stops, and so does every message of his that
+   * still awaits its decision, which is said in his chat. Returns how many of both there were. Before, Stop did
+   * nothing while the router was only deciding, and the Working mark stayed.
+   */
   stopChatWork(): number {
     const running = this.store.tickets.open().filter(ticket => chatTicket(ticket) && !!runningAssignment(ticket));
     for (const ticket of running) this.engine.stopTicket(ticket.id);
-    if (running.length) this.passes.request();
-    return running.length;
+    const waiting = this.store.threads
+      .active()
+      .filter(thread => thread.ref.source === "elpis-chat")
+      .flatMap(thread => [...(thread.evaluating?.triggerIds ?? []), ...thread.pending]);
+    const stopped = [...new Set(waiting)].filter(id => {
+      try {
+        this.engine.decide(id, { kind: "ignore", reason: "He pressed Stop" });
+        return true;
+      } catch {
+        // A job already has this message, or it was decided in the meantime.
+        return false;
+      }
+    });
+    for (const id of stopped) this.say(`stopped:${id}`, `Stopped: I will not act on ${this.quoted(id)}.`);
+    if (running.length || stopped.length) this.passes.request();
+    return running.length + stopped.length;
+  }
+  /** His message, by its Trigger, as a short quotation. */
+  private quoted(triggerId: string): string {
+    const text = (this.store.triggers.get(triggerId)?.text ?? "").replace(/\s+/g, " ").trim();
+    return text ? `\u201c${text.length > 80 ? `${text.slice(0, 80)}…` : text}\u201d` : "your message";
+  }
+  /** One line from the host in his chat, written once for its id. */
+  private say(id: string, text: string): void {
+    if (this.said.has(id)) return;
+    this.said.add(id);
+    void this.options.transport.appendAssistant(this.options.threadId, { id, text }).catch(() => this.said.delete(id));
+  }
+  /**
+   * A message of his that got no decision (the model did not answer in time, or failed) is said in his chat in one
+   * plain line, once: nothing waits in silence (R9). Before, it showed only as a problem in the settings panel.
+   */
+  private sayUndecided(): void {
+    const since = new Date(Date.now() - 3_600_000).toISOString();
+    for (const { thread, decision } of unjudged(this.store, since)) {
+      if (thread.ref.source !== "elpis-chat") continue;
+      const why = decision.reason.some(reason => reason.code === "timeout")
+        ? "the model did not answer in time"
+        : reasonText(decision.reason);
+      this.say(
+        `undecided:${decision.id}`,
+        `I could not act on ${this.quoted(decision.triggerIds[0] ?? "")}: ${why}. Send it again, or choose another model for Elpis in the message box.`,
+      );
+    }
   }
   /** Whether the router is at work for him: a message of his awaits its decision, or a job he asked for is running. */
   working(): boolean {

@@ -529,3 +529,63 @@ test("what the Elpis chat does not do is refused in words, and a request it has 
   assert.match(elpisChatRefusal("rewind") ?? "", /Edit a message to send it again/);
   assert.match(elpisChatRefusal("something-new") ?? "", /does not take this/);
 });
+
+/** His message as the router's main Session received it: the Session's id and the candidate's trigger. */
+async function candidateOf(h: ReturnType<typeof fixture>) {
+  await waitFor(() => assert.ok([...h.workers.threads.values()][0]?.turns.length));
+  const main = [...h.workers.threads.keys()][0]!;
+  const input = h.workers.threads.get(main)!.turns[0]!.items[0] as { content: { text: string }[] };
+  const message = input.content[0]!.text;
+  return { main, trigger: (JSON.parse(message.slice(message.indexOf("\n") + 1)) as { trigger_id: string }).trigger_id };
+}
+const replies = async (h: ReturnType<typeof fixture>) =>
+  (await h.client.readThread(CHAT)).data
+    .filter(entry => entry.item.type === "agentMessage")
+    .map(entry => String((entry.item as { text?: string }).text));
+
+// R9, 11 Nov: "nothing waits silently". A message the router's model never decided (no answer in time, or an error)
+// showed only as a problem in the settings panel: his chat stayed on Working and then went quiet.
+test("a message of his that got no decision is said in his chat in one plain line, once", async () => {
+  const h = fixture();
+  const mother = h.create();
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    await mother.send(CHAT, { text: "Fix the failing login test in the desktop app" });
+    const { trigger } = await candidateOf(h);
+    const app = (mother as unknown as { app: { engine: { decide(id: string, outcome: object): unknown }; pump(): Promise<void> } }).app;
+    app.engine.decide(trigger, { kind: "unavailable", reason: { code: "timeout" } });
+    await app.pump();
+    await waitFor(async () => assert.equal((await replies(h)).length, 1));
+    await app.pump();
+    assert.deepEqual(await replies(h), [
+      "I could not act on \u201cFix the failing login test in the desktop app\u201d: the model did not answer in time. " +
+        "Send it again, or choose another model for Elpis in the message box.",
+    ]);
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});
+
+test("Stop also stops a message that still awaits its decision, says so, and the Working mark ends", async () => {
+  const h = fixture();
+  const mother = h.create();
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    await mother.send(CHAT, { text: "Count the lines of readme.md" });
+    await candidateOf(h);
+    const app = (mother as unknown as { app: { working(): boolean } }).app;
+    assert.equal(app.working(), true, "his message awaits its decision");
+    assert.deepEqual(await mother.interrupt(), { interrupted: true });
+    assert.equal(app.working(), false, "nothing is left to wait for");
+    await waitFor(async () => assert.deepEqual(await replies(h), ["Stopped: I will not act on \u201cCount the lines of readme.md\u201d."]));
+    assert.deepEqual(await mother.interrupt(), { interrupted: false }, "a second Stop has nothing to stop");
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});
