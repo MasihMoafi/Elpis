@@ -10,7 +10,7 @@
 
 <p align="center">A coding agent should see only what you chose to show it, and a team of agents should touch only what each was given. Elpis is an agent harness for Linux, built on OpenAI's Codex, for people who run coding agents: a terminal app and a desktop app where you decide what every agent knows, design teams of agents on a board, and watch every step they take.</p>
 
-<p align="center">Alpha · v0.5.1 · Linux x86_64 · in daily use by its author</p>
+<p align="center">Alpha · v0.5.2 · Linux x86_64 · in daily use by its author</p>
 
 <p align="center"><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> · <a href="https://elpis.masihmoafi.com">Website</a> · <a href="docs/GUIDE.md">Technical guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">License</a></p>
 
@@ -27,13 +27,13 @@ Then run `elpis-app` for the desktop app or `elpis` for the terminal app. Sign i
 <details>
 <summary>Other ways to install</summary>
 
-From the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1); every file has a SHA-256 checksum:
+From the [v0.5.2 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.2); every file has a SHA-256 checksum:
 
-- **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb`
-- **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.1-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
+- **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.2_amd64.deb ./elpis-desktop_0.5.2_amd64.deb`
+- **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.2-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
 - **Arch, Omarchy (native package):** `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`
-- **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash`
-- **Terminal app with npm:** `npm install -g elpis-cli`, then `elpis`. The first run downloads the v0.5.1 release and checks its SHA-256.
+- **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.2/scripts/install-elpis.sh | bash`
+- **Terminal app with npm:** `npm install -g elpis-cli`, then `elpis`. The first run downloads the v0.5.2 release and checks its SHA-256.
 
 Both apps share one engine and one state folder, `~/.elpis-next`.
 </details>

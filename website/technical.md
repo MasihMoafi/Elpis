@@ -65,12 +65,12 @@ dissolve, and coalescing responses. These changes are newer than the September 5
 
 ## Quickstart
 
-Linux x86_64. Download from the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.1):
+Linux x86_64. Download from the [v0.5.2 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.2):
 
-- **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.1_amd64.deb ./elpis-desktop_0.5.1_amd64.deb`, then `elpis-app`.
-- **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.1-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
+- **Ubuntu, Debian:** `sudo apt install ./elpis_0.5.2_amd64.deb ./elpis-desktop_0.5.2_amd64.deb`, then `elpis-app`.
+- **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.2-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
 - **Arch, Omarchy (native package):** `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`.
-- **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash` (read it first).
+- **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.2/scripts/install-elpis.sh | bash` (read it first).
 
 Both apps share one engine and one state folder. Sign in with ChatGPT or Claude, or set up a provider. Claude models run through your own [Claude Code](https://code.claude.com) install.
 
