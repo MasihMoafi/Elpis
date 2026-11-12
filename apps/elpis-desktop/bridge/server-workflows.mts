@@ -26,18 +26,55 @@ const CHAT_CHANGES = new Set([
   "turn/completed",
   "turn/aborted",
 ]);
-type ChatList = { at: number; changed: boolean; threads?: Promise<MapThread[]> };
+type LiveChat = MapThread & { worked?: boolean };
+type ChatList = { at: number; changed: boolean; threads?: Promise<MapThread[]>; live: Map<string, LiveChat> };
+type ChatParams = { threadId?: unknown; thread?: MapThread; status?: MapThread["status"]; threadName?: string };
+type ChatEvent = { type?: string; data?: { method?: string; params?: ChatParams } };
 const chatLists = new WeakMap<object, ChatList>();
+/** At most this many chats heard starting are kept while the list does not hold them. */
+const LIVE_KEPT = 200;
 
-function chatList(client: import("./server-http.mts").ServerState["client"]): Promise<MapThread[]> {
-  const list: ChatList = chatLists.get(client) ?? { at: 0, changed: true };
+/** W2 (12 Nov, his real app): the engine lists a chat only once its first turn has written its record (its list leaves
+ * out a chat with no preview), so a new chat was off the Map for its whole first turn. The bridge hears every chat
+ * start and change state; the Map keeps those it has heard work until the list holds them. */
+function hear(live: Map<string, LiveChat>, method: string | undefined, params: ChatParams | undefined) {
+  const id = params?.thread?.id ?? params?.threadId;
+  if (typeof id !== "string") return;
+  if (method === "thread/started") {
+    if (!live.has(id)) live.set(id, { ...params!.thread!, id });
+    if (live.size > LIVE_KEPT) live.delete(live.keys().next().value!);
+    return;
+  }
+  const chat = live.get(id);
+  if (!chat) return;
+  if (method === "thread/deleted" || method === "thread/archived" || method === "thread/closed") live.delete(id);
+  else if (method === "thread/name/updated") chat.name = params?.threadName ?? null;
+  else if (method === "turn/started") Object.assign(chat, { status: { type: "active" }, worked: true });
+  else if (method === "turn/completed" || method === "turn/aborted") chat.status = { type: "idle" };
+  else if (method === "thread/status/changed" && params?.status) {
+    chat.status = params.status;
+    if (params.status.type === "active") chat.worked = true;
+  }
+}
+
+async function chatList(client: import("./server-http.mts").ServerState["client"]): Promise<MapThread[]> {
+  const list: ChatList = chatLists.get(client) ?? { at: 0, changed: true, live: new Map() };
   if (!chatLists.has(client)) {
     chatLists.set(client, list);
-    client.on("event", (value: { type?: string; data?: { method?: string } }) => {
+    client.on("event", (value: ChatEvent) => {
       if (value.type === "connection" || (value.type === "message" && CHAT_CHANGES.has(value.data?.method ?? "")))
         list.changed = true;
+      if (value.type === "message") hear(list.live, value.data?.method, value.data?.params);
     });
   }
+  const threads = await listedChats(client, list);
+  for (const thread of threads) list.live.delete(thread.id);
+  // A chat created and never given a message does not have to show; one that has worked shows its live state.
+  const live = [...list.live.values()].filter(chat => chat.worked).map(({ worked: _, ...chat }) => chat);
+  return [...threads, ...live];
+}
+
+function listedChats(client: import("./server-http.mts").ServerState["client"], list: ChatList): Promise<MapThread[]> {
   if (list.threads && !list.changed && Date.now() - list.at < CHATS_KEPT_MS) return list.threads;
   const threads = pageChats(client);
   Object.assign(list, { at: Date.now(), changed: false, threads });

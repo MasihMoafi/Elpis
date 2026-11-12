@@ -100,3 +100,56 @@ test("the open Map pages the chat list once in 15 s unless a chat changed", asyn
     mock.timers.reset();
   }
 });
+
+// W2 (12 Nov, his real app): the engine lists a chat only once its first turn has written its record, so a brand-new
+// chat was missing from the Map while it worked and appeared 14 s later as idle. The bridge hears it start and work.
+test("a new chat the list does not hold yet is on the Map with its live state, and nothing is paged for it", async () => {
+  mock.timers.enable({ apis: ["Date"], now: 2_000_000 });
+  try {
+    let reads = 0,
+      recorded = false;
+    const client = Object.assign(new EventEmitter(), {
+      listThreads: async () => {
+        reads++;
+        const old = [{ id: "router" }, { id: "chat", name: "Older chat" }];
+        return { data: recorded ? [...old, { id: "plain", name: "Plain", status: { type: "idle" } },
+          { id: "worker", status: { type: "idle" } }] : old, nextCursor: null };
+      },
+      workflowHistory: async () => ({ data: [] }),
+    });
+    const message = (method: string, params: object) => client.emit("event", { type: "message", data: { method, params } });
+    const node = async (threadId: string, query = "") =>
+      (await mapOf(client, query)).nodes.find((item: { threadId?: string }) => item.threadId === threadId);
+    assert.equal(await node("plain", "?all=1"), undefined);
+
+    // Created, never given a message: it does not have to appear, and does not.
+    message("thread/started", { thread: { id: "empty", status: { type: "idle" } } });
+    for (const id of ["plain", "worker"]) {
+      message("thread/started", { thread: { id, name: id === "plain" ? "Plain" : null, status: { type: "idle" } } });
+      message("thread/status/changed", { threadId: id, status: { type: "active", activeFlags: [] } });
+      message("turn/started", { threadId: id, turn: { id: "t1", status: "inProgress" } });
+    }
+    mock.timers.tick(2_000);
+    assert.equal((await node("plain", "?all=1"))?.state, "working", "a plain chat shows working in Show all chats");
+    assert.equal((await node("worker"))?.state, "working", "the router's new worker shows working by default");
+    assert.equal((await node("worker"))?.title, "Ticket");
+    assert.equal(await node("empty", "?all=1"), undefined, "a chat that never got a message stays off the Map");
+    assert.equal(await node("plain"), undefined, "the default view still leaves plain chats out");
+    const pagedWhileWorking = reads;
+
+    // The turn ends before the engine's list holds the chat: its end state shows.
+    message("turn/completed", { threadId: "plain", turn: { id: "t1", status: "failed" } });
+    message("thread/status/changed", { threadId: "plain", status: { type: "systemError" } });
+    mock.timers.tick(2_000);
+    assert.equal((await node("plain", "?all=1"))?.state, "failed");
+    // Then the list holds both; the listed record wins.
+    recorded = true;
+    message("thread/status/changed", { threadId: "worker", status: { type: "idle" } });
+    mock.timers.tick(2_000);
+    assert.equal((await node("plain", "?all=1"))?.state, "idle");
+    assert.equal((await node("worker"))?.state, "idle");
+    assert(reads <= pagedWhileWorking + 4, "only the events that already re-page the list cause reads");
+  } finally {
+    mock.timers.reset();
+  }
+});
