@@ -35,7 +35,7 @@ assert(binaryArg && path.isAbsolute(binaryArg), 'provide the absolute path of th
 const binary: string = binaryArg;
 const tools = path.resolve(__dirname, '../tools/elpis-claude');
 const runtimePath = path.join(tools, 'shared-runtime.mts');
-const runtimeFiles = ['shared-runtime.mts', 'runtime-identity.mts', 'runtime-transport.mts', 'runtime-process.mts', 'log-redaction.mts'];
+const runtimeFiles = ['shared-runtime.mts', 'runtime-identity.mts', 'runtime-transport.mts', 'runtime-process.mts', 'log-redaction.mts', 'proxy-env.mts'];
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'esr-'));
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const checks: string[] = [];
