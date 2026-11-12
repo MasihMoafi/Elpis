@@ -6,6 +6,7 @@ import path from "node:path";
 import { RequestError } from "@agentclientprotocol/sdk";
 import { redactSecrets } from "./log-redaction.mts";
 import { runtimeDir } from "./shared-runtime.mts";
+import { directEnv } from "./proxy-env.mts";
 import WebSocket from "ws";
 export function bridgeEndpoint() {
     const explicit = process.env.ELPIS_APP_BRIDGE_SOCKET || process.env.ELPIS_BRIDGE_SOCKET;
@@ -73,7 +74,7 @@ export class Engine {
             return;
         }
         this.opened = Promise.resolve();
-        this.child = spawn(bin, ["app-server"], { stdio: ["pipe", "pipe", "pipe"] });
+        this.child = spawn(bin, ["app-server"], { env: directEnv(), stdio: ["pipe", "pipe", "pipe"] });
         this.child.stdin.on("error", () => { });
         this.child.stderr.on("data", (d) => { this.tail = (this.tail + d).slice(-2000); });
         let buffer = "";

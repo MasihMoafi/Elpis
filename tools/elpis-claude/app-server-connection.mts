@@ -4,6 +4,7 @@
 import { spawn } from "node:child_process";
 import WebSocket from "ws";
 import { wireId,wireObject } from "./bridge-wire.mts";
+import { directEnv } from "./proxy-env.mts";
 
 type RpcMessage = { id?: string | number; method?: string; params?: unknown; result?: unknown; error?: unknown };
 type ConnectionOptions = { url?: string | (() => string | undefined) | undefined; engineBin?: string | undefined; name?: string; version?: string };
@@ -58,7 +59,7 @@ export function connectAppServer({ url, engineBin, name = "elpis-agents", versio
     send = (o) => { if (ws.readyState === 1) ws.send(JSON.stringify(o)); };
     close = () => ws.close();
   } else {
-    const proc = spawn(engineBin ?? `${process.env.HOME}/.local/bin/elpis`, ["app-server"], { stdio: ["pipe", "pipe", "ignore"] });
+    const proc = spawn(engineBin ?? `${process.env.HOME}/.local/bin/elpis`, ["app-server"], { env: directEnv(), stdio: ["pipe", "pipe", "ignore"] });
     let buf = "";
     proc.stdout.on("data", (chunk) => {
       buf += chunk;
