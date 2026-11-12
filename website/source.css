@@ -397,6 +397,8 @@ figure img { display: block; width: 100%; height: auto; }
 .wf-log { display:grid; align-content:end; gap:2px; height:5.6em; margin:0; padding:.55rem .95rem; overflow:hidden; border-top:1px solid var(--edge); list-style:none; font:500 10.5px/1.25 "SFMono-Regular","Cascadia Mono",monospace; color:var(--muted); }
 .wf-log li { padding-left:.5rem; border-left:2px solid var(--color-success); }
 .wf-log li:not([data-shown]) { display:none; }
+/* Her ink and the user's ink on the Love Spot board. */
+.ls-window { --ls-her:#d34fa8; --ls-you:#e5484d; }
 .ls-board { position:relative; flex:1; background-image:radial-gradient(circle,color-mix(in oklab,var(--color-base-content) 10%,transparent) 1px,transparent 1.2px); background-size:20px 20px; }
 .ls-shot { position:absolute; left:40%; top:36%; width:46%; height:52%; display:grid; align-content:start; gap:7%; padding:3% 4%; border:1px solid var(--edge); background:var(--surface); box-shadow:0 18px 40px -22px #000b; transform:rotate(-1.5deg); }
 .ls-shot-bar { height:9%; margin:-3% -4% 2%; background:color-mix(in oklab,var(--color-base-content) 9%,transparent); }
@@ -406,18 +408,52 @@ figure img { display: block; width: 100%; height: auto; }
 .ls-shot-button { justify-self:end; padding:2% 5%; background:var(--color-warning); color:#14110a; font-weight:700; font-size:10px; }
 .ls-ink { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
 .ls-ink path { fill:none; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; vector-effect:non-scaling-stroke; }
-.ls-you { stroke:#e5484d; }
-.ls-her { stroke:#d34fa8; }
+.ls-you { stroke:var(--ls-you); }
+.ls-her { stroke:var(--ls-her); }
 .ls-matilda { position:absolute; right:5%; top:6%; width:15%; aspect-ratio:1; border-radius:50%; box-shadow:0 10px 30px -12px #000c; transition:box-shadow .3s, transform .3s; }
-.ls-matilda[data-state="thinking"] { box-shadow:0 0 0 3px #d34fa8, 0 0 30px -4px #d34fa8; transform:scale(1.05); }
+.ls-matilda[data-state="thinking"] { box-shadow:0 0 0 3px var(--ls-her), 0 0 30px -4px var(--ls-her); transform:scale(1.05); }
 .ls-chat { position:absolute; left:4%; top:8%; width:34%; display:grid; gap:.5rem; font-family:Georgia,"Times New Roman",serif; }
 .ls-chat p { margin:0; padding:.5rem .7rem; border:1px solid var(--edge); background:var(--surface); font-size:12.5px; line-height:1.4; }
 .ls-you-msg { justify-self:end; max-width:90%; }
-.ls-her-msg { min-height:3.2em; border-color:color-mix(in oklab,#d34fa8 50%,transparent); }
+.ls-her-msg { min-height:3.2em; border-color:color-mix(in oklab,var(--ls-her) 50%,transparent); }
 .ls-input { display:flex; align-items:center; gap:.4rem; padding:.6rem .7rem; border:1px solid var(--edge); background:var(--surface); color:var(--muted); font-size:13px; clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px); }
 .ls-input [data-type] { color:var(--ink); }
 .ls-input [data-off]:not([data-shown]) { display:none; }
 .ls-send { margin-left:auto; color:var(--muted); }
+#love-spot.scene { height:640svh; }
+/* The cast: her portrait turns through every character while the strip fills in. */
+.ls-face { position:absolute; right:5%; top:6%; width:15%; aspect-ratio:1; border-radius:50%; box-shadow:0 10px 30px -12px #000c; }
+.ls-cast { position:absolute; left:4%; right:4%; bottom:4%; z-index:2; padding:.7rem .8rem; border:1px solid var(--edge); background:var(--surface); }
+.ls-cast p { margin:0 0 .5rem; color:var(--ink); font-size:12.5px; }
+.ls-cast ol { display:grid; grid-template-columns:repeat(12,minmax(0,1fr)); gap:.35rem; margin:0; padding:0; list-style:none; }
+.ls-cast li { display:grid; justify-items:center; gap:.2rem; min-width:0; opacity:.25; transition:opacity .25s; }
+.ls-cast li[data-active] { opacity:1; }
+.ls-cast img { width:100%; max-width:40px; aspect-ratio:1; border-radius:50%; }
+.ls-cast span { max-width:100%; overflow:hidden; color:var(--muted); font-size:10px; white-space:nowrap; text-overflow:ellipsis; }
+/* She speaks first: the sidebar nudge from the desktop app, beside her portrait. */
+.ls-nudge { position:absolute; right:22%; top:6%; z-index:2; width:min(36%,300px); padding:.7rem .8rem; border:1px solid var(--edge); background:var(--surface); box-shadow:0 18px 40px -22px #000b; }
+.ls-nudge p { margin:0 0 .6rem; min-height:2.8em; color:var(--ink); font-size:12.5px; line-height:1.4; }
+.ls-nudge div { display:flex; justify-content:flex-end; gap:.4rem; font-size:12px; }
+.ls-nudge div span { padding:.25rem .6rem; border:1px solid var(--edge); color:var(--muted); }
+.ls-nudge-tidy[data-active] { border-color:var(--ink); background:var(--ink); color:var(--color-base-100); }
+/* A live voice call: her face, a voice level, and the call's controls. */
+.ls-call { position:absolute; left:4%; right:4%; bottom:4%; z-index:2; display:flex; align-items:center; gap:.7rem; padding:.55rem .7rem; border:1px solid color-mix(in oklab,var(--ls-her) 55%,transparent); background:var(--surface); font-size:12px; }
+.ls-call img { width:32px; height:32px; border-radius:50%; }
+.ls-call div { display:grid; line-height:1.2; } .ls-call div span { color:var(--muted); }
+.ls-call-level { display:flex; align-items:center; gap:3px; height:18px; margin-right:auto; }
+.ls-call-level i { width:3px; height:30%; border-radius:2px; background:var(--ls-her); animation:ls-level 1s ease-in-out infinite; }
+.ls-call-level i:nth-child(2) { animation-delay:-.2s; } .ls-call-level i:nth-child(3) { animation-delay:-.4s; } .ls-call-level i:nth-child(4) { animation-delay:-.6s; } .ls-call-level i:nth-child(5) { animation-delay:-.8s; }
+@keyframes ls-level { 50% { height:100%; } }
+@media (prefers-reduced-motion: reduce) { .ls-call-level i { animation:none; height:60%; } }
+.ls-call-button { padding:.25rem .55rem; border:1px solid var(--edge); color:var(--muted); }
+.ls-call-end { border-color:color-mix(in oklab,var(--ls-you) 60%,transparent); color:var(--ls-you); }
+.ls-matilda[data-state="speaking"] { box-shadow:0 0 0 3px var(--ls-her), 0 0 30px -4px var(--ls-her); }
+@media (max-width: 900px) {
+  .ls-cast ol { grid-template-columns:repeat(6,minmax(0,1fr)); }
+  .ls-nudge { right:4%; top:30%; width:auto; left:4%; }
+  .ls-call { gap:.4rem; padding:.45rem .5rem; }
+  .ls-call-button { padding:.2rem .4rem; font-size:11px; }
+}
 @media (max-width: 900px) {
   .scene { height:300svh; }
   .scene-stage { grid-template-columns:1fr; align-content:center; gap:1rem; padding-block:1rem; }
