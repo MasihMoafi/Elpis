@@ -7,6 +7,9 @@
 /* design:start: generated from ~/Desktop/p/skills/web-dev/design/design.json. Change a value with `design set`, not here. */
 :root {
   --spacing: 0.25rem;
+  --control-height-sm: 2rem;
+  --control-height: 2.25rem;
+  --control-height-lg: 2.5rem;
 }
 /* design:end */
 
@@ -83,9 +86,10 @@
 
 /* Shared inner spacing for text-bearing surfaces. */
 @utility card-body { padding: clamp(24px, 2.5vw, 32px); gap: 14px; }
-@utility btn { min-height: 44px; height: auto; padding: 12px 22px; }
-/* An icon button keeps the 44px height of its row: the block padding above would make it 46px. */
-@utility btn-square { padding-block: 0; }
+/* Buttons take the shared shadcn heights from design.json: lg by default, sm for btn-sm. */
+@utility btn { min-height: var(--control-height-lg); height: var(--control-height-lg); padding: 0 22px; }
+@utility btn-sm { min-height: var(--control-height-sm); height: var(--control-height-sm); padding-inline: 12px; }
+@utility btn-square { padding: 0; width: auto; aspect-ratio: 1; }
 
 .install-terminal { padding: 76px 0 24px; }
 .install-terminal::before { position: absolute; top: 28px; left: 28px; margin: 0; }
@@ -364,7 +368,7 @@ figure img { display: block; width: 100%; height: auto; }
 .scene-bar strong { color:var(--ink); }
 .scene-meta { margin-left:auto; letter-spacing:.04em; }
 .wf-view { margin-left:auto; flex:none; letter-spacing:normal; text-transform:none; }
-.wf-view .btn { min-height:1.6rem; height:1.6rem; padding-inline:.45rem; font:600 .68rem/1 Inter,ui-sans-serif,system-ui,sans-serif; color:var(--muted); }
+.wf-view .btn { min-height:var(--control-height-sm); height:var(--control-height-sm); padding-inline:.6rem; font:600 .68rem/1 Inter,ui-sans-serif,system-ui,sans-serif; color:var(--muted); }
 .wf-view .btn[aria-pressed="true"] { background:var(--surface); color:var(--ink); box-shadow:0 0 0 1px var(--edge); }
 .scene [data-on], .scene [data-off] { transition:opacity .35s ease, transform .35s ease; }
 .scene [data-on]:not([data-shown]), .scene [data-off]:not([data-shown]) { opacity:0; }
