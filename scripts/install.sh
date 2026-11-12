@@ -3,7 +3,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/main/scripts/install.sh | bash
 # Ubuntu and Debian get the two .deb packages through apt (asks for your password). Every other Linux gets the AppImage
 # in ~/.local/lib/elpis, with `elpis-app` and `elpis` in ~/.local/bin and a menu entry. Every file's SHA-256 is checked.
-#   ELPIS_RELEASE_VERSION=v0.5.2  a fixed release instead of the latest
+#   ELPIS_RELEASE_VERSION=v0.5.3  a fixed release instead of the latest
 #   ELPIS_USE_APPIMAGE=1          the AppImage even where apt exists
 set -euo pipefail
 [[ "$(uname -s)-$(uname -m)" == Linux-x86_64 ]] || { echo "Elpis publishes Linux x86_64 only (this is $(uname -s)-$(uname -m))." >&2; exit 1; }

@@ -3,7 +3,7 @@
   "productName": "Elpis",
   "desktopName": "elpis-desktop.desktop",
   "main": "desktop/main.cts",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "private": true,
   "engines": {
     "node": "26.1.0"

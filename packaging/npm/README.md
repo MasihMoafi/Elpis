@@ -2,7 +2,7 @@
 
 This package installs the Elpis terminal app with npm. Elpis is an agent harness for Linux, built on OpenAI's Codex: you decide what every agent sees and touches.
 
-The package is alpha, like Elpis 0.5.2 itself, and runs on Linux x86_64 only.
+The package is alpha, like Elpis 0.5.3 itself, and runs on Linux x86_64 only.
 
 ## Quick start
 
@@ -17,7 +17,7 @@ Or without installing:
 npx elpis-cli
 ```
 
-Expected result: the first run prints `Elpis 0.5.2: first run, downloading the terminal app to …`, then the terminal app opens. Later runs open at once.
+Expected result: the first run prints `Elpis 0.5.3: first run, downloading the terminal app to …`, then the terminal app opens. Later runs open at once.
 
 ## How it works
 

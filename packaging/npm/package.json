@@ -1,6 +1,6 @@
 {
   "name": "elpis-cli",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "The Elpis terminal app: an agent harness for Linux, built on OpenAI's Codex, where you decide what every agent sees and touches.",
   "license": "Apache-2.0",
   "bin": {
