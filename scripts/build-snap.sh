@@ -38,7 +38,9 @@ install -m 0755 "$bwrap" "$S/engine/package/codex-resources/bwrap"
 ln -s package/bin/codex "$S/engine/elpis-next"
 rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$S/engine/tools/elpis-claude/"
 mkdir -p "$S/engine/tools/elpis-claude/matilda"
-cp "$R/apps/elpis-desktop/bridge/matilda-goals.mts" "$R/apps/elpis-desktop/bridge/matilda-sessions.mts" "$S/engine/tools/elpis-claude/matilda/"
+cp "$R/apps/elpis-desktop/bridge/matilda-goals.mts" "$S/engine/tools/elpis-claude/matilda/"
+# matilda-sessions.mts only re-exports the router's discovery module, so the module itself goes in its place (as build-deb.sh does).
+cp "$R/apps/elpis-desktop/bridge/router/executor/discovery.mts" "$S/engine/tools/elpis-claude/matilda/matilda-sessions.mts"
 
 # Launchers. Node is Electron's own (ELECTRON_RUN_AS_NODE), so the host needs no Node.js.
 mkdir -p "$S/bin" "$S/meta/gui"
