@@ -57,7 +57,7 @@ Reconnect and error notices follow the last message inside `.chat-content`. Show
 5. Retained tests change only through `scripts/renderer-artifact-gate.mts` (pin with Masih's words as approval).
 6. Follow [desktop verification](TESTING.md) before installation.
 
-The shared static UI check is owned by `skills/web-dev/ui-check/lint.mjs`; its copy is generated. After changing the owner, run `node scripts/ui-lint-sync.mts --write` from this app.
+The shared static UI check is owned by the shared-system package (`~/Desktop/p/shared-system/lint/lint.mjs`, on npm as `@masihmoafi/shared-system`; the old path under `skills/web-dev/` is a link to it). This app holds a generated copy, `scripts/ui-lint.generated.mjs`. After changing the owner, run `node scripts/ui-lint-sync.mts --write` from this app; `node scripts/ui-lint-sync.mts --check` runs in every build and on CI, and fails on a stale copy.
 
 ## 8. Known UI exceptions
 What `ui-check.known.json` still allows, one row per key (rule, then file or page); the list only shrinks. A disclosure is `Disclosure` with `DisclosureSummary` (`components/ui/disclosure-summary.tsx`, the one native `details`), so it has no row. An R5 row stays where `Button` or `Input` would change the look: their base classes add the bevel clip, a 1 px transparent border, medium weight, a 1 px press shift and the focus ring. Matching a control to the pixel needs an unstyled shared variant and a look check for that control.
