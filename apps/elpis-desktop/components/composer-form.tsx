@@ -1,4 +1,5 @@
 import type React from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { MentionMenu, type useMentionMenu } from "@/components/mention-menu";
@@ -61,6 +62,11 @@ export function ComposerForm({
   const { attachments, attachmentsRef, attaching, setAttachments, fileNotice, setFileNotice, addFiles } =
     attachmentsState;
   const { saveAttachments } = drafts;
+  // The page's HTML shows this box before its script runs, and starting replaces the text with the chat's saved draft:
+  // what was typed before then was lost (a split pane typed in at once). The box takes typing only once the window has
+  // started; this effect's update renders after every start-up effect of the same commit.
+  const [started, setStarted] = useState(false);
+  useEffect(() => setStarted(true), []);
   return (
     <form
       className="composer"
@@ -141,6 +147,7 @@ export function ComposerForm({
         onChange={onComposerChange}
         onPaste={onComposerPaste}
         disabled={projectChanging}
+        readOnly={!started}
         onKeyDown={onComposerKeyDown}
       />
       {composerNotice && (
