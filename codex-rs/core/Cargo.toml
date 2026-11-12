@@ -131,12 +131,9 @@ uuid = { workspace = true, features = ["serde", "v4", "v5", "v7"] }
 which = { workspace = true }
 whoami = { workspace = true }
 
-# Build OpenSSL from source for musl builds.
-[target.x86_64-unknown-linux-musl.dependencies]
-openssl-sys = { workspace = true, features = ["vendored"] }
-
-# Build OpenSSL from source for musl builds.
-[target.aarch64-unknown-linux-musl.dependencies]
+# Elpis: build OpenSSL from source on every Linux build, so the shipped engine needs no system libssl or
+# libcrypto. Arch moved to OpenSSL 4 and dropped libssl.so.3, and the engine did not start there (12 Nov).
+[target.'cfg(target_os = "linux")'.dependencies]
 openssl-sys = { workspace = true, features = ["vendored"] }
 
 [target.'cfg(unix)'.dependencies]

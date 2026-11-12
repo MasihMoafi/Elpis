@@ -266,6 +266,12 @@ jobs:
           # Test harness binaries also need the pinned sandbox on PATH.
           echo "$PWD/target/release/codex-resources" >> "$GITHUB_PATH"
           test "$(target/release/elpis --version)" = "elpis $ELPIS_VERSION"
+      - name: Shipped binaries need no system OpenSSL, and TLS answers on Ubuntu and Arch
+        # Arch moved to OpenSSL 4 and dropped libssl.so.3; v0.5.1 and v0.5.2 did not start there (12 Nov).
+        if: ${{ !cancelled() && steps.runtime_build.outcome == 'success' }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/elpis-tls"
+          bash scripts/check-engine-openssl.sh codex-rs/target/release 2>&1 | tee "$RUNNER_TEMP/elpis-tls/check.log"
       - name: Read-only child follow across app-server connections
         if: inputs.verification == 'build'
         working-directory: codex-rs
