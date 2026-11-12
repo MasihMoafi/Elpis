@@ -24,7 +24,7 @@
 </head>
 <body id="top">
 <a class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-base-content focus:px-4 focus:py-2 focus:text-base-100" href="#main">Skip to content</a>
-<header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 px-5 backdrop-blur-xl lg:px-12">
+<header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 site-frame backdrop-blur-xl">
   <div class="navbar-start"><a class="text-xl font-black" href="./index.html" aria-label="Elpis home" draggable="false"><img data-brand-logo draggable="false" data-theme-image="dark" src="./assets/branding/elpis-wordmark-amber-loop.svg?v=amber-20261020" alt="Elpis" width="90" height="44" /><img data-brand-logo draggable="false" data-theme-image="light" src="./assets/branding/elpis-wordmark-amber-light-loop.svg?v=amber-20261020" alt="Elpis" width="90" height="44" /></a></div>
   <nav class="navbar-center hidden gap-6 text-sm text-base-content/65 lg:flex" aria-label="Primary navigation"><a href="./index.html#demo">Demo</a><a href="./index.html#context">Context</a><a href="./technical.html" aria-current="page">Technical</a><a href="./index.html#install">Install</a></nav>
   <div class="navbar-end"><button class="btn btn-ghost btn-sm btn-square" type="button" data-brand-theme aria-label="Use day theme" aria-pressed="false"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg></button><a class="btn btn-ghost btn-sm" href="https://github.com/MasihMoafi/Elpis">View source ↗</a></div>
@@ -32,7 +32,7 @@
 <main id="main">
   <section class="hero hero-grid technical-hero">
     <svg class="hero-flow" viewBox="0 0 1440 610" preserveAspectRatio="none" aria-hidden="true"><path d="M-80 490C220 490 260 370 560 370S890 170 1520 170"/><path d="M-60 560C280 560 350 460 650 460S980 330 1500 330"/><circle r="4"><animateMotion dur="8s" repeatCount="indefinite" path="M-80 490C220 490 260 370 560 370S890 170 1520 170"/></circle></svg>
-    <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-24 lg:px-12"><div class="max-w-4xl"><p class="mb-6 font-mono text-xs font-bold uppercase tracking-[.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Technical</p><h1 class="text-6xl font-semibold leading-[.9] tracking-[-.06em] sm:text-7xl lg:text-8xl">How Elpis<br><em class="font-normal text-base-content/50">works.</em></h1><p class="mt-8 max-w-2xl text-lg leading-8 text-base-content/68">The full project write-up: context control, continuity, memory, providers, work graphs and historical evidence, with current defaults and release limits.</p><div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-primary" href="#never-lose-a-thread-again">Start reading ↓</a><a class="btn btn-soft hero-secondary" href="./index.html">Back to overview</a></div></div></div>
+    <div class="hero-content relative z-10 w-full max-w-none items-start justify-start site-frame py-28"><div class="max-w-4xl"><p class="mb-6 font-mono text-xs font-bold uppercase tracking-[.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Technical</p><h1 class="text-6xl font-semibold leading-[.9] tracking-[-.06em] sm:text-7xl lg:text-8xl">How Elpis<br><em class="font-normal text-base-content/50">works.</em></h1><p class="mt-8 max-w-2xl text-lg leading-8 text-base-content/68">The full project write-up: context control, continuity, memory, providers, work graphs and historical evidence, with current defaults and release limits.</p><div class="mt-8 flex flex-wrap gap-3"><a class="btn btn-primary" href="#never-lose-a-thread-again">Start reading ↓</a><a class="btn btn-soft hero-secondary" href="./index.html">Back to overview</a></div></div></div>
   </section>
   <div class="site-section technical-layout">
 $if(toc)$
@@ -43,6 +43,6 @@ $body$
     </article>
   </div>
 </main>
-<footer class="footer sm:footer-horizontal border-t border-base-300 bg-base-200 px-6 py-10 text-base-content/68 lg:px-12"><aside><strong class="text-base-content">Elpis.</strong><p>The open-source home for coding agents.</p></aside><nav><h2 class="footer-title text-base-content">Project</h2><a href="./index.html">Overview</a><a href="https://github.com/MasihMoafi/Elpis">Source</a><a href="#top">Back to top</a></nav></footer>
+<footer class="footer border-t border-base-300 bg-base-200 site-frame py-4 text-base-content/70"><nav class="flex w-full flex-wrap items-center gap-x-5 gap-y-1" aria-label="Footer"><a class="py-0.5" href="./index.html">Overview</a><a class="py-0.5" href="https://github.com/MasihMoafi/Elpis">Source</a><a class="py-0.5" href="#top">Back to top</a><a class="py-0.5" href="mailto:hi@masihmoafi.com">hi@masihmoafi.com</a></nav></footer>
 </body>
 </html>

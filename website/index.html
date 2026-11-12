@@ -28,7 +28,7 @@
   <body id="top">
     <a class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:bg-base-content focus:px-4 focus:py-2 focus:text-base-100" href="#main">Skip to content</a>
 
-    <header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 px-5 backdrop-blur-xl lg:px-12">
+    <header class="navbar sticky top-0 z-50 border-b border-base-300 bg-base-100/90 site-frame backdrop-blur-xl">
       <div class="navbar-start">
         <a class="text-xl font-black tracking-tight" href="#top" aria-label="Elpis home" draggable="false"><img data-brand-logo draggable="false" data-theme-image="dark" src="./assets/branding/elpis-wordmark-amber-loop.svg?v=amber-20261020" alt="Elpis" width="90" height="44" /><img data-brand-logo draggable="false" data-theme-image="light" src="./assets/branding/elpis-wordmark-amber-light-loop.svg?v=amber-20261020" alt="Elpis" width="90" height="44" /></a>
       </div>
@@ -50,7 +50,7 @@
           <path id="hero-flow-lower" d="M-60 730 C280 730 350 610 650 610 S980 460 1500 460" />
           <circle r="4"><animateMotion dur="8s" repeatCount="indefinite"><mpath href="#hero-flow-lower" /></animateMotion></circle>
         </svg>
-        <div class="hero-content relative z-10 w-full max-w-7xl items-start px-6 py-28 lg:px-12">
+        <div class="hero-content relative z-10 w-full max-w-none items-start justify-start site-frame py-28">
           <div class="max-w-4xl">
             <p class="mb-7 font-mono text-xs font-bold uppercase tracking-[0.24em] text-base-content/55"><span class="status status-warning mr-2"></span>Vision</p>
             <h1 id="hero-title" aria-label="Be Elpis my friend." class="hero-heading max-w-5xl text-6xl font-semibold leading-[0.9] tracking-[-0.065em] sm:text-7xl lg:text-9xl">Be <span class="hero-wordmark" aria-hidden="true"><img data-hero-brand draggable="false" data-theme-image="dark" src="./assets/branding/elpis-wordmark-amber-loop.svg?v=amber-20261020" alt="" width="224" height="110" /><img data-hero-brand draggable="false" data-theme-image="light" src="./assets/branding/elpis-wordmark-amber-light-loop.svg?v=amber-20261020" alt="" width="224" height="110" /></span><br /><em class="font-normal">my friend.</em></h1>
@@ -63,7 +63,7 @@
         </div>
       </section>
 
-      <section class="mx-auto grid max-w-7xl gap-8 px-6 py-24 lg:grid-cols-[1.15fr_.85fr] lg:items-end lg:px-12" id="demo" aria-labelledby="demo-title">
+      <section class="grid site-frame gap-8 py-24 lg:grid-cols-[1.15fr_.85fr] lg:items-end" id="demo" aria-labelledby="demo-title">
         <div>
           <h2 id="demo-title" class="section-title">See context change<br /><em><strong class="font-semibold">before</strong> the model does.</em></h2>
         </div>
@@ -218,7 +218,7 @@
       </section>
     </main>
 
-    <footer class="footer border-t border-base-300 bg-base-200 px-6 py-4 text-base-content/70 lg:px-12">
+    <footer class="footer border-t border-base-300 bg-base-200 site-frame py-4 text-base-content/70">
       <nav class="flex w-full flex-wrap items-center gap-x-5 gap-y-1" aria-label="Footer">
         <a class="py-0.5" href="https://github.com/MasihMoafi/Elpis">Source</a>
         <a class="py-0.5" href="#top">Back to top</a>

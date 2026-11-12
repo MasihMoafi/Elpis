@@ -10,6 +10,12 @@
 }
 /* design:end */
 
+/* One frame for every band (header, hero, sections, scenes, footer): content starts one gutter inside an
+   80rem column, while full-width bands keep their own background and border. */
+:root { --site-frame: 80rem; --site-gutter: calc(var(--spacing) * 6); }
+@media (min-width: 64rem) { :root { --site-gutter: calc(var(--spacing) * 12); } }
+@utility site-frame { padding-inline: max(var(--site-gutter), calc((100% - var(--site-frame)) / 2 + var(--site-gutter))); }
+
 .current-media { margin: 1.5rem 0; }
 .current-media img, .motion-preview video { display:block; width:100%; max-width:1052px; margin:auto; border:1px solid #3b3528; border-radius:12px; background:#111214; }
 .current-media figcaption, .current-gallery figcaption, .motion-preview p, .motion-preview figcaption { margin-top:.8rem; color:#c8c0ae; font-size:.9rem; line-height:1.6; }
@@ -67,7 +73,7 @@
 }
 
 @layer components {
-  .site-section { @apply mx-auto max-w-7xl px-6 py-24 lg:px-12 lg:py-32; }
+  .site-section { @apply site-frame py-24 lg:py-32; }
   .section-heading { @apply mb-14 grid gap-8 lg:grid-cols-[1.15fr_.85fr] lg:items-end; }
   .section-kicker { @apply mb-5 font-mono text-xs font-bold uppercase tracking-[.2em] text-warning; }
   .section-title { @apply text-5xl font-semibold leading-[.95] tracking-[-.055em] sm:text-6xl lg:text-7xl; }
@@ -320,7 +326,7 @@ figure img { display: block; width: 100%; height: auto; }
    next screenshot wipes in from the left behind a line in that theme's accent. app.js sets the
    --tour-* colours and each shot's --reveal. */
 .theme-tour { --tour-bg:#0a0b0d; --tour-ink:#e6e0d3; --tour-muted:#9c9587; --tour-accent:#f2a93b; position:relative; height:420vh; overflow-anchor:none; background:var(--tour-bg); color:var(--tour-ink); border-bottom:1px solid var(--color-base-300); }
-.theme-tour-stage { position:sticky; top:65px; display:grid; grid-template-columns:minmax(0,.78fr) minmax(0,1.5fr); align-items:center; gap:clamp(1.5rem,4vw,4rem); height:calc(100svh - 65px); max-width:1500px; margin-inline:auto; padding:2rem clamp(1rem,4vw,3rem); box-sizing:border-box; }
+.theme-tour-stage { @apply site-frame; position:sticky; top:65px; display:grid; grid-template-columns:minmax(0,.78fr) minmax(0,1.5fr); align-items:center; gap:clamp(1.5rem,4vw,4rem); height:calc(100svh - 65px); padding-block:2rem; box-sizing:border-box; }
 .theme-tour .section-title { color:var(--tour-ink); }
 .theme-tour .section-title em { color:var(--tour-muted); }
 .theme-tour .section-copy { color:var(--tour-muted); }
@@ -350,7 +356,7 @@ figure img { display: block; width: 100%; height: auto; }
 
 /* Scroll-driven scenes (index.html #workflows, #love-spot; app.js drives data-shown, data-state, typing and drawing). */
 .scene { position:relative; height:330vh; overflow-anchor:none; border-bottom:1px solid var(--color-base-300); }
-.scene-stage { position:sticky; top:65px; display:grid; grid-template-columns:minmax(0,.7fr) minmax(0,1.55fr); align-items:center; gap:clamp(1.5rem,4vw,4rem); height:calc(100svh - 65px); max-width:1500px; margin-inline:auto; padding:2rem clamp(1rem,4vw,3rem); box-sizing:border-box; }
+.scene-stage { @apply site-frame; position:sticky; top:65px; display:grid; grid-template-columns:minmax(0,.7fr) minmax(0,1.55fr); align-items:center; gap:clamp(1.5rem,4vw,4rem); height:calc(100svh - 65px); padding-block:2rem; box-sizing:border-box; }
 .scene .section-copy { margin-top:1.6rem; }
 .scene-window { --edge:color-mix(in oklab,var(--color-base-content) 14%,transparent); --ink:var(--color-base-content); --muted:color-mix(in oklab,var(--color-base-content) 58%,transparent); --surface:color-mix(in oklab,var(--color-base-100) 94%,var(--color-base-content)); position:relative; display:flex; flex-direction:column; aspect-ratio:16/10; border:1px solid var(--edge); border-radius:14px; overflow:hidden; background:var(--color-base-100); box-shadow:0 40px 90px -40px #000c; font:500 13px/1.35 Inter,ui-sans-serif,system-ui,sans-serif; color:var(--ink); }
 .scene-bar { display:flex; align-items:center; gap:.55rem; padding:.6rem .95rem; border-bottom:1px solid var(--edge); font:600 .72rem/1 "SFMono-Regular","Cascadia Mono","Liberation Mono",monospace; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); }
