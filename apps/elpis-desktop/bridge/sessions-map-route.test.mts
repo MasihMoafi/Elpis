@@ -161,7 +161,7 @@ test("a new chat the list does not hold yet is on the Map with its live state, a
 // W2, his usual order: he asks Elpis for work (a worker chat starts), then opens the Map. Chats were followed only from
 // the Map's first read, so that worker was missing for its whole first turn.
 test("a chat that started working before the Map was first read is on the Map as working on that first read", async t => {
-  const home = createTestTempDir(path.join(os.homedir(), ".cache", "elpis-tests", "sessions-map-route-"));
+  const home = createTestTempDir(path.join(os.tmpdir(), "sessions-map-route-"));
   const client = Object.assign(new EventEmitter(), {
     close() {},
     listThreads: async () => ({ data: [], nextCursor: null }),
