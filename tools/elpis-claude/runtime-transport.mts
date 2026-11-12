@@ -12,6 +12,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { redactedLines } from "./log-redaction.mts";
+import { directEnv } from "./proxy-env.mts";
 export const shared = () => Boolean(process.env.ELPIS_SHARED_BRIDGE);
 // A unix socket path must fit sockaddr_un (108 bytes, with the terminator).
 export const SOCKET_PATH_MAX = 100;
@@ -210,9 +211,12 @@ export let sharedEngine: EngineEntry | null = null;
 // An engine never outlives its bridge. On Linux the kernel sends it SIGTERM when the bridge dies, even by SIGKILL
 // from the memory guard (setpriv --pdeathsig execs the engine in place, so its pid and command line stay the engine's).
 export const setpriv = process.platform === "linux" ? ["/usr/bin/setpriv", "/bin/setpriv"].find(usable) : undefined;
-export const spawnEngine = (args: string[], options: SpawnOptions) => setpriv
-    ? spawn(setpriv, ["--pdeathsig", "TERM", "--", engineBin(), ...args], options)
-    : spawn(engineBin(), args, options);
+export const spawnEngine = (args: string[], options: SpawnOptions) => {
+    const direct = { ...options, env: directEnv(options.env ?? process.env) };
+    return setpriv
+        ? spawn(setpriv, ["--pdeathsig", "TERM", "--", engineBin(), ...args], direct)
+        : spawn(engineBin(), args, direct);
+};
 export function spawnPrivate() {
     const child = spawnEngine(["app-server"], { stdio: ["pipe", "pipe", "ignore"] }) as PrivateChild;
     privateEngines.add(child);

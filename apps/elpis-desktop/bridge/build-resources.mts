@@ -16,7 +16,7 @@ if (!bridgeOnly) {
 }
 const resources = new URL("./resources/", import.meta.url);
 await fs.mkdir(resources, { recursive: true });
-for (const name of ["permission-policy.mts", "app-server-connection.mts", "bridge-wire.mts"]) {
+for (const name of ["permission-policy.mts", "app-server-connection.mts", "bridge-wire.mts", "proxy-env.mts"]) {
   const source = await fs.readFile(new URL(`../../../tools/elpis-claude/${name}`, import.meta.url), "utf8");
   // The shared permission contract keeps the native generated type as its owner.
   await fs.writeFile(new URL(name, resources), source.replace("from '../../codex-rs/", "from '../../../../codex-rs/"));

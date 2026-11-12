@@ -202,6 +202,8 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install the ACP test agent dependencies
         run: npm ci --prefix ../../tools/elpis-claude --ignore-scripts --no-audit --no-fund
+      - name: Check native Codex proxy isolation
+        run: node --test ../../tools/elpis-claude/test/native-proxy.test.mts
       - name: Install the Electron test binary
         run: node node_modules/electron/install.js
       - name: Install PDF text and audio tools the attachment and transcription tests use

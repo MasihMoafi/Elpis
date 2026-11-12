@@ -4,13 +4,14 @@ import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PROXY_ENV_NAMES } from "./proxy-env.mts";
+export { PROXY_ENV_NAMES } from "./proxy-env.mts";
 export const here = path.dirname(fileURLToPath(import.meta.url));
 // ---- launcher helper -----------------------------------------------------------------------------
 export const sha = (data: string | Buffer) => createHash("sha256").update(data).digest("hex");
 // The environment the bridge inherits from the terminal that started it and that changes what it
 // does: network proxy, the Claude and Antigravity programs and adapters, stores and auth homes.
 // Request, working-directory, terminal and log-path variables are incidental and not listed.
-export const PROXY_ENV_NAMES = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"];
 export const ENV_NAMES = [
     ...PROXY_ENV_NAMES,
     "NODE_USE_ENV_PROXY", "NODE_EXTRA_CA_CERTS",

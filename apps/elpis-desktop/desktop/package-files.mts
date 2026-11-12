@@ -20,6 +20,7 @@ export const productionFiles = [
   "bridge/resources/permission-policy.mts",
   "bridge/resources/app-server-connection.mts",
   "bridge/resources/bridge-wire.mts",
+  "bridge/resources/proxy-env.mts",
   "bridge/resources/workflow-concurrency.mts",
   "bridge/import-chats.mts",
   "bridge/settings-files.mts",
