@@ -21,9 +21,13 @@ tls_check() { # tls_check ENGINE LABEL
   out=$(tls_request "$1")
   echo "$2: $(grep -Eo "$answer|[^ ]*(certificate|handshake)[^.]*" <<<"$out" | head -n 2 | tr '\n' ' ')"
   grep -Eq "$answer" <<<"$out" || { echo "FAIL: no HTTP answer on $2" >&2; tail -n 20 <<<"$out" >&2; return 1; }
-  control=$(tls_request "$1" SSL_CERT_FILE=/nonexistent SSL_CERT_DIR=/nonexistent)
+  # openssl-probe ignores a path that does not exist and finds the system's certificates anyway, so the
+  # control names an empty file and an empty folder that do exist.
+  local none; none=$(mktemp -d); : > "$none/none.pem"; mkdir "$none/certs"
+  control=$(tls_request "$1" SSL_CERT_FILE="$none/none.pem" SSL_CERT_DIR="$none/certs")
   if grep -Eq "$answer" <<<"$control"; then
-    echo "FAIL: on $2 the request was answered with no certificates, so this check proves nothing" >&2; return 1
+    echo "FAIL: on $2 the request was answered with no certificates, so this check proves nothing" >&2
+    tail -n 20 <<<"$control" >&2; return 1
   fi
   echo "$2 control with no certificates: $(grep -Eo '[^ ]*(certificate|handshake|verify)[^.]*' <<<"$control" | head -n 1)"
 }
