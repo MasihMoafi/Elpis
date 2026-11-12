@@ -90,7 +90,8 @@ test('model picker searches actual models, supports keyboard selection and retur
   await page.getByRole('combobox', { name: 'Model', exact: true }).filter({ hasText: 'Opus' }).waitFor();
   await page.getByRole('combobox', { name: 'Model', exact: true }).click();
   await page.getByLabel('Search models').press('Escape');
-  assert.equal(await page.getByRole('combobox', { name: 'Model', exact: true }).evaluate(e => e === document.activeElement), true);
+  // The list gives the focus back once it has closed, a frame after Escape (Base UI's FloatingFocusManager).
+  await untilTrue(() => page.getByRole('combobox', { name: 'Model', exact: true }).evaluate(e => e === document.activeElement), 'Escape returns the focus to Model');
   assert.equal(calls.filter(call => call.method === 'POST' && call.path !== '/api/session').length, 0);
   assert.equal(await page.getByLabel('Message Elpis').inputValue(), 'Do not send this while choosing a model.');
 }));
@@ -117,7 +118,7 @@ test('existing chat keeps the pending model for its next message and saves a pic
 }));
 
 const { fixture: parityFixture }: { fixture(options: object): Promise<ParityFixture> } = require('./parity-fixture.cts');
-const { chooseOption, controlValue, openSettings }: { chooseOption(locator: Locator, value: string | null): Promise<void>; controlValue(locator: Locator): Promise<string>; openSettings(page: Page): Promise<void> } = require('./controls.cts');
+const { chooseOption, controlValue, openSettings, untilTrue }: { chooseOption(locator: Locator, value: string | null): Promise<void>; controlValue(locator: Locator): Promise<string>; openSettings(page: Page): Promise<void>; untilTrue(read: () => Promise<unknown>, message: string): Promise<void> } = require('./controls.cts');
 
 for (const connected of [true, false]) test(`transcription menu ${connected ? 'retains a saved custom model' : 'explains a disconnected OpenRouter'}`, async () => {
   const model = connected ? 'user/saved-audio-model' : null;

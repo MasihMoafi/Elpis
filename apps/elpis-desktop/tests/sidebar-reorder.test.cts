@@ -120,7 +120,9 @@ test('Alt+Up/Down reorders the focused chat inside its section and keeps focus; 
     await link('chat-e').focus();
     await page.keyboard.press('Alt+ArrowUp');
     await eventually(async () => assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-e', 'chat-d', 'chat-f']));
-    assert.equal(await page.evaluate(() => document.activeElement?.closest<HTMLElement>('.thread-row')?.dataset.threadId), 'chat-e', 'focus stays on the moved chat');
+    // Moving the row drops its focus; components/reorder.tsx puts it back a frame after the move is saved.
+    const focusedRow = () => page.evaluate(() => document.activeElement?.closest<HTMLElement>('.thread-row')?.dataset.threadId);
+    await eventually(async () => assert.equal(await focusedRow(), 'chat-e', 'focus stays on the moved chat'));
     await page.keyboard.press('Alt+ArrowUp'); // already first in Recents: it does not jump into the group above
     assert.deepEqual(await idsIn(section(page, 'Recents')), ['chat-e', 'chat-d', 'chat-f']);
     await page.keyboard.press('Alt+ArrowDown'); await page.keyboard.press('Alt+ArrowDown'); await page.keyboard.press('Alt+ArrowDown');

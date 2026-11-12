@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { openCanvas } = require('./canvas-fixture.cts');
-const { chooseOption, chooseTheme, controlValue } = require('./controls.cts');
+const { chooseOption, chooseTheme, controlValue, untilTrue } = require('./controls.cts');
 type SavedNode = { id: string; type: string; position: { x: number; y: number }; data: { provider?: string; effort?: string | null } };
 type Edge = { source: string; target: string };
 type WorkingWindow = Window & { __workingSetItem?: (key: string, value: string) => void };
@@ -53,7 +53,8 @@ for (const middle of [false, true]) test(`bottom + adds only a successor: ${midd
       assert.deepEqual(await selected(f), [id]);
       const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true }); await panel.waitFor();
       const prompt = panel.getByRole('textbox', { name: 'Prompt', exact: true });
-      assert.equal(await prompt.evaluate((el: HTMLElement) => el === document.activeElement), true, 'the new prompt takes the keys');
+      // The board focuses the new prompt 60 ms after the agent is made (components/agents-canvas/use-canvas-board-model.tsx).
+      await untilTrue(() => prompt.evaluate((el: HTMLElement) => el === document.activeElement), 'the new prompt takes the keys');
       await f.page.keyboard.type(`Follow Start ${i + 1}`);
       await f.fit();
       const overlaps = await f.canvas.locator('.react-flow__node-agent, .react-flow__node-note, .react-flow__node-mother').evaluateAll((nodes: HTMLElement[]) => {

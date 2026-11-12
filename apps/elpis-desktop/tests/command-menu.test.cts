@@ -8,6 +8,7 @@ type Post = { path: string; body: unknown };
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, CWD } = require('./parity-fixture.cts');
+const { untilTrue }: { untilTrue(read: () => Promise<unknown>, message: string): Promise<void> } = require('./controls.cts');
 
 const chat = (id: string, name: string) => ({ id, name, preview: name, cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } });
 const LIST = [chat('chat-a', 'Fix the parser'), chat('chat-b', 'Write the docs'), chat('chat-c', 'Plan the release')];
@@ -32,7 +33,8 @@ test('Ctrl+K opens recent chats and actions; ↑/↓ wrap, Enter opens, Esc retu
     await composer.fill('draft');
     await page.keyboard.press('Control+k');
     await input(page).waitFor();
-    assert.ok(await input(page).evaluate((element: Element) => element === document.activeElement), 'the search box has the focus');
+    // The dialog focuses its first field one frame after it opens (Base UI's FloatingFocusManager).
+    await untilTrue(() => input(page).evaluate((element: Element) => element === document.activeElement), 'the search box has the focus');
     assert.deepEqual(await sections(page), ['Recents', 'Actions']);
     const all = await names(page);
     assert.deepEqual(all.slice(0, 3), ['Fix the parser', 'Write the docs', 'Plan the release']);

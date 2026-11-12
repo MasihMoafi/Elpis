@@ -10,7 +10,8 @@ const http: typeof import('node:http') = require('node:http');
 const fs: typeof import('node:fs') = require('node:fs');
 const path: typeof import('node:path') = require('node:path');
 const { chromium }: typeof import('playwright-core') = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
-const { guardDesktopStore, widenSidePanel }: { guardDesktopStore(target: Page): Promise<void>; widenSidePanel(page: Page, width: number): Promise<void> } = require('./controls.cts');
+const { guardDesktopStore, widenSidePanel, untilTrue }: { guardDesktopStore(target: Page): Promise<void>; widenSidePanel(page: Page, width: number): Promise<void>;
+  untilTrue(read: () => Promise<unknown>, message: string): Promise<void> } = require('./controls.cts');
 type DrawingWindow = typeof window & { __state: BrowserState; __log: string[]; __shot: string; __jpeg: string; EXCALIDRAW_ASSET_PATH?: string };
 type Attachment = { name: string; text: string; dataUrl: string };
 const staticOut = process.env.ELPIS_TEST_OUT || path.join(__dirname, '../out');
@@ -295,7 +296,8 @@ test('Style closes without losing marks and Chat pauses drawing for a lossless R
   await dialog(page).getByRole('button', { name: 'Chat', exact: true }).press('Enter');
   await dialog(page).waitFor({ state: 'detached' });
   assert.equal(await input.inputValue(), 'Still here with you.');
-  assert.equal(await input.evaluate(element => element === document.activeElement), true);
+  // Chat focuses the message box a frame after the drawing closes (components/browser-panel.tsx).
+  await untilTrue(() => input.evaluate(element => element === document.activeElement), 'Chat returns the focus to the message box');
   await page.getByRole('button', { name: 'Show side panel' }).click();
   await page.getByRole('button', { name: 'Resume', exact: true }).click();
   await dialog(page).waitFor();

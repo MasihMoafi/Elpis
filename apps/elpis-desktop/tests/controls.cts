@@ -222,5 +222,11 @@ async function scrollToLoadEarlier(page: Page, scroller = '.chat-scroll') {
   await page.waitForTimeout(150);
   await page.waitForFunction(() => !document.querySelector('.load-on-scroll[data-loading]'));
 }
+/** Waits up to 5 s for `read` to report true, for a value the app sets late (focus put back a frame, a timer or a message
+ * after the action): a single read right after the action races it, and failed on slow runners. */
+async function untilTrue(read: () => Promise<unknown>, message: string) {
+  for (const deadline = Date.now() + 5000; !(await read()); await new Promise(resolve => setTimeout(resolve, 50)))
+    if (Date.now() > deadline) throw new Error(message);
+}
 
-module.exports = { scrollToLoadEarlier, openPatterns, rowAction, threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };
+module.exports = { untilTrue, scrollToLoadEarlier, openPatterns, rowAction, threadMenuItem, LOGO_ACCENT, assertDialogActionsExplained, captureReview, chooseOption, chooseTheme, controlValue, guardDesktopStore, leaveSettings, openSettings, optionsCut, oranges, unapprovedOranges, sidebar, widenSidePanel };

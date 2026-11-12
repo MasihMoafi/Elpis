@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cts');
-const { openSettings, leaveSettings, chooseOption } = require('./controls.cts');
+const { openSettings, leaveSettings, chooseOption, untilTrue } = require('./controls.cts');
 
 const ALL_CHARACTERS = [
   ['palette-plum', 'Punk rocker'],
@@ -119,7 +119,8 @@ for (const colorScheme of ['light', 'dark']) test(`characters can be selected be
     await page.keyboard.press('Enter');
     await page.keyboard.press('Escape');
     assert.equal(await draft.isVisible(), true, 'Escape closes only the character menu');
-    assert.equal(await picker.evaluate((button: HTMLElement) => button === document.activeElement), true, 'menu returns focus to its button');
+    // The menu gives the focus back once it has closed, a frame after Escape (Base UI's FloatingFocusManager).
+    await untilTrue(() => picker.evaluate((button: HTMLElement) => button === document.activeElement), 'menu returns focus to its button');
 
     await page.reload();
     await pinned.waitFor();

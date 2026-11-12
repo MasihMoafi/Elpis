@@ -5,6 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { untilTrue } = require('./controls.cts');
 const root = path.resolve(__dirname, '../out');
 
 test('plan mode: "+" turns it on, a proposed plan asks to be implemented, and implementing leaves Plan mode', async () => {
@@ -67,8 +68,8 @@ test('plan mode: "+" turns it on, a proposed plan asks to be implemented, and im
     await page.getByText('Implemented.', { exact: true }).waitFor();
     assert.deepEqual(turns[2], { text: 'Implement the plan.', mode: 'default' });
     assert.equal(await pill.count(), 0, 'implementing leaves Plan mode'); assert.equal(await prompt.count(), 0);
-    await page.waitForTimeout(100);
-    assert.equal(await page.getByLabel('Message Elpis').evaluate((e: Element) => e === document.activeElement), true, 'implementing returns to the composer');
+    // The focus comes back a frame after the turn is accepted (restoreComposerFocus in lib/workspace-controls.ts).
+    await untilTrue(() => page.getByLabel('Message Elpis').evaluate((e: Element) => e === document.activeElement), 'implementing returns to the composer');
     assert.deepEqual(errors, []);
   } finally { await browser.close(); server.close(); }
 });

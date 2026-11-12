@@ -6,6 +6,7 @@ const http: typeof import('node:http') = require('node:http');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { chromium } = require(process.env.ELPIS_PLAYWRIGHT_PACKAGE || 'playwright');
+const { untilTrue }: { untilTrue(read: () => Promise<unknown>, message: string): Promise<void> } = require('./controls.cts');
 const root = path.resolve(__dirname, '../out');
 const INIT_PROMPT_FILE = path.resolve(__dirname, '../../../codex-rs/tui/assets/prompt_for_init_command.md');
 type Locator = { locator(selector: string): Locator; getByRole(role: string, options?: object): Locator; filter(options: object): Locator; first(): Locator; waitFor(options?: object): Promise<void>; click(): Promise<void>; count(): Promise<number>; fill(value: string): Promise<void>; press(key: string): Promise<void>; inputValue(): Promise<string>; isVisible(): Promise<boolean>; textContent(): Promise<string | null>; getAttribute(name: string): Promise<string | null>; evaluateAll<T>(fn: (elements: HTMLInputElement[]) => T): Promise<T> };
@@ -163,23 +164,25 @@ test('the controls a command opens (/model, /effort, /permissions, /yolo) take t
     for (const [command, opened, activeElement] of opens) {
       await composer.fill(command); await composer.press('Enter');
       await opened().waitFor();
-      if (activeElement) assert.equal(await focused(page), activeElement, `${command}: the picker has the focus once it opens`);
-      else assert.equal(await focusInside(page, '[role="listbox"],[role="menu"],[role="dialog"]'), true, `${command}: the focus is inside what it opened`);
+      // A control takes the focus a frame after it opens (Base UI's FloatingFocusManager), and lib/slash-focus.ts hands it
+      // back to the composer up to 150 ms after it closes: wait for each.
+      if (activeElement) await untilTrue(async () => (await focused(page)) === activeElement, `${command}: the picker has the focus once it opens`);
+      else await untilTrue(() => focusInside(page, '[role="listbox"],[role="menu"],[role="dialog"]'), `${command}: the focus is inside what it opened`);
       await page.keyboard.press('Escape');
       await opened().waitFor({ state: 'detached' });
-      assert.equal(await focused(page), 'textarea:Message Elpis', `${command}: closing returns the focus to the composer`);
+      await untilTrue(async () => (await focused(page)) === 'textarea:Message Elpis', `${command}: closing returns the focus to the composer`);
       await typesIntoComposer(page, composer, 'typed after');
     }
     // Escape straight after Enter, before anything has had time to settle: the control still closes, and the composer keeps the focus.
     await composer.fill('/model'); await composer.press('Enter'); await page.keyboard.press('Escape');
     await page.getByRole('combobox', { name: 'Search models', exact: true }).waitFor({ state: 'detached' });
-    assert.equal(await focused(page), 'textarea:Message Elpis');
+    await untilTrue(async () => (await focused(page)) === 'textarea:Message Elpis', 'Escape at once leaves the focus in the composer');
     await typesIntoComposer(page, composer, 'quick');
     // Choosing from the control closes it the same way.
     await composer.fill('/effort'); await composer.press('Enter');
     await page.getByRole('option', { name: 'low', exact: true }).click();
     await page.getByRole('option', { name: 'low', exact: true }).waitFor({ state: 'detached' });
-    assert.equal(await focused(page), 'textarea:Message Elpis', 'choosing also returns the focus to the composer');
+    await untilTrue(async () => (await focused(page)) === 'textarea:Message Elpis', 'choosing also returns the focus to the composer');
     await typesIntoComposer(page, composer, 'after choosing');
     assert.deepEqual(errors, []);
   } finally { await context.close(); }

@@ -8,7 +8,8 @@ const fs: typeof import('node:fs/promises') = require('node:fs/promises');
 const path: typeof import('node:path') = require('node:path');
 const os: typeof import('node:os') = require('node:os');
 const { fixture, CWD }: { fixture(options?: RouteOptions): Promise<Fixture>; CWD: string } = require('./parity-fixture.cts');
-const { openSettings, leaveSettings }: { openSettings(page: Page): Promise<void>; leaveSettings(page: Page): Promise<void> } = require('./controls.cts');
+const { openSettings, leaveSettings, untilTrue }: { openSettings(page: Page): Promise<void>; leaveSettings(page: Page): Promise<void>;
+  untilTrue(read: () => Promise<unknown>, message: string): Promise<void> } = require('./controls.cts');
 
 const evidence = path.join(os.homedir(), '.cache/elpis-tests/desktop-small-fixes');
 const chat = (id: string, name: string, extra: object = {}) => ({ id, name, cwd: CWD, source: 'cli', model: 'sol', modelProvider: 'openai', status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' }, ...extra });
@@ -166,7 +167,8 @@ test('sidebar pages reorder by drag and drop and by Alt+Arrow, and keep their or
   await nav.getByRole('button', { name: 'Customize', exact: true }).focus();
   await page.keyboard.press('Alt+ArrowUp'); await page.keyboard.press('Alt+ArrowUp');
   assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Customize', 'Elpis', 'Observability'], 'Alt+Up moves the focused page up');
-  assert.equal(await page.evaluate(() => String(document.activeElement?.textContent).trim()), 'Customize', 'focus stays on the moved page');
+  // Moving the button drops its focus; components/reorder.tsx puts it back a frame after the move is saved.
+  await untilTrue(async () => (await page.evaluate(() => String(document.activeElement?.textContent).trim())) === 'Customize', 'focus stays on the moved page');
   await nav.getByRole('button', { name: 'Elpis', exact: true }).focus();
   await page.keyboard.press('Alt+ArrowDown');
   assert.deepEqual(await order(), ['New chat', 'Love Spot', 'Lab', 'Workflows', 'Customize', 'Observability', 'Elpis'], 'Elpis reorders with the same keys');
