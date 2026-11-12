@@ -11,12 +11,21 @@
 set -euo pipefail
 
 answer='401|Unauthorized|invalid_api_key|Incorrect API key'
+# The built-in provider tries a WebSocket first (rustls) and falls back to HTTPS. A provider without WebSockets
+# sends its request over HTTPS only, through the built-in OpenSSL (native-tls), which is what this check is for.
+https_only=(-c model_provider=tlscheck
+  -c 'model_providers.tlscheck={name="TLS check",base_url="https://api.openai.com/v1",env_key="CODEX_API_KEY",wire_api="responses"}')
+transport=()
 tls_request() { # tls_request ENGINE [VAR=value...]: the engine's output for one model request
   local engine=$1 home; shift; home=$(mktemp -d)
   env -i PATH=/usr/bin:/bin HOME="$home" ELPIS_HOME="$home/.elpis-next" CODEX_API_KEY=sk-elpis-tls-check-not-a-key "$@" \
-    timeout 60 "$engine" exec --skip-git-repo-check -C "$home" 'Reply with OK.' </dev/null 2>&1 || true
+    timeout 60 "$engine" exec --skip-git-repo-check -C "$home" ${transport[@]+"${transport[@]}"} 'Reply with OK.' </dev/null 2>&1 || true
 }
-tls_check() { # tls_check ENGINE LABEL
+tls_check() { # tls_check ENGINE LABEL: both transports
+  transport=(); tls_check_one "$1" "$2 (WebSocket, then HTTPS)"
+  transport=("${https_only[@]}"); tls_check_one "$1" "$2 (HTTPS only, built-in OpenSSL)"
+}
+tls_check_one() { # tls_check_one ENGINE LABEL
   local out control
   out=$(tls_request "$1")
   echo "$2: $(grep -Eo "$answer|[^ ]*(certificate|handshake)[^.]*" <<<"$out" | head -n 2 | tr '\n' ' ')"
