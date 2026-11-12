@@ -13,6 +13,12 @@ ignore = [
     "RUSTSEC-2026-0487", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
     "RUSTSEC-2026-0489", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
     "RUSTSEC-2026-0490", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
+    # Accepted 2026-11-12 at Masih's word: DNSSEC validation faults in hickory 0.25.2 via rama-dns =0.3.0-alpha.4 (codex-network-proxy); the build has no dnssec feature (`cargo tree --locked --offline -p hickory-proto@0.25.2 -f '{p} [{f}]' --depth 0` gives [futures-io,std,tokio], hickory-resolver gives [system-config,tokio]); remove when rama moves to hickory >=0.26.2.
+    "RUSTSEC-2026-0504", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
+    "RUSTSEC-2026-0505", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
+    "RUSTSEC-2026-0511", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
+    "RUSTSEC-2026-0512", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
+    "RUSTSEC-2026-0514", # hickory-resolver: DNSSEC validation (dnssec feature not enabled, code not compiled in)
     "RUSTSEC-2026-0491", # REACHABLE on Linux/Windows: the proxy resolves hostnames with rama's default HickoryDns and decodes DNS replies; a reply from the DNS server's address can force a short ~18 MB allocation (DoS)
     "RUSTSEC-2026-0194", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     "RUSTSEC-2026-0195", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
