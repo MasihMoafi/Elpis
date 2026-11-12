@@ -1,5 +1,84 @@
 {
-  "src": ["."],
-  "ignore": ["^styles\\.css$", "^technical\\.html$", "^candidates/", "^prototypes/", "^evidence/"],
-  "controls": ["btn"]
+  "src": [
+    "."
+  ],
+  "ignore": [
+    "^styles\\.css$",
+    "^technical\\.html$",
+    "^candidates/",
+    "^prototypes/",
+    "^evidence/"
+  ],
+  "controls": [
+    "btn"
+  ],
+  "serve": ".",
+  "routes": [
+    "/index.html",
+    "/technical.html"
+  ],
+  "alignment": {
+    "viewports": {
+      "wide": {
+        "width": 1440,
+        "height": 900
+      },
+      "desktop": {
+        "width": 1280,
+        "height": 800
+      },
+      "phone": {
+        "width": 390,
+        "height": 844
+      }
+    },
+    "rules": [
+      {
+        "name": "site frame",
+        "match": "^/(?:index|technical)\\.html$",
+        "scope": "body",
+        "samePage": [
+          [
+            "header.navbar",
+            ".hero-content"
+          ],
+          [
+            "header.navbar",
+            "main .site-section"
+          ],
+          [
+            "header.navbar",
+            "footer.footer"
+          ]
+        ]
+      },
+      {
+        "name": "terminal frame",
+        "match": "^/index\\.html$",
+        "scope": "body",
+        "samePage": [
+          [
+            "header.navbar",
+            ".ace-demo-stage"
+          ],
+          [
+            "header.navbar",
+            "#demo"
+          ],
+          [
+            "header.navbar",
+            ".scene-stage"
+          ]
+        ]
+      }
+    ]
+  },
+  "themes": {
+    "dark": {
+      "scheme": "dark"
+    }
+  },
+  "scrollRoutes": [
+    "/*"
+  ]
 }

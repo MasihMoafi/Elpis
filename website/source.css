@@ -108,8 +108,8 @@
 .hero-flow path { fill: none; stroke: color-mix(in oklab, var(--color-base-content) 12%, transparent); stroke-width: 1; }
 .hero-flow circle { fill: var(--color-warning); opacity: .8; filter: drop-shadow(0 0 9px var(--color-warning)); }
 
-.ace-demo { overflow-anchor: none; height: 500vh; padding: 0 1.5rem 4rem; border-bottom: 1px solid var(--color-base-300); }
-.ace-demo-stage { position: sticky; top: 65px; display: grid; place-items: center; height: calc(100svh - 65px); max-width: 1600px; margin-inline: auto; padding-block: .75rem; }
+.ace-demo { overflow-anchor: none; height: 500vh; padding: 0 0 4rem; border-bottom: 1px solid var(--color-base-300); }
+.ace-demo-stage { @apply site-frame; position: sticky; top: 65px; display: grid; place-items: center; height: calc(100svh - 65px); padding-block: .75rem; }
 .ace-frame { width: 100%; height: min(880px, calc(100svh - 96px)); min-height: 0; overflow: hidden; border-color: var(--color-base-300); background: var(--color-base-100); box-shadow: 0 28px 90px rgba(0,0,0,.45); }
 .ace-terminal { --tui-line: var(--color-base-300); --tui-muted: color-mix(in srgb,var(--color-base-content) 65%,var(--color-base-100)); --tui-copper: var(--color-accent); --tui-gold: var(--color-warning); --tui-teal: var(--color-secondary); position: relative; height: 100%; min-width: 0; overflow-wrap: anywhere; color: var(--color-base-content); background: var(--color-base-100); font: 16px/1.35 "SFMono-Regular", "Cascadia Mono", "Liberation Mono", Consolas, monospace; }
 [data-theme="elpis-light"] .ace-terminal { --tui-muted: #6b675e; }
@@ -294,7 +294,7 @@ figure img { display: block; width: 100%; height: auto; }
 
 @media (max-width: 720px) {
   .ace-app { grid-template-columns: minmax(0,1fr); }
-  .ace-demo { height: 300svh; padding-inline: .75rem; }
+  .ace-demo { height: 300svh; }
   .ace-demo-stage { position: sticky; top: 65px; height: calc(100svh - 65px); }
   .ace-frame { height: calc(100svh - 96px); min-height: 0; }
   .ace-chat { touch-action: pan-y; }
