@@ -49,6 +49,7 @@ tls_check "$engine" "$(. /etc/os-release && echo "$PRETTY_NAME")"
 if [[ ${ELPIS_TLS_ARCH:-1} != 0 ]]; then
   script=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
   docker run --rm -v "$dir:/e:ro" -v "$script:/check.sh:ro" archlinux:latest \
-    bash -c "pacman -Q openssl; /e/$(basename "$engine") --version && bash /check.sh --tls /e/$(basename "$engine") 'Arch'"
+    bash -c "pacman -Syu --noconfirm --needed openssl >/dev/null && pacman -Q openssl && ! ls /usr/lib/libssl.so.3 2>/dev/null \
+      && /e/$(basename "$engine") --version && bash /check.sh --tls /e/$(basename "$engine") 'Arch'"
 fi
 echo "OK: no shipped binary needs a system OpenSSL, and TLS answers"
