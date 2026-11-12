@@ -1,7 +1,11 @@
 import { strict as assert } from "node:assert";
 import { EventEmitter } from "node:events";
+import os from "node:os";
+import path from "node:path";
 import { mock, test } from "node:test";
 import { handleWorkflowRoutes } from "./server-workflows.mts";
+import { startDesktopServer } from "./server.mts";
+import { createTestTempDir, removeTestTempDir } from "../tests/temp-root.cts";
 
 const mother = {
   sessionLinks: () => ({ enabled: true, threadId: "router", tickets: [{ title: "Ticket", threadId: "worker" }] }),
@@ -152,4 +156,35 @@ test("a new chat the list does not hold yet is on the Map with its live state, a
   } finally {
     mock.timers.reset();
   }
+});
+
+// W2, his usual order: he asks Elpis for work (a worker chat starts), then opens the Map. Chats were followed only from
+// the Map's first read, so that worker was missing for its whole first turn.
+test("a chat that started working before the Map was first read is on the Map as working on that first read", async t => {
+  const home = createTestTempDir(path.join(os.homedir(), ".cache", "elpis-tests", "sessions-map-route-"));
+  const client = Object.assign(new EventEmitter(), {
+    close() {},
+    listThreads: async () => ({ data: [], nextCursor: null }),
+    workflowHistory: async () => ({ data: [] }),
+  });
+  const app = await startDesktopServer({ client, elpisHome: home, trashFile: path.join(home, "trash.json") });
+  t.after(async () => {
+    await app.close();
+    removeTestTempDir(home);
+  });
+  const message = (method: string, params: object) => client.emit("event", { type: "message", data: { method, params } });
+  message("thread/started", { thread: { id: "early", name: "Early", status: { type: "idle" } } });
+  message("thread/status/changed", { threadId: "early", status: { type: "active", activeFlags: [] } });
+
+  const launch = new URL(app.url);
+  const session = await fetch(launch.origin + "/api/session", {
+    method: "POST",
+    headers: { Origin: launch.origin, "Content-Type": "application/json" },
+    body: JSON.stringify({ token: launch.hash.slice(7) }),
+  });
+  const cookie = session.headers.get("set-cookie")!.split(";")[0]!;
+  const response = await fetch(launch.origin + "/api/sessions-map?all=1", { headers: { Origin: launch.origin, Cookie: cookie } });
+  const graph = await response.json();
+  const node = graph.nodes.find((item: { threadId?: string }) => item.threadId === "early");
+  assert.equal(node?.state, "working");
 });

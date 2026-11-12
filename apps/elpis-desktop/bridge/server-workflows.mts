@@ -57,16 +57,23 @@ function hear(live: Map<string, LiveChat>, method: string | undefined, params: C
   }
 }
 
+/** Follows the chats of one client from the moment the desktop server is up (startDesktopServer calls it), so a worker
+ * the router started before the Map was first opened is on the Map in its first turn. Once per client. */
+export function followChats(client: import("./server-http.mts").ServerState["client"]): ChatList {
+  const known = chatLists.get(client);
+  if (known) return known;
+  const list: ChatList = { at: 0, changed: true, live: new Map() };
+  chatLists.set(client, list);
+  client.on("event", (value: ChatEvent) => {
+    if (value.type === "connection" || (value.type === "message" && CHAT_CHANGES.has(value.data?.method ?? "")))
+      list.changed = true;
+    if (value.type === "message") hear(list.live, value.data?.method, value.data?.params);
+  });
+  return list;
+}
+
 async function chatList(client: import("./server-http.mts").ServerState["client"]): Promise<MapThread[]> {
-  const list: ChatList = chatLists.get(client) ?? { at: 0, changed: true, live: new Map() };
-  if (!chatLists.has(client)) {
-    chatLists.set(client, list);
-    client.on("event", (value: ChatEvent) => {
-      if (value.type === "connection" || (value.type === "message" && CHAT_CHANGES.has(value.data?.method ?? "")))
-        list.changed = true;
-      if (value.type === "message") hear(list.live, value.data?.method, value.data?.params);
-    });
-  }
+  const list = followChats(client);
   const threads = await listedChats(client, list);
   for (const thread of threads) list.live.delete(thread.id);
   // A chat created and never given a message does not have to show; one that has worked shows its live state.

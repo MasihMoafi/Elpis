@@ -41,7 +41,7 @@ import { handleLoveSpotRoutes } from "./server-love-spot.mts";
 import { handleVoiceRoutes } from "./server-voice.mts";
 import { handleFileRoutes } from "./server-files.mts";
 import { handleSettingsRoutes } from "./server-settings.mts";
-import { createWorkflowDispatcher, handleWorkflowRoutes } from "./server-workflows.mts";
+import { createWorkflowDispatcher, followChats, handleWorkflowRoutes } from "./server-workflows.mts";
 import { createHistoryCursors, handleThreadRoutes } from "./server-threads.mts";
 import { MotherAgent } from "./router/mother-agent.mts";
 
@@ -197,6 +197,8 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
   client.on("event", (value: { type?: string; data?: unknown }) => {
     if (value.type === "message") void titles.event(value.data as Parameters<typeof titles.event>[0]);
   });
+  // The Map shows a chat in its first turn even when it started before the Map was opened (W2).
+  followChats(client);
   /** @type {import('./server-http.mts').ServerState} */
   const state: import("./server-http.mts").ServerState = {
     client,
