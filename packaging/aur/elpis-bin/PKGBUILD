@@ -18,7 +18,7 @@ source=("${_rel}/elpis_${pkgver}_amd64.deb"
         "LICENSE-${pkgver}::https://raw.githubusercontent.com/MasihMoafi/Elpis/v${pkgver}/LICENSE")
 noextract=("elpis_${pkgver}_amd64.deb" "elpis-desktop_${pkgver}_amd64.deb")
 sha256sums=('7a03802877aa85cf37294997b679f8efbe2e462167d5456bb59d8aa1fa33073a'
-            'fe1a8c1506dcef63925de3cb858750a090007a7192265907ba1cccd609b51730'
+            '437bc6e9e2c25e73d0d959c2f166df98d34165c660161d9de24d8572e23509e6'
             'SKIP')
 
 package() {
