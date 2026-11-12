@@ -36,6 +36,11 @@ test('Matilda takes each palette\'s character across all 11 character themes, is
       await page.waitForFunction((name: string) => document.querySelector('.title-bar img[data-character]')?.getAttribute('data-character') === name, name);
       assert.equal(await character(), name);
       assert.ok(await pin.locator('img[data-character]').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0), `${name}'s picture loads`);
+      if (name === 'Ice') {
+        const backgrounds = await page.locator('html').evaluate((root: HTMLElement) =>
+          ['light', 'dark'].map(mode => root.style.getPropertyValue(`--palette-${mode}-background`).trim()));
+        assert.deepEqual(backgrounds, ['#f7f8fa', '#101215'], 'Ice carries Silver colours with her portrait');
+      }
     }
     // Pinned, her big face is the character too.
     await pin.click();
