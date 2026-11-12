@@ -36,7 +36,9 @@ test('D deletes the focused chat and Ctrl+Z brings back the last deleted chats o
     await page.keyboard.press('d');
     await row(page, 'chat-a').waitFor({ state: 'detached' });
     assert.equal(await page.getByRole('alertdialog').count(), 0);
-    assert.ok(await page.evaluate(() => !!document.activeElement?.closest('aside.sidebar')), 'the focus stays in the sidebar after D');
+    // The app focuses a row one frame after the deleted row is gone (lib/chat-deletion.ts), so wait for it.
+    await page.waitForFunction(() => !!document.activeElement?.closest('aside.sidebar'), undefined, { timeout: 5_000 })
+      .catch(() => assert.fail('the focus stays in the sidebar after D'));
     await page.getByRole('status').filter({ hasText: 'Deleted “Fix the parser”' }).getByRole('button', { name: 'Undo' }).waitFor();
     assert.equal(f.posts.some((post: { path: string }) => /\/threads\/[^/]+\/delete$/.test(post.path)), false, 'nothing is deleted for good from the sidebar');
 
