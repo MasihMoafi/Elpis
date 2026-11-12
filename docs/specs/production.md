@@ -105,7 +105,7 @@ Rules: `~/Desktop/p/skills/shared-system/SKILL.md`.
 | N2 | Every top-level item is in the folder map or gone. | `lat.md/workspace.md` lists each. | done: local-only items are listed under their own heading |
 | N3 | Merged branches are gone; the rest are listed with their purpose. | `git branch --merged` shows only the work branch and `main`. | done: `git branch --merged` shows `main` and the work branch only (12 Nov). 48 local and 48 remote branches whose every commit is in `main` are deleted. The branches kept, each with its purpose, are listed in [branches.md](branches.md) |
 | N4 | Pointers resolve. | No doc names `install-desktop.mjs` or the old `Elpis-wt-install` path. | done |
-| N5 | Scratch is cleared. | `.agents/briefs/`, `test-results/` and `.tmp/` hold nothing older than the current task. | doing: cleared, except `.tmp/final-candidate` (1.1 GB, Oct): its sandbox folders belong to another user id and need root |
+| N5 | Scratch is cleared. | `.agents/briefs/`, `test-results/` and `.tmp/` hold nothing older than the current task. | done: `.agents/briefs/` and `test-results/` are gone, and `.tmp/` holds only `rewind` from this task (12 Nov). `.tmp/final-candidate` (1.1 GB, Oct) went to the trash after its 302 root-owned entries were given back to him with his password |
 
 ## F. Release (each step needs his yes)
 
