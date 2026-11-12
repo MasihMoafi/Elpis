@@ -29,7 +29,7 @@ tls_check() { # tls_check ENGINE LABEL
     echo "FAIL: on $2 the request was answered with no certificates, so this check proves nothing" >&2
     tail -n 20 <<<"$control" >&2; return 1
   fi
-  echo "$2 control with no certificates: $(grep -Eo '[^ ]*(certificate|handshake|verify)[^.]*' <<<"$control" | head -n 1)"
+  echo "$2 control with no certificates: $(grep -Ei 'certificate|handshake|verify' <<<"$control" | head -n 1 | cut -c1-240)"
 }
 
 if [[ ${1:-} == --tls ]]; then tls_check "$2" "$3"; exit; fi
