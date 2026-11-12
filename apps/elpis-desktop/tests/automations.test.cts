@@ -85,3 +85,36 @@ test('Run now on a scheduled workflow replays its saved board in the window, out
     assert.equal(await page.getByLabel('Workflow request', { exact: true }).inputValue(), 'A different draft', 'the draft is untouched');
   } finally { await f.close(); }
 });
+
+// E26, 12 Nov, Masih: "whichever but mostly codex models and never anthropic's". The editor chooses the chat's model with the
+// message box's pickers; the card names it, and the run starts its chat on it.
+test('an automation keeps the model and effort chosen in its editor, the card names it, and its run starts on it', async () => {
+  const f = await loveSpotFixture({ automations: true, reply: 'Three openings found.' });
+  try {
+    const { page } = f;
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Scheduled', exact: true }).click();
+    await page.getByRole('button', { name: 'New automation', exact: true }).click();
+    await page.getByLabel('Automation name', { exact: true }).fill('Job hunt');
+    await page.getByLabel('Automation instruction', { exact: true }).fill('Find three openings');
+    await page.getByText("No model chosen: each run uses the app's default model at the time it runs.").waitFor();
+    const form = page.getByRole('region', { name: 'New automation' });
+    await form.getByRole('combobox', { name: 'Model', exact: true }).click();
+    await page.getByRole('option', { name: /GPT-6\.1-Sol/ }).click();
+    assert.match(await form.getByRole('combobox', { name: 'Model', exact: true }).innerText(), /GPT-6\.1-Sol/);
+    await form.getByRole('combobox', { name: 'Reasoning effort' }).click();
+    await page.getByRole('option', { name: 'medium', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Run in', exact: true }).click();
+    await page.getByRole('option', { name: 'A new chat every run', exact: true }).click();
+    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    const row = page.locator('.automation').filter({ hasText: 'Job hunt' });
+    await row.locator('[data-automation-model="sol"]').filter({ hasText: 'GPT-6.1-Sol · medium' }).waitFor();
+
+    await row.getByRole('button', { name: 'Run now', exact: true }).click();
+    await row.getByRole('button', { name: 'Open chat', exact: true }).waitFor();
+    const chat = f.chats.at(-1) as { name: string; model?: string; provider?: string };
+    assert.deepEqual([chat.name, chat.model, chat.provider], ['Job hunt', 'sol', 'openai'], 'its chat starts on Sol');
+    assert.equal((f.turns.at(-1) as { effort?: string }).effort, 'medium');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});

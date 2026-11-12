@@ -72,7 +72,7 @@
   "bridge/router/sources/poll.mts:long": 1,
   "bridge/router/sources/registry.mts:long": 1,
   "bridge/router/worktree-name.mts:long": 1,
-  "bridge/schedule-mcp.mts:long": 2,
+  "bridge/schedule-mcp.mts:long": 1,
   "bridge/server-characters.mts:long": 2,
   "bridge/server-http.mts:long": 1,
   "bridge/server-threads.mts:long": 1,

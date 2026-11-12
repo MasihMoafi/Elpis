@@ -125,6 +125,42 @@ export function plainCatalogError(error: string, label = "this connection") {
     : message;
 }
 
+/** The reasoning effort beside a model: the levels it offers, and its own default. One owner for the message box and the
+ * Scheduled page (E26, 12 Nov). A saved level the model no longer lists stays shown, so it is never silently changed. */
+export function EffortPicker({
+  efforts,
+  value,
+  disabled,
+  onChange,
+}: {
+  efforts: string[];
+  value: string;
+  disabled: boolean;
+  onChange: (effort: string) => void;
+}) {
+  return (
+    <OptionSelect
+      aria-label="Reasoning effort"
+      size="sm"
+      className="model-select"
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      disabled={disabled}
+    >
+      <option value="">
+        <span className="effort-long">Default effort</span>
+        <span className="effort-short">Default</span>
+      </option>
+      {value && !efforts.includes(value) && <option value={value}>{value}</option>}
+      {efforts.map(effort => (
+        <option key={effort} value={effort}>
+          {effort}
+        </option>
+      ))}
+    </OptionSelect>
+  );
+}
+
 /** Cloudroom's searchable model/provider pattern, backed by Elpis's own catalog. */
 export function ModelPicker({
   choices,

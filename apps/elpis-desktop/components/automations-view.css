@@ -18,6 +18,7 @@
 .automation-runs-title { margin:4px 0 0; font-size:var(--text-xs); font-weight:600; color:var(--muted-foreground); }
 .automation-runs { display:grid; gap:2px; margin:0; padding:0; list-style:none; font-size:var(--text-xs); }
 .automation-runs li { display:flex; align-items:center; gap:8px; min-height:26px; }
+.automation-route { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:6px; min-width:0; }
 .automation-run-error { color:var(--destructive); overflow-wrap:anywhere; }
 /* The form, after DeepSeek Harness's editor: labelled fields, then rule rows in rounded panels. */
 .automation-form { display:grid; gap:20px; padding:20px; border:1px solid var(--border); border-radius:16px; background:var(--card); }

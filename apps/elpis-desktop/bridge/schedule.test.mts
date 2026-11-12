@@ -95,11 +95,16 @@ test("rules that cannot run are refused with what is wrong", () => {
   );
 });
 
-function harness(start: number) {
+/** `models`: the current model list, per connection ("" is the engine's own list); `providers`: the subscriptions. */
+function harness(
+  start: number,
+  { models = {}, providers = {} }: { models?: Record<string, string[]>; providers?: object } = {},
+) {
   let clock = start,
     pending: { fn: () => void; due: number } | null = null;
   const sent: { id: string; text: string; automatic: boolean }[] = [],
-    made: { id: string; cwd?: string; name: string; automatic: boolean }[] = [];
+    sends: Record<string, unknown>[] = [],
+    made: { id: string; cwd?: string; name: string; automatic: boolean; model?: string; provider?: string }[] = [];
   const client = {
     async createThread(body: { cwd?: string; name: string; automatic: boolean }) {
       const id = `chat-${made.length + 1}`;
@@ -108,6 +113,15 @@ function harness(start: number) {
     },
     async send(id: string, body: { text: string; automatic: boolean }) {
       sent.push({ id, text: body.text, automatic: body.automatic });
+      sends.push({ id, ...body });
+    },
+    async models(options: { provider?: string } = {}) {
+      const listed = models[options.provider ?? ""];
+      if (!listed) throw new Error("This connection needs a saved API address before Elpis can list its models.");
+      return { data: listed.map(model => ({ model })) };
+    },
+    async providers() {
+      return providers;
     },
   };
   const timers = {
@@ -123,6 +137,7 @@ function harness(start: number) {
     client,
     timers,
     sent,
+    sends,
     made,
     now: () => clock,
     /** Moves the clock and fires the timer if it came due; waits for the run to finish. */
@@ -204,6 +219,147 @@ test("a new chat every run, a one-time task ends, and a paused task does not run
     schedule.create({ title: "Late", prompt: "x", rule: rule("20261104T080000", "FREQ=DAILY;COUNT=1") }),
     /already passed/,
   );
+  await schedule.close();
+});
+
+// 12 Nov, Masih, setting his daily automations: "whichever but mostly codex models and never anthropic's", and Codex Sol
+// for two of them. A task with a model starts its chat on it and never on the app's default of the day.
+test("a task with a model starts its chat on that model and effort; a kept chat keeps its own model", async () => {
+  const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "elpis-schedule-")), "tasks.json");
+  const h = harness(at(2026, 11, 4, 8, 0), { models: { openai: ["gpt-6.1-sol", "gpt-6-luna"] } });
+  const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  const sol = { model: "gpt-6.1-sol", provider: "openai", effort: "high" };
+  const fresh = await schedule.create({ title: "Jobs", prompt: "Find jobs", rule: rule("20261101T090000", "FREQ=DAILY"), target: "new", ...sol });
+  assert.deepEqual([fresh.model, fresh.provider, fresh.effort], ["gpt-6.1-sol", "openai", "high"], "the task keeps its model");
+  await schedule.runNow(fresh.id);
+  assert.equal(h.made[0]!.model, "gpt-6.1-sol");
+  assert.equal(h.made[0]!.provider, "openai");
+  assert.equal(h.sends[0]!.effort, "high", "the first message carries the effort");
+
+  const kept = await schedule.create({ title: "Outreach", prompt: "Write to one lab", rule: rule("20261101T090000", "FREQ=DAILY"), target: "reuse", ...sol });
+  await schedule.runNow(kept.id);
+  await schedule.runNow(kept.id);
+  assert.equal(h.made.length, 2, "one chat for the kept task");
+  assert.equal(h.made[1]!.model, "gpt-6.1-sol", "its first run starts the chat on the model");
+  assert.equal(h.sends[2]!.effort, undefined, "a later run leaves the chat's model and effort alone");
+  assert.equal(h.sends[2]!.model, undefined);
+
+  // An agent's "remind me here": the chat already exists, so the run sends into it as it is.
+  const here = await schedule.create({
+    title: "Here",
+    prompt: "Check in",
+    rule: rule("20261101T090000", "FREQ=DAILY"),
+    threadId: "00000000-0000-4000-8000-0000000000aa",
+    ...sol,
+  });
+  await schedule.runNow(here.id);
+  assert.equal(h.made.length, 2, "no new chat");
+  assert.deepEqual([h.sends[3]!.model, h.sends[3]!.effort], [undefined, undefined]);
+
+  // Clearing the model returns the task to the app's default.
+  const cleared = await schedule.update(fresh.id, { model: null });
+  assert.deepEqual([cleared.model, cleared.provider, cleared.effort], [null, null, null]);
+  await schedule.close();
+});
+
+test("a task whose model cannot run records a failed run that names it, and starts no chat", async () => {
+  const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "elpis-schedule-")), "tasks.json");
+  const usage = [{ primary: { usedPercent: 100, resetsAt: null }, secondary: null, credits: null }];
+  const h = harness(at(2026, 11, 4, 8, 0), {
+    models: { "": ["claude/opus"], openai: ["gpt-6.1-sol"] },
+    providers: { claude: { state: "connected", usage } },
+  });
+  const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  const daily = rule("20261101T090000", "FREQ=DAILY");
+  // Listed when he chose it, gone from the list by the time it runs.
+  const gone = await schedule.create({ title: "Jobs", prompt: "Find jobs", rule: daily, target: "new", model: "gpt-6.1-sol", provider: "openai" });
+  await fs.writeFile(file, (await fs.readFile(file, "utf8")).replace(/gpt-6\.1-sol/g, "gpt-5-retired"));
+  const reread = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  const failed = await reread.runNow(gone.id);
+  assert.equal(
+    failed.runs[0]!.error,
+    "gpt-5-retired on ChatGPT did not run because it is not in the current model list; choose another model for this automation.",
+  );
+  assert.equal(failed.runs[0]!.threadId, null);
+  // A subscription whose plan limit is reached: the line item 63 uses, not a run on another model.
+  const opus = await reread.create({ title: "Review", prompt: "Review", rule: daily, target: "new", model: "claude/opus" });
+  const stopped = await reread.runNow(opus.id);
+  assert.equal(
+    stopped.runs[0]!.error,
+    "claude/opus on Claude did not run because the Claude usage limit is reached; wait for the reset, or choose another model for this automation.",
+  );
+  assert.equal(h.made.length, 0, "no chat was started on any model");
+  assert.equal(h.sent.length, 0);
+  // An agent's typo is refused when the task is made, with the reason.
+  await assert.rejects(
+    reread.create({ title: "x", prompt: "x", rule: daily, model: "codex-sol", provider: "openai" }),
+    /codex-sol on ChatGPT .* not in the current model list/,
+  );
+  await assert.rejects(reread.create({ title: "x", prompt: "x", rule: daily, effort: "high" }), /Choose a model/);
+  await schedule.close();
+  await reread.close();
+});
+
+test("a task saved before automations had a model still runs on the app's default", async () => {
+  const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "elpis-schedule-")), "tasks.json");
+  const old = {
+    id: "11111111-1111-4111-8111-111111111111",
+    title: "Morning check",
+    prompt: "Check the build",
+    cwd: null,
+    rule: { kind: "daily", time: "09:00" },
+    target: "new",
+    status: "active",
+    threadId: null,
+    runs: [],
+    lastRunAt: null,
+    nextRunAt: at(2026, 11, 4, 9),
+    createdAt: at(2026, 11, 1),
+    updatedAt: at(2026, 11, 1),
+  };
+  await fs.writeFile(file, JSON.stringify({ version: 1, tasks: [old] }));
+  const h = harness(at(2026, 11, 4, 8, 0));
+  const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  const ran = await schedule.runNow(old.id);
+  assert.equal(ran.runs[0]!.error, null);
+  assert.equal(ran.model ?? null, null);
+  assert.equal("model" in h.made[0]!, false, "the chat starts on the app's default");
+  assert.equal("effort" in h.sends[0]!, false);
+  await schedule.close();
+});
+
+test("the agents' tools take a model, its provider and effort, and the list shows them", async () => {
+  const { callTool, tools } = await import("./schedule-mcp.mts");
+  const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "elpis-schedule-")), "tasks.json");
+  const h = harness(at(2026, 11, 4, 8, 0), { models: { openai: ["gpt-6.1-sol", "gpt-6-luna"] } });
+  const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  const request = (async (route: string, body?: Record<string, unknown>) => {
+    if (route === "/api/automations") return body ? schedule.create(body) : { data: await schedule.list() };
+    const { action: _action, ...fields } = body!;
+    return schedule.update(route.split("/").pop()!, fields);
+  }) as unknown as Parameters<typeof callTool>[3];
+  for (const name of ["automation_create", "automation_update"]) {
+    const properties = tools.find(tool => tool.name === name)!.inputSchema.properties as Record<string, unknown>;
+    assert.ok(properties.model && properties.provider && properties.effort, `${name} takes model, provider and effort`);
+  }
+  const { created } = await callTool(
+    "automation_create",
+    {
+      title: "Jobs",
+      prompt: "Find jobs",
+      rule: rule("20261101T090000", "FREQ=DAILY"),
+      target: "new_chat",
+      model: "gpt-6.1-sol",
+      provider: "openai",
+      effort: "high",
+    },
+    undefined,
+    request,
+  );
+  assert.deepEqual([created!.model, created!.provider, created!.effort], ["gpt-6.1-sol", "openai", "high"]);
+  await callTool("automation_update", { id: created!.id, action: "update", model: "gpt-6-luna", provider: "openai", effort: "medium" }, undefined, request);
+  const { automations } = await callTool("automation_list", {}, undefined, request);
+  assert.deepEqual([automations![0]!.model, automations![0]!.provider, automations![0]!.effort], ["gpt-6-luna", "openai", "medium"]);
   await schedule.close();
 });
 

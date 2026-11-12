@@ -2,11 +2,14 @@
 // tasks"). Each task says what to send, when (bridge/schedule-rules.mts), and where: one chat it keeps using, or a new chat
 // every run. The timer lives in this process, so tasks run while Elpis runs (open or in the tray); runs missed while it was
 // closed become one run at the next start, as in DeepSeek Harness. Kept in <ELPIS_HOME>/automations/tasks.json.
+// A task may name its model, provider and effort (E26, 12 Nov, Masih: "whichever but mostly codex models and never
+// anthropic's"): its chat starts on that model, and a model that cannot run fails the run with one line, never another model.
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { BridgeError, object, projectFolder, text, threadId as chatId } from "./validate.mts";
 import { describeRule, legacyRule, nextRun, parseRule } from "./schedule-rules.mts";
+import { quotaStopLine, unlistedModelLine, workflowModelRoutes, workflowRoute } from "./workflow-models.mts";
 
 type Board = { nodes: unknown[] };
 type Workflow = { id: string; name: string; board?: Board | undefined };
@@ -26,16 +29,35 @@ type Task = {
   createdAt: number;
   updatedAt: number;
   workflow?: Workflow | null;
+  /** The chat's model, its connection (none for a subscription route or the engine's own list) and effort; none: the
+   * app's default at run time. Tasks saved before 12 Nov have none. */
+  model?: string | null;
+  provider?: string | null;
+  effort?: string | null;
 };
+type Route = { model: string; provider: string | null; effort: string | null };
 type Timers = { set: (fn: () => void, ms: number) => object; clear: (handle: object) => unknown };
 type Client = {
-  createThread: (body: { cwd?: string; name: string; automatic: boolean }) => Promise<{ thread?: { id?: string } }>;
-  send: (id: string, body: { text: string; automatic: boolean }) => Promise<unknown>;
+  createThread: (body: {
+    cwd?: string;
+    name: string;
+    automatic: boolean;
+    model?: string;
+    provider?: string;
+  }) => Promise<{ thread?: { id?: string } }>;
+  send: (id: string, body: { text: string; automatic: boolean; effort?: string }) => Promise<unknown>;
+  /** The current model list: the engine's, or one connection's (bridge/client-models.mts). */
+  models?: (options?: { provider?: string }) => Promise<{ data?: { model: string }[] }>;
+  /** The subscriptions and their usage (bridge/client-settings.mts impl_providers). */
+  providers?: () => Promise<Parameters<typeof workflowModelRoutes>[1]>;
 };
 
 const TARGETS = ["reuse", "new"],
   RUN_LIMIT = 50,
   LONGEST_WAIT = 2 ** 31 - 1;
+
+const routeOf = (task: Task): Route | null =>
+  task.model ? { model: task.model, provider: task.provider ?? null, effort: task.effort ?? null } : null;
 
 /** The task as the page and agents see it. */
 const shown = (task: Task) => ({
@@ -92,6 +114,27 @@ export function createSchedule({
     return task;
   };
 
+  /** Throws the one line saying why the route cannot run: its model is not in the current list, or its subscription's
+   * plan limit is reached. `quota`: also ask the subscriptions (at run time; a task being saved only needs the list). */
+  async function checkRoute(route: Route, quota: boolean) {
+    const named = { model: route.model, provider: workflowRoute(route.model, route.provider ?? "").provider };
+    if (!client.models) return;
+    const listed = await client.models(route.provider ? { provider: route.provider } : {}).catch((error: Error) => {
+      throw new BridgeError(`${unlistedModelLine(named, "automation")} (${error.message})`);
+    });
+    if (!(listed?.data ?? []).some(item => item.model === route.model))
+      throw new BridgeError(unlistedModelLine(named, "automation"));
+    if (!quota || !client.providers) return;
+    const providers = await client.providers().catch(() => null);
+    const subscription = providers
+      ? workflowModelRoutes(listed.data ?? [], providers).find(
+          item => item.model === route.model && item.provider === named.provider,
+        )
+      : undefined;
+    if (subscription?.exhausted)
+      throw new BridgeError(quotaStopLine(named, false, subscription.resetsAt ?? null, "automation"), 409);
+  }
+
   /** One timer for the earliest active task; a task already due runs now. */
   function arm() {
     if (timer) timers.clear(timer);
@@ -127,9 +170,13 @@ export function createSchedule({
       ).threadId;
     }
     let threadId: string | null | undefined = task.target === "reuse" ? task.threadId : null;
+    // A chat that already exists keeps its own model; a new one starts on the task's, or on the app's default.
+    const route = threadId ? null : routeOf(task);
     if (!threadId) {
+      if (route) await checkRoute(route, true);
       const made = await client.createThread({
         ...(task.cwd ? { cwd: task.cwd } : {}),
+        ...(route ? { model: route.model, ...(route.provider ? { provider: route.provider } : {}) } : {}),
         name: task.title,
         automatic: true,
       });
@@ -137,7 +184,7 @@ export function createSchedule({
       if (typeof threadId !== "string") throw new Error("Elpis did not start a chat for it");
       if (task.target === "reuse") task.threadId = threadId;
     }
-    await client.send(threadId, { text: task.prompt, automatic: true });
+    await client.send(threadId, { text: task.prompt, automatic: true, ...(route?.effort ? { effort: route.effort } : {}) });
     return threadId;
   }
 
@@ -174,8 +221,8 @@ export function createSchedule({
     const input = object(
       raw,
       partial
-        ? ["title", "prompt", "cwd", "rule", "target", "status", "workflow"]
-        : ["title", "prompt", "cwd", "rule", "target", "status", "threadId", "workflow"],
+        ? ["title", "prompt", "cwd", "rule", "target", "status", "workflow", "model", "provider", "effort"]
+        : ["title", "prompt", "cwd", "rule", "target", "status", "threadId", "workflow", "model", "provider", "effort"],
     ) as Record<string, unknown>;
     const value: Partial<Task> = {};
     if (!partial || input.title !== undefined) value.title = text(input.title, "name", 120).trim();
@@ -222,7 +269,31 @@ export function createSchedule({
         throw new BridgeError("Status must be active or paused");
       value.status = input.status as string;
     }
+    // A model given replaces the whole route: its provider and effort come with it, or are none. No model: the default.
+    if (input.model !== undefined) {
+      const model = input.model || null;
+      if (model !== null && (typeof model !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/.test(model)))
+        throw new BridgeError("Give a model ID from the current model list");
+      value.model = model as string | null;
+      value.provider = model && input.provider ? text(input.provider, "provider", 64) : null;
+      if (value.provider && !/^[a-z][a-z0-9_-]*$/.test(value.provider))
+        throw new BridgeError("Give a provider ID from Settings > Models & accounts");
+      value.effort = null;
+    } else if (input.provider !== undefined) throw new BridgeError("Give the model with its provider");
+    if (input.effort !== undefined) {
+      const effort = input.effort || null;
+      if (effort !== null && (typeof effort !== "string" || !/^[a-z]{1,20}$/.test(effort)))
+        throw new BridgeError("Give a reasoning effort the model offers, such as low, medium or high");
+      value.effort = effort as string | null;
+    }
     return value;
+  }
+
+  /** A route being saved: an effort needs its model, and a model must be in the current list. */
+  async function saveable(task: Partial<Task>, input: Partial<Task>) {
+    if (task.effort && !task.model) throw new BridgeError("Choose a model before its reasoning effort");
+    const route = routeOf(task as Task);
+    if (route && input.model !== undefined) await checkRoute(route, false);
   }
 
   return {
@@ -245,6 +316,7 @@ export function createSchedule({
         updatedAt: at,
         ...value,
       } as Task;
+      await saveable(task, value);
       task.nextRunAt = task.status === "active" ? nextRun(task.rule, at) : null;
       if (task.nextRunAt == null && task.status === "active") throw new BridgeError("That time has already passed");
       tasks.push(task);
@@ -258,6 +330,7 @@ export function createSchedule({
         value = fields(input, true);
       if (value.target && value.target !== task.target) task.threadId = null;
       if (value.workflow && !value.workflow.board) value.workflow.board = task.workflow?.board;
+      await saveable({ ...task, ...value }, value);
       Object.assign(task, value, { updatedAt: now() });
       // An ended task given a new rule runs again; the next run counts from now.
       if (value.rule && task.status === "ended") task.status = "active";

@@ -130,6 +130,8 @@ export function WorkflowPages({
           {workflowTab === "scheduled" && (
             <AutomationsView
               projects={projects}
+              models={models}
+              threads={threads}
               prefill={workflowPrefill}
               onPrefillUsed={() => setWorkflowPrefill(null)}
               onOpenChat={id => {

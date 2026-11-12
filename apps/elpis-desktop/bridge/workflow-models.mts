@@ -24,10 +24,20 @@ export function workflowRoute(model: string = "", provider: string = "") {
 const providerName = (provider: string) =>
   provider === "claude" ? "Claude" : provider === "agy" ? "Antigravity" : provider === "openai" ? "ChatGPT" : provider;
 
+/** What he does next, for whom the model was chosen: a workflow's agent is resumed, an automation simply runs again. */
+const another = (whom: "agent" | "automation") =>
+  whom === "agent" ? "choose another model for this agent and resume" : "choose another model for this automation";
+
 /** The one line an agent's chat and its run's record show when its subscription has no quota left. An agent never moves
  * to another subscription (E17, 11 Nov, Masih: "I never permitted opus"), so the line says what he can do. `resetsAt` in
- * seconds, when the usage data has it; `during`: the limit was reached while the agent worked. */
-export function quotaStopLine(route: { model: string; provider: string }, during: boolean, resetsAt?: number | null) {
+ * seconds, when the usage data has it; `during`: the limit was reached while the agent worked. An automation's run uses
+ * the same line (E26, 12 Nov). */
+export function quotaStopLine(
+  route: { model: string; provider: string },
+  during: boolean,
+  resetsAt?: number | null,
+  whom: "agent" | "automation" = "agent",
+) {
   const name = providerName(route.provider);
   const until = resetsAt
     ? ` until ${new Date(resetsAt * 1000).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
@@ -35,7 +45,12 @@ export function quotaStopLine(route: { model: string; provider: string }, during
   const why = during
     ? `stopped because the ${name} usage limit was reached during its work`
     : `did not run because the ${name} usage limit is reached${until}`;
-  return `${route.model || name} on ${name} ${why}; wait for the reset, or choose another model for this agent and resume.`;
+  return `${route.model || name} on ${name} ${why}; wait for the reset, or ${another(whom)}.`;
+}
+/** The line for a chosen model the current model list no longer has (or never had): nothing runs on another model. */
+export function unlistedModelLine(route: { model: string; provider: string }, whom: "agent" | "automation" = "agent") {
+  const name = providerName(route.provider);
+  return `${route.model} on ${name} did not run because it is not in the current model list; ${another(whom)}.`;
 }
 export function quotaFailure(error: unknown) {
   const details = error as { errorKind?: string; message?: string } | null | undefined;

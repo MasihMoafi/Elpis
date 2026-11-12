@@ -5,10 +5,9 @@ import { ContextUsage } from "@/components/context-usage";
 import { Dictation } from "@/components/dictation";
 import { SendIcon, StopIcon } from "@/components/elpis-icons";
 import type { useMentionMenu } from "@/components/mention-menu";
-import { ModelPicker } from "@/components/model-picker";
+import { EffortPicker, ModelPicker } from "@/components/model-picker";
 import type { useSlashMenu } from "@/components/slash-menu";
 import { Button } from "@/components/ui/button";
-import { OptionSelect } from "@/components/ui/option-select";
 import { Voice } from "@/components/voice";
 import type { Model, ProviderSettings, Thread } from "@/lib/api";
 import { ATTACHMENT_LIMITS } from "@/lib/attachments";
@@ -182,25 +181,12 @@ export function ComposerControls({
           }}
         />
         {turnEfforts.length > 0 && (
-          <OptionSelect
-            aria-label="Reasoning effort"
-            size="sm"
-            className="model-select"
+          <EffortPicker
+            efforts={turnEfforts}
             value={turnEffort}
-            onChange={e => (selected ? void saveEffort(selected.id, e.target.value) : setEffort(e.target.value))}
+            onChange={effort => (selected ? void saveEffort(selected.id, effort) : setEffort(effort))}
             disabled={!ready || !connected || busy}
-          >
-            <option value="">
-              <span className="effort-long">Default effort</span>
-              <span className="effort-short">Default</span>
-            </option>
-            {turnEffort && !turnEfforts.includes(turnEffort) && <option value={turnEffort}>{turnEffort}</option>}
-            {turnEfforts.map(value => (
-              <option key={value} value={value}>
-                {value}
-              </option>
-            ))}
-          </OptionSelect>
+          />
         )}
         {!selected?.motherAgent && (
           <Button

@@ -1,6 +1,6 @@
 # Elpis desktop requirements
 
-These are the required behaviors, numbered 1–90 without gaps; refer to one as "SPEC item N". The IDs in parentheses are the older request IDs that code, tests and REQUESTS.md still cite. [ES.md](../../ES.md) records current state and open decisions; [REQUESTS.md](../../REQUESTS.md) records requests. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md), the design system in [DESIGN.md](DESIGN.md), and verification in [TESTING.md](TESTING.md).
+These are the required behaviors, numbered 1–91 without gaps; refer to one as "SPEC item N". The IDs in parentheses are the older request IDs that code, tests and REQUESTS.md still cite. [ES.md](../../ES.md) records current state and open decisions; [REQUESTS.md](../../REQUESTS.md) records requests. Project rules are in [MASIH-RULES.md](../../docs/MASIH-RULES.md), the design system in [DESIGN.md](DESIGN.md), and verification in [TESTING.md](TESTING.md).
 
 ## Sidebar and chat list
 
@@ -93,6 +93,7 @@ These are the required behaviors, numbered 1–90 without gaps; refer to one as 
 69. The board and chat workflow tool use one runner: independent agents start together, dependents start after their inputs finish, and writers use isolated worktrees. (WR8)
 
 86. Workflows opens on a Map of the router, ticket chats, agent trees and workflow runs, with live states and clickable chats; Board and Scheduled remain available, and the page reopens on the view he last used. Show all chats adds 30 recent standalone chats. The Map keeps its pan and zoom and remains readable at 1100 × 750. (W1–W4)
+91. An automation on the Scheduled page can hold a model, its provider and an effort, chosen with the message box's pickers; its card names the model (12 Nov, Masih: "whichever but mostly codex models and never anthropic's"). A run starts its chat on that model and effort: every run for "a new chat every run", the first run for "one chat". A chat that already exists keeps its own model, and the card names it. Without a model a run uses the app's default at run time, and the editor says so; tasks saved earlier run as before. A model missing from the current list, or whose subscription has reached its limit, is never replaced: the run is recorded as failed with one line naming the model and what to do, as in item 63. The agents' automation tools take and list the same fields.
 
 ## Router (the Elpis tab)
 

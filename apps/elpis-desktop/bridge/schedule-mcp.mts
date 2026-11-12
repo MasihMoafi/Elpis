@@ -14,6 +14,9 @@ type Task = {
   status: string;
   nextRunAt?: string | number | null;
   target: string;
+  model?: string | null;
+  provider?: string | null;
+  effort?: string | null;
 };
 type Request = (path: string, body?: Record<string, unknown>) => Promise<Task & { data: Task[] }>;
 type Message = {
@@ -31,6 +34,22 @@ const RULE = {
     "daylight-saving changes; skipped local times are skipped, and repeated ones occur once, at the earlier instant. A one-time run is " +
     "RRULE:FREQ=DAILY;COUNT=1. FREQ is MINUTELY, HOURLY, DAILY, WEEKLY, MONTHLY or YEARLY. MINUTELY and HOURLY take no BY parts, so pick clock " +
     'times with DAILY or WEEKLY plus BYHOUR and BYMINUTE. Example: "DTSTART;TZID=Asia/Tehran:20261109T090000\\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR".',
+};
+// The chat's model (E26, 12 Nov): the same fields the Scheduled page saves (bridge/schedule.mts).
+const ROUTE = {
+  model: {
+    type: "string",
+    description:
+      "The model its chats start on, an id from Elpis's current model list, only when the user names one. Omit for the app's default " +
+      "at run time; an empty string clears it. A run never falls back to another model: if this one cannot run, the run fails and says why.",
+  },
+  provider: {
+    type: "string",
+    description:
+      'The connection that serves the model, e.g. "openai" for ChatGPT models or a configured API provider; omit for the default ' +
+      "connection and for subscription models (claude/..., agy/...).",
+  },
+  effort: { type: "string", description: "Reasoning effort the model offers (e.g. low, medium, high, xhigh); omit for its default." },
 };
 export const tools = [
   {
@@ -51,18 +70,20 @@ export const tools = [
           type: "string",
           description: "Absolute project folder for new chats; omit for the current chat's folder or none.",
         },
+        ...ROUTE,
       },
     },
   },
   {
     name: "automation_list",
-    description: "List the scheduled automations with their id, rule, status and next run.",
+    description: "List the scheduled automations with their id, rule, status, next run and model.",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
     name: "automation_update",
     description:
-      'Change, pause, resume or delete an automation, only at the user\'s explicit request. action "update" takes any of title, prompt, rule; "pause", "resume" and "delete" take only id.',
+      "Change, pause, resume or delete an automation, only at the user's explicit request. " +
+      'action "update" takes any of title, prompt, rule, model (with its provider and effort); "pause", "resume" and "delete" take only id.',
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -73,6 +94,7 @@ export const tools = [
         title: { type: "string" },
         prompt: { type: "string" },
         rule: RULE,
+        ...ROUTE,
       },
     },
   },
@@ -97,6 +119,9 @@ const brief = (task: Task) => ({
   status: task.status,
   next: task.nextRunAt ? new Date(task.nextRunAt).toString() : null,
   runsIn: task.target === "reuse" ? "one chat" : "a new chat each run",
+  model: task.model ?? "the app's default at run time",
+  provider: task.provider ?? null,
+  effort: task.effort ?? null,
 });
 
 /** Runs one tool call against the app; `request(path, body?)` posts (or gets, without a body) and returns its JSON. */

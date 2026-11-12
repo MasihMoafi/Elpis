@@ -2,13 +2,15 @@
 // Automations (6 Nov, Masih: "we need a schedule tab in Elpis ... mimic deepseek's"): prompts Elpis sends on a schedule,
 // as DeepSeek Harness's "Automation tasks". The list filters by state; New and Edit open the same form; each task has
 // Run now, Pause or Resume, Edit, Delete and its past runs, each opening the chat it ran in. bridge/schedule.mjs runs them.
+// A task may hold its chat's model and effort, chosen with the message box's pickers (E26, 12 Nov).
 import "@/components/automations-view.css";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarClock, Pause, Pencil, Play, Plus, Trash2, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDelete } from "@/components/confirm-delete";
+import { EffortPicker, ModelPicker } from "@/components/model-picker";
 import { Choice, Segmented, SettingsEmpty, SettingsHeader, SettingsNotice } from "@/components/settings/rows";
 import {
   defaultTiming,
@@ -18,7 +20,20 @@ import {
   timingValid,
   type TimingDraft,
 } from "@/components/schedule-editor";
-import { api } from "@/lib/api";
+import {
+  agentModelLabel,
+  api,
+  choiceById,
+  effortsOf,
+  modelLabel,
+  providerChoices,
+  subscriptionOf,
+  type Model,
+  type ProviderChoice,
+  type ProviderSettings,
+  type Thread,
+} from "@/lib/api";
+import { useElpisSettings } from "@/lib/settings-store";
 import { errorText } from "@/lib/error-text.mts";
 import type { Project } from "@/lib/projects";
 import type { CanvasGraph } from "@/lib/canvas";
@@ -36,6 +51,12 @@ export type Automation = {
   target: "reuse" | "new";
   status: "active" | "paused" | "ended";
   workflow?: ScheduledWorkflow | null;
+  /** The chat it keeps using, once there is one. */
+  threadId?: string | null;
+  /** Its chats' model, connection and effort; none: the app's default when it runs. */
+  model?: string | null;
+  provider?: string | null;
+  effort?: string | null;
   nextRunAt: number | null;
   lastRunAt: number | null;
   runs: Run[];
@@ -48,6 +69,10 @@ type Draft = TimingDraft & {
   cwd: string;
   target: "reuse" | "new";
   workflow: ScheduledWorkflow | null;
+  /** "" for the app's default; `choiceId` is the model picker's connection. */
+  model: string;
+  choiceId: string;
+  effort: string;
 };
 /** What the board hands over when he presses Schedule: the workflow, its request and its project. */
 export type WorkflowPrefill = { id: string; name: string; board: CanvasGraph; request: string; cwd?: string };
@@ -70,6 +95,9 @@ const blank = (from?: WorkflowPrefill | null): Draft => ({
   cwd: from?.cwd ?? "",
   target: "reuse",
   workflow: from ? { id: from.id, name: from.name, board: from.board } : null,
+  model: "",
+  choiceId: "",
+  effort: "",
 });
 const draftOf = (task: Automation): Draft => ({
   ...timingFromRule(task.rule),
@@ -78,7 +106,20 @@ const draftOf = (task: Automation): Draft => ({
   cwd: task.cwd ?? "",
   target: task.target,
   workflow: task.workflow ?? null,
+  model: task.model ?? "",
+  choiceId: task.provider ?? subscriptionOf(task.model)?.prefix ?? "",
+  effort: task.effort ?? "",
 });
+/** The model a task's next run uses, in words: its kept chat's own, its chosen one, or the app's default. */
+function modelOf(task: Automation, models: Model[], threads: Thread[]) {
+  if (task.target === "reuse" && task.threadId) {
+    const chat = threads.find(thread => thread.id === task.threadId);
+    return { badge: chat ? agentModelLabel(chat, models) : "", line: `on its chat's own model${chat?.model ? `, ${agentModelLabel(chat, models)}` : ""}` };
+  }
+  if (!task.model) return { badge: "", line: "on the app's default model" };
+  const named = [modelLabel(task.model, models), task.effort].filter(Boolean).join(" · ");
+  return { badge: named, line: `on ${named}` };
+}
 const when = (ms: number) =>
   new Date(ms).toLocaleString(undefined, {
     weekday: "short",
@@ -93,12 +134,16 @@ function AutomationForm({
   initial,
   editing,
   projects,
+  models,
+  choices,
   onSave,
   onCancel,
 }: {
   initial: Draft;
   editing: boolean;
   projects: Project[];
+  models: Model[];
+  choices: ProviderChoice[];
   onSave: (draft: Draft) => Promise<void>;
   onCancel: () => void;
 }) {
@@ -162,7 +207,46 @@ function AutomationForm({
             ]}
           />
         </div>
+        {/* A workflow's agents carry their own models on its board. */}
+        {!draft.workflow && (
+          <div className="schedule-row">
+            <span className="schedule-row-label">Model</span>
+            <span className="automation-route">
+              <ModelPicker
+                choices={choices}
+                models={models}
+                model={draft.model}
+                choiceId={draft.choiceId}
+                disabled={busy}
+                onChange={choice => set({ model: choice.model, choiceId: choice.choiceId, effort: "" })}
+              />
+              {draft.model && effortsOf(draft.model, models).length > 0 && (
+                <EffortPicker
+                  efforts={effortsOf(draft.model, models)}
+                  value={draft.effort}
+                  disabled={busy}
+                  onChange={effort => set({ effort })}
+                />
+              )}
+              {draft.model && (
+                <Button variant="ghost" size="sm" disabled={busy} onClick={() => set({ model: "", choiceId: "", effort: "" })}>
+                  Use the default
+                </Button>
+              )}
+            </span>
+          </div>
+        )}
       </div>
+      {!draft.workflow && (
+        <p className="automation-meta">
+          {draft.model
+            ? draft.target === "reuse"
+              ? "Its chat starts on this model at the first run; a chat it already uses keeps its own. " +
+                "If the model cannot run, the run fails and says why; it never uses another model."
+              : "Each run starts on this model. If the model cannot run, the run fails and says why; it never uses another model."
+            : "No model chosen: each run uses the app's default model at the time it runs."}
+        </p>
+      )}
       <ScheduleFields draft={draft} onChange={timing => set(timing)} />
       <div className="automation-form-actions">
         {error && <SettingsNotice tone="alert">{error}</SettingsNotice>}
@@ -183,11 +267,15 @@ function AutomationForm({
 /** `prefill` opens the form for a workflow the board handed over; `onPrefillUsed` clears it once taken. */
 export function AutomationsView({
   projects,
+  models,
+  threads,
   onOpenChat,
   prefill,
   onPrefillUsed,
 }: {
   projects: Project[];
+  models: Model[];
+  threads: Thread[];
   onOpenChat: (threadId: string) => void;
   prefill?: WorkflowPrefill | null;
   onPrefillUsed?: () => void;
@@ -200,6 +288,8 @@ export function AutomationsView({
     [busy, setBusy] = useState<string | null>(null),
     [deleting, setDeleting] = useState<Automation | null>(null);
   const [fromBoard, setFromBoard] = useState<WorkflowPrefill | null>(null);
+  const settings = useElpisSettings().data;
+  const choices = useMemo(() => providerChoices(models, settings as ProviderSettings | null), [models, settings]);
   // The board's Schedule button: open a new automation for that workflow, once.
   useEffect(() => {
     if (!prefill) return;
@@ -246,7 +336,13 @@ export function AutomationsView({
       cwd: draft.cwd || null,
       target: draft.target,
       rule: rruleFromDraft(draft, editing === "new"),
-      ...(draft.workflow ? { workflow: draft.workflow } : {}),
+      ...(draft.workflow
+        ? { workflow: draft.workflow }
+        : {
+            model: draft.model || null,
+            provider: (draft.model && choiceById(choices, draft.choiceId)?.provider) || null,
+            effort: (draft.model && draft.effort) || null,
+          }),
     };
     const saved =
       editing === "new"
@@ -280,6 +376,8 @@ export function AutomationsView({
           initial={editing === "new" ? blank(fromBoard) : draftOf(editing)}
           editing={editing !== "new"}
           projects={projects}
+          models={models}
+          choices={choices}
           onSave={save}
           onCancel={() => {
             setEditing(null);
@@ -308,7 +406,8 @@ export function AutomationsView({
             <div className="settings-rows automation-list">
               {shown.map(task => {
                 const expanded = open === task.id,
-                  working = busy === task.id;
+                  working = busy === task.id,
+                  route = modelOf(task, models, threads);
                 return (
                   <div key={task.id} className="automation" data-automation-id={task.id} data-status={task.status}>
                     <Button
@@ -321,6 +420,11 @@ export function AutomationsView({
                       <CalendarClock size={16} aria-hidden="true" />
                       <span className="automation-title">{task.title}</span>
                       {task.workflow && <span className="settings-badge">Workflow</span>}
+                      {!task.workflow && route.badge && (
+                        <span className="settings-badge" data-automation-model={task.model ?? ""}>
+                          {route.badge}
+                        </span>
+                      )}
                       {task.status !== "active" && (
                         <span className="settings-badge">{task.status === "paused" ? "Paused" : "Ended"}</span>
                       )}
@@ -334,6 +438,7 @@ export function AutomationsView({
                         <p className="automation-prompt">{task.prompt}</p>
                         <p className="automation-meta">
                           {task.target === "reuse" ? "Runs in one chat" : "A new chat each run"}
+                          {task.workflow ? "" : ` ${route.line}`}
                           {task.cwd ? ` · ${projects.find(project => project.cwd === task.cwd)?.name ?? task.cwd}` : ""}
                         </p>
                         <div className="automation-actions">
