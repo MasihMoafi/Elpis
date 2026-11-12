@@ -33,6 +33,7 @@ From the [v0.5.1 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.
 - **Fedora, Arch, Omarchy, any Linux:** `chmod +x Elpis-0.5.1-x86_64.AppImage`, then run it; add `elpis` to run the terminal app.
 - **Arch, Omarchy (native package):** `git clone https://github.com/MasihMoafi/Elpis && cd Elpis/packaging/aur/elpis-bin && makepkg -si`
 - **Terminal app only:** `curl -fsSL https://raw.githubusercontent.com/MasihMoafi/Elpis/v0.5.1/scripts/install-elpis.sh | bash`
+- **Terminal app with npm:** `npm install -g elpis-cli`, then `elpis`. The first run downloads the v0.5.1 release and checks its SHA-256.
 
 Both apps share one engine and one state folder, `~/.elpis-next`.
 </details>
