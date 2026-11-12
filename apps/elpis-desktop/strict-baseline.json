@@ -195,7 +195,7 @@
   "tests/bookmarks.test.cts:long": 9,
   "tests/bridge-architecture.test.mts:long": 2,
   "tests/browser-annotate.test.cts:long": 5,
-  "tests/browser-drawing.test.cts:long": 14,
+  "tests/browser-drawing.test.cts:long": 13,
   "tests/browser-identity-electron.test.cts:long": 6,
   "tests/browser-panel.test.cts:long": 40,
   "tests/browser-sessions-electron.test.cts:long": 20,
