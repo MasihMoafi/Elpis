@@ -60,11 +60,17 @@ Reconnect and error notices follow the last message inside `.chat-content`. Show
 The shared static UI check is owned by the shared-system package (`~/Desktop/p/shared-system/lint/lint.mjs`, on npm as `@masihmoafi/shared-system`; the old path under `skills/web-dev/` is a link to it). This app holds a generated copy, `scripts/ui-lint.generated.mjs`. After changing the owner, run `node scripts/ui-lint-sync.mts --write` from this app; `node scripts/ui-lint-sync.mts --check` runs in every build and on CI, and fails on a stale copy.
 
 ## 8. Known UI exceptions
-What `ui-check.known.json` still allows, one row per key (rule, then file or page); the list only shrinks. A disclosure is `Disclosure` with `DisclosureSummary` (`components/ui/disclosure-summary.tsx`, the one native `details`), so it has no row. An R5 row stays where `Button` or `Input` would change the look: their base classes add the bevel clip, a 1 px transparent border, medium weight, a 1 px press shift and the focus ring. Matching a control to the pixel needs an unstyled shared variant and a look check for that control.
+What `ui-check.known.json` still allows, one row per key (rule, then file or page); the list only shrinks. The R2 control-height rows are grouped by control instead, with their number of keys (25 in all). A disclosure is `Disclosure` with `DisclosureSummary` (`components/ui/disclosure-summary.tsx`, the one native `details`), so it has no row. An R5 row stays where `Button` or `Input` would change the look: their base classes add the bevel clip, a 1 px transparent border, medium weight, a 1 px press shift and the focus ring. Matching a control to the pixel needs an unstyled shared variant and a look check for that control.
 
 | Rule | File or page | Why it stays; what would change it |
 | --- | --- | --- |
 | R2 | `/` brand row | The 73×36 wordmark and the 28 px Close sidebar button share a centre line; equal boxes means clipping the wordmark or a 38 px hover box on Close |
+| R2 | `/` sidebar nav rows (7 keys) | New chat, Lab, Workflows, Love Spot, Elpis, Observability and Customize are 34 px. Rule R2 arrived on 12 Nov 2026 from the shared system; Elpis's pass to the shared heights (32, 36, 40 px) is a design change Masih sees first |
+| R2 | `/` sidebar chat rows (3 keys) | Each chat row is 34 px. Same reason: R2 arrived on 12 Nov 2026; the pass to the shared heights waits for Masih |
+| R2 | `/` usage summary (1 key) | "Usage unavailable" at the sidebar foot is 34 px. Same reason |
+| R2 | `/` composer chips and triggers (7 keys) | Local, Work in a project, Full access, the permissions chip on the phone (icon only), the model picker, Add files and the context gauge are 28 px. Same reason |
+| R2 | `/` feature chips (3 keys) | Smart Prune, Subagents and RAG under the composer are 28 px. Same reason |
+| R2 | `/` buttons and triggers (4 keys) | The Elpis home wordmark is 38 px; Close sidebar and Pin Matilda are 28 px; Add new project, the theme toggle and Settings are 24 px; the Character, Sort chats and chat-row action menus are 24 px. Same reason |
 | R3 | `/` brand row | The same pair: their tops differ by 5 px because they are centred; top-aligning moves the toggle off the wordmark's centre |
 | R4 | `components/agents-canvas.css` | The board's kind, sticky-note and iso-face colours have no theme token; adding them is a theme change in `design/design.json` |
 | R5 | `components/agents-iso-places.tsx` | Ports, wire ends and flow labels are marks placed on the board; Button's box and clip would move them |
