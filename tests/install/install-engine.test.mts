@@ -213,6 +213,85 @@ test('source and install paths can contain spaces', (t) => {
   assert.equal(execFileSync(`${f.bin}/elpis`, ['--version'], { encoding: 'utf8' }).trim(), 'elpis 0.4.1');
 });
 
+// 13 Nov: no Rust build was allowed, so a fix to the bridge scripts alone had no supported install. --binaries-from takes
+// the engine binaries from an installed version and the scripts from the checkout, and records both origins.
+function snapshot(dir: string): string[] {
+  return readdirSync(dir, { recursive: true }).map(String).sort().map((name) => {
+    const file = path.join(dir, name);
+    const stat = lstatSync(file);
+    const body = stat.isSymbolicLink() ? `-> ${readlinkSync(file)}` : stat.isFile() ? readFileSync(file).toString('base64') : 'dir';
+    return `${name} ${stat.mode} ${stat.mtimeMs} ${body}`;
+  });
+}
+
+function reusedFixture(t: TestContext) {
+  const f = fixture(t);
+  const first = f.run('built');
+  assert.equal(first.status, 0, first.stderr);
+  const from = f.bundle();
+  // The checkout moves on: new scripts, and a different engine in the cargo folder that must not be taken.
+  writeFileSync(`${f.source}/tools/elpis-claude/runtime.mts`, 'export const fixed = true;\n');
+  f.git('add', 'tools/elpis-claude/runtime.mts');
+  f.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-qm', 'scripts only');
+  writeFileSync(`${f.source}/codex-rs/target/release/codex`, '#!/bin/sh\nprintf "elpis 9.9.9\\n"\n');
+  const versions = path.dirname(from);
+  return { ...f, from, name: path.basename(from), versions, scriptsHead: f.git('rev-parse', 'HEAD').toString().trim() };
+}
+
+test('--binaries-from installs the checkout\'s scripts with an installed version\'s binaries and records both origins', (t) => {
+  const f = reusedFixture(t);
+  const before = snapshot(f.from);
+  const result = f.run('--binaries-from', f.name, '--reason', 'no Rust build allowed tonight', 'scripts');
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stderr, /skipped/);
+  const bundle = f.bundle();
+  assert.notEqual(bundle, f.from);
+  for (const file of ['bin/codex', 'bin/codex-code-mode-host', 'codex-path/rg', 'codex-resources/bwrap']) {
+    assert.deepEqual(readFileSync(`${bundle}/package/${file}`), readFileSync(`${f.from}/package/${file}`), file);
+  }
+  assert.equal(path.basename(bundle), `scripts-${path.basename(f.from).split('-').at(-1)}`);
+  assert.equal(readFileSync(`${bundle}/tools/elpis-claude/runtime.mts`, 'utf8'), 'export const fixed = true;\n');
+  assert.ok(existsSync(`${bundle}/tools/elpis-claude/node_modules`));
+  const binaries = JSON.parse(readFileSync(`${f.from}/source.json`, 'utf8'));
+  const record = JSON.parse(readFileSync(`${bundle}/source.json`, 'utf8'));
+  assert.equal(record.source_head, binaries.source_head);
+  assert.equal(record.source_head, f.head);
+  assert.notEqual(record.source_head, f.scriptsHead);
+  assert.equal(record.runtime_sha256, binaries.runtime_sha256);
+  assert.deepEqual(record.binaries_from, { version: f.name, path: f.from, source_head: f.head, source_patch_sha256: binaries.source_patch_sha256 });
+  assert.equal(record.scripts_head, f.scriptsHead);
+  assert.equal(record.reason, 'no Rust build allowed tonight');
+  assert.ok(record.skipped.length > 0);
+  assert.deepEqual(snapshot(f.from), before, 'the source version is unchanged');
+  assert.equal(execFileSync(`${f.bin}/elpis`, ['--version'], { encoding: 'utf8' }).trim(), 'elpis 0.4.1');
+  execFileSync('bash', [`${bundle}/rollback.sh`], { env: { ...process.env, HOME: f.home } });
+  assert.equal(f.bundle(), f.from);
+});
+
+test('--binaries-from refuses a missing version, a version without a binary, the version being written, and no reason', async (t) => {
+  for (const reason of ['missing', 'no-binary', 'same-name', 'no-reason', 'with-frontend']) {
+    await t.test(reason, (t) => {
+      const f = reusedFixture(t);
+      if (reason === 'no-binary') mkdirSync(`${f.versions}/empty/package/bin`, { recursive: true });
+      const from = { missing: 'absent', 'no-binary': 'empty' }[reason] ?? f.name;
+      // The binaries of `built-<sha>` installed as `built` would be written to `built-<sha>` itself.
+      const name = reason === 'same-name' ? 'built' : 'refused';
+      const args = reason === 'no-reason' ? ['--binaries-from', from, name]
+        : [...(reason === 'with-frontend' ? ['--with-frontend'] : []), '--binaries-from', from, '--reason', 'test', name];
+      const launcher = readFileSync(`${f.bin}/elpis`);
+      const listing = readdirSync(f.versions).sort();
+      const before = snapshot(f.from);
+      const result = f.run(...args);
+      assert.notEqual(result.status, 0, result.stdout);
+      assert.match(result.stderr, { missing: /no installed version/, 'no-binary': /no engine binary/, 'same-name': /being written/, 'no-reason': /--reason/, 'with-frontend': /--with-frontend/ }[reason] as RegExp);
+      assert.deepEqual(readFileSync(`${f.bin}/elpis`), launcher);
+      assert.equal(f.bundle(), f.from);
+      assert.deepEqual(readdirSync(f.versions).sort(), listing);
+      assert.deepEqual(snapshot(f.from), before);
+    });
+  }
+});
+
 // 1 Nov: six engine bundles of 459 MB were never removed. An install trashes all but the newest five, the rollback
 // bundle and any bundle the live launcher still names.
 test('an install moves old engine bundles to the trash', (t) => {
