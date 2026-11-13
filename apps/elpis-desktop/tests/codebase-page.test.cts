@@ -29,13 +29,25 @@ const routes = (projects: typeof PROJECTS, current: string | null) => ({
     return project ? report(project.name) : { __http: 404, error: 'None of your chats works in this project.' };
   },
 });
-type Locator = { first(): Locator; click(): Promise<void>; waitFor(): Promise<void>; filter(options: object): Locator; getByRole(role: string, options?: object): Locator };
+/** A control's left, right, top and height, in px. */
+type Box = [number, number, number, number];
+type Locator = {
+  evaluate<T, A>(fn: (element: HTMLElement, arg: A) => T, arg: A): Promise<T>;
+  locator(selector: string): Locator; first(): Locator; click(): Promise<void>; waitFor(): Promise<void>;
+  filter(options: object): Locator; getByRole(role: string, options?: object): Locator;
+};
 type Page = { locator(selector: string): Locator; getByRole(role: string, options?: object): Locator; frameLocator(selector: string): Locator };
 async function openCodebase(page: Page) {
   await page.locator('aside.sidebar .thread-row').first().click();
   await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
   await page.getByRole('radio', { name: 'Codebase', exact: true }).click();
 }
+/** The boxes of the controls `selector` finds inside a row, in page order. */
+const boxes = (row: Locator, selector: string): Promise<Box[]> =>
+  row.evaluate((element: HTMLElement, found: string) => [...element.querySelectorAll(found)].map(control => {
+    const b = control.getBoundingClientRect();
+    return [Math.round(b.left), Math.round(b.right), Math.round(b.top), Math.round(b.height)] as Box;
+  }), selector);
 const heading = (page: Page, text: string | RegExp) =>
   page.frameLocator('iframe[title="Codebase"]').getByRole('heading', { level: 1 }).filter({ hasText: text });
 
@@ -54,20 +66,18 @@ test('Observability shows the project of the chosen chat: code, churn for chosen
     await frame.getByRole('cell', { name: '660', exact: true }).waitFor();
     assert.equal(await frame.getByRole('button', { name: '30 days', exact: true }).getAttribute('aria-pressed'), 'false');
     // The date fields and the presets are one row of 32 px controls, 8 px apart inside a group and 16 px between groups.
-    const range = await frame.locator('.range').evaluate((row: HTMLElement) =>
-      [...row.querySelectorAll('input, .toggle')].map(el => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(b.top), Math.round(b.height)]; }));
+    const range = await boxes(frame.locator('.range'), 'input, .toggle');
     assert.deepEqual(range.map(([, , , height]) => height), [32, 32, 32]);
     assert.equal(new Set(range.map(([, , top]) => top)).size, 1, 'one row at 1300 px');
-    assert.ok(range[2][0] - range[1][1] >= 16, `presets stand 16 px off the dates: ${JSON.stringify(range)}`);
+    assert.ok(range[2]![0] - range[1]![1] >= 16, `presets stand 16 px off the dates: ${JSON.stringify(range)}`);
     await frame.getByRole('button', { name: /^Readiness/ }).click();
     await heading(page, 'demo meets 2 of 3 readiness checks; documentation is weakest').waitFor();
     await frame.getByText('no AGENTS.md or CLAUDE.md in Git: a fresh clone has none', { exact: true }).waitFor();
     await frame.getByText('Changed since the report of 2026-11-01', { exact: true }).waitFor();
     // The bar: chooser and page switch are one 32 px row, 12 px apart; the switch never wraps.
-    const bar = await page.locator('.observability-bar').evaluate((row: HTMLElement) =>
-      [row.querySelector('[aria-label="Project"]'), row.querySelector('[role="radiogroup"]')].map(el => { const b = el!.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(b.top), Math.round(b.height)]; }));
-    assert.deepEqual(bar.map(([, , top, height]) => [top, height]), [[bar[0][2], 32], [bar[0][2], 32]], JSON.stringify(bar));
-    assert.equal(bar[1][0] - bar[0][1], 12);
+    const bar = await boxes(page.locator('.observability-bar'), '[aria-label="Project"], [role="radiogroup"]');
+    assert.deepEqual(bar.map(([, , top, height]) => [top, height]), [[bar[0]![2], 32], [bar[0]![2], 32]], JSON.stringify(bar));
+    assert.equal(bar[1]![0] - bar[0]![1], 12);
     if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/codebase-readiness.png` });
     // He picks another project; the page reads it and the choice is kept on this device.
     await page.getByRole('combobox', { name: 'Project' }).click();
