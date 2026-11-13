@@ -86,9 +86,9 @@ test('the notice’s Undo brings the chat back; Ctrl+Z in the message box undoes
 test('the Deleted notice never covers the transcript or the message box, sidebar open or closed, wide or narrow', async () => {
   const { routes } = trashRoutes(), f = await fixture({ routes, width: 1440, height: 900 });
   const { page } = f;
-  const box = (selector: string) => page.locator(selector).first().evaluate(element => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; });
+  const box = (selector: string) => page.locator(selector).first().evaluate((element: Element) => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; });
   const overlap = (a: { left: number; top: number; right: number; bottom: number }, b: typeof a) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
-  const sidebarShown = () => page.locator('aside.sidebar').evaluate(element => getComputedStyle(element).display !== 'none');
+  const sidebarShown = () => page.locator('aside.sidebar').evaluate((element: Element) => getComputedStyle(element).display !== 'none');
   try {
     for (const [width, id] of [[1440, 'chat-c'], [720, 'chat-b']] as const) {
       await page.setViewportSize({ width, height: 900 });
