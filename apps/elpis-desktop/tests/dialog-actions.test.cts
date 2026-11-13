@@ -51,3 +51,13 @@ test('shared reasons appear once, enabled actions have none, and an omitted busy
   assert.doesNotMatch(render(React.createElement(Button, { disabledReason: 'Describe what should change.' }, 'Start change')), /role="status"|aria-describedby=/);
   assert.match(render(React.createElement(Button, { disabled: true }, 'Saving…')), /Wait for the current action to finish\./);
 });
+
+// 13 Nov, Masih: "this give your char a name shouldn't be at the bottom!" A reason already shown at its form field
+// is named by the action and not repeated above the footer.
+test('an action whose reason sits at its field keeps that description and adds no footer line', () => {
+  const { AlertDialogFooter, Button } = components();
+  const html = renderToStaticMarkup(React.createElement(AlertDialogFooter, null,
+    React.createElement(Button, { disabled: true, 'aria-describedby': 'character-name-hint' }, 'Save character')));
+  assert.doesNotMatch(html, /role="status"|<p/);
+  assert.match(html, /aria-describedby="character-name-hint"/);
+});

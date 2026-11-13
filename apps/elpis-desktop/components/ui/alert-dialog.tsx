@@ -57,7 +57,13 @@ function AlertDialogFooter({ className, children, ...props }: React.ComponentPro
   const id = useId(),
     reasons: string[] = [];
   const actions = Children.map(children, child => {
-    if (!isValidElement<React.ComponentProps<typeof Button>>(child) || child.type !== Button || !child.props.disabled)
+    // A button whose reason already sits at its form field (aria-describedby) gets no second line here.
+    if (
+      !isValidElement<React.ComponentProps<typeof Button>>(child) ||
+      child.type !== Button ||
+      !child.props.disabled ||
+      child.props["aria-describedby"]
+    )
       return child;
     const { variant = "default", disabledReason, title } = child.props;
     if (!["default", "cutPrimary", "destructive"].includes(variant ?? "default") && !disabledReason && !title)

@@ -140,3 +140,49 @@ for (const colorScheme of ['light', 'dark']) test(`characters can be selected be
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// 13 Nov, Masih, on the Create your own form: "this give your char a name shouldn't be at the bottom!" and "why is
+// there the faces saved? if I'm to create a new one there will be a new face". Each reason sits at its field; a new
+// character starts with an empty face and gets hers from the file he chooses.
+test('a new character starts with an empty face, gets it from the chosen image, and each missing field says so at that field', async () => {
+  const f = await loveSpotFixture();
+  try {
+    const { page } = f;
+    const face = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    await page.route('**/api/characters/sources', (route: { fulfill(options: object): Promise<unknown> }) => route.fulfill({ json: { sources: [], unavailable: [] } }));
+    await page.route('**/api/characters/portrait', (route: { fulfill(options: object): Promise<unknown> }) => route.fulfill({ json: { image: face } }));
+    await page.locator('.title-bar').getByRole('button', { name: 'Character', exact: true }).click();
+    await page.locator('[data-matilda-character-menu]').getByRole('menuitem', { name: 'Create your own', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Create your own', exact: true });
+    await dialog.waitFor();
+    assert.equal(await dialog.locator('img').count(), 0, 'no saved face, Matilda\'s or another, is shown');
+    assert.equal(await dialog.getByRole('img', { name: 'No portrait yet', exact: true }).count(), 1, 'an empty face instead');
+    assert.equal(await dialog.getByLabel('Character portrait', { exact: true }).count(), 0, 'no select of saved faces');
+    const name = dialog.getByLabel('Name', { exact: true }), file = dialog.getByLabel('Choose portrait image', { exact: true });
+    const nameHint = dialog.locator('#character-name-hint');
+    assert.equal(await nameHint.innerText(), 'Give your character a name.');
+    assert.match(await name.getAttribute('aria-describedby') ?? '', /character-name-hint/, 'the name field is described by its reason');
+    const [nameBox, hintBox, fileBox] = await Promise.all([name.boundingBox(), nameHint.boundingBox(), file.boundingBox()]);
+    assert.ok(nameBox && hintBox && fileBox && hintBox.y >= nameBox.y + nameBox.height && hintBox.y < fileBox.y, 'the reason sits directly under Name');
+    const footer = dialog.locator('[data-slot="alert-dialog-footer"]');
+    assert.equal(await footer.getByText('Give your character a name.').count(), 0, 'not at the bottom');
+    const save = dialog.getByRole('button', { name: 'Save character', exact: true });
+    assert.equal(await save.isDisabled(), true);
+    assert.match(await save.getAttribute('aria-describedby') ?? '', /character-name-hint/, 'Save names the reason at the field');
+    assert.equal(await dialog.locator('#character-description-hint').innerText(), 'Describe your character first.');
+    assert.equal(await dialog.locator('#character-portrait-hint').innerText(), 'Choose an image for her face.');
+    await dialog.getByLabel('Description', { exact: true }).fill('A patient astronomer');
+    await name.fill('Vega');
+    assert.equal(await nameHint.count(), 0, 'a named character has no name reason');
+    assert.equal(await save.isDisabled(), true, 'still no face');
+    await file.setInputFiles({ name: 'vega.png', mimeType: 'image/png', buffer: Buffer.from(face.slice(face.indexOf(',') + 1), 'base64') });
+    await dialog.getByRole('img', { name: 'Character preview', exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('img', { name: 'Character preview', exact: true }).getAttribute('src'), face, 'her face is the chosen image');
+    assert.equal(await dialog.getByRole('img', { name: 'No portrait yet', exact: true }).count(), 0);
+    assert.equal(await save.isDisabled(), false);
+    assert.equal(await save.getAttribute('aria-describedby'), null);
+    await name.fill('');
+    assert.equal(await nameHint.innerText(), 'Give your character a name.', 'clearing the name brings its reason back at the field');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
