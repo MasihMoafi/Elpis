@@ -69,11 +69,36 @@ test('the RAG card settles once while its three reads arrive, and its OpenRouter
   const later = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   const fake = 'sk-or-v1-e31-fake-key-0000';
   let keySet = false;
-  const mcp = () => ({ version: keySet ? 'm2' : 'm1', configPath: '/tmp/elpis/config.toml', write: { available: true }, servers: [{ name: 'rag', enabled: true, transport: 'stdio', command: 'rag-mcp', url: null, credentials: keySet ? [{ name: 'OPENROUTER_API_KEY', source: 'config', set: true }] : [] }] });
+  const mcp = () => ({
+    version: keySet ? 'm2' : 'm1',
+    configPath: '/tmp/elpis/config.toml',
+    write: { available: true },
+    servers: [{
+      name: 'rag',
+      enabled: true,
+      transport: 'stdio',
+      command: 'rag-mcp',
+      url: null,
+      credentials: keySet ? [{ name: 'OPENROUTER_API_KEY', source: 'config', set: true }] : [],
+    }],
+  });
   const sol = { id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: [] };
   const f = await fixture({ routes: {
-    '/api/mcp': (body: { action?: string; env?: Record<string, string> } | null) => { if (body?.action === 'credentials' && body.env?.OPENROUTER_API_KEY) keySet = true; return mcp(); },
-    '/api/tools/rag': async () => { await later(300); return { stages: [{ stage: 'embedding', provider: 'openrouter', model: 'qwen/qwen3-embedding-8b', location: 'api' }, { stage: 'reranking', provider: null, model: 'off', location: 'local' }, { stage: 'generation', provider: 'openrouter', model: 'deepseek/deepseek-v4.1-flash', location: 'api' }], keys: { openrouter: keySet } }; },
+    '/api/mcp': (body: { action?: string; env?: Record<string, string> } | null) => {
+      if (body?.action === 'credentials' && body.env?.OPENROUTER_API_KEY) keySet = true;
+      return mcp();
+    },
+    '/api/tools/rag': async () => {
+      await later(300);
+      return {
+        stages: [
+          { stage: 'embedding', provider: 'openrouter', model: 'qwen/qwen3-embedding-8b', location: 'api' },
+          { stage: 'reranking', provider: null, model: 'off', location: 'local' },
+          { stage: 'generation', provider: 'openrouter', model: 'deepseek/deepseek-v4.1-flash', location: 'api' },
+        ],
+        keys: { openrouter: keySet },
+      };
+    },
     '/api/models': async (_body: unknown, url: URL) => {
       if (url.searchParams.get('provider') !== 'openrouter') return { data: [sol], nextCursor: null };
       // OpenRouter's reranker list fails late, as when its catalogue is slow: its notice is one more change of height.

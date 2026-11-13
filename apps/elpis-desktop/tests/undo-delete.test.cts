@@ -86,7 +86,10 @@ test('the notice’s Undo brings the chat back; Ctrl+Z in the message box undoes
 test('the Deleted notice never covers the transcript or the message box, sidebar open or closed, wide or narrow', async () => {
   const { routes } = trashRoutes(), f = await fixture({ routes, width: 1440, height: 900 });
   const { page } = f;
-  const box = (selector: string) => page.locator(selector).first().evaluate((element: Element) => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; });
+  const box = (selector: string) => page.locator(selector).first().evaluate((element: Element) => {
+    const r = element.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+  });
   const overlap = (a: { left: number; top: number; right: number; bottom: number }, b: typeof a) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
   const sidebarShown = () => page.locator('aside.sidebar').evaluate((element: Element) => getComputedStyle(element).display !== 'none');
   try {
@@ -97,7 +100,10 @@ test('the Deleted notice never covers the transcript or the message box, sidebar
       await page.keyboard.press('d');
       await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
       await row(page, id).waitFor({ state: 'detached' });
-      const status = page.locator('.action-notices').getByRole('status').filter({ has: page.getByRole('button', { name: 'Undo', exact: true }), hasText: `Deleted “${NAMES[id]}”` });
+      const status = page.locator('.action-notices').getByRole('status').filter({
+        has: page.getByRole('button', { name: 'Undo', exact: true }),
+        hasText: `Deleted “${NAMES[id]}”`,
+      });
       await status.waitFor();
       for (const open of [true, false]) {
         if (!open) {
@@ -115,7 +121,13 @@ test('the Deleted notice never covers the transcript or the message box, sidebar
           assert.equal(overlap(notice, transcript), false, `the notice stays off the transcript at ${where}`);
           assert.equal(overlap(notice, composer), false, `the notice stays off the message box at ${where}`);
         }
-        if (open) { const side = await box('aside.sidebar'); assert.ok(notice.left >= side.left && notice.right <= side.right, `the notice sits in the sidebar column at ${where}`); }
+        if (open) {
+          const side = await box('aside.sidebar');
+          assert.ok(
+            notice.left >= side.left && notice.right <= side.right,
+            `the notice sits in the sidebar column at ${where}`,
+          );
+        }
         else if (width > 760) assert.ok(notice.left < 40 && notice.bottom > 800, `the notice sits in the bottom left corner at ${where}`);
       }
       // It stays reachable and still undoes.

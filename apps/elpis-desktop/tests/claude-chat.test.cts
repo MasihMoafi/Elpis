@@ -174,10 +174,19 @@ for (const colorScheme of ['light']) {
     await copy.waitFor();
     await page.mouse.move(4, 4);
     // Masih, 13 Nov: the row shows "for all messages all the time", with no pointer over the transcript, quiet until hovered.
-    const rest = await copy.evaluate(element => { const actions = element.closest('.message-actions'); if (!actions) throw Error('Message actions unavailable'); const style = getComputedStyle(actions); return { opacity: style.opacity, display: style.display, height: actions.getBoundingClientRect().height, color: style.color }; });
+    const rest = await copy.evaluate(element => {
+      const actions = element.closest('.message-actions');
+      if (!actions) throw Error('Message actions unavailable');
+      const style = getComputedStyle(actions);
+      return { opacity: style.opacity, display: style.display, height: actions.getBoundingClientRect().height, color: style.color };
+    });
     assert.deepEqual([rest.opacity, rest.display, rest.height > 0], ['1', 'flex', true], 'a finished reply shows its actions without a hover');
     await reply.hover();
-    await eventually(async () => assert.notEqual(await copy.evaluate(element => getComputedStyle(element.closest('.message-actions')!).color), rest.color, 'the row is quiet at rest and steps up on hover'));
+    await eventually(async () => assert.notEqual(
+      await copy.evaluate(element => getComputedStyle(element.closest('.message-actions')!).color),
+      rest.color,
+      'the row is quiet at rest and steps up on hover',
+    ));
     await copy.click();
     await reply.getByRole('status').filter({ hasText: /^Copied$/ }).waitFor();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '**Original reply**\n\nمتن فارسی\n\n```js\n  const x = 1;\n```\n');
