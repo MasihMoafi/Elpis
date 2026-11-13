@@ -222,7 +222,7 @@ export function WorkspaceComposer({
               ? "This agent is running in an earlier Elpis runtime. Its completed history will appear when it finishes."
               : ""}
         </span>
-        <ElpisFeatures />
+        <ElpisFeatures subagents={!selected?.motherAgent} />
       </div>
     </div>
   );

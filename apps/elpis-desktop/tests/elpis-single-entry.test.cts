@@ -48,10 +48,15 @@ test('the Elpis chat has its own look: a band on what his chats are doing and it
     await page.getByRole('tab', { name: 'Old notes', exact: true }).waitFor();
     assert.equal(await band.count(), 0, 'an ordinary chat has no band');
     assert.equal(await page.locator('main.workspace.elpis-chat').count(), 0);
+    // 13 Nov, Masih: "here we shouldn't have the subagents option (in this chat) because they are on by default".
+    const chips = () => page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button').allInnerTexts();
+    await page.getByRole('group', { name: 'Elpis features', exact: true }).getByRole('button', { name: 'Subagents', exact: true }).waitFor();
+    assert.deepEqual(await chips(), ['Smart Prune', 'Subagents', 'RAG'], 'an ordinary chat keeps the Subagents switch');
     await page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Elpis', exact: true }).click();
     await band.waitFor();
     assert.equal((await band.innerText()).replace(/\s+/g, ' ').trim(), 'Elpis 1 needs you · 1 working · 3 chats');
     await page.locator('main.workspace.elpis-chat').waitFor();
+    assert.deepEqual(await chips(), ['Smart Prune', 'RAG'], 'the Elpis chat always hands work out: no Subagents switch');
     assert.equal(await page.locator('main textarea').first().getAttribute('placeholder'), 'Ask Elpis about your chats, or hand it a job');
     const wash = await page.locator('main.workspace.elpis-chat .chat-view').evaluate((el: HTMLElement) => getComputedStyle(el).backgroundImage);
     assert.match(wash, /gradient/, 'the page carries a wash of the accent');

@@ -1,9 +1,10 @@
 import type { Entry } from "@/lib/api";
 
 /** What the router sends a worker is written for the model: the ticket as JSON with its IDs
- * (bridge/router/executor/dsh.mts launch) and fixed notices (bridge/router/executor/messages.mts). A person reads the
- * ticket's title, its assignment and the request; the notices are quiet notes, not messages from him
- * (specs/router-chats.md R3, R4). Anything else is returned unchanged. */
+ * (bridge/router/executor/dsh.mts launch) and fixed notices (bridge/router/executor/messages.mts). A person reads his
+ * own request and the router's note; the ticket's title only when he wrote nothing, since the title already names the
+ * chat and repeats his request (13 Nov, Masih: "printing two times"). The notices are quiet notes, not messages from
+ * him (specs/router-chats.md R3, R4). Anything else is returned unchanged. */
 export function ticketText(body: string): string | null {
   if (!body.startsWith("{") || !body.includes('"ticket_id"')) return null;
   try {
@@ -15,7 +16,8 @@ export function ticketText(body: string): string | null {
     const brief = typeof value.assignment === "string" ? value.assignment.trim() : "";
     const trigger = value.trigger && typeof value.trigger === "object" ? (value.trigger as Record<string, unknown>) : {};
     const asked = typeof trigger.text === "string" ? trigger.text.trim() : "";
-    const parts = [title, brief.replace(/^Routing note \(not the source request\):\s*/i, ""), asked && `Request: ${asked}`];
+    const note = brief.replace(/^Routing note \(not the source request\):\s*/i, "");
+    const parts = asked ? [asked, note && `Note from Elpis: ${note}`] : [title, note];
     const shown = parts.filter(Boolean).join("\n\n");
     return shown || (typeof value.assignment === "number" ? `Assignment ${value.assignment} started again.` : "Ticket");
   } catch {

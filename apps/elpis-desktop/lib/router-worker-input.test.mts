@@ -6,16 +6,25 @@ import { noteRouterNotices } from "./router-worker-input.ts";
 
 const wrap = (body: string) => `<elpis-router-message id="router%3Aassignment%3Aabc">\n${body}`;
 
-test("a worker's ticket reads as its title, assignment and request, with no IDs", () => {
+// 13 Nov, Masih: a worker chat printed his request twice, as the router's title and in his own words.
+test("a worker's ticket reads as his request and the router's note, once each, with no IDs", () => {
   const ticket = JSON.stringify({
     ticket_id: "0b11",
     title: "Fix Type Booster",
-    assignment: "Routing note (not the source request): Fix the luna to ulna swap.",
+    assignment: "Routing note (not the source request): He wants it done on Opus 5.5.",
     trigger: { trigger_id: "6e84", from: "local-user", thread: "elpis-chat:01a1", text: "luna types ulna - fix it" },
   });
   const shown = routerMessageText(wrap(ticket));
-  assert.equal(shown, "Fix Type Booster\n\nFix the luna to ulna swap.\n\nRequest: luna types ulna - fix it");
-  assert.doesNotMatch(shown, /ticket_id|trigger_id|0b11|[{}]/);
+  assert.equal(shown, "luna types ulna - fix it\n\nNote from Elpis: He wants it done on Opus 5.5.");
+  assert.doesNotMatch(shown, /ticket_id|trigger_id|0b11|[{}]|Fix Type Booster/);
+  const plain = JSON.stringify({ ticket_id: "0b12", title: "Count words in NOTICE", trigger: { trigger_id: "6e85", text: "Count the words of NOTICE" } });
+  assert.equal(routerMessageText(wrap(plain)), "Count the words of NOTICE", "no note: only his words");
+});
+
+test("a ticket without his words still names its work by its title", () => {
+  const ticket = JSON.stringify({ ticket_id: "0b13", title: "Answer the CI failure", assignment: "Check the failing job.", trigger: { trigger_id: "6e86" } });
+  assert.equal(routerMessageText(wrap(ticket)), "Answer the CI failure\n\nCheck the failing job.");
+  assert.equal(routerMessageText(wrap(JSON.stringify({ ticket_id: "0b14", assignment: 2 }))), "Assignment 2 started again.");
 });
 
 test("router notices become quiet notes; a person's message stays his", () => {
