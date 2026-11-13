@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { appStorage } from "@/lib/projects";
 import { errorText } from "@/lib/error-text.mts";
 import type { CompanionState } from "./matilda-companion-state";
-import { savedPlace, chromeBottom, BEHIND, sized, FLOAT_KEY, SIZE } from "./matilda-companion-shared";
+import { savedPlace, chromeBottom, BEHIND, sized, FLOAT_KEY, SIZE, watchSavedPlace } from "./matilda-companion-shared";
 
 export function useCompanionPlacement(previous: CompanionState) {
   const { setError, suppressClick, state } = previous;
@@ -181,6 +181,18 @@ export function useCompanionPlacement(previous: CompanionState) {
     window.addEventListener("resize", resized);
     return () => window.removeEventListener("resize", resized);
   }, []);
+  // Where and how big he last put her, in whichever window; never while he holds her here.
+  useEffect(
+    () =>
+      watchSavedPlace(next => {
+        const now = placeRef.current;
+        if (drag.current || (next.right === now.right && next.bottom === now.bottom && next.size === now.size)) return;
+        placeRef.current = next;
+        setPlace(next);
+        fit();
+      }),
+    [],
+  );
   useEffect(() => {
     if (!state?.pinned) return;
     let panes: Element[] = [];
