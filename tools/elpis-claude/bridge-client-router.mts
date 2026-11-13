@@ -93,7 +93,7 @@ export function createClientRouter({ AGENTS, HOME, acps, activeTurns, answerChil
       toTui({ id: msg.id, result: { status: subscribed ? "unsubscribed" : "notSubscribed" } });
       checkIdle(); return;
     }
-    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || ["thread/resume", "thread/read", "thread/subscribe", "thread/turns/list", "thread/items/list", "thread/settings/update", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method))) {
+    if (msg.method && owner && owner.ws !== ws && (!owner.nativeHelper || ["thread/resume", "thread/read", "thread/subscribe", "thread/turns/list", "thread/items/list", "thread/settings/update", "turn/settings/update", "turn/start", "turn/steer", "turn/interrupt"].includes(msg.method))) {
       owner.dispatch(msg, ws); return;
     }
     const mirror = pendingMirrors.get(msg.params.threadId);

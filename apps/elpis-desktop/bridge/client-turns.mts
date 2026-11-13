@@ -167,10 +167,14 @@ export async function impl_setServiceTier(this: DesktopClient, clientState: Clie
           error instanceof Error
             ? (error as Error & { engineMessage?: string }).engineMessage || error.message
             : String(error);
+        // The engine names the chat by its id when it no longer holds it: say so in words instead.
+        const plain = /thread not found/i.test(reason)
+          ? "The running turn has ended."
+          : reason.replace(/\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "").trim();
         return {
           serviceTier,
           activeTurnApplied: false,
-          warning: `${enabled ? "Fast" : "Standard speed"} is saved for later turns, but the running turn could not change speed. ${reason.slice(0, 1000)}`,
+          warning: `${enabled ? "Fast" : "Standard speed"} is saved for later turns, but the running turn could not change speed. ${plain.slice(0, 1000)}`.trim(),
         };
       }
     }

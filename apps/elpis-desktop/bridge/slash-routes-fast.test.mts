@@ -347,6 +347,22 @@ test("/fast reports a rejected running-turn change while retaining the saved spe
   }
 });
 
+test("/fast says in words that a running turn is gone, without the engine's chat id", async () => {
+  const id = "01a1d556-07e2-7bc0-8bea-bc2cdebe961f";
+  const { client, tiers } = fixture({ active: true, liveTierError: `thread not found: ${id}` });
+  await client.initialize();
+  try {
+    const result = await client.setServiceTier(CHAT, { enabled: true });
+    assert.equal(
+      result.warning,
+      "Fast is saved for later turns, but the running turn could not change speed. The running turn has ended.",
+    );
+    assert.equal(tiers().saved, "priority");
+  } finally {
+    client.close();
+  }
+});
+
 test("/fast rejects other providers, unsupported models, invalid options and background agents before changing speed", async () => {
   for (const [options, id, body, message] of [
     [{ provider: "anthropic" }, CHAT, {}, /OpenAI/],
