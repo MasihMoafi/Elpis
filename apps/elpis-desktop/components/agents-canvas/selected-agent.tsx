@@ -235,9 +235,15 @@ export function SelectedAgent({
             Open its chat
           </Button>
         )}
-        <Button variant="ghost" size="sm" className="text-destructive" onClick={() => remove([selected.id])}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-destructive"
+          aria-label="Delete agent"
+          onClick={() => remove([selected.id])}
+        >
           <Trash2 size={14} />
-          Delete agent
+          Delete
         </Button>
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setSelection([])}>
           Done
