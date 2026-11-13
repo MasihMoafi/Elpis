@@ -58,11 +58,8 @@ export function useMatildaMiniChat(open: boolean) {
   // the pinned chat for the first message it doesn't send the message right away"; the first send waits while Love Spot's
   // chat loads).
   const [outgoing, setOutgoing] = useState<string | null>(null);
-  const earlierRef = useRef(earlier);
-  earlierRef.current = earlier;
-  /** `sentTurn` is the turn just sent, or null when none is on its way; left out, a busy chat's last turn is. */
-  const rememberEarlier = useCallback((result: Conversation, sentTurn?: string | null) => {
-    const pending = sentTurn !== undefined ? sentTurn : result.busy ? result.entries.at(-1)?.turnId : undefined;
+  const rememberEarlier = useCallback((result: Conversation, sentTurn?: string) => {
+    const pending = sentTurn ?? (result.busy ? result.entries.at(-1)?.turnId : undefined);
     setEarlier(
       current => current ?? new Set(result.entries.map(entry => entry.turnId).filter(turn => turn !== pending)),
     );
@@ -149,16 +146,8 @@ export function useMatildaMiniChat(open: boolean) {
     setError("");
     setOutgoing(sent);
     setDraft(current => (current.trim() === sent ? "" : current));
+    latestRead.current++;
     try {
-      // Sent before her history arrived: what is there now is earlier, so her reply shows and is spoken as it streams
-      // rather than once the send returns. The bridge waits for the same loading before it sends.
-      if (!earlierRef.current && openRef.current) {
-        latestRead.current++;
-        const loaded = received(await api<Conversation>("/love-spot/talk"));
-        if (!mounted.current) return;
-        if (openRef.current) rememberEarlier(loaded, null);
-      }
-      latestRead.current++;
       const response = received(
         await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona(), pinned: true }),
       );
