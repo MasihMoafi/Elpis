@@ -205,6 +205,20 @@ it("lists a ticket's execution environment in its prompt, and says setup is inco
   });
 });
 
+it("tells a worker to stop at the request, answer a question first, and open things for the person with open-for-user", () => {
+  withStore(store => {
+    const worker = promptsOf(store).compose(defaultPrompts(), "worker"),
+      main = promptsOf(store).compose(defaultPrompts(), "orchestrator");
+    // On 13 Nov a worker asked what a Telegram message said and what video could be made spent 43 of its 60 minutes on
+    // a sample video, and answered only at the end.
+    expect(worker).toContain("Do what the request asks and stop there");
+    expect(worker).toContain("report the answer at once with orchestrator_report and reply_to_trigger_id");
+    // The same day a terminal a worker opened kept the worker's NO_COLOR, git config and command folder.
+    expect(worker).toContain("open-for-user <program> [arguments]");
+    expect(main).not.toContain("open-for-user");
+  });
+});
+
 it("registers the built-in Source skills, Elpis chat when enabled, before the team skills", () => {
   withStore(store => {
     const config = { ...defaultPrompts(), skills: { release: "Tag releases." } };
