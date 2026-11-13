@@ -6,21 +6,21 @@
 <title>Codebase</title>
 <style>
   :root {
-    --bg: #09090b; --page: #09090b; --card: #09090b; --raise: #27272a; --track: #27272a;
+    --bg: #09090b; --page: #09090b; --card: #09090b; --raise: #27272a; --track: #27272a; --side: #0c0c0e; --hover: rgba(250,250,250,.04);
     --ink: #fafafa; --ink-2: #d4d4d8; --ink-3: #a1a1aa; --line: #27272a; --grid: rgba(250,250,250,.08);
     --base: #71717a; --c1: #d6781d; --c2: #e23670; --c3: #2662d9; --c4: #22a477;
     --sans: Geist, Inter, system-ui, sans-serif; --mono: "Geist Mono", "IBM Plex Mono", "DejaVu Sans Mono", monospace; --ease: cubic-bezier(.2,.7,.2,1);
   }
   /* In the app the page wears the app's theme. */
   :root[data-theme="light"] {
-    --bg: #ffffff; --page: #ffffff; --card: #ffffff; --raise: #e4e4e7; --track: #e4e4e7;
+    --bg: #ffffff; --page: #ffffff; --card: #ffffff; --raise: #e4e4e7; --track: #e4e4e7; --side: #fafafa; --hover: rgba(24,24,27,.04);
     --ink: #18181b; --ink-2: #3f3f46; --ink-3: #71717a; --line: #e4e4e7; --grid: rgba(24,24,27,.08);
     --base: #a1a1aa;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 400 14px/20px var(--sans); }
   .shell { display: grid; grid-template-columns: 272px 1fr; min-height: 100vh; }
-  aside { background: #0c0c0e; border-right: 1px solid var(--line); padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  aside { background: var(--side); border-right: 1px solid var(--line); padding: 24px 16px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
   .brand svg { width: 20px !important; height: 20px; flex: none; }
   .item .lab { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
   .brand { display: flex; align-items: center; gap: 10px; font-size: 17px; font-weight: 500; padding: 0 8px 16px; }
@@ -29,7 +29,7 @@
   .nav { display: flex; align-items: center; gap: 10px; width: calc(100% + 16px); height: 36px; padding: 0 8px; margin: 0 -8px 2px;
          border: 0; border-radius: 6px; background: none; color: var(--ink-2); font: inherit; text-align: left; cursor: pointer;
          transition: background-color .15s var(--ease), color .15s var(--ease); }
-  .nav:hover { background: rgba(237,237,236,.04); color: var(--ink); }
+  .nav:hover { background: var(--hover); color: var(--ink); }
   .nav[aria-current="true"] { background: var(--raise); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
   .nav:focus-visible { outline: 2px solid var(--c3); outline-offset: 1px; }
   .nav .n, .item .n { white-space: nowrap; flex: none; margin-left: auto; font: 400 12px var(--mono); color: var(--ink-3); }
@@ -43,9 +43,13 @@
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 1px 2px rgba(0,0,0,.3); padding: 24px; margin-bottom: 16px; }
   .card h2 { font-size: 15px; line-height: 22px; font-weight: 500; margin: 0 0 4px; }
   .card .sub { color: var(--ink-3); font-size: 13px; margin: 0 0 16px; }
-  .toggle { display: inline-flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 2px; margin-bottom: 8px; }
-  .toggle button { border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 6px; cursor: pointer; }
+  /* The date presets are one segmented control, 32 px tall like the date fields beside it (13 Nov, Masih: "bottons too
+     close to each other"). */
+  .toggle { display: inline-flex; gap: 2px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .toggle button { height: 26px; border: 0; background: none; color: var(--ink-2); font: inherit; font-size: 13px; padding: 0 12px; border-radius: 6px; cursor: pointer; }
+  .toggle button:hover { color: var(--ink); }
   .toggle button[aria-pressed="true"] { background: var(--raise); color: var(--ink); }
+  .toggle button:focus-visible, .range input:focus-visible { outline: 2px solid var(--c3); outline-offset: 1px; }
   svg { display: block; width: 100%; height: auto; overflow: visible; }
   svg text { font: 400 11px var(--mono); fill: var(--ink-3); }
   svg .val { fill: var(--ink); font-weight: 500; }
@@ -64,8 +68,10 @@
   [hidden] { display: none !important; }
   @media (max-width: 900px) { .shell { grid-template-columns: 1fr; } aside { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
     main { padding: 24px 16px 64px; } .scroll { overflow-x: auto; } .scroll svg { min-width: 720px; } }
-  .range { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 16px; }
-  .range input, .range button { font: inherit; padding: 4px 8px; border: 1px solid var(--line, #ccc); border-radius: 6px; background: transparent; color: inherit; cursor: pointer; }
+  .range { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: center; margin: 4px 0 16px; }
+  .range label { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-2); }
+  .range input { box-sizing: border-box; height: 32px; font: inherit; font-size: 13px; padding: 0 8px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: inherit; color-scheme: dark; cursor: pointer; }
+  :root[data-theme="light"] .range input { color-scheme: light; }
 </style>
 </head>
 <body>
@@ -162,7 +168,7 @@ function sections() {
       render(m) {
         m.innerHTML = `<div class="eyebrow">Churn</div><h1 id="churn-h1"></h1><p class="what">Churn is lines added plus lines removed, by the date each change was written. Pick the dates.</p>
           <div class="range"><label>From <input type="date" id="churn-from"></label><label>To <input type="date" id="churn-to"></label>
-          <button data-d="30">30 days</button><button data-d="91">3 months</button><button data-d="182">6 months</button><button data-d="all">All time</button></div><div id="churn-body"></div>`;
+          <div class="toggle" role="group" aria-label="Dates"><button data-d="30">30 days</button><button data-d="91">3 months</button><button data-d="182">6 months</button><button data-d="all">All time</button></div></div><div id="churn-body"></div>`;
         const from = m.querySelector('#churn-from'), to = m.querySelector('#churn-to');
         [from.min, to.max] = [first, today()]; [from.max, to.min] = [today(), first];
         const show = () => {
@@ -178,9 +184,11 @@ function sections() {
           const t = card('By file'); t.append(table([{ t: 'File' }, { t: 'Size', n: 1 }, { t: 'Churn', n: 1 }, { t: 'Changes', n: 1 }, { t: 'Times over', n: 1 }],
             top.map(([f, s, ch, n]) => `<tr><td class="f">${f}</td><td class="n">${fmt(s)}</td><td class="n">${fmt(ch)}</td><td class="n">${n}</td><td class="n">${(ch / s).toFixed(1)}×</td></tr>`))); body.append(t);
         };
-        const pick = days => { [from.value, to.value] = days === 'all' ? [first, today()] : lastDays(Number(days)); show(); };
-        m.querySelectorAll('.range button').forEach(b => b.onclick = () => pick(b.dataset.d));
-        from.onchange = to.onchange = show; pick(30);
+        const presets = m.querySelectorAll('.range button');
+        const pressed = days => presets.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.d === days)));
+        const pick = days => { [from.value, to.value] = days === 'all' ? [first, today()] : lastDays(Number(days)); pressed(days); show(); };
+        presets.forEach(b => b.onclick = () => pick(b.dataset.d));
+        from.onchange = to.onchange = () => { pressed(null); show(); }; pick('30');
       },
     },
     docs: {
@@ -240,9 +248,10 @@ function sections() {
 
 const nav = document.getElementById('nav'), main = document.getElementById('main');
 async function start() {
-  const thread = new URLSearchParams(location.search).get('thread');
-  if (!thread) { document.getElementById('state').textContent = 'Choose a chat to see its project.'; return; }
-  const response = await fetch(`/api/threads/${encodeURIComponent(thread)}/codebase`);
+  // The app names the project chosen in Observability (`root`); an older address names a chat (`thread`).
+  const query = new URLSearchParams(location.search), root = query.get('root'), thread = query.get('thread');
+  if (!root && !thread) { document.getElementById('state').textContent = 'Choose a project.'; return; }
+  const response = await fetch(root ? `/api/codebase/report?root=${encodeURIComponent(root)}` : `/api/threads/${encodeURIComponent(thread)}/codebase`);
   const report = await response.json().catch(() => ({}));
   if (!response.ok) { document.getElementById('state').textContent = report.error || 'Could not read the project.'; return; }
   REPORT = report;

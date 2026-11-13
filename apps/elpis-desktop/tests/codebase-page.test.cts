@@ -1,58 +1,105 @@
-// docs/specs/codebase-dashboard.md, D1: Observability has a Codebase page for the project of the chat he picks.
+// docs/specs/codebase-dashboard.md, D1 and D9: Observability has a Codebase page for a Git project his chats use.
 // 11 Nov, Masih: "there was a dashboard I had asked for in elpis ... please see that to the end".
+// 13 Nov: "it says no git and I couldn't find any git projects which is odd! ... bottons too close to each other".
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 
-const report = {
-  name: 'demo', commit: 'abc1234', date: '2026-11-10',
+const report = (name: string) => ({
+  name, commit: 'abc1234', date: '2026-11-10',
   code: [{ k: 'src', v: 4200, d: '31 files' }, { k: 'tests', v: 900, d: '12 files' }],
   docs: [['docs', 4, 380]],
   churnFiles: [['src/app.ts', 300]],
   churnLog: [[new Date().toISOString().slice(0, 10), [[0, 620]]], ['2026-01-05', [[0, 40]]]],
   dups: [{ files: ['a.png', 'b.png'], bytes: 2048, kind: 'media' }],
-  worktrees: [['/work/demo', 120, 'main', '2026-11-10', 2]],
+  worktrees: [[`/work/${name}`, 120, 'main', '2026-11-10', 2]],
   pillars: [
     ['Documentation', [['A README', 1, 'README.md'], ['Agent instructions are in Git', 0, 'no AGENTS.md or CLAUDE.md in Git: a fresh clone has none']]],
     ['Testing', [['Tests exist', 1, '12 test files']]],
   ],
   changed: [{ check: 'A README', from: 0, to: 1 }],
   previous: '2026-11-01T10:00:00.000Z',
-};
+});
+const PROJECTS = [{ root: '/work/demo', name: 'demo', usedAt: 3 }, { root: '/work/other', name: 'other', usedAt: 1 }];
+/** The bridge's two Codebase routes; `current` is the project of the chat asked about. */
+const routes = (projects: typeof PROJECTS, current: string | null) => ({
+  '/api/codebase/projects': () => ({ projects, current }),
+  '/api/codebase/report': (_body: unknown, url: URL) => {
+    const project = projects.find(p => p.root === url.searchParams.get('root'));
+    return project ? report(project.name) : { __http: 404, error: 'None of your chats works in this project.' };
+  },
+});
+type Locator = { first(): Locator; click(): Promise<void>; waitFor(): Promise<void>; filter(options: object): Locator; getByRole(role: string, options?: object): Locator };
+type Page = { locator(selector: string): Locator; getByRole(role: string, options?: object): Locator; frameLocator(selector: string): Locator };
+async function openCodebase(page: Page) {
+  await page.locator('aside.sidebar .thread-row').first().click();
+  await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
+  await page.getByRole('radio', { name: 'Codebase', exact: true }).click();
+}
+const heading = (page: Page, text: string | RegExp) =>
+  page.frameLocator('iframe[title="Codebase"]').getByRole('heading', { level: 1 }).filter({ hasText: text });
 
 test('Observability shows the project of the chosen chat: code, churn for chosen dates and readiness with its evidence', async () => {
-  const f = await fixture({ width: 1300, height: 850, routes: { '/api/threads/chat-a/codebase': () => report } });
+  const f = await fixture({ width: 1300, height: 850, routes: routes(PROJECTS, '/work/demo') });
   try {
     const { page } = f;
-    await page.locator('aside.sidebar .thread-row').first().click();
-    await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
-    await page.getByRole('radio', { name: 'Codebase', exact: true }).click();
+    await openCodebase(page);
     const frame = page.frameLocator('iframe[title="Codebase"]');
-    await frame.getByRole('heading', { level: 1 }).filter({ hasText: 'demo holds 5,100 lines of code and data; 82% is in src' }).waitFor();
+    await heading(page, 'demo holds 5,100 lines of code and data; 82% is in src').waitFor();
     await frame.getByRole('button', { name: /^Churn/ }).click();
     await frame.getByRole('heading', { level: 1 }).filter({ hasText: /1 of the 1 most changed files/ }).waitFor();
     await frame.getByText('620', { exact: true }).first().waitFor();
+    assert.equal(await frame.getByRole('button', { name: '30 days', exact: true }).getAttribute('aria-pressed'), 'true');
     await frame.getByRole('button', { name: 'All time', exact: true }).click();
     await frame.getByRole('cell', { name: '660', exact: true }).waitFor();
+    assert.equal(await frame.getByRole('button', { name: '30 days', exact: true }).getAttribute('aria-pressed'), 'false');
+    // The date fields and the presets are one row of 32 px controls, 8 px apart inside a group and 16 px between groups.
+    const range = await frame.locator('.range').evaluate((row: HTMLElement) =>
+      [...row.querySelectorAll('input, .toggle')].map(el => { const b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(b.top), Math.round(b.height)]; }));
+    assert.deepEqual(range.map(([, , , height]) => height), [32, 32, 32]);
+    assert.equal(new Set(range.map(([, , top]) => top)).size, 1, 'one row at 1300 px');
+    assert.ok(range[2][0] - range[1][1] >= 16, `presets stand 16 px off the dates: ${JSON.stringify(range)}`);
     await frame.getByRole('button', { name: /^Readiness/ }).click();
-    await frame.getByRole('heading', { level: 1 }).filter({ hasText: 'demo meets 2 of 3 readiness checks; documentation is weakest' }).waitFor();
+    await heading(page, 'demo meets 2 of 3 readiness checks; documentation is weakest').waitFor();
     await frame.getByText('no AGENTS.md or CLAUDE.md in Git: a fresh clone has none', { exact: true }).waitFor();
     await frame.getByText('Changed since the report of 2026-11-01', { exact: true }).waitFor();
+    // The bar: chooser and page switch are one 32 px row, 12 px apart; the switch never wraps.
+    const bar = await page.locator('.observability-bar').evaluate((row: HTMLElement) =>
+      [row.querySelector('[aria-label="Project"]'), row.querySelector('[role="radiogroup"]')].map(el => { const b = el!.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(b.top), Math.round(b.height)]; }));
+    assert.deepEqual(bar.map(([, , top, height]) => [top, height]), [[bar[0][2], 32], [bar[0][2], 32]], JSON.stringify(bar));
+    assert.equal(bar[1][0] - bar[0][1], 12);
     if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/codebase-readiness.png` });
+    // He picks another project; the page reads it and the choice is kept on this device.
+    await page.getByRole('combobox', { name: 'Project' }).click();
+    await page.locator('[data-project-root="/work/other"]').click();
+    await heading(page, /^other holds 5,100 lines/).waitFor();
+    assert.equal(await page.evaluate(() => (window as unknown as { elpisDesktop: { storage: Storage } }).elpisDesktop.storage.getItem('elpis-codebase-project-v1')), '/work/other');
     await page.getByRole('radio', { name: 'Trajectory', exact: true }).click();
     await page.locator('iframe[title="Trajectory"]').waitFor();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
 
-test('a chat whose folder is not a Git project gets a plain sentence, not an empty chart', async () => {
-  const refusal = { __http: 409, error: "This chat's folder is not a Git project, so there is nothing to measure." };
-  const f = await fixture({ routes: { '/api/threads/chat-a/codebase': () => refusal } });
+test('a chat whose folder has no Git says so and opens on the project he chose last, not on an empty page', async () => {
+  const f = await fixture({ routes: routes(PROJECTS, null), storage: { 'elpis-codebase-project-v1': '/work/other' } });
   try {
     const { page } = f;
-    await page.locator('aside.sidebar .thread-row').first().click();
-    await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
-    await page.getByRole('radio', { name: 'Codebase', exact: true }).click();
-    await page.frameLocator('iframe[title="Codebase"]').getByText("This chat's folder is not a Git project, so there is nothing to measure.", { exact: true }).waitFor();
+    await openCodebase(page);
+    await page.locator('.observability-bar').getByText("This chat's folder is not a Git project.", { exact: true }).waitFor();
+    await heading(page, /^other holds/).waitFor();
+    assert.equal(await page.getByRole('combobox', { name: 'Project' }).innerText(), 'other');
+  } finally { await f.close(); }
+});
+
+test('with no Git project in any chat, the page keeps the plain sentence and the chooser', async () => {
+  const f = await fixture({ routes: routes([], null) });
+  try {
+    const { page } = f;
+    await openCodebase(page);
+    await page.getByText("This chat's folder is not a Git project, and none of your chats works in one yet.", { exact: true }).waitFor();
+    const chooser = page.getByRole('combobox', { name: 'Project' });
+    assert.equal(await chooser.innerText(), 'No Git projects');
+    assert.equal(await chooser.isDisabled(), true);
+    assert.equal(await page.locator('iframe[title="Codebase"]').count(), 0);
   } finally { await f.close(); }
 });

@@ -1,7 +1,9 @@
 import { cachedCodebaseReport } from "./codebase.mts";
+import { codebaseProjects, repositoryOf, type CodebaseProject } from "./codebase-projects.mts";
 import { elpisHome } from "./client-paths.mts";
 import { elpisChatRefusal } from "./router/mother-agent.mts";
 import { createHash } from "node:crypto";
+import { stat } from "node:fs/promises";
 import { BridgeError, object } from "./validate.mts";
 import { ATTACHMENT_BODY_LIMIT } from "./attachments.mts";
 import { smartPruneDetail } from "./smart-prune.mts";
@@ -77,6 +79,40 @@ const THREAD_POST_OPS: Record<
   "service-tier": "setServiceTier",
   folder: "setFolder",
 };
+
+type Client = import("./server-http.mts").ServerState["client"];
+/** The last project list each bridge client gave, so a report for one of them needs no second listing. */
+const codebaseProjectsSeen = new WeakMap<Client, CodebaseProject[]>();
+async function knownCodebaseProjects(client: Client) {
+  const chats: { cwd?: unknown; usedAt?: unknown }[] = [];
+  let cursor: string | null | undefined;
+  // His newest 1,000 chats are enough to name the projects he works in.
+  for (let pages = 0; pages < 10; pages++) {
+    const page = await client.listThreads({ limit: 100, ...(cursor ? { cursor } : {}) });
+    for (const thread of page.data as { cwd?: unknown; recencyAt?: unknown; updatedAt?: unknown; createdAt?: unknown }[])
+      chats.push({ cwd: thread.cwd, usedAt: thread.recencyAt ?? thread.updatedAt ?? thread.createdAt });
+    if (!page.nextCursor || page.nextCursor === cursor) break;
+    cursor = page.nextCursor;
+  }
+  const projects = await codebaseProjects(chats);
+  codebaseProjectsSeen.set(client, projects);
+  return projects;
+}
+
+async function readCodebase(folder: string, home: string, subject: string) {
+  return cachedCodebaseReport(folder, home).catch(async (cause: unknown) => {
+    // A folder that is gone fails to start git at all, with no words from git (it read "Could not read the project: ").
+    if (!(await stat(folder).then(info => info.isDirectory(), () => false)))
+      throw new BridgeError(`${subject} no longer exists.`, 409);
+    const said = String((cause as { stderr?: unknown }).stderr || cause);
+    throw new BridgeError(
+      /not a git repository/i.test(said)
+        ? `${subject} is not a Git project, so there is nothing to measure.`
+        : `Could not read the project: ${said.trim().split("\n")[0]}`,
+      409,
+    );
+  });
+}
 
 export async function handleThreadRoutes(
   state: import("./server-http.mts").ServerState,
@@ -156,21 +192,36 @@ export async function handleThreadRoutes(
     );
     return true;
   }
+  // The Codebase page's project chooser: the Git projects his chats use, and the one of the chat he picked, if any.
+  if (url.pathname === "/api/codebase/projects" && method === "GET") {
+    const id = url.searchParams.get("thread");
+    const [projects, current] = await Promise.all([
+      knownCodebaseProjects(client),
+      id
+        ? client.readThreadMetadata(id).then(
+            thread => (typeof thread.cwd === "string" && thread.cwd ? repositoryOf(thread.cwd) : null),
+            () => null,
+          )
+        : null,
+    ]);
+    json(response, 200, { projects, current });
+    return true;
+  }
+  // The Codebase page for a project from that list; any other folder is refused, so the page reads only his projects.
+  if (url.pathname === "/api/codebase/report" && method === "GET") {
+    const root = url.searchParams.get("root") ?? "";
+    const listed = (projects: { root: string }[]) => projects.some(project => project.root === root);
+    if (!listed(codebaseProjectsSeen.get(client) ?? []) && !listed(await knownCodebaseProjects(client)))
+      throw new BridgeError("None of your chats works in this project.", 404);
+    json(response, 200, await readCodebase(root, options.elpisHome ?? elpisHome(), "This folder"));
+    return true;
+  }
   // The Codebase page of Observability: the project of the chat he picked (docs/specs/codebase-dashboard.md).
   const codebase = url.pathname.match(/^\/api\/threads\/([^/]+)\/codebase$/);
   if (codebase && method === "GET") {
     const thread = await client.readThreadMetadata(decodeURIComponent(codebase[1] ?? ""));
     if (typeof thread.cwd !== "string" || !thread.cwd) throw new BridgeError("This chat has no folder.", 409);
-    const report = await cachedCodebaseReport(thread.cwd, options.elpisHome ?? elpisHome()).catch((cause: unknown) => {
-      const said = String((cause as { stderr?: unknown }).stderr ?? cause);
-      throw new BridgeError(
-        /not a git repository/i.test(said)
-          ? "This chat's folder is not a Git project, so there is nothing to measure."
-          : `Could not read the project: ${said.trim().split("\n")[0]}`,
-        409,
-      );
-    });
-    json(response, 200, report);
+    json(response, 200, await readCodebase(thread.cwd, options.elpisHome ?? elpisHome(), "This chat's folder"));
     return true;
   }
   const contextFiles = url.pathname.match(/^\/api\/threads\/([^/]+)\/context-files$/);
