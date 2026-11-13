@@ -42,6 +42,8 @@ The accepted Working status: `WorkingPlacement` portals `WorkingStatus` into `.c
 
 The prompt rail keeps a 28 px target inside the existing 32 px gutter, so showing it does not resize the transcript.
 
+Message actions (reply, copy, read aloud, "More") show under his every message and under each turn's final reply all the time, never only on hover (Masih, 13 Nov: "show for all messages all the time"). They hang in the room the message keeps under it, so nothing moves when the pointer does; `--subtle-foreground` at rest, `--foreground` while the message is hovered or the row holds focus. A reply still arriving shows none; a reply in the middle of a turn offers them in its right-click menu.
+
 Reconnect and error notices follow the last message inside `.chat-content`. Showing, updating or dismissing one never changes the composer or transcript viewport's position or size. Other pages, and a chat hidden behind the side panel, keep their notices at the workspace bottom.
 
 ## 6. Rules for every screen

@@ -432,7 +432,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-heading:hover { background:var(--hover); color:var(--foreground); }
 .activity-heading svg { flex-shrink:0; color:var(--muted-foreground); }
 .activity-heading > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
-/* The hover buttons sit in the gap under their message, so a message that is not hovered holds no room for them. */
+/* The action buttons hang in the room their message keeps under it (components/message-actions.css). */
 .message-actions { display:flex; align-items:center; gap:2px; position:absolute; top:100%; left:0; color:var(--subtle-foreground); }
 .message-model { padding-inline:4px; font-size:var(--text-xs); line-height:var(--control-sm); white-space:nowrap; }
 
