@@ -101,7 +101,7 @@ describe("worker shims", () => {
   it("replace only what dsh-superagent wrote and refuse anything else in its places", async () => {
     await writeEnvironment(testDeployment({ stateDir: dir }), ["old-cli"]);
     await writeEnvironment(testDeployment({ stateDir: dir }), []);
-    expect(readdirSync(workerBin(dir)).sort()).toEqual(["gh", "lark-cli"]);
+    expect(readdirSync(workerBin(dir)).sort()).toEqual(["gh", "lark-cli", "open-for-user"]);
     // A file that merely contains the marker on a later line, a symlink to a shim, and a foreign gitconfig are all rejected.
     writeFileSync(
       join(workerBin(dir), "notes"),
@@ -130,8 +130,88 @@ describe("worker shims", () => {
     legacy(join(workerBin(dir), "older-cli"), "dsh-freelancer");
     legacy(workerGitConfig(dir), "dsh-go");
     await writeEnvironment(testDeployment({ stateDir: dir }), []);
-    expect(readdirSync(workerBin(dir)).sort()).toEqual(["gh", "lark-cli"]);
+    expect(readdirSync(workerBin(dir)).sort()).toEqual(["gh", "lark-cli", "open-for-user"]);
     expect(readFileSync(workerGitConfig(dir), "utf8")).toContain("Written by dsh-superagent");
+  });
+});
+
+describe("open-for-user", () => {
+  /** Runs the command from a worker's environment, with a `systemctl` that reports the given login session. */
+  const openFromWorker = async (session: string, argv: string[]) => {
+    await writeEnvironment(testDeployment({ stateDir: dir }), []);
+    mkdirSync(join(dir, "fake"));
+    writeFileSync(join(dir, "session.env"), session);
+    program(join(dir, "fake", "systemctl"), `cat ${JSON.stringify(join(dir, "session.env"))}`);
+    const env = {
+      PATH: [workerBin(dir), join(dir, "fake"), "/usr/bin", "/bin"].join(":"),
+      NO_COLOR: "1",
+      GIT_CONFIG_GLOBAL: workerGitConfig(dir),
+      GIT_CONFIG_NOSYSTEM: "1",
+      CODEX_HOME: "/worker/codex",
+      ELPIS_MOTHER_ROLE: "worker",
+      LANG: "C",
+    };
+    return exec(join(workerBin(dir), "open-for-user"), argv, { env, cwd: dir, timeout: 10_000 });
+  };
+  /** Waits for the detached child to write its environment. */
+  const childEnvironment = async (file: string): Promise<Record<string, string>> => {
+    for (let tries = 0; tries < 100; tries++) {
+      const text = (() => {
+        try {
+          return readFileSync(file, "utf8");
+        } catch {
+          return "";
+        }
+      })();
+      if (text.endsWith("\0END\0"))
+        return Object.fromEntries(
+          text
+            .split("\0")
+            .filter(line => line.includes("="))
+            .map(line => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+        );
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error("The child never wrote its environment");
+  };
+  const session = [
+    "DISPLAY=:0",
+    "WAYLAND_DISPLAY=wayland-0",
+    "XDG_RUNTIME_DIR=/run/user/1000",
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+    "PATH=/usr/bin:/bin",
+    "LANG=en_US.UTF-8",
+    "HIS_NOTE=$'two words and a \\'quote\\''",
+    "",
+  ].join("\n");
+  it("starts the program detached with his session's environment and none of the worker's", async () => {
+    const out = join(dir, "child.env");
+    await openFromWorker(session, ["/bin/sh", "-c", 'env -0 > "$0"; printf "END\\0" >> "$0"', out]);
+    const env = await childEnvironment(out);
+    expect(env).toMatchObject({
+      DISPLAY: ":0",
+      WAYLAND_DISPLAY: "wayland-0",
+      XDG_RUNTIME_DIR: "/run/user/1000",
+      DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/1000/bus",
+      PATH: "/usr/bin:/bin",
+    });
+    const names = Object.keys(env);
+    expect(names.filter(name => /^(NO_COLOR|GIT_CONFIG_|CODEX_|ELPIS_)/.test(name))).toEqual([]);
+    expect(env.PATH!.split(":")).not.toContain(workerBin(dir));
+  });
+  it("keeps his session's own variables, also where the worker set the same name differently", async () => {
+    const out = join(dir, "child.env");
+    await openFromWorker(session, ["/bin/sh", "-c", 'env -0 > "$0"; printf "END\\0" >> "$0"', out]);
+    const env = await childEnvironment(out);
+    expect(env.HIS_NOTE).toBe("two words and a 'quote'");
+    expect(env.LANG).toBe("en_US.UTF-8");
+  });
+  it("tells the worker when the program is not in his session's PATH or no program is named", async () => {
+    await expect(openFromWorker(session, ["no-such-program-e33"])).rejects.toMatchObject({
+      code: 127,
+      stderr: expect.stringContaining("no-such-program-e33 is not on the PATH of the person's session"),
+    });
+    await expect(exec(join(workerBin(dir), "open-for-user"), [])).rejects.toMatchObject({ code: 2 });
   });
 });
 
