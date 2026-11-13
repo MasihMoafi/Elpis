@@ -42,7 +42,7 @@ const row = (page: Page, id: string) => page.locator(`aside.sidebar .thread-row[
 const nameOf = (page: Page, id: string) => row(page, id).locator('.thread-link').innerText().then(text => text.split('\n')[0]);
 /** The page holds the focus, as after a click on an empty part of the window. */
 const focusPage = (page: Page) => page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
-const notice = (page: Page, text: string) => page.locator('.workspace-notices [role="status"]').filter({ hasText: text });
+const notice = (page: Page, text: string) => page.locator('.action-notices [role="status"]').filter({ hasText: text });
 const posted = (f: Fixture, pattern: RegExp) => f.posts.filter(post => pattern.test(post.path)).map(post => post.path);
 async function eventually(check: () => Promise<unknown>) {
   const end = Date.now() + 5000;

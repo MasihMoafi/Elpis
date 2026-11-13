@@ -21,6 +21,7 @@ import { SidePanel, sideMinWidth } from "@/components/side-panel";
 import { FloatChatBar, FloatChatPill } from "@/components/float-chat";
 import { title, agentName } from "@/lib/api";
 import { WorkspaceAlertArea } from "@/components/workspace-alert-area";
+import { ActionNotices } from "@/components/workspace-notices";
 import { PAGE_NAMES } from "@/lib/workspace-navigation-pages";
 import { WorkspaceOrganizationDialogs } from "@/components/workspace-organization-dialogs";
 import { WorkspaceCommandDialogs } from "@/components/workspace-command-dialogs";
@@ -55,7 +56,6 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
       rewind={workspace.rewindState}
       catalog={workspace.catalog}
       activeTurn={workspace.activeTurn}
-      undoDelete={workspace.undoDelete}
       switchRewind={workspace.switchRewind}
       editDraft={workspace.editDraft}
     />
@@ -232,6 +232,15 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
                 setAgentRunsOpen={workspace.setAgentRunsOpen}
               />
             </WorkspaceSidebar>
+            <ActionNotices
+              deleted={workspace.notices.deletedNotice}
+              onUndoDelete={() => void workspace.undoDelete()}
+              onDismissDeleted={() => workspace.notices.setDeletedNotice(null)}
+              history={workspace.notices.historyNotice}
+              onDismissHistory={() => workspace.notices.setHistoryNotice("")}
+              worktree={workspace.notices.worktreeNotice}
+              onDismissWorktree={() => workspace.notices.setWorktreeNotice("")}
+            />
             <main
               className={`workspace${workspace.view === "chat" && workspace.selectedLoveChat ? " love-chat accent-scope" : ""}${
                 workspace.view === "chat" && workspace.selected?.motherAgent ? " elpis-chat" : ""

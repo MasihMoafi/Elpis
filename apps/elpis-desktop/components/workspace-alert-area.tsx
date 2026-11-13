@@ -23,7 +23,6 @@ type Props = {
   rewind: ReturnType<typeof useRewindState>;
   catalog: ReturnType<typeof useModelCatalog>;
   activeTurn: string | undefined;
-  undoDelete: () => Promise<unknown>;
   switchRewind: ReturnType<typeof createMessageActions>["switchRewind"];
   editDraft: (value: string) => void;
 };
@@ -38,12 +37,10 @@ export function WorkspaceAlertArea({
   rewind,
   catalog,
   activeTurn,
-  undoDelete,
   switchRewind,
   editDraft,
 }: Props) {
-  const { error, setError, deletedNotice, setDeletedNotice, historyNotice, setHistoryNotice } = notices;
-  const { worktreeNotice, setWorktreeNotice } = notices;
+  const { error, setError } = notices;
   const { selected } = session,
     { connected, ready, connectionStatus, runtimeNotices, setRuntimeNotices } = runtime;
   const { rewindActions, rewindBusy } = rewind,
@@ -54,11 +51,6 @@ export function WorkspaceAlertArea({
   return (
     <WorkspaceNotices
       {...(connection !== undefined ? { connection } : {})}
-      deleted={deletedNotice}
-      onUndoDelete={() => void undoDelete()}
-      onDismissDeleted={() => setDeletedNotice(null)}
-      history={historyNotice}
-      onDismissHistory={() => setHistoryNotice("")}
       rewind={
         selected &&
         rewindActions[selected.id] && (
@@ -79,8 +71,6 @@ export function WorkspaceAlertArea({
       }
       {...(visibleError !== undefined ? { error: visibleError } : {})}
       onDismissError={() => setError("")}
-      worktree={worktreeNotice}
-      onDismissWorktree={() => setWorktreeNotice("")}
       loadingModels={catalogLoading && !catalogError && !models.length}
       {...(conversationError !== undefined ? { conversationError } : {})}
       onDismissConversationError={() => selected && setRuntimeNotices(prev => without(prev, selected.id))}

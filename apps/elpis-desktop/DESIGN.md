@@ -46,6 +46,8 @@ Message actions (reply, copy, read aloud, "More") show under his every message a
 
 Reconnect and error notices follow the last message inside `.chat-content`. Showing, updating or dismissing one never changes the composer or transcript viewport's position or size. Other pages, and a chat hidden behind the side panel, keep their notices at the workspace bottom.
 
+Notices about a chat action (Deleted with its Undo, Undone or Redone after Ctrl+Z, a kept worktree) never cover the transcript or the message box (Masih, 13 Nov: they showed "on top of the last message of any conversation"). `ActionNotices` (`components/workspace-notices.tsx`, `.action-notices`) stacks them small at the sidebar's foot, above its footer; with the sidebar closed, in the window's bottom left corner; where that corner would touch the chat (a narrow window), in the title bar's free middle, the first notice only. They keep `role="status"`, their buttons in the tab order, Ctrl+Z, and their 8 s on screen.
+
 ## 6. Rules for every screen
 - A shown name or label is not a control.
 - A page the user cannot act on is removed or made to work. A hidden page leaves the sidebar and the command menu.
