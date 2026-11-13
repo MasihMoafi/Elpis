@@ -2,7 +2,7 @@
 
 import { message } from "./mcp-credentials";
 export { message, LOCAL_RERANKERS, providerName } from "./mcp-credentials";
-import { Key, CredentialSettings, RagSettings } from "./mcp-credentials";
+import { Key, CredentialSettings, RagSettings, keyNames } from "./mcp-credentials";
 import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { useCallback, useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
@@ -295,9 +295,9 @@ export function McpSettings({ onOpenVoice, onCustomize }: { onOpenVoice?: () => 
                 <Trash2 size={14} />
               </Button>
             </header>
-            {server.credentials.length > 0 && (
+            {server.credentials.some(item => !keyNames(server).includes(item.name)) && (
               <ul className="grid gap-1 text-sm">
-                {server.credentials.map(item => (
+                {server.credentials.filter(item => !keyNames(server).includes(item.name)).map(item => (
                   <Key
                     key={`${item.source}:${item.name}`}
                     name={item.name}
@@ -307,12 +307,20 @@ export function McpSettings({ onOpenVoice, onCustomize }: { onOpenVoice?: () => 
                 ))}
               </ul>
             )}
-            <CredentialSettings
-              server={server}
-              disabled={!data.write?.available}
-              save={body => save(server.name, body)}
-            />
-            {server.name === "rag" && <RagSettings version={data.version} />}
+            {server.name === "rag" ? (
+              <RagSettings
+                version={data.version}
+                server={server}
+                disabled={!data.write?.available}
+                save={body => save(server.name, body)}
+              />
+            ) : (
+              <CredentialSettings
+                server={server}
+                disabled={!data.write?.available}
+                save={body => save(server.name, body)}
+              />
+            )}
             {server.name === "whispertype" && (
               <p className="provider-note">
                 The microphone’s transcription route is set under Voice.

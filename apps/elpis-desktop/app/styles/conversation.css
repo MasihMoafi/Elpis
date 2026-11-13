@@ -52,6 +52,11 @@
 .key-state { list-style:none; }
 .key-state.set { color:var(--foreground); }
 .key-state.unset { color:var(--warning); }
+/* An MCP server's keys (components/mcp-credentials.tsx): one field each, its state in words beside its name. */
+.mcp-keys { display:grid; gap:8px; }
+.mcp-key-name { display:flex; align-items:baseline; gap:8px; }
+.mcp-keys .key-state { font-size:var(--text-xs); font-weight:400; }
+.mcp-keys-actions { display:flex; align-items:center; gap:12px; }
 .mcp-values { display:grid; gap:6px; margin:0; font-size:var(--text-sm); }
 .mcp-values div { display:grid; grid-template-columns:130px minmax(0,1fr); gap:8px; }
 .mcp-values dt { color:var(--muted-foreground); }
