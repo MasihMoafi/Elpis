@@ -54,8 +54,15 @@ export function useMatildaMiniChat(open: boolean) {
   const [history, setHistory] = useState(false);
   const openRef = useRef(open);
   openRef.current = open;
-  const rememberEarlier = useCallback((result: Conversation, sentTurn?: string) => {
-    const pending = sentTurn ?? (result.busy ? result.entries.at(-1)?.turnId : undefined);
+  // What he sent and has not yet come back from the bridge: shown at once, as sent (13 Nov, Masih: "when I press enter in
+  // the pinned chat for the first message it doesn't send the message right away"; the first send waits while Love Spot's
+  // chat loads).
+  const [outgoing, setOutgoing] = useState<string | null>(null);
+  const earlierRef = useRef(earlier);
+  earlierRef.current = earlier;
+  /** `sentTurn` is the turn just sent, or null when none is on its way; left out, a busy chat's last turn is. */
+  const rememberEarlier = useCallback((result: Conversation, sentTurn?: string | null) => {
+    const pending = sentTurn !== undefined ? sentTurn : result.busy ? result.entries.at(-1)?.turnId : undefined;
     setEarlier(
       current => current ?? new Set(result.entries.map(entry => entry.turnId).filter(turn => turn !== pending)),
     );
@@ -140,8 +147,18 @@ export function useMatildaMiniChat(open: boolean) {
     streamedWhileSending.current = null;
     setPosting(true);
     setError("");
-    latestRead.current++;
+    setOutgoing(sent);
+    setDraft(current => (current.trim() === sent ? "" : current));
     try {
+      // Sent before her history arrived: what is there now is earlier, so her reply shows and is spoken as it streams
+      // rather than once the send returns. The bridge waits for the same loading before it sends.
+      if (!earlierRef.current && openRef.current) {
+        latestRead.current++;
+        const loaded = received(await api<Conversation>("/love-spot/talk"));
+        if (!mounted.current) return;
+        if (openRef.current) rememberEarlier(loaded, null);
+      }
+      latestRead.current++;
       const response = received(
         await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona(), pinned: true }),
       );
@@ -155,7 +172,6 @@ export function useMatildaMiniChat(open: boolean) {
           : response;
       if (openRef.current) rememberEarlier(result, responseTurn);
       setConversation(result);
-      setDraft(current => (current.trim() === sent ? "" : current));
       setError(result.error || "");
       window.dispatchEvent(new Event(MATILDA_CHANGED));
       // A scripted or cached model can complete before the POST snapshot catches its final entry and before the live
@@ -175,14 +191,22 @@ export function useMatildaMiniChat(open: boolean) {
           }
         })();
     } catch (cause) {
-      if (mounted.current) setError(errorText(cause, "Message not sent. Try again."));
+      if (mounted.current) {
+        setError(errorText(cause, "Message not sent. Try again."));
+        // Not sent: his words go back in the box, unless he has started another message.
+        setDraft(current => (current.trim() ? current : sent));
+      }
     } finally {
       sending.current = false;
-      if (mounted.current) setPosting(false);
+      if (mounted.current) {
+        setPosting(false);
+        setOutgoing(null);
+      }
     }
   }
   return {
     draft,
+    outgoing,
     setDraft,
     conversation,
     error,
@@ -270,10 +294,19 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   }, [chat.shownEarlier]);
   const said = chat.conversation.entries.filter(entry => message(entry).trim());
   const before = chat.earlier ? said.filter(entry => chat.earlier!.has(entry.turnId)) : said;
-  const entries = [
-    ...(chat.history ? before.slice(-chat.shownEarlier) : []),
-    ...said.filter(entry => !before.includes(entry)),
-  ];
+  const fresh = said.filter(entry => !before.includes(entry));
+  // His message shows as sent at once; once the bridge has it, its own entry takes its place.
+  const outgoing: Entry[] =
+    chat.outgoing !== null &&
+    !fresh.some(entry => entry.item.type === "userMessage" && message(entry).trim() === chat.outgoing)
+      ? [
+          {
+            turnId: "outgoing",
+            item: { id: "outgoing", type: "userMessage", content: [{ type: "text", text: chat.outgoing }] },
+          },
+        ]
+      : [];
+  const entries = [...(chat.history ? before.slice(-chat.shownEarlier) : []), ...fresh, ...outgoing];
   const moreEarlier = chat.history && before.length > chat.shownEarlier;
   // The newest message is in view whenever one arrives, grows or the earlier ones open (29 Oct: they opened at the oldest,
   // her answers below the fold); asking again while she replies changes nothing, so it never moves what he scrolled to.
