@@ -84,7 +84,9 @@ for (const first of ['stream', 'send']) test(`a reply stays visible when ${first
   await input.fill('How are you?');
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
   await conversation.getByText('How are you?', { exact: true }).waitFor({ timeout: 5000 });
-  if (first === 'stream') assert.equal(await input.inputValue(), 'How are you?', 'the unacknowledged draft is kept');
+  // 13 Nov, Masih: Enter "doesn't send the message right away". Shown as sent, it leaves the box at once, and only once.
+  if (first === 'stream') assert.equal(await input.inputValue(), '', 'a message on its way is out of the box');
+  assert.equal(await conversation.getByText('How are you?', { exact: true }).count(), 1, 'and shown once while on its way');
   releasePost();
   await completed;
   release();

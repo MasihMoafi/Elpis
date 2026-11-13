@@ -31,6 +31,33 @@ test('a narrow window keeps Matilda on screen, then she returns to her place', {
   assert.deepEqual(f.errors ?? [], []);
 });
 
+// 13 Nov, Masih: the notification for her reply "makes the pin icon big again". The click brings forward a window that
+// read her size when it opened; it now follows the size he last gave her in any window.
+test('a window opened earlier follows the size he gave her in another window', { timeout: 60000 }, async t => {
+  const f = await loveSpotFixture({ colorScheme: 'light' });
+  t.after(() => f.close());
+  const presence = (page: Page) => page.getByRole('region', { name: 'Pinned Matilda', exact: true });
+  const a = f.page;
+  await a.setViewportSize({ width: 1000, height: 800 });
+  await a.locator('.app-menus').waitFor();
+  await a.getByRole('button', { name: 'Pin Matilda', exact: true }).click();
+  await presence(a).waitFor();
+  const b = await f.newPage();
+  await b.setViewportSize({ width: 1000, height: 800 });
+  await presence(b).waitFor();
+  const before = await presence(b).boundingBox();
+  await a.bringToFront();
+  await presence(a).getByRole('button', { name: 'Resize Matilda', exact: true }).focus();
+  for (let i = 0; i < 3; i++) await a.keyboard.press('-');
+  const small = await presence(a).boundingBox();
+  assert.ok(before && small && Math.round(before.width - small.width) === 24, JSON.stringify({ before, small }));
+  await b.bringToFront();
+  await b.waitForFunction(width => Math.round(document.querySelector('.matilda-float')?.getBoundingClientRect().width ?? 0) === width, Math.round(small.width), { timeout: 3000 });
+  assert.deepEqual(await presence(b).boundingBox(), small, 'the same size and place in the window brought forward');
+  assert.equal(await b.getByRole('dialog', { name: 'Small chat with Matilda', exact: true }).count(), 0, 'nor does it open her small chat');
+  assert.deepEqual(f.errors, []);
+});
+
 for (const colorScheme of ['light'] as const) test(`Matilda floats out of the title bar and stays put across app pages, with global Unpin (${colorScheme})`, { timeout: 60000 }, async t => {
   const f = await loveSpotFixture({ colorScheme });
   t.after(() => f.close());
@@ -165,15 +192,22 @@ for (const colorScheme of ['light'] as const) test(`Matilda mini chat, mute and 
   await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
   await mini.getByRole('alert').filter({ hasText: 'Matilda could not send' }).waitFor();
   assert.equal(await field.inputValue(), 'Keep failed message');
+  assert.equal(await mini.getByRole('log').getByText('Keep failed message', { exact: true }).count(), 0, 'a message not sent is not shown as sent');
   assert.equal(sends().length, 2);
+  // 13 Nov, Masih: "when I press enter in the pinned chat for the first message it doesn't send the message right away".
+  // While the chat is still being prepared his message shows as sent, at once and once.
   replyMode = 'slow'; await field.fill('Slow message');
-  await mini.getByRole('button', { name: 'Send to Matilda', exact: true }).click();
+  await field.press('Enter');
   await page.waitForFunction(() => document.querySelector('.matilda-mini-status'));
+  await slowStarted;
+  await mini.getByRole('log').getByText('Slow message', { exact: true }).waitFor({ timeout: 1000 });
+  assert.equal(await field.inputValue(), '', 'Enter takes his message out of the box at once');
   await field.fill('New text while waiting');
   assert.equal(sends().length, 3);
   await slowStarted; const resume = release as (() => void) | undefined; assert.ok(resume); resume();
   await mini.getByRole('status').filter({ hasText: 'Matilda is replying' }).waitFor({ state: 'hidden' });
   assert.equal(await field.inputValue(), 'New text while waiting', 'a slow acknowledgement cannot erase later typing');
+  assert.equal(await mini.getByRole('log').getByText('Slow message', { exact: true }).count(), 1, 'shown once, not twice');
   assert.deepEqual(await mainState(), mainBefore);
   await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
 
