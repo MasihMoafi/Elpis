@@ -324,7 +324,7 @@
   "tests/made-chats.test.cts:long": 3,
   "tests/matilda-badge.test.cts:long": 2,
   "tests/matilda-chat-unlock.test.cts:long": 1,
-  "tests/matilda-companion.test.cts:long": 15,
+  "tests/matilda-companion.test.cts:long": 14,
   "tests/matilda-live-voice.test.cts:long": 9,
   "tests/matilda-pet.test.cts:long": 9,
   "tests/matilda-pin-pet.test.cts:long": 4,

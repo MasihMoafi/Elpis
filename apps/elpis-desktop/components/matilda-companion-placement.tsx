@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type 
 import { appStorage } from "@/lib/projects";
 import { errorText } from "@/lib/error-text.mts";
 import type { CompanionState } from "./matilda-companion-state";
-import { savedPlace, chromeBottom, BEHIND, sized, FLOAT_KEY, SIZE, watchSavedPlace } from "./matilda-companion-shared";
+import { savedPlace, chromeBottom, sized, FLOAT_KEY, SIZE, watchSavedPlace } from "./matilda-companion-shared";
 
 export function useCompanionPlacement(previous: CompanionState) {
   const { setError, suppressClick, state } = previous;
@@ -15,9 +15,8 @@ export function useCompanionPlacement(previous: CompanionState) {
   const placeRef = useRef(place);
   placeRef.current = place;
   const shownRef = useRef(shown);
-  // A Workflows side panel goes over her: she stays where she was put and is cut off at its edge, so its Done and Run
-  // buttons stay clickable (1 Nov: she covered them). Pages keep her place (the stays-put rule).
-  const [hidden, setHidden] = useState(0);
+  // She floats above every page's panels, the Workflows side panels too (13 Nov: an agent panel hid her and took her
+  // clicks); only the native browser page, which sits above the renderer, moves her (DESIGN.md, Layers).
   const drag = useRef<{
     x: number;
     y: number;
@@ -53,21 +52,6 @@ export function useCompanionPlacement(previous: CompanionState) {
         continue;
       left = Math.max(0, Math.floor(pane.left - size - 4));
     }
-    let under = 0;
-    for (const element of document.querySelectorAll(BEHIND)) {
-      const pane = element.getBoundingClientRect();
-      if (
-        !pane.width ||
-        !pane.height ||
-        left >= pane.right ||
-        left + size <= pane.left ||
-        top >= pane.bottom ||
-        top + size <= pane.top
-      )
-        continue;
-      under = Math.max(under, Math.ceil(left + size - pane.left));
-    }
-    setHidden(Math.min(under, size));
     if (left === shownRef.current.left && top === shownRef.current.top) return;
     shownRef.current = { left, top };
     setShown(shownRef.current);
@@ -198,7 +182,7 @@ export function useCompanionPlacement(previous: CompanionState) {
     let panes: Element[] = [];
     const resized = new ResizeObserver(() => fit());
     const discover = () => {
-      const next = [...document.querySelectorAll(`.browser-panel, ${BEHIND}`)];
+      const next = [...document.querySelectorAll(".browser-panel")];
       if (next.length === panes.length && next.every((pane, i) => pane === panes[i])) return;
       panes = next;
       resized.disconnect();
@@ -238,7 +222,7 @@ export function useCompanionPlacement(previous: CompanionState) {
       ? { left, width, bottom: size + gap, maxHeight: shown.top - gap - chrome - edge }
       : { left, width, top: size + gap, maxHeight: innerHeight - shown.top - size - gap - edge };
   };
-  return { ...previous, shown, hidden, drag, put, grab, pull, release, keys, track, size, chrome, side, chatPlace };
+  return { ...previous, shown, drag, put, grab, pull, release, keys, track, size, chrome, side, chatPlace };
 }
 
 export type CompanionPlacement = ReturnType<typeof useCompanionPlacement>;

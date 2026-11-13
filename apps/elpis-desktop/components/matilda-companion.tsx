@@ -31,7 +31,6 @@ export function MatildaCompanion() {
     shown,
     chrome,
     size,
-    hidden,
     chatOpen,
     faceRef,
     grab,
@@ -107,11 +106,6 @@ export function MatildaCompanion() {
         top: shown.top,
         width: size,
         height: size,
-        ...(hidden
-          ? {
-              clipPath: `polygon(-9999px -9999px, ${size - hidden}px -9999px, ${size - hidden}px 9999px, -9999px 9999px)`,
-            }
-          : {}),
       }}
     >
       {/* Right-click: Hide, the same as Unpin (5 Nov). Her face is images, so the trigger keeps Electron's image menu out. */}

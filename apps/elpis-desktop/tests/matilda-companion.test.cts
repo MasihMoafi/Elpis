@@ -1,4 +1,4 @@
-import type { Locator, Page } from 'playwright-core';
+import type { Locator, Page, Route } from 'playwright-core';
 import type { LoveSpotFixture, LoveSpotOptions } from './love-spot-test-types.mts';
 
 type Entry = { turnId: string; item: { id: string; type: string; text?: string; content?: { type: string; text: string; text_elements?: object[] }[] } };
@@ -258,17 +258,7 @@ for (const colorScheme of ['light'] as const) test(`Matilda mini chat, mute and 
   const kept = await presence.boundingBox();
   assert.ok(kept);
   assert.ok(kept.y + kept.height <= browser.y || kept.x + kept.width <= browser.x || kept.x >= browser.x + browser.width, JSON.stringify({ kept, browser }));
-  // A Workflows side panel over her half: she stays where she is, and the panel, not she, takes a click there (1 Nov).
-  const covered = await page.evaluate(() => {
-    const her = (document.querySelector('.matilda-float') as HTMLElement).getBoundingClientRect(), side = document.createElement('aside');
-    side.className = 'canvas-side'; Object.assign(side.style, { position: 'fixed', top: '0px', left: `${Math.round(her.left + her.width / 2)}px`, right: '0px', height: '100vh' });
-    document.body.append(side); return { her: her.toJSON(), x: Math.round(her.left + her.width * 0.75), y: Math.round(her.top + her.height / 2) };
-  });
-  await page.waitForFunction(({ x, y }) => document.elementFromPoint(x, y)?.matches('aside.canvas-side'), covered);
-  assert.deepEqual(await presence.boundingBox(), { x: covered.her.x, y: covered.her.y, width: covered.her.width, height: covered.her.height }, 'she stays put');
-  assert.ok(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x - Math.round((document.querySelector('.matilda-float') as HTMLElement).getBoundingClientRect().width / 2), y)?.closest('.matilda-float'), covered), 'her uncovered half is still hers');
-  await page.evaluate(() => (document.querySelector('aside.canvas-side') as HTMLElement).remove());
-  await page.waitForFunction(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.matilda-float'), covered);
+  // Workflows side panels no longer go over her (13 Nov): see the Board agent panel test below.
   assert.equal(await mini.count(), 0);
   await page.evaluate(() => (window as TestWindow).__push({ fullView: 1 }));
   await page.getByRole('button', { name: 'Collapse floating chat', exact: true }).click();
@@ -444,6 +434,45 @@ test('a message of Matilda shows as a count on her title-bar button, and pinning
     const note = page.getByRole('status', { name: 'Matilda says', exact: true });
     await note.waitFor();
     assert.match(await note.innerText(), /Your sidebar is filling up: 10 chats outside a project/);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+// 13 Nov: on Workflows, Board, an agent's panel hid the pinned Matilda and took her clicks. She floats above every
+// page's panels; a dialog that blocks the whole app (here the command menu) still covers her.
+test('pinned Matilda stays above the Board agent panel, and under a blocking dialog', { timeout: 60000 }, async () => {
+  const { openCanvas }: import('./canvas-fixture.cts').CanvasHelpers = require('./canvas-fixture.cts');
+  const { FACE_DATA_URL } = require('../bridge/matilda-face.cts');
+  const graph: import('../lib/canvas.ts').CanvasGraph = { name: 'Panel', nodes: [{ id: 'a1', type: 'agent', position: { x: 260, y: 90 }, data: {
+    title: 'Quillon', instruction: 'Fix the login test.', model: 'gpt-6-luna', provider: 'openai', writeScopes: ['src'], acceptanceCriteria: ['It passes.'],
+  } }], edges: [] };
+  const f = await openCanvas({ graph });
+  try {
+    const { page } = f;
+    let pinned = false;
+    await page.route('**/api/love-spot/companion*', async (route: Route) => {
+      if (route.request().method() === 'POST') pinned = (route.request().postDataJSON() as { action?: string }).action === 'pin' || pinned;
+      await route.fulfill({ json: { pinned, face: FACE_DATA_URL, threadId: null, favorite: null, music: null, reason: '' } });
+    });
+    await page.route('**/api/love-spot/talk*', (route: Route) => route.fulfill({ json: { entries: [], busy: false } }));
+    await f.node('Quillon').click();
+    const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true }); await panel.waitFor();
+    await page.getByRole('button', { name: 'Pin Matilda', exact: true }).click();
+    const presence = page.getByRole('region', { name: 'Pinned Matilda', exact: true }); await presence.waitFor();
+    const her = await presence.boundingBox(), side = await panel.boundingBox(); assert.ok(her && side);
+    const x = Math.round(her.x + her.width / 2), y = Math.round(her.y + her.height / 2);
+    assert.ok(x > side.x && y > side.y && y < side.y + side.height, `she sits over the panel: ${JSON.stringify({ her, side })}`);
+    const owner = () => page.evaluate(at => { const hit = document.elementFromPoint(at.x, at.y);
+      if (hit?.closest('.matilda-float')) return 'matilda';
+      if (hit?.closest('[data-slot="alert-dialog-overlay"]')) return 'overlay';
+      return hit?.closest('aside')?.getAttribute('aria-label') ?? hit?.tagName ?? ''; }, { x, y });
+    assert.equal(await owner(), 'matilda', 'the element at her face is hers, not the panel');
+    await page.mouse.click(x, y);
+    const mini = page.getByRole('dialog', { name: 'Small chat with Matilda', exact: true }); await mini.waitFor();
+    await page.keyboard.press('Escape'); await mini.waitFor({ state: 'hidden' });
+    await page.keyboard.press('Control+k');
+    await page.getByRole('dialog', { name: 'Command menu' }).waitFor();
+    assert.equal(await owner(), 'overlay', 'a blocking dialog covers her');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

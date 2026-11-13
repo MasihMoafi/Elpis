@@ -29,6 +29,3 @@ export const chromeBottom = () =>
   typeof document === "undefined"
     ? 0
     : Math.ceil(document.querySelector(".title-bar")?.getBoundingClientRect().bottom ?? 0);
-
-/** Panels that go over pinned Matilda rather than move her (right-hand side panels). */
-export const BEHIND = ".canvas-side";
