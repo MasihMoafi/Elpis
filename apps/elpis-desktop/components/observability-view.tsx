@@ -13,6 +13,7 @@ import {
   ComboboxList,
   ComboboxTrigger,
 } from "@/components/ui/combobox";
+import { CodebaseProjectPicker, useCodebaseProject } from "@/components/codebase-project-picker";
 import { api, title, type Thread } from "@/lib/api";
 
 const recency = (chat: Thread) => chat.recencyAt ?? chat.updatedAt ?? chat.createdAt ?? 0;
@@ -87,6 +88,40 @@ export function ObservabilityView({ threadId, chats }: { threadId?: string; chat
   }, [threadId]);
   const rows = [...chats].filter(chat => !chat.parentThreadId).sort((a, b) => recency(b) - recency(a));
   const current = chats.find(chat => chat.id === picked) ?? null;
+  const codebase = useCodebaseProject(picked, page === "codebase");
+  const pageSwitch = (
+    <Segmented
+      label="Observability page"
+      className="observability-page"
+      value={page}
+      onChange={setPage}
+      options={[
+        { value: "trajectory", label: "Trajectory" },
+        { value: "codebase", label: "Codebase" },
+      ]}
+    />
+  );
+  if (page === "codebase")
+    return (
+      <div className="observability" data-view="observability" aria-label="Observability">
+        <div className="observability-bar">
+          <CodebaseProjectPicker projects={codebase.projects} root={codebase.root} onChoose={codebase.choose} />
+          {pageSwitch}
+          {!codebase.loading && picked && !codebase.chatHasGit && (
+            <p className="observability-note">This chat&apos;s folder is not a Git project.</p>
+          )}
+        </div>
+        {codebase.root ? (
+          <iframe key={`codebase:${codebase.root}`} title="Codebase" src={`/codebase/index.html?root=${encodeURIComponent(codebase.root)}`} />
+        ) : codebase.loading ? null : (
+          <SettingsNotice>
+            {picked
+              ? "This chat's folder is not a Git project, and none of your chats works in one yet."
+              : "None of your chats works in a Git project yet."}
+          </SettingsNotice>
+        )}
+      </div>
+    );
   return (
     <div className="observability" data-view="observability" aria-label="Observability">
       <div className="observability-bar">
@@ -127,23 +162,11 @@ export function ObservabilityView({ threadId, chats }: { threadId?: string; chat
             </ComboboxList>
           </ComboboxContent>
         </Combobox>
-        <Segmented
-          label="Observability page"
-          value={page}
-          onChange={setPage}
-          options={[
-            { value: "trajectory", label: "Trajectory" },
-            { value: "codebase", label: "Codebase" },
-          ]}
-        />
+        {pageSwitch}
         {picked && <ProjectHealth threadId={picked} />}
       </div>
       {picked ? (
-        page === "codebase" ? (
-          <iframe key={`codebase:${picked}`} title="Codebase" src={`/codebase/index.html?thread=${encodeURIComponent(picked)}`} />
-        ) : (
-          <iframe key={picked} title="Trajectory" src={`/trajectory/index.html?thread=${encodeURIComponent(picked)}`} />
-        )
+        <iframe key={picked} title="Trajectory" src={`/trajectory/index.html?thread=${encodeURIComponent(picked)}`} />
       ) : (
         <SettingsNotice>Choose a chat to see its trajectory or its project.</SettingsNotice>
       )}
