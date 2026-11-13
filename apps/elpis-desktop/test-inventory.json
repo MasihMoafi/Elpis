@@ -200,6 +200,7 @@
     "bridge/love-spot-talk-matilda.test.mts",
     "bridge/love-spot-talk-note.test.mts",
     "bridge/love-spot-talk-stops.test.mts",
+    "tests/matilda-mini-voice.test.mts",
     "bridge/love-spot-changing.test.mts",
     "bridge/love-spot-private.test.mts",
     "bridge/love-spot-pages.test.mts",

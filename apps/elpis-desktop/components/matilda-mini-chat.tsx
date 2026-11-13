@@ -7,14 +7,14 @@ import { History, Volume2, VolumeX } from "lucide-react";
 import { Dictation } from "@/components/dictation";
 import { insertTranscript } from "@/lib/dictation";
 import { isSendKey, savePreferences, usePreferences } from "@/lib/preferences";
-import { speakableLength, useReadAloud, type LiveSpeech } from "@/components/read-aloud";
+import { useReadAloud } from "@/components/read-aloud";
+import { herReplies, miniVoice, shownReply, speakReplies } from "@/components/matilda-mini-voice";
 import { SendIcon } from "@/components/elpis-icons";
 import { MarkdownText } from "@/components/markdown-text";
 import { api, unreadable, type Entry } from "@/lib/api";
 import { MATILDA_CHANGED, savedPersona } from "@/lib/matilda";
 import { subscribeLoveSpotTalk } from "@/lib/love-spot-talk-events";
 import { HEART_REACTION, talkHeartReaction } from "@/lib/heart-reactions";
-import { replyPortrait } from "@/bridge/matilda-face.cts";
 import { attachedFile } from "@/lib/prompt-history";
 import { LoadOnScroll } from "@/components/load-on-scroll";
 import { MatildaFace } from "@/components/matilda-face";
@@ -218,21 +218,16 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
     speechRef = useRef(speech);
   speechRef.current = speech;
   const preferences = usePreferences();
-  const voice = useRef({
-    seen: new Map<string, number>(),
-    stopped: new Set<string>(),
-    live: null as { id: string; speech: LiveSpeech } | null,
-    suppress: false,
-  });
+  const voice = useRef(miniVoice());
   const [voiceError, setVoiceError] = useState(""),
     toldUnavailable = useRef(false);
   const stopSpeech = useCallback(() => {
     const state = voice.current,
       active = speechRef.current?.active;
-    if (state.live || (active && state.seen.has(active))) speechRef.current?.stop();
+    if (state.live || (active && state.said.has(active))) speechRef.current?.stop();
     state.live = null;
     state.suppress = true;
-    for (const id of state.seen.keys()) state.stopped.add(id);
+    for (const id of state.said.keys()) state.stopped.add(id);
   }, []);
   const dictationBusy = useCallback(
     (busy: boolean) => {
@@ -243,45 +238,15 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
   useEffect(() => () => stopSpeech(), [stopSpeech]);
   useEffect(() => {
     if (!chat.earlier) return;
-    const state = voice.current;
-    for (const entry of chat.conversation.entries) {
-      if (
-        entry.item.type !== "agentMessage" ||
-        (entry.item.phase && entry.item.phase !== "final_answer") ||
-        chat.earlier.has(entry.turnId)
-      )
-        continue;
-      const id = `${entry.turnId}:${entry.item.id}`,
-        text = message(entry),
-        offset = state.seen.get(id) ?? 0;
-      if (state.suppress || state.stopped.has(id) || !preferences.speakMatildaReplies) {
-        state.seen.set(id, text.length);
-        state.stopped.add(id);
-        continue;
-      }
-      const pending = text.slice(offset),
-        length = speakableLength(pending, chat.conversation.busy);
-      if (!length) continue;
-      if (state.live?.id !== id) {
-        // Said once per opening, not after every reply while the voice stays unavailable.
-        const opened = speech?.live(id) ?? null;
-        if (!opened) {
-          if (!toldUnavailable.current) {
-            toldUnavailable.current = true;
-            setVoiceError("The selected read aloud source is unavailable. Check Models & accounts.");
-          }
-          state.seen.set(id, text.length);
-          continue;
-        }
-        state.live = { id, speech: opened };
-      }
-      state.seen.set(id, offset + length);
-      state.live.speech.feed(pending.slice(0, length));
-    }
-    if (!chat.conversation.busy) {
-      state.suppress = false;
-      state.live?.speech.end();
-      state.live = null;
+    const unavailable = speakReplies(voice.current, herReplies(chat.conversation.entries, chat.earlier), {
+      busy: chat.conversation.busy,
+      enabled: preferences.speakMatildaReplies,
+      open: id => speech?.live(id) ?? null,
+    });
+    // Said once per opening, not after every reply while the voice stays unavailable.
+    if (unavailable && !toldUnavailable.current) {
+      toldUnavailable.current = true;
+      setVoiceError("The selected read aloud source is unavailable. Check Models & accounts.");
     }
   }, [chat.conversation, chat.earlier, preferences.speakMatildaReplies, speech]);
   useEffect(() => {
@@ -373,7 +338,7 @@ export function MatildaMiniChat({ chat }: { chat: ReturnType<typeof useMatildaMi
               )}
               <span className="sr-only">{entry.item.type === "userMessage" ? "You" : "Matilda"}: </span>
               <MarkdownText
-                text={entry.item.type === "agentMessage" ? replyPortrait(message(entry)).text : message(entry)}
+                text={entry.item.type === "agentMessage" ? shownReply(message(entry)) : message(entry)}
                 allowImages={false}
               />
             </div>
