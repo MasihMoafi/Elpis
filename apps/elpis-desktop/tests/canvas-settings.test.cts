@@ -61,3 +61,24 @@ for (const iso of [false, true]) test(`${iso ? '3D' : '2D'} settings load every 
     assert.deepEqual(fixture.errors, []);
   } finally { await fixture.close(); }
 });
+
+// Masih, 13 Nov: "the button be called delete so they all fit". Info, Delete and Done share one row; Done is last.
+test('the agent panel shows Info, Delete and Done on one row, Done at the right', async () => {
+  const f = await openCanvas({});
+  try {
+    await f.page.setViewportSize({ width: 1280, height: 900 });
+    await f.node('Quillon · Part 1').click();
+    const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
+    const remove = panel.getByRole('button', { name: 'Delete agent', exact: true });
+    assert.equal((await remove.innerText()).trim(), 'Delete');
+    const boxes = await panel.locator('.canvas-inspector-actions > button').evaluateAll((buttons: Element[]) => buttons.map(button => {
+      const r = button.getBoundingClientRect(); return { text: (button as HTMLElement).innerText.trim(), top: Math.round(r.top), right: r.right };
+    }));
+    assert.deepEqual(boxes.map(box => box.text.split('\n')[0]), ['Info', 'Delete', 'Done']);
+    assert.equal(new Set(boxes.map(box => box.top)).size, 1, `one row: ${JSON.stringify(boxes)}`);
+    assert.equal(Math.max(...boxes.map(box => box.right)), boxes[2]!.right);
+    await remove.click();
+    assert.equal(await f.node('Quillon · Part 1').count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
