@@ -17,8 +17,28 @@ const MARKER = "# Written by dsh-superagent on every start; edits are lost.";
 const LEGACY_MARKERS = ["dsh-tag", "dsh-go", "dsh-freelancer"].map(
   name => `# Written by ${name} on every start; edits are lost.`,
 );
+/** The command a worker opens something on the person's screen with. */
+export const OPEN_FOR_USER = "open-for-user";
 /** Commands workers need, which `blockedCommands` cannot block: the shims and git. */
-export const WORKER_COMMANDS: readonly string[] = ["gh", "git", "lark-cli"];
+export const WORKER_COMMANDS: readonly string[] = ["gh", "git", "lark-cli", OPEN_FOR_USER];
+/**
+ * Starts a program detached, with the environment of the person's login session (`systemctl --user show-environment`)
+ * and none of the worker's: a terminal a worker opened kept NO_COLOR, the worker's git config and this folder on PATH.
+ * systemd writes values with special characters as `$'…'`, which bash reads and dash does not.
+ */
+const openForUser = (): string => {
+  const inSession = [
+    'set -a; eval "$SESSION_ENVIRONMENT"; set +a; unset SESSION_ENVIRONMENT; cd .',
+    `command -v "$1" >/dev/null || { echo "$1 is not on the PATH of the person's session." >&2; exit 127; }`,
+    'exec setsid -f "$@" </dev/null >/dev/null 2>&1',
+  ].join("\n");
+  return [
+    `[ $# -gt 0 ] || { echo 'Usage: ${OPEN_FOR_USER} <program> [arguments]' >&2; exit 2; }`,
+    `session=$(systemctl --user show-environment) || { echo '${OPEN_FOR_USER}: the environment of the login session is unavailable.' >&2; exit 1; }`,
+    `bash=$(command -v bash) || { echo '${OPEN_FOR_USER}: bash is missing.' >&2; exit 1; }`,
+    `exec env -i "SESSION_ENVIRONMENT=$session" "$bash" -c ${shellQuote(inSession)} ${OPEN_FOR_USER} "$@"`,
+  ].join("\n");
+};
 import { workerBin, workerGitConfig } from "./git-environment.mts";
 export { workerBin, workerGitConfig, agentVariables, GIT_LOCATION } from "./git-environment.mts";
 const shellQuote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`;
@@ -105,6 +125,7 @@ export async function writeEnvironment(
       : fail("GitHub is not configured; select its repository in the Elpis settings."),
   );
   await shim("lark-cli", fail("lark-cli is unavailable: this installation has no Feishu bot."));
+  await shim(OPEN_FOR_USER, openForUser());
   for (const name of new Set(blockedCommands.filter(name => !WORKER_COMMANDS.includes(name)))) {
     await shim(name, fail(`${name} is blocked in this installation; use gh, which acts as ${github.login}.`));
   }
