@@ -40,7 +40,7 @@ These are the required behaviors, numbered 1–91 without gaps; refer to one as 
 
 ## Browser and annotations
 
-28. Each chat has its own browser. Its tabs, address, history, reload, stop and sidebar URL pins work without exposing the Elpis runtime to websites. Browser settings follow the ChatGPT desktop reference. (R10, R39)
+28. Each chat has its own browser. Its tabs, address, history, reload, stop and sidebar URL pins work without exposing the Elpis runtime to websites. Settings has no Browser page: it only repeated the sidebar's pins and the side panel's browser (Masih, 13 Nov: "why is there a browser settings in the settings when it doesn't do anything?"). (R10, R39)
 29. Tab selection supports Shift ranges and grouped, icon-led actions. Close other tabs and Close tabs to the right affect the intended tabs; unselected tabs and deliberate panel sizes are preserved. An empty pane does not reopen as a wide blank view. (C9, R76)
 30. Drawing uses the browser's own box over a still image; Add or Close restores the live page without moving the surrounding layout. Style opens and closes without changing marks or the selected tool. Chat pauses drawing and focuses the composer; Resume restores the marks and Discard is explicit. (S21, M1, M2, A151)
 31. Enter sends a browser annotation once and in order. The sent message shows the person's comments, not the internal note for the model. Popup and dialog elements can be annotated without activating or dismissing them. (S17, C9, A147)

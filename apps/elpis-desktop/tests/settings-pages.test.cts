@@ -1,4 +1,4 @@
-const { openSettings } = require('./controls.cts');
+const { openSettings, leaveSettings } = require('./controls.cts');
 // Every Settings page against a local adapter: page order, what each control writes, and narrow layouts. No runtime or model calls.
 const test = require('node:test'), assert = require('node:assert/strict');
 
@@ -42,26 +42,22 @@ test('Claude MCP import previews selections and handles a stale source without c
   } finally { await f.close(); }
 });
 
-test('Browser settings opens the native new tab and shares pinned websites with the browser store', async () => {
+// Masih, 13 Nov: "why is there a browser settings in the settings when it doesn't do anything?" Its controls only repeated
+// the sidebar's pinned pages (open, unpin) and the side panel's browser, so the page is gone; the sidebar still does both.
+test('Settings has no Browser page; a pinned website opens and unpins from the sidebar', async () => {
   const { fixture } = require('./parity-fixture.cts');
   const key = 'elpis-browser-pins-v1', pin = { title: 'Docs', url: 'https://example.test/docs' };
   const f = await fixture({ storage: { [key]: JSON.stringify([pin]) } });
   try {
-    const { page } = f; await f.open('chat-a'); await openSettings(page, 'Browser');
-    let panel = page.getByRole('tabpanel', { name: 'Browser' });
-    await panel.getByText('Docs', { exact: true }).waitFor();
-    await panel.getByRole('button', { name: 'Open browser', exact: true }).click();
-    await page.waitForFunction(() => (window as Window & { __commands?: { action: string; url?: string }[] }).__commands?.some(command => command.action === 'new'));
-    assert.deepEqual(await page.evaluate(() => (window as Window & { __commands?: { action: string; url?: string }[] }).__commands?.filter(command => command.action === 'new').at(-1)), { action: 'new' });
-    await openSettings(page, 'Browser'); panel = page.getByRole('tabpanel', { name: 'Browser' });
-    const row = panel.locator('[data-slot="settings-row"]').filter({ hasText: 'Docs' });
-    await row.getByRole('button', { name: 'Open', exact: true }).click();
+    const { page } = f; await f.open('chat-a'); await openSettings(page);
+    await page.getByRole('tab', { name: 'MCP servers', exact: true }).waitFor();
+    assert.equal(await page.getByRole('tab', { name: 'Browser', exact: true }).count(), 0, 'no Browser page in Settings');
+    await leaveSettings(page);
+    const pins = page.getByRole('region', { name: 'Pinned browser pages' });
+    await pins.getByRole('button', { name: /Docs/ }).first().click();
     await page.waitForFunction((url: string) => (window as Window & { __commands?: { action: string; url?: string }[] }).__commands?.some(command => command.action === 'new' && command.url === url), pin.url);
-    await openSettings(page, 'Browser'); panel = page.getByRole('tabpanel', { name: 'Browser' });
-    await panel.locator('[data-slot="settings-row"]').filter({ hasText: 'Docs' }).getByRole('button', { name: 'Unpin' }).click();
+    await pins.getByRole('button', { name: 'Unpin Docs from sidebar', exact: true }).click();
     assert.deepEqual(JSON.parse(await page.evaluate((key: string) => localStorage.getItem(key), key)), []);
-    await page.reload(); await openSettings(page, 'Browser');
-    assert.equal(await page.getByRole('tabpanel', { name: 'Browser' }).getByText('Docs', { exact: true }).count(), 0);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -80,7 +76,8 @@ test('the RAG card settles once while its three reads arrive, and its OpenRouter
     '/api/tools/rag': async () => { await later(300); return { stages: [{ stage: 'embedding', provider: 'openrouter', model: 'qwen/qwen3-embedding-8b', location: 'api' }, { stage: 'reranking', provider: null, model: 'off', location: 'local' }, { stage: 'generation', provider: 'openrouter', model: 'deepseek/deepseek-v4.1-flash', location: 'api' }], keys: { openrouter: keySet } }; },
     '/api/models': async (_body: unknown, url: URL) => {
       if (url.searchParams.get('provider') !== 'openrouter') return { data: [sol], nextCursor: null };
-      if (url.searchParams.get('outputModality') === 'rerank') { await later(1500); return { data: [{ id: 'cohere/rerank-4', model: 'cohere/rerank-4', displayName: 'Cohere Rerank 4' }] }; }
+      // OpenRouter's reranker list fails late, as when its catalogue is slow: its notice is one more change of height.
+      if (url.searchParams.get('outputModality') === 'rerank') { await later(1500); return { __http: 502, error: 'OpenRouter did not answer' }; }
       await later(900); return { data: [{ id: 'deepseek/deepseek-v4.1-flash', model: 'deepseek/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash' }] };
     },
   } });
@@ -95,7 +92,8 @@ test('the RAG card settles once while its three reads arrive, and its OpenRouter
     await page.waitForTimeout(2500);
     const heights: number[] = await page.evaluate(() => (window as unknown as { __heights: number[] }).__heights);
     const changes = heights.filter((height, i) => i > 0 && height !== heights[i - 1]).length;
-    assert.ok(changes <= 1, `the card changes height once, from reading to read (heights ${[...new Set(heights)].join(', ')})`);
+    console.log('rag card heights', heights.filter((height, i) => height !== heights[i - 1]).join(' → '));
+    assert.ok(changes <= 1,`the card changes height once, from reading to read (heights ${[...new Set(heights)].join(', ')})`);
     const asked = f.requests.slice(from).map((request: { path: string }) => request.path);
     assert.equal(asked.filter((path: string) => path === '/api/tools/rag').length <= 1, true, 'rag is read once');
     assert.equal(asked.filter((path: string) => path === '/api/mcp').length, 0, 'the server list is not read again');

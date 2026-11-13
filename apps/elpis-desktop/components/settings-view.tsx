@@ -17,12 +17,10 @@ import { NotificationSettings } from "@/components/settings/notification-setting
 import { PersonalizationSettings } from "@/components/settings/personalization-settings";
 import { ShortcutSettings } from "@/components/settings/shortcut-settings";
 import { UsageSettings } from "@/components/settings/usage-settings";
-import { BrowserSettings } from "@/components/settings/browser-settings";
 import { VoiceSettings } from "@/components/settings/voice-settings";
 import { ArrowLeft } from "lucide-react";
 import {
   ModelsIcon,
-  BrowserIcon,
   ArchiveIcon,
   BellIcon,
   BranchIcon,
@@ -146,14 +144,6 @@ const TABS = [
     Icon: ToolIcon,
     words: "tools servers rag",
   },
-  {
-    id: "browser",
-    label: "Browser",
-    group: "integrations",
-    scope: "this device",
-    Icon: BrowserIcon,
-    words: "browse websites sign in native tabs pinned pages",
-  },
   { id: "hooks", label: "Hooks", group: "coding", scope: "new chats", Icon: WorkflowsIcon, words: "hook trust" },
   { id: "git", label: "Git", group: "coding", scope: "new chats", Icon: BranchIcon, words: "project root markers" },
   {
@@ -196,7 +186,6 @@ type Props = {
   onImported?: () => void;
   onDeleteThread: (thread: Thread) => Promise<void>;
   onBack?: () => void;
-  onBrowser?: (url?: string) => void;
   onCustomize?: () => void;
   onChatContext?: () => void;
   onChatPermissions?: () => void;
@@ -218,7 +207,6 @@ export function SettingsView({
   onImported,
   onDeleteThread,
   onBack,
-  onBrowser,
   onCustomize,
   onOpenMother,
   onChatContext,
@@ -273,8 +261,6 @@ export function SettingsView({
         return <AppearanceSettings theme={theme} onTheme={onTheme} />;
       case "shortcuts":
         return <ShortcutSettings />;
-      case "browser":
-        return <BrowserSettings {...(onBrowser ? { onOpen: onBrowser } : {})} />;
       case "voice":
         return (
           <VoiceSettings

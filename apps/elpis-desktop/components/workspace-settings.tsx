@@ -1,4 +1,3 @@
-import type { useBrowser } from "@/components/browser-panel";
 import { permissionLabel, type PermissionMode } from "@/components/composer-controls";
 import { OPEN_CONTEXT_EVENT } from "@/components/context-usage";
 import { SettingsView } from "@/components/settings-view";
@@ -21,7 +20,6 @@ type Props = {
   runtime: ReturnType<typeof useRuntimeState>;
   unarchived: ReturnType<typeof createConversationActions>["unarchived"];
   deleteThread: ReturnType<typeof createConversationActions>["deleteThread"];
-  browser: ReturnType<typeof useBrowser>;
   busy: boolean;
   show: (view: View) => void;
   focusComposer: () => void;
@@ -38,7 +36,6 @@ export function WorkspaceSettings({
   runtime,
   unarchived,
   deleteThread,
-  browser,
   busy,
   show,
   focusComposer,
@@ -85,10 +82,6 @@ export function WorkspaceSettings({
               requestAnimationFrame(() => openComposerControl("Model"));
             }}
             {...(modelChangeReason !== undefined ? { modelChangeReason } : {})}
-            onBrowser={url => {
-              show("chat");
-              void browser.command("new", url ? { url } : undefined);
-            }}
             onOpenMother={() => show("mother")}
             onCustomize={() => show("customize")}
             onChatContext={() => {
