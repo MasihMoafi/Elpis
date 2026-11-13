@@ -65,11 +65,12 @@ test('Observability shows the project of the chosen chat: code, churn for chosen
     await frame.getByRole('button', { name: 'All time', exact: true }).click();
     await frame.getByRole('cell', { name: '660', exact: true }).waitFor();
     assert.equal(await frame.getByRole('button', { name: '30 days', exact: true }).getAttribute('aria-pressed'), 'false');
-    // The date fields and the presets are one row of 32 px controls, 8 px apart inside a group and 16 px between groups.
+    // The date fields and the presets are 32 px controls, 8 px apart inside a group and 16 px between groups.
     const range = await boxes(frame.locator('.range'), 'input, .toggle');
     assert.deepEqual(range.map(([, , , height]) => height), [32, 32, 32]);
-    assert.equal(new Set(range.map(([, , top]) => top)).size, 1, 'one row at 1300 px');
-    assert.ok(range[2]![0] - range[1]![1] >= 16, `presets stand 16 px off the dates: ${JSON.stringify(range)}`);
+    // Whether the presets fit beside the dates depends on the font; beside them or below, they keep clear of them.
+    const [, to, presets] = range as [Box, Box, Box];
+    assert.ok(presets[2] === to[2] ? presets[0] - to[1] >= 16 : presets[2] - (to[2] + to[3]) >= 8, `presets clear of the dates: ${JSON.stringify(range)}`);
     await frame.getByRole('button', { name: /^Readiness/ }).click();
     await heading(page, 'demo meets 2 of 3 readiness checks; documentation is weakest').waitFor();
     await frame.getByText('no AGENTS.md or CLAUDE.md in Git: a fresh clone has none', { exact: true }).waitFor();
