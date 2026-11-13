@@ -25,8 +25,8 @@ type Sandbox = 'read-only' | 'workspace-write' | 'danger-full-access';
 type Turn = { id: string; status: string; items: { id: string; type: string; content?: { text?: string }[] | undefined }[] };
 type Thread = { id: string; cwd?: string | undefined; model?: string | undefined; source?: string; status: { type: string; activeFlags?: string[] }; turns: Turn[]; historyMode?: string; name?: string | undefined; parentThreadId?: string | undefined };
 type Settings = { approvalPolicy?: string; approvalsReviewer?: string; sandboxPolicy?: { type?: string } | undefined; activePermissionProfile?: { id: Profile } | null };
-type Row = Settings & { thread: Thread; model?: string | undefined; modelProvider?: string; approvalRequested?: boolean };
-type Params = { threadId?: string; cwd?: string; model?: string; modelProvider?: string; name?: string; includeTurns?: boolean; input?: { text?: string }[]; permissions?: Profile; sandbox?: Sandbox; approvalPolicy?: string; approvalsReviewer?: string; sandboxPolicy?: { type?: string } };
+type Row = Settings & { thread: Thread; model?: string | undefined; modelProvider?: string; approvalRequested?: boolean; serviceTier?: string; effort?: string; runningTurn?: { serviceTier?: string; effort?: string } };
+type Params = { threadId?: string; turnId?: string; serviceTier?: string; effort?: string; cwd?: string; model?: string; modelProvider?: string; name?: string; includeTurns?: boolean; input?: { text?: string }[]; permissions?: Profile; sandbox?: Sandbox; approvalPolicy?: string; approvalsReviewer?: string; sandboxPolicy?: { type?: string } };
 type Wire = { id?: string | number; method?: string; params?: Params; result?: unknown };
 type BridgeEvent = { method?: string; params: { threadId?: string; delta: string; item?: { id?: string }; threadSettings: { sandboxPolicy: { type: string }; approvalsReviewer: string } } };
 type RpcResult = { model: string; thread: { id: string } };
@@ -113,7 +113,7 @@ if (process.argv.includes('app-server')) {
           release(); return;
         }
         if (!row) return missing();
-        Object.assign(row, settings(p, row)); save(row);
+        Object.assign(row, settings(p, row), p.serviceTier ? { serviceTier: p.serviceTier } : {}, p.effort ? { effort: p.effort } : {}); save(row);
         send({ method: 'thread/settings/updated', params: { threadId: p.threadId, threadSettings: row } });
         if (row.thread.parentThreadId && !row.approvalRequested) {
           row.approvalRequested = true; save(row);
@@ -148,6 +148,14 @@ if (process.argv.includes('app-server')) {
           for (const delta of ['read ', 'read ', `LIVE ${n}\n`]) send({ method: 'item/agentMessage/delta', params: { ...params, itemId: 'answer', delta } });
         }, 40));
         return;
+      }
+      case 'model/list': return reply({ data: [{ model: 'gpt-test', serviceTiers: [{ id: 'priority' }] }], nextCursor: null });
+      // Only the engine process that holds the chat can change its running turn.
+      case 'turn/settings/update': {
+        if (!row) return missing();
+        if (!row.thread.turns.some(turn => turn.id === p.turnId && turn.status === 'inProgress')) return reply({ status: 'targetUnavailable' });
+        row.runningTurn = { ...row.runningTurn, ...(p.serviceTier ? { serviceTier: p.serviceTier } : {}), ...(p.effort ? { effort: p.effort } : {}) }; save(row);
+        return reply({ status: 'applied' });
       }
       case 'turn/interrupt': {
         if (!row) return missing();
@@ -425,6 +433,35 @@ if (process.argv.includes('app-server')) {
       await until(() => observerEvents.some(message => message.method === 'item/agentMessage/delta' && message.params.threadId === childId), 'a previously blocked child continues when the new default is allowed');
       const resumed = JSON.parse(fs.readFileSync(path.join(root, `${child.thread.id}.json`), 'utf8'));
       assert.deepEqual([resumed.approvalPolicy, resumed.activePermissionProfile.id], ['never', ':workspace']);
+    });
+    await t.test('Fast and effort chosen in a running worker chat reach its running turn in the worker engine', async () => {
+      const saved = () => JSON.parse(fs.readFileSync(path.join(root, `${id}.json`), 'utf8')) as Row;
+      assert.equal(saved().thread.status.type, 'active', 'the worker is still running');
+      fs.unlinkSync(path.join(root, 'requirements.json')); // the managed limits of the previous case
+      assert.equal((await request(`/threads/${id}/resume`, {})).status, 200);
+      const fast = await request(`/threads/${id}/service-tier`, { enabled: true });
+      assert.equal(fast.status, 200, JSON.stringify(fast.body));
+      assert.deepEqual(fast.body, { serviceTier: 'priority', activeTurnApplied: true });
+      assert.equal(saved().serviceTier, 'priority', 'later turns start Fast');
+      assert.equal(saved().runningTurn?.serviceTier, 'priority', 'the running turn changed speed');
+      const effort = await request(`/threads/${id}/effort`, { effort: 'high' });
+      assert.equal(effort.status, 200, JSON.stringify(effort.body));
+      assert.equal(saved().effort, 'high');
+      assert.equal(saved().runningTurn?.effort, 'high', 'the running turn takes the new effort');
+      // A chat no other connection owns still goes to the main engine.
+      const own = await rpc('thread/start', { model: 'gpt-test', cwd: root });
+      assert.ifError(own.error);
+      assert.ifError((await rpc('turn/start', { threadId: own.result.thread.id, input: [{ type: 'text', text: 'own' }] })).error);
+      const ownTurn = (JSON.parse(fs.readFileSync(path.join(root, `${own.result.thread.id}.json`), 'utf8')) as Row).thread.turns[0];
+      assert.ok(ownTurn);
+      const live = await rpc('turn/settings/update', { threadId: own.result.thread.id, turnId: ownTurn.id, serviceTier: 'priority' }) as unknown as { result: { status: string }; error?: { message: string } };
+      assert.ifError(live.error);
+      assert.equal(live.result.status, 'applied');
+      await rpc('turn/interrupt', { threadId: own.result.thread.id });
+      // A method outside the helper list is still answered by the main engine, which does not hold the worker.
+      const renamed = await rpc('thread/name/set', { threadId: id, name: 'not passed' });
+      assert.match(renamed.error?.message ?? '', /thread not found/);
+      assert.notEqual(saved().thread.name, 'not passed');
     });
   });
 }
