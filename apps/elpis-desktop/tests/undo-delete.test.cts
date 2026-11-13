@@ -79,3 +79,50 @@ test('the notice’s Undo brings the chat back; Ctrl+Z in the message box undoes
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// Masih, 13 Nov: "the undo notif ... show below on top of the last message of any conversation". The Deleted notice sits at
+// the sidebar's foot, or with the sidebar closed in the window's bottom left corner (the title bar when that corner would
+// touch the chat): never over the transcript or the message box, at a wide and a narrow window.
+test('the Deleted notice never covers the transcript or the message box, sidebar open or closed, wide or narrow', async () => {
+  const { routes } = trashRoutes(), f = await fixture({ routes, width: 1440, height: 900 });
+  const { page } = f;
+  const box = (selector: string) => page.locator(selector).first().evaluate(element => { const r = element.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; });
+  const overlap = (a: { left: number; top: number; right: number; bottom: number }, b: typeof a) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+  const sidebarShown = () => page.locator('aside.sidebar').evaluate(element => getComputedStyle(element).display !== 'none');
+  try {
+    let asked = false;
+    for (const [width, id] of [[1440, 'chat-c'], [720, 'chat-b']] as const) {
+      await page.setViewportSize({ width, height: 900 });
+      if (!(await sidebarShown())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+      await row(page, id).locator('.thread-link').focus();
+      await page.keyboard.press('d');
+      if (!asked) { await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click(); asked = true; }
+      await row(page, id).waitFor({ state: 'detached' });
+      const status = page.locator('.action-notices').getByRole('status').filter({ hasText: `Deleted “${NAMES[id]}”` });
+      await status.waitFor();
+      for (const open of [true, false]) {
+        if (!open) {
+          if (width > 760) await page.getByRole('button', { name: 'Close sidebar', exact: true }).click();
+          else await page.keyboard.press('Escape');
+          await page.waitForFunction(() => getComputedStyle(document.querySelector('aside.sidebar')!).display === 'none');
+        }
+        if (!(await page.locator('.chat-scroll').first().isVisible())) await f.open('chat-a');
+        const notice = await box('.action-notices'), transcript = await box('.chat-scroll'), composer = await box('.composer');
+        const where = `${width} px, sidebar ${open ? 'open' : 'closed'}: ${JSON.stringify({ notice, transcript, composer })}`;
+        assert.ok(notice.right > notice.left && notice.bottom > notice.top && notice.left >= 0 && notice.top >= 0 && notice.bottom <= 900, `the notice is on screen at ${where}`);
+        // A narrow window's open sidebar is a drawer over the chat; the notice sits inside the drawer, above its footer.
+        if (!(open && width <= 760)) {
+          assert.equal(overlap(notice, transcript), false, `the notice stays off the transcript at ${where}`);
+          assert.equal(overlap(notice, composer), false, `the notice stays off the message box at ${where}`);
+        }
+        if (open) { const side = await box('aside.sidebar'); assert.ok(notice.left >= side.left && notice.right <= side.right, `the notice sits in the sidebar column at ${where}`); }
+        else if (width > 760) assert.ok(notice.left < 40 && notice.bottom > 800, `the notice sits in the bottom left corner at ${where}`);
+      }
+      // It stays reachable and still undoes.
+      await status.getByRole('button', { name: 'Undo' }).click();
+      await row(page, id).waitFor();
+      if (width > 760) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
