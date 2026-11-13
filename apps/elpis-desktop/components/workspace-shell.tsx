@@ -325,7 +325,6 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
                     runtime={workspace.runtime}
                     unarchived={workspace.unarchived}
                     deleteThread={workspace.deleteThread}
-                    browser={workspace.browser}
                     busy={workspace.busy}
                     show={workspace.show}
                     focusComposer={workspace.focusComposer}
