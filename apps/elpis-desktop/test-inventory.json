@@ -5,6 +5,7 @@
     "lib/imported-tools.test.mts",
     "lib/router-worker-input.test.mts",
     "lib/workflow-failure.test.mts",
+    "tests/matilda-place.test.mts",
     "tests/strict-baseline.test.mts",
     "bridge/settled-status.test.mts",
     "bridge/sessions-map.test.mts",
