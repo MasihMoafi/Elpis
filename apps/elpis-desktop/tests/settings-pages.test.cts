@@ -65,3 +65,52 @@ test('Browser settings opens the native new tab and shares pinned websites with 
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+// Masih, 13 Nov: "why is the openrouter key section in RAG like that? it's broken and flickers my screen". rag's settings and
+// its two model lists arrive at different times (rag's doctor is slow); the card took a new height as each one landed.
+test('the RAG card settles once while its three reads arrive, and its OpenRouter key is one plain field', async () => {
+  const { fixture } = require('./parity-fixture.cts');
+  const later = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  const fake = 'sk-or-v1-e31-fake-key-0000';
+  let keySet = false;
+  const mcp = () => ({ version: keySet ? 'm2' : 'm1', configPath: '/tmp/elpis/config.toml', write: { available: true }, servers: [{ name: 'rag', enabled: true, transport: 'stdio', command: 'rag-mcp', url: null, credentials: keySet ? [{ name: 'OPENROUTER_API_KEY', source: 'config', set: true }] : [] }] });
+  const sol = { id: 'sol', model: 'sol', displayName: 'GPT-6.1-Sol', inputModalities: ['text', 'image'], supportedReasoningEfforts: [] };
+  const f = await fixture({ routes: {
+    '/api/mcp': (body: { action?: string; env?: Record<string, string> } | null) => { if (body?.action === 'credentials' && body.env?.OPENROUTER_API_KEY) keySet = true; return mcp(); },
+    '/api/tools/rag': async () => { await later(300); return { stages: [{ stage: 'embedding', provider: 'openrouter', model: 'qwen/qwen3-embedding-8b', location: 'api' }, { stage: 'reranking', provider: null, model: 'off', location: 'local' }, { stage: 'generation', provider: 'openrouter', model: 'deepseek/deepseek-v4.1-flash', location: 'api' }], keys: { openrouter: keySet } }; },
+    '/api/models': async (_body: unknown, url: URL) => {
+      if (url.searchParams.get('provider') !== 'openrouter') return { data: [sol], nextCursor: null };
+      if (url.searchParams.get('outputModality') === 'rerank') { await later(1500); return { data: [{ id: 'cohere/rerank-4', model: 'cohere/rerank-4', displayName: 'Cohere Rerank 4' }] }; }
+      await later(900); return { data: [{ id: 'deepseek/deepseek-v4.1-flash', model: 'deepseek/deepseek-v4.1-flash', displayName: 'DeepSeek V4.1 Flash' }] };
+    },
+  } });
+  try {
+    const { page } = f; await openSettings(page, 'MCP servers');
+    const card = page.locator('section.mcp-server[data-name="rag"]'); await card.waitFor();
+    await page.evaluate(() => {
+      const w = window as unknown as { __heights: number[] }, el = document.querySelector('section.mcp-server[data-name="rag"]')!;
+      w.__heights = []; const tick = () => { w.__heights.push(Math.round(el.getBoundingClientRect().height)); requestAnimationFrame(tick); }; tick();
+    });
+    const from = f.requests.length;
+    await page.waitForTimeout(2500);
+    const heights: number[] = await page.evaluate(() => (window as unknown as { __heights: number[] }).__heights);
+    const changes = heights.filter((height, i) => i > 0 && height !== heights[i - 1]).length;
+    assert.ok(changes <= 1, `the card changes height once, from reading to read (heights ${[...new Set(heights)].join(', ')})`);
+    const asked = f.requests.slice(from).map((request: { path: string }) => request.path);
+    assert.equal(asked.filter((path: string) => path === '/api/tools/rag').length <= 1, true, 'rag is read once');
+    assert.equal(asked.filter((path: string) => path === '/api/mcp').length, 0, 'the server list is not read again');
+    await card.getByRole('combobox', { name: 'RAG answer model' }).waitFor();
+    // One field for the key, its state in words, the key never on screen.
+    const keys = card.locator('input[type="password"]');
+    assert.equal(await keys.count(), 1, 'one key field');
+    assert.match(await card.innerText(), /OpenRouter key\s*Not saved/);
+    assert.doesNotMatch(await card.innerText(), /as rag sees it|OPENROUTER_API_KEY · /, 'the key state is said once');
+    await keys.fill(fake);
+    await card.getByRole('button', { name: 'Save key', exact: true }).click();
+    await card.getByRole('status').filter({ hasText: 'Key saved.' }).waitFor();
+    assert.match(await card.innerText(), /OpenRouter key\s*Saved/);
+    assert.equal(await keys.inputValue(), '');
+    assert.equal((await page.content()).includes(fake), false, 'the key is never shown');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
