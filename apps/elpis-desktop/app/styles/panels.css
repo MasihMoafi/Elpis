@@ -52,8 +52,10 @@
 .workspace-header h1 .thread-actions { opacity:.7; }
 .message-time { font-size:var(--text-small); color:var(--subtle-foreground); opacity:0; transition:opacity .12s; font-variant-numeric:tabular-nums; }
 .user-turn:hover .message-time { opacity:1; }
-.message-actions { opacity:.0; transition:opacity .12s; }
-.user-turn:hover .message-actions, .message.agent:hover .message-actions, .message-actions:focus-within { opacity:1; }
+/* Message actions show under every finished message, always (Masih, 13 Nov: "show for all messages all the time"), in a
+   quiet colour that steps up while the message is hovered or the row holds focus. */
+.message-actions { transition:color .12s; }
+.user-turn:hover .message-actions, .message.agent:hover .message-actions, .message-actions:focus-within { color:var(--foreground); }
 .app-shell.sidebar-collapsed { grid-template-columns:minmax(0,1fr); }
 .app-shell.sidebar-collapsed > .sidebar { display:none; }
 /* The sidebar button at the top left: in the sidebar to close it, in the header to reopen it (always on narrow windows). */

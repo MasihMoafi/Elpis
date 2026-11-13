@@ -164,7 +164,7 @@ for (const colorScheme of ['light']) {
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), COPY_PROMPTS[1], 'copy still works after reload');
   }));
 
-  test(`reply Copy keeps its source, feedback and hover behavior · ${colorScheme}`, () => using({
+  test(`reply Copy keeps its source, feedback and an always-visible row · ${colorScheme}`, () => using({
     nativeClipboard: true, colorScheme, width: 1280, height: 1000,
     chat: [['copy-control', 'Question for the negative control.', '**Original reply**\n\nمتن فارسی\n\n```js\n  const x = 1;\n```\n']],
   }, async f => {
@@ -173,8 +173,12 @@ for (const colorScheme of ['light']) {
     const reply = page.locator('.message.agent'), copy = reply.getByRole('button', { name: 'Copy reply', exact: true });
     await copy.waitFor();
     await page.mouse.move(4, 4);
-    assert.equal(await copy.evaluate(element => { const actions = element.closest('.message-actions'); if (!actions) throw Error('Message actions unavailable'); return getComputedStyle(actions).opacity; }), '0', 'reply hover behavior stays unchanged');
-    await reply.hover(); await copy.click();
+    // Masih, 13 Nov: the row shows "for all messages all the time", with no pointer over the transcript, quiet until hovered.
+    const rest = await copy.evaluate(element => { const actions = element.closest('.message-actions'); if (!actions) throw Error('Message actions unavailable'); const style = getComputedStyle(actions); return { opacity: style.opacity, display: style.display, height: actions.getBoundingClientRect().height, color: style.color }; });
+    assert.deepEqual([rest.opacity, rest.display, rest.height > 0], ['1', 'flex', true], 'a finished reply shows its actions without a hover');
+    await reply.hover();
+    await eventually(async () => assert.notEqual(await copy.evaluate(element => getComputedStyle(element.closest('.message-actions')!).color), rest.color, 'the row is quiet at rest and steps up on hover'));
+    await copy.click();
     await reply.getByRole('status').filter({ hasText: /^Copied$/ }).waitFor();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '**Original reply**\n\nمتن فارسی\n\n```js\n  const x = 1;\n```\n');
     assert.equal(await reply.getByRole('button', { name: 'Copy message', exact: true }).count(), 0);

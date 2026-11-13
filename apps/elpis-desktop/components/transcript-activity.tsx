@@ -14,7 +14,7 @@ import type { Draw } from "./transcript";
 import type { Item } from "@/lib/api";
 
 /** Replies stay as they are; each run of tool activity between them becomes one line. */
-/** `end` names the turn's final reply: only it keeps room under it for its hover actions (message-actions.css). */
+/** `end` names the turn's final reply: only it keeps room under it for its actions (message-actions.css). */
 export function Flow({
   entries,
   renderItem,
