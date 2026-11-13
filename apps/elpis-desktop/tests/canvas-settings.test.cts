@@ -71,7 +71,7 @@ test('the agent panel shows Info, Delete and Done on one row, Done at the right'
     const panel = f.canvas.getByRole('complementary', { name: 'Selected agent', exact: true });
     const remove = panel.getByRole('button', { name: 'Delete agent', exact: true });
     assert.equal((await remove.innerText()).trim(), 'Delete');
-    const boxes = await panel.locator('.canvas-inspector-actions > button').evaluateAll((buttons: Element[]) => buttons.map(button => {
+    const boxes: { text: string; top: number; right: number }[] = await panel.locator('.canvas-inspector-actions > button').evaluateAll((buttons: Element[]) => buttons.map(button => {
       const r = button.getBoundingClientRect(); return { text: (button as HTMLElement).innerText.trim(), top: Math.round(r.top), right: r.right };
     }));
     assert.deepEqual(boxes.map(box => box.text.split('\n')[0]), ['Info', 'Delete', 'Done']);
