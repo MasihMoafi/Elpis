@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { api, type Entry, type Thread } from "@/lib/api";
 import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
 import { mergeHistoryWithLive } from "@/lib/live-events";
 import { TranscriptCache } from "./transcript-cache.mts";
+import { recentRouterHistory } from "./router-history.mts";
 
 export function useTranscriptHistory(
   selected: Thread | null,
   loading: boolean,
   entries: Entry[],
   setEntries: Dispatch<SetStateAction<Entry[]>>,
+  stickToBottom: RefObject<boolean>,
 ) {
   const [itemCursor, setItemCursor] = useState<string | null>(null);
   // Chats whose earliest part is gone open with what remains and say so.
@@ -31,7 +33,11 @@ export function useTranscriptHistory(
     heldEarlier.current.clear();
   }, [selected?.id]);
   useEffect(() => {
-    if (selected && !loading) transcripts.current.set(selected.id, { entries, cursor: itemCursor });
+    if (selected && !loading)
+      transcripts.current.set(
+        selected.id,
+        selected.motherAgent ? recentRouterHistory(entries, itemCursor) : { entries, cursor: itemCursor },
+      );
   }, [selected, loading, entries, itemCursor]);
   // A hover reads recent history so a click can show it immediately.
   const prefetching = useRef(new Map<string, Promise<void>>());
@@ -42,7 +48,12 @@ export function useTranscriptHistory(
       api<{ data: Entry[]; nextCursor: string | null }>(historyPath(thread.id))
         .then(result => {
           if (Array.isArray(result.data) && !transcripts.current.has(thread.id))
-            transcripts.current.set(thread.id, { entries: inReadingOrder(result), cursor: result.nextCursor });
+            transcripts.current.set(
+              thread.id,
+              thread.motherAgent
+                ? recentRouterHistory(inReadingOrder(result), result.nextCursor)
+                : { entries: inReadingOrder(result), cursor: result.nextCursor },
+            );
         })
         .catch(() => {}) // The click reads it again and reports a failure.
         .finally(() => prefetching.current.delete(thread.id)),
@@ -50,6 +61,16 @@ export function useTranscriptHistory(
   }, []);
   const liveRevision = useRef(0),
     liveVersions = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    if (!selected?.motherAgent || loading || !stickToBottom.current) return;
+    const recent = recentRouterHistory(entries, itemCursor);
+    if (recent.entries === entries) return;
+    heldEarlier.current.delete(selected.id);
+    const retained = new Set(recent.entries.map(entry => `${entry.turnId}:${entry.item.id}`));
+    for (const key of liveVersions.current.keys()) if (!retained.has(key)) liveVersions.current.delete(key);
+    setEntries(recent.entries);
+    setItemCursor(recent.cursor);
+  }, [selected?.id, selected?.motherAgent, loading, entries, itemCursor, setEntries, stickToBottom]);
   const liveKeysAfter = useCallback(
     (revision: number) =>
       new Set([...liveVersions.current].filter(([, version]) => version > revision).map(([key]) => key)),

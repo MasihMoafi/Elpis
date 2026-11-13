@@ -171,7 +171,16 @@ export function WorkspaceTranscript({
         }}
       >
         <div className="chat-content">
-          {itemCursor || (heldCount >= 0 && earlierHeld(selected?.id)) ? (
+          {itemCursor || (heldCount >= 0 && earlierHeld(selected?.id)) ? selected?.motherAgent ? (
+            <Button
+              variant="ghost"
+              className="load-earlier-messages"
+              disabled={loading}
+              onClick={() => void older()}
+            >
+              {loading ? "Loading earlier messages…" : "Load more messages"}
+            </Button>
+          ) : (
             <LoadOnScroll
               className="load-earlier-messages"
               loading={loading}

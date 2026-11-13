@@ -1,6 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { api, unreadable, type Entry, type Thread } from "@/lib/api";
 import { historyPath } from "@/lib/chat-history";
+import { readEarlierHistory } from "./router-history.mts";
 import type { useTranscriptHistory } from "@/lib/use-transcript-history";
 
 type Inputs = {
@@ -51,7 +52,10 @@ export function createEarlierMessages({
       while (cursor && !found && (untilTurnId || messagesIn(pages) < EARLIER_MESSAGES)) {
         if (seen.has(cursor)) throw new Error("Repeated conversation cursor");
         seen.add(cursor);
-        const result: { data: Entry[]; nextCursor: string | null } = await api(historyPath(id, cursor));
+        const result = await readEarlierHistory(cursor, next => {
+          if (selectedRef.current?.id !== id || request.current !== revision) throw new Error("Conversation changed");
+          return api(historyPath(id, next));
+        });
         if (!Array.isArray(result.data)) throw unreadable("conversations");
         found = result.data.some(
           entry =>

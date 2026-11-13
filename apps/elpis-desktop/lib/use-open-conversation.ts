@@ -117,6 +117,10 @@ export function useOpenConversation({
         if (!Array.isArray(result.data)) throw unreadable("conversations");
         if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
         if (request.current !== id) return;
+        if (switching && result.thread.motherAgent) {
+          pendingPosition.current = null;
+          stickToBottom.current = true;
+        }
         select(remember(result.thread));
         applyHistoryPage(thread.id, result, historyRevision, switching && !!shown);
         // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like

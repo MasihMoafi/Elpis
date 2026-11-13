@@ -212,7 +212,7 @@ export function useWorkspaceState() {
   const { dark, sidebarWidth } = appearance;
   // The website's animated wordmark, its dark or light version (website/assets/branding).
   const searchInput = useRef<HTMLInputElement>(null);
-  const history = useTranscriptHistory(selected, loading, entries, setEntries);
+  const history = useTranscriptHistory(selected, loading, entries, setEntries, stickToBottom);
   const { itemCursor, prefetchThread } = history;
   const conversations = useConversationList(threads, setThreads, selectedRef, setSelected, setError);
   const { threadsRef, hidden } = conversations;

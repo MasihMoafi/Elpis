@@ -1,5 +1,6 @@
 {
   "fast": [
+    "tests/router-history.test.mts",
     "lib/router-message-text.test.mts",
     "lib/imported-tools.test.mts",
     "lib/router-worker-input.test.mts",
@@ -306,6 +307,7 @@
     "desktop/main-error-guard.test.cts"
   ],
   "ui": [
+    "tests/router-history.test.cts",
     "tests/sessions-map.test.cts",
     "tests/page-frame.test.cts",
     "tests/codebase-page.test.cts",
