@@ -18,7 +18,13 @@ async function mounted(motherAgent: boolean) {
   const host = document.createElement("div");
   document.body.append(host);
   const root = createRoot(host);
-  let state: { entries: Entry[]; history: ReturnType<typeof useTranscriptHistory>; append: (entries: Entry[]) => void; prepend: (entries: Entry[]) => void; bottom: { current: boolean } };
+  let state: {
+    entries: Entry[];
+    history: ReturnType<typeof useTranscriptHistory>;
+    append: (entries: Entry[]) => void;
+    prepend: (entries: Entry[]) => void;
+    bottom: { current: boolean };
+  };
   function Chat() {
     const [entries, setEntries] = useState(turns(12));
     const bottom = useRef(true);
