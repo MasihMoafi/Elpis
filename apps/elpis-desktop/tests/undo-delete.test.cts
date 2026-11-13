@@ -90,25 +90,25 @@ test('the Deleted notice never covers the transcript or the message box, sidebar
   const overlap = (a: { left: number; top: number; right: number; bottom: number }, b: typeof a) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
   const sidebarShown = () => page.locator('aside.sidebar').evaluate(element => getComputedStyle(element).display !== 'none');
   try {
-    let asked = false;
     for (const [width, id] of [[1440, 'chat-c'], [720, 'chat-b']] as const) {
       await page.setViewportSize({ width, height: 900 });
       if (!(await sidebarShown())) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
       await row(page, id).locator('.thread-link').focus();
       await page.keyboard.press('d');
-      if (!asked) { await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click(); asked = true; }
+      await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
       await row(page, id).waitFor({ state: 'detached' });
-      const status = page.locator('.action-notices').getByRole('status').filter({ hasText: `Deleted “${NAMES[id]}”` });
+      const status = page.locator('.action-notices').getByRole('status').filter({ has: page.getByRole('button', { name: 'Undo', exact: true }), hasText: `Deleted “${NAMES[id]}”` });
       await status.waitFor();
       for (const open of [true, false]) {
         if (!open) {
-          if (width > 760) await page.getByRole('button', { name: 'Close sidebar', exact: true }).click();
-          else await page.keyboard.press('Escape');
+          await page.getByRole('button', { name: 'Close sidebar', exact: true }).click();
           await page.waitForFunction(() => getComputedStyle(document.querySelector('aside.sidebar')!).display === 'none');
         }
         if (!(await page.locator('.chat-scroll').first().isVisible())) await f.open('chat-a');
         const notice = await box('.action-notices'), transcript = await box('.chat-scroll'), composer = await box('.composer');
         const where = `${width} px, sidebar ${open ? 'open' : 'closed'}: ${JSON.stringify({ notice, transcript, composer })}`;
+        console.log(`notice at ${width} px, sidebar ${open ? 'open' : 'closed'}: ${await page.locator('.action-notices').getAttribute('data-place')}`);
+        if (process.env.ELPIS_SHOTS) await page.screenshot({ path: `${process.env.ELPIS_SHOTS}/notice-${width}-${open ? 'open' : 'closed'}.png` });
         assert.ok(notice.right > notice.left && notice.bottom > notice.top && notice.left >= 0 && notice.top >= 0 && notice.bottom <= 900, `the notice is on screen at ${where}`);
         // A narrow window's open sidebar is a drawer over the chat; the notice sits inside the drawer, above its footer.
         if (!(open && width <= 760)) {
@@ -120,8 +120,8 @@ test('the Deleted notice never covers the transcript or the message box, sidebar
       }
       // It stays reachable and still undoes.
       await status.getByRole('button', { name: 'Undo' }).click();
-      await row(page, id).waitFor();
-      if (width > 760) await page.getByRole('button', { name: 'Open sidebar' }).first().click();
+      await page.waitForFunction((id: string) => !!document.querySelector(`aside.sidebar .thread-row[data-thread-id="${id}"]`), id);
+      await status.waitFor({ state: 'detached' });
     }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
