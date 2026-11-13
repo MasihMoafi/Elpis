@@ -2016,7 +2016,13 @@ fn config_request_overrides_from_config(
             )
         })
     };
-    for key in ["model_reasoning_summary", "model_verbosity"] {
+    // A launch's `-c developer_instructions` (Rustidian names the open note this way) must
+    // reach a remote or bridged app-server, which never sees the client's flags.
+    for key in [
+        "model_reasoning_summary",
+        "model_verbosity",
+        "developer_instructions",
+    ] {
         if is_launch(key) {
             overrides.insert(key.to_string(), serde_json::json!(effective[key]));
         }
@@ -3621,6 +3627,52 @@ mod tests {
                         .and_then(serde_json::Value::as_str),
                 ),
                 (expected, cli.then_some("none")),
+            );
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn config_overrides_forward_launch_developer_instructions() -> Result<()> {
+        let home = tempfile::tempdir()?;
+        let workspace = home.path().join("workspace");
+        std::fs::create_dir_all(&workspace)?;
+        std::fs::write(
+            home.path().join("config.toml"),
+            format!(
+                "developer_instructions = \"From the user's config.\"\n[projects.{}]\ntrust_level = \"trusted\"\n",
+                toml::Value::String(workspace.to_string_lossy().into_owned()),
+            ),
+        )?;
+        for (cli, expected) in [
+            (false, None),
+            (true, Some("Read the note named in agent-context.md first.")),
+        ] {
+            let config = ConfigBuilder::default()
+                .codex_home(home.path().to_path_buf())
+                .harness_overrides(ConfigOverrides {
+                    cwd: Some(workspace.clone()),
+                    ..ConfigOverrides::default()
+                })
+                .loader_overrides(codex_config::LoaderOverrides::without_managed_config_for_tests())
+                .cli_overrides(if cli {
+                    vec![(
+                        "developer_instructions".to_string(),
+                        "Read the note named in agent-context.md first.".into(),
+                    )]
+                } else {
+                    Vec::new()
+                })
+                .build()
+                .await?;
+            let overrides = config_request_overrides_from_config(&config, ThreadParamsMode::Remote)
+                .expect("config overrides");
+            assert_eq!(
+                overrides
+                    .get("developer_instructions")
+                    .and_then(serde_json::Value::as_str),
+                expected,
+                "cli override: {cli}"
             );
         }
         Ok(())
