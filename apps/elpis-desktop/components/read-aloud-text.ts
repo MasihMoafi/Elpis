@@ -58,19 +58,22 @@ export function speakableLength(pending: string, writing: boolean) {
   return length;
 }
 
-/** Text as it should sound: no Markdown marks, code or addresses (Matilda's portrait markers included), in sentence groups
- * short enough that the first one plays almost at once. */
-export function spokenPieces(text: string): string[] {
-  const plain = text
+/** Text as it should sound: no Markdown marks, list bullets, code or addresses (Matilda's portrait markers included), on
+ * one line. Applying it twice changes nothing. */
+export const speakable = (text: string) =>
+  text
     .replace(/<!--[\s\S]*?-->/g, " ")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
     .replace(/https?:\/\/\S+/g, "a link")
-    .replace(/^\s{0,3}(#{1,6}|[-*+]|\d+[.)]|>)\s+/gm, "")
+    .replace(/^\s{0,3}(#{1,6}|[-*+•]|\d+[.)]|>)\s+/gm, "")
     .replace(/[*_~|]+/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/\s+/g, " ");
+
+/** Text as it should sound (`speakable`), in sentence groups short enough that the first one plays almost at once. */
+export function spokenPieces(text: string): string[] {
+  const plain = speakable(text).trim();
   const pieces: string[] = [];
   for (const sentence of plain.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) ?? []) {
     const last = pieces.at(-1);
