@@ -4,6 +4,17 @@ Build and check the desktop app locally with one job at the lowest priority. Kee
 
 Desktop verification and installation: [TESTING.md](../apps/elpis-desktop/TESTING.md).
 
+## Installing the engine
+
+`scripts/install-engine.sh <name>` installs the engine from the cargo build folder and the bridge scripts
+(`tools/elpis-claude/`) from the checkout into `~/.local/lib/elpis-next/versions/<name>-<sha8>`, and writes
+`source.json` and `rollback.sh` there. When no Rust build is allowed and only scripts changed,
+`--binaries-from <installed version> --reason <text>` takes the binaries and prompts from that version (only read,
+never pruned by this install) instead; `source.json` then keeps the binaries' own `source_head`, adds
+`binaries_from`, `scripts_head`, `checkout_codex_rs`, `skipped` and `reason`. It refuses a missing version, one
+without a binary or whose record does not match it, the version being written, and `--with-frontend`. Tests:
+`node --test tests/install/install-engine.test.mts` (throwaway homes under `~/.cache/elpis-tests/`).
+
 ## Never format the whole repo
 
 `cargo fmt --all` rewrites every file in the workspace, including in-flight work from
