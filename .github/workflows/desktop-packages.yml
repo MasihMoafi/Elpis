@@ -1,0 +1,373 @@
+name: Elpis desktop packages
+
+# Builds the desktop packages, the AppImage (with update information and its .zsync) and the desktop .deb, on Ubuntu
+# 22.04 from the commit it runs on, so they run on glibc 2.35 and newer; starts both on Ubuntu 22.04 and 24.04 until the
+# window is connected to its engine; on a version tag attaches them, with a .sha256 each, to the tag's release.
+# Why: v0.5.3's AppImage and .deb were built on Masih's laptop (glibc 2.42). Its engine needs glibc 2.39 and its
+# node-pty 2.42, so on Ubuntu 22.04 and 24.04, Debian 12 and 13 and Fedora 42 the window opened with "Elpis is
+# disconnected" (AppImage catalog test, AppImage/appimage.github.io#11989, 14 Nov). Nothing is built locally any more
+# (Masih: "Please don't do builds locally"; docs/LOCAL_BUILD_RULES.md).
+# Run by hand: gh workflow run desktop-packages.yml --ref <branch>. With `released` set to a tag, it also starts that
+# release's AppImage on Ubuntu 22.04 and keeps the screenshot (how the v0.5.3 failure was reproduced).
+on:
+  workflow_dispatch:
+    inputs:
+      released:
+        description: 'Also start the AppImage of this release tag on Ubuntu 22.04 (for example v0.5.3); empty: skip'
+        required: false
+        default: ''
+  push:
+    tags: ['v*']
+    branches: ['build/g5-desktop-packages']   # DEV ONLY: removed before merge
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-packages-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      engine_run: ${{ steps.plan.outputs.engine_run }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' codex-rs/cli/Cargo.toml | head -n 1)
+          desktop=$(node -p 'require("./apps/elpis-desktop/package.json").version')
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            test "$GITHUB_REF_NAME" = "v$version" || { echo "tag $GITHUB_REF_NAME is not v$version (codex-rs/cli/Cargo.toml)" >&2; exit 1; }
+            test "$desktop" = "$version" || { echo "apps/elpis-desktop/package.json says $desktop, not $version" >&2; exit 1; }
+          fi
+          # The engine takes about 100 minutes to build cold: a kept engine of this workflow built from the same
+          # codex-rs tree is the same engine, so it is reused.
+          tree=$(git rev-parse HEAD:codex-rs); run=
+          for candidate in $(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=elpis-engine-glibc-2.35&per_page=50" --jq '.artifacts[] | select(.expired | not) | "\(.workflow_run.id):\(.workflow_run.head_sha)"'); do
+            sha=${candidate#*:}
+            git cat-file -e "$sha" 2>/dev/null || git fetch -q --depth=1 origin "$sha" 2>/dev/null || continue
+            if [ "$(git rev-parse "$sha:codex-rs" 2>/dev/null)" = "$tree" ]; then run=${candidate%%:*}; echo "Reusing the engine of run $run ($sha)"; break; fi
+          done
+          echo "engine_run=$run" >> "$GITHUB_OUTPUT"
+
+  # The same build as the tag run's terminal files (embedded-elpis-linux.yml, "Build the runtime, Code Mode host, and
+  # sandbox"), on Ubuntu 22.04 instead of 24.04, so the engine needs glibc 2.35, not 2.39.
+  engine:
+    needs: plan
+    if: needs.plan.outputs.engine_run == ''
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '4'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '256'
+      CARGO_PROFILE_RELEASE_DEBUG: 'none'
+      CARGO_PROFILE_RELEASE_STRIP: 'symbols'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Room for a cold Rust build, build dependencies and Rust
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          df -h /
+      - name: Download and verify the pinned sandbox V8
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          directory="$RUNNER_TEMP/elpis-v8"
+          mkdir -p "$directory"
+          archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
+          binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
+          gh release download rusty-v8-v150.4.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
+          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
+            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          (cd "$directory" && sha256sum -c SHA256SUMS)
+          echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
+          echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
+      - name: Build the runtime, Code Mode host, and sandbox
+        working-directory: codex-rs
+        run: |
+          cargo build --release --locked -p codex-cli --bin codex -p codex-code-mode-host --bin codex-code-mode-host
+          env -u CODEX_SKIP_BWRAP_BUILD cargo build --release --locked -p codex-bwrap --bin bwrap
+          mkdir -p "$RUNNER_TEMP/engine"
+          install -m 0755 target/release/codex "$RUNNER_TEMP/engine/elpis"
+          install -m 0755 target/release/codex-code-mode-host target/release/bwrap "$RUNNER_TEMP/engine/"
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' cli/Cargo.toml | head -n 1)
+          test "$("$RUNNER_TEMP/engine/elpis" --version)" = "elpis $version"
+          git rev-parse HEAD > "$RUNNER_TEMP/engine/runtime-source.txt"
+          git rev-parse HEAD:codex-rs > "$RUNNER_TEMP/engine/engine-tree.txt"
+      - name: The engine needs glibc 2.35 at most and no system OpenSSL, and TLS answers
+        env:
+          ELPIS_TLS_ARCH: '0'
+        run: |
+          bash scripts/check-glibc.sh 2.35 "$RUNNER_TEMP/engine"
+          bash scripts/check-engine-openssl.sh "$RUNNER_TEMP/engine"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: elpis-engine-glibc-2.35
+          path: ${{ runner.temp }}/engine
+          if-no-files-found: error
+          retention-days: 30
+
+  packages:
+    needs: [plan, engine]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.engine.result == 'success' || needs.engine.result == 'skipped') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      OUT: ${{ runner.temp }}/packages
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - name: Tools the package scripts use
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep rsync python3-yaml zsync
+      - name: The engine (this run's, or a kept one built from the same codex-rs tree)
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: elpis-engine-glibc-2.35
+          path: ${{ runner.temp }}/engine-download
+          run-id: ${{ needs.plan.outputs.engine_run || github.run_id }}
+          github-token: ${{ github.token }}
+      - name: Lay the engine out as the package scripts expect
+        run: |
+          set -euo pipefail
+          d=$RUNNER_TEMP/engine-download
+          test "$(cat "$d/engine-tree.txt")" = "$(git rev-parse HEAD:codex-rs)"
+          mkdir -p "$RUNNER_TEMP/engine"
+          install -m 0755 "$d/elpis" "$RUNNER_TEMP/engine/codex"
+          install -m 0755 "$d/codex-code-mode-host" "$d/bwrap" "$RUNNER_TEMP/engine/"
+          test "$("$RUNNER_TEMP/engine/codex" --version)" = "elpis $VERSION"
+      - name: Desktop dependencies, Electron, and node-pty rebuilt here for this Electron
+        working-directory: apps/elpis-desktop
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node node_modules/electron/install.js
+          electron=$(node -p 'require("./node_modules/electron/package.json").version')
+          gyp="$(npm root -g)/npm/node_modules/node-gyp/bin/node-gyp.js"
+          (cd node_modules/node-pty && node "$gyp" rebuild --target="$electron" --dist-url=https://electronjs.org/headers --arch=x64)
+          ls -la node_modules/node-pty/build/Release/pty.node
+      - name: Provider bridge dependencies
+        working-directory: tools/elpis-claude
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+      - name: Renderer
+        working-directory: apps/elpis-desktop
+        run: |
+          node bridge/build-resources.mts
+          npm run -s build
+          printf '%s\n' "$GITHUB_SHA" > out/.commit
+      - name: appimagetool 1.9.1, checked
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/tools"
+          curl -fsSL -o "$RUNNER_TEMP/tools/appimagetool" https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage
+          echo "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  $RUNNER_TEMP/tools/appimagetool" | sha256sum -c
+          chmod +x "$RUNNER_TEMP/tools/appimagetool"
+      - name: AppImage, with update information for GitHub releases and its .zsync
+        env:
+          ENGINE_DIR: ${{ runner.temp }}/engine
+          ELPIS_STAGE_DIR: ${{ runner.temp }}/appdir
+          ELPIS_APPIMAGE_DIR: ${{ runner.temp }}/packages
+          APPIMAGETOOL: ${{ runner.temp }}/tools/appimagetool
+          ELPIS_APPIMAGE_UPDATE: gh-releases-zsync|${{ github.repository_owner }}|${{ github.event.repository.name }}|latest|Elpis-*-x86_64.AppImage.zsync
+        run: |
+          scripts/build-snap.sh "$VERSION"
+          scripts/build-appimage.sh "$VERSION"
+      - name: Desktop .deb
+        env:
+          ENGINE_DIR: ${{ runner.temp }}/engine
+          ELPIS_DEB_DIR: ${{ runner.temp }}/packages
+        run: apps/elpis-desktop/scripts/build-deb.sh "$VERSION"
+      - name: Every shipped binary needs glibc 2.35 at most
+        run: |
+          set -euo pipefail
+          cd "$OUT"
+          bash "$GITHUB_WORKSPACE/scripts/check-glibc.sh" 2.35 "Elpis-$VERSION-x86_64.AppImage" "elpis-desktop_${VERSION}_amd64.deb" | tee glibc-report.txt
+          # The update information the AppImage carries, and the files it names.
+          f=Elpis-$VERSION-x86_64.AppImage
+          info=$(./"$f" --appimage-updateinformation)
+          echo "update information: $info"
+          test "$info" = "gh-releases-zsync|${{ github.repository_owner }}|${{ github.event.repository.name }}|latest|Elpis-*-x86_64.AppImage.zsync"
+          head -n 12 "$f.zsync" | grep -a -E '^(Filename|URL|Length|SHA-1):'
+          sha256sum -c ./*.sha256
+          ls -la
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: desktop-packages
+          path: ${{ runner.temp }}/packages
+          if-no-files-found: error
+          retention-days: 14
+
+  # Each built package started for real, on the oldest and the newest Ubuntu GitHub offers, until its window is connected
+  # to its engine (scripts/smoke-launch.mts, the check install-desktop.mts runs); a screenshot of each is kept.
+  smoke:
+    needs: [plan, packages]
+    if: ${{ !cancelled() && needs.packages.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      EVIDENCE: ${{ runner.temp }}/evidence
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - name: The smoke check's own dependency and a virtual screen
+        run: |
+          npm ci --prefix apps/elpis-desktop --ignore-scripts --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-packages
+          path: ${{ runner.temp }}/packages
+      - name: The AppImage starts, with its terminal app, and its window connects
+        working-directory: apps/elpis-desktop
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/packages"; sha256sum -c ./*.sha256; cd - >/dev/null
+          f=$RUNNER_TEMP/packages/Elpis-$VERSION-x86_64.AppImage; chmod +x "$f"
+          # The AppImage mounts itself with FUSE where the system has it, as on a user's machine; else it unpacks itself.
+          if [ -e /dev/fuse ] && command -v fusermount fusermount3 >/dev/null 2>&1; then echo "FUSE: yes"; else echo "FUSE: no, extract and run"; export APPIMAGE_EXTRACT_AND_RUN=1; fi
+          out=$("$f" elpis --version); echo "$out"; test "$out" = "elpis $VERSION"
+          node scripts/smoke-launch.mts --launcher="$f" --sandbox --timeout=150 --evidence="$EVIDENCE/appimage"
+      - name: The .deb installs alone and its window connects
+        if: ${{ !cancelled() }}
+        working-directory: apps/elpis-desktop
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y "$RUNNER_TEMP/packages/elpis-desktop_${VERSION}_amd64.deb"
+          out=$(/opt/elpis-desktop/engine/elpis-next --version); echo "$out"; test "$out" = "elpis $VERSION"
+          # Electron's own Node, as on a machine without Node.js 22.
+          ELPIS_NODE_BIN=/opt/elpis-desktop/bin/node node scripts/smoke-launch.mts --launcher=/usr/bin/elpis-app --sandbox --timeout=150 --evidence="$EVIDENCE/deb"
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: smoke-${{ matrix.os }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The AppImage of an earlier release, started as above on Ubuntu 22.04 (only when `released` is set). It reports;
+  # it does not fail the run.
+  released:
+    if: (github.event_name == 'workflow_dispatch' && inputs.released != '') || github.ref == 'refs/heads/build/g5-desktop-packages'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      TAG: ${{ inputs.released || 'v0.5.3' }}
+      EVIDENCE: ${{ runner.temp }}/evidence
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - name: The release's AppImage and the check's tools
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm ci --prefix apps/elpis-desktop --ignore-scripts --no-audit --no-fund
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D "$RUNNER_TEMP/rel" -p "Elpis-${TAG#v}-x86_64.AppImage*"
+          (cd "$RUNNER_TEMP/rel" && sha256sum -c ./*.sha256)
+      - name: What its files need, and whether its engine and window start
+        continue-on-error: true
+        working-directory: apps/elpis-desktop
+        run: |
+          set -uo pipefail
+          mkdir -p "$EVIDENCE"
+          f=$(ls "$RUNNER_TEMP"/rel/*.AppImage); chmod +x "$f"
+          ldd --version | head -n 1 | tee "$EVIDENCE/system-glibc.txt"
+          bash "$GITHUB_WORKSPACE/scripts/check-glibc.sh" 2.35 "$f" > "$EVIDENCE/glibc-report.txt" 2>&1; tail -n 20 "$EVIDENCE/glibc-report.txt"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$f" elpis --version 2>&1 | tee "$EVIDENCE/engine-version.txt"
+          APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke-launch.mts --launcher="$f" --sandbox --timeout=90 --evidence="$EVIDENCE/appimage"
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: released-${{ env.TAG }}-ubuntu-22.04
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: warn
+          retention-days: 14
+
+  # On a version tag: attach the packages to the release the tag run (embedded-elpis-linux.yml) creates. It waits for
+  # that release and never replaces a file already there (gh release upload without --clobber fails on a name taken).
+  publish:
+    needs: [plan, packages, smoke]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: desktop-packages
+          path: packages
+      - name: Attach to the tag's release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd packages
+          sha256sum -c ./*.sha256
+          files=(Elpis-$VERSION-x86_64.AppImage Elpis-$VERSION-x86_64.AppImage.sha256 Elpis-$VERSION-x86_64.AppImage.zsync
+            Elpis-$VERSION-x86_64.AppImage.zsync.sha256 elpis-desktop_${VERSION}_amd64.deb elpis-desktop_${VERSION}_amd64.deb.sha256)
+          ls -la "${files[@]}"
+          for attempt in $(seq 1 300); do
+            gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
+            echo "Waiting for the release $GITHUB_REF_NAME from the tag run ($attempt/300)"; sleep 60
+          done
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'
+          gh release upload "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" "${files[@]}"
