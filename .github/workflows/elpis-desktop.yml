@@ -1,9 +1,10 @@
 name: Elpis desktop
 
 # Builds the desktop renderer and runs the full test set (every UI shard and the fast, bridge and desktop tiers) on
-# main, integrate/**, build/** and every pull request (6 Nov, Masih approved running it beyond build/**). Since 22
-# October the GUI app also builds locally (docs/LOCAL_BUILD_RULES.md); the build/** artifact is the alternative that
-# scripts/install-desktop.mts --actions installs, the artifact of exactly that commit.
+# main, integrate/**, build/** and every pull request (6 Nov, Masih approved running it beyond build/**). This is the
+# only desktop build (Masih: "Please don't do builds locally"; docs/LOCAL_BUILD_RULES.md): once every UI shard passed,
+# the `renderer` artifact holds out/ (with .commit and the UI receipt) and the generated bridge/resources, and
+# scripts/install-desktop.mts installs exactly that commit's artifact (scripts/actions-build.mts fetches it).
 on:
   workflow_dispatch:
   pull_request:
@@ -169,13 +170,19 @@ jobs:
           bash scripts/fetch-retained.sh
       - name: Merge every shard and write the installer receipt
         run: node scripts/renderer-artifact-gate.mts --merge "$RUNNER_TEMP/elpis-ui-plan/plan.json" "$RUNNER_TEMP/elpis-ui-evidence"
+      # The package also ships bridge/resources, copies of tracked files; writing them is not a build.
+      - name: Write the generated bridge files the install copies
+        run: node bridge/build-resources.mts --bridge-only
+      # Installs download this (about 20 MB) within days of the push; an expired one is re-run on GitHub.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: renderer
-          path: apps/elpis-desktop/out
+          path: |
+            apps/elpis-desktop/out
+            apps/elpis-desktop/bridge/resources
           include-hidden-files: true
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 5
 
   # The non-UI tiers run here (they include the artifact gate and inventory tests, so the build job does not repeat them);
   # the shards above run every UI test against the exact built renderer (A46b, 20 October). No browser is needed here.

@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// install-desktop.mts NAME [--release] [--actions]: packages this commit as ~/.local/lib/elpis-desktop/versions/NAME-<commit> and
-// points ~/.local/bin/elpis-app at it, with nothing uncommitted. A release also needs the full test gate's pass on exactly
-// this commit; a local install does not (Masih: "Only full suite for releases; for local deployment prefer fastest builds").
-// It links the installed Electron runtime rather than copying it, launches nothing, and prints the command that rolls back.
-// With --actions the renderer is the one GitHub Actions built for this commit (.github/workflows/elpis-desktop.yml; push
-// the commit to a build/* branch first), so nothing is built here (Masih, 20 October: "use github actions for all builds").
+// install-desktop.mts NAME [--release] [--local-out] [--rollback]: packages this commit as
+// ~/.local/lib/elpis-desktop/versions/NAME-<commit> and points ~/.local/bin/elpis-app at it, with nothing uncommitted.
+// The renderer and the generated bridge files come from the build GitHub Actions made of exactly this commit
+// (scripts/actions-build.mts; push the commit to a build/* branch first), so nothing is built here (Masih: "Please
+// don't do builds locally"). --local-out installs the out/ already in this checkout instead, which must be that same
+// build, fetched earlier with actions-build.mts. --actions, the old name of the default, is still accepted. A release
+// also needs the full test gate's pass on exactly this commit. It links the installed Electron runtime rather than
+// copying it and prints the command that rolls back.
 // The UI receipt must match both the downloaded renderer and its packaged copy before selecting the installation.
 // An install only moves forward: the commit must contain the selected installation's commit (21 October: an install
 // built from an older branch dropped about fifty installed fixes). --rollback skips that check when Masih asks for one.
@@ -15,14 +17,14 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { records, requirePass } from './gate-guards.mts';
 import { assertSourceCommit, verifyPackagedSources, verifyRendererReceipt } from './renderer-artifact-gate.mts';
+import { downloadBuild, placeResources } from './actions-build.mts';
 import { durableSourceCheckout } from '../bridge/improve-source.mts';
 import { pruneVersions } from '../../../scripts/prune-versions.mts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const missingCommit = 'The selected installation records no source commit, so this install could drop its fixes; integrate it first.';
-const name = process.argv[2], release = process.argv.includes('--release'), actions = process.argv.includes('--actions'), rollback = process.argv.includes('--rollback');
-const gh = (args: string[]) => execFileSync('gh', args, { cwd: root, encoding: 'utf8' }).trim();
+const name = process.argv[2], release = process.argv.includes('--release'), localOut = process.argv.includes('--local-out'), rollback = process.argv.includes('--rollback');
 
 /** Local installation metadata, derived from Git rather than the disposable checkout used to build/install. */
 export async function recordSourceCheckout(cwd: string, destination: string) {
@@ -50,21 +52,10 @@ export function assertMovesForward(cwd: string, installed: string | null, commit
 export function assertRendererCommit(root: string, commit: string) {
   let built = '';
   try { built = fs.readFileSync(path.join(root, 'out/.commit'), 'utf8').trim(); } catch { /* no record */ }
-  if (built !== commit) throw new Error(`out/ was built from ${built ? built.slice(0, 9) : 'an unrecorded commit'}, not ${commit.slice(0, 9)}: build it and write the commit to out/.commit, or install with --actions.`);
-}
-/** Downloads the renderer GitHub Actions built for `commit` into a new temporary folder and returns that folder. */
-async function actionsRenderer(commit: string) {
-  const [run] = JSON.parse(gh(['run', 'list', '--workflow', 'elpis-desktop.yml', '--commit', commit, '--status', 'success', '--json', 'databaseId', '--limit', '1']));
-  if (!run) throw new Error(`GitHub Actions has no successful build of ${commit.slice(0, 9)}: push it to a build/* branch and wait for "Elpis desktop".`);
-  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'elpis-renderer-'));
-  gh(['run', 'download', String(run.databaseId), '--name', 'renderer', '--dir', folder]);
-  const built = fs.readFileSync(path.join(folder, '.commit'), 'utf8').trim();
-  if (built !== commit) throw new Error(`The Actions renderer is from ${built.slice(0, 9)}, not ${commit.slice(0, 9)}.`);
-  await verifyRendererReceipt({ root, out: folder, commit });
-  return folder;
+  if (built !== commit) throw new Error(`out/ was built from ${built ? built.slice(0, 9) : 'an unrecorded commit'}, not ${commit.slice(0, 9)}: install GitHub's build of it (without --local-out), or fetch that build with scripts/actions-build.mts.`);
 }
 if (process.argv[1] === fileURLToPath(import.meta.url)) try {
-  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mts NAME [--release] [--actions] [--rollback]');
+  if (!/^[\w.-]+$/.test(name ?? '')) throw new Error('usage: node scripts/install-desktop.mts NAME [--release] [--local-out] [--rollback]');
   if (git(['status', '--porcelain', '--untracked-files=no'])) throw new Error('There are uncommitted changes; commit them and run the full gate first.');
   const commit = git(['rev-parse', 'HEAD']);
   if (release) await requirePass(records, commit);
@@ -77,14 +68,17 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) try {
   const electron = path.join(path.dirname(fs.realpathSync(link)), 'runtime/electron');
   const destination = path.join(os.homedir(), '.local/lib/elpis-desktop/versions', `${name}-${commit.slice(0, 9)}`);
   if (fs.existsSync(destination)) throw new Error(`${destination} already exists.`);
-  if (!actions) assertRendererCommit(root, commit);
-  const renderer = actions ? ['--out-directory', await actionsRenderer(commit)] : [];
-  // The package list is checked against what the entry points import before anything is installed (22 Oct: an unlisted module kept Elpis from opening).
-  if (fs.existsSync(path.join(root, 'desktop/package.test.mts'))) execFileSync(process.execPath, ['--test', 'desktop/package.test.mts'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
-  assertSourceCommit(root, commit);
-  execFileSync(process.execPath, ['desktop/package.mts', '--source', '.', '--destination', destination, '--link-runtime',
-    '--electron-dist', electron, '--ws-directory', 'node_modules/ws', ...renderer], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
-  if (actions) await verifyRendererReceipt({ root, out: path.join(destination, 'app/out'), commit });
+  let build: Awaited<ReturnType<typeof downloadBuild>> | undefined;
+  if (localOut) { assertRendererCommit(root, commit); await verifyRendererReceipt({ root, commit }); }
+  else { build = await downloadBuild(commit); placeResources(build.resources, root); }
+  try {
+    // The package list is checked against what the entry points import before anything is installed (22 Oct: an unlisted module kept Elpis from opening).
+    if (fs.existsSync(path.join(root, 'desktop/package.test.mts'))) execFileSync(process.execPath, ['--test', 'desktop/package.test.mts'], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+    assertSourceCommit(root, commit);
+    execFileSync(process.execPath, ['desktop/package.mts', '--source', '.', '--destination', destination, '--link-runtime',
+      '--electron-dist', electron, '--ws-directory', 'node_modules/ws', ...(build ? ['--out-directory', build.out] : [])], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] });
+  } finally { if (build) fs.rmSync(build.folder, { recursive: true, force: true }); }
+  await verifyRendererReceipt({ root, out: path.join(destination, 'app/out'), commit });
   await verifyPackagedSources({ root, destination, commit });
   await recordSourceCheckout(root, destination);
   // The package must open, with its own launcher, before `elpis-app` points at it (22 Oct: two installs shipped one Elpis could not open).

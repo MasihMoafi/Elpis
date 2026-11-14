@@ -378,7 +378,7 @@
   "tests/reading-options.test.cts:long": 5,
   "tests/reading.test.mts:long": 1,
   "tests/real-app.cts:long": 2,
-  "tests/renderer-artifact-gate.test.mts:long": 18,
+  "tests/renderer-artifact-gate.test.mts:long": 17,
   "tests/renderer.test.cts:long": 15,
   "tests/rendering-performance.test.cts:long": 2,
   "tests/responses-standin.mts:long": 2,
