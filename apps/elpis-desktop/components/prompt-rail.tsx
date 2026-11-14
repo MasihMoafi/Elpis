@@ -29,10 +29,14 @@ export function PromptRail({
   scroller,
   threadId,
   entries,
+  shownOnly = false,
   onLoadEarlier,
   onNavigate,
 }: {
   scroller: RefObject<HTMLElement | null>;
+  /** The Elpis chat keeps only its recent requests on screen; its rail lists those and grows with "Load more messages"
+   * (F2, 14 Nov: 37 marks for 10 requests shown). The bridge's index then only supplies the previews' replies. */
+  shownOnly?: boolean;
   /** Called before a jump, so the transcript stops following the newest message. */
   onNavigate: () => void;
   threadId: string | null;
@@ -294,7 +298,7 @@ export function PromptRail({
   const railShown =
     new Set(
       [
-        ...(indexed?.threadId === threadId ? indexed.data : []),
+        ...(indexed?.threadId === threadId && !shownOnly ? indexed.data : []),
         ...(loaded?.threadId === threadId ? loaded.data : []),
       ].map(prompt => prompt.turnId),
     ).size >= 4;
@@ -320,7 +324,7 @@ export function PromptRail({
   const indexedPrompts = indexed?.threadId === threadId ? indexed.data : [];
   const indexedIds = new Set(indexedPrompts.map(prompt => prompt.turnId));
   const prompts =
-    indexed?.threadId === threadId
+    indexed?.threadId === threadId && !shownOnly
       ? [...indexedPrompts, ...loadedPrompts.filter(prompt => !indexedIds.has(prompt.turnId))]
       : loadedPrompts;
   const bookmarks = saved?.threadId === threadId ? saved.ids : new Set<string>();

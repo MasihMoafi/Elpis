@@ -301,6 +301,7 @@ export function WorkspaceTranscript({
           scroller={scroll}
           threadId={selected?.id ?? null}
           entries={shownEntries}
+          shownOnly={!!selected?.motherAgent}
           onLoadEarlier={older}
           onNavigate={() => {
             followingBottom.current = false;

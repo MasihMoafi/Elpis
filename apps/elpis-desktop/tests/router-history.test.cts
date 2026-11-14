@@ -13,6 +13,9 @@ const turn = (index: number, label = "Request"): Entry[] => [
   { turnId: `t${index}`, item: { id: `u${index}`, type: "userMessage", content: [{ type: "text", text: `${label} ${index}` }] } },
   { turnId: `t${index}`, item: { id: `a${index}`, type: "agentMessage", text: `Answer ${index}. ${"Conversation detail. ".repeat(20)}` } },
 ];
+/** The bridge's prompt index: every request, oldest first. */
+const index = (saved: Entry[]) => saved.filter(entry => entry.item.type === "userMessage")
+  .map(entry => ({ turnId: entry.turnId, itemId: entry.item.id, text: entry.item.content?.[0]?.text ?? "" }));
 /** The bridge's history read: newest first, `size` entries a page, the offset as cursor. */
 const paged = (thread: object, saved: Entry[], size: number) => (url: URL) => {
   const start = Number(url.searchParams.get("cursor") ?? 0), end = start + size;
@@ -34,10 +37,15 @@ test("the router stays recent, loads older messages only on click, and preserves
       "/api/threads/elpis": (_: unknown, url: URL) => { reads++; return paged(thread, saved, 100)(url); },
       // An ordinary chat, a page of ten requests at a time: the negative case, it keeps loading on scroll.
       "/api/threads/chat-b": (_: unknown, url: URL) => { plainReads++; return paged(other, plain, 20)(url); },
+      // The bridge indexes every request of a chat, shown or not.
+      "/api/threads/elpis/prompts": () => ({ data: index(saved) }),
+      "/api/threads/chat-b/prompts": () => ({ data: index(plain) }),
     },
   });
   const page: Page = f.page;
   const users = () => page.locator(".chat-content .message.user").count();
+  // F2 (14 Nov): the rail listed 37 requests while ten were on screen.
+  const marks = () => page.getByRole("button", { name: /^Jump to user message \d+$/ }).count();
   const top = () => page.locator(".chat-scroll").evaluate(element => { element.scrollTop = 0; });
   const button = page.getByRole("button", { name: "Load more messages", exact: true });
   const openElpis = () => page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole("button", { name: "Elpis", exact: true }).click();
@@ -53,6 +61,7 @@ test("the router stays recent, loads older messages only on click, and preserves
     await page.waitForTimeout(300);
     await top();
     assert.equal(await users(), 10, "opening the router shows its latest ten requests");
+    assert.equal(await marks(), 10, "the rail lists only the requests on screen");
     const readCount = reads;
     await page.waitForTimeout(400);
     if (process.env.ELPIS_ROUTER_HISTORY_SHOTS) {
@@ -66,6 +75,7 @@ test("the router stays recent, loads older messages only on click, and preserves
     await button.click();
     await page.locator(".chat-content").getByText("Request 5", { exact: true }).waitFor();
     assert.equal(await users(), 20, "a click adds ten requests");
+    await page.waitForFunction(() => document.querySelectorAll('[aria-label^="Jump to user message"]').length === 20);
     await page.waitForTimeout(1100);
     assert.ok(Math.abs(await anchor.evaluate(element => element.getBoundingClientRect().top) - offset) < 2, "the visible message stays in place");
     const reading = await anchor.evaluate(element => element.getBoundingClientRect().top);
@@ -86,6 +96,7 @@ test("the router stays recent, loads older messages only on click, and preserves
     assert.ok(plainReads > plainBefore, "scrolling to the top of an ordinary chat reads older messages");
     assert.ok(await users() >= 20, "an ordinary chat keeps loading on scroll");
     assert.equal(await button.count(), 0, "an ordinary chat has no Load more button");
+    assert.equal(await marks(), 25, "an ordinary chat's rail still lists every request and loads older ones on a jump");
 
     await openElpis();
     await page.locator(".chat-content").getByText("Request 26", { exact: true }).waitFor();
