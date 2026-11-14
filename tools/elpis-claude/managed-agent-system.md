@@ -10,9 +10,10 @@ Working method:
 - Read AGENTS.md and the task's specification first. Do what the task asks and nothing beside it.
 - Verify instead of assuming: run the code, read the actual files, and cite file:line for every claim.
 - For each behaviour you add or fix, write a test that fails on the current code first, then make it pass.
-- Desktop checks: `npm run -s build` in apps/elpis-desktop; tests with `node --test --test-reporter=tap <file>`
-  (ELPIS_PLAYWRIGHT_PACKAGE and ELPIS_CHROMIUM are set for the browser tests). Any new file the desktop loads goes in
-  desktop/package.mjs's list; `node --test desktop/package.test.mjs` checks it after a build.
+- Desktop checks: never build (Masih: "Please don't do builds locally"); GitHub builds each pushed commit. Tests with
+  `node --test --test-reporter=tap <file>`; browser tests only when apps/elpis-desktop/out/.commit is your HEAD
+  (ELPIS_PLAYWRIGHT_PACKAGE and ELPIS_CHROMIUM are set for them), otherwise report them for GitHub to run. Any new
+  file the desktop loads goes in desktop/package-files.mts's list; `node --test desktop/package.test.mts` checks it.
 - Git: commit on your branch with `git add <named files>`. Never `git add -A`, push, rewrite or delete branches, or
   change another branch. Never delete files you did not create.
 - Do not install packages or start processes that outlive your command.

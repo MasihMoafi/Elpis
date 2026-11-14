@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # build-love-spot-snap.sh [VERSION]: the standalone Love Spot snap (strict confinement): Love Spot with Electron, the
 # engine, and its provider bridge (tools/elpis-claude). Packed with `snap pack` from a prepared folder, so no build VM
-# is needed. Run `npm run build` in apps/elpis-desktop first.
+# is needed. Put GitHub's build of this commit in out/ first: `node scripts/actions-build.mts` in apps/elpis-desktop.
 set -euo pipefail
 VERSION=${1:-0.5.1}
 R=$(cd "$(dirname "$0")/.." && pwd -P); APP=$R/apps/elpis-desktop
 commit=$(git -C "$R" rev-parse HEAD)
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)
 [[ "$built" == "$commit" ]] || { [[ -n "$built" ]] && git -C "$R" diff --quiet "$built" "$commit" -- apps/elpis-desktop ':!apps/elpis-desktop/scripts'; } \
-  || { echo "apps/elpis-desktop/out is not built from $commit: run npm run build" >&2; exit 1; }
+  || { echo "apps/elpis-desktop/out is not built from $commit: put GitHub's build there, (cd apps/elpis-desktop && node scripts/actions-build.mts)" >&2; exit 1; }
 if [[ -n "${ENGINE_DIR:-}" ]]; then codex=$ENGINE_DIR/codex; host=$ENGINE_DIR/codex-code-mode-host; bwrap=$ENGINE_DIR/bwrap
 else installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)"); codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi
 for f in "$codex" "$host" "$bwrap"; do [[ -x "$f" ]] || { echo "missing engine file: $f" >&2; exit 1; }; done
