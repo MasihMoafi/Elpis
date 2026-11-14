@@ -352,7 +352,11 @@ for (const [name, body] of [
   await assert.rejects(fs.access(path.join(f.out, receiptName)), { code: 'ENOENT' });
 });
 
-for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-head', 'package-source', 'transient-source', 'transient-identity', 'valid']) test(`the actual --actions installer checks ${mode} artifacts before selecting`, async t => {
+// The installer takes GitHub's build of exactly this commit (Masih: "Please don't do builds locally"); the last four modes
+// are the runs it must refuse: none, still running, failed, or a build of another commit.
+const refusedRuns: Record<string, RegExp> = { 'no-run': /has no "Elpis desktop" run for/, running: /run 3 for \w+ is still running/,
+  'failed-run': /run 2 for \w+ ended failure/, 'wrong-commit': /build in run 1 is of ccccccccc, not/ };
+for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-head', 'package-source', 'transient-source', 'transient-identity', 'valid', ...Object.keys(refusedRuns)]) test(`the actual installer checks ${mode} GitHub builds before selecting`, async t => {
   const f = await fixture(t);
   // The real installer records a durable Elpis checkout through this source module.
   await fs.mkdir(path.join(f.root, 'bridge'));
@@ -360,7 +364,7 @@ for (const mode of ['missing', 'stale', 'mutated', 'download-source', 'download-
   const identity = JSON.parse(await fs.readFile(path.join(f.root, 'package.json'), 'utf8'));
   await fs.writeFile(path.join(f.root, 'package.json'), JSON.stringify({ ...identity, name: 'elpis-desktop' }));
   await fs.mkdir(path.join(f.root, 'scripts'));
-  for (const file of ['renderer-evidence-pins.mts', 'renderer-evidence-retained.mts', 'renderer-evidence-retained-later.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'install-desktop.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
+  for (const file of ['renderer-evidence-pins.mts', 'renderer-evidence-retained.mts', 'renderer-evidence-retained-later.mts', 'renderer-evidence-types.mts', 'renderer-evidence-validation.mts', 'renderer-artifact-sources.mts', 'install-desktop.mts', 'actions-build.mts', 'renderer-artifact-gate.mts', 'test-gate.mts', 'gate-guards.mts']) {
     await fs.copyFile(fileURLToPath(new URL(`../scripts/${file}`, import.meta.url)), path.join(f.root, 'scripts', file));
   }
   // The installer trims old versions with the repository's shared prune script (1 Nov).
@@ -399,23 +403,32 @@ if(process.env.MOCK_RECEIPT==='mutated')fs.writeFileSync(path.join(destination,'
   const temporary = path.join(home, 'tmp');
   await fs.mkdir(temporary);
   await fs.writeFile(path.join(bin, 'gh'), `#!/usr/bin/env node
-const fs=require('node:fs'),path=require('node:path');
-if(process.argv[3]==='list')console.log(JSON.stringify([{databaseId:1}]));
-else {const folder=process.argv[process.argv.indexOf('--dir')+1];
-fs.writeFileSync(path.join(folder,'.commit'),process.env.MOCK_COMMIT);
-if(!['missing','stale'].includes(process.env.MOCK_RECEIPT))fs.cpSync(process.env.SOURCE_OUT,folder,{recursive:true});
-if(process.env.MOCK_RECEIPT==='download-source')fs.writeFileSync('desktop/main.cts','mutated during download');
-if(process.env.MOCK_RECEIPT==='download-head')require('node:child_process').execFileSync('git',['-c','core.hooksPath=/dev/null','commit','--allow-empty','-m','during download']);
-if(process.env.MOCK_RECEIPT==='stale')fs.writeFileSync(path.join(folder,${JSON.stringify(receiptName)}),JSON.stringify({schemaVersion:1,commit:'stale'}));}
+const fs=require('node:fs'),path=require('node:path'),mode=process.env.MOCK_RECEIPT,commit=process.env.MOCK_COMMIT;
+// GitHub is reached directly, never through the VPN proxy.
+if(Object.keys(process.env).some(name=>/^(https?|all)_proxy$/i.test(name)))process.exit(7);
+if(process.argv[3]==='list')console.log(JSON.stringify({'no-run':[],running:[{databaseId:3,status:'in_progress',conclusion:null,headSha:commit}],
+  'failed-run':[{databaseId:2,status:'completed',conclusion:'failure',headSha:commit}]}[mode]??[{databaseId:1,status:'completed',conclusion:'success',headSha:commit}]));
+else {const folder=process.argv[process.argv.indexOf('--dir')+1],out=path.join(folder,'out');
+fs.mkdirSync(path.join(folder,'bridge/resources'),{recursive:true});fs.writeFileSync(path.join(folder,'bridge/resources/rag.md'),'from GitHub');
+if(!['missing','stale'].includes(mode))fs.cpSync(process.env.SOURCE_OUT,out,{recursive:true});else fs.mkdirSync(out);
+if(['missing','stale','wrong-commit'].includes(mode))fs.writeFileSync(path.join(out,'.commit'),mode==='wrong-commit'?'c'.repeat(40):commit);
+if(mode==='download-source')fs.writeFileSync('desktop/main.cts','mutated during download');
+if(mode==='download-head')require('node:child_process').execFileSync('git',['-c','core.hooksPath=/dev/null','commit','--allow-empty','-m','during download']);
+if(mode==='stale')fs.writeFileSync(path.join(out,${JSON.stringify(receiptName)}),JSON.stringify({schemaVersion:1,commit:'stale'}));}
 `, { mode: 0o755 });
   const marker = path.join(f.repo, 'packaging-called');
   const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, TMPDIR: temporary, PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-    MOCK_COMMIT: commit, MOCK_RECEIPT: mode, PACKAGING_MARKER: marker, SOURCE_OUT: f.out, ELPIS_SKIP_LAUNCH_CHECK: '1' };
+    MOCK_COMMIT: commit, MOCK_RECEIPT: mode, PACKAGING_MARKER: marker, SOURCE_OUT: f.out, ELPIS_SKIP_LAUNCH_CHECK: '1',
+    HTTPS_PROXY: 'http://127.0.0.1:9', all_proxy: 'http://127.0.0.1:9' };
   delete env.NODE_TEST_CONTEXT;
-  const result = spawnSync(process.execPath, ['scripts/install-desktop.mts', 'candidate', '--actions'], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
+  const result = spawnSync(process.execPath, ['scripts/install-desktop.mts', 'candidate'], { cwd: f.root, env, encoding: 'utf8', timeout: 10000 });
   assert.equal(result.status, mode === 'valid' ? 0 : 1, result.stderr);
-  if (mode === 'missing' || mode === 'stale' || mode === 'download-source' || mode === 'download-head') {
-    assert.match(result.stderr, mode === 'missing' ? /ENOENT.*elpis-ui-receipt/ : mode === 'stale' ? /UI receipt belongs to another commit/ : mode === 'download-head' ? /Source HEAD changed/ : /Tracked source changed/);
+  // The downloaded build is removed whether or not it was installed.
+  assert.deepEqual(await fs.readdir(temporary), []);
+  if (mode === 'valid') assert.equal(await fs.readFile(path.join(f.root, 'bridge/resources/rag.md'), 'utf8'), 'from GitHub');
+  if (mode === 'missing' || mode === 'stale' || mode === 'download-source' || mode === 'download-head' || mode in refusedRuns) {
+    assert.match(result.stderr, refusedRuns[mode] ?? (mode === 'missing' ? /ENOENT.*elpis-ui-receipt/ : mode === 'stale'
+      ? /UI receipt belongs to another commit/ : mode === 'download-head' ? /Source HEAD changed/ : /Tracked source changed/));
     await assert.rejects(fs.access(marker), { code: 'ENOENT' });
     assert.deepEqual(await fs.readdir(path.dirname(path.dirname(previous))), [path.basename(path.dirname(previous))]);
   } else assert.equal(await fs.readFile(marker, 'utf8'), 'called');

@@ -71,3 +71,15 @@ test('a local install refuses a renderer built from another commit, or with no r
   await fs.writeFile(path.join(root, 'out/.commit'), `${commit}\n`);
   assertRendererCommit(root, commit);
 });
+
+// The install takes GitHub's build: a later successful re-run of the same commit counts, an earlier failure does not.
+test('the installer picks the newest successful run of exactly this commit', async () => {
+  const { pickRun } = await import('../scripts/actions-build.mts');
+  const commit = 'd'.repeat(40), other = 'e'.repeat(40);
+  const run = (databaseId: number, status: string, conclusion: string | null, createdAt: string, headSha = commit) =>
+    ({ databaseId, status, conclusion, createdAt, headSha });
+  const otherSuccess = run(3, 'completed', 'success', '2026-11-14T03', other);
+  assert.equal(pickRun([run(1, 'completed', 'failure', '2026-11-14T01'), run(2, 'completed', 'success', '2026-11-14T02'), otherSuccess], commit).databaseId, 2);
+  assert.throws(() => pickRun([run(1, 'completed', 'cancelled', '2026-11-14T01'), run(4, 'queued', null, '2026-11-14T04')], commit), /run 4 .* still running/);
+  assert.throws(() => pickRun([otherSuccess], commit), /no "Elpis desktop" run/);
+});
