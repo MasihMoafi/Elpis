@@ -4,6 +4,10 @@ No local builds of the desktop app (Masih: "Please don't do builds locally"): ne
 
 Desktop verification and installation: [TESTING.md](../apps/elpis-desktop/TESTING.md).
 
+## Desktop packages (AppImage and desktop .deb)
+
+GitHub builds them, never his laptop: the "Elpis desktop packages" workflow (`.github/workflows/desktop-packages.yml`) builds both on Ubuntu 22.04 from the commit it runs on, so every shipped binary needs glibc 2.35 or older (`scripts/check-glibc.sh`), starts each on Ubuntu 22.04 and 24.04 until its window is connected to its engine, and keeps a screenshot. It runs on every version tag, and attaches the packages to that tag's release, and by hand: `gh workflow run desktop-packages.yml --ref <branch>`. `scripts/build-snap.sh`, `scripts/build-appimage.sh` and `apps/elpis-desktop/scripts/build-deb.sh` are its steps; do not run them locally. Case: v0.5.3's packages were built on his laptop (glibc 2.42); its engine needed glibc 2.39, so on Ubuntu 22.04 and 24.04, Debian 12 and 13 and Fedora 42 the window said "Elpis is disconnected" (AppImage catalog test).
+
 ## Installing the engine
 
 `scripts/install-engine.sh <name>` installs the engine from the cargo build folder and the bridge scripts
