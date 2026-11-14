@@ -219,6 +219,19 @@ it("tells a worker to stop at the request, answer a question first, and open thi
   });
 });
 
+it("tells a worker that a request to hand work to a worker is its own job", () => {
+  withStore(store => {
+    const worker = promptsOf(store).compose(defaultPrompts(), "worker"),
+      main = promptsOf(store).compose(defaultPrompts(), "orchestrator");
+    // 14 Nov: given "Give a worker this read-only job: …", workers said no dispatch tool was available, and one refused.
+    expect(worker).toContain("you are the worker it was handed to");
+    expect(worker).toContain('"give a worker", "have an agent", "delegate this" or "open a session and tell it" mean do that job');
+    expect(worker).toContain("Never refuse, or apologise, for having no tool to hand work on.");
+    // The router still hands such a request to a worker.
+    expect(main).not.toContain("you are the worker it was handed to");
+  });
+});
+
 it("registers the built-in Source skills, Elpis chat when enabled, before the team skills", () => {
   withStore(store => {
     const config = { ...defaultPrompts(), skills: { release: "Tag releases." } };
