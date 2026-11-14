@@ -23,9 +23,12 @@ const tierOf = new Map(Object.entries(inventory).flatMap(([tier, files]) => file
 const all = changed.filter(file => tierOf.has(file) && tierOf.get(file) !== 'opt-in' && fs.existsSync(path.join(app, file)));
 if (!all.length) { console.log('changed-tests: no changed desktop test files'); process.exit(0); }
 
-const tests = all.filter(file => tierOf.get(file) === 'fast');
+// Fast-tier files that each keep a core busy for over ten seconds (they run whole fake gates and installers; measured
+// 13 to 33 s of CPU) run on GitHub too, so a push stays light.
+const githubOnly = ['tests/renderer-artifact-gate.test.mts', 'tests/gate-guards.test.mts', 'tests/test-inventory.test.mts'];
+const tests = all.filter(file => tierOf.get(file) === 'fast' && !githubOnly.includes(file));
 const left = all.length - tests.length;
-if (left) console.log(`changed-tests: GitHub runs the other ${left} changed test file(s) (bridge, desktop, browser); none run here.`);
+if (left) console.log(`changed-tests: GitHub runs the other ${left} changed test file(s) (bridge, desktop, browser, slow); none run here.`);
 if (!tests.length) process.exit(0);
 console.log(`changed-tests: ${tests.length} file(s): ${tests.join(' ')}`);
 const run = spawnSync('nice', ['-n', '19', process.execPath, '--test', '--test-concurrency=1', ...tests],
