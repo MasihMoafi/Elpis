@@ -271,7 +271,7 @@ jobs:
           cd "$RUNNER_TEMP/packages"; sha256sum -c ./*.sha256; cd - >/dev/null
           f=$RUNNER_TEMP/packages/Elpis-$VERSION-x86_64.AppImage; chmod +x "$f"
           # The AppImage mounts itself with FUSE where the system has it, as on a user's machine; else it unpacks itself.
-          if [ -e /dev/fuse ] && command -v fusermount fusermount3 >/dev/null 2>&1; then echo "FUSE: yes"; else echo "FUSE: no, extract and run"; export APPIMAGE_EXTRACT_AND_RUN=1; fi
+          if [ -e /dev/fuse ] && { command -v fusermount || command -v fusermount3; } >/dev/null 2>&1; then echo "FUSE: yes"; else echo "FUSE: no, extract and run"; export APPIMAGE_EXTRACT_AND_RUN=1; fi
           out=$("$f" elpis --version); echo "$out"; test "$out" = "elpis $VERSION"
           node scripts/smoke-launch.mts --launcher="$f" --sandbox --timeout=150 --evidence="$RUNNER_TEMP/evidence/appimage"
       - name: The .deb installs alone and its window connects
@@ -321,7 +321,8 @@ jobs:
         continue-on-error: true
         working-directory: apps/elpis-desktop
         run: |
-          set -uo pipefail
+          # Every check runs and is kept, whatever the one before it found.
+          set +e -uo pipefail
           mkdir -p "$RUNNER_TEMP/evidence"
           f=$(ls "$RUNNER_TEMP"/rel/*.AppImage); chmod +x "$f"
           ldd --version | head -n 1 | tee "$RUNNER_TEMP/evidence/system-glibc.txt"
