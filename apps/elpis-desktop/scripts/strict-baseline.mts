@@ -5,7 +5,7 @@
 //   node scripts/strict-baseline.mts [types|tsx|lint|dup ...] [--update] [--files a.mjs b.tsx]
 // types: tsc -p tsconfig.node.json (bridge, desktop, lib, scripts as JS with checkJs);
 // tsx: tsc -p tsconfig.json (renderer, with DeepSeek Harness's strict flags); lint: oxlint (.oxlintrc.json);
-// dup: jscpd (.jscpd.json), counted as clones per file pair. --files limits lint to those files (pre-commit).
+// dup: jscpd (.jscpd.json), counted as clones per file pair. --files limits lint to those files.
 // --update refuses to raise a count; ELPIS_BASELINE_RAISE=1 allows it, for a reviewed exception only.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
