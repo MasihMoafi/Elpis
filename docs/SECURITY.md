@@ -7,7 +7,7 @@ Only the latest published release receives security fixes. Older tags are not pa
 ## Reporting a vulnerability
 
 Report privately through GitHub's [Report a vulnerability](https://github.com/MasihMoafi/Elpis/security/advisories/new)
-form, not a public issue. Include what an attacker gains, the steps to reproduce it, the
+form, not a public issue. If that form is not available, write to hi@masihmoafi.com. Include what an attacker gains, the steps to reproduce it, the
 Elpis version (`elpis --version`) and your operating system.
 
 You get an acknowledgement within seven days. Elpis has a single maintainer, so a fix
