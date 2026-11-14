@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Opens the Elpis desktop window and starts or reuses the installed Elpis runtime.
-#   desktop/launch.sh                  open the window (builds the renderer once if missing)
+#   desktop/launch.sh                  open the window (needs out/: GitHub's build, node scripts/actions-build.mts)
 #   desktop/launch.sh --desktop-entry  print a .desktop launcher for this checkout; installs nothing
 set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,7 +18,7 @@ if [[ -n "$elpis_node" ]]; then
   export ELPIS_NODE_BIN="$elpis_node"
   export PATH="$(dirname "$elpis_node"):$PATH"
 fi
-[[ -f out/index.html ]] || npm run build
+[[ -f out/index.html ]] || { echo "launch.sh: no renderer in out/; fetch GitHub's build (no local builds): node scripts/actions-build.mts" >&2; exit 1; }
 # Apps started from the dock may lack the proxy; when one is set, background Node follows it,
 # and loopback (the bridge itself) is never proxied.
 if [[ -n "${HTTPS_PROXY:-${https_proxy:-${HTTP_PROXY:-${http_proxy:-}}}}" ]]; then

@@ -1,6 +1,6 @@
 # Local build rules
 
-Build and check the desktop app locally with one job at the lowest priority. Keep the `.next` cache on the New Volume. Do not build while a game runs.
+No local builds of the desktop app (Masih: "Please don't do builds locally"): never `npm run build` or `next build` on his laptop. GitHub builds it: push the commit to a `build/*` branch and wait for the "Elpis desktop" run. `node scripts/actions-build.mts` (in `apps/elpis-desktop`) puts that build of exactly HEAD in `out/` for browser tests and private copies, and `install-desktop.mts` installs from it. The push hook runs changed browser tests only on such a build and otherwise leaves them to GitHub.
 
 Desktop verification and installation: [TESTING.md](../apps/elpis-desktop/TESTING.md).
 

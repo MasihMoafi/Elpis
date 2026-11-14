@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # build-snap.sh [VERSION]: the elpis-agent snap (classic confinement): the desktop app with Electron, the engine, its
 # provider bridge (tools/elpis-claude) and a terminal launcher. Packed with `snap pack` from a prepared folder, so no
-# build VM is needed. Run `npm run build` in apps/elpis-desktop first.
+# build VM is needed. Put GitHub's build of this commit in out/ first: `node scripts/actions-build.mts` in apps/elpis-desktop.
 #   ENGINE_DIR  a folder with codex, codex-code-mode-host and bwrap (a CI build); default: the installed engine.
 #   ELECTRON_DIST  an Electron folder; default: the checkout's, else the installed app's (no download).
 set -euo pipefail
@@ -10,7 +10,7 @@ R=$(cd "$(dirname "$0")/.." && pwd -P); APP=$R/apps/elpis-desktop
 commit=$(git -C "$R" rev-parse HEAD)
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)
 [[ "$built" == "$commit" ]] || { [[ -n "$built" ]] && git -C "$R" diff --quiet "$built" "$commit" -- apps/elpis-desktop ':!apps/elpis-desktop/scripts'; } \
-  || { echo "apps/elpis-desktop/out is not built from $commit: run npm run build" >&2; exit 1; }
+  || { echo "apps/elpis-desktop/out is not built from $commit: put GitHub's build there, (cd apps/elpis-desktop && node scripts/actions-build.mts)" >&2; exit 1; }
 installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)")
 if [[ -n "${ENGINE_DIR:-}" ]]; then codex=$ENGINE_DIR/codex; host=$ENGINE_DIR/codex-code-mode-host; bwrap=$ENGINE_DIR/bwrap
 else codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi

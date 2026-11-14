@@ -4,7 +4,7 @@ The Elpis desktop app is a Next.js and shadcn interface in an Electron window, c
 
 ## Run
 
-From this directory, run `npm ci`, `npm run build`, then `npm run desktop` (or `desktop/launch.sh`). The desktop starts or reuses the installed Elpis runtime; no terminal window is needed.
+From this directory, run `npm ci`, put GitHub's build of this commit in `out/` with `node scripts/actions-build.mts` (no local builds on Masih's laptop; [build rules](../../docs/LOCAL_BUILD_RULES.md)), then `npm run desktop` (or `desktop/launch.sh`). The desktop starts or reuses the installed Elpis runtime; no terminal window is needed.
 
 - `ELPIS_ENGINE_BIN` selects another installed engine with its bundled provider bridge.
 - For a browser, start Elpis, run `npm run web` and open its private URL.

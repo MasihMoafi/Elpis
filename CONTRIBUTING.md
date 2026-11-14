@@ -36,6 +36,8 @@ npm run build
 npm test
 ```
 
+On Masih's laptop nothing is built: GitHub builds, and `node scripts/actions-build.mts` replaces `npm run build` there ([build rules](docs/LOCAL_BUILD_RULES.md)).
+
 Test tiers, opt-in checks and prerequisites: [TESTING.md](apps/elpis-desktop/TESTING.md).
 
 `npm run desktop` opens the window. It needs an installed Elpis engine at `~/.local/bin/elpis-next`, or one named by `ELPIS_ENGINE_BIN`, with its provider bridge. Packaging and installation: [README](readme.md#quick-start). Bridge and runtime socket: [desktop README](apps/elpis-desktop/README.md).

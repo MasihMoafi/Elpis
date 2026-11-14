@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-deb.sh [VERSION]: a small Debian package of the desktop app, built from this commit's out/ (npm run build first).
+# build-deb.sh [VERSION]: a small Debian package of the desktop app, built from this commit's out/ (GitHub's build: node scripts/actions-build.mts).
 # The app and a copy of Electron go to /opt/elpis-desktop; only the English locale is kept and the package is xz -9.
 # The engine is the `elpis` package; this package carries its Claude bridge (tools/elpis-claude), found beside the
 # engine launcher /opt/elpis-desktop/engine/elpis-next. Without Node.js 22 or newer, Electron itself runs the bridges.
@@ -10,7 +10,7 @@ commit=$(git -C "$APP" rev-parse HEAD)
 # out/ must be built from this commit, or from one whose app differs only in scripts/ (such as this script).
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)
 [[ "$built" == "$commit" ]] || { [[ -n "$built" ]] && git -C "$APP" diff --quiet "$built" "$commit" -- . ':!scripts'; } \
-  || { echo "out/ is not built from $commit: run npm run build" >&2; exit 1; }
+  || { echo "out/ is not built from $commit: put GitHub's build there with node scripts/actions-build.mts" >&2; exit 1; }
 mkdir -p "$HOME/.cache/elpis-tests"; STAGE=$(mktemp -d "$HOME/.cache/elpis-tests/elpis-deb.XXXXXX"); ROOT="$STAGE/root"; OPT="$ROOT/opt/elpis-desktop"
 OUT="${ELPIS_DEB_DIR:-$HOME/.cache/elpis-tests/deb}"; mkdir -p "$OUT"
 
