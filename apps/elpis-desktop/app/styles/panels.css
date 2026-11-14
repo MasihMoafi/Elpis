@@ -302,7 +302,6 @@
 .observability-chat-menu { width:min(480px, 90vw); }
 .observability-page { flex:none; flex-wrap:nowrap; }
 .observability-page > button { height:28px; }
-.observability-note { margin:0; min-width:0; font-size:var(--text-small); color:var(--muted-foreground); }
 .observability-project { display:flex; flex-direction:column; min-width:0; padding-right:24px; }
 .observability-project-path { font-size:var(--text-small); color:var(--muted-foreground); }
 .observability-health { flex:1 1 0; min-width:0; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px 16px; margin:0; font-size:var(--text-small); color:var(--muted-foreground); }

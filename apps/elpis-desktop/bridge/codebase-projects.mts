@@ -14,7 +14,8 @@ const run = promisify(execFile);
 /** A folder holding more repositories than this is not a projects folder (a home folder, say); the rest are skipped. */
 const MAX_CHILDREN = 200;
 
-export type CodebaseProject = { root: string; name: string; usedAt: number };
+/** `committedAt`: the time of its newest commit in seconds, 0 when it has none; the page opens on the newest (D9). */
+export type CodebaseProject = { root: string; name: string; usedAt: number; committedAt: number };
 export type ChatFolder = { cwd?: unknown; usedAt?: unknown };
 
 /** The main checkout of the repository that holds `folder`, or null when `folder` is not inside a Git work tree. */
@@ -35,6 +36,20 @@ export async function repositoryOf(folder: string): Promise<string | null> {
     return (await stat(main).then(info => info.isDirectory(), () => false)) ? main : top;
   } catch {
     return null;
+  }
+}
+
+/** When the newest commit of any branch in `root` was made, in seconds; 0 for a repository without commits. */
+async function committedAt(root: string): Promise<number> {
+  try {
+    const { stdout } = await run("git", ["for-each-ref", "--count=1", "--sort=-committerdate", "--format=%(committerdate:unix)", "refs/heads"], {
+      cwd: root,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
+      timeout: 10_000,
+    });
+    return Number(stdout.trim()) || 0;
+  } catch {
+    return 0;
   }
 }
 
@@ -72,7 +87,9 @@ export async function codebaseProjects(chats: ChatFolder[]): Promise<CodebasePro
       else for (const inner of await repositoriesIn(cwd)) nested.add(inner);
     }),
   );
-  const projects = [...used].map(([root, usedAt]) => ({ root, name: path.basename(root), usedAt }));
-  for (const root of nested) if (!used.has(root)) projects.push({ root, name: path.basename(root), usedAt: 0 });
+  const roots = [...used, ...[...nested].filter(root => !used.has(root)).map(root => [root, 0] as const)];
+  const projects = await Promise.all(
+    roots.map(async ([root, usedAt]) => ({ root, name: path.basename(root), usedAt, committedAt: await committedAt(root) })),
+  );
   return projects.sort((a, b) => b.usedAt - a.usedAt || a.name.localeCompare(b.name) || a.root.localeCompare(b.root));
 }

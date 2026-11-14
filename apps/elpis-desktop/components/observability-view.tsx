@@ -107,9 +107,6 @@ export function ObservabilityView({ threadId, chats }: { threadId?: string; chat
         <div className="observability-bar">
           <CodebaseProjectPicker projects={codebase.projects} root={codebase.root} onChoose={codebase.choose} />
           {pageSwitch}
-          {!codebase.loading && picked && !codebase.chatHasGit && (
-            <p className="observability-note">This chat&apos;s folder is not a Git project.</p>
-          )}
         </div>
         {codebase.root ? (
           <iframe key={`codebase:${codebase.root}`} title="Codebase" src={`/codebase/index.html?root=${encodeURIComponent(codebase.root)}`} />

@@ -20,7 +20,7 @@ const report = (name: string) => ({
   changed: [{ check: 'A README', from: 0, to: 1 }],
   previous: '2026-11-01T10:00:00.000Z',
 });
-const PROJECTS = [{ root: '/work/demo', name: 'demo', usedAt: 3 }, { root: '/work/other', name: 'other', usedAt: 1 }];
+const PROJECTS = [{ root: '/work/demo', name: 'demo', usedAt: 3, committedAt: 1 }, { root: '/work/other', name: 'other', usedAt: 1, committedAt: 2 }];
 /** The bridge's two Codebase routes; `current` is the project of the chat asked about. */
 const routes = (projects: typeof PROJECTS, current: string | null) => ({
   '/api/codebase/projects': () => ({ projects, current }),
@@ -91,14 +91,35 @@ test('Observability shows the project of the chosen chat: code, churn for chosen
   } finally { await f.close(); }
 });
 
-test('a chat whose folder has no Git says so and opens on the project he chose last, not on an empty page', async () => {
-  const f = await fixture({ routes: routes(PROJECTS, null), storage: { 'elpis-codebase-project-v1': '/work/other' } });
+// F3, 14 Nov: with Elpis chosen and its report showing, the bar still said "This chat's folder is not a Git project",
+// and with nothing chosen the chooser opened on the first project by name. The order: his last choice, the chat's own
+// project, the most recent commit.
+const LINE = /not a Git project/;
+for (const [current, why] of [[null, 'a chat without Git'], ['/work/demo', 'a chat in another project']] as const)
+  test(`he opens on the project he chose last, in ${why}, and no line says "not a Git project"`, async () => {
+    const f = await fixture({ routes: routes(PROJECTS, current), storage: { 'elpis-codebase-project-v1': '/work/other' } });
+    try {
+      const { page } = f;
+      await openCodebase(page);
+      await heading(page, /^other holds/).waitFor();
+      assert.equal(await page.getByRole('combobox', { name: 'Project' }).innerText(), 'other');
+      assert.equal(await page.locator('.observability').getByText(LINE).count(), 0);
+    } finally { await f.close(); }
+  });
+
+test('with no choice and no Git in the chat, the page opens on the project with the most recent commit', async () => {
+  const recent = [
+    { root: '/work/artface-demo', name: 'artface-demo', usedAt: 0, committedAt: 100 },
+    { root: '/work/Elpis', name: 'Elpis', usedAt: 0, committedAt: 300 },
+    { root: '/work/rustidian', name: 'rustidian', usedAt: 0, committedAt: 200 },
+  ];
+  const f = await fixture({ routes: routes(recent, null) });
   try {
     const { page } = f;
     await openCodebase(page);
-    await page.locator('.observability-bar').getByText("This chat's folder is not a Git project.", { exact: true }).waitFor();
-    await heading(page, /^other holds/).waitFor();
-    assert.equal(await page.getByRole('combobox', { name: 'Project' }).innerText(), 'other');
+    await heading(page, /^Elpis holds/).waitFor();
+    assert.equal(await page.getByRole('combobox', { name: 'Project' }).innerText(), 'Elpis');
+    assert.equal(await page.locator('.observability').getByText(LINE).count(), 0);
   } finally { await f.close(); }
 });
 

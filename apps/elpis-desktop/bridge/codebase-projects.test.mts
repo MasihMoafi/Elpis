@@ -11,10 +11,11 @@ import { codebaseReport } from "./codebase.mts";
 import { codebaseProjects, repositoryOf } from "./codebase-projects.mts";
 
 const env = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@example.test", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@example.test" };
-function repo(root: string) {
+function repo(root: string, committedAt = 1_700_000_000) {
   mkdirSync(join(root, "src"), { recursive: true });
   writeFileSync(join(root, "src/a.ts"), "one\ntwo\n");
-  for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "first"]]) execFileSync("git", args, { cwd: root, env });
+  const dated = { ...env, GIT_AUTHOR_DATE: `@${committedAt} +0000`, GIT_COMMITTER_DATE: `@${committedAt} +0000` };
+  for (const args of [["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "first"]]) execFileSync("git", args, { cwd: root, env: dated });
 }
 
 /** His folders in small: a projects folder like ~/Desktop/p (an empty `.git/info` and repositories inside), a linked
@@ -30,7 +31,7 @@ function folders() {
   mkdirSync(join(p, ".git", "info"), { recursive: true });
   writeFileSync(join(p, ".git", "info", "exclude"), "*\n");
   repo(elpis);
-  repo(rustidian);
+  repo(rustidian, 1_800_000_000);
   execFileSync("git", ["worktree", "add", "-q", "-b", "task", worktree], { cwd: elpis, env });
   mkdirSync(worker, { recursive: true });
   return { top, p, elpis, rustidian, worktree, router, worker, done: () => rmSync(top, { recursive: true, force: true }) };
@@ -84,9 +85,10 @@ test("the chooser lists each repository his chats use once, the most recently us
     { cwd: "relative/folder", usedAt: 1000 },
   ]);
   assert.deepEqual(projects, [
-    { root: f.elpis, name: "Elpis", usedAt: 500 },
-    // Found only inside the projects folder his chats run in.
-    { root: f.rustidian, name: "rustidian", usedAt: 0 },
+    { root: f.elpis, name: "Elpis", usedAt: 500, committedAt: 1_700_000_000 },
+    // Found only inside the projects folder his chats run in. Its last commit (F3, 14 Nov: the page opened on the
+    // first project by name) lets the page open on the most recently committed one.
+    { root: f.rustidian, name: "rustidian", usedAt: 0, committedAt: 1_800_000_000 },
   ]);
   assert.deepEqual(await codebaseProjects([{ cwd: f.router, usedAt: 1 }, { cwd: f.worker }]), [], "no Git anywhere: an empty list");
   assert.equal(execFileSync("git", ["status", "--porcelain"], { cwd: f.elpis }).toString(), "", "nothing was written in the project");
