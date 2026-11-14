@@ -51,6 +51,10 @@ A local `cargo build`, or a working local terminal, proves nothing about a fresh
 
 - A version number that never reached a user is not spent. Reuse it; the workflow
   replaces a re-tagged release rather than failing.
+- **A tag publishes everything; no file is built or uploaded by hand.** The tag run publishes the terminal
+  files; the "Elpis desktop packages" workflow, on the same tag, attaches the AppImage (with its `.zsync`) and the
+  desktop `.deb`, each with a `.sha256`, once the release exists, and replaces nothing. It builds on Ubuntu 22.04
+  so every binary needs glibc 2.35 or older: a laptop build needs the laptop's glibc ([build rules](LOCAL_BUILD_RULES.md#desktop-packages-appimage-and-desktop-deb)).
 - Move the version in `codex-rs/tui/Cargo.toml`, the assertion in the workflow's
   "Verify executable identity" step, and `Cargo.lock` together, or the tag run fails the
   version check.
