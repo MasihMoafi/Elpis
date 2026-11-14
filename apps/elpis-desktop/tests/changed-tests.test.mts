@@ -1,5 +1,5 @@
-// The push hook's test runner never builds (Masih: "Please don't do builds locally"). Changed browser tests run only
-// against a build of exactly HEAD already in out/; otherwise GitHub runs them and the push goes through.
+// The push hook's test runner runs only changed small unit tests (the fast tier) and never builds (Masih: "Please don't
+// do builds locally"); bridge, desktop and browser tests are left to GitHub and the push goes through.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
@@ -8,7 +8,7 @@ import path from 'node:path';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createTestTempDir, removeTestTempDir } from './temp-root.cts';
 
-async function app(t: test.TestContext, { changed = ['unit', 'ui'] } = {}) {
+async function app(t: test.TestContext, { changed = ['unit', 'bridge', 'ui'] } = {}) {
   const cache = path.join(os.homedir(), '.cache/elpis-tests');
   await fs.mkdir(cache, { recursive: true });
   const repo = createTestTempDir(path.join(cache, 'changed-tests-'));
@@ -17,7 +17,8 @@ async function app(t: test.TestContext, { changed = ['unit', 'ui'] } = {}) {
   for (const dir of ['scripts', 'tests']) await fs.mkdir(path.join(root, dir), { recursive: true });
   await fs.mkdir(bin); await fs.mkdir(marks);
   await fs.copyFile(new URL('../scripts/changed-tests.mts', import.meta.url), path.join(root, 'scripts/changed-tests.mts'));
-  await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify({ fast: ['tests/unit.test.mjs'], ui: ['tests/ui.test.mjs'], 'opt-in': [] }));
+  const inventory = { fast: ['tests/unit.test.mjs'], bridge: ['tests/bridge.test.mjs'], ui: ['tests/ui.test.mjs'], 'opt-in': [] };
+  await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify(inventory));
   await fs.writeFile(path.join(repo, '.gitignore'), 'apps/elpis-desktop/out/\nbin/\nmarks/\n');
   // Any build tool the runner could start leaves a mark.
   for (const tool of ['npm', 'npx', 'next']) await fs.writeFile(path.join(bin, tool), `#!/bin/sh\ntouch ${JSON.stringify(path.join(marks, 'build'))}\n`, { mode: 0o755 });
@@ -29,46 +30,44 @@ async function app(t: test.TestContext, { changed = ['unit', 'ui'] } = {}) {
     `import test from 'node:test'; import fs from 'node:fs'; test('${name}', () => fs.writeFileSync(${JSON.stringify(path.join(marks, name))}, ''));\n`);
   git('add', '.'); git('commit', '-qm', 'tests');
   const head = git('rev-parse', 'HEAD');
-  const run = () => {
-    const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const run = (extra: NodeJS.ProcessEnv = {}) => {
+    const env: NodeJS.ProcessEnv = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ...extra };
     delete env.NODE_TEST_CONTEXT;
     return spawnSync(process.execPath, ['scripts/changed-tests.mts', base], { cwd: root, env, encoding: 'utf8', timeout: 60_000 });
   };
   const ran = async () => (await fs.readdir(marks)).sort();
-  return { root, head, run, ran };
+  return { repo, root, head, run, ran };
 }
 
-test('without a build of HEAD, changed unit tests run, browser tests are left to GitHub, and nothing is built', async t => {
+test('changed unit tests run; bridge and browser tests are left to GitHub; nothing is built', async t => {
   const { run, ran } = await app(t);
   const result = run();
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /GitHub runs the 1 changed browser test\(s\); there is no build of \w{9} here\./);
+  assert.match(result.stdout, /GitHub runs the other 2 changed test file\(s\)/);
   assert.deepEqual(await ran(), ['unit']);
 });
 
-test('a build of another commit in out/ is not used and not rebuilt', async t => {
-  const { root, run, ran } = await app(t);
-  await fs.mkdir(path.join(root, 'out'));
-  await fs.writeFile(path.join(root, 'out/.commit'), `${'a'.repeat(40)}\n`);
-  const result = run();
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(await ran(), ['unit']);
-});
-
-test('with a build of exactly HEAD in out/, the changed browser tests run here', async t => {
+test('even with a build of HEAD in out/, browser tests do not run here', async t => {
   const { root, head, run, ran } = await app(t);
   await fs.mkdir(path.join(root, 'out'));
   await fs.writeFile(path.join(root, 'out/.commit'), `${head}\n`);
-  const result = run();
-  assert.equal(result.status, 0, result.stderr);
-  assert.doesNotMatch(result.stdout, /GitHub runs/);
-  assert.deepEqual(await ran(), ['ui', 'unit']);
+  assert.equal(run().status, 0);
+  assert.deepEqual(await ran(), ['unit']);
 });
 
-test('only browser tests changed and no build: the push goes through with nothing run', async t => {
+test('only browser tests changed: the push goes through with nothing run', async t => {
   const { run, ran } = await app(t, { changed: ['ui'] });
   const result = run();
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /GitHub runs the 1 changed browser test/);
+  assert.match(result.stdout, /GitHub runs the other 1 changed test file/);
   assert.deepEqual(await ran(), []);
+});
+
+// Git runs hooks with GIT_DIR set; the runner then found no changed test at all and every push skipped them.
+test('inside a push hook, with GIT_DIR set, the changed unit test is still found and run', async t => {
+  const { repo, run, ran } = await app(t);
+  const result = run({ GIT_DIR: path.join(repo, '.git') });
+  assert.equal(result.status, 0, result.stderr);
+  assert.doesNotMatch(result.stdout, /no changed desktop test files/);
+  assert.deepEqual(await ran(), ['unit']);
 });
