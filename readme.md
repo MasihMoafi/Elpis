@@ -1,9 +1,9 @@
-<p align="center">
+<h1 align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="website/assets/technical/elpis-wordmark-burning-dark.svg">
     <img src="website/assets/technical/elpis-wordmark-burning-light.svg" alt="Elpis" width="300">
   </picture>
-</p>
+</h1>
 
 <p align="center"><b>The ultimate harness: the perfect home for your agents.</b></p>
 <p align="center"><i>You put an agent into an Elpis, and it becomes Elpis. Be Elpis, my friend.</i></p>
@@ -13,6 +13,12 @@
 <p align="center">Alpha · v0.5.3 · Linux x86_64 · in daily use by its author</p>
 
 <p align="center"><a href="https://github.com/MasihMoafi/Elpis/releases">Releases</a> · <a href="https://elpis.masihmoafi.com">Website</a> · <a href="docs/GUIDE.md">Technical guide</a> · <a href="CONTRIBUTING.md">Contributing</a> · <a href="LICENSE">License</a></p>
+
+## Demo
+
+<p align="center"><img src="website/assets/technical/elpis-demo.gif" alt="Elpis in the terminal: the agent reads the project, a long search result is shortened before the model sees it, and the reply arrives with 87% of the context left"></p>
+
+<p align="center"><img src="website/assets/technical/workflows-team.gif" alt="Workflows: the Mother agent designs a code-review team of eight agents in four waves, shown flat and in isometric, runs it and checks each agent's work"></p>
 
 ## Quick start
 
@@ -37,12 +43,6 @@ From the [v0.5.3 release](https://github.com/MasihMoafi/Elpis/releases/tag/v0.5.
 
 Both apps share one engine and one state folder, `~/.elpis-next`.
 </details>
-
-## Demo
-
-<p align="center"><img src="website/assets/technical/elpis-demo.gif" alt="Elpis in the terminal: the agent reads the project, a long search result is shortened before the model sees it, and the reply arrives with 87% of the context left"></p>
-
-<p align="center"><img src="website/assets/technical/workflows-team.gif" alt="Workflows: the Mother agent designs a code-review team of eight agents in four waves, shown flat and in isometric, runs it and checks each agent's work"></p>
 
 ## The problem
 
@@ -140,7 +140,7 @@ The tradeoff: outside a Git project the folders are instructions, not enforced.
 - [Skills](https://github.com/MasihMoafi/skills): SKILL.md workflows for coding agents
 - [WhisperType](https://github.com/MasihMoafi/WhisperType): local voice input for developers
 - [Read Aloud](https://github.com/MasihMoafi/read-aloud): select text, press Super+R, hear it in a local voice
-- [Love Spot](https://github.com/MasihMoafi/love-spot): a shared drawing board where characters talk, draw and compete with you
+- Love Spot: a shared drawing board where characters talk, draw and compete with you
 - [SVG Studio](https://svg.masihmoafi.com): high-quality image vectorization
 - [Pin](https://github.com/MasihMoafi/pin): an always-on-top priority note, saved as plain Markdown
 - [Clocki](https://github.com/MasihMoafi/clocki): a floating desktop timer for tracking focus hours
