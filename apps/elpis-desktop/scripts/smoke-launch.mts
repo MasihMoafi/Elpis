@@ -49,7 +49,9 @@ async function pageCall(port: number, method: string, params: object, ms = 3000)
 
 async function pageState(port: number) {
   const reply = await pageCall(port, 'Runtime.evaluate', { expression: STATE, returnByValue: true });
-  return reply ? String(reply.result?.value ?? 'unknown') : 'no window';
+  if (!reply) return 'no window';
+  const value = reply.result?.value;
+  return typeof value === 'string' ? value : 'unknown';
 }
 
 /** The window as the person sees it, its text, the app's output and its Elpis home, saved in DIR; never fails the check. */
