@@ -32,8 +32,14 @@ test('real UI results require positive passes and no skipped, pending or cancell
   assert.throws(() => passingCounts(''), /TAP/);
 });
 
+// Scratch goes under ~/.cache/elpis-tests, never /tmp: the gate moves its scratch to the Trash with gio, which refuses
+// /tmp on Masih's machine. The gate's own scratch (prepareBaseline) follows XDG_CACHE_HOME, else the system temp folder,
+// so with neither set (as in the push hook) every gate test failed there.
+const scratchRoot = path.join(os.homedir(), '.cache/elpis-tests');
+process.env.XDG_CACHE_HOME = scratchRoot;
+
 async function fixture(t: import('node:test').TestContext, code?: string) {
-  const base = os.tmpdir();
+  const base = scratchRoot;
   await fs.mkdir(base, { recursive: true });
   const repo = createTestTempDir(path.join(base, 'renderer-gate-test-'));
   t.after(() => removeTestTempDir(repo));

@@ -63,6 +63,22 @@ test('only browser tests changed: the push goes through with nothing run', async
   assert.deepEqual(await ran(), []);
 });
 
+// A fast-tier file that runs whole fake gates (13 to 33 s of CPU each) is left to GitHub too.
+test('a slow fast-tier file is left to GitHub', async t => {
+  const { root, run, ran } = await app(t, { changed: ['unit'] });
+  const inventory = JSON.parse(await fs.readFile(path.join(root, 'test-inventory.json'), 'utf8'));
+  inventory.fast = ['tests/unit.test.mjs', 'tests/gate-guards.test.mts'];
+  await fs.writeFile(path.join(root, 'test-inventory.json'), JSON.stringify(inventory));
+  await fs.writeFile(path.join(root, 'tests/gate-guards.test.mts'), "import test from 'node:test'; test('slow', () => { throw Error('ran'); });\n");
+  const quiet = ['-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-c', 'user.name=t', '-c', 'user.email=t@t'];
+  execFileSync('git', [...quiet, 'add', '.'], { cwd: root });
+  execFileSync('git', [...quiet, 'commit', '-qm', 'slow test'], { cwd: root });
+  const result = run();
+  assert.equal(result.status, 0, result.stdout);
+  assert.match(result.stdout, /GitHub runs the other 1 changed test file/);
+  assert.deepEqual(await ran(), ['unit']);
+});
+
 // Git runs hooks with GIT_DIR set; the runner then found no changed test at all and every push skipped them.
 test('inside a push hook, with GIT_DIR set, the changed unit test is still found and run', async t => {
   const { repo, run, ran } = await app(t);
