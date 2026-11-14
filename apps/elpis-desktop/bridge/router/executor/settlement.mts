@@ -193,7 +193,9 @@ export class WorkerSettlement {
       // Once they ended, the router wakes the worker to finish, and its next turn's last words are the result.
       if (quiet && owed.length && agent.status === "idle" && live() && !this.host.closing()) {
         const names = owed.map(job => job.name).join(", ");
-        const note = `Your background job ${names} has ended, after your turn did. Finish the job now and give your result; if you need its output, run it again and wait for it with write_stdin in this turn.`;
+        const note =
+          `Your background job ${names} has ended, after your turn did. Finish the job now and give your result; ` +
+          "if you need its output, run it again and wait for it with write_stdin in this turn.";
         // A wake that fails delivers the last words as before, rather than nothing.
         woken = await this.host.sessions
           .prompt(agent.id, `ended:${idle.id}:${owed.map(job => job.id).join(",")}`, note, "queue")
