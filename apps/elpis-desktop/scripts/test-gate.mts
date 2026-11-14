@@ -141,8 +141,18 @@ export async function main(args: string[], { dir = root, locks = { build: '/tmp/
   let rendererBuilt = false;
   for (const tier of selected) {
     if (!rendererBuilt && tier === 'ui') {
-      // An earlier tier's failure does not stop the UI files.
-      if (await run('renderer-build', 'npm', ['run', '-s', 'build'], tier, { seconds: 1200, lock: locks.build }) !== 0) return;
+      // An earlier tier's failure does not stop the UI files. Masih's laptop never builds ("Please don't do builds
+      // locally"): there the UI files run on the build of exactly HEAD that scripts/actions-build.mts put in out/.
+      // GitHub builds; ELPIS_GATE_BUILDS=1 is set only by the gate's own tests, whose builds are fakes.
+      let built = ''; try { built = (await fs.readFile(path.join(dir, 'out/.commit'), 'utf8')).trim(); } catch {}
+      if (built === start.commit) console.log(`Renderer: out/ is the build of ${start.commit.slice(0, 9)}; not rebuilt.`);
+      else if (process.env.GITHUB_ACTIONS === 'true' || process.env.ELPIS_GATE_BUILDS === '1') {
+        if (await run('renderer-build', 'npm', ['run', '-s', 'build'], tier, { seconds: 1200, lock: locks.build }) !== 0) return;
+      } else {
+        console.log(`FAIL renderer-build: no local builds. Put GitHub's build of ${start.commit.slice(0, 9)} in out/ first: node scripts/actions-build.mts`);
+        process.exitCode = 1;
+        return;
+      }
       rendererBuilt = true;
     }
     if (tier === 'ui') {

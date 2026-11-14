@@ -105,7 +105,7 @@ test('mutate during the real gate', () => {
       git(['add', 'scripts/test-gate.mts', 'scripts/gate-guards.mts', 'test-inventory.json', 'package.json', '.gitignore', 'renderer.mjs', 'bridge/build-resources.mts', 'bridge/idle.test.mjs', 'desktop/idle.test.mjs', 'ui/idle.test.mjs', 'bin/flock', 'probe', 'tests/state.test.mjs']);
       git(['commit', '-qm', 'fixture']);
       if (scenario === 'dirty-start') await fs.writeFile(path.join(root, 'probe'), 'changed');
-      const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}`, GATE_SCENARIO: scenario, ELPIS_PLAYWRIGHT_PACKAGE: '/fixture/not-used' };
+      const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, PATH: `${path.join(root, 'bin')}${path.delimiter}${process.env.PATH}`, GATE_SCENARIO: scenario, ELPIS_PLAYWRIGHT_PACKAGE: '/fixture/not-used', ELPIS_GATE_BUILDS: '1' };
       delete env.NODE_TEST_CONTEXT; // The nested gate must execute its tests rather than skip recursive runners.
       const args = ['scripts/test-gate.mts', ...(scenario === 'fast-only' ? ['fast'] : scenario === 'desktop-only' ? ['desktop'] : [])];
       let output;
