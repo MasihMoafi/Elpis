@@ -360,8 +360,8 @@ jobs:
           set -euo pipefail
           cd packages
           sha256sum -c ./*.sha256
-          files=(Elpis-$VERSION-x86_64.AppImage Elpis-$VERSION-x86_64.AppImage.sha256 Elpis-$VERSION-x86_64.AppImage.zsync
-            Elpis-$VERSION-x86_64.AppImage.zsync.sha256 elpis-desktop_${VERSION}_amd64.deb elpis-desktop_${VERSION}_amd64.deb.sha256)
+          a="Elpis-$VERSION-x86_64.AppImage" d="elpis-desktop_${VERSION}_amd64.deb"
+          files=("$a" "$a.sha256" "$a.zsync" "$a.zsync.sha256" "$d" "$d.sha256")
           ls -la "${files[@]}"
           for attempt in $(seq 1 300); do
             gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 && break
