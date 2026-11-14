@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # build-deb.sh [VERSION]: a small Debian package of the desktop app, built from this commit's out/ (GitHub's build: node scripts/actions-build.mts).
 # The app and a copy of Electron go to /opt/elpis-desktop; only the English locale is kept and the package is xz -9.
-# The engine is the `elpis` package; this package carries its Claude bridge (tools/elpis-claude), found beside the
-# engine launcher /opt/elpis-desktop/engine/elpis-next. Without Node.js 22 or newer, Electron itself runs the bridges.
+# The package carries its own engine (ENGINE_DIR: codex, codex-code-mode-host and bwrap from the same build as the
+# AppImage's) and its Claude bridge (tools/elpis-claude) beside the engine launcher /opt/elpis-desktop/engine/elpis-next,
+# so it needs no other Elpis package. Without Node.js 22 or newer, Electron itself runs the bridges.
+# GitHub builds it on Ubuntu 22.04 (.github/workflows/desktop-packages.yml); not on Masih's laptop (docs/LOCAL_BUILD_RULES.md).
 set -euo pipefail
 VERSION=${1:-0.5.3}
+[[ -n "${ENGINE_DIR:-}" ]] || { echo "ENGINE_DIR must name a folder with codex, codex-code-mode-host and bwrap" >&2; exit 1; }
+for f in codex codex-code-mode-host bwrap; do [[ -x "$ENGINE_DIR/$f" ]] || { echo "missing engine file: $ENGINE_DIR/$f" >&2; exit 1; }; done
 APP="$(cd "$(dirname "$0")/.." && pwd)"
 commit=$(git -C "$APP" rev-parse HEAD)
 # out/ must be built from this commit, or from one whose app differs only in scripts/ (such as this script).
@@ -29,8 +33,13 @@ find "$OPT/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 chmod 4755 "$OPT/runtime/electron/chrome-sandbox"
 bridge="$APP/../../tools/elpis-claude"
 [[ -d "$bridge/node_modules/@agentclientprotocol/claude-agent-acp" ]] || { echo "run npm ci --omit=dev in tools/elpis-claude" >&2; exit 1; }
+# The engine laid out as the AppImage's (an installed bundle: runtimeTools() finds tools/elpis-claude beside package/).
 # A script, not a link: the app resolves links, and the bridge must sit beside the path it finds.
-mkdir -p "$OPT/engine/tools"; printf '#!/bin/sh\nexec /usr/bin/elpis "$@"\n' > "$OPT/engine/elpis-next"; chmod 0755 "$OPT/engine/elpis-next"
+mkdir -p "$OPT/engine/tools" "$OPT/engine/package/bin" "$OPT/engine/package/codex-resources"
+install -m 0755 "$ENGINE_DIR/codex" "$OPT/engine/package/bin/codex"
+install -m 0755 "$ENGINE_DIR/codex-code-mode-host" "$OPT/engine/package/bin/codex-code-mode-host"
+install -m 0755 "$ENGINE_DIR/bwrap" "$OPT/engine/package/codex-resources/bwrap"
+printf '#!/bin/sh\nexec /opt/elpis-desktop/engine/package/bin/codex "$@"\n' > "$OPT/engine/elpis-next"; chmod 0755 "$OPT/engine/elpis-next"
 rsync -aL --exclude 'claude-agent-sdk-linux-*' --exclude test --exclude spike --exclude '*.orig' --exclude '*.test.*' "$bridge/" "$OPT/engine/tools/elpis-claude/"
 mkdir -p "$OPT/engine/tools/elpis-claude/matilda"
 cp "$APP/bridge/matilda-goals.mts" "$OPT/engine/tools/elpis-claude/matilda/"
@@ -133,7 +142,7 @@ Version: $VERSION
 Architecture: amd64
 Maintainer: Elpis <MasihMoafi@users.noreply.github.com>
 Provides: love-spot, elpis-workflows
-Depends: elpis (>= $VERSION), libgtk-3-0t64 | libgtk-3-0, libnss3, libgbm1, libasound2t64 | libasound2, libxss1, libxtst6, libsecret-1-0, xdg-utils
+Depends: libc6 (>= 2.35), libgcc-s1, libgtk-3-0t64 | libgtk-3-0, libnss3, libgbm1, libasound2t64 | libasound2, libxss1, libxtst6, libsecret-1-0, xdg-utils
 Installed-Size: $(du -sk "$ROOT" | cut -f1)
 Homepage: https://github.com/MasihMoafi/Elpis
 Description: Elpis desktop app: chats, Workflows and Love Spot on the Elpis engine
@@ -141,10 +150,11 @@ CONTROL
 
 # No personal data: nothing in the package may name the builder's home folder or git email. (The bare user name can
 # be an ordinary word in a bundled translation, so it is not searched.)
+# On GitHub the home is the runner's, /home/runner, which the engine's build paths name; it is no one's.
 email=$(git -C "$APP" config user.email || true)
-if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$ROOT" || find "$ROOT" -type l -lname "$HOME/*" | rg .; then echo "The package names the builder's home or email; not built." >&2; gio trash "$STAGE"; exit 1; fi
+if [[ "${GITHUB_ACTIONS:-}" != true ]] && rg -l -F -e "$HOME/" ${email:+-e "$email"} "$ROOT" || find "$ROOT" -type l -lname "$HOME/*" | rg .; then echo "The package names the builder's home or email; not built." >&2; gio trash "$STAGE" 2>/dev/null || rm -rf "$STAGE"; exit 1; fi
 deb="$OUT/elpis-desktop_${VERSION}_amd64.deb"
 dpkg-deb --root-owner-group -Zxz -z9 --build "$ROOT" "$deb" >/dev/null
 (cd "$OUT" && sha256sum "$(basename "$deb")" > "$(basename "$deb").sha256")
-gio trash "$STAGE"
+gio trash "$STAGE" 2>/dev/null || rm -rf "$STAGE"
 echo "$deb $(du -h "$deb" | cut -f1) (installed $(( $(sed -n 's/^Installed-Size: //p' <(dpkg-deb -f "$deb")) / 1024 )) MB) from ${commit:0:9}"
