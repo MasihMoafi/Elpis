@@ -32,7 +32,9 @@ export function installClientWire({ ws, openingReplies, deletedThreads, provider
     if (msg.method === "thread/status/changed" && owner && params) params.status = owner.status();
     if (msg.method === "thread/settings/updated" && owner) {
       const model = owner.model();
-      if (model && params) params.threadSettings = { ...(wireObject(params.threadSettings) ? params.threadSettings : {}), model, effort: owner.effort() };
+      // A native helper's effort lives in the engine, which sent it here; only a provider chat keeps its own.
+      const settings = wireObject(params?.threadSettings) ? params.threadSettings : {};
+      if (model && params) params.threadSettings = { ...settings, model, effort: owner.nativeHelper ? settings.effort ?? null : owner.effort() };
     }
     const route = !msg.method && wireId(msg.id) ? forwarded.get(msg.id) : undefined;
     const recipient = route?.client ?? ws;

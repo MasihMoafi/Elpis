@@ -448,6 +448,15 @@ if (process.argv.includes('app-server')) {
       assert.equal(effort.status, 200, JSON.stringify(effort.body));
       assert.equal(saved().effort, 'high');
       assert.equal(saved().runningTurn?.effort, 'high', 'the running turn takes the new effort');
+      // F1 (14 Nov): switching Fast in a worker chat showed "Default effort"; the engine's effort must reach the app.
+      const shownEffort = () => messages().filter(msg => msg.method === 'thread/settings/updated' && msg.params?.threadId === id)
+        .map(msg => (msg.params.threadSettings as { effort?: string | null }).effort).at(-1);
+      await until(() => shownEffort() === 'high', 'the effort change reaches desktop SSE as high');
+      const before = messages().length;
+      assert.equal((await request(`/threads/${id}/service-tier`, { enabled: false })).status, 200);
+      await until(() => messages().slice(before).some(msg => msg.method === 'thread/settings/updated' && msg.params?.threadId === id), 'Fast off reaches desktop SSE');
+      assert.equal(shownEffort(), 'high', 'switching Fast off keeps the shown effort');
+      assert.equal(saved().effort, 'high', 'switching Fast off keeps the stored effort');
       // A chat no other connection owns still goes to the main engine.
       const own = await rpc('thread/start', { model: 'gpt-test', cwd: root });
       assert.ifError(own.error);
