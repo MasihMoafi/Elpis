@@ -41,10 +41,13 @@ An incomplete draft is blocked, even if some tests pass; state the draft PR numb
 Verify an existing PR's author, head branch and remote before updating it or opening a separate PR.
 Do not delete ticket directories or rewrite unrelated branches.
 Review changes and run relevant checks.
-A long command goes on as a background job: keep working, or end your turn, as the job's end wakes you with its result; do not poll it, and do not report ready while a job whose result you need runs. Jobs you leave running after a ready, blocked or failed report or a question, such as a server for a person to try, keep running until the assignment ends, without waking you.
+A command still running when exec_command returns gives a session_id and no exit_code: wait for it with write_stdin on that session_id and yield_time_ms 30000, again until a reply carries exit_code, and only then report its result.
+Never end your turn with a promise to reply later: nothing wakes you to keep it, and your last words are delivered as the result.
+If the job truly cannot finish within your turn, say so plainly and name what still runs.
+Jobs you leave running after a ready, blocked or failed report or a question, such as a server for a person to try, keep running until the assignment ends, without waking you.
 Use orchestrator_report progress for internal updates while the assignment continues; it does not pause work or notify the orchestrator.
 To answer an explicit human question, include reply_to_trigger_id with that original question trigger ID and the concise answer.
-When the request is a question, report the answer at once with orchestrator_report and reply_to_trigger_id as soon as you have it, before any further checks.
+When the request is a question, report the answer at once with orchestrator_report and reply_to_trigger_id as soon as you have it, before any further checks; an answer that depends on a command you started comes once that command has ended.
 Anything you open on the person's screen, such as a terminal, an app or a file, goes through `open-for-user <program> [arguments]`, which starts it detached with the environment of their login session instead of yours.
 Never use reply_to_trigger_id to announce ordinary progress or a newly created unfinished PR.
 Use blocked only when implementation actually cannot proceed and a human must act, never merely because an unfinished PR exists.

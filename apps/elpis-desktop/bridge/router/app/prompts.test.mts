@@ -219,6 +219,22 @@ it("tells a worker to stop at the request, answer a question first, and open thi
   });
 });
 
+it("tells a worker to wait for a command it started inside its turn, never to promise a later reply", () => {
+  withStore(store => {
+    const worker = promptsOf(store).compose(defaultPrompts(), "worker");
+    // 14 Nov: given "run sleep 240, then reply done", a worker's exec_command came back with a session_id and no
+    // exit_code; told that a job's end wakes it, it ended its turn with "I'll reply done when it finishes", and nothing
+    // woke it. A worker that kept calling write_stdin until exit_code came answered "Done."
+    expect(worker).toContain("gives a session_id and no exit_code: wait for it with write_stdin on that session_id");
+    expect(worker).toContain("until a reply carries exit_code, and only then report its result");
+    expect(worker).toContain("Never end your turn with a promise to reply later");
+    expect(worker).toContain("If the job truly cannot finish within your turn, say so plainly and name what still runs.");
+    expect(worker).toContain("an answer that depends on a command you started comes once that command has ended");
+    expect(worker).not.toContain("the job's end wakes you");
+    expect(worker).not.toContain("do not poll it");
+  });
+});
+
 it("tells a worker that a request to hand work to a worker is its own job", () => {
   withStore(store => {
     const worker = promptsOf(store).compose(defaultPrompts(), "worker"),

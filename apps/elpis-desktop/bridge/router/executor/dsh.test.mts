@@ -299,6 +299,33 @@ it("shows a finished Elpis chat job's result to the person itself, once, and tel
   assert.ok(!h.relays.some(text => text.includes("Fixed elsewhere") && text.includes("shown_to_person")));
   assert.equal(shown.length, 1);
 });
+it("wakes a worker whose turn ended before its shell job, and takes the next turn's words as the result", async t => {
+  const h = await fixture();
+  t.after(h.stop);
+  const one = await h.accept("1"),
+    other = await h.accept("2");
+  const interim = "The `sleep 240` command is running. I'll reply done when it finishes.";
+  const woke = (threadId: string) =>
+    h.server.calls.some(
+      call => call.method === "turn/start" && call.params.threadId === threadId && JSON.stringify(call.params.input).includes("has ended"),
+    );
+  // 14 Nov: the worker ended its turn while `sleep 240` ran, and its promise reached him as the result.
+  h.server.jobs.set(one.threadId, [{ id: "24405", label: "sleep 240" }]);
+  h.server.finish(one.threadId, "completed", interim);
+  await new Promise(resolve => setTimeout(resolve, 1500));
+  assert.equal(latestAssignment(h.store.tickets.get(one.ticket.id)!)?.report, undefined);
+  assert.ok(!woke(one.threadId));
+  h.server.jobs.set(one.threadId, []);
+  await waitFor(() => assert.ok(woke(one.threadId)));
+  h.server.finish(one.threadId, "completed", "Done. `sleep 240` completed.");
+  await waitFor(() => assert.equal(latestAssignment(h.store.tickets.get(one.ticket.id)!)?.report?.summary, "Done. `sleep 240` completed."));
+  assert.ok(h.relays.some(text => text.includes("Done. `sleep 240` completed.")));
+  assert.ok(!h.relays.some(text => text.includes("I'll reply done")));
+  // A worker whose turn ended with no job running is not woken: its words are the result at once.
+  h.server.finish(other.threadId, "completed", "Verified result");
+  await waitFor(() => assert.equal(latestAssignment(h.store.tickets.get(other.ticket.id)!)?.report?.summary, "Verified result"));
+  assert.ok(!woke(other.threadId));
+});
 it("does not cancel a worker when the ending transaction rolls back", async t => {
   const h = await fixture();
   t.after(h.stop);

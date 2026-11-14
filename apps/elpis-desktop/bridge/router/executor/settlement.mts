@@ -175,19 +175,38 @@ export class WorkerSettlement {
       limit.abort();
     }, BACKGROUND_LIMIT_MS);
     timer.unref?.();
-    let quiet: boolean;
+    let quiet: boolean,
+      woken = false;
     const left = this.left.get(ticket.id)?.jobs;
     try {
+      // The shell jobs that still ran when its turn ended. Unlike DSH's, the Elpis engine wakes no worker when one ends,
+      // so its last words were written before their result (14 Nov: "`sleep 240` is running. I'll reply done when it
+      // finishes." reached him as the result, and no reply followed).
+      await this.host.context.refresh?.(agent.id);
+      const owed = runningJobs(this.host.context, agent.id, left);
       quiet = await untilQuiet(
         this.host.context,
         agent,
         AbortSignal.any([this.host.lifetime, look.signal, limit.signal]),
         left,
       );
+      // Once they ended, the router wakes the worker to finish, and its next turn's last words are the result.
+      if (quiet && owed.length && agent.status === "idle" && live() && !this.host.closing()) {
+        const names = owed.map(job => job.name).join(", ");
+        const note = `Your background job ${names} has ended, after your turn did. Finish the job now and give your result; if you need its output, run it again and wait for it with write_stdin in this turn.`;
+        // A wake that fails delivers the last words as before, rather than nothing.
+        woken = await this.host.sessions
+          .prompt(agent.id, `ended:${idle.id}:${owed.map(job => job.id).join(",")}`, note, "queue")
+          .then(
+            () => true,
+            () => false,
+          );
+      }
     } finally {
       clearTimeout(timer);
       if (this.settling.get(ticket.id) === look) this.settling.delete(ticket.id);
     }
+    if (woken) return;
     const current = live();
     if (
       this.host.closing() ||
