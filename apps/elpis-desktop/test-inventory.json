@@ -14,6 +14,7 @@
     "tests/polish-source.test.cts",
     "tests/dialog-actions.test.cts",
     "tests/install-forward.test.mts",
+    "tests/changed-tests.test.mts",
     "tests/account-events.test.cts",
     "tests/config-sections.test.mts",
     "tests/agents-iso.test.mts",

@@ -52,12 +52,15 @@ async function fakeApp(t: TestContext, files: Record<string, string>, inventory:
   git('init', '-q'); git('add', '.'); git('-c', 'user.name=gate', '-c', 'user.email=gate@test', 'commit', '-qm', 'fake app');
   const locks = { build: path.join(dir, 'build.lock'), ui: path.join(dir, 'ui.lock') };
   // `interrupt`: once that file exists, press Ctrl+C on the gate (SIGINT), as a person stopping it would.
-  const gate = (args: string[], seconds = 30, interrupt?: string) => new Promise<{ code: number | null; signal: NodeJS.Signals | null; out: string }>((resolve, reject) => {
+  // `extra` is the gate's environment beyond this test's; the default lets its fake build run, as only GitHub's does.
+  const builds: NodeJS.ProcessEnv = { ELPIS_GATE_BUILDS: '1' };
+  type Result = { code: number | null; signal: NodeJS.Signals | null; out: string };
+  const gate = (args: string[], seconds = 30, interrupt?: string, extra = builds) => new Promise<Result>((resolve, reject) => {
     const source = `import { main } from ${JSON.stringify(new URL('../scripts/test-gate.mts', import.meta.url).href)}; await main(...JSON.parse(process.argv[1]));`;
     // Without NODE_TEST_CONTEXT the gate's own `node --test` children report as they do outside this runner.
     const { NODE_TEST_CONTEXT: _NODE_TEST_CONTEXT, ...env } = process.env;
     const child = spawn(process.execPath, ['--input-type=module', '-e', source, JSON.stringify([args, { dir, locks, seconds }])],
-      { env: { ...env, TMPDIR: path.join(dir, 'tmp'), ELPIS_PLAYWRIGHT_PACKAGE: dir }, stdio: ['ignore', 'pipe', 'pipe'] });
+      { env: { ...env, TMPDIR: path.join(dir, 'tmp'), ELPIS_PLAYWRIGHT_PACKAGE: dir, GITHUB_ACTIONS: '', ...extra }, stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '';
     child.stdout.on('data', data => { out += data; });
     child.stderr.resume();
@@ -67,6 +70,22 @@ async function fakeApp(t: TestContext, files: Record<string, string>, inventory:
   });
   return { dir, locks, gate };
 }
+
+// Masih: "Please don't do builds locally". Off GitHub the UI tier runs only on the build of HEAD already in out/.
+test('on the laptop the UI tier never builds: it refuses without a build of HEAD and uses one that is there', async t => {
+  const { dir, gate } = await (fakeApp(t, { 'ui.test.mjs': passing }, { ui: ['tests/ui.test.mjs'] }, `node -e "require('fs').writeFileSync('built', '')"`));
+  const refused = await gate(['ui'], 30, undefined, {});
+  assert.equal(refused.code, 1);
+  assert.match(refused.out, /^FAIL renderer-build: no local builds\. Put GitHub's build of \w{9} in out\/ first: node scripts\/actions-build\.mts$/m);
+  assert.doesNotMatch(refused.out, /tests\/ui.test.mjs/);
+  await fs.mkdir(path.join(dir, 'out'));
+  await fs.writeFile(path.join(dir, 'out/.commit'), execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }));
+  const ran = await gate(['ui'], 30, undefined, {});
+  assert.equal(ran.code, 0, ran.out);
+  assert.match(ran.out, /^Renderer: out\/ is the build of \w{9}; not rebuilt\.$/m);
+  assert.match(ran.out, /^PASS tests\/ui.test.mjs/m);
+  assert.equal(existsSync(path.join(dir, 'built')), false, 'nothing was built');
+});
 
 test('a failing fast file does not stop the desktop and UI tiers; a failing renderer build stops only the UI tier', async t => {
   const files = { 'fast.test.mjs': "import test from 'node:test'; test('fails', () => { throw new Error('boom'); });", 'desktop.test.mjs': passing, 'ui.test.mjs': passing };
