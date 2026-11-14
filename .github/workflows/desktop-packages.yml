@@ -143,7 +143,6 @@ jobs:
       actions: read
     env:
       VERSION: ${{ needs.plan.outputs.version }}
-      OUT: ${{ runner.temp }}/packages
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -217,7 +216,7 @@ jobs:
       - name: Every shipped binary needs glibc 2.35 at most
         run: |
           set -euo pipefail
-          cd "$OUT"
+          cd "$RUNNER_TEMP/packages"
           bash "$GITHUB_WORKSPACE/scripts/check-glibc.sh" 2.35 "Elpis-$VERSION-x86_64.AppImage" "elpis-desktop_${VERSION}_amd64.deb" | tee glibc-report.txt
           # The update information the AppImage carries, and the files it names.
           f=Elpis-$VERSION-x86_64.AppImage
@@ -247,7 +246,6 @@ jobs:
     timeout-minutes: 30
     env:
       VERSION: ${{ needs.plan.outputs.version }}
-      EVIDENCE: ${{ runner.temp }}/evidence
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -275,7 +273,7 @@ jobs:
           # The AppImage mounts itself with FUSE where the system has it, as on a user's machine; else it unpacks itself.
           if [ -e /dev/fuse ] && command -v fusermount fusermount3 >/dev/null 2>&1; then echo "FUSE: yes"; else echo "FUSE: no, extract and run"; export APPIMAGE_EXTRACT_AND_RUN=1; fi
           out=$("$f" elpis --version); echo "$out"; test "$out" = "elpis $VERSION"
-          node scripts/smoke-launch.mts --launcher="$f" --sandbox --timeout=150 --evidence="$EVIDENCE/appimage"
+          node scripts/smoke-launch.mts --launcher="$f" --sandbox --timeout=150 --evidence="$RUNNER_TEMP/evidence/appimage"
       - name: The .deb installs alone and its window connects
         if: ${{ !cancelled() }}
         working-directory: apps/elpis-desktop
@@ -284,7 +282,7 @@ jobs:
           sudo apt-get install -y "$RUNNER_TEMP/packages/elpis-desktop_${VERSION}_amd64.deb"
           out=$(/opt/elpis-desktop/engine/elpis-next --version); echo "$out"; test "$out" = "elpis $VERSION"
           # Electron's own Node, as on a machine without Node.js 22.
-          ELPIS_NODE_BIN=/opt/elpis-desktop/bin/node node scripts/smoke-launch.mts --launcher=/usr/bin/elpis-app --sandbox --timeout=150 --evidence="$EVIDENCE/deb"
+          ELPIS_NODE_BIN=/opt/elpis-desktop/bin/node node scripts/smoke-launch.mts --launcher=/usr/bin/elpis-app --sandbox --timeout=150 --evidence="$RUNNER_TEMP/evidence/deb"
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -301,7 +299,6 @@ jobs:
     timeout-minutes: 20
     env:
       TAG: ${{ inputs.released || 'v0.5.3' }}
-      EVIDENCE: ${{ runner.temp }}/evidence
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -325,12 +322,12 @@ jobs:
         working-directory: apps/elpis-desktop
         run: |
           set -uo pipefail
-          mkdir -p "$EVIDENCE"
+          mkdir -p "$RUNNER_TEMP/evidence"
           f=$(ls "$RUNNER_TEMP"/rel/*.AppImage); chmod +x "$f"
-          ldd --version | head -n 1 | tee "$EVIDENCE/system-glibc.txt"
-          bash "$GITHUB_WORKSPACE/scripts/check-glibc.sh" 2.35 "$f" > "$EVIDENCE/glibc-report.txt" 2>&1; tail -n 20 "$EVIDENCE/glibc-report.txt"
-          APPIMAGE_EXTRACT_AND_RUN=1 "$f" elpis --version 2>&1 | tee "$EVIDENCE/engine-version.txt"
-          APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke-launch.mts --launcher="$f" --sandbox --timeout=90 --evidence="$EVIDENCE/appimage"
+          ldd --version | head -n 1 | tee "$RUNNER_TEMP/evidence/system-glibc.txt"
+          bash "$GITHUB_WORKSPACE/scripts/check-glibc.sh" 2.35 "$f" > "$RUNNER_TEMP/evidence/glibc-report.txt" 2>&1; tail -n 20 "$RUNNER_TEMP/evidence/glibc-report.txt"
+          APPIMAGE_EXTRACT_AND_RUN=1 "$f" elpis --version 2>&1 | tee "$RUNNER_TEMP/evidence/engine-version.txt"
+          APPIMAGE_EXTRACT_AND_RUN=1 node scripts/smoke-launch.mts --launcher="$f" --sandbox --timeout=90 --evidence="$RUNNER_TEMP/evidence/appimage"
       - if: ${{ !cancelled() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
