@@ -52,6 +52,12 @@ export function unlistedModelLine(route: { model: string; provider: string }, wh
   const name = providerName(route.provider);
   return `${route.model} on ${name} did not run because it is not in the current model list; ${another(whom)}.`;
 }
+/** The line for an automation's run that could not read the model list because Elpis had no connection to its runtime
+ * for `minutes`: the model was never judged. Without a model it names the automation. */
+export function unconnectedLine(route: { model: string; provider: string } | null, minutes: number) {
+  const who = route ? `${route.model} on ${providerName(route.provider)}` : "This automation";
+  return `${who} did not run because Elpis could not connect to its runtime within ${minutes} minutes; press Run now to try again.`;
+}
 export function quotaFailure(error: unknown) {
   const details = error as { errorKind?: string; message?: string } | null | undefined;
   return (

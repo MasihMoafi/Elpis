@@ -95,13 +95,21 @@ test("rules that cannot run are refused with what is wrong", () => {
   );
 });
 
-/** `models`: the current model list, per connection ("" is the engine's own list); `providers`: the subscriptions. */
+/** `models`: the current model list, per connection ("" is the engine's own list); `providers`: the subscriptions;
+ * `offline`: how many reads of the list fail first as they do while Elpis is not connected (Infinity: it never is). */
 function harness(
   start: number,
-  { models = {}, providers = {} }: { models?: Record<string, string[]>; providers?: object } = {},
+  {
+    models = {},
+    providers = {},
+    offline = 0,
+  }: { models?: Record<string, string[]>; providers?: object; offline?: number } = {},
 ) {
   let clock = start,
-    pending: { fn: () => void; due: number } | null = null;
+    sets = 0,
+    busy = () => false;
+  const pending = new Set<{ fn: () => void; due: number }>();
+  const reads: number[] = [];
   const sent: { id: string; text: string; automatic: boolean }[] = [],
     sends: Record<string, unknown>[] = [],
     made: { id: string; cwd?: string; name: string; automatic: boolean; model?: string; provider?: string }[] = [];
@@ -116,6 +124,9 @@ function harness(
       sends.push({ id, ...body });
     },
     async models(options: { provider?: string } = {}) {
+      reads.push(clock);
+      // As bridge/client-rpc.mts rejects while the runtime connection is closed.
+      if (reads.length <= offline) throw Object.assign(new Error("Elpis is disconnected"), { status: 503 });
       const listed = models[options.provider ?? ""];
       if (!listed) throw new Error("This connection needs a saved API address before Elpis can list its models.");
       return { data: listed.map(model => ({ model })) };
@@ -126,11 +137,13 @@ function harness(
   };
   const timers = {
     set(fn: () => void, ms: number) {
-      pending = { fn, due: clock + ms };
-      return pending;
+      const handle = { fn, due: clock + ms };
+      pending.add(handle);
+      sets++;
+      return handle;
     },
     clear(handle: object) {
-      if (pending === handle) pending = null;
+      pending.delete(handle as { fn: () => void; due: number });
     },
   };
   return {
@@ -139,16 +152,23 @@ function harness(
     sent,
     sends,
     made,
+    reads,
     now: () => clock,
-    /** Moves the clock and fires the timer if it came due; waits for the run to finish. */
+    /** Lets advance() wait for the schedule's runs. */
+    watch(schedule: { busy: () => boolean }) {
+      busy = schedule.busy;
+    },
+    /** Moves the clock and fires the timers that came due; waits until the runs they start finish or wait on a timer. */
     async advance(to: number) {
       clock = to;
-      const due = pending;
-      if (due && due.due <= clock) {
-        pending = null;
-        due.fn();
-      }
+      const due = [...pending].filter(item => item.due <= clock).sort((a, b) => a.due - b.due);
+      for (const item of due) pending.delete(item);
+      for (const item of due) item.fn();
+      const before = sets;
       await new Promise(resolve => setTimeout(resolve, 20));
+      // A run writes its record to disk before it ends; a slow disk (GitHub's runners) needs more than 20 ms.
+      for (let waited = 0; due.length && busy() && sets === before && waited < 5000; waited += 5)
+        await new Promise(resolve => setTimeout(resolve, 5));
     },
   };
 }
@@ -190,6 +210,7 @@ test("a new chat every run, a one-time task ends, and a paused task does not run
   const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "elpis-schedule-")), "tasks.json");
   const h = harness(at(2026, 11, 4, 8, 0));
   const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  h.watch(schedule); // Run now below must not meet the timed run still writing its record ("running now").
   const once = await schedule.create({
     title: "Report",
     prompt: "Write the report",
@@ -298,6 +319,69 @@ test("a task whose model cannot run records a failed run that names it, and star
   await assert.rejects(reread.create({ title: "x", prompt: "x", rule: daily, effort: "high" }), /Choose a model/);
   await schedule.close();
   await reread.close();
+});
+
+// 14 Nov: uni-assist and job hunter, missed overnight, ran as the app started, read the model list before Elpis had
+// connected to its runtime, and failed as "not in the current model list (Elpis is disconnected)".
+/** A Codex Sol task due at 07:00, saved while connected; then the app starts at 07:43 with `start`'s harness. */
+async function missedAtStart(start: Parameters<typeof harness>[1]) {
+  const file = path.join(await fs.mkdtemp(path.join(os.tmpdir(), "elpis-schedule-")), "tasks.json");
+  const before = harness(at(2026, 11, 13, 20, 0), { models: { "": ["gpt-6.1-sol"] } });
+  const saved = createSchedule({ client: before.client, file, now: before.now, timers: before.timers });
+  const sol = { model: "gpt-6.1-sol", effort: "high" };
+  await saved.create({ title: "Uni-assist", prompt: "Brief me", rule: rule("20261101T070000", "FREQ=DAILY"), target: "new", ...sol });
+  await saved.close();
+  const h = harness(at(2026, 11, 14, 7, 43), start);
+  const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  h.watch(schedule);
+  await schedule.list();
+  await h.advance(h.now()); // the missed run starts
+  return { h, schedule };
+}
+const latest = async (schedule: ReturnType<typeof createSchedule>) => (await schedule.list())[0]!.runs[0];
+
+test("a run that starts before Elpis is connected waits for the model list, then runs on its own model", async () => {
+  const { h, schedule } = await missedAtStart({ models: { "": ["gpt-6.1-sol", "gpt-6-luna"] }, offline: 3 });
+  assert.equal(h.made.length, 0, "nothing starts while the list cannot be read");
+  for (let second = 1; h.made.length === 0 && second < 60; second++) await h.advance(at(2026, 11, 14, 7, 43) + second * 1000);
+  assert.equal(h.reads.length, 4, "three failed reads, then the list");
+  assert.deepEqual([h.made[0]!.model, h.sends[0]!.effort], ["gpt-6.1-sol", "high"], "its own model, no other");
+  assert.equal((await latest(schedule))!.error, null);
+  await schedule.close();
+});
+
+test("a model absent from a list that was read still fails with the same line, and no chat starts", async () => {
+  const { h, schedule } = await missedAtStart({ models: { "": ["gpt-6-luna"] }, offline: 2 });
+  for (let second = 1; second < 10; second++) await h.advance(at(2026, 11, 14, 7, 43) + second * 1000);
+  assert.equal(
+    (await latest(schedule))!.error,
+    "gpt-6.1-sol on ChatGPT did not run because it is not in the current model list; choose another model for this automation.",
+  );
+  assert.equal(h.made.length, 0);
+  await schedule.close();
+});
+
+test("a run whose Elpis never connects fails after three minutes with that reason, never as an unlisted model", async () => {
+  const { h, schedule } = await missedAtStart({ models: { "": ["gpt-6.1-sol"] }, offline: Infinity });
+  await h.advance(at(2026, 11, 14, 7, 45));
+  assert.equal(await latest(schedule), undefined, "still waiting after two minutes");
+  for (let second = 120; second <= 200; second++) await h.advance(at(2026, 11, 14, 7, 43) + second * 1000);
+  const run = (await latest(schedule))!;
+  assert.equal(
+    run.error,
+    "gpt-6.1-sol on ChatGPT did not run because Elpis could not connect to its runtime within 3 minutes; press Run now to try again.",
+  );
+  assert.equal(run.scheduledFor, at(2026, 11, 14, 7, 0));
+  assert.equal(h.made.length, 0);
+  await schedule.close();
+});
+
+test("closing the app while a run waits for the connection leaves it to run at the next start", async () => {
+  const { schedule } = await missedAtStart({ offline: Infinity });
+  await schedule.close();
+  const [task] = await schedule.list();
+  assert.equal(task!.runs.length, 0, "no failed run recorded");
+  assert.equal(task!.nextRunAt, at(2026, 11, 14, 7, 0), "still due");
 });
 
 test("a task saved before automations had a model still runs on the app's default", async () => {

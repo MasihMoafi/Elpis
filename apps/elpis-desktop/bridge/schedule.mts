@@ -9,7 +9,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { BridgeError, object, projectFolder, text, threadId as chatId } from "./validate.mts";
 import { describeRule, legacyRule, nextRun, parseRule } from "./schedule-rules.mts";
-import { quotaStopLine, unlistedModelLine, workflowModelRoutes, workflowRoute } from "./workflow-models.mts";
+import {
+  quotaStopLine,
+  unconnectedLine,
+  unlistedModelLine,
+  workflowModelRoutes,
+  workflowRoute,
+} from "./workflow-models.mts";
 
 type Board = { nodes: unknown[] };
 type Workflow = { id: string; name: string; board?: Board | undefined };
@@ -54,7 +60,11 @@ type Client = {
 
 const TARGETS = ["reuse", "new"],
   RUN_LIMIT = 50,
-  LONGEST_WAIT = 2 ** 31 - 1;
+  LONGEST_WAIT = 2 ** 31 - 1,
+  /** How long a run waits for Elpis to connect to its runtime before it fails (14 Nov). */
+  CONNECT_WAIT = 3 * 60_000,
+  /** Thrown by a run still waiting for the connection when the app closes: not recorded, so it runs at the next start. */
+  STOPPED = new Error("Elpis closed before the run started");
 
 const routeOf = (task: Task): Route | null =>
   task.model ? { model: task.model, provider: task.provider ?? null, effort: task.effort ?? null } : null;
@@ -87,6 +97,7 @@ export function createSchedule({
     closed = false,
     writing = Promise.resolve();
   const running = new Map<string, Promise<ReturnType<typeof shown>>>(); // task id -> its run in flight
+  const pauses = new Set<() => void>(); // runs waiting for the connection
   const loaded = (async () => {
     try {
       const saved = JSON.parse(await fs.readFile(file, "utf8")) as { tasks?: (Task & { anchor?: number })[] };
@@ -114,14 +125,55 @@ export function createSchedule({
     return task;
   };
 
+  /** Waits `ms` on the schedule's timers; close() ends every wait at once. */
+  function pause(ms: number) {
+    return new Promise<void>(resolve => {
+      const handle = timers.set(() => {
+        pauses.delete(stop);
+        resolve();
+      }, ms);
+      (handle as { unref?: () => void } | undefined)?.unref?.();
+      const stop = () => {
+        timers.clear(handle);
+        resolve();
+      };
+      pauses.add(stop);
+    });
+  }
+
+  /** The current model list for a run. While Elpis has no connection to its runtime (at its start, or reconnecting)
+   * the read fails with 503 or 504; the run then waits, up to `wait` ms, and nothing is judged until the list is read
+   * (14 Nov: two runs missed overnight failed at the app's start as "not in the current model list"). */
+  async function readModels(route: Route | null, wait: number) {
+    const named = route && { model: route.model, provider: workflowRoute(route.model, route.provider ?? "").provider };
+    const deadline = now() + wait;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await client.models!(route?.provider ? { provider: route.provider } : {});
+      } catch (error) {
+        if (![503, 504].includes((error as { status?: number })?.status ?? 0)) {
+          // Connected, but this list cannot be read: a task without a model does not need it.
+          if (!named) return null;
+          throw new BridgeError(`${unlistedModelLine(named, "automation")} (${(error as Error).message})`);
+        }
+        if (closed) throw STOPPED;
+        const ms = Math.min(1000 * 2 ** attempt, 10_000, deadline - now());
+        if (ms <= 0 && !wait)
+          throw new BridgeError("Elpis is not connected to its runtime, so the model could not be checked; try again", 503);
+        if (ms <= 0) throw new BridgeError(unconnectedLine(named, Math.round(wait / 60_000)), 503);
+        await pause(ms);
+        if (closed) throw STOPPED;
+      }
+    }
+  }
+
   /** Throws the one line saying why the route cannot run: its model is not in the current list, or its subscription's
-   * plan limit is reached. `quota`: also ask the subscriptions (at run time; a task being saved only needs the list). */
-  async function checkRoute(route: Route, quota: boolean) {
+   * plan limit is reached. `quota`: also ask the subscriptions (at run time; a task being saved only needs the list).
+   * `wait`: how long a run waits for Elpis to connect before the list is read; a task being saved does not wait. */
+  async function checkRoute(route: Route, quota: boolean, wait = 0) {
     const named = { model: route.model, provider: workflowRoute(route.model, route.provider ?? "").provider };
     if (!client.models) return;
-    const listed = await client.models(route.provider ? { provider: route.provider } : {}).catch((error: Error) => {
-      throw new BridgeError(`${unlistedModelLine(named, "automation")} (${error.message})`);
-    });
+    const listed = (await readModels(route, wait)) ?? { data: [] };
     if (!(listed?.data ?? []).some(item => item.model === route.model))
       throw new BridgeError(unlistedModelLine(named, "automation"));
     if (!quota || !client.providers) return;
@@ -172,8 +224,10 @@ export function createSchedule({
     let threadId: string | null | undefined = task.target === "reuse" ? task.threadId : null;
     // A chat that already exists keeps its own model; a new one starts on the task's, or on the app's default.
     const route = threadId ? null : routeOf(task);
+    // Every run first waits for Elpis to be connected; one with a model reads the list it is judged by.
+    if (route) await checkRoute(route, true, CONNECT_WAIT);
+    else if (client.models) await readModels(null, CONNECT_WAIT);
     if (!threadId) {
-      if (route) await checkRoute(route, true);
       const made = await client.createThread({
         ...(task.cwd ? { cwd: task.cwd } : {}),
         ...(route ? { model: route.model, ...(route.provider ? { provider: route.provider } : {}) } : {}),
@@ -195,6 +249,7 @@ export function createSchedule({
       try {
         record.threadId = await deliver(task);
       } catch (error) {
+        if (error === STOPPED) return shown(task);
         record.error = error instanceof Error ? error.message : String(error);
         // The kept chat was deleted: the next run starts a new one.
         if (task.target === "reuse" && /not found|no longer exists|unknown thread/i.test(record.error))
@@ -359,6 +414,7 @@ export function createSchedule({
     async close() {
       closed = true;
       if (timer) timers.clear(timer);
+      for (const stop of pauses) stop();
       await Promise.allSettled(running.values());
       await writing;
     },
