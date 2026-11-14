@@ -4,6 +4,9 @@
 # build VM is needed. Put GitHub's build of this commit in out/ first: `node scripts/actions-build.mts` in apps/elpis-desktop.
 #   ENGINE_DIR  a folder with codex, codex-code-mode-host and bwrap (a CI build); default: the installed engine.
 #   ELECTRON_DIST  an Electron folder; default: the checkout's, else the installed app's (no download).
+#   ELPIS_STAGE_DIR  only lay the package out in this new folder and stop before `snap pack` (the AppImage is made
+#                    from it: scripts/build-appimage.sh, run by .github/workflows/desktop-packages.yml).
+# Not run on Masih's laptop: GitHub builds the desktop packages (docs/LOCAL_BUILD_RULES.md).
 set -euo pipefail
 VERSION=${1:-0.5.3}
 R=$(cd "$(dirname "$0")/.." && pwd -P); APP=$R/apps/elpis-desktop
@@ -11,14 +14,14 @@ commit=$(git -C "$R" rev-parse HEAD)
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)
 [[ "$built" == "$commit" ]] || { [[ -n "$built" ]] && git -C "$R" diff --quiet "$built" "$commit" -- apps/elpis-desktop ':!apps/elpis-desktop/scripts'; } \
   || { echo "apps/elpis-desktop/out is not built from $commit: put GitHub's build there, (cd apps/elpis-desktop && node scripts/actions-build.mts)" >&2; exit 1; }
-installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)")
 if [[ -n "${ENGINE_DIR:-}" ]]; then codex=$ENGINE_DIR/codex; host=$ENGINE_DIR/codex-code-mode-host; bwrap=$ENGINE_DIR/bwrap
-else codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi
+else installed=$(dirname "$(readlink -f ~/.local/bin/elpis-next)"); codex=$installed/codex; host=$installed/codex-code-mode-host; bwrap=$installed/../codex-resources/bwrap; fi
 for f in "$codex" "$host" "$bwrap"; do [[ -x "$f" ]] || { echo "missing engine file: $f" >&2; exit 1; }; done
 bridge=$R/tools/elpis-claude
 [[ -d "$bridge/node_modules/@agentclientprotocol/claude-agent-acp" ]] || { echo "run npm ci --omit=dev in tools/elpis-claude" >&2; exit 1; }
 
-mkdir -p "$HOME/.cache/elpis-tests"; STAGE=$(mktemp -d "$HOME/.cache/elpis-tests/elpis-snap.XXXXXX"); S=$STAGE/prime
+mkdir -p "$HOME/.cache/elpis-tests"; STAGE=$(mktemp -d "$HOME/.cache/elpis-tests/elpis-snap.XXXXXX"); S=${ELPIS_STAGE_DIR:-$STAGE/prime}
+[[ -z "${ELPIS_STAGE_DIR:-}" || ! -e "$S" ]] || { echo "ELPIS_STAGE_DIR must not exist yet: $S" >&2; exit 1; }
 OUT=${ELPIS_SNAP_DIR:-$HOME/.cache/elpis-tests/snap}; mkdir -p "$OUT"
 
 # The desktop app and Electron, the renderer with this checkout's path replaced (as build-deb.sh does).
@@ -27,6 +30,7 @@ electron=${ELECTRON_DIST:-$APP/node_modules/electron/dist}
 cp -r "$APP/out" "$STAGE/out"
 real_app=$(dirname "$(readlink -f "$APP/node_modules")")
 (rg -0 -l -F -e "$APP" -e "$real_app" "$STAGE/out" || true) | xargs -0 -r sed -i -e "s|$APP|/snap/elpis-agent/current/desktop/app|g" -e "s|$real_app|/snap/elpis-agent/current/desktop/app|g"
+mkdir -p "$S"
 node "$APP/desktop/package.mts" --source "$APP" --destination "$S/desktop" --electron-dist "$electron" --out-directory "$STAGE/out" > "$STAGE/manifest.json"
 find "$S/desktop/runtime/electron/locales" -name '*.pak' ! -name 'en-US.pak' -delete
 
@@ -167,9 +171,11 @@ python3 -c 'import sys, yaml; yaml.safe_load(open(sys.argv[1]))' "$S/meta/snap.y
 # Licence notices for everything the snap carries or bundles.
 node "$APP/scripts/third-party-notices.mts" "$S" "$S/THIRD-PARTY-NOTICES.txt"; cp "$R/LICENSE" "$S/LICENSE"
 
-# No personal data: nothing may name the builder's home folder or git email.
+# No personal data: nothing may name the builder's home folder or git email. (On GitHub the home is the runner's,
+# /home/runner, which the engine's build paths name; it is no one's.)
 email=$(git -C "$R" config user.email || true)
-if rg -l -F -e "$HOME/" ${email:+-e "$email"} "$S" || find "$S" -type l -lname "$HOME/*" | rg .; then echo "The snap names the builder's home or email; not built." >&2; exit 1; fi
+if [[ "${GITHUB_ACTIONS:-}" != true ]] && rg -l -F -e "$HOME/" ${email:+-e "$email"} "$S" || find "$S" -type l -lname "$HOME/*" | rg .; then echo "The snap names the builder's home or email; not built." >&2; exit 1; fi
+if [[ -n "${ELPIS_STAGE_DIR:-}" ]]; then gio trash "$STAGE" 2>/dev/null || rm -rf "$STAGE"; echo "$S staged from ${commit:0:9}"; exit 0; fi
 snap pack --compression=xz "$S" "$OUT" >/dev/null
 f="$OUT/elpis-agent_${VERSION}_amd64.snap"
 (cd "$OUT" && sha256sum "$(basename "$f")" > "$(basename "$f").sha256")
