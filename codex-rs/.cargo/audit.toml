@@ -19,6 +19,10 @@ ignore = [
     "RUSTSEC-2026-0511", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
     "RUSTSEC-2026-0512", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
     "RUSTSEC-2026-0514", # hickory-resolver: DNSSEC validation (dnssec feature not enabled, code not compiled in)
+    # Accepted 2026-11-14 at Masih's word, on the same evidence: three more DNSSEC proof faults (NSEC and NSEC3 at a zone cut) in hickory-proto 0.25.2, no fixed release.
+    "RUSTSEC-2026-0530", # hickory-proto: DNSSEC validation, parent-side NSEC (dnssec feature not enabled, code not compiled in)
+    "RUSTSEC-2026-0531", # hickory-proto: DNSSEC validation, child-side NSEC or NSEC3 (dnssec feature not enabled, code not compiled in)
+    "RUSTSEC-2026-0532", # hickory-proto: DNSSEC validation, parent-side NSEC3 (dnssec feature not enabled, code not compiled in)
     "RUSTSEC-2026-0491", # REACHABLE on Linux/Windows: the proxy resolves hostnames with rama's default HickoryDns and decodes DNS replies; a reply from the DNS server's address can force a short ~18 MB allocation (DoS)
     "RUSTSEC-2026-0194", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     "RUSTSEC-2026-0195", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
