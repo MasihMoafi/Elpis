@@ -18,7 +18,7 @@ on:
         default: ''
   push:
     tags: ['v*']
-    branches: ['build/g5-desktop-packages']   # DEV ONLY: removed before merge
+    branches: ['build/g5b-desktop-packages']   # DEV ONLY: removed before merge
 
 permissions:
   contents: read
@@ -294,7 +294,7 @@ jobs:
   # The AppImage of an earlier release, started as above on Ubuntu 22.04 (only when `released` is set). It reports;
   # it does not fail the run.
   released:
-    if: (github.event_name == 'workflow_dispatch' && inputs.released != '') || github.ref == 'refs/heads/build/g5-desktop-packages'
+    if: (github.event_name == 'workflow_dispatch' && inputs.released != '') || github.ref == 'refs/heads/build/g5b-desktop-packages'
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     env:
