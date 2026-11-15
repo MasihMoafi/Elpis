@@ -22,7 +22,7 @@ export function createProviderTurn({
   recordAccounts, fullFor, cancelRelays, ws, toTui, notify, threadCwd, threadSeen, childThreads,
   childIds, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort,
   materializedProviders, sessionModel, threadAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode,
-  tokenSums, ctxChars, devChars, addChars, transcriptOf, lastTurnUsage, sendUsage, ensureAcp, catalogFor,
+  tokenSums, ctxChars, devChars, addChars, transcriptOf, lastTurnUsage, sendUsage, ensureAcp, catalogFor, dropThreadSession, releaseUnusedAcps,
   engineCall, elpisInstructions, subagentsAllowed, activeTurns, reconnects, pendingMirrors, priorTranscript,
   askTui, newLane, runNext,
 }: Dependencies) {
@@ -98,7 +98,7 @@ export function createProviderTurn({
     const accountId = agent.key === "claude" ? claudeAccounts.activeId() : null;
     let lastClaudeMessageId = null;
     try {
-      const { acp, sessionId, freshSession, ask, subagents, policy } = await prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sessionMode, devChars, ensureAcp, catalogFor, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd });
+      const { acp, sessionId, freshSession, ask, subagents, policy } = await prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sessionMode, devChars, ensureAcp, catalogFor, dropThreadSession, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd });
       sessionReady(sessionId);
       // The chat's updates draw into this turn; a subagent's come under its own ACP session and
       // draw into its child thread (see spawnSubagent). The turn hears only its own sessions.
@@ -388,7 +388,9 @@ export function createProviderTurn({
     }
     cancelRelays(ws, threadId, turnId);
     turnState.toolsIdle.splice(0).forEach((r) => r());
-    return completeProviderTurn({ now, updateStore, sessions, activeTurns, notify, announceLimits, recordAccounts, log, runNext, lastTurnUsage }, { threadId, turnId, lead, items, status, error, startedAt, t0, lastClaudeMessageId, turnState, agent, firstTokenAt, finishTurn });
+    const outcome = await completeProviderTurn({ now, updateStore, sessions, activeTurns, notify, announceLimits, recordAccounts, log, runNext, lastTurnUsage }, { threadId, turnId, lead, items, status, error, startedAt, t0, lastClaudeMessageId, turnState, agent, firstTokenAt, finishTurn });
+    releaseUnusedAcps();
+    return outcome;
   }
 
   return claudeTurn;

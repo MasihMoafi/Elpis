@@ -9,7 +9,7 @@ import type { GlobalRequest } from "./bridge-types.mts";
 import type { ClientRouterDependencies } from "./bridge-connection.mts";
 
 /** Route one frontend connection's requests to its owning provider or engine. */
-export function createClientRouter({ AGENTS, HOME, acps, activeTurns, answerChild, appMcpConfig, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, deleteThread, deletedThreads, deletingThreads, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, recoverClaudeTurn, relayed, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, workflowRequest, workflowToolConns, ws }: ClientRouterDependencies) {
+export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, agentOf, answerChild, appMcpConfig, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws }: ClientRouterDependencies) {
   const stringRecord = (value: unknown): value is Record<string, string> => wireObject(value) && Object.values(value).every(v => typeof v === "string");
   const bridgedModel = (value: string) => isBridged(value);
   function prepareOpening(msg: GlobalRequest) {
@@ -88,6 +88,10 @@ export function createClientRouter({ AGENTS, HOME, acps, activeTurns, answerChil
       const subscribed = subscriptions.get(ws)?.delete(tid);
       for (const [id, relay] of relayed) if (relay.threadId === tid && relay.clients.delete(ws)) {
         sendClient(ws, { method: "serverRequest/resolved", params: { threadId: relay.message.params.threadId, requestId: id } });
+      }
+      if (!activeTurns.has(tid) && !(queues.get(tid)?.length) && !viewers(tid, true).length) {
+        dropThreadSession(tid);
+        if (owner.ws !== ws) for (const c of contexts) c.releaseIfUnused();
       }
       // The provider runtime still needs its engine subscription for confirmed permissions.
       toTui({ id: msg.id, result: { status: subscribed ? "unsubscribed" : "notSubscribed" } });
@@ -174,7 +178,12 @@ export function createClientRouter({ AGENTS, HOME, acps, activeTurns, answerChil
       }
       const choice = permissionWrites.get(msg.id);
       if (choice?.settings.permissions && choice.settings.permissions !== p.permissions) permissionWrites.delete(msg.id);
-      if (typeof p.model === "string" && bridgedModel(p.model)) { claudeModel.set(p.threadId, p.model); claimProvider(p.threadId); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`); }
+      if (typeof p.model === "string" && bridgedModel(p.model)) {
+        const live = sessions.get(p.threadId);
+        const nextAgent = agentOf(p.model)?.key;
+        if (live && nextAgent && live.agent !== nextAgent && !activeTurns.has(p.threadId)) dropThreadSession(p.threadId);
+        claudeModel.set(p.threadId, p.model); claimProvider(p.threadId); p.model = null; log(`thread ${p.threadId} -> ${claudeModel.get(p.threadId)}`);
+      }
       else if (typeof p.model === "string") {
         if (activeTurns.has(p.threadId)) { toTui({ id: msg.id, error: { code: -32600, message: "Wait for the active provider turn to finish before switching this conversation to a native model." } }); return; }
         pendingNativeRoutes.set(msg.id, { threadId: p.threadId, model: p.model, ...(p.effort === undefined ? {} : { effort: p.effort }) });
@@ -277,7 +286,8 @@ export function createClientRouter({ AGENTS, HOME, acps, activeTurns, answerChil
       return;
     }
     if (msg.method === "turn/interrupt" && structured.has(msg.params?.threadId)) {
-      acps.get(AGENTS[0].key)?.send({ method: "session/cancel", params: { sessionId: structured.get(msg.params.threadId) } });
+      const sessionId = structured.get(msg.params.threadId);
+      if (sessionId) acps.get(acpKey(AGENTS[0].key))?.send({ method: "session/cancel", params: { sessionId } });
       toTui({ id: msg.id, result: {} });
       return;
     }

@@ -1,7 +1,7 @@
 import type { Dependencies } from './bridge-turn-types.mts';
 import type { Acp } from "./bridge-acp.mts";
 import type { BridgeError, ClaudeTurnRequest, ProviderAgent, ProviderTurn } from "./bridge-types.mts";
-export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sessionMode, devChars, ensureAcp, catalogFor, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd }: Pick<Dependencies, "log" | "SUBAGENT_TOOLS" | "SUBAGENTS_DISABLED" | "mcpServersFor" | "acpServersFrom" | "loadStore" | "storeChain" | "updateStore" | "refuseSignedOut" | "smartPruneProxy" | "threadCwd" | "threadSeen" | "threadPolicy" | "smartPrune" | "sessions" | "threadMcp" | "threadEnvironment" | "claudeModel" | "claudeEffort" | "materializedProviders" | "sessionModel" | "MODE_NAMES" | "claudeModeOf" | "sessionMode" | "devChars" | "ensureAcp" | "catalogFor" | "engineCall" | "elpisInstructions" | "subagentsAllowed" | "pendingMirrors"> & {
+export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sessionMode, devChars, ensureAcp, catalogFor, dropThreadSession, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd }: Pick<Dependencies, "log" | "SUBAGENT_TOOLS" | "SUBAGENTS_DISABLED" | "mcpServersFor" | "acpServersFrom" | "loadStore" | "storeChain" | "updateStore" | "refuseSignedOut" | "smartPruneProxy" | "threadCwd" | "threadSeen" | "threadPolicy" | "smartPrune" | "sessions" | "threadMcp" | "threadEnvironment" | "claudeModel" | "claudeEffort" | "materializedProviders" | "sessionModel" | "MODE_NAMES" | "claudeModeOf" | "sessionMode" | "devChars" | "ensureAcp" | "catalogFor" | "dropThreadSession" | "engineCall" | "elpisInstructions" | "subagentsAllowed" | "pendingMirrors"> & {
     threadId: string;
     req: ClaudeTurnRequest;
     followup: boolean;
@@ -20,6 +20,11 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
         materializedProviders.add(threadId);
     }
     refuseSignedOut(agent);
+    let live = sessions.get(threadId);
+    if (!followup && live && (live.agent !== agent.key || (live.accountId ?? null) !== accountId)) {
+        dropThreadSession(threadId);
+        live = undefined;
+    }
     const acp = followup ? req.acp as Acp : await ensureAcp(agent);
     turnState.acp = acp;
     // The engine's confirmed policy only: the TUI puts its own choice on every turn/start,
@@ -32,7 +37,6 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
     const environment: Record<string, string> = managed ? { ...threadEnvironment.get(threadId), GH_TOKEN: '', GITHUB_TOKEN: '' } : {};
     const managedMain = managed && environment.ELPIS_MOTHER_ROLE === 'orchestrator';
     const subagents = !managedMain && await subagentsAllowed(cwd);
-    let live = sessions.get(threadId);
     let sessionId = null;
     let freshSession = false;
     // Smart Prune on: Claude's requests go through the proxy (`smartPruneProxy`).

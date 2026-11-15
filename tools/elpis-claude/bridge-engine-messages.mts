@@ -18,7 +18,7 @@ const errorMessage = (value: unknown) => wireObject(value) && typeof value.messa
 const rpcError = (value: unknown) => wireObject(value) && typeof value.code === "number" && Number.isInteger(value.code);
 
 /** Reconcile native-engine replies and notifications with bridge state. */
-export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscriptionLimits, adoptHelper, agentOf, announceLimits, archivingThreads, authorityOf, automaticThreads, blockedAutomaticThreads, catalogFor, chatAccess, chatBack, checkIdle, claimProvider, claudeEffort, claudeModel, connectionId, deletingThreads, engine, engineCall, engineReqs, engineTurns, explicitChatChoices, failHelper, forkParent, fullFor, helperConns, helperScope, helperThreads, loadStore, log, markHelpers, missingThreadUntil, nameModel, noteAccess, notePlan, notify, now, openHelper, openingEnvironment, openingMcp, ownModel, pendingAdopt, pendingArchive, pendingChildList, pendingConfigRead, pendingDelegation, pendingHelperMark, pendingHelperTurns, pendingHelpers, pendingItemsList, pendingLimitsRead, pendingModelList, pendingNativeRoutes, pendingResume, pendingStart, pendingThreadList, pendingTurnsList, permissionChoices, permissionRefreshes, permissionWrites, providerOwners, queues, relayToTui, relayed, replayPlan, restrictHelper, resumeHistory, resumeOptions, resumeResults, sessions, settleRelay, shareHelper, signedOutModel, smartPrune, startingProviders, stopIfReduced, storeChain, storedChildren, subscriptions, threadCwd, threadEnvironment, threadMcp, threadPolicy, threadSeen, toOthers, toTui, unlistedClaudeThreads, updateStore, ws }: EngineMessageDependencies) {
+export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscriptionLimits, adoptHelper, agentOf, announceLimits, archivingThreads, authorityOf, automaticThreads, blockedAutomaticThreads, catalogFor, chatAccess, chatBack, checkIdle, claimProvider, claudeEffort, claudeModel, connectionId, deletingThreads, dropThreadSession, engine, engineCall, engineReqs, engineTurns, explicitChatChoices, failHelper, forkParent, fullFor, helperConns, helperScope, helperThreads, loadStore, log, markHelpers, missingThreadUntil, nameModel, noteAccess, notePlan, notify, now, openHelper, openingEnvironment, openingMcp, ownModel, pendingAdopt, pendingArchive, pendingChildList, pendingConfigRead, pendingDelegation, pendingHelperMark, pendingHelperTurns, pendingHelpers, pendingItemsList, pendingLimitsRead, pendingModelList, pendingNativeRoutes, pendingResume, pendingStart, pendingThreadList, pendingTurnsList, permissionChoices, permissionRefreshes, permissionWrites, providerOwners, queues, relayToTui, relayed, replayPlan, restrictHelper, resumeHistory, resumeOptions, resumeResults, sessions, settleRelay, shareHelper, signedOutModel, smartPrune, startingProviders, stopIfReduced, storeChain, storedChildren, subscriptions, threadCwd, threadEnvironment, threadMcp, threadPolicy, threadSeen, toOthers, toTui, unlistedClaudeThreads, updateStore, ws }: EngineMessageDependencies) {
   return async (line: string) => {
     let value: unknown;
     try { value = JSON.parse(line); } catch { ws.send(line); return; }
@@ -166,7 +166,7 @@ export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscrip
       if (!parsed.error) {
         claudeModel.delete(route.threadId); claudeEffort.delete(route.threadId);
         providerOwners.delete(route.threadId); resumeResults.delete(route.threadId);
-        sessions.delete(route.threadId);
+        dropThreadSession(route.threadId);
         await updateStore(store => {
           const record = store[route.threadId];
           if (record) { record.providerHistory = true; record.model = null; delete record.effort; record.nativeModel = route.model; }
@@ -184,8 +184,9 @@ export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscrip
       if (threadId !== undefined) {
       if (!parsed.error) {
         providerOwners.delete(threadId); claudeModel.delete(threadId); resumeResults.delete(threadId);
-        sessions.delete(threadId); threadSeen.delete(threadId); queues.delete(threadId);
+        threadSeen.delete(threadId); queues.delete(threadId);
         for (const watched of subscriptions.values()) watched.delete(threadId);
+        dropThreadSession(threadId);
       }
       if (/no rollout found/.test(parsed.error?.message ?? "")) {
         await storeChain();

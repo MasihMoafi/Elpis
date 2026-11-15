@@ -11,13 +11,14 @@
 // only explicit Bypass passes --dangerously-skip-permissions. Plan mode uses --mode plan.
 import { spawn, execFile } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { randomUUID } from "node:crypto";
+import { endGroup, endWorkers, trackWorker } from "./worker-lifecycle.mts";
 
 type ToolParameters = {
   [key: string]: unknown;
@@ -92,7 +93,7 @@ function approvalSocket(s: Session) {
     });
   });
   server.listen(path);
-  return { path, close: () => server.close() };
+  return { path, close: () => { server.close(); try { rmSync(path, { force: true }); } catch {} } };
 }
 
 let modelList: Promise<Model[]> | null = null;
@@ -162,7 +163,7 @@ function startProcess(s: Session) {
   if (gated) { writeHooks(); s.gate ??= approvalSocket(s); args.push("--add-dir", s.cwd, "--add-dir", HOOKS_DIR); }
   args.push("--print=");
   const env = gated ? { ...process.env, ELPIS_AGY_GATE: (s.gate as { path: string }).path, ELPIS_AGY_CWD: s.cwd, ELPIS_AGY_HOOKS: HOOKS_DIR } : process.env;
-  const proc = spawn(AGY, args, { cwd: s.cwd, env, stdio: ["pipe", "pipe", "pipe"] });
+  const proc = trackWorker(spawn(AGY, args, { cwd: s.cwd, env, detached: true, stdio: ["pipe", "pipe", "pipe"] }));
   s.proc = proc; s.flags = `${s.model}|${s.mode}`;
   let buf = "";
   proc.stdout.on("data", (d) => {
@@ -185,7 +186,7 @@ function startProcess(s: Session) {
     const turn = s.turn;
     if (turn) { s.turn = null; turn.cancelled ? turn.resolve({ stopReason: "cancelled" }) : turn.reject({ code: -32603, message: `Antigravity stopped (exit ${code})` }); }
   });
-  return new Promise<string | null | undefined>((resolve) => { s.initWaiters.push(resolve); setTimeout(() => resolve(null), 60_000); });
+  return new Promise<string | null | undefined>((resolve) => { s.initWaiters.push(resolve); setTimeout(() => resolve(null), 60_000).unref(); });
 }
 
 async function onEvent(s: Session, m: AgyEvent) {
@@ -302,7 +303,7 @@ async function handle(msg: ClientMessage) {
     case "session/prompt": {
       if (!s) throw { code: -32602, message: "unknown session" };
       if (s.turn) throw { code: -32603, message: "a turn is already running" };
-      if (s.proc && s.flags !== `${s.model}|${s.mode}`) { const old = s.proc; s.proc = null; old.kill("SIGTERM"); }
+      if (s.proc && s.flags !== `${s.model}|${s.mode}`) { const old = s.proc; s.proc = null; if (old.pid) void endGroup(old.pid); else old.kill("SIGTERM"); }
       if (!s.proc) await startProcess(s);
       if (!s.proc) throw { code: -32603, message: "Antigravity did not start" };
       const text = await promptText(s, p.prompt);
@@ -328,7 +329,14 @@ async function handle(msg: ClientMessage) {
       return { outcome: "queued", _meta: { delivery: "nextTurn" } };
     }
     case "session/delete":
-      if (s) { s.proc?.kill("SIGTERM"); s.gate?.close(); sessions.delete(p.sessionId as string); }
+      if (s) {
+        const proc = s.proc;
+        s.proc = null;
+        s.gate?.close();
+        sessions.delete(p.sessionId as string);
+        if (proc?.pid) await endGroup(proc.pid);
+        else proc?.kill("SIGTERM");
+      }
       return {};
     default:
       throw { code: -32601, message: `Antigravity adapter does not support ${msg.method}` };
@@ -355,4 +363,20 @@ process.stdin.on("data", (d) => {
     );
   }
 });
-process.stdin.on("end", () => { for (const s of sessions.values()) { s.proc?.kill("SIGTERM"); s.gate?.close(); } process.exit(0); });
+let closing = false;
+async function shutdown() {
+  if (closing) return;
+  closing = true;
+  for (const s of sessions.values()) {
+    if (s.proc?.pid) void endGroup(s.proc.pid);
+    else s.proc?.kill("SIGTERM");
+    s.proc = null;
+    s.gate?.close();
+  }
+  sessions.clear();
+  await endWorkers();
+  process.exit(0);
+}
+process.stdin.on("end", shutdown);
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

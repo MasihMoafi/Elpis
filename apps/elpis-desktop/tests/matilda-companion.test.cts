@@ -389,9 +389,14 @@ test('pinned Matilda says when the sidebar is full, and Tidy asks Elpis', async 
   const working = chat('busy', 'A chat at work', { status: { type: 'active', activeFlags: [] } });
   const asked: { text: string }[] = [];
   const more = { threads: [chat('elpis', 'Elpis', { motherAgent: true }), working, ...loose], readyThreadId: 'loose-0' };
+  let pinned = true;
   const f = await fixture({ width: 1100, height: 800, ...more,
     routes: {
-      '/api/love-spot/companion': () => ({ pinned: true, face: FACE_DATA_URL, threadId: null, favorite: null, music: null, reason: '' }),
+      '/api/love-spot/companion': body => {
+        if (body?.action === 'unpin') pinned = false;
+        if (body?.action === 'pin') pinned = true;
+        return { pinned, face: FACE_DATA_URL, threadId: null, favorite: null, music: null, reason: '' };
+      },
       '/api/threads/elpis/turns': body => { asked.push({ text: body?.text ?? '' }); return { turn: { id: 'router-1' }, routed: true }; },
     } });
   try {
@@ -401,10 +406,10 @@ test('pinned Matilda says when the sidebar is full, and Tidy asks Elpis', async 
     await note.waitFor();
     assert.match(await note.innerText(), /Your sidebar is filling up: 11 chats outside a project\. Shall Elpis tidy it\?/, 'the chat at work is not counted');
     await note.getByRole('button', { name: 'Tidy', exact: true }).click();
-    await page.waitForFunction(() => /I asked Elpis to tidy/.test(document.querySelector('[aria-label="Matilda says"]')?.textContent ?? ''));
-    assert.deepEqual(asked, [{ text: 'Tidy my chats: archive the leftovers and tell me what you archived.' }]);
-    await note.getByRole('button', { name: 'OK', exact: true }).click();
     await note.waitFor({ state: 'detached' });
+    assert.deepEqual(asked, [{ text: 'Tidy my chats: archive the leftovers and tell me what you archived.' }]);
+    await page.getByRole('button', { name: 'Pin Matilda', exact: true }).waitFor();
+    pinned = true;
     await page.reload();
     await page.getByRole('region', { name: 'Pinned Matilda', exact: true }).waitFor();
     await page.waitForTimeout(1200);

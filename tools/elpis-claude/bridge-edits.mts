@@ -1,23 +1,24 @@
 import { createProviderHistory } from "./bridge-history.mts";
 import { Acp } from "./bridge-acp.mts";
-import type { EngineCall,BridgeError,RequestId,BridgeMessage,StartPick,LiveSession,SavedSession,ProviderAgent,BridgeResponses,ThreadRequest } from "./bridge-types.mts";
+import type { EngineCall,BridgeError,RequestId,BridgeMessage,StartPick,SavedSession,ProviderAgent,ThreadRequest } from "./bridge-types.mts";
 import type { BridgeEnvironment } from "./bridge-server.mts";
 
 type Dependencies = Pick<BridgeEnvironment, "agentOf" | "claudeAccounts" | "log" | "storeChain" | "loadStoreSnapshot" | "updateStore" | "startingProviders"> & {
   claudeModel: Map<string, string>;
   threadCwd: Map<string, string>;
   ensureAcp: (agent: ProviderAgent) => Promise<Acp>;
+  dropThreadSession: (threadId: string) => void;
+  releaseUnusedAcps: () => void;
   engine: { stdin: { write: (data: string) => unknown } };
   engineCall: EngineCall;
   claudeTurnsOf: ReturnType<typeof createProviderHistory>["claudeTurnsOf"];
   pendingStart: Map<RequestId, StartPick>;
   connectionId: string;
-  sessions: Map<string, LiveSession>;
   toTui: (message: BridgeMessage) => void;
 };
 
 /** Keep provider history aligned when a person forks or rewinds a chat. */
-export function createProviderEdits({ agentOf, claudeModel, claudeAccounts, ensureAcp, threadCwd, log, storeChain, loadStoreSnapshot, claudeTurnsOf, engineCall, pendingStart, engine, startingProviders, connectionId, toTui, updateStore, sessions }: Dependencies) {
+export function createProviderEdits({ agentOf, claudeModel, claudeAccounts, ensureAcp, dropThreadSession, releaseUnusedAcps, threadCwd, log, storeChain, loadStoreSnapshot, claudeTurnsOf, engineCall, pendingStart, engine, startingProviders, connectionId, toTui, updateStore }: Dependencies) {
   // Esc-Esc "edit a previous message": revert drops a turn and every later one. Claude's turns
   // live in the bridge's store and Claude's own session, which the engine cannot see, so the
   // bridge drops them, gives Claude a fresh session seeded from the kept history, and has the
@@ -81,7 +82,7 @@ export function createProviderEdits({ agentOf, claudeModel, claudeAccounts, ensu
       const forked = await forkClaudeAfter(threadId, entry, kept.at(-1)?.claudeMessageId)
         .catch((e) => { log(`rewind fork failed, fresh session instead: ${e?.message ?? JSON.stringify(e)}`); return null; });
       await updateStore((st) => { const e = st[threadId] ?? {}; e.turns = (e.turns ?? []).filter((t) => keptIds.has(t.id)); delete e.sessions; if (forked) e.session = forked; else delete e.session; st[threadId] = e; });
-      sessions.delete(threadId);
+      dropThreadSession(threadId);
       const engineCut = engineTurns.find((t) => (t.startedAt ?? 0) >= cutAt);
       const result = engineCut
         ? await engineCall("thread/revert", { threadId, beforeTurnId: engineCut.id })
@@ -90,6 +91,8 @@ export function createProviderEdits({ agentOf, claudeModel, claudeAccounts, ensu
       toTui({ id: msg.id, result });
     } catch (e) {
       toTui({ id: msg.id, error: { code: -32603, message: `revert failed: ${(e as BridgeError)?.message ?? JSON.stringify(e)}` } });
+    } finally {
+      releaseUnusedAcps();
     }
   }
 

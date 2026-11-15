@@ -5,7 +5,7 @@ import { attachBridgeConnection } from "./bridge-connection.mts";
 import { createBridgeStore } from "./bridge-store.mts";
 import { wireObject } from "./bridge-wire.mts";
 import { writeJson } from "./bridge-json.mts";
-import type { RequestId, BridgeClient, BridgeMessage, HelperScope, ProviderOwner, RelayReply, Relay, BridgeContext, McpConfig, SavedHelper, EngineThread, Ceiling } from "./bridge-types.mts";
+import type { RequestId, BridgeClient, BridgeMessage, HelperScope, ProviderOwner, RelayReply, Relay, BridgeContext, McpConfig, SavedHelper, EngineThread, Ceiling, CatalogResult } from "./bridge-types.mts";
 // Elpis TUI <-ws-> bridge <-stdio-> real `elpis app-server` (everything else)
 //                         \-stdio-> claude-agent-acp (chat turns -> Claude)
 import { createBridgeServer, bridgeUrl } from "./shared-runtime.mts";
@@ -193,6 +193,7 @@ const ceilingOf = (threadId: string, d: SavedHelper) => explicitChatChoices.has(
 // A provider thread has one runtime owner. Other terminals subscribe to that runtime;
 // their requests and replies keep their own ids, including when both clients use id 1.
 const providerOwners = new Map<string, ProviderOwner>();
+const providerCatalogs = new Map<string, Promise<CatalogResult>>();
 const subscriptions = new Map<BridgeClient, Set<string>>(); // physical client -> threads it opened
 // A completed callback may be the last thing keeping a detached context alive. Defer the
 // check until its current cleanup (including any new queued work) has finished.
@@ -385,6 +386,7 @@ export type BridgeEnvironment = {
   helperCeiling: typeof helperCeiling;
   ceilingOf: typeof ceilingOf;
   providerOwners: typeof providerOwners;
+  providerCatalogs: typeof providerCatalogs;
   subscriptions: typeof subscriptions;
   BusyMap: typeof BusyMap;
   forwarded: typeof forwarded;
@@ -406,6 +408,6 @@ export type BridgeEnvironment = {
 
 export function startBridge() {
   wss.on("connection", socket => attachBridgeConnection(socket, {
-    HOME, permissionChoices, log, now, REVIEW_RULES, REVIEW_FORMAT, STRUCTURED_MODEL, STRUCTURED_SYSTEM, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, AUTONOMOUS_ORIGINS, REPLY_UPDATES, engineAgentsConfig, mcpServersFor, appMcpConfig, acpServersFrom, deletingThreads, archivingThreads, deletedThreads, loadStore, loadStoreSnapshot, updateStore, storeChain, STATE_DIR, claudeAccounts, claudeSignedOut, AGENTS, agentOf, signedOutModel, refuseSignedOut, acpErrorMessage, RECONNECT_MS, connectionDropped, RECONNECT_NOTE, readJson, nameModel, announceLimits, addSubscriptionLimits, smartPruneProxy, recordAccounts, clients, helperThreads, helperConns, workflowToolConns, relayed, chatAccess, TOOL_APPROVALS, automaticThreads, blockedAutomaticThreads, explicitChatChoices, helperScope, pendingHelpers, AUTHORITY, UNSANDBOXED, fullFor, lowest, helperCeiling, ceilingOf, providerOwners, subscriptions, BusyMap, forwarded, startingProviders, contexts, sendClient, viewers, relayToTui, settleRelay, cancelRelays, flushApprovals, decorateThread, stopping: runtime.stopping, checkIdle, workflows, chatBack, clearIdle
+    HOME, permissionChoices, log, now, REVIEW_RULES, REVIEW_FORMAT, STRUCTURED_MODEL, STRUCTURED_SYSTEM, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, AUTONOMOUS_ORIGINS, REPLY_UPDATES, engineAgentsConfig, mcpServersFor, appMcpConfig, acpServersFrom, deletingThreads, archivingThreads, deletedThreads, loadStore, loadStoreSnapshot, updateStore, storeChain, STATE_DIR, claudeAccounts, claudeSignedOut, AGENTS, agentOf, signedOutModel, refuseSignedOut, acpErrorMessage, RECONNECT_MS, connectionDropped, RECONNECT_NOTE, readJson, nameModel, announceLimits, addSubscriptionLimits, smartPruneProxy, recordAccounts, clients, helperThreads, helperConns, workflowToolConns, relayed, chatAccess, TOOL_APPROVALS, automaticThreads, blockedAutomaticThreads, explicitChatChoices, helperScope, pendingHelpers, AUTHORITY, UNSANDBOXED, fullFor, lowest, helperCeiling, ceilingOf, providerOwners, providerCatalogs, subscriptions, BusyMap, forwarded, startingProviders, contexts, sendClient, viewers, relayToTui, settleRelay, cancelRelays, flushApprovals, decorateThread, stopping: runtime.stopping, checkIdle, workflows, chatBack, clearIdle
   }));
 }

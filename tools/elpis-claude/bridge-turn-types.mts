@@ -81,6 +81,8 @@ export type Dependencies = {
     sendUsage: (threadId: string, turnId: string, last: UsageTotals | null) => void;
     ensureAcp: (agent: ProviderAgent) => Promise<Acp>;
     catalogFor: (agent: ProviderAgent) => Promise<CatalogResult>;
+    dropThreadSession: (threadId: string) => void;
+    releaseUnusedAcps: () => void;
     engineCall: EngineCall;
     elpisInstructions: (threadId: string, developerInstructions?: string | null) => Promise<string>;
     subagentsAllowed: (cwd: string | undefined) => Promise<boolean>;

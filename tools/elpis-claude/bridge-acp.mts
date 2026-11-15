@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { endGroup } from "./worker-lifecycle.mts";
 import { redactedLines } from "./log-redaction.mts";
 import { wireEnvelope,wireObject } from "./bridge-wire.mts";
 import { readAcpEvent,validAcpReply } from "./bridge-acp-events.mts";
@@ -47,11 +48,16 @@ export class Acp {
   declare bySession: Map<string, AcpHandlers>;
   declare loading: Set<string>;
   declare dead: string | undefined;
+  declare closing: boolean;
+  declare discovering: number;
   declare ready: Promise<unknown>;
   declare log: (message: string) => void;
   constructor(agent: ProviderAgent, log: (message: string) => void) {
     this.log = log;
-    this.proc = spawn("node", [agent.adapter], { env: { ...process.env, ...agent.env }, stdio: ["pipe", "pipe", "pipe"] });
+    this.closing = false;
+    this.discovering = 0;
+    this.proc = spawn("node", [agent.adapter], { env: { ...process.env, ...agent.env }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    this.proc.stdin.on("error", () => {});
     redactedLines(this.proc.stderr, clean => log(`${agent.key} acp stderr: ${clean.trim().slice(0, 300)}`));
     this.nextId = 1;
     this.pending = new Map();
@@ -62,7 +68,8 @@ export class Acp {
     this.loading = new Set(); // sessions being reloaded: their replayed history draws nowhere
     lineReader(this.proc.stdout, (line) => this.#handle(acpMessage(line)));
     this.proc.on("exit", (code) => {
-      this.dead = `the ${agent.label} ACP adapter exited (code ${code}). Is it installed at ${agent.adapter}?`;
+      this.dead ??= `the ${agent.label} ACP adapter exited (code ${code}). Is it installed at ${agent.adapter}?`;
+      if (this.proc.pid) void endGroup(this.proc.pid);
       for (const p of this.pending.values()) p.reject({ message: this.dead });
       this.pending.clear();
     });
@@ -115,5 +122,13 @@ export class Acp {
       this.send({ id: msg.id, error: { code: -32601, message: `client does not support ${msg.method}` } });
     }
   }
-  kill() { this.proc.kill(); }
+  kill() {
+    this.closing = true;
+    this.dead ??= "closed";
+    for (const p of this.pending.values()) p.reject({ message: this.dead });
+    this.pending.clear();
+    try { this.proc.stdin.end(); } catch {}
+    if (this.proc.pid) void endGroup(this.proc.pid);
+    else this.proc.kill("SIGTERM");
+  }
 }

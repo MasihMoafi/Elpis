@@ -78,7 +78,14 @@ export function MatildaCompanion() {
         </p>
       )}
       <div className="flex justify-end gap-2">
-        <Button variant="ghost" size="xs" onClick={nudge.later}>
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={() => {
+            nudge.later();
+            void act("unpin");
+          }}
+        >
           {nudge.tidy ? "Later" : "OK"}
         </Button>
         {nudge.tidy && (
@@ -86,7 +93,10 @@ export function MatildaCompanion() {
             size="xs"
             onClick={() => {
               setNudgeError("");
-              nudge.tidy?.().catch((cause: unknown) => setNudgeError(errorText(cause)));
+              nudge
+                .tidy?.()
+                .then(() => act("unpin"))
+                .catch((cause: unknown) => setNudgeError(errorText(cause)));
             }}
           >
             Tidy
