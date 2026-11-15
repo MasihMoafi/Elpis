@@ -1,7 +1,7 @@
 // S18, Masih 29 Oct: "those extra useless chats like the ones saying Task ID ... or chats I didn't start should not show in
 // my side-bar chats. I want that place to be organized". Pinned, Projects, Groups and Recents list only his own chats. Workflow
-// runs keep the Workflows section and agent runs (codex exec, including the "Task ID …" chats), orphaned agents and chats whose
-// maker is not listed sit in Background runs; both follow their switches, off by default. Nothing is lost or deleted.
+// runs keep the Workflows section (on by default; can be turned off) and agent runs (codex exec, including the "Task ID …" chats),
+// orphaned agents and chats whose maker is not listed sit in Background runs (off by default). Nothing is lost or deleted.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, CWD } = require('./parity-fixture.cts');
@@ -27,12 +27,27 @@ const open = (preferences = {}) => fixture({ threads: chats, readyThreadId: 'own
 type RowLocator = { locator(selector: string): { evaluateAll(fn: (items: HTMLElement[]) => (string | undefined)[]): Promise<(string | undefined)[]> } };
 const rows = (locator: RowLocator) => locator.locator('.thread-row[data-thread-id]').evaluateAll(items => [...new Set(items.map(row => row.dataset.threadId))].sort());
 
-test('by default the sidebar lists only the chats Masih started; agents, task runs, made chats and workflow runs stay out', async () => {
+test('by default the sidebar lists only his own chats in Recents and workflow runs in Workflows; agents, task runs and made chats stay out', async () => {
   const f = await open();
   try {
     const sidebar = f.page.locator('aside.sidebar');
     await sidebar.locator('.thread-row[data-thread-id="own-unnamed"]').waitFor();
-    const listed = await sidebar.locator('.thread-row[data-thread-id]').evaluateAll((rows: HTMLElement[]) => rows.map(row => row.dataset.threadId));
+    assert.deepEqual(await rows(sidebar.locator('section[aria-label="Recents"]')), OWN, 'Recents lists only his own chats');
+    assert.deepEqual(await rows(sidebar.locator('section[aria-label="Workflows"]')), ['workflow-run'], 'Workflows lists workflow runs');
+    const listed = await sidebar.locator('.thread-row[data-thread-id]').evaluateAll((items: HTMLElement[]) => items.map(row => row.dataset.threadId));
+    assert.deepEqual([...new Set(listed)].sort(), [...OWN, 'workflow-run'].sort(), 'only his own chats and workflow runs are rows');
+    for (const selector of ['section[aria-label="Background runs"]', '[aria-label="Agents whose parent is not listed"]'])
+      assert.equal(await sidebar.locator(selector).count(), 0, `nothing matches ${selector}`);
+    assert.deepEqual(f.posts.filter((post: { path: string }) => /archive|delete|trash/.test(post.path)), [], 'a display rule: nothing is archived or deleted');
+  } finally { await f.close(); }
+});
+
+test('turning Workflows off hides workflow runs too so only his own chats remain', async () => {
+  const f = await open({ sidebarWorkflows: false });
+  try {
+    const sidebar = f.page.locator('aside.sidebar');
+    await sidebar.locator('.thread-row[data-thread-id="own-unnamed"]').waitFor();
+    const listed = await sidebar.locator('.thread-row[data-thread-id]').evaluateAll((items: HTMLElement[]) => items.map(row => row.dataset.threadId));
     assert.deepEqual([...new Set(listed)].sort(), OWN, 'only his own chats are rows');
     for (const selector of ['section[aria-label="Background runs"]', 'section[aria-label="Workflows"]', '[aria-label="Agents whose parent is not listed"]'])
       assert.equal(await sidebar.locator(selector).count(), 0, `nothing matches ${selector}`);

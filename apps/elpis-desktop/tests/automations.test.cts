@@ -32,7 +32,7 @@ test('a new automation is listed with its schedule; Run now sends it and its run
     await row.getByRole('button', { name: 'Run now', exact: true }).click();
     await row.getByRole('button', { name: 'Open chat', exact: true }).waitFor();
     assert.deepEqual(f.turns.map((turn: { text: string; automatic: boolean }) => [turn.text, turn.automatic]), [['Check last night\'s builds', true]]);
-    assert.equal(f.chats.at(-1).name, 'Morning check', 'its chat is named after it');
+    assert.equal(f.chats.at(-1).name, 'Workflows · Morning check', 'its chat is named after it');
 
     await row.getByRole('button', { name: 'Open chat', exact: true }).click();
     await page.locator('.message').filter({ hasText: 'All builds are green.' }).waitFor();
@@ -113,7 +113,7 @@ test('an automation keeps the model and effort chosen in its editor, the card na
     await row.getByRole('button', { name: 'Run now', exact: true }).click();
     await row.getByRole('button', { name: 'Open chat', exact: true }).waitFor();
     const chat = f.chats.at(-1) as { name: string; model?: string; provider?: string };
-    assert.deepEqual([chat.name, chat.model, chat.provider], ['Job hunt', 'sol', 'openai'], 'its chat starts on Sol');
+    assert.deepEqual([chat.name, chat.model, chat.provider], ['Workflows · Job hunt', 'sol', 'openai'], 'its chat starts on Sol');
     assert.equal((f.turns.at(-1) as { effort?: string }).effort, 'medium');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

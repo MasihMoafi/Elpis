@@ -132,8 +132,12 @@ test("every setting the app can save is accepted by the desktop store", async t 
   a.preferences.savePreferences({ ...a.preferences.DEFAULT_PREFERENCES });
   await f.settle();
   assert.deepEqual(a.errors, []);
-  // S18, Masih 29 Oct: the sidebar's Workflows section is off by default.
-  assert.equal(JSON.parse(createStateStore(f.file).read()["elpis-preferences-v1"]).sidebarWorkflows, false);
+  // The sidebar's Workflows section starts on by default and can be toggled through the desktop store.
+  assert.equal(JSON.parse(createStateStore(f.file).read()["elpis-preferences-v1"]).sidebarWorkflows, true);
+  a.preferences.savePreferences({ sidebarWorkflows: false });
+  await f.settle();
+  assert.deepEqual(a.errors, []);
+  assert.equal(a.preferences.readPreferences().sidebarWorkflows, false);
   a.preferences.savePreferences({ sidebarWorkflows: true });
   await f.settle();
   assert.deepEqual(a.errors, []);
