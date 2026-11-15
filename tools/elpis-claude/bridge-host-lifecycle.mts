@@ -1,6 +1,6 @@
 import type { BridgeClient, BridgeContext } from "./bridge-types.mts";
 import { createBridgeServer, stopBridgeListener, shutdownRuntime, createDrainServer, drainFile, probe, startToken, allowEngines } from "./shared-runtime.mts";
-import { closeWhenQuiet } from "./handover.mts";
+import { closeWhenQuiet, currentDrain } from "./handover.mts";
 import { WorkflowRunner } from "./workflow-runner.mts";
 import { spawn } from "node:child_process";
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
@@ -64,7 +64,7 @@ export function createHostLifecycle({ HOME, wss, clients, contexts, helperConns,
         renameSync(`${file}.tmp`, file);
     }
     async function startDrain(successor: string) {
-        if (stopping || draining)
+        if (stopping || draining || currentDrain())
             return;
         const launchSuccessor = () => spawn(process.execPath, [join(dirname(successor), "shared-runtime.mts"), successor], { detached: true, stdio: ["ignore", "ignore", "inherit"], cwd: HOME }).unref();
         workflows().release(); // the newer runtime resumes the runs from their journals

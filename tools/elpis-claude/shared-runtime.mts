@@ -89,13 +89,19 @@ async function retireUnattachedBridge(rt: Runtime, state: BridgeState) {
   return true;
 }
 
-async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIdentity): Promise<{ engine: string; running: string } | undefined> {
+async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIdentity): Promise<{ engine: string; running: string; deferred?: boolean } | undefined> {
   const state = readJson<BridgeState>(rt.state);
   const reachable = await probe(rt.sock);
   if (state && alive(state.pid, state.token)) {
     if (reachable.ok) {
       const config = differingNames(state, process.env);
       if (state.identity === identity.hash && !config.length) return;
+      // drain.json names one predecessor. Replacing its successor again would discard that route while the
+      // predecessor still holds chat writers. This guard also protects bridges installed before the host guard.
+      const predecessor = readJson<Pick<BridgeState, "pid" | "token">>(path.join(rt.dir, "drain.json"));
+      const draining = predecessor && predecessor.pid !== state.pid && alive(predecessor.pid, predecessor.token);
+      if (state.identity !== identity.hash && !config.length && draining)
+        return { engine: state.engine, running: state.script, deferred: true };
       // Same installation, only proxy settings differ: never refuse (1 Nov, Masih: "I hate such errs"). An idle bridge
       // restarts with this launch's settings; one in use is joined and keeps its own until its terminals close.
       if (state.identity === identity.hash && config.every(name => PROXY_ENV_NAMES.includes(name))) {
@@ -106,6 +112,7 @@ async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIde
       const directHandover = config.length > 0 && config.every(name => PROXY_ENV_NAMES.includes(name))
         && PROXY_ENV_NAMES.every(name => process.env[name] === undefined);
       if (state.identity !== identity.hash && directHandover && usable(state.engine) && await managedSuccessorPair(state, identity)) {
+        if (draining) return { engine: state.engine, running: state.script, deferred: true };
         writeDirectSuccessor(rt, identity.script);
         fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
         return { engine: state.engine, running: state.script };
@@ -190,7 +197,9 @@ async function launcherMain(bridgeScript: string | undefined) {
     identity = codeIdentity(bridgeScript);
     joined = await ensureBridge(rt, bridgeScript, identity);
   } finally { release(); }
-  if (joined) process.stderr.write(`elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) takes over in a few seconds; chats working now finish first.\n`);
+  if (joined) process.stderr.write(joined.deferred
+    ? `elpis: using the Elpis already running (${versionOf(joined.running)}); an earlier handover is still finishing. This installation (${versionOf(identity.script)}) can take over on a later launch.\n`
+    : `elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) takes over in a few seconds; chats working now finish first.\n`);
   await new Promise((resolve) => process.stdout.write(`unix://${rt.sock}\n${joined ? `engine ${joined.engine}\n` : ""}`, resolve));
 }
 

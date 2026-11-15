@@ -276,3 +276,32 @@ test("an idle chat held by the old engine is served through the old bridge, not 
   assert.notEqual(state().pid, old.pid);
   fs.writeFileSync(release, "");
 });
+
+test("a second update joins the current bridge until its predecessor finishes", { timeout: 60000 }, async (t) => {
+  const { client, id, agentLog, release, install, state, socketPath, root, launchResult, nextEnv, oldAlive } = await fixture(t, { locks: true });
+  const idle = (await client.createThread({ model: "luna-test", cwd: root })).thread.id;
+  const sent = await client.send(id, { text: "[wait] keep the first bridge working" });
+  assert.ok("turn" in sent);
+  await until(() => lines(agentLog).some(entry => entry.method === "session/prompt"), "the first bridge works");
+  await install();
+  const current = state().pid;
+  const drainFile = path.join(path.dirname(socketPath), "drain.json");
+  const drain = fs.readFileSync(drainFile, "utf8");
+  const third = bundle(root, "c", false).dir;
+  const joined = await launchResult(third, nextEnv);
+  assert.equal(joined.code, 0, joined.err);
+  assert.match(joined.err, /earlier handover is still finishing/);
+  assert.equal(fs.existsSync(path.join(path.dirname(socketPath), "successor")), false, "the launcher does not queue an overlapping handover");
+  // A successor queued by an older launcher is guarded by the running host too.
+  fs.writeFileSync(path.join(path.dirname(socketPath), "successor"), path.join(third, "acp-bridge.mts"));
+  await pause(1800); // longer than the bridge's successor poll
+  assert.equal(state().pid, current, "the second update does not replace a bridge that still proxies its predecessor");
+  assert.equal(fs.readFileSync(drainFile, "utf8"), drain, "the predecessor's routing record survives");
+  assert.equal((await client.resume(id, {})).activeTurnId, sent.turn.id, "the running chat remains reachable");
+  assert.equal((await client.resume(idle, {})).thread.id, idle, "the idle chat still opens through its writer");
+  fs.writeFileSync(release, "");
+  await until(() => !oldAlive(), "the first bridge finishes", 10000);
+  assert.equal((await launchResult(third, nextEnv)).code, 0);
+  await until(() => state().pid !== current && state().pid !== undefined, "the deferred update can take over after the predecessor exits", 10000);
+  await until(async () => client.connected && (await client.resume(idle, {}).catch(() => null))?.thread.id === idle, "the chat opens after the deferred update", 10000);
+});

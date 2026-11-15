@@ -51,6 +51,7 @@ The required behaviors of the terminal app (`elpis`), numbered 1–43 without ga
 30. `/new` starts a separate thread and keeps the old one saved. (session-new)
 31. `/resume` lists sessions by title with Active and Archived filters, opens one with its history, and is fast. (session-resume-picker)
 32. `elpis resume --last` or `elpis resume <id>` reopens a session after a restart, and `--resume` stays compatible. (R4; session-resume-cli)
+    Case: successive bridge updates keep working and idle chats reachable; another handover waits until the previous backend finishes. (handover-claude.test.mts)
 33. `/fork` copies the conversation and its name into a new thread. (session-fork)
 34. `/archive` and `/del` ask first; delete also removes the session's subagent threads, and a session with a fork cannot be deleted. Nothing is deleted automatically. (session-archive, session-delete)
 35. Exact resume and lean continuation keep their own semantics; Elpis never switches between them on its own. (R4; [sessions.md §1](sessions.md#1-two-continuation-modes))
