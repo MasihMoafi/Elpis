@@ -54,6 +54,12 @@ async function pageState(port: number) {
   return typeof value === 'string' ? value : 'unknown';
 }
 
+/** What of the Elpis home is kept as evidence: its logs and settings, not sockets or the engine copy (260 MB a start). */
+function isEvidence(source: string) {
+  const stat = fs.lstatSync(source);
+  return !stat.isSocket() && (stat.isDirectory() || stat.size <= 2 * 1024 * 1024);
+}
+
 /** The window as the person sees it, its text, the app's output and its Elpis home, saved in DIR; never fails the check. */
 async function saveEvidence(dir: string, port: number | undefined, output: string, home: string, state: string) {
   try {
@@ -66,7 +72,7 @@ async function saveEvidence(dir: string, port: number | undefined, output: strin
       const text = await pageCall(port, 'Runtime.evaluate', { expression: 'document.body.innerText', returnByValue: true }).catch(() => undefined);
       if (typeof text?.result?.value === 'string') fs.writeFileSync(path.join(dir, 'window.txt'), text.result.value);
     }
-    if (fs.existsSync(home)) fs.cpSync(home, path.join(dir, 'elpis-home'), { recursive: true, filter: source => !fs.lstatSync(source).isSocket() });
+    if (fs.existsSync(home)) fs.cpSync(home, path.join(dir, 'elpis-home'), { recursive: true, filter: isEvidence });
   } catch (error) { console.error(`smoke-launch: evidence incomplete: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
