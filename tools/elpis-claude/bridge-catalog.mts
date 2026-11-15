@@ -23,6 +23,10 @@ export function createProviderCatalog({ readJson, ensureAcp, now, log }: Depende
   async function readCatalog(agent: ProviderAgent) {
     const saved = await readJson(agent.catalogFile);
     const efforts = saved?.efforts ?? {}; // filled in place by the live read
+    const stale = !saved?.models?.length || !saved.at || now() - saved.at > 86_400_000 || saved.models.some((m) => !efforts[m.value]);
+    if (!stale && agent.key === "agy") {
+      return { models: saved.models, efforts, fallback: saved.fallback ?? { levels: [], current: null }, modes: saved.modes ?? null };
+    }
     const live = liveCatalog(agent, saved, efforts);
     if (!saved?.models?.length) return live;
     live.catch(() => {});
