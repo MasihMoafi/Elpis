@@ -7,6 +7,8 @@ test('identifies legacy board chats and named ACP chats without classifying ordi
   assert.equal(chatOrigin({ id: 'legacy' }, { legacy: 'Review' }), 'Love Spot');
   assert.equal(chatOrigin({ id: 'new', name: 'Love Spot · Review' }), 'Love Spot');
   assert.equal(chatOrigin({ id: 'talk', name: 'Love Spot' }), 'Love Spot');
+  assert.equal(chatOrigin({ id: 'by-cwd', cwd: '/home/masih/.elpis-next/love-spot' }), 'Love Spot');
+  assert.equal(chatOrigin({ id: 'by-preview', preview: 'HiFile: Love Spot notes.txt' }), 'Love Spot');
   assert.equal(chatOrigin({ id: 'workflow', name: 'Workflows · Verify' }), 'Workflows');
   assert.equal(chatOrigin({ id: 'ordinary', name: 'Love Spot ideas' }), undefined);
   assert.equal(chatOrigin({ id: 'ordinary', name: 'Review' }), undefined);

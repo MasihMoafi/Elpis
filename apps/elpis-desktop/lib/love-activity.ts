@@ -60,10 +60,15 @@ export function newLoveReplies(previous: ReadonlyMap<string, string> | null, age
 }
 
 export function chatOrigin(
-  thread: { id: string; name?: string | null },
+  thread: { id: string; name?: string | null; cwd?: string | null; preview?: string | null },
   loveThreads: Readonly<Record<string, string>> = {},
 ): "Love Spot" | "Workflows" | undefined {
-  if (typeof loveThreads[thread.id] === "string" || /^Love Spot(?:\s*[·:]|$)/i.test(thread.name ?? ""))
+  if (
+    typeof loveThreads[thread.id] === "string" ||
+    /^Love Spot(?:\s*[·:]|$)/i.test(thread.name ?? "") ||
+    /(?:^|\/)love-spot$/i.test(thread.cwd ?? "") ||
+    (thread.preview ?? "").includes("File: Love Spot notes.txt")
+  )
     return "Love Spot";
   if (/^Workflows\s*[·:]/i.test(thread.name ?? "")) return "Workflows";
 }

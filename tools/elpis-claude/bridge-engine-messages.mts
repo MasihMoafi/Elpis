@@ -33,6 +33,7 @@ export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscrip
       }
     }
     if (!isEngineMessage(value)) { ws.send(line); return; }
+    if (value.method === "deprecationNotice" && [...engineReqs.values()].some(req => req.method === "thread/read")) return;
     let parsed = value;
     if (parsed.id !== undefined && !parsed.method && permissionRefreshes.delete(parsed.id) && !parsed.error) {
       try {
@@ -211,7 +212,11 @@ export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscrip
       if (pick && t.model !== pick.model) { t.model = pick.model; t.reasoningEffort = pick.effort ?? null; helpersMarked = true; } // shown only; routing waits for the answer
       else helpersMarked = ownModel(t, await loadStore());
     }
-    if (parsed.id !== undefined && pendingLimitsRead.delete(parsed.id)) { await addSubscriptionLimits(parsed); helpersMarked = true; }
+    if (parsed.id !== undefined && pendingLimitsRead.delete(parsed.id)) {
+      const used = new Set([...claudeModel.values(), ...[...providerOwners.values()].map((o) => o.model())].map((m) => agentOf(m)?.key).filter((k): k is string => !!k));
+      await addSubscriptionLimits(parsed, used);
+      helpersMarked = true;
+    }
     if (parsed.id !== undefined && pendingHelperMark.has(parsed.id)) {
       pendingHelperMark.delete(parsed.id);
       const result = parsed.result;

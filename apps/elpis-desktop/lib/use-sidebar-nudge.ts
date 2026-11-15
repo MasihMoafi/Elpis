@@ -3,9 +3,9 @@ import { api } from "@/lib/api";
 import { appStorage } from "@/lib/projects";
 import { SIDEBAR_TOLD_KEY, TIDY_REQUEST, sidebarFull, storedTold, toldAfter } from "@/lib/sidebar-fill";
 
-/** What the sidebar last reported, what she last said, and whether Elpis was just asked. */
-type Fill = { loose: number; elpisId: string | null; told: number | null; asked: boolean; read: boolean };
-let fill: Fill = { loose: 0, elpisId: null, told: null, asked: false, read: false };
+/** What the sidebar last reported and what she last said. */
+type Fill = { loose: number; elpisId: string | null; told: number | null; read: boolean };
+let fill: Fill = { loose: 0, elpisId: null, told: null, read: false };
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -47,16 +47,13 @@ export function useSidebarNudge(): SidebarNudge | null {
     () => fill,
     () => fill,
   );
-  if (current.asked)
-    return { text: "I asked Elpis to tidy. Its answer is in the Elpis tab.", later: () => set({ asked: false }) };
   const { elpisId, loose } = current;
   if (!elpisId || !sidebarFull(loose, current.told)) return null;
   return {
     text: `Your sidebar is filling up: ${loose} chats outside a project. Shall Elpis tidy it?`,
     tidy: async () => {
-      await api(`/threads/${encodeURIComponent(elpisId)}/turns`, { text: TIDY_REQUEST });
       remember(loose);
-      set({ asked: true });
+      await api(`/threads/${encodeURIComponent(elpisId)}/turns`, { text: TIDY_REQUEST });
     },
     later: () => remember(loose),
   };

@@ -228,10 +228,11 @@ export function createSchedule({
     if (route) await checkRoute(route, true, CONNECT_WAIT);
     else if (client.models) await readModels(null, CONNECT_WAIT);
     if (!threadId) {
+      const name = /^Workflows\s*[·:]/i.test(task.title) ? task.title : `Workflows · ${task.title}`;
       const made = await client.createThread({
         ...(task.cwd ? { cwd: task.cwd } : {}),
         ...(route ? { model: route.model, ...(route.provider ? { provider: route.provider } : {}) } : {}),
-        name: task.title,
+        name,
         automatic: true,
       });
       threadId = made?.thread?.id;

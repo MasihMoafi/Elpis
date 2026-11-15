@@ -231,7 +231,7 @@ test("a new chat every run, a one-time task ends, and a paused task does not run
     "the paused task sent nothing",
   );
   assert.equal(h.made[0]!.cwd, "/tmp");
-  assert.equal(h.made[0]!.name, "Report");
+  assert.equal(h.made[0]!.name, "Workflows · Report");
   assert.equal((await schedule.list()).find(task => task.id === once.id)!.status, "ended");
   // Run now sends once and keeps the schedule.
   await schedule.runNow(once.id);

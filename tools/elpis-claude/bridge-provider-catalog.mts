@@ -132,11 +132,14 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
         if (settings)
             Object.assign(settings, { model, reasoning_effort: effort ?? null });
     }
+    let agyActive = false;
     // A subscription's limits as account/rateLimits/updated notifications, so /usage has them as soon
     // as its chat opens or a turn ends.
     function announceLimits(agent: ProviderAgent | undefined, send: (method: string, params: {
         rateLimits: RateLimit;
     }) => void) {
+        if (agent?.key === "agy")
+            agyActive = true;
         agent?.limits().then((all) => {
             for (const rateLimits of all) {
                 log(`${rateLimits.limitName} limits: 5h ${rateLimits.primary?.usedPercent}% week ${rateLimits.secondary?.usedPercent}%`);
@@ -150,9 +153,12 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
     async function addSubscriptionLimits(answer: {
         result?: Record<string, unknown> | null;
         error?: unknown;
-    }) {
+    }, activeProviders?: ReadonlySet<string>) {
+        if (activeProviders?.has("agy"))
+            agyActive = true;
         const within = (limits: Promise<RateLimit[]>) => Promise.race([limits, new Promise<RateLimit[]>((resolve) => setTimeout(resolve, 5000, []))]).catch(() => []);
-        const limits = (await Promise.all(AGENTS.map((agent) => within(agent.limits())))).flat();
+        const active = AGENTS.filter((agent) => agent.key !== "agy" || agyActive);
+        const limits = (await Promise.all(active.map((agent) => within(agent.limits())))).flat();
         if (!limits.length)
             return;
         const byId = Object.fromEntries(limits.map((one) => [one.limitId, one]));

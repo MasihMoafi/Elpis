@@ -80,7 +80,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   followUp: "steer",
   showContextUsage: true,
   showAgentRuns: false,
-  sidebarWorkflows: false,
+  sidebarWorkflows: true,
   confirmClose: false,
   closeToTray: false,
   quickEntryShortcut: "Ctrl+Alt+Space",
