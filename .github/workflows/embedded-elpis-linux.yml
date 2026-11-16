@@ -225,6 +225,7 @@ jobs:
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
       - name: Installer checks
         run: |
+          node --test scripts/check-engine-openssl.test.mts
           bash tests/install/test_install.sh
           bash tests/install/test_cache_source_times.sh
           node --test --test-concurrency=1 tests/install/install-engine.test.mts tests/install/prune-versions.test.mts

@@ -10,7 +10,7 @@
 #   ELPIS_TLS_ARCH=0                       skip the Arch container (no Docker)
 set -euo pipefail
 
-answer='401|Unauthorized|invalid_api_key|Incorrect API key'
+answer='(^|[[:space:]:])401([[:space:]]|$)|Unauthorized|invalid_api_key|Incorrect API key'
 # The built-in provider tries a WebSocket first (rustls) and falls back to HTTPS. A provider without WebSockets
 # sends its request over HTTPS only, through the built-in OpenSSL (native-tls), which is what this check is for.
 https_only=(-c model_provider=tlscheck
