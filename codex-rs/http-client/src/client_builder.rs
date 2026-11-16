@@ -27,6 +27,11 @@ use crate::client::TransportClient;
 use crate::custom_ca::build_reqwest_client_with_custom_ca;
 use crate::with_chatgpt_cloudflare_cookie_store;
 
+/// Opt-in workaround for networks whose IPv6 route accepts TCP but rejects ChatGPT requests.
+pub fn ipv4_only() -> bool {
+    std::env::var("ELPIS_IPV4_ONLY").as_deref() == Ok("1")
+}
+
 /// Configures an [`HttpClient`] without exposing the underlying HTTP implementation.
 ///
 /// Product traffic should prefer [`HttpClientFactory::build_client`] or finish this builder with
@@ -358,6 +363,9 @@ impl HttpClientBuilder {
 
     fn base_reqwest_builder(self) -> reqwest::ClientBuilder {
         let mut builder = reqwest::Client::builder();
+        if ipv4_only() {
+            builder = builder.local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+        }
         if self.http2_prior_knowledge {
             builder = builder.http2_prior_knowledge();
         }

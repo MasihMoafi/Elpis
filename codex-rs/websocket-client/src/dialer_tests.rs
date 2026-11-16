@@ -38,6 +38,124 @@ use crate::WebSocketConnector;
 use crate::WebSocketTlsMode;
 
 #[tokio::test]
+async fn ipv4_only_covers_default_and_direct_websocket_routes() {
+    for (host, enabled, direct, rejected) in [
+        ("127.0.0.1", true, false, false),
+        ("::1", true, false, true),
+        ("::1", true, true, true),
+        ("::1", false, false, false),
+    ] {
+        let listener = TcpListener::bind((host, 0))
+            .await
+            .expect("WebSocket listener");
+        let address = listener.local_addr().expect("listener address");
+        let server = tokio::spawn(async move {
+            let Ok(Ok((stream, _))) =
+                tokio::time::timeout(Duration::from_secs(5), listener.accept()).await
+            else {
+                return false;
+            };
+            let mut websocket = accept_async(stream).await.expect("WebSocket handshake");
+            let message = websocket
+                .next()
+                .await
+                .expect("echo input")
+                .expect("valid message");
+            websocket.send(message).await.expect("echo output");
+            true
+        });
+        let output = tokio::task::spawn_blocking(move || {
+            let mut command = Command::new(std::env::current_exe().expect("test binary"));
+            for key in [
+                "HTTP_PROXY",
+                "http_proxy",
+                "HTTPS_PROXY",
+                "https_proxy",
+                "ALL_PROXY",
+                "all_proxy",
+                "NO_PROXY",
+                "no_proxy",
+            ] {
+                command.env_remove(key);
+            }
+            command
+                .args([
+                    "--exact",
+                    "dialer::tests::ipv4_only_websocket_probe",
+                    "--nocapture",
+                ])
+                .env("ELPIS_IPV4_ONLY", if enabled { "1" } else { "0" })
+                .env("ELPIS_TEST_WEBSOCKET_URL", format!("ws://{address}/"))
+                .env(
+                    "ELPIS_TEST_WEBSOCKET_DIRECT",
+                    if direct { "1" } else { "0" },
+                )
+                .env(
+                    "ELPIS_TEST_WEBSOCKET_REJECTED",
+                    if rejected { "1" } else { "0" },
+                )
+                .output()
+                .expect("WebSocket probe should run")
+        })
+        .await
+        .expect("WebSocket probe should finish");
+        assert!(
+            output.status.success(),
+            "{host}, enabled={enabled}, direct={direct}: {}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            server.await.expect("WebSocket fixture should finish"),
+            !rejected
+        );
+    }
+}
+
+#[tokio::test]
+async fn ipv4_only_websocket_probe() {
+    let Ok(url) = std::env::var("ELPIS_TEST_WEBSOCKET_URL") else {
+        return;
+    };
+    let policy = if std::env::var("ELPIS_TEST_WEBSOCKET_DIRECT").as_deref() == Ok("1") {
+        OutboundProxyPolicy::RespectSystemProxy
+    } else {
+        OutboundProxyPolicy::ReqwestDefault
+    };
+    let factory = HttpClientFactory::new(policy);
+    let connector =
+        WebSocketConnector::new_with_tls_mode(&factory, WebSocketTlsMode::TungsteniteDefault)
+            .expect("WebSocket connector");
+    let result = tokio::time::timeout(
+        Duration::from_secs(2),
+        connector.connect(
+            url.into_client_request().expect("WebSocket request"),
+            WebSocketConfig::default(),
+        ),
+    )
+    .await
+    .expect("connection must finish");
+    if std::env::var("ELPIS_TEST_WEBSOCKET_REJECTED").as_deref() == Ok("1") {
+        assert!(
+            result.is_err(),
+            "IPv4-only client must not connect over IPv6"
+        );
+    } else {
+        let (mut websocket, _) = result.expect("WebSocket connection");
+        let message = Message::Text("address-family echo".into());
+        websocket.send(message.clone()).await.expect("send echo");
+        assert_eq!(
+            websocket
+                .next()
+                .await
+                .expect("echo answer")
+                .expect("valid echo"),
+            message
+        );
+    }
+}
+
+#[tokio::test]
 async fn public_connector_uses_factory_and_exposes_stream_and_sink() {
     let (target_addr, target_task) = start_echo_websocket_server(/*acceptor*/ None).await;
     let request = format!("ws://localhost:{}/v1/responses", target_addr.port())

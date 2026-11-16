@@ -251,6 +251,11 @@ jobs:
           node scripts/bridge-launcher.test.cts
           node scripts/agy-steering.test.cts
           node scripts/build-elpis-local.test.cts
+      - name: Direct IPv4 HTTP and WebSocket regressions
+        working-directory: codex-rs
+        run: |
+          cargo test --profile dev-small --locked -p codex-http-client --lib ipv4_only
+          cargo test --profile dev-small --locked -p codex-websocket-client --lib ipv4_only
       - name: Build the runtime, Code Mode host, and sandbox
         id: runtime_build
         if: ${{ !cancelled() && inputs.verification != 'ui' }}

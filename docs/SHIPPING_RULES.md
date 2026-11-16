@@ -99,3 +99,6 @@ cases and Node's environment-proxy switch removed. The provider bridge retains i
 inherited settings for Mother. Case, 12 Nov: ordinary chats and private helper engines
 inherited the paid VPN. Check all launch paths with
 `node --test tools/elpis-claude/test/native-proxy.test.mts`.
+
+On a network with a broken IPv6 route, launch with `ELPIS_IPV4_ONLY=1` to keep
+native HTTP and WebSocket connections on direct IPv4. It does not enable a proxy.

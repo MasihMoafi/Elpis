@@ -22,6 +22,7 @@ pub use crate::chatgpt_hosts::is_allowed_chatgpt_host;
 pub use crate::client::HttpClient;
 pub use crate::client::HttpError;
 pub use crate::client_builder::HttpClientBuilder;
+pub use crate::client_builder::ipv4_only;
 pub use crate::client_tls::HttpClientTlsConfig;
 pub use crate::custom_ca::BuildCustomCaTransportError;
 /// Test-only subprocess hook for custom CA coverage.

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use codex_http_client::OutboundProxyRoute;
 use codex_http_client::build_rustls_client_config_with_custom_ca;
+use codex_http_client::ipv4_only;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use rustls::ClientConfig;
@@ -43,6 +44,11 @@ pub(crate) async fn connect(
 ) -> Result<(ConnectionInner, Response), WebSocketError> {
     let disable_nagle = tcp_nodelay == TcpNodelay::Enabled;
     let proxy_url = match proxy_route {
+        OutboundProxyRoute::TransportDefault
+            if ipv4_only() && ProxyConfig::from_env(request.uri())?.is_none() =>
+        {
+            None
+        }
         OutboundProxyRoute::TransportDefault => {
             // The workspace enables tokio-tungstenite's `proxy` feature, so its default dialer
             // resolves HTTP_PROXY, HTTPS_PROXY, ALL_PROXY, and NO_PROXY before opening the socket.
@@ -207,9 +213,12 @@ async fn connect_loopback_tcp(address: String, tcp_nodelay: TcpNodelay) -> io::R
 }
 
 async fn connect_resolved_tcp(
-    addresses: Vec<SocketAddr>,
+    mut addresses: Vec<SocketAddr>,
     tcp_nodelay: TcpNodelay,
 ) -> io::Result<TcpStream> {
+    if ipv4_only() {
+        addresses.retain(SocketAddr::is_ipv4);
+    }
     let stream = connect_happy_eyeballs(addresses, TcpStream::connect).await?;
     if tcp_nodelay == TcpNodelay::Enabled {
         stream.set_nodelay(/*nodelay*/ true)?;
