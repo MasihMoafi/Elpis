@@ -10,7 +10,7 @@
 #                    and turned into the AppDir in place
 #   ELPIS_APPIMAGE_UPDATE  update information to embed (appimagetool -u); a .zsync file is written beside the AppImage
 set -euo pipefail
-VERSION=${1:-0.5.3}
+VERSION=${1:-0.5.4}
 tool=${APPIMAGETOOL:-$HOME/.cache/elpis-tests/tools/appimagetool}
 [[ -x "$tool" ]] || { echo "missing appimagetool: $tool" >&2; exit 1; }
 OUT=${ELPIS_APPIMAGE_DIR:-$HOME/.cache/elpis-tests/appimage}; mkdir -p "$OUT" "$HOME/.cache/elpis-tests"

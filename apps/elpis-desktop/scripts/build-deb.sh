@@ -6,7 +6,7 @@
 # so it needs no other Elpis package. Without Node.js 22 or newer, Electron itself runs the bridges.
 # GitHub builds it on Ubuntu 22.04 (.github/workflows/desktop-packages.yml); not on Masih's laptop (docs/LOCAL_BUILD_RULES.md).
 set -euo pipefail
-VERSION=${1:-0.5.3}
+VERSION=${1:-0.5.4}
 [[ -n "${ENGINE_DIR:-}" ]] || { echo "ENGINE_DIR must name a folder with codex, codex-code-mode-host and bwrap" >&2; exit 1; }
 for f in codex codex-code-mode-host bwrap; do [[ -x "$ENGINE_DIR/$f" ]] || { echo "missing engine file: $ENGINE_DIR/$f" >&2; exit 1; }; done
 APP="$(cd "$(dirname "$0")/.." && pwd)"

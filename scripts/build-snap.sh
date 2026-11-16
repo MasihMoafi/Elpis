@@ -8,7 +8,7 @@
 #                    from it: scripts/build-appimage.sh, run by .github/workflows/desktop-packages.yml).
 # Not run on Masih's laptop: GitHub builds the desktop packages (docs/LOCAL_BUILD_RULES.md).
 set -euo pipefail
-VERSION=${1:-0.5.3}
+VERSION=${1:-0.5.4}
 R=$(cd "$(dirname "$0")/.." && pwd -P); APP=$R/apps/elpis-desktop
 commit=$(git -C "$R" rev-parse HEAD)
 built=$(cat "$APP/out/.commit" 2>/dev/null || true)
