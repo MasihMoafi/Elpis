@@ -151,6 +151,33 @@ test('explicit frontend installs move forward from legacy and new receipts, with
   assert.equal(execFileSync(`${f.bin}/elpis`, [], { encoding: 'utf8' }).trim(), 'old-frontend');
 });
 
+test('frontend promotion accepts preserved cherry-picks but refuses an omitted installed patch', async (t) => {
+  for (const preserve of [true, false]) await t.test(preserve ? 'preserved' : 'omitted', (t) => {
+    const f = fixture(t);
+    writeFileSync(`${f.source}/codex-rs/prompts/fixture.md`, 'installed frontend fix\n');
+    f.git('add', 'codex-rs/prompts/fixture.md');
+    f.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-qm', 'frontend fix');
+    const installed = f.git('rev-parse', 'HEAD').toString().trim();
+    writeFileSync(`${f.frontend}/verification.json`, JSON.stringify({ head: installed }));
+    f.git('checkout', '--detach', f.head);
+    writeFileSync(`${f.source}/tools/elpis-claude/runtime.mts`, 'new runtime\n');
+    f.git('add', 'tools/elpis-claude/runtime.mts');
+    f.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '-qm', 'runtime update');
+    if (preserve) f.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'cherry-pick', installed);
+    const before = readFileSync(`${f.bin}/elpis`);
+    const result = f.run('--with-frontend', 'cherry-pick');
+    if (preserve) {
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(execFileSync(`${f.bin}/elpis`, [], { encoding: 'utf8' }).trim(), 'elpis 0.4.1');
+      execFileSync('bash', [`${f.bundle()}/rollback.sh`], { env: { ...process.env, HOME: f.home } });
+    } else {
+      assert.notEqual(result.status, 0, result.stdout);
+    }
+    assert.deepEqual(readFileSync(`${f.bin}/elpis`), before);
+    assert.equal(readlinkSync(`${f.bin}/elpis-next`), `${f.old}/elpis-next`);
+  });
+});
+
 test('frontend promotion refuses missing, malformed, unknown, and divergent source provenance before activation', async (t) => {
   for (const reason of ['missing', 'malformed', 'unknown', 'divergent', 'missing-head', 'shell-expression']) {
     await t.test(reason, (t) => {

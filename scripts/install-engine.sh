@@ -148,10 +148,21 @@ if (process.argv[7] === 'true') {
     const source = fs.existsSync(sourceReceipt) ? receipt.source_head : receipt.head;
     if (typeof source !== 'string' || !/^[a-f0-9]{7,40}$/i.test(source)) throw new Error('The installed frontend source commit is unknown');
     try {
-        const commit = execFileSync('git', ['-C', process.argv[8], 'rev-parse', '--verify', `${source}^{commit}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-        execFileSync('git', ['-C', process.argv[8], 'merge-base', '--is-ancestor', commit, process.argv[9]], { stdio: 'pipe' });
+        const git = (...args) => execFileSync('git', ['-C', process.argv[8], ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        const commit = git('rev-parse', '--verify', `${source}^{commit}`);
+        try { git('merge-base', '--is-ancestor', commit, process.argv[9]); }
+        catch {
+            // Work branches are integrated by cherry-pick. Every installed patch must survive;
+            // unrelated roots and merge commits without a patch-equivalence proof stay blocked.
+            git('merge-base', commit, process.argv[9]);
+            const merges = git('rev-list', '--merges', `${process.argv[9]}..${commit}`);
+            const patches = git('cherry', process.argv[9], commit);
+            if (merges || patches.split('\n').some(line => line && !/^- [a-f0-9]{40}$/.test(line))) {
+                throw new Error('Installed frontend changes are missing');
+            }
+        }
     } catch {
-        throw new Error('The installed frontend source must be a known ancestor of the new source');
+        throw new Error('The new source must contain the installed frontend history or all of its cherry-picked changes');
     }
     frontendLine = `FRONTEND='${`${process.argv[5]}/elpis-next`.replace(/'/g, "'\\''")}'`;
 }
