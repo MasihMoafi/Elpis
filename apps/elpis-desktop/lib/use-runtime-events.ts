@@ -48,6 +48,8 @@ type RuntimeEvents = {
   viewRef: Ref<View>;
   planTurns: Ref<Map<string, string>>;
   setAttention: Setter<Attention>;
+  attentionRef: Ref<Attention>;
+  pendingReads: Ref<Set<string>>;
   loveRef: Ref<ReturnType<typeof useLoveActivity>>;
   isLoveChatId: (id: string) => boolean;
   setRewindActions: Setter<Record<string, "undo" | "redo" | undefined>>;
@@ -77,6 +79,8 @@ export function useRuntimeEvents({
   viewRef,
   planTurns,
   setAttention,
+  attentionRef,
+  pendingReads,
   loveRef,
   isLoveChatId,
   setRewindActions,
@@ -272,7 +276,7 @@ export function useRuntimeEvents({
             turnRevisions.current[threadId] = (turnRevisions.current[threadId] ?? 0) + 1;
             planTurns.current.delete(threadId);
             setAttention(previous => ({
-              unread: previous.unread.filter(id => id !== threadId),
+              unread: previous.unread,
               plans: without(previous.plans, threadId),
             }));
           }
@@ -287,10 +291,13 @@ export function useRuntimeEvents({
             !isAgentRun(threadsRef.current.find(thread => thread.id === threadId) ?? {})
           ) {
             // A reply is read when it is on screen: in its open chat, or on the open Love Spot board for a Love Spot chat.
-            const unread =
+            const shown =
               viewRef.current === "loveSpot" || loveRef.current.chatShown
-                ? !isLoveChatId(threadId)
-                : selectedRef.current?.id !== threadId || viewRef.current !== "chat";
+                ? isLoveChatId(threadId)
+                : selectedRef.current?.id === threadId && viewRef.current === "chat";
+            const visible = document.visibilityState === "visible" && document.hasFocus();
+            const unread = !visible || !shown;
+            if (!visible && !attentionRef.current.unread.includes(threadId)) pendingReads.current.add(threadId);
             const planReady =
               planTurns.current.get(threadId) === params.turn.id ||
               params.turn.items?.some((item: Item) => item.type === "plan");

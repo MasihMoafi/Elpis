@@ -10,6 +10,9 @@ import { emptyGroups, readGroups, writeGroups, type ChatGroups } from "@/lib/cha
  * `planTurns` remembers each chat's latest plan turn while the window is open. */
 export function useChatAttention(planAnswered: Record<string, string>, onError: (message: string) => void) {
   const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
+  const attentionRef = useRef(attention);
+  attentionRef.current = attention;
+  const pendingReads = useRef(new Set<string>());
   const [loaded, setLoaded] = useState(false);
   const planTurns = useRef(new Map<string, string>());
   useEffect(() => {
@@ -24,13 +27,18 @@ export function useChatAttention(planAnswered: Record<string, string>, onError: 
         onError("Could not save chat attention on this device.");
       }
   }, [attention, loaded, onError]);
+  useEffect(() => {
+    for (const id of pendingReads.current) if (!attention.unread.includes(id)) pendingReads.current.delete(id);
+  }, [attention]);
   const markRead = useCallback(
-    (id: string) =>
+    (id: string) => {
+      pendingReads.current.delete(id);
       setAttention(previous =>
         previous.unread.includes(id)
           ? { ...previous, unread: previous.unread.filter(value => value !== id) }
           : previous,
-      ),
+      );
+    },
     [],
   );
   useEffect(() => {
@@ -43,7 +51,7 @@ export function useChatAttention(planAnswered: Record<string, string>, onError: 
       };
     });
   }, [planAnswered]);
-  return { attention, setAttention, planTurns, markRead };
+  return { attention, attentionRef, pendingReads, setAttention, planTurns, markRead };
 }
 
 function useChatMarks(read: () => string[], save: (ids: string[]) => void) {

@@ -31,6 +31,7 @@ export function useReadLoveNotifications(
   isLoveChatId: (id: string) => boolean,
 ) {
   useEffect(() => {
-    if (chatShown) setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) }));
+    if (chatShown && document.visibilityState === "visible" && document.hasFocus())
+      setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) }));
   }, [chatShown, setAttention]);
 }

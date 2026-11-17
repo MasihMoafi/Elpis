@@ -86,7 +86,7 @@ export function useOpenConversation({
 
   const loadThread = useCallback(
     async (thread: Thread) => {
-      markRead(thread.id);
+      if (document.visibilityState === "visible" && document.hasFocus()) markRead(thread.id);
       // A chat that is already open in another tab brings that tab forward instead of opening twice.
       const owner = tabFor(tabsRef.current, thread.id);
       if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
@@ -186,7 +186,7 @@ export function useOpenConversation({
   const openThread = useCallback(
     async (thread: Thread) => {
       if (selectedRef.current?.id === thread.id) {
-        markRead(thread.id);
+        if (document.visibilityState === "visible" && document.hasFocus()) markRead(thread.id);
         setView("chat");
         setSidebar(false);
         return;

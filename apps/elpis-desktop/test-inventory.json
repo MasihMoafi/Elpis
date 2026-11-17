@@ -397,6 +397,7 @@
     "tests/settings-rows.test.cts",
     "tests/side-panel-fit.test.cts",
     "tests/sidebar-attention.test.cts",
+    "tests/unread-visibility.test.cts",
     "tests/sidebar-focus.test.cts",
     "tests/sidebar-groups.test.cts",
     "tests/sidebar-creators.test.cts",

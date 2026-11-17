@@ -99,7 +99,7 @@ export function useWorkspaceState() {
     setResumeOpen,
   } = dialogs;
   const { error, setError, setDeletedNotice, noteKept } = notices;
-  const { attention, setAttention, planTurns, markRead } = attentionState;
+  const { attention, attentionRef, pendingReads, setAttention, planTurns, markRead } = attentionState;
   const { marked, setMarked, threadList, rowLinks, clickRow } = selection;
   const { foldsRef, changeFolds, setCollapsedProjects } = foldsState;
   const rewindState = useRewindState(),
@@ -171,8 +171,23 @@ export function useWorkspaceState() {
   const { finishReplay, workflowSandbox, workflowFolder } = useWorkflowWorkspace(view, projectState, runtime, setError);
   useReadLoveNotifications(loveActivity.chatShown, setAttention, isLoveChatId);
   useEffect(() => {
-    if (view === "chat" && selected) markRead(selected.id);
+    if (view === "chat" && selected && document.visibilityState === "visible" && document.hasFocus()) markRead(selected.id);
   }, [view, selected?.id, markRead]);
+  useEffect(() => {
+    const readVisible = () => {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+      for (const id of pendingReads.current) {
+        if ((view === "chat" && selected?.id === id) ||
+            ((view === "loveSpot" || loveActivity.chatShown) && isLoveChatId(id))) markRead(id);
+      }
+    };
+    window.addEventListener("focus", readVisible);
+    document.addEventListener("visibilitychange", readVisible);
+    return () => {
+      window.removeEventListener("focus", readVisible);
+      document.removeEventListener("visibilitychange", readVisible);
+    };
+  }, [view, selected?.id, loveActivity.chatShown, markRead]);
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
   const workspacePanels = useWorkspacePanels({
     selected,
@@ -320,6 +335,8 @@ export function useWorkspaceState() {
     noteKept,
     attention,
     setAttention,
+    attentionRef,
+    pendingReads,
     planTurns,
     markRead,
     marked,
