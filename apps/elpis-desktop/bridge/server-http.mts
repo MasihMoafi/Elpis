@@ -46,7 +46,6 @@ export type ServerState = {
   readAloud: ReturnType<typeof import("./read-aloud-provider.mts").createReadAloudProvider>;
   importChats: ReturnType<typeof import("./import-chats.mts").createImportChats>;
   characters: ReturnType<typeof import("./custom-characters.mts").createCharacters>;
-  characterGeneration: ReturnType<typeof import("./character-generation.mts").createCharacterGeneration>;
 };
 
 export const COOKIE = "elpis_desktop";

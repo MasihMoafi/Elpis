@@ -133,11 +133,6 @@ function routerDependencies(source: string) {
     for (const dependency of Object.keys(manifest.dependencies ?? {})) visit(dependency, directory);
   };
   for (const name of ["zod", "proper-lockfile"]) visit(name, source);
-  // Custom character portraits (bridge/character-image.mts) decode through sharp: its loader, and the native addon and
-  // libvips built for this machine, which npm installs as optional per-platform packages (10 Nov: without them the
-  // packaged app could not open).
-  visit("sharp", source);
-  for (const name of [`@img/sharp-${process.platform}-${process.arch}`, `@img/sharp-libvips-${process.platform}-${process.arch}`]) visit(name, path.join(source, "node_modules/sharp"));
   return { files, versions };
 }
 

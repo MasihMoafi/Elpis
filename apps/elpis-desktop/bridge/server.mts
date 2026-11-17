@@ -14,7 +14,6 @@ import { createLocalSpeech } from "./local-speech.mts";
 import { createReadAloudProvider } from "./read-aloud-provider.mts";
 import { createImportChats } from "./import-chats.mts";
 import { createCharacters } from "./custom-characters.mts";
-import { createCharacterGeneration } from "./character-generation.mts";
 import { handleCharacterRoutes } from "./server-characters.mts";
 import { createTrash } from "./trash.mts";
 import { createLoveSpot } from "./love-spot-store.cts";
@@ -187,7 +186,6 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     ...(options.codexHome ? { codexHome: options.codexHome } : {}),
   });
   const characters = createCharacters(options.elpisHome ?? elpisHome());
-  const characterGeneration = createCharacterGeneration(client);
   const shown = (value: Parameters<typeof event>[0]) => {
     if (!mother.hides(value)) event(value);
   };
@@ -224,7 +222,6 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     readAloud,
     importChats,
     characters,
-    characterGeneration,
   };
   let origin = "";
   /** @param {import('node:http').IncomingMessage} request @param {import('node:http').ServerResponse} response */

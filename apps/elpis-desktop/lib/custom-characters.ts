@@ -3,7 +3,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { api, unreadable } from "@/lib/api";
 import { readPreferences, savePreferences } from "@/lib/preferences";
 import { errorText } from "./error-text.mts";
-import type { CharacterDraft, CustomCharacter } from "./custom-character-types.mts";
+import type { CustomCharacter } from "./custom-character-types.mts";
 
 type Snapshot = { characters: readonly CustomCharacter[]; loaded: boolean; error: string };
 const initial: Snapshot = { characters: [], loaded: false, error: "" };
@@ -27,11 +27,6 @@ export function useCustomCharacters() {
     window.addEventListener("focus", refresh); return () => window.removeEventListener("focus", refresh);
   }, []);
   return value;
-}
-export async function saveCustomCharacter(draft: CharacterDraft) {
-  const { character } = await api<{ character: CustomCharacter }>("/characters", draft);
-  snapshot = { characters: [...snapshot.characters, character], loaded: true, error: "" }; notify();
-  return character;
 }
 export async function updateCharacterPersonality(id: string, personality: string) {
   const { character } = await api<{ character: CustomCharacter }>("/characters/personality", { id, personality });

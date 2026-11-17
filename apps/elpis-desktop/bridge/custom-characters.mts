@@ -3,7 +3,6 @@ import { constants } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { BridgeError, object, text } from './validate.mts';
-import { characterImage } from './character-image.mts';
 import { BUILT_IN_THEMES } from '../lib/theme-palettes.ts';
 import { CHARACTER_LIMITS, type CustomCharacter } from '../lib/custom-character-types.mts';
 
@@ -68,24 +67,6 @@ export function createCharacters(home: string) {
   function mutate<T>(run: () => Promise<T>) {
     const task = writing.catch(() => {}).then(run); writing = task; return task;
   }
-  async function save(input: unknown): Promise<CustomCharacter> {
-    const raw = object(input, ['name', 'description', 'personality', 'themeId', 'portrait']) as Record<string, unknown>;
-    const details = profile(raw), portrait = object(raw.portrait, ['builtin', 'dataUrl']) as Record<string, unknown>;
-    if (Object.keys(portrait).length !== 1) throw new BridgeError('Choose one portrait.');
-    const png = 'dataUrl' in portrait ? await characterImage(portrait.dataUrl) : null;
-    if (!png && !builtin(portrait.builtin)) throw new BridgeError('Choose a built-in portrait.');
-    return mutate(async () => {
-      const rows = await list();
-      if (rows.length >= CHARACTER_LIMITS.count) throw new BridgeError('Delete a character before saving another (maximum 100).');
-      const id = `custom-${randomUUID()}`;
-      const row: CustomCharacter = { ...details, id, portrait: png ? { url: portraitUrl(id) } : { builtin: portrait.builtin as string } };
-      const file = path.join(directory, `${id}.png`);
-      if (png) await atomic(file, png);
-      try { await atomic(manifest, JSON.stringify([...rows, row])); }
-      catch (error) { if (png) await fs.unlink(file).catch(() => {}); throw error; }
-      return row;
-    });
-  }
   async function remove(id: unknown) {
     characterId(id);
     return mutate(async () => {
@@ -111,5 +92,5 @@ export function createCharacters(home: string) {
       return character;
     });
   }
-  return { list, save, delete: remove, portrait, personality };
+  return { list, delete: remove, portrait, personality };
 }

@@ -19,7 +19,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { CreateCharacterDialog } from "@/components/create-character-dialog";
 import { deleteCustomCharacter, useCustomCharacters } from "@/lib/custom-characters";
 import { characterChoice } from "@/lib/character-choice.mts";
 import { customCharacterImage } from "@/lib/theme-characters";
@@ -42,8 +41,7 @@ export function MatildaCharacterPicker({ compact = false }: { compact?: boolean 
     companion = useCompanionName();
   const [open, setOpen] = useState(false),
     trigger = useRef<HTMLButtonElement>(null);
-  const [creating, setCreating] = useState(false),
-    [deleting, setDeleting] = useState(false),
+  const [deleting, setDeleting] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const { characters } = useCustomCharacters(),
@@ -150,7 +148,7 @@ export function MatildaCharacterPicker({ compact = false }: { compact?: boolean 
               </DropdownMenuItem>
             ))}
           </DropdownMenuGroup>
-          <DropdownMenuSeparator />
+          {custom && <DropdownMenuSeparator />}
           {custom && (
             <DropdownMenuItem
               onClick={() => {
@@ -161,10 +159,8 @@ export function MatildaCharacterPicker({ compact = false }: { compact?: boolean 
               Delete {custom.name}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onClick={() => setCreating(true)}>Create your own</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {creating && <CreateCharacterDialog onClose={() => setCreating(false)} />}
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent role="dialog">
           <AlertDialogHeader>
