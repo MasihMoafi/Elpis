@@ -107,7 +107,10 @@ test('A102: archived unseen/waiting chats never enter the live list; a not-loade
 
 test('A102: working chats come first, then waiting and unseen replies; errors and seen replies keep their place', async () => {
   const chats = [chat('chat-a', 100), chat('working', 90, { type: 'active' }), chat('error', 80, { type: 'systemError' }), chat('done', 20), chat('question', 10, { type: 'active', activeFlags: ['waitingOnUserInput'] }), chat('approval', 5, { type: 'active', activeFlags: ['waitingOnApproval'] })];
-  const f = await open(chats, attention(['done', 'working', 'error']));
+  const f = await open(chats, attention(['done', 'working', 'error']), {
+    '/api/threads/done': () => ({ thread: chats[3], data: [{ turnId: 'done-turn',
+      item: { id: 'done-answer', type: 'agentMessage', text: 'Completed answer' } }], nextCursor: null }),
+  });
   try {
     const recents = section(f.page, 'Recents');
     await eventually(async () => assert.deepEqual(await ids(recents), ['working', 'question', 'approval', 'done', 'chat-a', 'error']));
