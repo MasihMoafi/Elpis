@@ -35,6 +35,7 @@ jobs:
       - name: Compare the approved renderer's two animation implementations
         env:
           ELPIS_CHROMIUM: /usr/bin/google-chrome
+          ELPIS_PLAYWRIGHT_PACKAGE: playwright-core
           ELPIS_PROFILE_OUTPUT: ${{ runner.temp }}/wordmark-profile
         run: |
           test "$(cat out/.commit)" = 586ca0a5b2147a755ebc8f1ff54fc754b4bb908b
