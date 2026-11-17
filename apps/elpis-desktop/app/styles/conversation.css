@@ -389,7 +389,9 @@
 .dark [data-category="userMessages"] { --category:#53b1ff; } .dark [data-category="agentMessages"] { --category:#3fd394; } .dark [data-category="reasoning"] { --category:#ab84ff; }
 .dark [data-category="toolCalls"] { --category:#ffa13a; } .dark [data-category="toolResults"] { --category:#d9db75; } .dark [data-category="systemInstructions"] { --category:#f0445d; }
 .dark [data-category="developerMessages"] { --category:#ff99c2; } .dark [data-category="toolDefinitions"] { --category:#a0a0a0; } .dark [data-category="unrecognizedItems"] { --category:#1dd1e2; }
-.message.agent p, .message.agent li { white-space:pre-line; }
+/* Markdown adds newlines around a loose list's paragraphs. Preserving them on the list item
+ * creates a blank line before its first paragraph and strands the marker above the text. */
+.message.agent p { white-space:pre-line; }
 /* Matilda's full Love Spot conversation and floating chat share one reading rhythm: compact lines and half a line between blocks. */
 .message.agent.matilda-message { line-height:var(--reply-line-height); }
 .message.agent.matilda-message .markdown > :is(p, ul, ol, pre) { margin-block:0; }

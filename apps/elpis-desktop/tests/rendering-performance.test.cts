@@ -10,6 +10,28 @@ const report = async (name: string, value: unknown) => {
   if (process.env.ELPIS_RENDER_REPORT) await fs.appendFile(process.env.ELPIS_RENDER_REPORT, JSON.stringify({ name, value }) + '\n');
 };
 
+test('loose, nested and multiline lists keep markers beside text without blank structural lines', async () => {
+  const text = '1. **What you asked:** Read the messages.\n\n2. **What I did:** Export conversations.\n\n   A second paragraph belongs to this item.\n\n   - Nested first item\n\n   - Nested second item\n\n3. **Correction:** Keep the full explanation.\n   This line continues the paragraph.';
+  const f = await fixture({ width: 820, height: 900, chat: [['lists', 'Review the work', text]] });
+  try {
+    await f.open('chat-a');
+    const list = f.page.locator('.message.agent .markdown > ol');
+    await list.waitFor();
+    const items = await list.locator('li').evaluateAll((elements: HTMLElement[]) => elements.map(element => {
+      const first = element.querySelector(':scope > p') ?? element.firstElementChild!;
+      const range = document.createRange(); range.selectNodeContents(first);
+      return { offset: range.getBoundingClientRect().top - element.getBoundingClientRect().top,
+        lineHeight: parseFloat(getComputedStyle(element).lineHeight) };
+    }));
+    assert.equal(items.length, 5);
+    for (const item of items) assert.ok(item.offset < item.lineHeight / 2, `marker detached from first line: ${JSON.stringify(item)}`);
+    assert.equal(await list.locator(':scope > li:nth-child(2) > p').count(), 2, 'intentional paragraphs remain distinct');
+    assert.equal(await list.locator('ul > li').count(), 2, 'nested list structure remains intact');
+    if (process.env.ELPIS_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_SHOTS}/markdown-list-spacing.png` });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('code actions stay above short, overflowing and multiline code in a narrow pane', async () => {
   const samples = ['echo done', `printf '%s' ${'long_argument_'.repeat(80)}`, 'first line\nsecond line\nthird line'];
   const text = samples.map(code => `\`\`\`bash\n${code}\n\`\`\``).join('\n\n');

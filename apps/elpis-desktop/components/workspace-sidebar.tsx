@@ -165,32 +165,32 @@ export function WorkspaceSidebar({
       <UsagePanel refreshKey={accountRefresh} onOpen={() => openSettings("usage")} />
       <div className="sidebar-footer">
         <AccountRow refreshKey={accountRefresh} />
-      </div>
-      <div className="sidebar-status">
-        <span className="status-line">
-          <i className={`status-dot${connected ? " connected" : ""}`} />
-          {connected ? "Local workspace" : "Disconnected"}
-        </span>
-        <span className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={dark ? "Use light theme" : "Use dark theme"}
-            title={dark ? "Use light theme" : "Use dark theme"}
-            onClick={() => setTheme(dark ? "light" : "dark")}
-          >
-            <ThemeIcon size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label="Settings"
-            title="Settings (Ctrl+,)"
-            onClick={() => openSettings("general")}
-          >
-            <SettingsIcon size={14} />
-          </Button>
-        </span>
+        <div className="sidebar-status">
+          <span className="status-line" title={connected ? "Connected" : "Disconnected"}>
+            <i className={`status-dot${connected ? " connected" : ""}`} />
+            {!connected && <span className="sr-only">Disconnected</span>}
+          </span>
+          <span className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label={dark ? "Use light theme" : "Use dark theme"}
+              title={dark ? "Use light theme" : "Use dark theme"}
+              onClick={() => setTheme(dark ? "light" : "dark")}
+            >
+              <ThemeIcon size={14} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Settings"
+              title="Settings (Ctrl+,)"
+              onClick={() => openSettings("general")}
+            >
+              <SettingsIcon size={14} />
+            </Button>
+          </span>
+        </div>
       </div>
       <ResizeEdge
         label="Resize sidebar"

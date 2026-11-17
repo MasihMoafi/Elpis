@@ -37,6 +37,14 @@ test('empty Projects offers Add project and Recents vanishes when every chat is 
   try {
     await f.open('chat-a');
     await f.page.getByRole('button', { name: 'Add new project', exact: true }).waitFor();
+    assert.equal(await f.page.getByRole('button', { name: 'Add new project', exact: true }).locator('svg').count(), 0, 'the empty-project action has no unwanted plus');
+    assert.equal(await f.page.getByText('Local workspace', { exact: true }).count(), 0);
+    const footer = await f.page.locator('.sidebar-footer').evaluate((element: HTMLElement) => {
+      const account = element.querySelector('.account-row')!.getBoundingClientRect();
+      const settings = element.querySelector('[aria-label="Settings"]')!.getBoundingClientRect();
+      return { accountTop: account.top, accountBottom: account.bottom, settingsTop: settings.top, settingsBottom: settings.bottom };
+    });
+    assert.ok(footer.settingsTop >= footer.accountTop && footer.settingsBottom <= footer.accountBottom, 'settings share the bottom account row rather than consuming a second row');
     assert.equal(await f.page.getByRole('button', { name: 'Projects', exact: true }).count(), 0);
     assert.equal(await f.page.locator('section[aria-label="Recents"]').count(), 0);
     assert.equal(await f.page.locator('section[aria-label="Pinned"] .thread-row').count(), 3);

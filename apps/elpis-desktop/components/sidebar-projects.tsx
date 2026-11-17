@@ -55,13 +55,12 @@ export function SidebarProjects({
         {projects.length > 0 && foldable("projects", "Projects", projects.length)}
         <Button
           variant="ghost"
-          size="icon-xs"
+          size={projects.length ? "icon-xs" : "sm"}
           aria-label="Add new project"
           title="Add new project: choose a folder"
           onClick={() => void addProject()}
         >
-          <PlusIcon size={13} />
-          {!projects.length && "Add project"}
+          {projects.length ? <PlusIcon size={13} /> : "Add project"}
         </Button>
       </div>
       {!collapsedSections.projects &&
