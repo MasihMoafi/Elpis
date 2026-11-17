@@ -5,4 +5,8 @@
 /**
  * Extra app-server data for a thread.
  */
-export type ThreadExtra = Record<string, never>;
+export type ThreadExtra = {
+/**
+ * The selected paginated rollout is unavailable; retained items are read-only.
+ */
+missingSourceRollout: boolean, };

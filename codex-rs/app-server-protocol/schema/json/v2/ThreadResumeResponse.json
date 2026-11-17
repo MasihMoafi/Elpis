@@ -1686,6 +1686,13 @@
     },
     "ThreadExtra": {
       "description": "Extra app-server data for a thread.",
+      "properties": {
+        "missingSourceRollout": {
+          "default": false,
+          "description": "The selected paginated rollout is unavailable; retained items are read-only.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "ThreadHistoryMode": {
