@@ -117,7 +117,7 @@ export class ClientState {
   attaching = new Map<unknown, Promise<{ thread: RpcResponse<"thread/read">["thread"]; followingLive?: boolean }>>();
   context: Map<
     unknown,
-    { tokenUsage?: ReturnType<typeof tokenUsageSnapshot>; smartPrune?: ReturnType<typeof smartPruneSnapshot> }
+    { tokenUsage?: ReturnType<typeof tokenUsageSnapshot>; tokenUsageReceivedAt?: number; smartPrune?: ReturnType<typeof smartPruneSnapshot> }
   > = new BoundedCache(64);
   restored: Map<unknown, Cached<Awaited<ReturnType<typeof restoredTokenUsage>>>> = new BoundedCache(16);
   shares: Map<unknown, Cached<Awaited<ReturnType<typeof rolloutShares>>>> = new BoundedCache(16);

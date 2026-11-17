@@ -15,12 +15,17 @@ type TraceWindow = typeof window & { __contextOpeningFrames: Frame[]; __traceCon
 const popupOf = (page: Page) => page.getByRole('dialog', { name: 'Context window usage', exact: true });
 async function open(f: Fixture) { await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
 for (const colorScheme of ['light', 'dark'] as const) test(`the open ledger follows custom accents (${colorScheme})`, async () => {
-  const f = await fixture({ colorScheme, routes: contextRoutes() });
+  const categories = ['userMessages', 'agentMessages', 'reasoning', 'toolCalls', 'toolResults',
+    'systemInstructions', 'developerMessages', 'toolDefinitions', 'unrecognizedItems'].map(id => ({ id, label: id, tokens: 5000 }));
+  const f = await fixture({ colorScheme, routes: { ...contextRoutes(),
+    '/api/threads/chat-a/context': () => ({ threadId: 'chat-a', ledger: { used: 45000, window: 200000, categories } }),
+  } });
   try {
     await open(f);
     if (process.env.ELPIS_REVIEW_SHOTS) {
       await f.page.screenshot({ path: `${process.env.ELPIS_REVIEW_SHOTS}/context-ledger-${colorScheme}.png` });
     }
+    let previous: string[] | undefined;
     for (const accent of ['rgb(150, 40, 110)', 'rgb(30, 110, 180)']) {
       const colors = await popupOf(f.page).evaluate((element, accent) => {
         element.style.setProperty('--primary', accent);
@@ -31,6 +36,15 @@ for (const colorScheme of ['light', 'dark'] as const) test(`the open ledger foll
         });
       }, accent);
       assert.deepEqual(colors, [accent, accent, accent]);
+      const swatches = await popupOf(f.page).evaluate(element => [...element.querySelectorAll('.context-bar-segment[data-category]')].map(segment => {
+        const row = element.querySelector(`.context-ledger-row[data-category="${segment.getAttribute('data-category')}"]`)!;
+        return [getComputedStyle(segment).backgroundColor, getComputedStyle(row, '::before').backgroundColor];
+      }));
+      assert.equal(new Set(swatches.map(([bar]) => bar)).size, categories.length, 'every category is visually distinct');
+      for (const [bar, swatch] of swatches) assert.equal(bar, swatch, 'legend and bar use the same category colour');
+      const current = swatches.map(([bar]) => bar!);
+      if (previous) current.forEach((color, index) => assert.notEqual(color, previous![index], 'all category colours follow an accent change'));
+      previous = current;
     }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }

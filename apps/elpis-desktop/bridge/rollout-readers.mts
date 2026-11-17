@@ -155,7 +155,9 @@ export const countedUsage = (line: string): RecordValue | null => {
   try {
     const row: unknown = JSON.parse(line);
     const payload = record(row) && record(row.payload) ? row.payload : null;
-    return payload?.type === "token_count" && record(payload.info) ? payload.info : null;
+    return payload?.type === "token_count" && record(payload.info)
+      ? { ...payload.info, recordedAt: record(row) && typeof row.timestamp === "string" ? Date.parse(row.timestamp) : null }
+      : null;
   } catch {
     return null;
   }
@@ -209,6 +211,7 @@ export async function restoredTokenUsage(file: unknown) {
   }
   if (!info) return null;
   return {
+    recordedAt: typeof info.recordedAt === "number" && Number.isFinite(info.recordedAt) ? info.recordedAt : null,
     total: rolloutUsage(info.total_token_usage),
     last: rolloutUsage(info.last_token_usage),
     modelContextWindow: typeof info.model_context_window === "number" ? info.model_context_window : null,

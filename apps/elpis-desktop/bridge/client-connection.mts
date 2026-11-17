@@ -324,7 +324,11 @@ function internal_receive(this: DesktopClient, clientState: ClientState, raw: un
       const shares = clientState.context.get(id)?.tokenUsage?.contextAttribution;
       const usage = value as ReturnType<typeof tokenUsageSnapshot>;
       if (key === "tokenUsage" && usage && !usage.contextAttribution && shares) usage.contextAttribution = shares;
-      clientState.context.set(id, { ...clientState.context.get(id), [key]: value });
+      clientState.context.set(id, {
+        ...clientState.context.get(id),
+        [key]: value,
+        ...(key === "tokenUsage" ? { tokenUsageReceivedAt: Date.now() } : {}),
+      });
       this.emit("event", { type: "message", data: { method: message.method, params: { threadId: id, [key]: value } } });
       return;
     }

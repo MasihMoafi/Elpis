@@ -369,12 +369,20 @@
 .context-ledger-head:hover:not(:disabled) .context-ledger-caret { color:var(--foreground); }
 .context-ledger-note { padding:0 16px; line-height:1.35; color:var(--muted-foreground); }
 .context-bar { display:flex; height:4px; margin:2px 16px; border-radius:999px; overflow:hidden; background:var(--muted); }
-.context-bar-segment { flex:none; height:100%; background:var(--primary); }
+.context-ledger [data-category="agentMessages"] { --context-category:oklch(from var(--primary) l c calc(h + 40)); }
+.context-ledger [data-category="reasoning"] { --context-category:oklch(from var(--primary) l c calc(h + 80)); }
+.context-ledger [data-category="toolCalls"] { --context-category:oklch(from var(--primary) l c calc(h + 120)); }
+.context-ledger [data-category="toolResults"] { --context-category:oklch(from var(--primary) l c calc(h + 160)); }
+.context-ledger [data-category="systemInstructions"] { --context-category:oklch(from var(--primary) l c calc(h + 200)); }
+.context-ledger [data-category="developerMessages"] { --context-category:oklch(from var(--primary) l c calc(h + 240)); }
+.context-ledger [data-category="toolDefinitions"] { --context-category:oklch(from var(--primary) l c calc(h + 280)); }
+.context-ledger [data-category="unrecognizedItems"] { --context-category:oklch(from var(--primary) l c calc(h + 320)); }
+.context-bar-segment { flex:none; height:100%; background:var(--context-category, var(--primary)); }
 .context-bar-segment:not(:first-child) { box-shadow:-1px 0 0 var(--card); }
 .context-bar-segment:only-child:not([data-category]) { min-width:4px; }
 .context-ledger-rows { display:grid; gap:4px; margin:2px 0 0; padding:0 16px; list-style:none; }
 .context-ledger-row { display:flex; align-items:center; gap:8px; }
-.context-ledger-row::before { content:""; flex:none; width:10px; height:10px; border-radius:2px; background:var(--primary); }
+.context-ledger-row::before { content:""; flex:none; width:10px; height:10px; border-radius:2px; background:var(--context-category, var(--primary)); }
 .context-ledger-row-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .context-ledger-row-value { color:var(--muted-foreground); font-variant-numeric:tabular-nums; white-space:nowrap; }
 .context-ledger-row-share { width:44px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }

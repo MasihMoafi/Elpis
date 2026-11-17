@@ -114,10 +114,13 @@ export async function impl_context(this: DesktopClient, clientState: ClientState
   const { thread } = await internal_rpc(this, clientState, "thread/read", { threadId: id, includeTurns: false });
   if (thread?.id !== id) throw new BridgeError("Elpis returned another thread", 502);
   const { desktopAccess } = internal_decorate.call(this, clientState, thread);
+  // A connection can miss updates, including compaction. Read the cached rollout tail and
+  // prefer its newer record; a live update received during the read must still win.
+  const restored = await internal_restoredUsage.call(this, clientState, thread.path);
   const snapshot = clientState.context.get(id) ?? {};
-  // Before this connection has live usage, the last usage the chat's rollout recorded (what a cold resume restores).
-  const restored = snapshot.tokenUsage ? null : await internal_restoredUsage.call(this, clientState, thread.path);
-  const tokenUsage = snapshot.tokenUsage ?? restored;
+  const useRestored = restored && (!snapshot.tokenUsage ||
+    (restored.recordedAt !== null && restored.recordedAt > (snapshot.tokenUsageReceivedAt ?? 0)));
+  const tokenUsage = useRestored ? restored : snapshot.tokenUsage ?? null;
   // The TUI has the shares only once its own process has seen a request; for a chat this app has not seen run, the saved transcript stands in.
   const saved =
     tokenUsage && !tokenUsage.contextAttribution
@@ -137,11 +140,11 @@ export async function impl_context(this: DesktopClient, clientState: ClientState
           ? { available: false, reason: "Only this agent's parent can compact it" }
           : { available: true },
     availability: {
-      tokenUsage: snapshot.tokenUsage ? "live" : restored ? "restored" : "unavailable",
+      tokenUsage: useRestored ? "restored" : snapshot.tokenUsage ? "live" : "unavailable",
       smartPrune: snapshot.smartPrune ? "live" : "unavailable",
     },
     reason:
-      "Live usage comes from events this app connection receives; before them, the last usage the chat's rollout recorded. Until the engine reports its category shares for a request, they are estimated from the chat's saved transcript.",
+      "Usage follows live events or a newer saved record when an event was missed. Until the engine reports its category shares for a request, they are estimated from the chat's saved transcript.",
   };
 }
 

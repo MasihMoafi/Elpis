@@ -40,6 +40,7 @@ test("an old chat shows the last usage its rollout recorded, plain or compressed
   await fs.writeFile(packed, zlib.zstdCompressSync(Buffer.from(lines.join("\n") + "\n")));
   await fs.writeFile(empty, lines[0] + "\n");
   const expected = {
+    recordedAt: Date.parse("2026-10-16T00:00:00Z"),
     total: {
       inputTokens: 69900,
       cachedInputTokens: 10,
@@ -95,6 +96,47 @@ test("an old chat shows the last usage its rollout recorded, plain or compressed
   assert.equal(live.ledger.used, 41000);
   assert.equal(live.availability.tokenUsage, "live");
   client.close();
+});
+
+test("missed usage events recover from the saved record after compaction without replacing newer live usage", async t => {
+  t.mock.timers.enable({ apis: ["Date"], now: 2000000000000 });
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), "elpis-context-refresh-"));
+  const file = path.join(temp, "rollout.jsonl");
+  const { client, socket, threads } = fixture();
+  t.after(async () => { client.close(); await fs.rm(temp, { recursive: true, force: true }); });
+  await client.initialize();
+  required(threads.get(ROOT)).path = file;
+  const live = (used: number) => socket.emit("message", JSON.stringify({
+    method: "thread/tokenUsage/updated",
+    params: { threadId: ROOT, tokenUsage: { last: { totalTokens: used }, modelContextWindow: 258400,
+      contextAttribution: { toolResults: used, estimatedTotal: used } } },
+  }));
+  const saved = (used: number) => fs.appendFile(file, JSON.stringify({
+    timestamp: new Date().toISOString(), type: "event_msg", payload: { type: "token_count", info: {
+      last_token_usage: { total_tokens: used }, model_context_window: 258400,
+    } },
+  }) + "\n");
+  await saved(241238);
+  await client.context(ROOT);
+  live(241238);
+  assert.equal((await client.context(ROOT)).ledger.used, 241238);
+  t.mock.timers.tick(1000);
+  await fs.appendFile(file, JSON.stringify({ type: "compacted", payload: { replacement_history: [] } }) + "\n");
+  await saved(52051);
+  const compacted = await client.context(ROOT);
+  assert.equal(compacted.ledger.used, 52051, "a lost notification must not leave the meter at 93%");
+  assert.equal(compacted.availability.tokenUsage, "restored");
+  assert.equal(compacted.tokenUsage?.contextAttribution, null, "pre-compaction shares are stale too");
+  t.mock.timers.tick(1000);
+  live(40038);
+  const resumed = await client.context(ROOT);
+  assert.equal(resumed.ledger.used, 40038, "new live usage wins while disk is still catching up");
+  assert.equal(resumed.availability.tokenUsage, "live");
+  t.mock.timers.tick(1000);
+  await saved(40611);
+  assert.equal((await client.context(ROOT)).ledger.used, 40611, "later missed updates recover too");
+  await fs.unlink(file);
+  assert.equal((await client.context(ROOT)).ledger.used, 40038, "an unavailable rollout keeps live usage");
 });
 
 test("encrypted reasoning weighs what the model is sent, as the engine counts it (A225, A260)", async () => {
