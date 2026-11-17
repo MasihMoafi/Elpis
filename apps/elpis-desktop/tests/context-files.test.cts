@@ -14,10 +14,13 @@ type Frame = { popup: Box | null; app: Box | null; composer: Box | null };
 type TraceWindow = typeof window & { __contextOpeningFrames: Frame[]; __traceContextOpening: boolean };
 const popupOf = (page: Page) => page.getByRole('dialog', { name: 'Context window usage', exact: true });
 async function open(f: Fixture) { await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
-test('the open ledger follows a changed custom accent across headings, admissions and usage bars', async () => {
-  const f = await fixture({ routes: contextRoutes() });
+for (const colorScheme of ['light', 'dark'] as const) test(`the open ledger follows custom accents (${colorScheme})`, async () => {
+  const f = await fixture({ colorScheme, routes: contextRoutes() });
   try {
     await open(f);
+    if (process.env.ELPIS_REVIEW_SHOTS) {
+      await f.page.screenshot({ path: `${process.env.ELPIS_REVIEW_SHOTS}/context-ledger-${colorScheme}.png` });
+    }
     for (const accent of ['rgb(150, 40, 110)', 'rgb(30, 110, 180)']) {
       const colors = await popupOf(f.page).evaluate((element, accent) => {
         element.style.setProperty('--primary', accent);

@@ -34,7 +34,7 @@ test('loose, nested and multiline lists keep markers beside text without blank s
     for (const item of items) assert.ok(item.offset < item.lineHeight / 2, `marker detached from first line: ${JSON.stringify(item)}`);
     assert.equal(await list.locator(':scope > li:nth-child(2) > p').count(), 2, 'intentional paragraphs remain distinct');
     assert.equal(await list.locator('ul > li').count(), 2, 'nested list structure remains intact');
-    if (process.env.ELPIS_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_SHOTS}/markdown-list-spacing.png` });
+    if (process.env.ELPIS_REVIEW_SHOTS) await f.page.screenshot({ path: `${process.env.ELPIS_REVIEW_SHOTS}/markdown-list-spacing.png` });
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -57,6 +57,9 @@ test('code actions stay above short, overflowing and multiline code in a narrow 
         return { actionBottom: bar.bottom, codeTop: code.top };
       });
       assert.ok(bounds.actionBottom <= bounds.codeTop, `code block ${index}: actions overlap the source`);
+      if (process.env.ELPIS_REVIEW_SHOTS) {
+        await f.page.screenshot({ path: `${process.env.ELPIS_REVIEW_SHOTS}/code-block-${index}.png` });
+      }
       await block.getByRole('button', { name: 'Copy code', exact: true }).click();
       assert.equal(await f.copied(), samples[index], 'the actions copy only the complete source');
     }
