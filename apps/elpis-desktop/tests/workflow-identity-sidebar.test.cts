@@ -174,7 +174,7 @@ test('hiding Workflows can be undone after visiting Settings with the Persian ke
     await leaveSettings(page);
     await page.evaluate(() => {
       (document.activeElement as HTMLElement | null)?.blur();
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ظ', code: 'KeyZ', ctrlKey: true, bubbles: true }));
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ظ', code: 'KeyZ', ctrlKey: true, bubbles: true }));
     });
     await workflows(page).waitFor();
     await page.reload(); await sidebar(page).waitFor();
