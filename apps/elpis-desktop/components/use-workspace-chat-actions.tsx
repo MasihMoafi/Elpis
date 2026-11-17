@@ -307,7 +307,7 @@ export function useWorkspaceChatActions(previous: WorkspaceConversation) {
     else show(next);
   };
   const { openInTui, openSettings, focusComposer, restoreComposerFocus, openComposerControl, closePanel } =
-    createWorkspaceControls({ session, composer, panels, pages, workspacePanels, cwd, loadThread });
+    createWorkspaceControls({ session, composer, panels, pages, workspacePanels, cwd, openThread });
   const setDesktopPrompt = useDesktopEntryPoints({
     pages,
     composer,

@@ -2,11 +2,51 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 
-test('reconnection preserves received output, accepts newer saved output and keeps chats separate', async () => {
+test('numbered, boundary and return-from-settings navigation preserve the visible live chat', async () => {
+  const f = await fixture({ running: true });
+  try {
+    await f.open('chat-a');
+    f.emit('message', { method: 'item/completed', params: {
+      threadId: 'chat-a', turnId: 't4',
+      item: { id: 'a-t4', type: 'agentMessage', text: 'New output that is not in the saved page.' },
+    } });
+    const latest = f.page.getByText('New output that is not in the saved page.', { exact: true });
+    await latest.waitFor();
+    await f.composer.fill('Keep my unsent draft');
+    const reads = () => f.requests.filter((request: { method: string; path: string }) =>
+      request.method === 'GET' && request.path === '/api/threads/chat-a').length;
+    const before = reads();
+    const position = await f.page.locator('.thread-row[data-depth="0"]').evaluateAll((rows: Element[]) =>
+      rows.findIndex(row => row.getAttribute('data-thread-id') === 'chat-a') + 1);
+    assert.equal(position, 1, 'the working chat is first for the boundary shortcut');
+    for (const action of ['numbered', 'boundary', 'settings']) {
+      if (action === 'settings') {
+        await f.page.keyboard.press('Control+,');
+        await f.page.getByRole('heading', { name: 'General', exact: true }).waitFor();
+      }
+      await f.page.keyboard.press(action === 'boundary' ? 'Control+PageUp' : `Alt+${position}`);
+      await latest.waitFor();
+      await f.page.waitForTimeout(100);
+      assert.equal(reads(), before, `${action}: navigation must not reread an already visible chat`);
+      assert.equal(await latest.count(), 1, `${action}: latest output stays`);
+      assert.equal(await f.composer.inputValue(), 'Keep my unsent draft', `${action}: draft stays`);
+    }
+    await f.page.keyboard.press('Control+PageDown');
+    await f.page.locator('.thread-row.active[data-thread-id="chat-b"]').waitFor();
+    assert.equal(await latest.count(), 0, 'a different chat gets its own transcript');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+for (const oversized of [false, true]) test(`reconnection keeps live output and accepts newer history (${oversized ? 'uncached large chat' : 'cached chat'})`, async () => {
   let savedReply = 'All green.';
   const f = await fixture({ running: true, chat: [['t4', 'Check the result', savedReply]], routes: {
     '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Chat A', cwd: '/tmp/parity-fixture' }, data: [
       { turnId: 't4', item: { id: 'a-t4', type: 'agentMessage', text: savedReply } },
+      ...(oversized ? [{ turnId: 't4', item: {
+        id: 'large-output', type: 'commandExecution', command: 'large log', status: 'completed',
+        aggregatedOutput: 'x'.repeat(3 * 1024 * 1024),
+      } }] : []),
       { turnId: 't4', item: { id: 'u-t4', type: 'userMessage', content: [{ type: 'text', text: 'Check the result' }] } },
     ], nextCursor: null }),
   } });

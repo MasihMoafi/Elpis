@@ -15,7 +15,7 @@ type Inputs = {
   pages: ReturnType<typeof useWorkspacePagesState>;
   workspacePanels: ReturnType<typeof useWorkspacePanels>;
   cwd: string;
-  loadThread: ReturnType<typeof useOpenConversation>["loadThread"];
+  openThread: ReturnType<typeof useOpenConversation>["openThread"];
 };
 
 export function createWorkspaceControls({
@@ -25,7 +25,7 @@ export function createWorkspaceControls({
   pages,
   workspacePanels,
   cwd,
-  loadThread,
+  openThread,
 }: Inputs) {
   const { selectedRef } = session,
     { composerRef } = composer,
@@ -34,7 +34,7 @@ export function createWorkspaceControls({
     { side, setTuiLaunch, show } = workspacePanels;
   /** "Open in Elpis TUI": the chat opens here and its terminal resumes it in the TUI (`elpis resume <id>`). */
   const openInTui = (thread: Thread) => {
-    if (selectedRef.current?.id !== thread.id || view !== "chat") void loadThread(thread);
+    if (selectedRef.current?.id !== thread.id || view !== "chat") void openThread(thread);
     setTuiLaunch({ key: side.openTerminal(thread.cwd || cwd, thread.id), threadId: thread.id, token: Date.now() });
   };
   const openSettings = (tab: SettingsDestination) => {

@@ -88,7 +88,11 @@ export function useTranscriptHistory(
       const overlap = cached?.entries.findIndex(entry => keys.has(`${entry.turnId}:${entry.item.id}`)) ?? -1;
       const prefix = overlap > 0 ? cached!.entries.slice(0, overlap) : [];
       const snapshot = !fresh.length && cached ? cached.entries : [...prefix, ...fresh];
-      setEntries(previous => mergeHistoryWithLive(previous, snapshot, liveKeysAfter(revision), cached?.liveKeys));
+      // An oversized open chat is not cached. Its received items still survive reconnection.
+      const received = keepOlder
+        ? new Set([...(cached?.liveKeys ?? []), ...liveVersions.current.keys()])
+        : undefined;
+      setEntries(previous => mergeHistoryWithLive(previous, snapshot, liveKeysAfter(revision), received));
       setItemCursor(cached && (!fresh.length || prefix.length) ? cached.cursor : page.nextCursor);
       noteHistoryGap(id, page);
       if (!cached || (fresh.length && !prefix.length)) heldEarlier.current.delete(id);

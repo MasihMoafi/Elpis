@@ -38,7 +38,7 @@ type Inputs = {
   narrow: () => boolean;
   show: (view: View) => void;
   goHistory: (direction: -1 | 1) => void;
-  loadThread: (thread: Thread) => Promise<unknown>;
+  openThread: (thread: Thread) => Promise<unknown>;
   archiveChats: (threads: Thread[]) => void;
   chosenChats: () => Thread[];
   togglePin: (thread: Thread) => void;
@@ -80,7 +80,7 @@ export function useWorkspaceShortcuts({
   narrow,
   show,
   goHistory,
-  loadThread,
+  openThread,
   archiveChats,
   chosenChats,
   togglePin,
@@ -123,7 +123,7 @@ export function useWorkspaceShortcuts({
       setSettingsSection("general");
       show("settings");
     } else if (id === "go-to-chat") {
-      if (index !== undefined && ordered[index]) void loadThread(ordered[index]);
+      if (index !== undefined && ordered[index]) void openThread(ordered[index]);
     } else if (id.startsWith("go-")) show(id.slice(3) as View);
     // A cancelled event means a visible picker took it; with Matilda hidden, Settings holds the same choice.
     else if (id === "theme") {
@@ -135,9 +135,9 @@ export function useWorkspaceShortcuts({
     else if (id === "shortcuts") {
       shortcutsReturnFocus.current = document.activeElement as HTMLElement | null;
       setShortcutsOpen(true);
-    } else if (id === "previous-chat" && ordered.length) void loadThread(ordered[at <= 0 ? 0 : at - 1]!);
+    } else if (id === "previous-chat" && ordered.length) void openThread(ordered[at <= 0 ? 0 : at - 1]!);
     else if (id === "next-chat" && ordered.length)
-      void loadThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]!);
+      void openThread(ordered[at < 0 ? 0 : Math.min(ordered.length - 1, at + 1)]!);
     else if (id === "rename" && selected) setRenameRequest(true);
     else if (id === "archive") archiveChats(chosenChats());
     else if (id === "pin" && selected) togglePin(selected);
