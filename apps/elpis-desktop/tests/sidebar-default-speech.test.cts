@@ -7,6 +7,7 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar hierarchy and running
   const f = await fixture({ colorScheme, running: true });
   try {
     await f.open('chat-b');
+    assert.equal(await f.page.locator('.sidebar-status .status-line').count(), 0, 'a healthy connection adds no footer indicator');
     const heading = f.page.getByRole('button', { name: 'Recents', exact: true });
     await heading.waitFor();
     assert.equal(await heading.locator('.section-count').textContent(), '3');
@@ -48,6 +49,26 @@ test('empty Projects offers Add project and Recents vanishes when every chat is 
     assert.equal(await f.page.getByRole('button', { name: 'Projects', exact: true }).count(), 0);
     assert.equal(await f.page.locator('section[aria-label="Recents"]').count(), 0);
     assert.equal(await f.page.locator('section[aria-label="Pinned"] .thread-row').count(), 3);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('the footer only shows connection trouble and hides it again after recovery', async () => {
+  let connected = true;
+  const f = await fixture({ routes: { '/api/health': () => ({ connected }) } });
+  try {
+    await f.open('chat-a');
+    await f.composer.fill('Keep this draft across a connection change');
+    const indicator = f.page.locator('.sidebar-status .status-line');
+    assert.equal(await indicator.count(), 0);
+    connected = false; f.emit('connection', { connected });
+    await indicator.waitFor();
+    assert.equal(await indicator.getAttribute('title'), 'Disconnected');
+    connected = true; f.emit('connection', { connected });
+    await indicator.waitFor({ state: 'detached' });
+    assert.equal(await f.composer.inputValue(), 'Keep this draft across a connection change');
+    assert.equal(await f.page.getByRole('button', { name: 'Use dark theme', exact: true }).count(), 1);
+    assert.equal(await f.page.getByRole('button', { name: 'Settings', exact: true }).count(), 1);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

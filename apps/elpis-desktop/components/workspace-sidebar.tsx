@@ -166,9 +166,9 @@ export function WorkspaceSidebar({
       <div className="sidebar-footer">
         <AccountRow refreshKey={accountRefresh} />
         <div className="sidebar-status">
-          <span className="status-line" title={connected ? "Connected" : "Disconnected"}>
-            <i className={`status-dot${connected ? " connected" : ""}`} />
-            {!connected && <span className="sr-only">Disconnected</span>}
+          <span className={connected ? "sr-only" : "status-line"} role="status" title={connected ? undefined : "Disconnected"}>
+            <i className={`status-dot${connected ? " connected" : ""}`} aria-hidden="true" />
+            <span className={connected ? undefined : "sr-only"}>{connected ? "Connected" : "Disconnected"}</span>
           </span>
           <span className="flex items-center gap-1">
             <Button
