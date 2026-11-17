@@ -49,22 +49,55 @@ export function liveEventItemKey(method: string, params: Record<string, unknown>
   return event ? itemKey(event.turnId, "item" in event ? event.item.id : event.itemId) : null;
 }
 
-/** Keep the chronological snapshot, except for items changed while its read was in flight. */
+/** A cached stream must not shrink on reopening; a longer saved result can advance it. */
+function cachedLiveIsNewer(entry: Entry, baseline: Entry): boolean {
+  if (entry.item.type !== baseline.item.type) return false;
+  const field = entry.item.type === "agentMessage" ? "text" : "aggregatedOutput";
+  const current = entry.item[field], saved = baseline.item[field];
+  if (typeof current === "string" && typeof saved === "string") {
+    if (saved.length > current.length) return false;
+    if (current.length > saved.length && current.startsWith(saved)) return true;
+  }
+  return !!entry.completedAtMs || (entry.item.status === "completed" && baseline.item.status !== "completed");
+}
+
+/** Keep the chronological snapshot, except for newer live items, including those cached before a chat switch. */
 export function mergeHistoryWithLive(
   current: Entry[],
   snapshot: Entry[],
   changedSinceRead: ReadonlySet<string>,
+  previouslyLive: ReadonlySet<string> = new Set(),
 ): Entry[] {
   const merged = new Map<string, Entry>();
   for (const entry of snapshot) merged.set(itemKey(entry.turnId, entry.item.id), entry);
   for (const entry of current) {
     const key = itemKey(entry.turnId, entry.item.id);
-    if (!changedSinceRead.has(key)) continue;
+    const changed = changedSinceRead.has(key);
+    if (!changed && !previouslyLive.has(key)) continue;
     const baseline = merged.get(key);
     if (unbasedItems.has(entry.item) && baseline && !unbasedItems.has(baseline.item)) continue;
+    if (!changed && baseline && !cachedLiveIsNewer(entry, baseline)) continue;
     merged.set(key, entry);
   }
-  return [...merged.values()];
+  const result = [...merged.values()];
+  const snapshotKeys = new Set(snapshot.map(entry => itemKey(entry.turnId, entry.item.id)));
+  // A saved page can have advanced while the chat was hidden. Missing cached stream items
+  // belong after their preceding shared item, before the page's newer work.
+  let previous: string | undefined;
+  for (const entry of current) {
+    const key = itemKey(entry.turnId, entry.item.id);
+    if (!merged.has(key)) continue;
+    if (previous && previouslyLive.has(key) && !snapshotKeys.has(key)) {
+      const at = result.indexOf(entry);
+      if (at >= 0) {
+        result.splice(at, 1);
+        const anchor = result.findIndex(row => itemKey(row.turnId, row.item.id) === previous);
+        result.splice(anchor + 1, 0, entry);
+      }
+    }
+    previous = key;
+  }
+  return result;
 }
 
 /** Update the selected conversation only; completion replaces its streamed item. */

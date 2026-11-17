@@ -19,6 +19,7 @@ function fixture() {
   const module = { exports: {} as { ReadAloud(options: { enabled: boolean; children: null }): { props: { value: AudioContext | null } } } };
   const imports = (id: string): unknown => id === './read-aloud-text.ts' ? helpers() : id === 'react' ? hooks : id === '@/lib/api' ? { sessionReady: async () => {}, api: async () => ({ available }) }
     : id === '@/lib/remote-audio' ? { playRemoteAudio: () => ({}) }
+    : id === '@/lib/streaming-audio' ? { playStreamingAudio: () => { throw Error('This fixture uses the nonstreaming provider'); } }
     : id === '@/lib/love-spot-audio' ? { READ_ALOUD_AUDIO: { available: false } }
     : id === '@/lib/error-text.mts' ? { errorText: (error: { message?: string } | null, fallback: string) => error?.message || fallback } : require(id);
   const helpers = () => {

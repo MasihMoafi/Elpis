@@ -113,7 +113,7 @@ for (const response of ['rejected', 'empty']) test(`provider cards and key check
 });
 
 // Masih, 6 Nov: "optionally one key for everything; remember? we get to check and uncheck."
-for (const colorScheme of ['light', 'dark']) test(`ticking Read aloud on the OpenRouter key routes read aloud there and unticking returns it to Kokoro (${colorScheme})`, async () => {
+for (const colorScheme of ['light', 'dark']) test(`ticking Read aloud on the OpenRouter key routes read aloud there and unticking returns it to the local voice (${colorScheme})`, async () => {
  const app = await fixture({ colorScheme, height: 900, routes: keyRoutes() });
  try {
   await openAccounts(app.page);
@@ -142,7 +142,7 @@ for (const colorScheme of ['light', 'dark']) test(`ticking Read aloud on the Ope
   if (process.env.ELPIS_KEY_SCREENSHOTS) await router.locator('xpath=ancestor::section[@data-provider="openrouter"]').screenshot({ path: path.join(process.env.ELPIS_KEY_SCREENSHOTS, `key-checkboxes-${colorScheme}.png`) });
   // Unticking returns read aloud to its default.
   await box(router, 'OpenRouter', 'Read aloud').click();
-  await router.getByText('Read aloud is back on local Kokoro.', { exact: true }).waitFor();
+  await router.getByText('Read aloud is back on the local GPU voice.', { exact: true }).waitFor();
   assert.deepEqual(app.posts.filter((item: {path: string}) => item.path === '/api/read-aloud/settings').map((item: {body: unknown}) => item.body).at(-1), { source: 'local', model: null, voice: null });
   assert.equal(await box(router, 'OpenRouter', 'Read aloud').getAttribute('aria-checked'), 'false');
   // Dictation has its own picker: the key's speech-to-text models.

@@ -112,8 +112,14 @@ export function SidebarChatList({
   } = model;
   const { nextCursor, moreLoading, loadMoreConversations } = conversations;
   const searchTerm = search.searchTerm;
+  const markRead = !searchTerm && ordinaryUnread.length > 0 && (
+    <Button variant="ghost" size="icon-xs" aria-label="Mark all as read" title="Mark all as read" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>
+      <CheckCheck size={16} />
+    </Button>
+  );
   return (
     <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
+      {!recentChats.length && markRead && <div className="section-label-row justify-end">{markRead}</div>}
       {workflowCatalog.error && (
         <p role="alert" className="px-2 text-xs text-destructive">
           {workflowCatalog.error}
@@ -220,11 +226,7 @@ export function SidebarChatList({
         >
           <div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>
             {searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents", recentChats.length)}
-            {!searchTerm && ordinaryUnread.length > 0 && (
-              <Button variant="ghost" size="icon-xs" aria-label="Mark all as read" title="Mark all as read" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>
-                <CheckCheck size={16} />
-              </Button>
-            )}
+            {markRead}
             {!searchTerm && (
               <GroupAndSortMenu
                 state={chatGroups}

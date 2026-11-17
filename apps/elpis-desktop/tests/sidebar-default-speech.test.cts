@@ -41,7 +41,10 @@ test('empty Projects offers Add project and Recents vanishes when every chat is 
 });
 
 test('default model search opens its actual control and hides groups with no matching settings', async () => {
-  const f = await fixture();
+  const f = await fixture({ routes: { '/api/settings': () => ({
+    version: 'v1', main: { model: 'sol', provider: 'openai' }, background: {},
+    smartPrune: { explicitOverride: {} }, memory: {}, write: { available: true },
+  }) } });
   try {
     await f.open('chat-a'); await openSettings(f.page);
     await f.page.getByLabel('Search settings', { exact: true }).fill('default model');
@@ -83,7 +86,7 @@ test('streaming Read aloud begins before synthesis finishes and speed changes du
       } as unknown as typeof Audio;
     });
     await f.page.reload(); await f.open('chat-a');
-    const reply = f.page.locator('.message.assistant').first();
+    const reply = f.page.locator('.message.agent').first();
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
     await f.page.waitForFunction(() => ((window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio?.currentTime ?? 0) > 0, null, { timeout: 2000 });
     assert.equal(completed, false, 'first playback precedes the last generated chunk');

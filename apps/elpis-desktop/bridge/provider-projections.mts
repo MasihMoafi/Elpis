@@ -151,7 +151,8 @@ export function providersSnapshot({
     },
     claude:
       anthropic?.signedOut === true || anthropic?.unavailable === true
-        ? { state: "notConnected", models: [], usage: [], signedOut: anthropic.signedOut === true, unavailable: anthropic.unavailable === true }
+        ? { state: "notConnected", models: [], usage: [], signedOut: anthropic.signedOut === true,
+            ...(anthropic.unavailable === true ? { unavailable: true } : {}) }
         : { ...subscription("claude/", "claude"), signedOut: false },
     gemini: subscription("agy/", "antigravity"),
     openrouter: configured.filter(([, def]) => hostOf(def.base_url).endsWith("openrouter.ai")).map(describe),

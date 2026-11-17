@@ -1,6 +1,6 @@
 import type { Entry } from "./api.ts";
 
-type Transcript = { entries: Entry[]; cursor: string | null };
+type Transcript = { entries: Entry[]; cursor: string | null; liveKeys?: ReadonlySet<string> };
 const MAX_CHARS = 2 * 1024 * 1024;
 const MAX_CHATS = 4;
 

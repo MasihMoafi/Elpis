@@ -6,6 +6,34 @@ import type { Entry } from '../lib/api.ts';
 
 function at<T>(items: T[], index: number): T { const item = items[index]; assert.ok(item); return item; }
 
+test('reopened cached live output survives an older page, in order before newer saved work', () => {
+  const entry = (id: string, text: string): Entry => ({ turnId: 'turn', item: { id, type: 'agentMessage', text }, completedAtMs: 50 });
+  const before = entry('before', 'Earlier'), latest = entry('latest', 'Completed live reply'), extra = entry('extra', 'Live commentary');
+  const advanced = entry('advanced', 'Saved while hidden');
+  const current = [before, latest, extra];
+  const old = { ...latest, item: { ...latest.item, text: 'Completed' } };
+  const result = mergeHistoryWithLive(current, [before, old, advanced], new Set(), new Set(['turn:latest', 'turn:extra']));
+  assert.deepEqual(result, [before, latest, extra, advanced]);
+});
+
+test('reopened history can advance an incomplete cached stream and complete its command', () => {
+  const current: Entry[] = [
+    { turnId: 'turn', item: { id: 'reply', type: 'agentMessage', text: 'Partial' } },
+    { turnId: 'turn', item: { id: 'cmd', type: 'commandExecution', status: 'inProgress', aggregatedOutput: 'Start' } },
+  ];
+  const snapshot: Entry[] = [
+    { turnId: 'turn', item: { id: 'reply', type: 'agentMessage', text: 'Partial reply completed while away.' } },
+    { turnId: 'turn', item: { id: 'cmd', type: 'commandExecution', status: 'completed', aggregatedOutput: 'Start\nDone' } },
+  ];
+  assert.deepEqual(mergeHistoryWithLive(current, snapshot, new Set(), new Set(['turn:reply', 'turn:cmd'])), snapshot);
+});
+
+test('an invalidated rewind cache allows authoritative removals and replacements', () => {
+  const current: Entry[] = [{ turnId: 'removed', item: { id: 'reply', type: 'agentMessage', text: 'Removed reply' }, completedAtMs: 50 }];
+  const snapshot: Entry[] = [{ turnId: 'retained', item: { id: 'reply', type: 'agentMessage', text: 'Rewound history' } }];
+  assert.deepEqual(mergeHistoryWithLive(current, snapshot, new Set()), snapshot);
+});
+
 test('fresh affectionate commentary reacts once per assistant item, never from history or emoji in code', () => {
   const item = (id: string, text: string, phase = 'commentary') => ({ threadId: 'chat', turnId: 'long-turn', item: { id, type: 'agentMessage', phase, text } });
   const first = nativeHeartReaction('item/completed', item('reply-1', '<!--matilda:kissSoft--> Here for you.'));

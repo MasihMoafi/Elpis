@@ -36,7 +36,10 @@ export function useTranscriptHistory(
     if (selected && !loading)
       transcripts.current.set(
         selected.id,
-        selected.motherAgent ? recentRouterHistory(entries, itemCursor) : { entries, cursor: itemCursor },
+        {
+          ...(selected.motherAgent ? recentRouterHistory(entries, itemCursor) : { entries, cursor: itemCursor }),
+          liveKeys: new Set(liveVersions.current.keys()),
+        },
       );
   }, [selected, loading, entries, itemCursor]);
   // A hover reads recent history so a click can show it immediately.
@@ -85,7 +88,7 @@ export function useTranscriptHistory(
       const overlap = cached?.entries.findIndex(entry => keys.has(`${entry.turnId}:${entry.item.id}`)) ?? -1;
       const prefix = overlap > 0 ? cached!.entries.slice(0, overlap) : [];
       const snapshot = !fresh.length && cached ? cached.entries : [...prefix, ...fresh];
-      setEntries(previous => mergeHistoryWithLive(previous, snapshot, liveKeysAfter(revision)));
+      setEntries(previous => mergeHistoryWithLive(previous, snapshot, liveKeysAfter(revision), cached?.liveKeys));
       setItemCursor(cached && (!fresh.length || prefix.length) ? cached.cursor : page.nextCursor);
       noteHistoryGap(id, page);
       if (!cached || (fresh.length && !prefix.length)) heldEarlier.current.delete(id);

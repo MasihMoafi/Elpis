@@ -101,6 +101,8 @@ export function useOpenConversation({
       const historyRevision = liveRevision.current;
       let unread = false;
       const shown = transcripts.current.get(thread.id);
+      // Remember which cached items came from the live stream across subsequent reopenings.
+      for (const key of shown?.liveKeys ?? []) liveVersions.current.set(key, 0);
       const position = switching ? scrollPositions.current.get(thread.id) : undefined;
       pendingPosition.current = position && shown ? { id: thread.id, ...position } : null;
       if (switching) stickToBottom.current = position?.atBottom ?? true;

@@ -113,7 +113,7 @@ const catalogRoute = (feature: Feature, id: string) =>
 
 /** The checkboxes under each API key: a ticked feature uses that key. Every choice saves into its existing owner
  * (Configuration's main model, the read aloud preference, WhisperType), so one feature is on at most one key, and an
- * unticked feature returns to its default: ChatGPT for chat, local Kokoro for read aloud, Automatic for dictation. */
+ * unticked feature returns to its default: ChatGPT for chat, the local voice for read aloud, Automatic for dictation. */
 export function useKeyUses({
   providers,
   refreshKey,
