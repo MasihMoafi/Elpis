@@ -11,7 +11,14 @@ const report = async (name: string, value: unknown) => {
 };
 
 test('loose, nested and multiline lists keep markers beside text without blank structural lines', async () => {
-  const text = '1. **What you asked:** Read the messages.\n\n2. **What I did:** Export conversations.\n\n   A second paragraph belongs to this item.\n\n   - Nested first item\n\n   - Nested second item\n\n3. **Correction:** Keep the full explanation.\n   This line continues the paragraph.';
+  const text = [
+    '1. **What you asked:** Read the messages.',
+    '2. **What I did:** Export conversations.',
+    '   A second paragraph belongs to this item.',
+    '   - Nested first item',
+    '   - Nested second item',
+    '3. **Correction:** Keep the full explanation.\n   This line continues the paragraph.',
+  ].join('\n\n');
   const f = await fixture({ width: 820, height: 900, chat: [['lists', 'Review the work', text]] });
   try {
     await f.open('chat-a');

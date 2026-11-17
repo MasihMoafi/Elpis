@@ -14,6 +14,24 @@ type Frame = { popup: Box | null; app: Box | null; composer: Box | null };
 type TraceWindow = typeof window & { __contextOpeningFrames: Frame[]; __traceContextOpening: boolean };
 const popupOf = (page: Page) => page.getByRole('dialog', { name: 'Context window usage', exact: true });
 async function open(f: Fixture) { await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
+test('the open ledger follows a changed custom accent across headings, admissions and usage bars', async () => {
+  const f = await fixture({ routes: contextRoutes() });
+  try {
+    await open(f);
+    for (const accent of ['rgb(150, 40, 110)', 'rgb(30, 110, 180)']) {
+      const colors = await popupOf(f.page).evaluate((element, accent) => {
+        element.style.setProperty('--primary', accent);
+        return ['.context-files-heading', '[data-included="true"] .context-file-state', '.context-bar-segment'].map(selector => {
+          const node = element.querySelector(selector)!;
+          const style = getComputedStyle(node);
+          return selector === '.context-bar-segment' ? style.backgroundColor : style.color;
+        });
+      }, accent);
+      assert.deepEqual(colors, [accent, accent, accent]);
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 const animationFrames = (page: Page, count = 12) => page.evaluate(count => new Promise<void>(resolve => {
   const tick = () => --count > 0 ? requestAnimationFrame(tick) : resolve(); requestAnimationFrame(tick);
 }), count);
@@ -115,7 +133,14 @@ for (const colorScheme of colorSchemes) for (const [width, height] of [[900, 700
     try {
       await open(f); const popup = popupOf(f.page);
       assert.deepEqual(await popup.locator('.context-files-heading').allTextContents(), ['SESSION CONTINUITY', 'DURABLE MEMORY', 'INSTRUCTIONS']);
-      assert.equal(await popup.locator('.context-files-heading').first().evaluate(el => getComputedStyle(el).color), colorScheme === 'dark' ? 'rgb(91, 200, 192)' : 'rgb(0, 124, 120)');
+      const colors = await popup.evaluate(el => {
+        const probe = document.createElement('span'); probe.style.color = 'var(--primary)'; el.append(probe);
+        const expected = getComputedStyle(probe).color; probe.remove();
+        return { expected, heading: getComputedStyle(el.querySelector('.context-files-heading')!).color,
+          included: getComputedStyle(el.querySelector('[data-included="true"] .context-file-state')!).color };
+      });
+      assert.equal(colors.heading, colors.expected, 'headings follow the selected theme');
+      assert.equal(colors.included, colors.expected, 'included file states follow the same theme');
       assert.match(await popup.innerText(), /≈1.3k est. tokens/);
       const toggle = popup.getByRole('switch', { name: 'Include ES.md', exact: true });
       assert.equal(await toggle.getAttribute('aria-checked'), 'true');

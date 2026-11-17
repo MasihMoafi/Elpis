@@ -249,7 +249,7 @@
   "tests/config-navigation.test.cts:long": 1,
   "tests/context-files-fixture.cts:long": 3,
   "tests/context-files.runtime.mts:long": 13,
-  "tests/context-files.test.cts:long": 28,
+  "tests/context-files.test.cts:long": 27,
   "tests/context-ledger.runtime.mts:long": 5,
   "tests/context-menu.test.cts:long": 10,
   "tests/controls.cts:long": 11,

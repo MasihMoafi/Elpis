@@ -369,12 +369,12 @@
 .context-ledger-head:hover:not(:disabled) .context-ledger-caret { color:var(--foreground); }
 .context-ledger-note { padding:0 16px; line-height:1.35; color:var(--muted-foreground); }
 .context-bar { display:flex; height:4px; margin:2px 16px; border-radius:999px; overflow:hidden; background:var(--muted); }
-.context-bar-segment { flex:none; height:100%; background:var(--category, var(--context)); }
+.context-bar-segment { flex:none; height:100%; background:var(--primary); }
 .context-bar-segment:not(:first-child) { box-shadow:-1px 0 0 var(--card); }
 .context-bar-segment:only-child:not([data-category]) { min-width:4px; }
 .context-ledger-rows { display:grid; gap:4px; margin:2px 0 0; padding:0 16px; list-style:none; }
 .context-ledger-row { display:flex; align-items:center; gap:8px; }
-.context-ledger-row::before { content:""; flex:none; width:10px; height:10px; border-radius:2px; background:var(--category, var(--context)); }
+.context-ledger-row::before { content:""; flex:none; width:10px; height:10px; border-radius:2px; background:var(--primary); }
 .context-ledger-row-label { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .context-ledger-row-value { color:var(--muted-foreground); font-variant-numeric:tabular-nums; white-space:nowrap; }
 .context-ledger-row-share { width:44px; text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
@@ -382,13 +382,6 @@
 .context-ledger-row[data-category="free"] .context-ledger-row-share { color:inherit; }
 .context-ledger-row[data-category="free"]::before { background:var(--muted); box-shadow:inset 0 0 0 1px var(--border); }
 .context-ledger-compact { display:flex; justify-content:flex-end; padding:4px 16px 0; }
-/* Category colours are the TUI's (context_usage.rs): its paper palette in light, its charcoal palette in dark. */
-[data-category="userMessages"] { --category:#006cce; } [data-category="agentMessages"] { --category:#00875c; } [data-category="reasoning"] { --category:#7143d6; }
-[data-category="toolCalls"] { --category:#7d5b3a; } [data-category="toolResults"] { --category:#74841b; } [data-category="systemInstructions"] { --category:#8c2d3c; }
-[data-category="developerMessages"] { --category:#ce478f; } [data-category="toolDefinitions"] { --category:#646464; } [data-category="unrecognizedItems"] { --category:#008395; }
-.dark [data-category="userMessages"] { --category:#53b1ff; } .dark [data-category="agentMessages"] { --category:#3fd394; } .dark [data-category="reasoning"] { --category:#ab84ff; }
-.dark [data-category="toolCalls"] { --category:#ffa13a; } .dark [data-category="toolResults"] { --category:#d9db75; } .dark [data-category="systemInstructions"] { --category:#f0445d; }
-.dark [data-category="developerMessages"] { --category:#ff99c2; } .dark [data-category="toolDefinitions"] { --category:#a0a0a0; } .dark [data-category="unrecognizedItems"] { --category:#1dd1e2; }
 /* Markdown adds newlines around a loose list's paragraphs. Preserving them on the list item
  * creates a blank line before its first paragraph and strands the marker above the text. */
 .message.agent p { white-space:pre-line; }

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 import type { Ledger, CacheShare, CacheUse, Compact } from "./context-usage";
 
-/** The Ledger's bar on a full-window scale, one coloured segment per category (`data-category` carries the TUI's colours). */
+/** The Ledger's bar on a full-window scale, one theme-colored segment per labelled category. */
 export function LedgerBar({ ledger }: { ledger: Ledger | null }) {
   const { used, window: capacity, categories } = ledger ?? UNMEASURED;
   const scale = used !== null && capacity ? Math.max(capacity, used) : 0;
