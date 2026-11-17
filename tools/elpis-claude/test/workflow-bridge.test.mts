@@ -123,8 +123,11 @@ if (process.argv.includes("app-server")) {
       await sse?.cancel().catch(() => {}); await app?.close(); desktop?.close();
       for (const m of mcps) await m.close().catch(() => {});
       ws?.close();
-      try { process.kill(-bridgePid, "SIGKILL"); } catch {}
-      await bridgeClosed;
+      // Graceful shutdown flushes stores and stops engines in their own process groups.
+      // Killing only the bridge group left those engines writing into the removed fixture.
+      const killTimer = setTimeout(() => { try { process.kill(-bridgePid, "SIGKILL"); } catch {} }, 10_000);
+      try { bridge.kill("SIGTERM"); await bridgeClosed; }
+      finally { clearTimeout(killTimer); }
       if (!process.env.WF_KEEP) removeTestTempDir(root);
     });
     const until = async <T,>(what: string, check: () => T | Promise<T>, ms = 20_000): Promise<Exclude<T, false | 0 | "" | null | undefined>> => {

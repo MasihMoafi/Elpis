@@ -110,6 +110,11 @@ const oranges = (page: Page, exclude = '', approvedAccents = false) => page.eval
   const pressed = resolve(`color-mix(in srgb, ${accent}, white 16%)`);
   const approved = (element: Element, property: string, colour: string) => {
     const pixel = rgba(colour), same = (expected: number[]) => expected.length === pixel.length && expected.every((value, at) => value === pixel[at]);
+    // Chart categories have their own bright palette; surrounding controls retain the theme accent.
+    if (property === 'background-color' && element.matches('.context-ledger .context-bar-segment[data-category]')) {
+      const category = getComputedStyle(element).getPropertyValue('--context-category').trim();
+      return !!category && same(resolve(category));
+    }
     if (property === 'stroke' && element.matches('.elpis-working-rotor')) return same(main);
     if (property === 'color' && !approvedAccents) return false;
     return same(main)
