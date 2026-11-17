@@ -46,8 +46,9 @@ if [ -d "$OLD/package" ]; then
     HOST=$OLD/package/bin/codex-code-mode-host
     RESOURCES=$OLD/package/codex-resources
 fi
-# A host built with the engine (cargo's target dir, or a CI runtime laid out like one) matches it.
+# Prefer the host and sandbox built with the engine, including a staged CI runtime.
 [ -x "$(dirname "$BIN")/codex-code-mode-host" ] && HOST=$(dirname "$BIN")/codex-code-mode-host
+[ -x "$(dirname "$BIN")/codex-resources/bwrap" ] && RESOURCES=$(dirname "$BIN")/codex-resources
 RG=$(command -v rg)
 if [ -n "$SRC" ]; then
     HOST=$SRC/package/bin/codex-code-mode-host

@@ -198,6 +198,18 @@ test('incomplete prerequisites fail before activation', (t) => {
   assert.equal(readlinkSync(`${f.bin}/elpis-next`), `${f.old}/elpis-next`);
 });
 
+test('the sandbox built with the engine is installed even when the old bundle lacks one', (t) => {
+  const f = fixture(t, true);
+  const resources = `${f.source}/codex-rs/target/release/codex-resources`;
+  mkdirSync(resources);
+  const sandbox = '#!/bin/sh\necho sandbox-built-with-engine\n';
+  writeFileSync(`${resources}/bwrap`, sandbox, { mode: 0o755 });
+  execFileSync('gio', ['trash', `${f.old}/codex-resources/bwrap`]);
+  const result = f.run('sandbox');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(`${f.bundle()}/package/codex-resources/bwrap`, 'utf8'), sandbox);
+});
+
 test('invalid bundle names cannot escape the versions directory', (t) => {
   const f = fixture(t);
   const before = readFileSync(`${f.bin}/elpis`);
