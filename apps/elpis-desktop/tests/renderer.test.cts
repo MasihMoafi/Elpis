@@ -15,7 +15,11 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
   const thread={id:'existing',name:'Investigate pruning quality',cwd:'/tmp/elpis-fixture',model:'gpt-6-luna',modelProvider:'openai',desktopAccess:{writable:false,reason:'Open in the terminal client.'},status:{type:'idle'}};
   const child={...thread,id:'child',name:'Inspect cache behaviour',parentThreadId:'existing'};
   const created={...thread,id:'created',name:null,preview:'New chat',desktopAccess:{writable:true,reason:null}};
-  let createdThread=false, backgroundRunning=true, backgroundFailure=false;
+  let createdThread=false, backgroundFailure=0;
+  let backgroundJobs = [
+    {itemId:'cmd',processId:'42',command:'long build',cwd:'/tmp'},
+    {itemId:'cmd2',processId:'43',command:'other build',cwd:'/tmp'},
+  ];
   const emit=(method: string,params: unknown)=>{for(const res of clients)res.write(`event: message\ndata: ${JSON.stringify({method,params})}\n\n`);};
   const server=http.createServer(async(req: IncomingMessage,res: ServerResponse)=>{
     const url=new URL(req.url || '/', 'http://localhost');let body='';for await(const chunk of req)body+=chunk;
@@ -41,8 +45,16 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     if(url.pathname.endsWith('/resume')){const id=url.pathname.split('/')[3];return json({thread:{...(id==='child'?child:id==='created'?created:thread),desktopAccess:{writable:true,mode:'direct',reason:null}},activeTurnId:null});}
     if(url.pathname.endsWith('/steer'))return json({turnId:'turn-1'});
     if(url.pathname.endsWith('/interrupt')){json({});emit('turn/completed',{threadId:'created',turn:{id:'turn-1',status:'interrupted'}});return;}
-    if(url.pathname.endsWith('/background-processes')){if(backgroundFailure){res.statusCode=503;return json({error:'temporarily unavailable'});}return json({data:url.pathname.includes('/existing/')&&backgroundRunning?[{itemId:'cmd',processId:'42',command:'long build',cwd:'/tmp'}]:[],nextCursor:null});}
-    if(url.pathname.startsWith('/api/threads/'))return json({thread:url.pathname.endsWith('child')?child:url.pathname.endsWith('created')?created:thread,data:[{turnId:'old',item:{id:'answer',type:'agentMessage',text:'The cache prefix remains unchanged.'}},{turnId:'old',item:{id:'cmd',type:'commandExecution',command:'long build',status:'inProgress',aggregatedOutput:'building now'}},{turnId:'old',item:{id:'question',type:'userMessage',content:[{type:'text',text:'Check the prefix cache.'}]}}],nextCursor:null});
+    if(url.pathname.endsWith('/background-processes')){
+      if(backgroundFailure){res.statusCode=backgroundFailure;return json({error:'unavailable'});}
+      return json({data:url.pathname.includes('/existing/')?backgroundJobs:[],nextCursor:null});
+    }
+    if(url.pathname.startsWith('/api/threads/'))return json({thread:url.pathname.endsWith('child')?child:url.pathname.endsWith('created')?created:thread,data:[
+      {turnId:'old',item:{id:'answer',type:'agentMessage',text:'The cache prefix remains unchanged.'}},
+      {turnId:'old',item:{id:'cmd',type:'commandExecution',command:'long build',status:'inProgress',aggregatedOutput:'building now'}},
+      {turnId:'old',item:{id:'cmd2',type:'commandExecution',command:'other build',status:'inProgress',aggregatedOutput:'other output'}},
+      {turnId:'old',item:{id:'question',type:'userMessage',content:[{type:'text',text:'Check the prefix cache.'}]}}
+    ],nextCursor:null});
     try {const file=path.join(root,url.pathname==='/'?'index.html':url.pathname);const content=await fs.readFile(file);res.setHeader('content-type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');res.end(content);}catch{res.statusCode=404;res.end();}
   });
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -63,14 +75,34 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     assert.deepEqual(calls.find(c=>c.path.endsWith('/steer'))?.data,{text:'Also check the pruning overhead.',expectedTurnId:'turn-1'});
     await page.getByRole('button',{name:'Stop response'}).click();await page.getByRole('button',{name:'Send message',exact:true}).waitFor();
     await page.getByLabel('Message Elpis').fill('Keep my draft');
+    backgroundFailure=501;
     await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).first().click();
     await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();
-    await page.getByText('1 background process running',{exact:true}).waitFor();
-    await page.getByText('1 background process running',{exact:true}).click();
+    await page.getByText('Background process status unavailable',{exact:true}).waitFor();
+    backgroundFailure=0;
+    await page.getByText('2 background processes running',{exact:true}).waitFor({timeout:8000});
+    assert.equal(await page.getByText('building now',{exact:true}).count(),0, 'collapsed logs are not mounted');
+    await page.getByText('2 background processes running',{exact:true}).click();
     await page.getByText('building now',{exact:true}).waitFor();
-    backgroundFailure=true;
+    if(process.env.ELPIS_REVIEW_SHOTS){
+      await fs.mkdir(process.env.ELPIS_REVIEW_SHOTS,{recursive:true});
+      await page.screenshot({path:path.join(process.env.ELPIS_REVIEW_SHOTS,'background-processes.png'),animations:'disabled'});
+    }
+    backgroundFailure=503;
     await page.getByText('Background process status unavailable',{exact:true}).waitFor({timeout:8000});
-    backgroundFailure=false;
+    backgroundFailure=0;
+    backgroundJobs=backgroundJobs.slice(1);
+    emit('item/completed',{threadId:'existing',turnId:'old',item:{id:'cmd',type:'commandExecution',
+      command:'long build',status:'completed',exitCode:0,aggregatedOutput:'build passed'}});
+    await page.getByText('1 background process running',{exact:true}).waitFor({timeout:8000});
+    backgroundJobs=[];
+    emit('item/completed',{threadId:'existing',turnId:'old',item:{id:'cmd2',type:'commandExecution',
+      command:'other build',status:'failed',exitCode:1,aggregatedOutput:'build failed'}});
+    await page.waitForFunction(()=>!document.body.textContent?.includes('1 background process running'),undefined,{timeout:8000});
+    await page.locator('.worked-for > summary').last().click();
+    await page.locator('.worked-for .activity-group > summary').first().click();
+    await page.getByText('build passed',{exact:true}).waitFor();
+    await page.getByText('build failed',{exact:true}).waitFor();
     // An existing chat opens writable: its own empty draft, followed live through a plain native rejoin.
     assert.equal(await controlValue(page.getByLabel('Message Elpis')),'');
     await page.getByLabel('Refresh conversation').click();await page.getByText('The cache prefix remains unchanged.',{exact:true}).waitFor();
@@ -81,7 +113,6 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     await page.getByLabel('Search conversations').fill('');
     await page.locator('.thread-link[title="New chat"]').first().click();await page.getByRole('heading',{name:'New chat',exact:true}).waitFor();await page.getByLabel('Message Elpis').waitFor();assert.equal(await controlValue(page.getByLabel('Message Elpis')),'Keep my draft');
     assert.equal(await page.getByText('1 background process running',{exact:true}).count(),0, 'another chat does not inherit the process');
-    backgroundRunning=false;
     const refreshed = page.waitForResponse((response: { url(): string })=>response.url().includes('/existing/background-processes'));
     await page.getByRole('button',{name:'Investigate pruning quality',exact:true}).first().click();
     await refreshed;
