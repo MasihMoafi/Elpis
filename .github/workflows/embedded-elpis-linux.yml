@@ -590,7 +590,7 @@ jobs:
         working-directory: codex-rs
         run: |
           cargo test --profile dev-small --locked -p codex-core --lib -- \
-            elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config \
+            elpis_ memory_save save_memory smart_prune compact_instructions world_state build_agent_spawn_config work_graphs \
             refresh_runtime_config_follows_the_subagent_switch_in_the_same_chat \
             subagent_switch_off_overrides_explicit_v2 enabling_subagents_does_not_enable_an_internal_reviewer \
             enabling_subagents_does_not_enable_an_isolated_root \
