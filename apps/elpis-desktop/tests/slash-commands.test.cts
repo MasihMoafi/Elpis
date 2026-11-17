@@ -83,7 +83,7 @@ async function open({ colorScheme }: { colorScheme?: string } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'], acceptDownloads: true, ...(colorScheme ? { colorScheme } : {}) });
   const page = await context.newPage(); page.setDefaultTimeout(8000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
-  await page.goto(url); await page.getByText('Local workspace', { exact: true }).waitFor();
+  await page.goto(url); await page.locator('.status-dot.connected').waitFor();
   const composer = page.getByRole('textbox', { name: 'Message Elpis', exact: true });
   const menu = page.getByRole('listbox', { name: 'Slash commands', exact: true });
   return { page, context, errors, composer, menu,

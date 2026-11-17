@@ -271,7 +271,7 @@ export async function startRuntime() {
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, permissions: ['clipboard-read', 'clipboard-write'] }); page.setDefaultTimeout(12000); page.setDefaultTimeout(12000);
   const pageErrors: string[] = []; page.on('pageerror', error => pageErrors.push(error.message));
   const loaded = { count: 0 }; page.on('load', () => { loaded.count++; });
-  await page.goto(app.url); await page.getByText('Local workspace', { exact: true }).waitFor();
+  await page.goto(app.url); await page.locator('.status-dot.connected').waitFor();
   return { pageErrors, loaded };
 }
 export async function finishRun() {

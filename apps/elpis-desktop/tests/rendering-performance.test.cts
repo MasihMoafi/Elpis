@@ -21,7 +21,7 @@ test('loose, nested and multiline lists keep markers beside text without blank s
   ].join('\n\n');
   const f = await fixture({ width: 820, height: 900, chat: [['lists', 'Review the work', text]] });
   try {
-    await f.open('chat-a');
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
     const list = f.page.locator('.message.agent .markdown > ol');
     await list.waitFor();
     const items = await list.locator('li').evaluateAll((elements: HTMLElement[]) => elements.map(element => {
