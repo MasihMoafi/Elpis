@@ -1,6 +1,5 @@
 import { z } from "zod";
-import type { SmartPruneLogListResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/SmartPruneLogListResponse.ts";
-import type { SmartPruneLogReadResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/SmartPruneLogReadResponse.ts";
+import type { SmartPruneLogListResponse, SmartPruneLogRecord } from "../lib/smart-prune.ts";
 import { BridgeError } from "./validate.mts";
 import type { DecoratedInput, EngineItem } from "./client-thread-list.mts";
 import type { WorkGraphListResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/WorkGraphListResponse.ts";
@@ -75,7 +74,7 @@ type ItemPage = {
 };
 export type RpcResponses = {
   "smartPrune/log/list": SmartPruneLogListResponse;
-  "smartPrune/log/read": SmartPruneLogReadResponse;
+  "smartPrune/log/read": { record: SmartPruneLogRecord };
   "config/read": ConfigRead;
   "configRequirements/read": ConfigRequirements;
   "thread/read": ThreadResponse;

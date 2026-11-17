@@ -48,7 +48,7 @@ impl PruneLogItem {
         config.timeout(std::time::Duration::from_millis(100));
         Some(
             config
-                .diff_lines(&self.original, compact)
+                .diff_lines(self.original.as_str(), compact)
                 .unified_diff()
                 .context_radius(3)
                 .header("Original", "Compact")

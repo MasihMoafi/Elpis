@@ -18859,6 +18859,212 @@
       ],
       "type": "object"
     },
+    "SmartPruneLogItem": {
+      "properties": {
+        "callId": {
+          "type": "string"
+        },
+        "compact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decision": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "diff": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "estimatedAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "estimatedSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "kept": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "original": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "callId",
+        "decision",
+        "description",
+        "estimatedAdmittedTokens",
+        "estimatedSourceTokens",
+        "original"
+      ],
+      "type": "object"
+    },
+    "SmartPruneLogRecord": {
+      "properties": {
+        "attemptId": {
+          "type": "string"
+        },
+        "chatTitle": {
+          "type": "string"
+        },
+        "estimatedAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/SmartPruneLogItem"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "turnNumber": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "attemptId",
+        "chatTitle",
+        "items",
+        "model",
+        "reasoningEffort",
+        "threadId",
+        "timestamp",
+        "turnId"
+      ],
+      "type": "object"
+    },
+    "SmartPruneLogSummary": {
+      "properties": {
+        "attemptId": {
+          "type": "string"
+        },
+        "chatTitle": {
+          "type": "string"
+        },
+        "estimatedAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "turnNumber": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "attemptId",
+        "chatTitle",
+        "model",
+        "reasoningEffort",
+        "threadId",
+        "timestamp",
+        "turnId"
+      ],
+      "type": "object"
+    },
     "SortDirection": {
       "enum": [
         "asc",
