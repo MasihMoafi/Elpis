@@ -194,8 +194,11 @@ test('what he writes reaches her with the board and its picture and the main mod
 test('a reply reaches the board after navigating away', async () => {
   const f = await loveSpotFixture({ replyDelay: 700 });
   try {
-    await f.open(f.page); await note(f, 'Still here when you return');
-    await f.page.waitForResponse(response => response.url().endsWith('/api/love-spot/talk') && response.request().method() === 'POST', { timeout: 20000 });
+    await f.open(f.page);
+    await Promise.all([
+      f.page.waitForResponse(response => response.url().endsWith('/api/love-spot/talk') && response.request().method() === 'POST', { timeout: 20000 }),
+      note(f, 'Still here when you return'),
+    ]);
     await f.page.getByRole('button', { name: 'Workflows', exact: true }).click();
     await f.waitFor(s => s.elements.some(e => e.text === 'I am here with you.'), 'navigation lost the reply');
     await f.page.locator('.nav-list .love-unread').waitFor();
