@@ -57,7 +57,10 @@ test("old-drain subscription falls back to one read, while other results stay ex
     assert.equal(trash.status, 0, String(trash.stderr));
   });
   proxy.take({ method: "initialize", params: { clientInfo: { name: "test", version: "1" }, capabilities: { experimentalApi: true } } });
+  assert.equal(proxy.take({ id: 100, method: "smartPrune/log/list", params: {} }), false);
+  assert.equal(proxy.take({ id: 101, method: "smartPrune/log/read", params: { threadId: "legacy", attemptId: "attempt" } }), false);
   for (const [index, threadId] of threads.entries()) assert.equal(proxy.take({ id: index + 1, method: "thread/subscribe", params: { threadId, includeTurns: false } }), true);
+  assert.equal(proxy.take({ id: 102, method: "smartPrune/log/read", params: { threadId: "legacy", attemptId: "attempt" } }), false);
   assert.equal(proxy.take({ id: 99, method: "thread/subscribe", params: { threadId: "new-runtime" } }), false);
   const until = async (predicate: () => boolean, message: string) => {
     const end = Date.now() + 5000;
@@ -75,6 +78,7 @@ test("old-drain subscription falls back to one read, while other results stay ex
   assert.equal(response(4).error?.message, "engine failed");
   assert.equal(response(5).error?.message, "Invalid request: another error");
   assert.deepEqual(seen.filter(request => request.method === "thread/read").map(request => request.params?.threadId).sort(), ["legacy", "read-fails"]);
+  assert.equal(seen.some(request => request.method.startsWith("smartPrune/log/")), false);
   assert.equal(seen.some(request => ["thread/resume", "thread/settings/update", "turn/start"].includes(request.method)), false);
   for (const socket of upstream.clients) socket.send(JSON.stringify({ method: "bridge/released", params: { threadId: "legacy" } }));
   await until(() => closed.length === 1, "the viewer reconnects when the old child finishes");

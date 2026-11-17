@@ -120,6 +120,9 @@ export function drainProxy(ws: ClientSocket, log: (message: string) => void = ()
     take(msg: HandoverMessage) {
       if (msg?.method === "initialize") initialize = msg.params;
       if (msg?.id !== undefined && !msg.method && asked.has(msg.id)) { const id = asked.get(msg.id) as Id; asked.delete(msg.id); send({ ...msg, id }); return true; }
+      // Smart Prune's global, read-only log uses threadId to scope a disk record;
+      // it must be served by the successor even when that thread is still draining.
+      if (msg?.method === "smartPrune/log/list" || msg?.method === "smartPrune/log/read") return false;
       const threadId = msg?.params?.threadId;
       if (!msg?.method || typeof threadId !== "string") return false;
       const old = currentDrain();
