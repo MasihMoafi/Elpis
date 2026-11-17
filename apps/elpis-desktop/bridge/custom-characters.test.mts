@@ -56,7 +56,7 @@ test('creation, upload and generation routes are absent while saved characters c
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
     const address = server.address(); assert.ok(address && typeof address !== 'string');
     const origin = `http://127.0.0.1:${address.port}`;
-    for (const [suffix, method] of [['', 'POST'], ['/portrait', 'POST'], ['/generate', 'POST'], ['/stop', 'POST'], ['/sources', 'GET']]) {
+    for (const [suffix, method] of [['', 'POST'], ['/portrait', 'POST'], ['/generate', 'POST'], ['/stop', 'POST'], ['/sources', 'GET']] as const) {
       const response = await fetch(`${origin}/api/characters${suffix}`, { method });
       assert.equal(response.status, 404, `${method} ${suffix} must not start character creation`);
       await response.text();

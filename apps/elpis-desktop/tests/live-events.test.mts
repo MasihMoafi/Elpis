@@ -1,5 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { cachedHistoryPrefix } from '../lib/chat-history.ts';
+
+test('reopening after a whole page advances keeps cached prompts before newer replies', () => {
+  const entry = (id: string, text: string): Entry => ({ turnId: 'active', item: { id, type: 'agentMessage', text } });
+  const cached = [entry('older', 'Working'), entry('follow-up', 'When do I go?')];
+  const fresh = [entry('reply', 'Leave at 15:46'), entry('latest', 'Latest update')];
+  const snapshot = [...cachedHistoryPrefix(cached, fresh), ...fresh];
+  const merged = mergeHistoryWithLive(cached, snapshot, new Set(), new Set(['active:follow-up']));
+  assert.deepEqual(merged, [...cached, ...fresh], 'a cached follow-up cannot reappear after the latest reply');
+  assert.deepEqual(cachedHistoryPrefix(cached, [cached[1]!, ...fresh]), [cached[0]]);
+  assert.deepEqual(cachedHistoryPrefix(undefined, fresh), [], 'a rewind invalidates the cache');
+  const arriving = entry('arriving', 'Arrived during the read');
+  assert.deepEqual(mergeHistoryWithLive([...cached, arriving], snapshot,
+    new Set(['active:arriving']), new Set(['active:follow-up', 'active:arriving'])),
+  [...cached, ...fresh, arriving], 'a new live update still follows the fresh page');
+});
 import { liveEventItemKey, mergeHistoryWithLive, mergeLiveItem, retryRecovered, runtimeErrorNotice } from '../lib/live-events.ts';
 import { createHeartDeduper, nativeHeartReaction, talkHeartReaction } from '../lib/heart-reactions.ts';
 import type { Entry } from '../lib/api.ts';

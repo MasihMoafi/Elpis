@@ -10,3 +10,10 @@ export const historyPath = (threadId: string, cursor?: string | null) =>
 
 /** A page's items in reading order (oldest first). */
 export const inReadingOrder = (page: { data: Entry[] }) => [...page.data].reverse();
+
+/** Keep the known older prefix when the latest page advances while this chat is hidden. */
+export function cachedHistoryPrefix(cached: Entry[] | undefined, fresh: Entry[]): Entry[] {
+  const keys = new Set(fresh.map(entry => `${entry.turnId}:${entry.item.id}`));
+  const overlap = cached?.findIndex(entry => keys.has(`${entry.turnId}:${entry.item.id}`)) ?? -1;
+  return cached && overlap !== 0 ? cached.slice(0, overlap < 0 ? undefined : overlap) : [];
+}

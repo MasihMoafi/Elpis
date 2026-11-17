@@ -37,7 +37,7 @@ async function setup(text = '# Agreement\n\nمتن فارسی — saved.\n') {
   try { await f.open('chat-a'); }
   catch (error) { await f.close(); await promisify(execFile)('gio', ['trash', root]); throw error; }
   return { ...f, page, root, file, bytes,
-    editor: (name: string) => page.getByRole('textbox', { name: `Contents of ${name}`, exact: true }),
+    editor: (name: string) => page.getByRole(name.endsWith('.docx') ? 'document' : 'textbox', { name: `Contents of ${name}`, exact: true }),
     link: (name: string) => page.locator('.message.agent').getByRole('button', { name, exact: true }),
     close: async () => { await f.close(); await promisify(execFile)('gio', ['trash', root]); },
   };

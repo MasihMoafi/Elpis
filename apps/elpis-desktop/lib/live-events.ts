@@ -87,7 +87,7 @@ export function mergeHistoryWithLive(
   for (const entry of current) {
     const key = itemKey(entry.turnId, entry.item.id);
     if (!merged.has(key)) continue;
-    if (previous && previouslyLive.has(key) && !snapshotKeys.has(key)) {
+    if (previous && previouslyLive.has(key) && !changedSinceRead.has(key) && !snapshotKeys.has(key)) {
       const at = result.indexOf(entry);
       if (at >= 0) {
         result.splice(at, 1);

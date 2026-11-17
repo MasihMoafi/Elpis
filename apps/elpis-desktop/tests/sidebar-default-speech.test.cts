@@ -96,18 +96,21 @@ test('default model search opens its actual control and hides groups with no mat
 });
 
 test('streaming Read aloud begins before synthesis finishes and speed changes during playback survive reload', async () => {
-  let completed = false;
+  let completed = false, prepared = 0;
+  const requested = new Set<string>();
   const audio = require('node:fs').readFileSync(require('node:path').join(__dirname, 'fixtures/read-aloud-tone.mp3'));
-  const id = '11111111-1111-4111-8111-111111111111';
-  const f = await fixture({ chat: [['t1', 'Read this.', 'A sentence read by the local streaming voice.']], routes: {
+  const ids = ['11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222', '33333333-3333-4333-8333-333333333333'];
+  const text = Array.from({ length: 3 }, (_, i) => `Sentence ${i}: ${'spoken words '.repeat(24)}.`).join(' ');
+  const f = await fixture({ chat: [['t1', 'Read this.', text]], routes: {
     '/api/read-aloud': () => ({ available: true, streaming: true, revision: 'local' }),
-    '/api/read-aloud/prepare': () => ({ url: `/api/read-aloud/audio/${id}` }),
-    [`/api/read-aloud/audio/${id}`]: (_body: unknown, _url: URL, res: import('node:http').ServerResponse) => {
+    '/api/read-aloud/prepare': () => ({ url: `/api/read-aloud/audio/${ids[prepared++ % ids.length]}` }),
+    ...Object.fromEntries(ids.map(id => [`/api/read-aloud/audio/${id}`, (_body: unknown, _url: URL, res: import('node:http').ServerResponse) => {
       if (res.req.method === 'DELETE') { res.writeHead(204); res.end(); return; }
+      requested.add(id);
       res.writeHead(200, { 'Content-Type': 'audio/mpeg' }); res.write(audio);
       const timer = setTimeout(() => { completed = true; res.end(audio); }, 3000);
       res.once('close', () => clearTimeout(timer));
-    },
+    }])),
   } });
   try {
     await f.page.addInitScript(() => {
@@ -123,6 +126,7 @@ test('streaming Read aloud begins before synthesis finishes and speed changes du
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
     await f.page.waitForFunction(() => ((window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio?.currentTime ?? 0) > 0, null, { timeout: 2000 });
     assert.equal(completed, false, 'first playback precedes the last generated chunk');
+    assert.equal(requested.size, 3, 'the next pieces generate while the first is still playing');
     await chooseOption(reply.getByLabel('Read aloud speed'), '1.5');
     const playback = await f.page.evaluate(() => {
       const audio = (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio!;

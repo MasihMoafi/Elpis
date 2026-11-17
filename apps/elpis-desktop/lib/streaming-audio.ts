@@ -1,5 +1,5 @@
 /** Feed MPEG frames to the media buffer as they arrive. A plain media URL waits for the complete response in Chromium. */
-export async function playStreamingAudio(audio: HTMLAudioElement, url: string, signal: AbortSignal) {
+export async function playStreamingAudio(audio: HTMLAudioElement, url: string, signal: AbortSignal, prefetched?: Promise<Response>) {
   if (!MediaSource.isTypeSupported("audio/mpeg")) throw new Error("This browser cannot play the local streaming voice.");
   const media = new MediaSource(), address = URL.createObjectURL(media);
   const transfer = new AbortController(), combined = AbortSignal.any([signal, transfer.signal]);
@@ -29,9 +29,12 @@ export async function playStreamingAudio(audio: HTMLAudioElement, url: string, s
     const failed = () => { failure = new Error("The local speech stream is invalid."); transfer.abort(); };
     buffer.addEventListener("error", failed);
     try {
-      const response = await fetch(url, { signal: combined });
+      const response = await (prefetched ?? fetch(url, { signal: combined }));
       if (!response.ok || !response.body) throw new Error("The local voice could not start. Read the reply again.");
       const reader = response.body.getReader();
+      const cancelRead = () => { void reader.cancel().catch(() => {}); };
+      combined.addEventListener("abort", cancelRead, { once: true });
+      if (combined.aborted) cancelRead();
       try {
         for (;;) {
           const { value, done } = await reader.read();
@@ -41,7 +44,7 @@ export async function playStreamingAudio(audio: HTMLAudioElement, url: string, s
           buffer.appendBuffer(new Uint8Array(value).buffer);
           await updated;
         }
-      } finally { await reader.cancel().catch(() => {}); }
+      } finally { combined.removeEventListener("abort", cancelRead); await reader.cancel().catch(() => {}); }
       if (media.readyState === "open") media.endOfStream();
       await ended;
     } finally { buffer.removeEventListener("error", failed); }

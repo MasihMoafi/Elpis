@@ -2,6 +2,38 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 
+test('returning after the latest page advances never puts an old follow-up below new replies', async () => {
+  let advanced = false;
+  const f = await fixture({ running: true, chat: [['t4', 'Task', 'Before switch']], routes: {
+    '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Chat A', cwd: '/tmp/parity-fixture' }, data: advanced ? [
+      { turnId: 't4', item: { id: 'latest', type: 'agentMessage', text: 'Latest reply after the new page.' } },
+      { turnId: 't4', item: { id: 'new-page', type: 'agentMessage', text: 'The saved page advanced while hidden.' } },
+    ] : [
+      { turnId: 't4', item: { id: 'a-t4', type: 'agentMessage', text: 'Before switch' } },
+      { turnId: 't4', item: { id: 'u-t4', type: 'userMessage', content: [{ type: 'text', text: 'Task' }] } },
+    ], nextCursor: null }),
+  } });
+  try {
+    await f.open('chat-a');
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4',
+      item: { id: 'follow-up', type: 'userMessage', content: [{ type: 'text', text: 'When do I go?' }] },
+    } });
+    await f.page.getByText('When do I go?', { exact: true }).waitFor();
+    await f.open('chat-b');
+    advanced = true;
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await f.page.getByText('Latest reply after the new page.', { exact: true }).waitFor();
+    const text = await f.page.locator('.chat-content').innerText();
+    assert.ok(text.indexOf('When do I go?') < text.indexOf('Latest reply after the new page.'), text);
+    assert.equal(await f.page.getByText('When do I go?', { exact: true }).count(), 1);
+    await f.page.waitForFunction(() => {
+      const s = document.querySelector('.chat-scroll')!;
+      return s.scrollHeight - s.scrollTop - s.clientHeight <= 2;
+    });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('numbered, boundary and return-from-settings navigation preserve the visible live chat', async () => {
   const f = await fixture({ running: true });
   try {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { api, type Entry, type Thread } from "@/lib/api";
-import { historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
+import { cachedHistoryPrefix, historyPath, inReadingOrder, type HistoryPage } from "@/lib/chat-history";
 import { mergeHistoryWithLive } from "@/lib/live-events";
 import { TranscriptCache } from "./transcript-cache.mts";
 import { recentRouterHistory } from "./router-history.mts";
@@ -84,9 +84,7 @@ export function useTranscriptHistory(
     (id: string, page: HistoryPage, revision: number, keepOlder = false) => {
       const fresh = inReadingOrder(page),
         cached = keepOlder ? transcripts.current.get(id) : undefined;
-      const keys = new Set(fresh.map(entry => `${entry.turnId}:${entry.item.id}`));
-      const overlap = cached?.entries.findIndex(entry => keys.has(`${entry.turnId}:${entry.item.id}`)) ?? -1;
-      const prefix = overlap > 0 ? cached!.entries.slice(0, overlap) : [];
+      const prefix = cachedHistoryPrefix(cached?.entries, fresh);
       const snapshot = !fresh.length && cached ? cached.entries : [...prefix, ...fresh];
       // An oversized open chat is not cached. Its received items still survive reconnection.
       const received = keepOlder

@@ -55,10 +55,16 @@ export function ReadAloud({
     setActive(id);
     audio.preservesPitch = true;
     audio.playbackRate = speedRef.current;
+    const streams = new Map<string, Promise<Response>>();
     const voice = async (piece: string) => {
       if (source.streaming) {
         const result = await api<{ url: string }>("/read-aloud/prepare", { text: piece, ...(source.revision ? { revision: source.revision } : {}) });
         if (!/^\/api\/read-aloud\/audio\/[a-f0-9-]{36}$/.test(result.url)) throw new Error("The local reader returned an invalid audio address.");
+        if (!controller.signal.aborted) {
+          const stream = fetch(result.url, { signal: controller.signal });
+          stream.catch(() => {});
+          streams.set(result.url, stream);
+        }
         return result.url;
       }
       return fetch("/api/read-aloud", {
@@ -103,7 +109,10 @@ export function ReadAloud({
           const url = await voiced[played]!;
           if (controller.signal.aborted || local.current !== mine) { if (url.startsWith("blob:")) URL.revokeObjectURL(url); break; }
           audio.playbackRate = speedRef.current;
-          if (source.streaming) await playStreamingAudio(audio, url, controller.signal);
+          if (source.streaming) {
+            await playStreamingAudio(audio, url, controller.signal, streams.get(url));
+            streams.delete(url);
+          }
           else {
             audio.src = url;
             audio.playbackRate = speedRef.current;
@@ -121,6 +130,9 @@ export function ReadAloud({
         if (local.current === mine && !controller.signal.aborted)
           setError({ id, message: errorText(cause, "Read aloud could not voice this reply.") });
       } finally {
+        controller.abort();
+        for (const stream of streams.values()) void stream.then(response => response.body?.cancel().catch(() => {}), () => {});
+        streams.clear();
         for (const unused of voiced.slice(played)) void unused.then(url => {
           if (url.startsWith("blob:")) URL.revokeObjectURL(url);
           else if (source.streaming) void fetch(url, { method: "DELETE" }).catch(() => {});
