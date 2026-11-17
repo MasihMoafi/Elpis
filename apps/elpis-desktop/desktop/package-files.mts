@@ -14,6 +14,7 @@ export const productionFiles = [
   "bridge/local-speech.mts",
   "bridge/qwen.mts",
   "bridge/qwen-worker.py",
+  "bridge/speech_mp3.py",
   "lib/default-model.mts",
   "bridge/read-aloud-provider.mts",
   "lib/speech-model.mts",

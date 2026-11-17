@@ -17,13 +17,18 @@ export async function handleVoiceRoutes(
     return true;
   }
   const audio = url.pathname.match(/^\/api\/read-aloud\/audio\/([a-f0-9-]{36})$/);
+  if (audio && method === "DELETE") {
+    readAloud.release(audio[1]!);
+    response.writeHead(204); response.end();
+    return true;
+  }
   if (audio && method === "GET") {
     const controller = new AbortController();
     const cancel = () => controller.abort();
     response.once("close", cancel);
     try {
       const stream = await readAloud.stream(audio[1]!, controller.signal);
-      response.writeHead(200, { "Content-Type": "audio/wav", "Cache-Control": "no-store", "Accept-Ranges": "none" });
+      response.writeHead(200, { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" });
       await pipeline(stream, response);
     } finally { response.removeListener("close", cancel); }
     return true;

@@ -1,4 +1,4 @@
-import { BridgeError } from "./validate.mts";
+import { BridgeError, object } from "./validate.mts";
 import { MAX_BRIDGE_MESSAGE_BYTES } from "./client-paths.mts";
 import { appIdentity } from "./app-identity.mts";
 import { body, json, pageQuery } from "./server-http.mts";
@@ -13,6 +13,7 @@ export async function handleSettingsRoutes(
 ) {
   const { client, settingsFiles } = state;
   if (url.pathname === "/api/settings/default-model" && method === "POST") {
+    object(await body(request), []);
     const [settings, models, providers] = await Promise.all([client.settings(), client.models(), client.providers()]);
     const main = settings.managed?.modelProvider ? null : availableDefault(settings.main, models.data, providers);
     json(response, 200, main ? await client.saveSettings({ version: settings.version, main }) : settings);

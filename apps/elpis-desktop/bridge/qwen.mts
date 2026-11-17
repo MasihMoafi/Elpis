@@ -24,22 +24,13 @@ export function qwenPaths(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
-function wavHeader(rate: number) {
-  const buffer = Buffer.alloc(44);
-  buffer.write("RIFF"); buffer.writeUInt32LE(0x7ffffffe, 4); buffer.write("WAVEfmt ", 8);
-  buffer.writeUInt32LE(16, 16); buffer.writeUInt16LE(1, 20); buffer.writeUInt16LE(1, 22);
-  buffer.writeUInt32LE(rate, 24); buffer.writeUInt32LE(rate * 2, 28);
-  buffer.writeUInt16LE(2, 32); buffer.writeUInt16LE(16, 34); buffer.write("data", 36); buffer.writeUInt32LE(0x7fffffda, 40);
-  return buffer;
-}
-
 /** The same installed GPU model and generator as Read Aloud; no model download or CPU fallback. */
 export function createQwen(env: NodeJS.ProcessEnv = process.env) {
   const paths = qwenPaths(env);
   let child: ChildProcessWithoutNullStreams | null = null;
   let ready: Promise<void> | null = null;
   let idle: ReturnType<typeof setTimeout> | undefined;
-  const jobs = new Map<string, { audio: PassThrough; started: boolean }>();
+  const jobs = new Map<string, { audio: PassThrough }>();
   const available = () => [
     paths.python, path.join(paths.worker, "synthesis.py"), path.join(paths.model, "model.safetensors"),
     path.join(paths.model, "speech_tokenizer/model.safetensors"),
@@ -73,7 +64,7 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
         let end;
         while ((end = pending.indexOf("\n")) >= 0) {
           const line = pending.slice(0, end); pending = pending.slice(end + 1);
-          let message: { ready?: boolean; id?: string; pcm?: string; rate?: number; done?: boolean; error?: string };
+          let message: { ready?: boolean; id?: string; audio?: string; done?: boolean; error?: string };
           try { message = JSON.parse(line); } catch { continue; }
           if (message.ready !== undefined) {
             clearTimeout(timer);
@@ -85,9 +76,8 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
           if (!job) continue;
           if (message.error) { job.audio.destroy(new BridgeError(message.error, 502)); jobs.delete(message.id!); }
           else if (message.done) { job.audio.end(); jobs.delete(message.id!); }
-          else if (message.pcm && Number.isInteger(message.rate) && message.rate! > 0 && message.rate! <= 192000) {
-            if (!job.started) { job.audio.write(wavHeader(message.rate!)); job.started = true; }
-            if (!job.audio.write(Buffer.from(message.pcm, "base64"))) {
+          else if (message.audio) {
+            if (!job.audio.write(Buffer.from(message.audio, "base64"))) {
               running.stdout.pause();
               job.audio.once("drain", () => running.stdout.resume());
             }
@@ -112,7 +102,7 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
       try { await start(); } finally { signal?.removeEventListener("abort", loading); }
       if (signal?.aborted || !child) { if (!jobs.size) close(); throw new BridgeError("Reading was stopped.", 499); }
       const id = randomUUID(), audio = new PassThrough();
-      jobs.set(id, { audio, started: false });
+      jobs.set(id, { audio });
       const cancel = () => {
         if (!jobs.delete(id)) return;
         child?.stdin.write(`${JSON.stringify({ cancel: id })}\n`);

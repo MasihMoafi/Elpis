@@ -63,7 +63,8 @@ export function createReadAloudProvider({
   kokoro: {
     voices?: () => Promise<string[]>;
     available: () => boolean;
-    speak: (text: string, voice: string | null) => Promise<Buffer>;
+    speak: (text: string, voice: string | null, signal?: AbortSignal) => Promise<Buffer>;
+    format?: (voice: string | null) => string;
     canStream?: (voice: string | null) => boolean;
     stream?: (text: string, voice: string | null, signal?: AbortSignal) => Promise<Readable>;
   };
@@ -79,7 +80,7 @@ export function createReadAloudProvider({
       throw new BridgeError("Choose a read aloud source.");
     if (value.source === "local") {
       if (value.model !== null || (value.voice !== null && (typeof value.voice !== "string" || !ID.test(value.voice))))
-        throw new BridgeError("Choose a Kokoro voice.");
+        throw new BridgeError("Choose a local voice.");
     } else {
       if (typeof value.model !== "string" || !ID.test(value.model)) throw new BridgeError("Choose a speech model.");
       const reason = speechModelUnavailable(value.model);
@@ -113,7 +114,7 @@ export function createReadAloudProvider({
     const choice = validate(input);
     if (choice.source !== "local") await provider(choice.source);
     else if (choice.voice && !(await kokoro.voices?.())?.includes(choice.voice))
-      throw new BridgeError("Choose an installed Kokoro voice.");
+      throw new BridgeError("Choose an installed local voice.");
     const task = writing
       .catch(() => {})
       .then(async () => {
@@ -141,7 +142,7 @@ export function createReadAloudProvider({
           ...choice,
           revision: revision(choice),
           available: false,
-          reason: "Kokoro is unavailable on this computer.",
+          reason: "The local GPU voice is unavailable on this computer.",
         };
       try {
         await kokoro.voices?.();
@@ -164,7 +165,7 @@ export function createReadAloudProvider({
     const choice = await read();
     if (input.revision !== undefined && input.revision !== revision(choice))
       throw new BridgeError("Read aloud source changed. Try again with the selected source.", 409);
-    if (choice.source === "local") return { audio: await kokoro.speak(value, choice.voice), type: "audio/wav" };
+    if (choice.source === "local") return { audio: await kokoro.speak(value, choice.voice, signal), type: kokoro.format?.(choice.voice) ?? "audio/wav" };
     const connection = await provider(choice.source);
     const rate = speechPcmRate(choice.model as string);
     let response;
@@ -242,5 +243,6 @@ export function createReadAloudProvider({
       throw new BridgeError("The read aloud source changed. Read it again.", 409);
     return kokoro.stream(job.text, choice.voice, signal);
   }
-  return { read, save, status, speak, prepare, stream };
+  const release = (id: string) => { prepared.delete(id); };
+  return { read, save, status, speak, prepare, stream, release };
 }

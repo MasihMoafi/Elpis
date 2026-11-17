@@ -25,6 +25,10 @@ test("streaming reads are single-use and a changed source cannot play prepared a
   const stream = await reader.stream(id, new AbortController().signal);
   for await (const _ of stream) { /* drain */ }
   assert.deepEqual(spoken, ["First sentence."]);
+  const unused = await reader.prepare({ text: "A cancelled prefetch." });
+  const unusedId = unused.url.split("/").at(-1)!;
+  reader.release(unusedId);
+  await assert.rejects(reader.stream(unusedId, new AbortController().signal), /expired/);
   await assert.rejects(reader.stream(id, new AbortController().signal), /expired/);
   const stale = await reader.prepare({ text: "Obsolete." });
   await reader.save({ source: "local", model: null, voice: "qwen_aiden" });
@@ -32,7 +36,7 @@ test("streaming reads are single-use and a changed source cannot play prepared a
   assert.deepEqual(spoken, ["First sentence."]);
 });
 
-test("Qwen delivers initial PCM before synthesis ends and Stop cancels generation while retaining the warm model", async t => {
+test("Qwen streams audio before synthesis ends and Stop cancels generation while retaining the warm model", async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "qwen-adapter-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.mkdir(path.join(root, "worker"));
@@ -64,7 +68,7 @@ def clip(*_): return PCM()
   const controller = new AbortController(), started = Date.now();
   const stream = await reader.stream("Hello.", "qwen_aiden", controller.signal);
   const first = await new Promise<Buffer>((resolve, reject) => { stream.once("data", resolve); stream.once("error", reject); });
-  assert.equal(first.subarray(0, 4).toString(), "RIFF");
+  assert.equal(first[0], 0xff, "the streaming encoder emits a decodable MPEG frame");
   assert.ok(Date.now() - started < 1500, "initial sound must precede the delayed final chunk");
   const pid = Number(await fs.readFile(path.join(root, "pid"), "utf8"));
   const closed = new Promise<void>(resolve => stream.once("close", resolve));

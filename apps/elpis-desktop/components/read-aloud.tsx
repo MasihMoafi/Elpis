@@ -9,6 +9,7 @@ import { createContext, useContext, useEffect, useRef, useState, type ReactNode 
 import { api, sessionReady } from "@/lib/api";
 import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
 import { errorText } from "@/lib/error-text.mts";
+import { playStreamingAudio } from "@/lib/streaming-audio";
 const SpeechContext = createContext<Speech | null>(null);
 export const useReadAloud = () => useContext(SpeechContext);
 
@@ -101,14 +102,18 @@ export function ReadAloud({
           prepare();
           const url = await voiced[played]!;
           if (controller.signal.aborted || local.current !== mine) { if (url.startsWith("blob:")) URL.revokeObjectURL(url); break; }
-          audio.src = url;
           audio.playbackRate = speedRef.current;
-          await new Promise<void>((resolve, reject) => {
-            audio.onended = () => resolve();
-            audio.onerror = () => reject(new Error("This reply could not be played."));
-            controller.signal.addEventListener("abort", () => resolve(), { once: true });
-            void audio.play().catch(reject);
-          });
+          if (source.streaming) await playStreamingAudio(audio, url, controller.signal);
+          else {
+            audio.src = url;
+            audio.playbackRate = speedRef.current;
+            await new Promise<void>((resolve, reject) => {
+              audio.onended = () => resolve();
+              audio.onerror = () => reject(new Error("This reply could not be played."));
+              controller.signal.addEventListener("abort", () => resolve(), { once: true });
+              void audio.play().catch(reject);
+            });
+          }
           if (url.startsWith("blob:")) URL.revokeObjectURL(url);
           played++;
         }
@@ -116,6 +121,10 @@ export function ReadAloud({
         if (local.current === mine && !controller.signal.aborted)
           setError({ id, message: errorText(cause, "Read aloud could not voice this reply.") });
       } finally {
+        for (const unused of voiced.slice(played)) void unused.then(url => {
+          if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+          else if (source.streaming) void fetch(url, { method: "DELETE" }).catch(() => {});
+        }, () => {});
         if (local.current === mine) {
           local.current = null;
           setActive(null);

@@ -286,7 +286,7 @@ export function useKeyUses({
       if (feature === "speech") {
         setSpeech(readChoice(await api<Choice>("/read-aloud/settings", DEFAULT_SPEECH)));
         window.dispatchEvent(new Event("elpis-read-aloud-settings"));
-        return "Read aloud is back on local Kokoro.";
+        return "Read aloud is back on the local GPU voice.";
       }
       setMcp(
         readMcp(
