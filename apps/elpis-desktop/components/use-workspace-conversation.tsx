@@ -32,7 +32,7 @@ export function useWorkspaceConversation(previous: WorkspaceState) {
     updateTabs,
     session,
     newDraftKey,
-    markRead,
+    attention,
     setView,
     setSidebar,
     setError,
@@ -114,8 +114,6 @@ export function useWorkspaceConversation(previous: WorkspaceState) {
     updateTabs,
     session,
     newDraftKey,
-    markRead,
-    autoRead,
     setView,
     setSidebar,
     setError,
@@ -169,6 +167,8 @@ export function useWorkspaceConversation(previous: WorkspaceState) {
     showAgentRuns: preferences.showAgentRuns,
     agentRunsOpen,
     newDraftKey,
+    autoRead,
+    pending: attention.pending,
   });
   const { activeTurn, permissionMode, planMode, proposedPlan, outsideChatApprovals, readOnlyRun, continues } =
     conversationStatus(session, options, runtime, providerSettings, view);

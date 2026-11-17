@@ -8,6 +8,7 @@ export function useConversationSession() {
   const [selected, setSelected] = useState<Thread | null>(null);
   const selectedRef = useRef<Thread | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
+  const [displayedThreadId, setDisplayedThreadId] = useState<string | null>(null);
   const [submissions, setSubmissions] = useState<SubmittedMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const sending = useRef(0);
@@ -50,6 +51,8 @@ export function useConversationSession() {
     selectedRef,
     entries,
     setEntries,
+    displayedThreadId,
+    setDisplayedThreadId,
     submissions,
     setSubmissions,
     busy,

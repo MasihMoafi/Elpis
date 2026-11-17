@@ -284,10 +284,7 @@ export function useRuntimeEvents({
             !isAgentRun(threadsRef.current.find(thread => thread.id === threadId) ?? {})
           ) {
             // A reply is read when it is on screen: in its open chat, or on the open Love Spot board for a Love Spot chat.
-            const shown =
-              viewRef.current === "loveSpot" || loveRef.current.chatShown
-                ? isLoveChatId(threadId)
-                : selectedRef.current?.id === threadId && viewRef.current === "chat";
+            const shown = (viewRef.current === "loveSpot" || loveRef.current.chatShown) && isLoveChatId(threadId);
             const visible = document.visibilityState === "visible" && document.hasFocus();
             const planReady =
               planTurns.current.get(threadId) === params.turn.id ||

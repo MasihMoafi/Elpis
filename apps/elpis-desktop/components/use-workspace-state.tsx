@@ -171,14 +171,10 @@ export function useWorkspaceState() {
   const { finishReplay, workflowSandbox, workflowFolder } = useWorkflowWorkspace(view, projectState, runtime, setError);
   useReadLoveNotifications(loveActivity.chatShown, attention.unread, autoRead, isLoveChatId);
   useEffect(() => {
-    if (view === "chat" && selected && document.visibilityState === "visible" && document.hasFocus()) autoRead(selected.id);
-  }, [view, selected?.id, autoRead]);
-  useEffect(() => {
     const readVisible = () => {
       if (document.visibilityState !== "visible" || !document.hasFocus()) return;
       for (const id of attentionRef.current.unread) {
-        if ((view === "chat" && selected?.id === id) ||
-            ((view === "loveSpot" || loveActivity.chatShown) && isLoveChatId(id))) autoRead(id);
+        if ((view === "loveSpot" || loveActivity.chatShown) && isLoveChatId(id)) autoRead(id);
       }
     };
     window.addEventListener("focus", readVisible);
@@ -188,7 +184,7 @@ export function useWorkspaceState() {
       window.removeEventListener("focus", readVisible);
       document.removeEventListener("visibilitychange", readVisible);
     };
-  }, [view, selected?.id, loveActivity.chatShown, autoRead, attention.unread]);
+  }, [view, loveActivity.chatShown, autoRead, attention.unread]);
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
   const workspacePanels = useWorkspacePanels({
     selected,

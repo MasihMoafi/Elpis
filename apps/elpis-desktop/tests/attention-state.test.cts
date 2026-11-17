@@ -45,3 +45,12 @@ test('independent chats and plan clearing do not overwrite each other', () => {
   state = apply(state, { kind: 'complete', id: 'a', turn: 'new', read: false, plan: true });
   assert.equal(view(state).plans.a, undefined, 'starting a new turn dismisses the plan permanently');
 });
+
+test('displaying an older reply does not mark a newer unloaded reply read', () => {
+  let state = apply(null, { kind: 'complete', id: 'a', turn: 'old', read: false, plan: false });
+  state = apply(state, { kind: 'complete', id: 'a', turn: 'new', read: false, plan: false });
+  state = apply(state, { kind: 'read', id: 'a', turn: 'old', manual: false });
+  assert.deepEqual(view(state).unread, ['a']);
+  state = apply(state, { kind: 'read', id: 'a', turn: 'new', manual: false });
+  assert.deepEqual(view(state).unread, []);
+});

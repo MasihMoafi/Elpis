@@ -4,7 +4,7 @@ type Chat = { manual: boolean; replies: Record<string, boolean>; dismissed?: str
 type State = { version: 2; chats: Record<string, Chat> };
 type Op =
   | { kind: "complete"; id: string; turn: string; read: boolean; plan: boolean }
-  | { kind: "read"; id: string; manual: boolean }
+  | { kind: "read"; id: string; manual: boolean; turn?: string }
   | { kind: "unread"; id: string }
   | { kind: "clearPlan"; id: string; turn?: string };
 
@@ -15,7 +15,7 @@ function operationImpl(value: unknown): value is Op {
   const v = value as Record<string, unknown>;
   if (!id(v.id)) return false;
   if (v.kind === "complete") return id(v.turn) && typeof v.read === "boolean" && typeof v.plan === "boolean";
-  if (v.kind === "read") return typeof v.manual === "boolean";
+  if (v.kind === "read") return typeof v.manual === "boolean" && (v.turn === undefined || id(v.turn));
   if (v.kind === "clearPlan") return v.turn === undefined || id(v.turn);
   return v.kind === "unread";
 }
@@ -50,7 +50,9 @@ function applyImpl(raw: string | null, op: Op): string {
     chat.replies[op.turn] = chat.replies[op.turn] === true || op.read;
     if (op.plan && !chat.dismissed?.includes(op.turn)) chat.plan = op.turn;
   } else if (op.kind === "read") {
-    for (const turn of Object.keys(chat.replies)) chat.replies[turn] = true;
+    if (op.turn) {
+      if (Object.hasOwn(chat.replies, op.turn)) chat.replies[op.turn] = true;
+    } else for (const turn of Object.keys(chat.replies)) chat.replies[turn] = true;
     if (op.manual) chat.manual = false;
   } else if (op.kind === "unread") chat.manual = true;
   else {
@@ -58,19 +60,22 @@ function applyImpl(raw: string | null, op: Op): string {
     if (dismissed && !chat.dismissed?.includes(dismissed)) chat.dismissed = [...(chat.dismissed ?? []), dismissed];
     if (!op.turn || chat.plan === op.turn) delete chat.plan;
   }
-  return JSON.stringify({ ...state, ...project(state) });
+  const { unread, plans } = project(state);
+  return JSON.stringify({ ...state, unread, plans });
 }
 function project(state: State) {
-  const unread: string[] = [], plans: Record<string, string> = {};
+  const unread: string[] = [], plans: Record<string, string> = {}, pending: Record<string, string[]> = {};
   for (const [key, chat] of Object.entries(state.chats)) {
-    if (chat.manual || Object.values(chat.replies).includes(false)) unread.push(key);
+    const turns = Object.entries(chat.replies).filter(([, read]) => !read).map(([turn]) => turn);
+    if (turns.length) pending[key] = turns;
+    if (chat.manual || turns.length) unread.push(key);
     if (chat.plan) plans[key] = chat.plan;
   }
-  return { unread, plans };
+  return { unread, plans, pending };
 }
 function viewImpl(raw: string | null) { return project(parse(raw)); }
 module.exports = { operation: operationImpl, apply: applyImpl, view: viewImpl };
 export type { Op };
 export declare const operation: (value: unknown) => value is Op;
 export declare const apply: (raw: string | null, op: Op) => string;
-export declare const view: (raw: string | null) => { unread: string[]; plans: Record<string, string> };
+export declare const view: (raw: string | null) => { unread: string[]; plans: Record<string, string>; pending: Record<string, string[]> };

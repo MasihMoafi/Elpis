@@ -14,8 +14,6 @@ type Setter<T> = Dispatch<SetStateAction<T>>;
 type OpenInputs = ChatWiring & {
   composer: ReturnType<typeof useComposerState>;
   runtime: ReturnType<typeof useRuntimeState>;
-  markRead: (id: string) => void;
-  autoRead: (id: string) => void;
   setView: Setter<View>;
   setSidebar: Setter<boolean>;
   setError: Setter<string>;
@@ -33,8 +31,6 @@ export function useOpenConversation({
   updateTabs,
   session,
   newDraftKey,
-  markRead,
-  autoRead,
   setView,
   setSidebar,
   setError,
@@ -50,6 +46,7 @@ export function useOpenConversation({
     pendingPosition,
     setLoading,
     setEntries,
+    setDisplayedThreadId,
   } = session;
   const { textRef, setText } = composer;
   const { setHistoryOnly, turnRevisions, modeRevisions, setActiveTurns, completedTurns, setLiveError } = runtime;
@@ -88,7 +85,6 @@ export function useOpenConversation({
 
   const loadThread = useCallback(
     async (thread: Thread) => {
-      if (document.visibilityState === "visible" && document.hasFocus()) autoRead(thread.id);
       // A chat that is already open in another tab brings that tab forward instead of opening twice.
       const owner = tabFor(tabsRef.current, thread.id);
       if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
@@ -112,6 +108,7 @@ export function useOpenConversation({
       setView("chat");
       setSidebar(false);
       setEntries(shown?.entries ?? []);
+      setDisplayedThreadId(shown ? thread.id : null);
       setItemCursor(shown?.cursor ?? null);
       setLoading(!shown);
       setError("");
@@ -119,7 +116,7 @@ export function useOpenConversation({
       try {
         const result = await api<HistoryPage & { thread: Thread }>(historyPath(thread.id));
         if (!Array.isArray(result.data)) throw unreadable("conversations");
-        if (!result.thread || typeof result.thread.id !== "string") throw unreadable("conversation");
+        if (!result.thread || result.thread.id !== thread.id) throw unreadable("conversation");
         if (request.current !== id) return;
         if (switching && result.thread.motherAgent) {
           pendingPosition.current = null;
@@ -127,6 +124,7 @@ export function useOpenConversation({
         }
         select(remember(result.thread));
         applyHistoryPage(thread.id, result, historyRevision, switching && !!shown);
+        setDisplayedThreadId(thread.id);
         // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
         // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
         unread = !result.data.length && !result.nextCursor;
@@ -139,6 +137,7 @@ export function useOpenConversation({
         if (landed) {
           setEntries(previous => mergeHistoryWithLive(previous, landed.entries, liveKeysAfter(historyRevision)));
           setItemCursor(landed.cursor);
+          setDisplayedThreadId(thread.id);
         }
         if (request.current !== id) return;
         if (!shown && !landed) {
@@ -162,6 +161,7 @@ export function useOpenConversation({
           const again = await api<HistoryPage>(historyPath(thread.id));
           if (request.current === id && Array.isArray(again.data)) {
             applyHistoryPage(thread.id, again, historyRevision, switching && !!shown);
+            setDisplayedThreadId(thread.id);
           }
         }
       } catch (e) {
@@ -179,8 +179,6 @@ export function useOpenConversation({
       applyHistoryPage,
       restoreAttachments,
       updateTabs,
-      markRead,
-      autoRead,
       noteHistoryGap,
     ],
   );
@@ -189,15 +187,13 @@ export function useOpenConversation({
   const openThread = useCallback(
     async (thread: Thread) => {
       if (selectedRef.current?.id === thread.id) {
-        if (document.visibilityState === "visible" && document.hasFocus()) markRead(thread.id);
         setView("chat");
         setSidebar(false);
         return;
       }
-      if (document.visibilityState === "visible" && document.hasFocus()) markRead(thread.id);
       await loadThread(thread);
     },
-    [loadThread, markRead],
+    [loadThread],
   );
 
   return { rememberFollowing, reconcileLiveThread, loadThread, openThread };

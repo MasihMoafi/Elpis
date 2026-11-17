@@ -39,12 +39,16 @@ async function eventually<T>(check: () => T | Promise<T>, ms = 4000) {
 }
 
 test('a reply that finishes in a chat you are not looking at is unread until you open it, even after a restart', async () => {
-  const f = await fixture(), { page } = f;
+  const f = await fixture({ routes: { '/api/threads/chat-b': () => ({ thread: THREADS[1], data: [
+    { turnId: 'tb', item: { id: 'reply-tb', type: 'agentMessage', text: 'Docs reply' } },
+  ], nextCursor: null }) } }), { page } = f;
   try {
     await f.open('chat-a');
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'ta',
+      item: { id: 'reply-ta', type: 'agentMessage', text: 'Parser reply' } } });
     finish(f, 'chat-a', 'ta'); finish(f, 'chat-b', 'tb');
     await eventually(async () => assert.equal(await dot(page, 'chat-b').getAttribute('aria-label'), 'Unread response. Mark as read'));
-    assert.equal(await dot(page, 'chat-a').count(), 0, 'the chat you are reading is read');
+    await eventually(async () => assert.equal(await dot(page, 'chat-a').count(), 0, 'the chat you are reading is read'));
     const weight = (id: string) => row(page, id).locator('.thread-title').evaluate(element => Number(getComputedStyle(element).fontWeight));
     assert.ok(await weight('chat-b') > await weight('chat-c'), 'an unread chat’s name stands out');
     await page.reload();
@@ -95,8 +99,11 @@ test('a selected chat is unread on another page; a new turn clears a plan waitin
   try {
     await f.open('chat-a');
     await page.getByRole('button', { name: 'Lab', exact: true }).click();
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 'background',
+      item: { id: 'background-reply', type: 'agentMessage', text: 'Background reply' } } });
     finish(f, 'chat-a', 'background');
     await eventually(async () => assert.equal(await dot(page, 'chat-a').getAttribute('data-state'), 'unread'));
+    f.turns.push(['background', 'Continue', 'Background reply']);
     await f.open('chat-a');
     assert.equal(await dot(page, 'chat-a').count(), 0);
     f.emit('message', { method: 'item/completed', params: { threadId: 'chat-b', turnId: 'plan-turn', item: { id: 'p', type: 'plan', text: 'Review this' } } });

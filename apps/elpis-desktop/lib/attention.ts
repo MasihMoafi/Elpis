@@ -3,11 +3,11 @@ import { apply, view, type Op } from "./attention-state.cts";
 
 const KEY = "elpis-chat-attention-v1";
 const CHANGE = "elpis:attention-changed";
-export type Attention = { unread: string[]; plans: Record<string, string> };
+export type Attention = { unread: string[]; plans: Record<string, string>; pending: Record<string, string[]> };
 
 export function readAttention(): Attention {
   try { return view(appStorage().getItem(KEY)); }
-  catch { return { unread: [], plans: {} }; }
+  catch { return { unread: [], plans: {}, pending: {} }; }
 }
 
 /** Native writes are serialized in the main process; browser-only windows use their local store. */

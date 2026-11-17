@@ -10,7 +10,7 @@ import { emptyGroups, readGroups, writeGroups, type ChatGroups } from "@/lib/cha
 /** Which chats have an answer not yet read and which wait on a plan, kept on this computer. A plan the person has answered stops waiting.
  * `planTurns` remembers each chat's latest plan turn while the window is open. */
 export function useChatAttention(planAnswered: Record<string, string>, onError: (message: string) => void) {
-  const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
+  const [attention, setAttention] = useState<Attention>({ unread: [], plans: {}, pending: {} });
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
   const planTurns = useRef(new Map<string, string>());
@@ -26,7 +26,7 @@ export function useChatAttention(planAnswered: Record<string, string>, onError: 
   const markRead = useCallback(
     (id: string) => attentionOp({ kind: "read", id, manual: true }), [attentionOp],
   );
-  const autoRead = useCallback((id: string) => attentionOp({ kind: "read", id, manual: false }), [attentionOp]);
+  const autoRead = useCallback((id: string, turn?: string) => attentionOp({ kind: "read", id, manual: false, ...(turn ? { turn } : {}) }), [attentionOp]);
   useEffect(() => {
     for (const [id, turn] of Object.entries(attention.plans))
       if (turn === planAnswered[id]) attentionOp({ kind: "clearPlan", id, turn });

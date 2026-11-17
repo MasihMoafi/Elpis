@@ -13,9 +13,11 @@ test('background replies remain unread until their own visible chat regains focu
   try {
     await f.open('chat-a');
     await visibility(page, false);
-    const finish = (threadId: string, id: string) => f.emit('message', {
-      method: 'turn/completed', params: { threadId, turn: { id, status: 'completed', items: [] } },
-    });
+    const finish = (threadId: string, id: string) => {
+      f.emit('message', { method: 'item/completed', params: { threadId, turnId: id,
+        item: { id: `reply-${id}`, type: 'agentMessage', text: `Reply ${id}` } } });
+      f.emit('message', { method: 'turn/completed', params: { threadId, turn: { id, status: 'completed', items: [] } } });
+    };
     finish('chat-a', 'hidden-a');
     finish('chat-b', 'hidden-b');
     const unread = () => page.evaluate(() => JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []);
@@ -64,4 +66,49 @@ test('a hidden Love Spot board retains its reply until the board is visible agai
     await page.waitForFunction(() => !(JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []).includes('matilda-chat'));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
+});
+
+test('failed, slow and stale history loads retain unread until the matching reply is displayed', async () => {
+  let mode: 'fail' | 'slow' = 'fail', turn = 'reply-one', release: (() => void) | undefined;
+  let gate = Promise.resolve();
+  const hold = () => { gate = new Promise<void>(resolve => { release = resolve; }); };
+  const f = await fixture({ routes: {
+    '/api/threads/chat-b': async () => {
+      if (mode === 'fail') return { __http: 500, error: 'History unavailable' };
+      const current = turn;
+      await gate;
+      return { thread: THREADS[1], data: [{ turnId: current,
+        item: { id: `answer-${current}`, type: 'agentMessage', text: `Displayed ${current}` } }], nextCursor: null };
+    },
+  } }), { page } = f;
+  const finish = (id: string) => f.emit('message', { method: 'turn/completed',
+    params: { threadId: 'chat-b', turn: { id, status: 'completed', items: [] } } });
+  const unread = () => page.evaluate(() => JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []);
+  try {
+    await f.open('chat-a');
+    finish('reply-one');
+    await page.waitForFunction(() => (JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []).includes('chat-b'));
+    await f.open('chat-b');
+    await page.getByText(/History unavailable/).waitFor();
+    assert.ok((await unread()).includes('chat-b'), 'failed history did not mark the chat read');
+    await f.open('chat-a');
+    mode = 'slow'; hold();
+    await f.open('chat-b');
+    assert.ok((await unread()).includes('chat-b'), 'an unfinished load did not mark it read');
+    release?.();
+    await page.getByText('Displayed reply-one', { exact: true }).waitFor();
+    await page.waitForFunction(() => !(JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []).includes('chat-b'));
+
+    await f.open('chat-a');
+    turn = 'reply-two'; finish(turn); hold();
+    await page.waitForFunction(() => (JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []).includes('chat-b'));
+    await f.open('chat-b');
+    await page.getByText('Displayed reply-one', { exact: true }).waitFor();
+    assert.ok((await unread()).includes('chat-b'), 'older cached text cannot clear a newer reply');
+    await f.open('chat-c');
+    release?.();
+    await page.waitForTimeout(150);
+    assert.ok((await unread()).includes('chat-b'), 'a stale response after switching cannot mark it read');
+    assert.deepEqual(f.errors, []);
+  } finally { release?.(); await f.close(); }
 });
