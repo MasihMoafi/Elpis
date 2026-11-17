@@ -310,7 +310,7 @@ test('folder links browse nested, outside and empty folders while preserving an 
     await f.ref('Empty').click();
     await f.view.getByText('Folder is empty', { exact: true }).waitFor();
     assert.equal(await f.view.getByRole('alert').count(), 0);
-    await f.tabs.getByRole('tab', { name: 'guide.md', exact: true }).click();
+    await f.tabs.getByRole('tab', { name: /guide\.md/ }).click();
     assert.equal(await f.editor('docs/guide.md').inputValue(), 'Keep this unsaved edit');
     assert.deepEqual(f.errors, []);
     if (process.env.ELPIS_REVIEW_SHOTS) {
