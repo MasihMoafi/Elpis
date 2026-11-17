@@ -1,4 +1,5 @@
 import type { fixture as Fixture } from './parity-fixture.cts';
+import type { Page } from 'playwright-core';
 const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const { fixture, CWD }: { fixture: typeof Fixture; CWD: string } = require('./parity-fixture.cts');
@@ -13,6 +14,7 @@ for (const colorScheme of ['light', 'dark']) {
     ].map(thread => ({ ...thread, cwd: CWD }));
     const staticDir = process.env.ELPIS_STATUS_STATIC_DIR;
     const f = await fixture({ colorScheme, threads, ...(staticDir ? { staticDir } : {}) });
+    const page = f.page as Page;
     try {
       await f.page.locator('[data-thread-id="chat-a"] .elpis-working-mark').waitFor({ timeout: 2000 });
       const states = await f.page.evaluate(() =>
@@ -38,7 +40,7 @@ for (const colorScheme of ['light', 'dark']) {
       assert.deepEqual(animation, { rotation: '4s', blink: '2s', masks: 0 });
       for (const id of ['chat-a', 'chat-b', 'chat-c']) {
         await f.open(id);
-        const selected = f.page.locator(`aside.sidebar .thread-row.active[data-thread-id="${id}"]`);
+        const selected = page.locator(`aside.sidebar .thread-row.active[data-thread-id="${id}"]`);
         const edge = await selected.evaluate(row => ({
           shadow: getComputedStyle(row, '::after').boxShadow,
           rowShadow: getComputedStyle(row).boxShadow,
@@ -46,7 +48,7 @@ for (const colorScheme of ['light', 'dark']) {
         }));
         assert.deepEqual(edge, { shadow: 'none', rowShadow: 'none', border: '2px' }, `${id}: selection keeps its edge without a shadow`);
         if (id === 'chat-a' && process.env.ELPIS_REVIEW_SHOTS)
-          await f.page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-no-shadow-${colorScheme}.png`) });
+          await page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-no-shadow-${colorScheme}.png`) });
       }
       f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-a', status: { type: 'idle' } } });
       await f.page.locator('[data-thread-id="chat-a"] .elpis-working-mark').waitFor({ state: 'detached' });
