@@ -171,7 +171,7 @@ test("says so for a binary file and refuses what lies outside the project", asyn
   await refused(readFile(root, "../etc/passwd"), 400, /outside/i);
   await refused(readFile(root, path.join(outside, "secret.txt")), 400, /outside/i);
   await refused(readFile(root, "escape.txt"), 400, /outside/i);
-  await refused(readFile(root, "src"), 400, /file/i);
+  assert.deepEqual(await readFile(root, "src"), { path: "src", size: 0, directory: true });
   await refused(readFile(root, "missing.ts"), 404, /No such file in .*: missing\.ts/);
   await refused(readFile(root, ""), 400, /path/i);
 });

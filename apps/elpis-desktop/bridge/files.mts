@@ -206,7 +206,7 @@ export async function readFile(
   target: unknown,
   options: { page?: number | undefined; line?: number | undefined; mtimeMs?: number | undefined } = {},
 ): Promise<FileRead> {
-  const { real, rel, info: initial } = await inside(cwd, target, "file", true, true);
+  const { real, rel, info: initial } = await inside(cwd, target, "file", false, true);
   if (initial.isDirectory()) return { path: rel, size: 0, directory: true };
   const handle = await fs.open(real, "r").catch(() => {
     throw new BridgeError("This file cannot be read.");
