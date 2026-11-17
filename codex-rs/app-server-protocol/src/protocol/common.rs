@@ -769,6 +769,18 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadBackgroundTerminalsListResponse,
     },
+    #[experimental("smartPrune/log/list")]
+    SmartPruneLogList => "smartPrune/log/list" {
+        params: v2::SmartPruneLogListParams,
+        serialization: global("smart-prune-log"),
+        response: v2::SmartPruneLogListResponse,
+    },
+    #[experimental("smartPrune/log/read")]
+    SmartPruneLogRead => "smartPrune/log/read" {
+        params: v2::SmartPruneLogReadParams,
+        serialization: global("smart-prune-log"),
+        response: v2::SmartPruneLogReadResponse,
+    },
     #[experimental("thread/backgroundTerminals/terminate")]
     ThreadBackgroundTerminalsTerminate => "thread/backgroundTerminals/terminate" {
         params: v2::ThreadBackgroundTerminalsTerminateParams,

@@ -1065,11 +1065,7 @@ impl Session {
 
     async fn smart_prune_log_dir(&self) -> std::path::PathBuf {
         let state = self.state.lock().await;
-        state
-            .session_configuration
-            .codex_home()
-            .join("logs")
-            .to_path_buf()
+        crate::smart_prune_log::audit_log_dir(state.session_configuration.codex_home())
     }
 
     /// Hash and durably link the logical prompt input before transport adaptation.

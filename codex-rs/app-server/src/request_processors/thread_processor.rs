@@ -13,6 +13,13 @@ use super::thread_input::ensure_direct_input_allowed;
 use super::*;
 use crate::error_code::method_not_found;
 use codex_app_server_protocol::SelectedCapabilityRoot;
+use codex_app_server_protocol::SmartPruneLogItem;
+use codex_app_server_protocol::SmartPruneLogListParams;
+use codex_app_server_protocol::SmartPruneLogListResponse;
+use codex_app_server_protocol::SmartPruneLogReadParams;
+use codex_app_server_protocol::SmartPruneLogReadResponse;
+use codex_app_server_protocol::SmartPruneLogRecord;
+use codex_app_server_protocol::SmartPruneLogSummary;
 use codex_app_server_protocol::ThreadHistoryMode as ApiThreadHistoryMode;
 use codex_app_server_protocol::ThreadItemsListAnchor;
 use codex_app_server_protocol::ThreadItemsListCursor;
@@ -26,6 +33,7 @@ use codex_app_server_protocol::ThreadSectionAppearance;
 use codex_app_server_protocol::ThreadSectionMoveParams;
 use codex_app_server_protocol::ThreadSectionMoveResponse;
 use codex_config::types::WindowsSandboxModeToml;
+use codex_core::smart_prune_log;
 use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ThreadIdleCause;
 use codex_protocol::SanitizedGitUrl;
@@ -38,6 +46,40 @@ use std::ops::ControlFlow;
 
 pub(super) const THREAD_LIST_DEFAULT_LIMIT: usize = 25;
 pub(super) const THREAD_LIST_MAX_LIMIT: usize = 100;
+
+fn smart_prune_summary(row: smart_prune_log::PruneLogSummary) -> SmartPruneLogSummary {
+    SmartPruneLogSummary {
+        attempt_id: row.attempt_id,
+        thread_id: row.thread_id,
+        timestamp: row.timestamp,
+        chat_title: row.chat_title,
+        turn_id: row.turn_id,
+        turn_number: row.turn_number.map(|n| n as u64),
+        model: row.model,
+        reasoning_effort: row.reasoning_effort,
+        estimated_source_tokens: row.estimated_source_tokens.map(|n| n as u64),
+        estimated_admitted_tokens: row.estimated_admitted_tokens.map(|n| n as u64),
+        estimated_saved_tokens: row.estimated_saved_tokens.map(|n| n as u64),
+        note: row.note,
+    }
+}
+
+fn smart_prune_error(error: anyhow::Error) -> JSONRPCErrorError {
+    match error.downcast_ref::<smart_prune_log::GlobalLogError>() {
+        Some(smart_prune_log::GlobalLogError::InvalidCursor) => {
+            invalid_params("Invalid Smart Prune cursor; reload the first page")
+        }
+        Some(smart_prune_log::GlobalLogError::InvalidScope) => {
+            invalid_params("Invalid Smart Prune record identity or chat")
+        }
+        Some(smart_prune_log::GlobalLogError::ScanLimit) => internal_error(
+            "Smart Prune log exceeds the listing scan limit; a large-history index is required",
+        ),
+        None => internal_error(
+            "Smart Prune evidence is unavailable, unreadable, or exceeds the size limit",
+        ),
+    }
+}
 const PAGINATED_FULL_HISTORY_DEPRECATION_SUMMARY: &str = "Full-history hydration is deprecated for paginated threads; use `excludeTurns: true`, then page with `thread/turns/list` and `thread/items/list`.";
 const PAGINATED_THREAD_READ_DEPRECATION_SUMMARY: &str = "Full-history hydration is deprecated for paginated threads; omit `includeTurns` or set it to `false`, then page with `thread/turns/list` and `thread/items/list`.";
 
@@ -849,6 +891,67 @@ impl ThreadRequestProcessor {
         self.thread_background_terminals_list_inner(params)
             .await
             .map(|response| Some(response.into()))
+    }
+
+    pub(crate) async fn smart_prune_log_list(
+        &self,
+        params: SmartPruneLogListParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        let limit = params.limit.unwrap_or(25) as usize;
+        if !(1..=100).contains(&limit) {
+            return Err(invalid_params(
+                "Smart Prune page limit must be between 1 and 100",
+            ));
+        }
+        let log_dir = smart_prune_log::audit_log_dir(&self.config.codex_home);
+        let page = tokio::task::spawn_blocking(move || {
+            smart_prune_log::load_page(&log_dir, params.cursor.as_deref(), limit)
+        })
+        .await
+        .map_err(|_| internal_error("Smart Prune log reader failed"))?
+        .map_err(smart_prune_error)?;
+        Ok(Some(
+            SmartPruneLogListResponse {
+                data: page.data.into_iter().map(smart_prune_summary).collect(),
+                next_cursor: page.next_cursor,
+                unreadable: page.unreadable as u64,
+            }
+            .into(),
+        ))
+    }
+
+    pub(crate) async fn smart_prune_log_read(
+        &self,
+        params: SmartPruneLogReadParams,
+    ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        let log_dir = smart_prune_log::audit_log_dir(&self.config.codex_home);
+        let response = tokio::task::spawn_blocking(move || {
+            let record =
+                smart_prune_log::read_scoped(&log_dir, &params.attempt_id, &params.thread_id)?;
+            let summary = smart_prune_summary((&record).into());
+            let items = record
+                .items
+                .into_iter()
+                .map(|item| SmartPruneLogItem {
+                    diff: item.diff(),
+                    call_id: item.call_id,
+                    kept: item.kept,
+                    description: item.description,
+                    estimated_source_tokens: item.source_tokens as u64,
+                    estimated_admitted_tokens: item.admitted_tokens as u64,
+                    decision: item.decision,
+                    original: item.original,
+                    compact: item.compact,
+                })
+                .collect();
+            Ok::<_, anyhow::Error>(SmartPruneLogReadResponse {
+                record: SmartPruneLogRecord { summary, items },
+            })
+        })
+        .await
+        .map_err(|_| internal_error("Smart Prune log reader failed"))?
+        .map_err(smart_prune_error)?;
+        Ok(Some(response.into()))
     }
 
     pub(crate) async fn thread_background_terminals_terminate(

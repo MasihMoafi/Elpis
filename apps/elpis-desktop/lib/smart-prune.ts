@@ -1,3 +1,7 @@
+export type { SmartPruneLogSummary } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/SmartPruneLogSummary.ts";
+export type { SmartPruneLogRecord } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/SmartPruneLogRecord.ts";
+export type { SmartPruneLogListResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/SmartPruneLogListResponse.ts";
+
 export type Prune = {
   attemptId: string;
   callId: string;

@@ -66,6 +66,8 @@ const READ_RPCS = new Set([
   "config/read",
   "configRequirements/read",
   "pruner/read",
+  "smartPrune/log/list",
+  "smartPrune/log/read",
   "workGraph/list",
   "hooks/list",
   "workflowRun/list",

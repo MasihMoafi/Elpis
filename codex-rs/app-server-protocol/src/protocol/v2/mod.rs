@@ -18,6 +18,7 @@ mod elpis_activity;
 // Elpis: Context Ledger state types.
 mod elpis_context;
 mod elpis_pruner;
+mod elpis_smart_prune_log;
 mod elpis_work_graph;
 mod environment;
 mod experimental_feature;
@@ -64,6 +65,7 @@ pub use diagnostics::*;
 pub use elpis_activity::*;
 pub use elpis_context::*;
 pub use elpis_pruner::*;
+pub use elpis_smart_prune_log::*;
 pub use elpis_work_graph::*;
 pub use environment::*;
 pub use experimental_feature::*;

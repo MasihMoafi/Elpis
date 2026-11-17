@@ -1,4 +1,6 @@
 import { z } from "zod";
+import type { SmartPruneLogListResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/SmartPruneLogListResponse.ts";
+import type { SmartPruneLogReadResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/SmartPruneLogReadResponse.ts";
 import { BridgeError } from "./validate.mts";
 import type { DecoratedInput, EngineItem } from "./client-thread-list.mts";
 import type { WorkGraphListResponse } from "../../../codex-rs/app-server-protocol/schema/typescript/v2/WorkGraphListResponse.ts";
@@ -72,6 +74,8 @@ type ItemPage = {
   backwardsCursor?: string | null;
 };
 export type RpcResponses = {
+  "smartPrune/log/list": SmartPruneLogListResponse;
+  "smartPrune/log/read": SmartPruneLogReadResponse;
   "config/read": ConfigRead;
   "configRequirements/read": ConfigRequirements;
   "thread/read": ThreadResponse;
@@ -185,6 +189,18 @@ const text = z.string();
 const strings = z.array(text);
 const record = z.record(text, z.unknown());
 const nullableText = text.nullish();
+const pruneSummary = z.object({
+  attemptId: text, threadId: text, timestamp: text, chatTitle: text, turnId: text,
+  turnNumber: z.number().int().nonnegative().nullable(), model: text, reasoningEffort: text,
+  estimatedSourceTokens: z.number().nonnegative().nullable(),
+  estimatedAdmittedTokens: z.number().nonnegative().nullable(),
+  estimatedSavedTokens: z.number().nonnegative().nullable(), note: text.nullable(),
+});
+const pruneItem = z.object({
+  callId: text, description: text, estimatedSourceTokens: z.number().nonnegative(),
+  estimatedAdmittedTokens: z.number().nonnegative(), decision: text, kept: text.nullable(),
+  original: text, compact: text.nullable(), diff: text.nullable(),
+});
 const item = z
   .looseObject({
     id: text,
@@ -277,6 +293,8 @@ const page = <T extends z.ZodType>(row: T) =>
   z.looseObject({ data: z.array(row), nextCursor: nullableText, backwardsCursor: nullableText });
 const results = {
   // Layers contain raw JSON, not the effective Config projection (ConfigLayer.config).
+  "smartPrune/log/list": z.object({ data: z.array(pruneSummary), nextCursor: text.nullable(), unreadable: z.number().int().nonnegative() }),
+  "smartPrune/log/read": z.object({ record: pruneSummary.extend({ items: z.array(pruneItem) }) }),
   "config/read": z.looseObject({
     config: config.optional(),
     layers: z.array(z.looseObject({ config: z.json().optional() })).nullish(),

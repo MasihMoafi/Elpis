@@ -203,11 +203,12 @@ function internal_receive(this: DesktopClient, clientState: ClientState, raw: un
         pending.method.startsWith("workflowRun/");
       const contextFiles =
         pending.method === "thread/contextFiles/list" || pending.method === "thread/contextFiles/set";
-      const unsupported = (workflow || contextFiles) && /unknown (method|variant)/i.test(message.error.message ?? "");
+      const pruneLog = pending.method === "smartPrune/log/list" || pending.method === "smartPrune/log/read";
+      const unsupported = (workflow || contextFiles || pruneLog) && /unknown (method|variant)/i.test(message.error.message ?? "");
       // An operation Elpis does not support (-32601) says which one; the bare code would not.
       const detail = ARCHIVED_SESSION.test(message.error.message ?? "")
         ? "This chat is archived. Unarchive it, or send a message in it, to continue."
-        : (workflow ||
+        : (workflow || pruneLog ||
               pending.method.startsWith("thread/goal/") ||
               EXPLAINED.has(pending.method) ||
               message.error.code === -32601) &&
@@ -218,7 +219,9 @@ function internal_receive(this: DesktopClient, clientState: ClientState, raw: un
         conflict
           ? "Settings changed in another client. Reload settings before saving again."
           : unsupported
-            ? contextFiles
+            ? pruneLog
+              ? "Update Elpis to view Smart Prune history."
+              : contextFiles
               ? "Update and restart Elpis to view and change context files."
               : "Update and restart Elpis to run workflows from this app."
             : detail,

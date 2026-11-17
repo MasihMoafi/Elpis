@@ -159,6 +159,16 @@ const graph: WorkGraphListResponse = {
   ],
 };
 const cases = {
+  "smartPrune/log/list": {
+    valid: { data: [], nextCursor: null, unreadable: 0 },
+    invalid: { data: [], nextCursor: null, unreadable: -1 },
+  },
+  "smartPrune/log/read": {
+    valid: { record: { attemptId: "a", threadId: CHAT, timestamp: "time", chatTitle: "Chat", turnId: "t", turnNumber: null,
+      model: "local", reasoningEffort: "low", estimatedSourceTokens: null, estimatedAdmittedTokens: null, estimatedSavedTokens: null,
+      note: "Evidence unavailable", items: [] } },
+    invalid: { record: { items: [] } },
+  },
   "config/read": { valid: { config: { features: { multi_agent: false } } }, invalid: { config: [] } },
   "configRequirements/read": { valid: { requirements: null }, invalid: { requirements: "invalid" } },
   "thread/read": threadReply,

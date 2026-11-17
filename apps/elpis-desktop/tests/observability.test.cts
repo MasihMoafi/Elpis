@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { loveSpotFixture } = require('./love-spot-fixture.cts');
+const { fixture: parityFixture } = require('./parity-fixture.cts');
 
 const line = (timestamp: string, type: string, payload: unknown) => JSON.stringify({ timestamp, type, payload });
 const usage = (input: number, cached: number, output: number) => ({ usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, reasoning_output_tokens: 5, total_tokens: input + output } });
@@ -29,6 +30,92 @@ const ROLLOUT = [
   line('2026-11-05T10:01:02.000Z', 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Done.' }] }),
   line('2026-11-05T10:01:02.000Z', 'token_usage_record', usage(10400, 1000, 10)),
 ].join('\n');
+
+test('Smart Prune history spans chats, pages attempts and opens the exact original/compact evidence in both themes', async () => {
+  for (const colorScheme of ['light', 'dark']) {
+    const first = { attemptId: 'p1', threadId: 'chat-a', chatTitle: 'Parser audit', timestamp: 'Saved first', turnId: 't1', turnNumber: 1,
+      model: 'Local pruner', reasoningEffort: 'low', estimatedSourceTokens: 1200, estimatedAdmittedTokens: 200, estimatedSavedTokens: 1000, note: null };
+    const second = { ...first, attemptId: 'p2', threadId: 'chat-b', chatTitle: 'Docs audit', estimatedAdmittedTokens: 1200,
+      estimatedSavedTokens: 0, note: 'Model failed; original kept.' };
+    const original = 'Exact original output\nwith retained whitespace\n' + 'long_word_'.repeat(50);
+    let detailReads = 0;
+    const f = await parityFixture({ colorScheme, width: 1280, routes: {
+      '/api/smart-prune': (_body: unknown, url: URL) => url.searchParams.has('cursor')
+        ? { data: [second], nextCursor: null, unreadable: 1 } : { data: [first], nextCursor: 'next', unreadable: 1 },
+      '/api/smart-prune/chat-a/p1': () => { detailReads++; return { record: { ...first, items: [{ callId: 'c1', description: 'Build output',
+        estimatedSourceTokens: 1200, estimatedAdmittedTokens: 200, decision: 'Replaced', kept: 'Compiler errors', original,
+        compact: 'Error: missing name', diff: '-Removed source line\n+Error: missing name' }] } }; },
+      '/api/smart-prune/chat-b/p2': () => ({ record: { ...second, items: [{ callId: 'c2', description: 'Search output',
+        estimatedSourceTokens: 1200, estimatedAdmittedTokens: 1200, decision: 'Original kept', kept: null, original: 'All search results', compact: null, diff: null }] } }),
+    } });
+    try {
+      const { page } = f;
+      await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
+      await page.getByRole('radio', { name: 'Smart Prune', exact: true }).click();
+      const history = page.getByRole('region', { name: 'Smart Prune history' });
+      await history.getByRole('button', { name: /Parser audit/ }).waitFor();
+      assert.equal(detailReads, 0, 'list does not fetch full evidence');
+      await history.getByText('1 saved record could not be read. The list is incomplete.').waitFor();
+      await history.getByRole('button', { name: 'Load earlier attempts' }).click();
+      await history.getByRole('button', { name: /Docs audit/ }).waitFor();
+      assert.equal(await history.getByRole('button', { name: /Parser audit/ }).count(), 1);
+      await history.getByRole('button', { name: /Parser audit/ }).click();
+      await history.getByText('Error: missing name', { exact: true }).waitFor();
+      assert.equal(await history.locator('pre').first().textContent(), original);
+      await history.getByText('Text changes', { exact: true }).click();
+      await history.getByText('-Removed source line\n+Error: missing name', { exact: true }).waitFor();
+      if (colorScheme === 'dark') await page.setViewportSize({ width: 390, height: 900 });
+      assert.equal(await history.evaluate((el: HTMLElement) => el.scrollWidth <= el.clientWidth), true, 'comparison fits a narrow view');
+      await history.getByRole('button', { name: 'Back to prune history' }).click();
+      await history.getByRole('button', { name: /Docs audit/ }).click();
+      await history.getByText('Original kept; no compact version was used.').waitFor();
+      assert.equal(await history.getByText('Error: missing name', { exact: true }).count(), 0, 'other-chat evidence is gone');
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  }
+});
+
+test('Smart Prune empty, failed and recovered reads stay distinct; late detail cannot overwrite another chat', async () => {
+  let fail = false, empty = true;
+  let release: (() => void) | undefined;
+  const delayed = new Promise<void>(resolve => { release = resolve; });
+  const a = { attemptId: 'a', threadId: 'chat-a', chatTitle: 'Slow evidence', timestamp: '', turnId: 't', turnNumber: null,
+    model: 'Local', reasoningEffort: 'low', estimatedSourceTokens: null, estimatedAdmittedTokens: null, estimatedSavedTokens: null, note: null };
+  const b = { ...a, attemptId: 'b', threadId: 'chat-b', chatTitle: 'Current evidence' };
+  const f = await parityFixture({ routes: {
+    '/api/smart-prune': () => fail ? { __http: 503, error: 'History temporarily unavailable' } : { data: empty ? [] : [a, b], nextCursor: null, unreadable: 0 },
+    '/api/smart-prune/chat-a/a': async () => { await delayed; return { record: { ...a, note: 'STALE RECORD', items: [] } }; },
+    '/api/smart-prune/chat-b/b': () => ({ record: { ...b, note: 'CURRENT RECORD', items: [{ callId: 'unknown', description: 'Missing admission',
+      estimatedSourceTokens: 100, estimatedAdmittedTokens: 100, decision: 'Evidence missing', kept: null,
+      original: 'Original still readable', compact: null, diff: null }] } }),
+  } });
+  try {
+    const { page } = f;
+    await page.locator('.nav-list').getByRole('button', { name: 'Observability', exact: true }).click();
+    await page.getByRole('radio', { name: 'Smart Prune', exact: true }).click();
+    const history = page.getByRole('region', { name: 'Smart Prune history' });
+    await history.getByText('No Smart Prune attempts are recorded yet.').waitFor();
+    fail = true;
+    await history.getByRole('button', { name: 'Refresh prune history' }).click();
+    await history.getByRole('alert').waitFor();
+    assert.equal(await history.getByText('No Smart Prune attempts are recorded yet.').count(), 0);
+    fail = false; empty = false;
+    await history.getByRole('button', { name: 'Retry', exact: true }).click();
+    await history.getByRole('button', { name: /Slow evidence/ }).click();
+    await history.getByRole('status').waitFor();
+    await history.getByRole('button', { name: 'Back to prune history' }).click();
+    await history.getByRole('button', { name: /Current evidence/ }).click();
+    await history.getByText('CURRENT RECORD', { exact: true }).waitFor();
+    await history.getByText('Committed replacement evidence is unavailable.').waitFor();
+    assert.equal(await history.getByText('Original kept; no compact version was used.').count(), 0);
+    assert.equal(await history.locator('meter').count(), 0, 'missing evidence does not claim a measured result');
+    release?.();
+    await page.waitForTimeout(100);
+    assert.equal(await history.getByText('STALE RECORD', { exact: true }).count(), 0);
+    assert.equal(await history.getByText('CURRENT RECORD', { exact: true }).count(), 1);
+    assert.deepEqual(f.errors, []);
+  } finally { release?.(); await f.close(); }
+});
 
 test('Observability shows the selected chat as the Trajectory page, names it, and its Chat menu picks another; with no chat it asks for one', async () => {
   const id = '00000000-0000-4000-8000-0000000000a1', other = '00000000-0000-4000-8000-0000000000a2';

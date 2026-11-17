@@ -157,6 +157,7 @@ impl ChatWidget {
             smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot::default(),
             smart_prune_synced: false,
             smart_prune_log_request: None,
+            smart_prune_detail_request: None,
             last_prune_saved_tokens: None,
             token_usage_pending: false,
             rate_limit_snapshots_by_limit_id: BTreeMap::new(),

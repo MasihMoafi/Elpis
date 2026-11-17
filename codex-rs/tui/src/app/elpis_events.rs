@@ -80,12 +80,9 @@ impl App {
                 if self.current_displayed_thread_id() != Some(thread_id) {
                     return Ok(());
                 }
-                let log_dir = self
-                    .chat_widget
-                    .config_ref()
-                    .codex_home
-                    .as_path()
-                    .join("logs");
+                let log_dir = crate::legacy_core::smart_prune_log::audit_log_dir(
+                    self.chat_widget.config_ref().codex_home.as_path(),
+                );
                 let tx = self.app_event_tx.clone();
                 tokio::spawn(async move {
                     let records = tokio::task::spawn_blocking(move || {
@@ -113,14 +110,138 @@ impl App {
                     .current_displayed_thread_id()
                     .is_some_and(|id| id.to_string() == record.thread_id)
                 {
+                    let (detail_id, picker) = self.chat_widget.begin_local_smart_prune_detail();
+                    let tx = self.app_event_tx.clone();
+                    tokio::task::spawn_blocking(move || {
+                        let diffs = record.items.iter().map(|item| item.diff()).collect();
+                        tx.send(AppEvent::Elpis(
+                            ElpisAppEvent::LocalSmartPruneRecordPrepared(
+                                detail_id, picker, record, diffs,
+                            ),
+                        ));
+                    });
+                }
+            }
+            ElpisAppEvent::LocalSmartPruneRecordPrepared(detail_id, picker, record, diffs) => {
+                if self
+                    .chat_widget
+                    .local_smart_prune_detail_is_current(detail_id, picker)
+                    && self
+                        .current_displayed_thread_id()
+                        .is_some_and(|id| id.to_string() == record.thread_id)
+                {
                     tui.enter_alt_screen()?;
                     self.reset_backtrack_state();
                     self.overlay = Some(crate::chatwidget::smart_prune_log::record_overlay(
                         &record,
+                        diffs,
                         &self.keymap.pager,
                     ));
                     tui.frame_requester().schedule_frame();
                 }
+            }
+            ElpisAppEvent::OpenGlobalSmartPruneLog(request_id, cursor) => {
+                if self.chat_widget.smart_prune_picker_is_current(request_id) {
+                    self.chat_widget.open_global_smart_prune_log(cursor);
+                }
+            }
+            ElpisAppEvent::LoadGlobalSmartPruneLog(request_id, cursor) => {
+                if !self
+                    .chat_widget
+                    .global_smart_prune_log_is_current(request_id)
+                {
+                    return Ok(());
+                }
+                let log_dir = crate::legacy_core::smart_prune_log::audit_log_dir(
+                    self.chat_widget.config_ref().codex_home.as_path(),
+                );
+                let tx = self.app_event_tx.clone();
+                tokio::spawn(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        crate::legacy_core::smart_prune_log::load_page(
+                            &log_dir,
+                            cursor.as_deref(),
+                            100,
+                        )
+                        .map_err(|error| error.to_string())
+                    })
+                    .await
+                    .unwrap_or_else(|error| Err(error.to_string()));
+                    tx.send(AppEvent::Elpis(ElpisAppEvent::GlobalSmartPruneLogLoaded(
+                        request_id, result,
+                    )));
+                });
+            }
+            ElpisAppEvent::GlobalSmartPruneLogLoaded(request_id, result) => {
+                self.chat_widget
+                    .finish_global_smart_prune_log(request_id, result);
+                tui.frame_requester().schedule_frame();
+            }
+            ElpisAppEvent::ReadGlobalSmartPruneRecord(request_id, attempt_id, thread_id) => {
+                let Some(detail_id) = self.chat_widget.begin_global_smart_prune_detail(request_id)
+                else {
+                    return Ok(());
+                };
+                let log_dir = crate::legacy_core::smart_prune_log::audit_log_dir(
+                    self.chat_widget.config_ref().codex_home.as_path(),
+                );
+                let tx = self.app_event_tx.clone();
+                let expected_thread = thread_id.clone();
+                tokio::spawn(async move {
+                    let result = tokio::task::spawn_blocking(move || {
+                        crate::legacy_core::smart_prune_log::read_scoped(
+                            &log_dir,
+                            &attempt_id,
+                            &thread_id,
+                        )
+                        .map(|record| {
+                            let diffs = record.items.iter().map(|item| item.diff()).collect();
+                            (record, diffs)
+                        })
+                        .map_err(|error| error.to_string())
+                    })
+                    .await
+                    .unwrap_or_else(|error| Err(error.to_string()));
+                    tx.send(AppEvent::Elpis(
+                        ElpisAppEvent::GlobalSmartPruneRecordLoaded(
+                            request_id,
+                            detail_id,
+                            expected_thread,
+                            result,
+                        ),
+                    ));
+                });
+            }
+            ElpisAppEvent::GlobalSmartPruneRecordLoaded(
+                request_id,
+                detail_id,
+                thread_id,
+                result,
+            ) => {
+                if !self
+                    .chat_widget
+                    .global_smart_prune_detail_is_current(request_id, detail_id)
+                {
+                    return Ok(());
+                }
+                match result {
+                    Ok((record, diffs)) if record.thread_id == thread_id => {
+                        tui.enter_alt_screen()?;
+                        self.reset_backtrack_state();
+                        self.overlay = Some(crate::chatwidget::smart_prune_log::record_overlay(
+                            &record,
+                            diffs,
+                            &self.keymap.pager,
+                        ));
+                    }
+                    Ok(_) => self.chat_widget.add_error_message(
+                        "Smart Prune evidence belongs to a different chat.".to_string(),
+                    ),
+                    Err(error) => self
+                        .chat_widget
+                        .add_error_message(format!("Cannot read pruning evidence: {error}")),
+                }
+                tui.frame_requester().schedule_frame();
             }
             ledger_event => self.handle_elpis_ledger_event(tui, ledger_event)?,
         }

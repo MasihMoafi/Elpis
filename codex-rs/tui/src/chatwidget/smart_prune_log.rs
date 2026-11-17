@@ -15,35 +15,58 @@ use crate::pager_overlay::Overlay;
 use crate::pager_overlay::escape_first_pager_keymap;
 
 pub(crate) const LOG_VIEW_ID: &str = "smart-prune-log";
+pub(crate) const GLOBAL_LOG_VIEW_ID: &str = "smart-prune-global-log";
 
 pub(crate) fn record_overlay(
     record: &PruneLogRecord,
+    diffs: Vec<Option<String>>,
     keymap: &crate::keymap::PagerKeymap,
 ) -> Overlay {
     Overlay::new_static_with_renderables(
-        vec![Box::new(ComparisonCell(record.clone()))],
+        vec![Box::new(ComparisonCell {
+            record: record.clone(),
+            diffs,
+        })],
         "Smart Prune record".to_string(),
         escape_first_pager_keymap(keymap),
     )
 }
 
+#[cfg(test)]
 pub(crate) fn record_lines(record: &PruneLogRecord) -> Vec<Line<'static>> {
+    let diffs = record
+        .items
+        .iter()
+        .map(|item| item.diff())
+        .collect::<Vec<_>>();
+    record_lines_with_diffs(record, &diffs)
+}
+
+fn record_lines_with_diffs(
+    record: &PruneLogRecord,
+    diffs: &[Option<String>],
+) -> Vec<Line<'static>> {
+    let summary = crate::legacy_core::smart_prune_log::PruneLogSummary::from(record);
     let mut lines = vec![safe_text(&record.heading()).bold().into(), Line::default()];
     if let Some(note) = &record.note {
-        lines.push(note.clone().dim().into());
+        lines.push(safe_text(note).dim().into());
         lines.push(Line::default());
     }
-    for item in &record.items {
+    for (item, diff) in record.items.iter().zip(diffs) {
         lines.push(safe_text(&item.description).bold().into());
-        lines.push(
-            format!(
-                "{} → {} tokens · {}",
-                item.source_tokens,
-                item.admitted_tokens,
-                safe_text(&item.decision)
-            )
-            .into(),
-        );
+        if summary.estimated_saved_tokens.is_some() {
+            lines.push(
+                format!(
+                    "~{} → ~{} tokens · {}",
+                    item.source_tokens,
+                    item.admitted_tokens,
+                    safe_text(&item.decision)
+                )
+                .into(),
+            );
+        } else {
+            lines.push(safe_text(&item.decision).into());
+        }
         if let Some(compact) = &item.compact {
             lines.push(Line::styled(
                 "Compact output received by the main model",
@@ -51,7 +74,7 @@ pub(crate) fn record_lines(record: &PruneLogRecord) -> Vec<Line<'static>> {
             ));
             lines.extend(compact.split('\n').map(|line| Line::from(safe_text(line))));
         } else {
-            lines.push("Original kept; no compact version was used.".dim().into());
+            lines.push("No compact output recorded.".dim().into());
         }
         lines.push(Line::styled(
             "Original output",
@@ -62,9 +85,35 @@ pub(crate) fn record_lines(record: &PruneLogRecord) -> Vec<Line<'static>> {
                 .split('\n')
                 .map(|line| Line::from(safe_text(line))),
         );
+        if let Some(diff) = diff {
+            lines.push(Line::styled(
+                "Changes (original → compact)",
+                crate::style::section_style(),
+            ));
+            lines.extend(diff.split('\n').map(|line| Line::from(safe_text(line))));
+        } else if item.compact.is_some() {
+            lines.push("Text changes unavailable for this record.".dim().into());
+        }
         lines.push(Line::default());
     }
-    lines.push(record.total_line().bold().into());
+    lines.push(
+        match (
+            summary.estimated_source_tokens,
+            summary.estimated_saved_tokens,
+        ) {
+            (Some(before), Some(saved)) => {
+                let share = if before == 0 {
+                    0.0
+                } else {
+                    saved as f64 * 100.0 / before as f64
+                };
+                format!("Estimated: saved {saved} of {before} tokens ({share:.1}%)")
+                    .bold()
+                    .into()
+            }
+            _ => "Estimated savings unavailable".dim().into(),
+        },
+    );
     lines.push(safe_text(&record.identifiers()).dim().into());
     lines
 }
@@ -92,6 +141,7 @@ impl ChatWidget {
         };
         let request_id = uuid::Uuid::new_v4();
         self.smart_prune_log_request = Some(request_id);
+        self.smart_prune_detail_request = None;
         self.bottom_pane.show_selection_view(SelectionViewParams {
             view_id: Some(LOG_VIEW_ID),
             title: Some("Smart Prune log".to_string()),
@@ -106,14 +156,20 @@ impl ChatWidget {
     }
 
     pub(crate) fn smart_prune_log_params(
+        request_id: uuid::Uuid,
         records: Vec<PruneLogRecord>,
         unreadable: usize,
     ) -> SelectionViewParams {
-        let initial_selected_idx = records.len().checked_sub(1);
+        let initial_selected_idx = records.len().checked_sub(1).map(|index| index + 1);
         let empty = records.is_empty();
-        let items = records
+        let mut items: Vec<SelectionItem> = records
             .into_iter()
             .map(|record| {
+                let summary = crate::legacy_core::smart_prune_log::PruneLogSummary::from(&record);
+                let savings = summary.estimated_saved_tokens.map_or_else(
+                    || "Savings unavailable".to_string(),
+                    |saved| format!("~{saved} tokens saved"),
+                );
                 SelectionItem {
                     name: format!("{} · {}", record.timestamp, record.turn_label()),
                     search_value: Some(format!(
@@ -128,7 +184,7 @@ impl ChatWidget {
                     )),
                     description: Some(format!(
                         "{} · {} ({}) · {}",
-                        record.total_line(),
+                        savings,
                         record.model,
                         record.reasoning_effort,
                         record
@@ -148,6 +204,20 @@ impl ChatWidget {
                 }
             })
             .collect();
+        items.insert(
+            0,
+            SelectionItem {
+                name: "All chats…".to_string(),
+                description: Some("Browse Smart Prune evidence across chats".to_string()),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::Elpis(ElpisAppEvent::OpenGlobalSmartPruneLog(
+                        request_id, None,
+                    )));
+                })],
+                dismiss_on_select: false,
+                ..Default::default()
+            },
+        );
         SelectionViewParams {
             view_id: Some(LOG_VIEW_ID),
             title: Some("Smart Prune log".to_string()),
@@ -179,7 +249,9 @@ impl ChatWidget {
             return;
         }
         let params = match records {
-            Ok((records, unreadable)) => Self::smart_prune_log_params(records, unreadable),
+            Ok((records, unreadable)) => {
+                Self::smart_prune_log_params(request_id, records, unreadable)
+            }
             Err(error) => SelectionViewParams {
                 view_id: Some(LOG_VIEW_ID),
                 title: Some("Smart Prune log".to_string()),
@@ -190,6 +262,180 @@ impl ChatWidget {
         // A late disk read must not reopen a picker the user already dismissed.
         self.bottom_pane
             .replace_selection_view_if_present(LOG_VIEW_ID, params);
+    }
+
+    pub(crate) fn open_global_smart_prune_log(&mut self, cursor: Option<String>) {
+        let request_id = uuid::Uuid::new_v4();
+        self.smart_prune_log_request = Some(request_id);
+        self.smart_prune_detail_request = None;
+        let params = SelectionViewParams {
+            view_id: Some(GLOBAL_LOG_VIEW_ID),
+            title: Some("Smart Prune log · All chats".to_string()),
+            subtitle: Some("Loading attempts…".to_string()),
+            footer_hint: Some(standard_popup_hint_line()),
+            ..Default::default()
+        };
+        match self.bottom_pane.active_view_id() {
+            Some(LOG_VIEW_ID) => {
+                self.bottom_pane
+                    .replace_selection_view_if_active(LOG_VIEW_ID, params);
+            }
+            Some(GLOBAL_LOG_VIEW_ID) => {
+                self.bottom_pane
+                    .replace_selection_view_if_active(GLOBAL_LOG_VIEW_ID, params);
+            }
+            _ => self.bottom_pane.show_selection_view(params),
+        }
+        self.app_event_tx
+            .send(AppEvent::Elpis(ElpisAppEvent::LoadGlobalSmartPruneLog(
+                request_id, cursor,
+            )));
+    }
+
+    pub(crate) fn global_smart_prune_log_is_current(&self, request_id: uuid::Uuid) -> bool {
+        self.smart_prune_log_request == Some(request_id)
+            && self.bottom_pane.active_view_id() == Some(GLOBAL_LOG_VIEW_ID)
+    }
+
+    pub(crate) fn smart_prune_picker_is_current(&self, request_id: uuid::Uuid) -> bool {
+        self.smart_prune_log_request == Some(request_id)
+            && matches!(
+                self.bottom_pane.active_view_id(),
+                Some(LOG_VIEW_ID | GLOBAL_LOG_VIEW_ID)
+            )
+    }
+
+    pub(crate) fn begin_global_smart_prune_detail(
+        &mut self,
+        request_id: uuid::Uuid,
+    ) -> Option<uuid::Uuid> {
+        if !self.global_smart_prune_log_is_current(request_id) {
+            return None;
+        }
+        let detail_id = uuid::Uuid::new_v4();
+        self.smart_prune_detail_request = Some(detail_id);
+        Some(detail_id)
+    }
+
+    pub(crate) fn begin_local_smart_prune_detail(&mut self) -> (uuid::Uuid, Option<uuid::Uuid>) {
+        let detail_id = uuid::Uuid::new_v4();
+        self.smart_prune_detail_request = Some(detail_id);
+        let picker = (self.bottom_pane.active_view_id() == Some(LOG_VIEW_ID))
+            .then_some(self.smart_prune_log_request)
+            .flatten();
+        (detail_id, picker)
+    }
+
+    pub(crate) fn local_smart_prune_detail_is_current(
+        &self,
+        detail_id: uuid::Uuid,
+        picker: Option<uuid::Uuid>,
+    ) -> bool {
+        self.smart_prune_detail_request == Some(detail_id)
+            && picker.is_none_or(|request_id| {
+                self.smart_prune_log_request == Some(request_id)
+                    && self.bottom_pane.active_view_id() == Some(LOG_VIEW_ID)
+            })
+    }
+
+    pub(crate) fn global_smart_prune_detail_is_current(
+        &self,
+        request_id: uuid::Uuid,
+        detail_id: uuid::Uuid,
+    ) -> bool {
+        self.global_smart_prune_log_is_current(request_id)
+            && self.smart_prune_detail_request == Some(detail_id)
+    }
+
+    pub(crate) fn finish_global_smart_prune_log(
+        &mut self,
+        request_id: uuid::Uuid,
+        result: Result<crate::legacy_core::smart_prune_log::PruneLogPage, String>,
+    ) {
+        if !self.global_smart_prune_log_is_current(request_id) {
+            return;
+        }
+        let params = match result {
+            Ok(page) => {
+                let empty = page.data.is_empty();
+                let mut items: Vec<SelectionItem> = page
+                    .data
+                    .into_iter()
+                    .map(|record| {
+                        let saved = record.estimated_saved_tokens.map_or_else(
+                            || "Savings unavailable".to_string(),
+                            |n| format!("~{n} tokens saved"),
+                        );
+                        let attempt_id = record.attempt_id.clone();
+                        let thread_id = record.thread_id.clone();
+                        SelectionItem {
+                            name: format!(
+                                "{} · {}",
+                                safe_text(&record.timestamp),
+                                safe_text(&record.chat_title)
+                            ),
+                            description: Some(format!("{} · {}", saved, safe_text(&record.model))),
+                            search_value: Some(format!(
+                                "{} {} {}",
+                                record.chat_title, record.thread_id, record.model
+                            )),
+                            actions: vec![Box::new(move |tx| {
+                                tx.send(AppEvent::Elpis(
+                                    ElpisAppEvent::ReadGlobalSmartPruneRecord(
+                                        request_id,
+                                        attempt_id.clone(),
+                                        thread_id.clone(),
+                                    ),
+                                ));
+                            })],
+                            dismiss_on_select: false,
+                            ..Default::default()
+                        }
+                    })
+                    .collect();
+                if let Some(cursor) = page.next_cursor {
+                    items.push(SelectionItem {
+                        name: "Next page…".to_string(),
+                        actions: vec![Box::new(move |tx| {
+                            tx.send(AppEvent::Elpis(ElpisAppEvent::OpenGlobalSmartPruneLog(
+                                request_id,
+                                Some(cursor.clone()),
+                            )));
+                        })],
+                        dismiss_on_select: false,
+                        ..Default::default()
+                    });
+                }
+                SelectionViewParams {
+                    view_id: Some(GLOBAL_LOG_VIEW_ID),
+                    title: Some("Smart Prune log · All chats".to_string()),
+                    subtitle: Some(
+                        if empty {
+                            "No pruning attempts found."
+                        } else {
+                            "All chats · newest first · Enter opens the evidence"
+                        }
+                        .to_string(),
+                    ),
+                    items,
+                    is_searchable: true,
+                    max_visible_rows: 12,
+                    footer_note: (page.unreadable > 0).then(|| {
+                        format!("{} unreadable audit record(s) skipped.", page.unreadable).into()
+                    }),
+                    footer_hint: Some(standard_popup_hint_line()),
+                    ..Default::default()
+                }
+            }
+            Err(error) => SelectionViewParams {
+                view_id: Some(GLOBAL_LOG_VIEW_ID),
+                title: Some("Smart Prune log · All chats".to_string()),
+                subtitle: Some(format!("Cannot read pruning evidence: {error}")),
+                ..Default::default()
+            },
+        };
+        self.bottom_pane
+            .replace_selection_view_if_active(GLOBAL_LOG_VIEW_ID, params);
     }
 }
 
@@ -221,16 +467,19 @@ impl crate::history_cell::HistoryCell for SmartPruneCell {
 }
 
 #[derive(Debug)]
-struct ComparisonCell(PruneLogRecord);
+struct ComparisonCell {
+    record: PruneLogRecord,
+    diffs: Vec<Option<String>>,
+}
 impl crate::render::renderable::Renderable for ComparisonCell {
     fn render(&self, area: ratatui::layout::Rect, buf: &mut ratatui::buffer::Buffer) {
         use ratatui::widgets::Widget;
-        ratatui::widgets::Paragraph::new(comparison_lines(&self.0, area.width))
+        ratatui::widgets::Paragraph::new(comparison_lines(&self.record, &self.diffs, area.width))
             .wrap(ratatui::widgets::Wrap { trim: false })
             .render(area, buf);
     }
     fn desired_height(&self, width: u16) -> u16 {
-        ratatui::widgets::Paragraph::new(comparison_lines(&self.0, width))
+        ratatui::widgets::Paragraph::new(comparison_lines(&self.record, &self.diffs, width))
             .wrap(ratatui::widgets::Wrap { trim: false })
             .line_count(width)
             .try_into()
@@ -238,9 +487,13 @@ impl crate::render::renderable::Renderable for ComparisonCell {
     }
 }
 
-pub(crate) fn comparison_lines(record: &PruneLogRecord, width: u16) -> Vec<Line<'static>> {
+fn comparison_lines(
+    record: &PruneLogRecord,
+    diffs: &[Option<String>],
+    width: u16,
+) -> Vec<Line<'static>> {
     if width < 60 {
-        return record_lines(record);
+        return record_lines_with_diffs(record, diffs);
     }
     let column = usize::from(width.saturating_sub(3)) / 2;
     let wrap = |text: &str| -> Vec<String> {
@@ -253,33 +506,60 @@ pub(crate) fn comparison_lines(record: &PruneLogRecord, width: u16) -> Vec<Line<
             })
             .collect()
     };
+    let summary = crate::legacy_core::smart_prune_log::PruneLogSummary::from(record);
+    let total = match (
+        summary.estimated_source_tokens,
+        summary.estimated_saved_tokens,
+    ) {
+        (Some(before), Some(saved)) => {
+            let share = if before == 0 {
+                0.0
+            } else {
+                saved as f64 * 100.0 / before as f64
+            };
+            format!("Estimated: saved {saved} of {before} tokens ({share:.1}%)")
+        }
+        _ => "Estimated savings unavailable".to_string(),
+    };
     let mut lines = vec![
         safe_text(&record.heading()).bold().into(),
-        record.total_line().bold().into(),
+        total.bold().into(),
     ];
     if let Some(note) = &record.note {
         lines.push(safe_text(note).dim().into());
     }
-    for item in &record.items {
+    for (item, diff) in record.items.iter().zip(diffs) {
         lines.push(Line::default());
         lines.push(safe_text(&item.description).bold().into());
         lines.push(safe_text(&item.decision).dim().into());
-        let original = wrap(&format!(
-            "Original output ({} tokens)\n{}",
-            item.source_tokens, item.original
-        ));
+        let original_label = if summary.estimated_source_tokens.is_some() {
+            format!("Original output (~{} tokens)", item.source_tokens)
+        } else {
+            "Original output".to_string()
+        };
+        let compact_label = if summary.estimated_admitted_tokens.is_some() {
+            format!("Compact output (~{} tokens)", item.admitted_tokens)
+        } else {
+            "Compact output".to_string()
+        };
+        let original = wrap(&format!("{original_label}\n{}", item.original));
         let compact = wrap(&format!(
-            "Compact output ({} tokens)\n{}",
-            item.admitted_tokens,
+            "{compact_label}\n{}",
             item.compact
                 .as_deref()
-                .unwrap_or("Original kept; no compact version was used.")
+                .unwrap_or("No compact output recorded.")
         ));
         for index in 0..original.len().max(compact.len()) {
             let left = original.get(index).map(String::as_str).unwrap_or("");
             let right = compact.get(index).map(String::as_str).unwrap_or("");
             let pad = column.saturating_sub(crate::width::display_width(left));
             lines.push(format!("{left}{} │ {right}", " ".repeat(pad)).into());
+        }
+        if let Some(diff) = diff {
+            lines.push("Changes (original → compact)".bold().into());
+            lines.extend(diff.split('\n').map(|line| Line::from(safe_text(line))));
+        } else if item.compact.is_some() {
+            lines.push("Text changes unavailable for this record.".dim().into());
         }
     }
     lines.push(safe_text(&record.identifiers()).dim().into());

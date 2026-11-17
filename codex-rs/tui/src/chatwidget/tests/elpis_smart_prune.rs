@@ -128,7 +128,7 @@ async fn smart_prune_on_off_sets_it_and_anything_else_prints_the_usage() {
                 assert!(
                     cells
                         .iter()
-                        .any(|cell| cell.contains("Usage: /smart-prune [on|off|log]")),
+                        .any(|cell| cell.contains("Usage: /smart-prune [on|off|log|log all]")),
                     "{cells:?}"
                 );
             }

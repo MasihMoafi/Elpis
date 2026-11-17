@@ -2,7 +2,7 @@
 //! `model_popups.rs`.
 //!
 //! `/prune` turns Smart Prune on for subsequent turns; `/smart-prune` toggles it and
-//! `/smart-prune on|off` sets it and `log` browses its evidence. `/pruner-model`
+//! `/smart-prune on|off` sets it, `log` browses this chat and `log all` browses all chats. `/pruner-model`
 //! chooses the model Smart Prune's optimizer uses, saved in `pruner.json`
 //! (`core/src/pruner_settings.rs`); the chat model is never changed. Typed choices parse as
 //! `/memory-model`'s do (`crate::elpis_background_model`): `default`, `<provider>:<id>`, or an
@@ -23,7 +23,7 @@ use codex_app_server_protocol::PrunerReadResponse;
 use codex_app_server_protocol::PrunerWriteParams;
 use codex_protocol::openai_models::ReasoningEffort;
 
-const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off|log]";
+const SMART_PRUNE_USAGE: &str = "Usage: /smart-prune [on|off|log|log all]";
 const PRUNER_MODEL_LOADING_VIEW_ID: &str = "pruner-model-loading";
 const PRUNER_MODEL_SELECTION_VIEW_ID: &str = "pruner-model-selection";
 
@@ -90,6 +90,7 @@ impl ChatWidget {
         match cmd {
             SlashCommand::SmartPrune => match args.to_ascii_lowercase().as_str() {
                 "log" => self.open_smart_prune_log(),
+                "log all" => self.open_global_smart_prune_log(None),
                 "on" => {
                     self.request_smart_prune_enabled(/*enabled*/ true);
                 }

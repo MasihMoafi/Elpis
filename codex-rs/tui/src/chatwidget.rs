@@ -598,6 +598,7 @@ pub(crate) struct ChatWidget {
     smart_prune: codex_app_server_protocol::ThreadSmartPruneSnapshot,
     smart_prune_synced: bool,
     smart_prune_log_request: Option<uuid::Uuid>,
+    smart_prune_detail_request: Option<uuid::Uuid>,
     last_prune_saved_tokens: Option<u64>,
     token_usage_pending: bool,
     // Status and polling use account usage reads; response streams may identify meters differently.

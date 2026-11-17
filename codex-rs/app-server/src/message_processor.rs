@@ -1493,6 +1493,12 @@ impl MessageProcessor {
                     .thread_background_terminals_list(params)
                     .await
             }
+            ClientRequest::SmartPruneLogList { params, .. } => {
+                self.thread_processor.smart_prune_log_list(params).await
+            }
+            ClientRequest::SmartPruneLogRead { params, .. } => {
+                self.thread_processor.smart_prune_log_read(params).await
+            }
             ClientRequest::ThreadBackgroundTerminalsTerminate { params, .. } => {
                 self.thread_processor
                     .thread_background_terminals_terminate(params)

@@ -14,6 +14,7 @@ import {
   ComboboxTrigger,
 } from "@/components/ui/combobox";
 import { CodebaseProjectPicker, useCodebaseProject } from "@/components/codebase-project-picker";
+import { SmartPruneLog } from "@/components/smart-prune-log";
 import { api, title, type Thread } from "@/lib/api";
 
 const recency = (chat: Thread) => chat.recencyAt ?? chat.updatedAt ?? chat.createdAt ?? 0;
@@ -82,7 +83,7 @@ export function ObservabilityView({ threadId, chats }: { threadId?: string; chat
   const [picked, setPicked] = useState(threadId);
   const [query, setQuery] = useState("");
   // Trajectory shows what the chat did; Codebase shows the project it works in (11 Nov, Masih: "see that to the end").
-  const [page, setPage] = useState<"trajectory" | "codebase">("trajectory");
+  const [page, setPage] = useState<"trajectory" | "codebase" | "prune">("trajectory");
   useEffect(() => {
     if (threadId) setPicked(threadId);
   }, [threadId]);
@@ -98,8 +99,15 @@ export function ObservabilityView({ threadId, chats }: { threadId?: string; chat
       options={[
         { value: "trajectory", label: "Trajectory" },
         { value: "codebase", label: "Codebase" },
+        { value: "prune", label: "Smart Prune" },
       ]}
     />
+  );
+  if (page === "prune") return (
+    <div className="observability" data-view="observability" aria-label="Observability">
+      <div className="observability-bar">{pageSwitch}</div>
+      <SmartPruneLog />
+    </div>
   );
   if (page === "codebase")
     return (

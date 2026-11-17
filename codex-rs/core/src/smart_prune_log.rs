@@ -1,5 +1,6 @@
 //! Human-readable projections of the immutable Smart Prune evidence.
 
+use std::io::Read;
 use std::path::Component;
 use std::path::Path;
 
@@ -16,6 +17,14 @@ use crate::smart_prune::MIN_SAVINGS_PERCENT;
 use crate::smart_prune::parse_decision_manifest;
 use crate::smart_prune::textual_tool_output;
 
+const MISSING_ADMISSION_NOTE: &str =
+    "Committed admission evidence unavailable; savings are unknown.";
+
+/// The writer and all readers use the session's Codex home for Smart Prune evidence.
+pub fn audit_log_dir(codex_home: &Path) -> std::path::PathBuf {
+    codex_home.join("logs")
+}
+
 #[derive(Clone, Debug)]
 pub struct PruneLogItem {
     pub call_id: String,
@@ -26,6 +35,26 @@ pub struct PruneLogItem {
     pub decision: String,
     pub original: String,
     pub compact: Option<String>,
+}
+
+impl PruneLogItem {
+    /// Textual line changes in a committed replacement; this is not a semantic-loss judgment.
+    pub fn diff(&self) -> Option<String> {
+        let compact = self.compact.as_deref()?;
+        if self.original.len().saturating_add(compact.len()) > MAX_GLOBAL_DETAIL_BYTES {
+            return None;
+        }
+        let mut config = similar::TextDiff::configure();
+        config.timeout(std::time::Duration::from_millis(100));
+        Some(
+            config
+                .diff_lines(&self.original, compact)
+                .unified_diff()
+                .context_radius(3)
+                .header("Original", "Compact")
+                .to_string(),
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +69,7 @@ pub struct PruneLogRecord {
     pub reasoning_effort: String,
     pub items: Vec<PruneLogItem>,
     pub note: Option<String>,
+    pub admission_evidence_missing: bool,
 }
 
 impl PruneLogRecord {
@@ -311,7 +341,13 @@ struct AdmittedItem {
     admitted_artifact: String,
 }
 
-fn confined_read(root: &Path, relative: &Path) -> Result<Vec<u8>> {
+const MAX_GLOBAL_FILE_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_GLOBAL_ITEMS: usize = 128;
+const MAX_GLOBAL_DETAIL_BYTES: usize = 16 * 1024 * 1024;
+const MAX_GLOBAL_SCAN_ENTRIES: usize = 4096;
+const MAX_GLOBAL_SCAN_TIME: std::time::Duration = std::time::Duration::from_secs(2);
+
+fn confined_path(root: &Path, relative: &Path) -> Result<std::path::PathBuf> {
     anyhow::ensure!(
         relative
             .components()
@@ -323,7 +359,28 @@ fn confined_read(root: &Path, relative: &Path) -> Result<Vec<u8>> {
         path.starts_with(root.canonicalize()?),
         "audit path leaves its directory"
     );
-    Ok(std::fs::read(path)?)
+    Ok(path)
+}
+
+fn confined_read(root: &Path, relative: &Path, bounded: bool) -> Result<Vec<u8>> {
+    let path = confined_path(root, relative)?;
+    if bounded {
+        anyhow::ensure!(
+            std::fs::metadata(&path)?.is_file(),
+            "Smart Prune evidence is not a file"
+        );
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)?
+            .take(MAX_GLOBAL_FILE_BYTES + 1)
+            .read_to_end(&mut bytes)?;
+        anyhow::ensure!(
+            bytes.len() <= MAX_GLOBAL_FILE_BYTES as usize,
+            "Smart Prune evidence is too large"
+        );
+        Ok(bytes)
+    } else {
+        Ok(std::fs::read(path)?)
+    }
 }
 
 fn tool_description(invocation: Option<&Value>) -> String {
@@ -395,22 +452,29 @@ fn tool_description(invocation: Option<&Value>) -> String {
 
 /// Read one attempt, deriving replacements only from committed admission evidence.
 pub fn read_attempt(log_dir: &Path, attempt_id: &str) -> Result<PruneLogRecord> {
-    project_attempt(log_dir, read_attempt_data(log_dir, attempt_id)?)
+    project_attempt(
+        log_dir,
+        read_attempt_data(log_dir, attempt_id, false)?,
+        false,
+        true,
+    )
 }
 
-fn read_attempt_data(log_dir: &Path, attempt_id: &str) -> Result<Attempt> {
-    anyhow::ensure!(
-        Path::new(attempt_id).components().count() == 1
-            && matches!(
-                Path::new(attempt_id).components().next(),
-                Some(Component::Normal(_))
-            ),
-        "invalid attempt id"
-    );
+fn valid_attempt_id(attempt_id: &str) -> bool {
+    Path::new(attempt_id).components().count() == 1
+        && matches!(
+            Path::new(attempt_id).components().next(),
+            Some(Component::Normal(_))
+        )
+}
+
+fn read_attempt_data(log_dir: &Path, attempt_id: &str, bounded: bool) -> Result<Attempt> {
+    anyhow::ensure!(valid_attempt_id(attempt_id), "invalid attempt id");
     let root = log_dir.join("smart-prune");
     let attempt: Attempt = serde_json::from_slice(&confined_read(
         &root,
         &Path::new("attempts").join(format!("{attempt_id}.json")),
+        bounded,
     )?)?;
     anyhow::ensure!(
         attempt.attempt_id == attempt_id,
@@ -419,7 +483,12 @@ fn read_attempt_data(log_dir: &Path, attempt_id: &str) -> Result<Attempt> {
     Ok(attempt)
 }
 
-fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
+fn project_attempt(
+    log_dir: &Path,
+    attempt: Attempt,
+    bounded: bool,
+    include_text: bool,
+) -> Result<PruneLogRecord> {
     let root = log_dir.join("smart-prune");
     let legacy_identity = attempt.thread_id.is_none();
     let input = serde_json::from_str::<OptimizerInput>(&attempt.input);
@@ -431,6 +500,8 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
         .with_timezone(&chrono::Local)
         .format("%Y-%m-%d %H:%M:%S %:z")
         .to_string();
+    let admission_evidence_missing =
+        matches!(attempt.status, AttemptStatus::Admitted) && attempt.admission_id.is_none();
     let mut record = PruneLogRecord {
         attempt_id: attempt.attempt_id,
         thread_id: attempt.thread_id.unwrap_or(attempt.session_id),
@@ -441,9 +512,20 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
         model: attempt.model,
         reasoning_effort: attempt.reasoning_effort,
         items: Vec::new(),
+        admission_evidence_missing,
         note: legacy_identity
             .then(|| "Older audit: may include activity from this chat's agents.".to_string()),
     };
+    if admission_evidence_missing {
+        record.add_note(MISSING_ADMISSION_NOTE.to_string());
+    }
+    if bounded
+        && !include_text
+        && matches!(attempt.status, AttemptStatus::Admitted)
+        && attempt.admission_id.is_some()
+    {
+        record.add_note("Replacement text integrity is checked when detail opens.".to_string());
+    }
     let failure =
         crate::session::smart_prune::safe_failure_reason(attempt.status, attempt.error.as_deref());
     let input = match input {
@@ -470,6 +552,7 @@ fn project_attempt(log_dir: &Path, attempt: Attempt) -> Result<PruneLogRecord> {
         attempt.status,
         attempt.error.as_deref(),
         attempt.admission_id.as_deref(),
+        (bounded, include_text),
     )?;
     Ok(record)
 }
@@ -491,6 +574,7 @@ pub(crate) fn inline_items(
         status,
         error,
         admission_id,
+        (false, true),
     )
 }
 
@@ -501,7 +585,12 @@ fn project_items(
     status: AttemptStatus,
     error: Option<&str>,
     admission_id: Option<&str>,
+    (bounded, include_text): (bool, bool),
 ) -> Result<Vec<PruneLogItem>> {
+    anyhow::ensure!(
+        !bounded || input.items.len() <= MAX_GLOBAL_ITEMS,
+        "Smart Prune evidence has too many items"
+    );
     let failure = crate::session::smart_prune::safe_failure_reason(status, error);
     let mut items = Vec::new();
     let expected_ids = input
@@ -520,6 +609,7 @@ fn project_items(
             Ok(serde_json::from_slice(&confined_read(
                 root,
                 &dir.join("manifest.json"),
+                bounded,
             )?)?)
         })
         .transpose()?;
@@ -560,12 +650,16 @@ fn project_items(
             decision: failure
                 .map(|why| format!("failed: {why} Original kept."))
                 .unwrap_or(kept_reason),
-            original: textual_tool_output(&candidate.source_output)
-                .map(|(_, text)| text.into_owned())
-                .unwrap_or_else(|| "Non-text output".to_string()),
+            original: include_text
+                .then(|| {
+                    textual_tool_output(&candidate.source_output)
+                        .map(|(_, text)| text.into_owned())
+                        .unwrap_or_else(|| "Non-text output".to_string())
+                })
+                .unwrap_or_default(),
             compact: None,
         };
-        if failure.is_none() {
+        if include_text && failure.is_none() {
             let lines = item.original.lines().collect::<Vec<_>>();
             item.decision.push_str(&format!(
                 " Retained all {} source lines, including {}.",
@@ -577,21 +671,47 @@ fn project_items(
             .as_ref()
             .and_then(|m| m.items.iter().find(|i| i.call_id == candidate.call_id))
         {
-            let dir = admission_dir
-                .as_ref()
-                .context("missing admission directory")?;
-            let output: ResponseItem = serde_json::from_slice(&confined_read(
-                root,
-                &dir.join(&admitted.admitted_artifact),
-            )?)?;
-            let (_, text) = textual_tool_output(&output).context("non-text admission")?;
             item.source_tokens = admitted.source_tokens;
             item.admitted_tokens = admitted.admitted_tokens;
-            item.compact = Some(text.into_owned());
-            item.decision =
-                removal_description(&item.original, item.compact.as_deref().unwrap_or_default());
+            if bounded && !include_text {
+                let dir = admission_dir
+                    .as_ref()
+                    .context("missing admission directory")?;
+                let path = confined_path(root, &dir.join(&admitted.admitted_artifact))?;
+                let metadata = std::fs::metadata(path)?;
+                anyhow::ensure!(
+                    metadata.is_file() && metadata.len() <= MAX_GLOBAL_FILE_BYTES,
+                    "Smart Prune evidence is unavailable or too large"
+                );
+            }
+            if include_text {
+                let dir = admission_dir
+                    .as_ref()
+                    .context("missing admission directory")?;
+                let output: ResponseItem = serde_json::from_slice(&confined_read(
+                    root,
+                    &dir.join(&admitted.admitted_artifact),
+                    bounded,
+                )?)?;
+                let (_, text) = textual_tool_output(&output).context("non-text admission")?;
+                item.compact = Some(text.into_owned());
+                item.decision = removal_description(
+                    &item.original,
+                    item.compact.as_deref().unwrap_or_default(),
+                );
+            }
         }
         items.push(item);
+        if bounded && include_text {
+            let total = items.iter().fold(0usize, |sum, item| {
+                sum.saturating_add(item.original.len())
+                    .saturating_add(item.compact.as_ref().map_or(0, String::len))
+            });
+            anyhow::ensure!(
+                total <= MAX_GLOBAL_DETAIL_BYTES,
+                "Smart Prune detail is too large"
+            );
+        }
     }
     Ok(items)
 }
@@ -617,11 +737,11 @@ pub fn load_chat(log_dir: &Path, thread_id: &str) -> Result<(Vec<PruneLogRecord>
             .and_then(|s| s.to_str())
             .unwrap_or_default()
             .to_string();
-        match read_attempt_data(log_dir, &id) {
+        match read_attempt_data(log_dir, &id, false) {
             Ok(attempt)
                 if attempt.thread_id.as_deref().unwrap_or(&attempt.session_id) == thread_id =>
             {
-                match project_attempt(log_dir, attempt) {
+                match project_attempt(log_dir, attempt, false, true) {
                     Ok(record) => records.push(record),
                     Err(_) => unreadable += 1,
                 }
@@ -637,6 +757,191 @@ pub fn load_chat(log_dir: &Path, thread_id: &str) -> Result<(Vec<PruneLogRecord>
         )
     });
     Ok((records, unreadable))
+}
+
+/// Metadata only: original and committed replacement text stay in the detail reader.
+#[derive(Clone, Debug)]
+pub struct PruneLogSummary {
+    pub attempt_id: String,
+    pub thread_id: String,
+    pub timestamp: String,
+    pub chat_title: String,
+    pub turn_id: String,
+    pub turn_number: Option<usize>,
+    pub model: String,
+    pub reasoning_effort: String,
+    pub estimated_source_tokens: Option<usize>,
+    pub estimated_admitted_tokens: Option<usize>,
+    pub estimated_saved_tokens: Option<usize>,
+    pub note: Option<String>,
+}
+
+impl From<PruneLogRecord> for PruneLogSummary {
+    fn from(record: PruneLogRecord) -> Self {
+        Self::from(&record)
+    }
+}
+
+impl From<&PruneLogRecord> for PruneLogSummary {
+    fn from(record: &PruneLogRecord) -> Self {
+        let counts = (!record.items.is_empty() && !record.admission_evidence_missing).then(|| {
+            let source = record
+                .items
+                .iter()
+                .fold(0usize, |sum, item| sum.saturating_add(item.source_tokens));
+            let admitted = record
+                .items
+                .iter()
+                .fold(0usize, |sum, item| sum.saturating_add(item.admitted_tokens));
+            let saved = record.items.iter().fold(0usize, |sum, item| {
+                sum.saturating_add(item.source_tokens.saturating_sub(item.admitted_tokens))
+            });
+            (source, admitted, saved)
+        });
+        Self {
+            attempt_id: record.attempt_id.clone(),
+            thread_id: record.thread_id.clone(),
+            timestamp: record.timestamp.clone(),
+            chat_title: record.chat_title.clone(),
+            turn_id: record.turn_id.clone(),
+            turn_number: record.turn_number,
+            model: record.model.clone(),
+            reasoning_effort: record.reasoning_effort.clone(),
+            estimated_source_tokens: counts.map(|v| v.0),
+            estimated_admitted_tokens: counts.map(|v| v.1),
+            estimated_saved_tokens: counts.map(|v| v.2),
+            note: record.note.clone(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PruneLogPage {
+    pub data: Vec<PruneLogSummary>,
+    pub next_cursor: Option<String>,
+    pub unreadable: usize,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum GlobalLogError {
+    #[error("invalid Smart Prune cursor")]
+    InvalidCursor,
+    #[error("invalid Smart Prune record identity or scope")]
+    InvalidScope,
+    #[error("Smart Prune log exceeds the listing scan limit")]
+    ScanLimit,
+}
+
+fn order_key(record: &PruneLogSummary) -> Result<(i64, String)> {
+    let at = chrono::DateTime::parse_from_str(&record.timestamp, "%Y-%m-%d %H:%M:%S %:z")?;
+    Ok((at.timestamp(), record.attempt_id.clone()))
+}
+
+/// Read a bounded newest-first page across chats. The cursor continues to older attempts.
+pub fn load_page(log_dir: &Path, cursor: Option<&str>, limit: usize) -> Result<PruneLogPage> {
+    anyhow::ensure!(
+        (1..=100).contains(&limit),
+        "Smart Prune page limit must be 1 to 100"
+    );
+    let started = std::time::Instant::now();
+    let anchor = cursor
+        .map(|id| {
+            anyhow::ensure!(valid_attempt_id(id), GlobalLogError::InvalidCursor);
+            let attempt = read_attempt_data(log_dir, id, true).map_err(|error| {
+                if error
+                    .downcast_ref::<std::io::Error>()
+                    .is_some_and(|io| io.kind() == std::io::ErrorKind::NotFound)
+                {
+                    anyhow::Error::new(GlobalLogError::InvalidCursor)
+                } else {
+                    error
+                }
+            })?;
+            project_attempt(log_dir, attempt, true, false)
+                .and_then(|record| order_key(&record.into()))
+        })
+        .transpose()?;
+    let directory = log_dir.join("smart-prune/attempts");
+    let entries = match std::fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && cursor.is_none() => {
+            return Ok(PruneLogPage {
+                data: Vec::new(),
+                next_cursor: None,
+                unreadable: 0,
+            });
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let mut rows = Vec::new();
+    let mut unreadable = 0;
+    let mut scanned = 0;
+    for entry in entries {
+        let entry = entry?;
+        scanned += 1;
+        anyhow::ensure!(
+            scanned <= MAX_GLOBAL_SCAN_ENTRIES && started.elapsed() <= MAX_GLOBAL_SCAN_TIME,
+            GlobalLogError::ScanLimit
+        );
+        if entry.path().extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let id = entry
+            .path()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let Ok(record) = read_attempt_data(log_dir, &id, true)
+            .and_then(|attempt| project_attempt(log_dir, attempt, true, false))
+        else {
+            unreadable += 1;
+            continue;
+        };
+        let summary: PruneLogSummary = record.into();
+        let Ok(key) = order_key(&summary) else {
+            unreadable += 1;
+            continue;
+        };
+        if anchor.as_ref().is_some_and(|previous| key >= *previous) {
+            continue;
+        }
+        let index = rows.partition_point(|(existing, _)| existing > &key);
+        rows.insert(index, (key, summary));
+        if rows.len() > limit + 1 {
+            rows.pop();
+        }
+    }
+    anyhow::ensure!(
+        started.elapsed() <= MAX_GLOBAL_SCAN_TIME,
+        GlobalLogError::ScanLimit
+    );
+    let has_more = rows.len() > limit;
+    rows.truncate(limit);
+    let data: Vec<_> = rows.into_iter().map(|(_, row)| row).collect();
+    let next_cursor = if has_more {
+        data.last().map(|row| row.attempt_id.clone())
+    } else {
+        None
+    };
+    Ok(PruneLogPage {
+        data,
+        next_cursor,
+        unreadable,
+    })
+}
+
+/// A record can be opened only under the chat identity returned by the list.
+pub fn read_scoped(log_dir: &Path, attempt_id: &str, thread_id: &str) -> Result<PruneLogRecord> {
+    anyhow::ensure!(valid_attempt_id(attempt_id), GlobalLogError::InvalidScope);
+    let attempt = read_attempt_data(log_dir, attempt_id, true)?;
+    anyhow::ensure!(
+        attempt.thread_id.as_deref().unwrap_or(&attempt.session_id) == thread_id,
+        GlobalLogError::InvalidScope
+    );
+    let record = project_attempt(log_dir, attempt, true, true)?;
+    anyhow::ensure!(record.thread_id == thread_id, GlobalLogError::InvalidScope);
+    Ok(record)
 }
 
 #[cfg(test)]
@@ -671,6 +976,151 @@ mod tests {
             .to_string(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn global_pages_report_committed_savings_and_unreadable_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "a", "chat-a", "admitted");
+        fixture(root.path(), "b", "chat-b", "admitted");
+        let older = root.path().join("smart-prune/attempts/b.json");
+        let mut attempt: Value = serde_json::from_slice(&std::fs::read(&older).unwrap()).unwrap();
+        attempt["timestamp"] = json!("2026-10-16T12:00:00Z");
+        std::fs::write(older, attempt.to_string()).unwrap();
+        std::fs::write(root.path().join("smart-prune/attempts/broken.json"), b"{").unwrap();
+        let first = load_page(root.path(), None, 1).unwrap();
+        assert_eq!(first.unreadable, 1);
+        assert_eq!(first.data[0].attempt_id, "a");
+        assert_eq!(first.data[0].thread_id, "chat-a");
+        assert!(first.data[0].note.as_ref().unwrap().contains("Older audit"));
+        assert_eq!(first.data[0].estimated_source_tokens, Some(2000));
+        assert_eq!(first.data[0].estimated_admitted_tokens, Some(1000));
+        assert_eq!(first.data[0].estimated_saved_tokens, Some(1000));
+        let second = load_page(root.path(), first.next_cursor.as_deref(), 1).unwrap();
+        assert_eq!(second.data[0].attempt_id, "b");
+        assert!(second.next_cursor.is_none());
+        assert!(load_page(root.path(), Some("missing"), 1).is_err());
+        assert!(load_page(root.path(), None, 101).is_err());
+    }
+
+    #[test]
+    fn scoped_detail_requires_identity_and_rejects_traversal() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "a", "chat-a", "admitted");
+        let record = read_scoped(root.path(), "a", "chat-a").unwrap();
+        assert_eq!(
+            record.items[0].compact.as_deref(),
+            Some("EXACT COMPACT\nwith final fact")
+        );
+        assert!(record.items[1].compact.is_none());
+        assert!(record.items[1].diff().is_none());
+        assert!(read_scoped(root.path(), "a", "chat-b").is_err());
+        assert!(read_scoped(root.path(), "../a", "chat-a").is_err());
+    }
+
+    #[test]
+    fn committed_diff_shows_repeated_line_removal_and_rewording() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "a", "chat-a", "admitted");
+        let mut item = read_scoped(root.path(), "a", "chat-a")
+            .unwrap()
+            .items
+            .remove(0);
+        item.original = "repeat\nrepeat\nold wording\n".into();
+        item.compact = Some("repeat\nnew wording\n".into());
+        let diff = item.diff().unwrap();
+        assert!(diff.contains("--- Original"));
+        assert!(diff.contains("+++ Compact"));
+        assert!(diff.contains("-repeat"));
+        assert!(diff.contains("-old wording"));
+        assert!(diff.contains("+new wording"));
+        assert_eq!(diff, item.diff().unwrap());
+    }
+
+    #[test]
+    fn failed_attempt_does_not_claim_model_output_was_admitted() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "a", "chat-a", "admitted");
+        let path = root.path().join("smart-prune/attempts/a.json");
+        let mut attempt: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        attempt["status"] = json!("model_error");
+        std::fs::write(path, attempt.to_string()).unwrap();
+        let page = load_page(root.path(), None, 10).unwrap();
+        assert_eq!(page.data[0].estimated_saved_tokens, Some(0));
+        let record = read_scoped(root.path(), "a", "chat-a").unwrap();
+        assert!(record.items.iter().all(|item| item.compact.is_none()));
+    }
+
+    #[test]
+    fn legacy_admission_without_manifest_has_unknown_savings() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "a", "chat-a", "admitted");
+        let path = root.path().join("smart-prune/attempts/a.json");
+        let mut attempt: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        attempt["admission_id"] = Value::Null;
+        std::fs::write(path, attempt.to_string()).unwrap();
+        let page = load_page(root.path(), None, 10).unwrap();
+        assert_eq!(page.data[0].estimated_saved_tokens, None);
+        assert!(
+            read_scoped(root.path(), "a", "chat-a")
+                .unwrap()
+                .admission_evidence_missing
+        );
+        assert!(
+            page.data[0]
+                .note
+                .as_ref()
+                .unwrap()
+                .contains(MISSING_ADMISSION_NOTE)
+        );
+    }
+
+    #[test]
+    fn global_reader_rejects_oversized_evidence_without_truncating_it() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "large", "chat-a", "admitted");
+        std::fs::write(
+            root.path().join("smart-prune/attempts/large.json"),
+            vec![b'x'; MAX_GLOBAL_FILE_BYTES as usize + 1],
+        )
+        .unwrap();
+        let page = load_page(root.path(), None, 10).unwrap();
+        assert!(page.data.is_empty());
+        assert_eq!(page.unreadable, 1);
+        let error = read_scoped(root.path(), "large", "chat-a").unwrap_err();
+        assert!(error.to_string().contains("too large"));
+    }
+
+    #[test]
+    fn global_scan_limit_fails_instead_of_returning_incomplete_page() {
+        let root = tempfile::tempdir().unwrap();
+        let attempts = root.path().join("smart-prune/attempts");
+        std::fs::create_dir_all(&attempts).unwrap();
+        for id in 0..=MAX_GLOBAL_SCAN_ENTRIES {
+            std::fs::write(attempts.join(format!("{id}.other")), b"").unwrap();
+        }
+        let error = load_page(root.path(), None, 1).unwrap_err();
+        assert!(error.to_string().contains("scan limit"));
+    }
+
+    #[test]
+    fn global_page_does_not_read_compact_text_until_detail_is_opened() {
+        let root = tempfile::tempdir().unwrap();
+        fixture(root.path(), "a", "chat-a", "admitted");
+        let compact = root
+            .path()
+            .join("smart-prune/admissions/admission-1/items/compact.json");
+        std::fs::write(compact, b"not json").unwrap();
+        let page = load_page(root.path(), None, 10).unwrap();
+        assert_eq!(page.data[0].estimated_saved_tokens, Some(1000));
+        assert!(
+            page.data[0]
+                .note
+                .as_ref()
+                .unwrap()
+                .contains("integrity is checked")
+        );
+        assert!(read_scoped(root.path(), "a", "chat-a").is_err());
     }
 
     #[test]

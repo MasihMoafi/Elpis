@@ -31,12 +31,150 @@ fn record(id: &str, turn: &str) -> PruneLogRecord {
             compact: None,
         }],
         note: None,
+        admission_evidence_missing: false,
     }
 }
 
 fn finish_current(chat: &mut ChatWidget, records: Result<(Vec<PruneLogRecord>, usize), String>) {
     let request_id = chat.smart_prune_log_request.expect("open log request");
     chat.finish_smart_prune_log(request_id, records);
+}
+
+#[tokio::test]
+async fn picker_navigation_keeps_active_view_until_global_and_next_page_events_are_handled() {
+    use crate::legacy_core::smart_prune_log::PruneLogPage;
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log".to_string(), Vec::new());
+    finish_current(&mut chat, Ok((Vec::new(), 0)));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let (source, cursor) = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::Elpis(ElpisAppEvent::OpenGlobalSmartPruneLog(id, cursor)) => {
+                Some((id, cursor))
+            }
+            _ => None,
+        })
+        .expect("All chats requests the global log");
+    assert_eq!(cursor, None);
+    assert!(chat.smart_prune_picker_is_current(source));
+    chat.open_global_smart_prune_log(cursor);
+    let page_request = chat.smart_prune_log_request.unwrap();
+    chat.finish_global_smart_prune_log(
+        page_request,
+        Ok(PruneLogPage {
+            data: vec![(&record("newest", "2")).into()],
+            next_cursor: Some("older".to_string()),
+            unreadable: 0,
+        }),
+    );
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let (source, cursor) = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::Elpis(ElpisAppEvent::OpenGlobalSmartPruneLog(id, cursor)) => {
+                Some((id, cursor))
+            }
+            _ => None,
+        })
+        .expect("Next page requests older records");
+    assert_eq!(source, page_request);
+    assert_eq!(cursor.as_deref(), Some("older"));
+    assert!(chat.smart_prune_picker_is_current(source));
+    chat.open_global_smart_prune_log(cursor);
+    assert_ne!(chat.smart_prune_log_request, Some(page_request));
+    assert!(render_bottom_popup(&chat, 100).contains("Loading"));
+}
+
+#[tokio::test]
+async fn global_log_opens_other_chat_and_rejects_stale_detail_requests() {
+    use crate::legacy_core::smart_prune_log::PruneLogPage;
+    let (mut chat, mut rx, _ops) = make_chatwidget_manual(None).await;
+    chat.thread_id = Some(ThreadId::new());
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log".to_string(), Vec::new());
+    finish_current(&mut chat, Ok((Vec::new(), 0)));
+    assert!(render_bottom_popup(&chat, 100).contains("All chats"));
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log all".to_string(), Vec::new());
+    let request = chat.smart_prune_log_request.unwrap();
+    let mut other = record("other-attempt", "6");
+    other.thread_id = "other-chat".to_string();
+    chat.finish_global_smart_prune_log(
+        request,
+        Ok(PruneLogPage {
+            data: vec![(&other).into()],
+            next_cursor: Some("next".to_string()),
+            unreadable: 1,
+        }),
+    );
+    let screen = render_bottom_popup(&chat, 100);
+    assert!(screen.contains("All chats"));
+    assert!(screen.contains("Readable pruning log"));
+    assert!(screen.contains("unreadable"));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let requested = std::iter::from_fn(|| rx.try_recv().ok())
+        .find_map(|event| match event {
+            AppEvent::Elpis(ElpisAppEvent::ReadGlobalSmartPruneRecord(id, attempt, thread)) => {
+                Some((id, attempt, thread))
+            }
+            _ => None,
+        })
+        .expect("global selection requests its record");
+    assert_eq!(
+        requested,
+        (
+            request,
+            "other-attempt".to_string(),
+            "other-chat".to_string()
+        )
+    );
+    let detail = chat.begin_global_smart_prune_detail(request).unwrap();
+    assert!(chat.global_smart_prune_detail_is_current(request, detail));
+    let newer = chat.begin_global_smart_prune_detail(request).unwrap();
+    assert!(!chat.global_smart_prune_detail_is_current(request, detail));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    assert!(!chat.global_smart_prune_detail_is_current(request, newer));
+    chat.finish_global_smart_prune_log(
+        request,
+        Ok(PruneLogPage {
+            data: vec![(&other).into()],
+            next_cursor: None,
+            unreadable: 0,
+        }),
+    );
+    assert!(!chat.global_smart_prune_log_is_current(request));
+}
+
+#[tokio::test]
+async fn global_log_displays_unknown_savings_and_ignores_old_page() {
+    use crate::legacy_core::smart_prune_log::PruneLogPage;
+    let (mut chat, _rx, _ops) = make_chatwidget_manual(None).await;
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log all".to_string(), Vec::new());
+    let old = chat.smart_prune_log_request.unwrap();
+    chat.dispatch_command_with_args(SlashCommand::SmartPrune, "log all".to_string(), Vec::new());
+    let current = chat.smart_prune_log_request.unwrap();
+    let mut unknown: crate::legacy_core::smart_prune_log::PruneLogSummary =
+        (&record("unknown", "1")).into();
+    unknown.estimated_saved_tokens = None;
+    chat.finish_global_smart_prune_log(
+        old,
+        Ok(PruneLogPage {
+            data: vec![unknown.clone()],
+            next_cursor: None,
+            unreadable: 0,
+        }),
+    );
+    assert!(render_bottom_popup(&chat, 100).contains("Loading"));
+    chat.finish_global_smart_prune_log(
+        current,
+        Ok(PruneLogPage {
+            data: vec![unknown],
+            next_cursor: None,
+            unreadable: 0,
+        }),
+    );
+    let screen = render_bottom_popup(&chat, 100);
+    assert!(screen.contains("Savings unavailable"));
+    assert!(!screen.contains("~0 tokens saved"));
 }
 
 #[tokio::test]
@@ -84,6 +222,7 @@ async fn smart_prune_log_list_and_open_record_snapshots() {
         let crate::pager_overlay::Overlay::Static(mut pager) =
             super::super::smart_prune_log::record_overlay(
                 &opened,
+                opened.items.iter().map(|item| item.diff()).collect(),
                 &crate::keymap::RuntimeKeymap::defaults().pager,
             )
         else {
@@ -170,6 +309,33 @@ fn smart_prune_log_record_puts_turn_ids_last_and_explains_removed_text() {
             .any(|line| line.contains("Removed 480 repeated test lines"))
     );
     assert!(lines.last().unwrap().contains(&attempt.turn_id));
+}
+
+#[test]
+fn missing_admission_never_claims_savings_and_notes_are_safe() {
+    let mut attempt = record("missing", "3");
+    attempt.admission_evidence_missing = true;
+    attempt.note = Some(
+        "Committed admission evidence unavailable; savings are unknown.\u{1b}[31m".to_string(),
+    );
+    for item in &mut attempt.items {
+        item.compact = None;
+    }
+    let lines = super::super::smart_prune_log::record_lines(&attempt)
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("savings unavailable"))
+    );
+    assert!(
+        !lines
+            .iter()
+            .any(|line| line.contains("received by the main model"))
+    );
+    assert!(lines.iter().all(|line| !line.contains('\u{1b}')));
 }
 
 #[test]
@@ -296,6 +462,7 @@ fn smart_prune_record_opens_at_the_start_of_a_long_original() {
         let crate::pager_overlay::Overlay::Static(mut pager) =
             super::super::smart_prune_log::record_overlay(
                 &evidence,
+                evidence.items.iter().map(|item| item.diff()).collect(),
                 &crate::keymap::RuntimeKeymap::defaults().pager,
             )
         else {

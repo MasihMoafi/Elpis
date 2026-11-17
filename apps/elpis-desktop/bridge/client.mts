@@ -30,6 +30,7 @@ import * as clientSettings from "./client-settings.mts";
 import * as clientVoice from "./client-voice.mts";
 import * as clientMcp from "./client-mcp.mts";
 import * as clientContext from "./client-context.mts";
+import * as clientPrune from "./smart-prune.mts";
 import * as clientWorkflows from "./client-workflows.mts";
 import * as clientThreadActions from "./client-thread-actions.mts";
 import * as clientRewind from "./client-rewind.mts";
@@ -304,6 +305,12 @@ export class DesktopClient extends EventEmitter {
   }
   async contextFiles(id?: unknown) {
     return clientContext.impl_contextFiles.call(this, this.#state, id);
+  }
+  async smartPruneLog(cursor?: string) {
+    return clientPrune.impl_smartPruneLog.call(this, this.#state, cursor);
+  }
+  async smartPruneRecord(threadId?: unknown, attemptId?: unknown) {
+    return clientPrune.impl_smartPruneRecord.call(this, this.#state, threadId, attemptId);
   }
   async backgroundProcesses(id?: unknown, cursor?: string) {
     return clientContext.impl_backgroundProcesses.call(this, this.#state, id, cursor);

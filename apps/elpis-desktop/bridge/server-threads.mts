@@ -145,10 +145,20 @@ export async function handleThreadRoutes(
     response.end(asset.bytes);
     return true;
   }
+  if (url.pathname === "/api/smart-prune" && method === "GET") {
+    json(response, 200, await client.smartPruneLog(url.searchParams.get("cursor") ?? undefined));
+    return true;
+  }
+  const pruneRecord = url.pathname.match(/^\/api\/smart-prune\/([^/]+)\/([^/]+)$/);
+  if (pruneRecord && method === "GET") {
+    const [threadId, attemptId] = pruneRecord.slice(1).map(decodeURIComponent);
+    json(response, 200, await client.smartPruneRecord(threadId, attemptId));
+    return true;
+  }
   const inlinePrune = url.pathname.match(/^\/api\/threads\/([^/]+)\/smart-prune\/([^/]+)\/([^/]+)$/);
   if (inlinePrune && method === "GET") {
     const [threadId, turnId, itemId] = inlinePrune.slice(1).map(decodeURIComponent);
-    json(response, 200, await smartPruneDetail(options.elpisHome, threadId, turnId, itemId));
+    json(response, 200, await smartPruneDetail(client, threadId, turnId, itemId));
     return true;
   }
   // Sidebar deletion: archived now, Ctrl+Z brings back the newest, quitting deletes for good.

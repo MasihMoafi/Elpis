@@ -51,6 +51,31 @@ pub(crate) enum ElpisAppEvent {
         >,
     ),
     OpenSmartPruneRecord(Box<crate::legacy_core::smart_prune_log::PruneLogRecord>),
+    LocalSmartPruneRecordPrepared(
+        uuid::Uuid,
+        Option<uuid::Uuid>,
+        Box<crate::legacy_core::smart_prune_log::PruneLogRecord>,
+        Vec<Option<String>>,
+    ),
+    OpenGlobalSmartPruneLog(uuid::Uuid, Option<String>),
+    LoadGlobalSmartPruneLog(uuid::Uuid, Option<String>),
+    GlobalSmartPruneLogLoaded(
+        uuid::Uuid,
+        Result<crate::legacy_core::smart_prune_log::PruneLogPage, String>,
+    ),
+    ReadGlobalSmartPruneRecord(uuid::Uuid, String, String),
+    GlobalSmartPruneRecordLoaded(
+        uuid::Uuid,
+        uuid::Uuid,
+        String,
+        Result<
+            (
+                crate::legacy_core::smart_prune_log::PruneLogRecord,
+                Vec<Option<String>>,
+            ),
+            String,
+        >,
+    ),
 
     // The Context Ledger (app/elpis_ledger.rs).
     /// Render the `/context` usage report. Requires the App-owned transcript cell list

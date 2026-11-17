@@ -49,6 +49,7 @@ mod dynamic_tools;
 // Elpis: the instruction text a thread's model receives.
 mod elpis_context_files;
 mod elpis_instructions_read;
+mod smart_prune_log;
 // Elpis: per-turn timing, cost state and category shares.
 mod elpis_turn_activity;
 mod elpis_work_graphs;
