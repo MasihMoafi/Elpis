@@ -456,9 +456,7 @@
 .task-tab.chat-tab.active { --edge-paint:var(--edge-ink) left bottom / 100% var(--edge-line) no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
 .message.user { position:relative; --edge-cut:var(--cut-lg); --edge-color:color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent);
   --edge-paint:var(--edge-ink) right top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
-/* The glow follows the straight part of the line. */
-.thread-row.active::after { content:""; position:absolute; left:0; top:var(--edge-cut, var(--cut)); bottom:0; width:var(--edge-line); pointer-events:none; box-shadow:var(--edge-glow); }
-[aria-label="Workflows"] .thread-row.active::after { box-shadow:none; }
+/* Chat tabs keep their line glow; selected sidebar rows use only the crisp edge above. */
 .task-tab.chat-tab.active::after { left:0; right:var(--edge-cut, var(--cut)); bottom:0; height:var(--edge-line); background:none; box-shadow:var(--edge-glow); }
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
 .thread-link:focus-visible { outline:none; }

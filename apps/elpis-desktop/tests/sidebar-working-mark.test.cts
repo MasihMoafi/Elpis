@@ -2,6 +2,7 @@ import type { fixture as Fixture } from './parity-fixture.cts';
 const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const { fixture, CWD }: { fixture: typeof Fixture; CWD: string } = require('./parity-fixture.cts');
+const path: typeof import('node:path') = require('node:path');
 
 for (const colorScheme of ['light', 'dark']) {
   test(`running chats animate distinctly from finished and waiting chats (${colorScheme})`, async () => {
@@ -35,6 +36,18 @@ for (const colorScheme of ['light', 'dark']) {
         };
       });
       assert.deepEqual(animation, { rotation: '4s', blink: '2s', masks: 0 });
+      for (const id of ['chat-a', 'chat-b', 'chat-c']) {
+        await f.open(id);
+        const selected = f.page.locator(`aside.sidebar .thread-row.active[data-thread-id="${id}"]`);
+        const edge = await selected.evaluate(row => ({
+          shadow: getComputedStyle(row, '::after').boxShadow,
+          rowShadow: getComputedStyle(row).boxShadow,
+          border: getComputedStyle(row, '::before').borderLeftWidth,
+        }));
+        assert.deepEqual(edge, { shadow: 'none', rowShadow: 'none', border: '2px' }, `${id}: selection keeps its edge without a shadow`);
+        if (id === 'chat-a' && process.env.ELPIS_REVIEW_SHOTS)
+          await f.page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-no-shadow-${colorScheme}.png`) });
+      }
       f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-a', status: { type: 'idle' } } });
       await f.page.locator('[data-thread-id="chat-a"] .elpis-working-mark').waitFor({ state: 'detached' });
     } finally {
