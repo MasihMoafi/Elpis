@@ -68,7 +68,12 @@ for (const action of ['toolbar', 'more menu', 'context menu']) test(`Read aloud 
   } finally { await f.close(); }
 });
 
-for (const selected of ['x'.repeat(3799) + '😀', 'hello world '.repeat(60) + 'x_y']) test(`Read aloud preserves long selected text (${selected.length} UTF-16 units)`, async () => {
+for (const [selection, selected] of [
+  [true, 'x'.repeat(3799) + '😀'],
+  [true, 'hello world '.repeat(60) + 'x_y'],
+  [false, 'گفتار😀'.repeat(600)],
+  [false, 'Read this long paragraph without losing words '.repeat(100)],
+] as const) test(`Read aloud preserves long ${selection ? 'selected text' : 'whole replies'} (${selected.length} UTF-16 units)`, async () => {
   const f = await fixture({ chat: [['t1', 'Explain.', selected]] }), voiced: string[] = [];
   try {
     await f.page.route('**/api/read-aloud', async (route: { request(): { method(): string; postData(): string }; fulfill(options: { contentType: string; body: string | Buffer }): Promise<unknown> }) => {
@@ -78,10 +83,15 @@ for (const selected of ['x'.repeat(3799) + '😀', 'hello world '.repeat(60) + '
     });
     await f.page.reload(); await f.page.locator('.startup-splash').waitFor({ state: 'detached' }); await f.open('chat-a');
     const reply = f.page.locator('.message.agent').first();
-    await reply.locator('.message-body p').evaluate((element: Element) => { const range = document.createRange(); range.selectNodeContents(element); const selection = getSelection()!; selection.removeAllRanges(); selection.addRange(range); });
+    if (selection) await reply.locator('.message-body p').evaluate((element: Element) => {
+      const range = document.createRange(); range.selectNodeContents(element);
+      const selection = getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+    });
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
     await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor(); await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor({ timeout: 15000 });
-    assert.equal(voiced.join(''), selected); assert.ok(voiced.every(piece => piece.isWellFormed() && piece.length <= 3800));
+    const normalized = (text: string) => selection ? text : text.replace(/\s+/gu, '');
+    assert.ok(normalized(voiced.join('')) === normalized(selected), 'every character is retained in order');
+    assert.ok(voiced.every(piece => piece.isWellFormed() && piece.length <= 280));
     if (selected.startsWith('hello')) { assert.ok(voiced.length > 1); const first = voiced[0]; assert.ok(first !== undefined && first.length <= 300); assert.ok(voiced.slice(0, -1).every(piece => /\s$/.test(piece))); }
   } finally { await f.close(); }
 });

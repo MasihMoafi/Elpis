@@ -42,6 +42,7 @@ export const KEEP_OPEN_MS = 60_000;
 export const VOICED_AHEAD = 3;
 
 export const MIN_CLAUSE = 32;
+const MAX_PIECE = 280;
 
 /** How much of a reply still being written can be spoken now: through its last finished sentence, or its last clause once
  * there is enough to sound natural. Unclosed code, comments and links wait. */
@@ -79,26 +80,26 @@ export function spokenPieces(text: string): string[] {
   const pieces: string[] = [];
   for (const sentence of plain.match(/[^.!?]+[.!?]+["')\]]*\s*|[^.!?]+$/g) ?? []) {
     const last = pieces.at(-1);
-    if (last && last.length + sentence.length <= 280) pieces[pieces.length - 1] = last + sentence;
+    if (last && last.length + sentence.length <= MAX_PIECE) pieces[pieces.length - 1] = last + sentence;
     else pieces.push(sentence);
   }
   return pieces
     .map(piece => piece.trim())
     .filter(Boolean)
-    .flatMap(piece => (piece.length <= 3800 ? [piece] : (piece.match(/.{1,3800}(\s|$)/g) ?? [])));
+    .flatMap(selectedPieces);
 }
 
 export function selectedPieces(text: string): string[] {
   const pieces: string[] = [];
   let current = "";
   for (const token of text.match(/\S+\s*|\s+/gu) ?? []) {
-    if (current && current.length + token.length > 280) {
+    if (current && current.length + token.length > MAX_PIECE) {
       pieces.push(current);
       current = "";
     }
     let rest = token;
-    while (rest.length > 3800) {
-      let end = 3800;
+    while (rest.length > MAX_PIECE) {
+      let end = MAX_PIECE;
       if (
         rest.charCodeAt(end - 1) >= 0xd800 &&
         rest.charCodeAt(end - 1) <= 0xdbff &&

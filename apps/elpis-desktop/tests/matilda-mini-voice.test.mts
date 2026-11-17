@@ -12,6 +12,18 @@ const { spokenPieces } = await import("../components/read-aloud-text.ts");
 
 const words = (text: string) => spokenPieces(text).join(" ").split(/\s+/).filter(Boolean);
 
+for (const [name, text] of [
+  ["a paragraph without sentence punctuation", "Read every word in this long paragraph ".repeat(150)],
+  ["an unbroken Unicode passage", "گفتار😀".repeat(900)],
+] as const) {
+  test(`long speech preserves all text in promptly playable pieces: ${name}`, () => {
+    const pieces = spokenPieces(text);
+    assert.ok(pieces.join("").replace(/\s+/gu, "") === text.replace(/\s+/gu, ""), "no text is dropped or repeated");
+    assert.ok(pieces.length > 1);
+    assert.ok(pieces.every(piece => piece.length <= 280 && piece.isWellFormed()));
+  });
+}
+
 /** Drives the bridge's Love Spot chat as the small chat sees it, speaking each update as the small chat does. */
 async function conversation(t: test.TestContext, reply: string[], final: string) {
   const f = await fixture(t);

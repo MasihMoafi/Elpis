@@ -127,7 +127,7 @@ test('a failed prefetched piece reports its error when reached and cleans up the
   try {
     view.render(); view.start(); await tick();
     const value = view.render().props.value!;
-    const done = value.play('reply', `First ${'word '.repeat(55)}. Second ${'word '.repeat(55)}.`);
+    const done = value.play('reply', `First ${'word '.repeat(50)}. Second ${'word '.repeat(50)}.`);
     await tick(); await tick();
     assert.equal(fetched, 2); assert.equal(played, 1);
     release(); await done;
