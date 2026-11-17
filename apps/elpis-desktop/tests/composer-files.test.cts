@@ -121,6 +121,56 @@ async function openChat(view: View, name: string) { await leaveSettings(view.pag
 async function visibleFile(view: View, name: string) { try { await eventually(async () => assert.equal(await attachments(view).getByRole('button', { name: `Remove ${name}`, exact: true }).count(), 1)); } catch (error) { console.error('Attachment fixture diagnostic', await view.page.evaluate(() => ({ lastChat: localStorage.getItem('elpis-last-chat'), storage: Object.fromEntries(Object.keys(sessionStorage).map(key => [key, sessionStorage.getItem(key)?.slice(0, 400)])), body: document.body.innerText.slice(-1800) }))); throw error; } }
 async function noSend(view: View) { assert.equal(sends(view).length, 0); assert.deepEqual(view.errors, []); }
 
+type PendingScreenshot = Window & { releaseScreenshot?: () => void };
+async function holdScreenshot(view: View, fail = false) {
+  await view.page.evaluate(fail => {
+    const original = File.prototype.arrayBuffer;
+    File.prototype.arrayBuffer = function () {
+      const file = this;
+      return new Promise<ArrayBuffer>((resolve, reject) => {
+        (window as PendingScreenshot).releaseScreenshot = () => {
+          if (fail) reject(new Error('Screenshot could not be read'));
+          else original.call(file).then(resolve, reject);
+        };
+      });
+    };
+  }, fail);
+  await transfer(view, 'paste', { file: 'image' });
+  await view.page.waitForFunction(() => !!(window as PendingScreenshot).releaseScreenshot);
+}
+const releaseScreenshot = (view: View) => view.page.evaluate(() => (window as PendingScreenshot).releaseScreenshot!());
+
+test('Enter during screenshot reading sends once when ready, even if pressed twice', async t => {
+  const view = await fixture(t);
+  await holdScreenshot(view);
+  await view.input.press('Enter'); await view.input.press('Enter');
+  await noSend(view);
+  await releaseScreenshot(view);
+  await eventually(async () => assert.equal(sends(view).length, 1));
+  assert.equal(required(sends(view)[0]).body.attachments.length, 1);
+  assert.match(required(required(sends(view)[0]).body.attachments[0]).dataUrl, /^data:image\/png;base64,/);
+  await eventually(async () => assert.equal(await attachments(view).count(), 0));
+});
+
+test('a pending screenshot send is cancelled by switching chats and keeps the original draft', async t => {
+  const view = await fixture(t); await openChat(view, 'Chat A');
+  await holdScreenshot(view); await view.input.press('Enter');
+  await openChat(view, 'Chat B'); await releaseScreenshot(view);
+  await view.page.getByText('Reading files…', { exact: true }).waitFor({ state: 'hidden' });
+  await noSend(view);
+  await openChat(view, 'Chat A'); await visibleFile(view, 'pasted-image.png');
+  await noSend(view);
+});
+
+test('a failed screenshot read cancels the pending send without sending text alone', async t => {
+  const view = await fixture(t); await view.input.fill('Explain this screenshot');
+  await holdScreenshot(view, true); await view.input.press('Enter');
+  await releaseScreenshot(view);
+  await view.page.getByText('Screenshot could not be read', { exact: false }).waitFor();
+  assert.equal(await view.input.inputValue(), 'Explain this screenshot');
+  await noSend(view);
+});
+
 test('ordinary text paste and drop remain uncancelled and editable without attachments', async t => {
   const view = await fixture(t); await view.input.fill('Draft');
   const pasted = await transfer(view, 'paste', { text: ' plus pasted text' });

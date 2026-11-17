@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { api, type Thread } from "@/lib/api";
 import { attachFiles, fitAttachments, type Attachment } from "@/lib/attachments";
 import { errorText } from "@/lib/error-text.mts";
@@ -24,6 +24,13 @@ export function useComposerAttachments({
   const attachmentsRef = useRef<Attachment[]>([]);
   const [attaching, setAttaching] = useState(false);
   const readingFiles = useRef(false);
+  const sendAfterReading = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    if (attaching) return;
+    const send = sendAfterReading.current;
+    sendAfterReading.current = null;
+    send?.();
+  }, [attaching, attachments]);
   const [fileNotice, setFileNotice] = useState("");
   const setAttachments = useCallback((value: Attachment[]) => {
     attachmentsRef.current = value;
@@ -31,6 +38,7 @@ export function useComposerAttachments({
   }, []);
   const restoreAttachments = useCallback(
     (id: string) => {
+      sendAfterReading.current = null;
       try {
         setAttachments(savedAttachments(id));
         savedAttachments(`recovery-${id}`);
@@ -67,6 +75,7 @@ export function useComposerAttachments({
       }
       if (read.problems.length || fit.problems.length) throw Error([...read.problems, ...fit.problems].join("\n"));
     } catch (cause) {
+      sendAfterReading.current = null;
       const message = errorText(cause);
       if ((selectedRef.current?.id || newDraftKey.current) === owner) setFileNotice(message);
       else setRuntimeNotices(previous => ({ ...previous, [owner]: message }));
@@ -81,6 +90,7 @@ export function useComposerAttachments({
     attaching,
     setAttaching,
     readingFiles,
+    sendAfterReading,
     fileNotice,
     setFileNotice,
     setAttachments,

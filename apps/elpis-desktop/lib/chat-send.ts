@@ -53,6 +53,7 @@ type SendInputs = {
   pending: NextTurn | undefined;
   loadThread: (thread: Thread) => Promise<void>;
   restoreComposerFocus: (origin: Element | null) => number;
+  sendAfterFiles: (followUp?: Preferences["followUp"]) => Promise<void>;
 };
 
 export function createChatSend({
@@ -86,6 +87,7 @@ export function createChatSend({
   assignProject,
   pending,
   loadThread,
+  sendAfterFiles,
 }: SendInputs) {
   const { selected, busy, sending, setBusy, request, stickToBottom, setSubmissions, entries, setThreads, selectedRef } =
     session;
@@ -98,6 +100,17 @@ export function createChatSend({
   const { saveDraft, savedDraft, saveAttachments, savedAttachments } = drafts;
   return async function send(own?: string, followUp?: Preferences["followUp"]) {
     if (!ready || !connected || readOnlyRun) return;
+    if (own === undefined && (attaching || attachments.readingFiles.current)) {
+      const owner = selectedRef.current?.id || newDraftKey.current;
+      const revision = request.current, draft = textRef.current;
+      // Keep the first Enter while a paste is decoding. Resume through the current render so
+      // model support, busy state and connection checks use the state after the file arrives.
+      attachments.sendAfterReading.current ??= () => {
+        if ((selectedRef.current?.id || newDraftKey.current) !== owner || request.current !== revision || textRef.current !== draft) return;
+        void sendAfterFiles(followUp);
+      };
+      return;
+    }
     if (own === undefined && shellMode) {
       await sendShell();
       return;

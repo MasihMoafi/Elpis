@@ -198,6 +198,7 @@ export function useWorkspaceChatActions(previous: WorkspaceConversation) {
     restoreComposerFocus: origin => restoreComposerFocus(origin),
   });
   const { rememberModes, setPlan, answerPlan, noteStartedMode, saveEffort } = conversationSettings;
+  const latestSend = useRef<ReturnType<typeof createChatSend> | null>(null);
   /** Sends the composer's message, or `own`: a command's message (such as /init's prompt), sent without the composer's files.
    * While a turn runs, `followUp` steers or queues this one message instead of following Settings (Ctrl+Enter). */
   const send = createChatSend({
@@ -210,6 +211,7 @@ export function useWorkspaceChatActions(previous: WorkspaceConversation) {
     session,
     options,
     sendShell: () => sendShell(),
+    sendAfterFiles: followUp => latestSend.current!(undefined, followUp),
     askSideQuestion: question => askSideQuestion(question),
     restoreComposerFocus: origin => restoreComposerFocus(origin),
     readOnlyRun,
@@ -232,6 +234,7 @@ export function useWorkspaceChatActions(previous: WorkspaceConversation) {
     pending,
     loadThread,
   });
+  latestSend.current = send;
   const sendShell = createShellSend({
     composer,
     attachments: attachmentState,
