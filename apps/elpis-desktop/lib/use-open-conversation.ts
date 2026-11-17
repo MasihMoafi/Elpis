@@ -15,6 +15,7 @@ type OpenInputs = ChatWiring & {
   composer: ReturnType<typeof useComposerState>;
   runtime: ReturnType<typeof useRuntimeState>;
   markRead: (id: string) => void;
+  autoRead: (id: string) => void;
   setView: Setter<View>;
   setSidebar: Setter<boolean>;
   setError: Setter<string>;
@@ -33,6 +34,7 @@ export function useOpenConversation({
   session,
   newDraftKey,
   markRead,
+  autoRead,
   setView,
   setSidebar,
   setError,
@@ -86,7 +88,7 @@ export function useOpenConversation({
 
   const loadThread = useCallback(
     async (thread: Thread) => {
-      if (document.visibilityState === "visible" && document.hasFocus()) markRead(thread.id);
+      if (document.visibilityState === "visible" && document.hasFocus()) autoRead(thread.id);
       // A chat that is already open in another tab brings that tab forward instead of opening twice.
       const owner = tabFor(tabsRef.current, thread.id);
       if (owner && owner.id !== tabsRef.current.activeId) updateTabs(activate(tabsRef.current, owner.id));
@@ -178,6 +180,7 @@ export function useOpenConversation({
       restoreAttachments,
       updateTabs,
       markRead,
+      autoRead,
       noteHistoryGap,
     ],
   );
@@ -191,6 +194,7 @@ export function useOpenConversation({
         setSidebar(false);
         return;
       }
+      if (document.visibilityState === "visible" && document.hasFocus()) markRead(thread.id);
       await loadThread(thread);
     },
     [loadThread, markRead],

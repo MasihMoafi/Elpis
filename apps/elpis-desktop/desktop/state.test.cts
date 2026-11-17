@@ -7,6 +7,28 @@ const { createStateStore } = require("./state.cts");
 const { spawn } = require("node:child_process");
 const { windows }: import("./state.fixtures.cts").Fixtures = require("./state.fixtures.cts");
 
+test("attention operations merge across windows and preserve manual unread after reopening", async t => {
+  const f = windows(t, { "elpis-chat-attention-v1": JSON.stringify({ unread: ["legacy"], plans: {} }) });
+  const a = f.open(1), b = f.open(2), key = "elpis-chat-attention-v1";
+  f.delay(true);
+  await Promise.all([
+    a.storage.attention({ kind: "complete", id: "chat", turn: "one", read: true, plan: false }),
+    b.storage.attention({ kind: "complete", id: "chat", turn: "one", read: false, plan: false }),
+    b.storage.attention({ kind: "complete", id: "second", turn: "two", read: false, plan: false }),
+    a.storage.attention({ kind: "complete", id: "second", turn: "two", read: true, plan: false }),
+    b.storage.attention({ kind: "unread", id: "manual" }),
+  ]);
+  f.deliver();
+  const { view } = require("../lib/attention-state.cts");
+  assert.deepEqual(view(f.store.read()[key]).unread.sort(), ["legacy", "manual"]);
+  assert.deepEqual(view(a.storage.getItem(key)).unread.sort(), ["legacy", "manual"]);
+  assert.deepEqual(view(b.storage.getItem(key)).unread.sort(), ["legacy", "manual"]);
+  await a.storage.attention({ kind: "read", id: "manual", manual: false });
+  await b.storage.attention({ kind: "read", id: "legacy", manual: true });
+  const reopened = createStateStore(f.file);
+  assert.deepEqual(view(reopened.read()[key]).unread, ["manual"]);
+});
+
 test("a saved workspace holding a setting this version no longer knows still opens and keeps it", async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "elpis-old-key-")), "workspace.json");
   fs.writeFileSync(file, JSON.stringify({ "elpis-theme": "dark", "elpis-love-bars": '{"tools":{"x":1,"y":2}}' }));

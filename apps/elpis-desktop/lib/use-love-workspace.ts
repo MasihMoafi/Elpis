@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { LOVE_SPOT_AUDIO } from "@/lib/love-spot-audio";
 import { useLoveActivity } from "@/lib/use-love-activity";
 import type { Thread } from "@/lib/api";
-import type { useChatAttention } from "@/lib/use-sidebar-state";
 import type { View } from "@/lib/workspace-types";
 
 export function useLoveWorkspace(view: View, ready: boolean, selected: Thread | null, getThreads: () => Thread[]) {
@@ -27,11 +26,12 @@ export function useLoveWorkspace(view: View, ready: boolean, selected: Thread | 
 /** Matilda's chat on screen reads every Love Spot reply. */
 export function useReadLoveNotifications(
   chatShown: boolean,
-  setAttention: ReturnType<typeof useChatAttention>["setAttention"],
+  unread: string[],
+  autoRead: (id: string) => void,
   isLoveChatId: (id: string) => boolean,
 ) {
   useEffect(() => {
     if (chatShown && document.visibilityState === "visible" && document.hasFocus())
-      setAttention(previous => ({ ...previous, unread: previous.unread.filter(id => !isLoveChatId(id)) }));
-  }, [chatShown, setAttention]);
+      unread.filter(isLoveChatId).forEach(autoRead);
+  }, [chatShown, autoRead]);
 }

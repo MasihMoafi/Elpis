@@ -41,6 +41,7 @@
     "tests/reading.test.mts",
     "tests/slash-helpers.test.mts",
     "tests/steps.test.mts",
+    "tests/attention-state.test.cts",
     "tests/background-processes.test.mts",
     "tests/run-card.test.mts",
     "tests/submitted-messages.test.mts",

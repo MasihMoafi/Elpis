@@ -204,7 +204,8 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
                 preferences={workspace.preferences}
                 chatGroups={workspace.chatGroups}
                 updateGroups={workspace.updateGroups}
-                setAttention={workspace.setAttention}
+                readChat={workspace.markRead}
+                unread={workspace.attention.unread}
                 conversations={workspace.conversations}
                 threadList={workspace.threadList}
                 listKeys={workspace.listKeys}

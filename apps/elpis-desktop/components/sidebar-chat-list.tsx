@@ -29,7 +29,8 @@ type Props = {
   preferences: ReturnType<typeof useAppPreferences>;
   chatGroups: ReturnType<typeof useChatGroups>["chatGroups"];
   updateGroups: ReturnType<typeof useChatGroups>["updateGroups"];
-  setAttention: ReturnType<typeof useChatAttention>["setAttention"];
+  readChat: ReturnType<typeof useChatAttention>["markRead"];
+  unread: string[];
   conversations: ReturnType<typeof useConversationList>;
   threadList: React.RefObject<HTMLDivElement | null>;
   listKeys: React.KeyboardEventHandler<HTMLDivElement>;
@@ -66,7 +67,8 @@ export function SidebarChatList({
   preferences,
   chatGroups,
   updateGroups,
-  setAttention,
+  readChat,
+  unread,
   conversations,
   threadList,
   listKeys,
@@ -114,7 +116,7 @@ export function SidebarChatList({
   const { nextCursor, moreLoading, loadMoreConversations } = conversations;
   const searchTerm = search.searchTerm;
   const markRead = !searchTerm && ordinaryUnread.length > 0 && (
-    <Button variant="ghost" size="icon-xs" aria-label="Mark all as read" title="Mark all as read" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>
+    <Button variant="ghost" size="icon-xs" aria-label="Mark all as read" title="Mark all as read" onClick={() => unread.forEach(readChat)}>
       <CheckCheck size={16} />
     </Button>
   );

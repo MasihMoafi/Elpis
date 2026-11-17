@@ -4,7 +4,10 @@ import type { IpcRendererEvent } from "electron";
 const { contextBridge, ipcRenderer }: typeof import("electron") = require("electron");
 type Snapshot = { values?: Record<string, string>; revision?: number; error?: string };
 type Change = { key: string; value: string | null; revision: number };
-type Update = { value: string | null; changes?: never } | { changes: Record<string, unknown>; value?: never };
+type Update =
+  | { value: string | null; changes?: never; attention?: never }
+  | { changes: Record<string, unknown>; value?: never; attention?: never }
+  | { attention: unknown; value?: never; changes?: never };
 type Pending = Update & { key: string; baseRevision: number };
 type WriteResult = Change | { error: string; code?: string; snapshot?: Snapshot };
 const saved: Snapshot = ipcRenderer.sendSync("elpis:state:read");
@@ -31,7 +34,7 @@ function refresh(key: string) {
           if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) current = parsed;
         } catch {}
         value = JSON.stringify({ ...current, ...patch.changes });
-      } else value = patch.value ?? null;
+      } else if (patch.attention === undefined) value = patch.value ?? null;
     }
   if ((values[key] ?? null) === value) return;
   if (value === null) delete values[key];
@@ -109,6 +112,7 @@ contextBridge.exposeInMainWorld("elpisDesktop", {
     patchItem: (key, changes) => {
       write(key, { changes }).catch(failed);
     },
+    attention: op => write("elpis-chat-attention-v1", { attention: op }),
     onChange: callback => {
       listeners.add(callback);
       return () => listeners.delete(callback);

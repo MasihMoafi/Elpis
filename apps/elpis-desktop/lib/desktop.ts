@@ -88,6 +88,7 @@ export type DesktopStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">
   saveItem?: (key: string, value: string) => Promise<void>;
   /** Atomically merges preference fields; conflicts go to onError. */
   patchItem?: (key: string, changes: Record<string, string | boolean>) => void;
+  attention?: (op: import("./attention-state.cts").Op) => Promise<void>;
   onChange?: (callback: (key: string) => void) => () => void;
   onError: (callback: (message: string) => void) => () => void;
 };

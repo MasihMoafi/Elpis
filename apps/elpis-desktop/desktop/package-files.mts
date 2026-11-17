@@ -8,6 +8,7 @@ export const productionFiles = [
   "lib/theme-palettes.ts",
   "lib/custom-character-types.mts",
   "lib/preference-choices.cts",
+  "lib/attention-state.cts",
   "bridge/voice.mts",
   "bridge/voice-handoff.cts",
   "bridge/kokoro.mts",

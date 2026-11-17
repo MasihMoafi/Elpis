@@ -10,7 +10,7 @@ import {
   type Item,
   type Thread,
 } from "@/lib/api";
-import type { Attention } from "@/lib/attention";
+import type { Op } from "./attention-state.cts";
 import { changesModelCatalog } from "@/lib/account-events";
 import { activeTab, type ChatTabs } from "@/lib/chat-tabs";
 import { historyPath, type HistoryPage } from "@/lib/chat-history";
@@ -47,9 +47,7 @@ type RuntimeEvents = {
   openThread: (thread: Thread) => Promise<void>;
   viewRef: Ref<View>;
   planTurns: Ref<Map<string, string>>;
-  setAttention: Setter<Attention>;
-  attentionRef: Ref<Attention>;
-  pendingReads: Ref<Set<string>>;
+  attentionOp: (op: Op) => void;
   loveRef: Ref<ReturnType<typeof useLoveActivity>>;
   isLoveChatId: (id: string) => boolean;
   setRewindActions: Setter<Record<string, "undo" | "redo" | undefined>>;
@@ -78,9 +76,7 @@ export function useRuntimeEvents({
   openThread,
   viewRef,
   planTurns,
-  setAttention,
-  attentionRef,
-  pendingReads,
+  attentionOp,
   loveRef,
   isLoveChatId,
   setRewindActions,
@@ -275,10 +271,7 @@ export function useRuntimeEvents({
           if (threadId && method === "turn/started" && !completedTurns.current.has(params.turn.id)) {
             turnRevisions.current[threadId] = (turnRevisions.current[threadId] ?? 0) + 1;
             planTurns.current.delete(threadId);
-            setAttention(previous => ({
-              unread: previous.unread,
-              plans: without(previous.plans, threadId),
-            }));
+            attentionOp({ kind: "clearPlan", id: threadId });
           }
           if (threadId && method === "item/completed" && params.item?.type === "plan")
             planTurns.current.set(threadId, params.turnId);
@@ -296,17 +289,10 @@ export function useRuntimeEvents({
                 ? isLoveChatId(threadId)
                 : selectedRef.current?.id === threadId && viewRef.current === "chat";
             const visible = document.visibilityState === "visible" && document.hasFocus();
-            const unread = !visible || !shown;
-            if (!visible && !attentionRef.current.unread.includes(threadId)) pendingReads.current.add(threadId);
             const planReady =
               planTurns.current.get(threadId) === params.turn.id ||
               params.turn.items?.some((item: Item) => item.type === "plan");
-            setAttention(previous => ({
-              unread: unread
-                ? [...new Set([...previous.unread, threadId])]
-                : previous.unread.filter(id => id !== threadId),
-              plans: planReady ? { ...previous.plans, [threadId]: params.turn.id } : previous.plans,
-            }));
+            attentionOp({ kind: "complete", id: threadId, turn: params.turn.id, read: visible && shown, plan: !!planReady });
           }
           if (method === "turn/plan/updated" && Array.isArray(params.plan))
             setPlans(prev => ({

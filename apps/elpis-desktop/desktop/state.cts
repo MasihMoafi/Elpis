@@ -2,11 +2,12 @@
 
 import type { BrowserWindow, Dialog, IpcMainEvent, IpcMainInvokeEvent } from "electron";
 import type { createWindowIpc } from "./window-ipc.cts";
-type Patch = { key: string; baseRevision: number; value?: string | null; changes?: Record<string, unknown> };
+type Patch = { key: string; baseRevision: number; value?: string | null; changes?: Record<string, unknown>; attention?: unknown };
 type Change = { key: string; value: string | null; revision: number; rebased: boolean };
 type Version = { revision: number; writer: number | null | undefined };
 type Listener = (change: Change) => void;
 const { PREFERENCE_CHOICES }: typeof import("../lib/preference-choices.cts") = require("../lib/preference-choices.cts");
+const attentionState: typeof import("../lib/attention-state.cts") = require("../lib/attention-state.cts");
 const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
@@ -122,13 +123,16 @@ function createStateStoreImpl(file: string) {
       if (error) throw Error(error);
       const { key, baseRevision, changes } = (input ?? {}) as Partial<Patch>;
       let value = input?.value;
+      const attention = input?.attention;
       if (
         !allowed(key) ||
         typeof baseRevision !== "number" ||
         !Number.isSafeInteger(baseRevision) ||
         baseRevision < 0 ||
         baseRevision > revision ||
-        (changes !== undefined
+        (attention !== undefined
+          ? key !== "elpis-chat-attention-v1" || value !== undefined || changes !== undefined || !attentionState.operation(attention)
+          : changes !== undefined
           ? value !== undefined ||
             !(key === PREFERENCES_KEY
               ? preferencePatch(changes)
@@ -137,7 +141,9 @@ function createStateStoreImpl(file: string) {
       )
         throw Error("Unsupported workspace patch");
       let changedFields: string[] | undefined;
-      if (changes !== undefined) {
+      if (attention !== undefined) {
+        value = attentionState.apply(values[key] ?? null, attention as import("../lib/attention-state.cts").Op);
+      } else if (changes !== undefined) {
         let current: Record<string, unknown> = {};
         try {
           const parsed = JSON.parse(values[key] || "{}");
@@ -158,7 +164,7 @@ function createStateStoreImpl(file: string) {
       const stale = (version: Version | undefined) =>
         version && version.revision > baseRevision && (writer === undefined || version.writer !== writer);
       const conflict =
-        changes !== undefined
+        attention !== undefined ? false : changes !== undefined
           ? stale(replacements.get(key)) || changedFields!.some(field => stale(fields.get(field)))
           : stale(versions.get(key));
       if (conflict)

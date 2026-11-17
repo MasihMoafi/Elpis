@@ -99,7 +99,7 @@ export function useWorkspaceState() {
     setResumeOpen,
   } = dialogs;
   const { error, setError, setDeletedNotice, noteKept } = notices;
-  const { attention, attentionRef, pendingReads, setAttention, planTurns, markRead } = attentionState;
+  const { attention, attentionRef, attentionOp, planTurns, markRead, autoRead } = attentionState;
   const { marked, setMarked, threadList, rowLinks, clickRow } = selection;
   const { foldsRef, changeFolds, setCollapsedProjects } = foldsState;
   const rewindState = useRewindState(),
@@ -169,25 +169,26 @@ export function useWorkspaceState() {
     () => threadsRef.current,
   );
   const { finishReplay, workflowSandbox, workflowFolder } = useWorkflowWorkspace(view, projectState, runtime, setError);
-  useReadLoveNotifications(loveActivity.chatShown, setAttention, isLoveChatId);
+  useReadLoveNotifications(loveActivity.chatShown, attention.unread, autoRead, isLoveChatId);
   useEffect(() => {
-    if (view === "chat" && selected && document.visibilityState === "visible" && document.hasFocus()) markRead(selected.id);
-  }, [view, selected?.id, markRead]);
+    if (view === "chat" && selected && document.visibilityState === "visible" && document.hasFocus()) autoRead(selected.id);
+  }, [view, selected?.id, autoRead]);
   useEffect(() => {
     const readVisible = () => {
       if (document.visibilityState !== "visible" || !document.hasFocus()) return;
-      for (const id of pendingReads.current) {
+      for (const id of attentionRef.current.unread) {
         if ((view === "chat" && selected?.id === id) ||
-            ((view === "loveSpot" || loveActivity.chatShown) && isLoveChatId(id))) markRead(id);
+            ((view === "loveSpot" || loveActivity.chatShown) && isLoveChatId(id))) autoRead(id);
       }
     };
     window.addEventListener("focus", readVisible);
     document.addEventListener("visibilitychange", readVisible);
+    readVisible();
     return () => {
       window.removeEventListener("focus", readVisible);
       document.removeEventListener("visibilitychange", readVisible);
     };
-  }, [view, selected?.id, loveActivity.chatShown, markRead]);
+  }, [view, selected?.id, loveActivity.chatShown, autoRead, attention.unread]);
   const { desktop, windowAvailable, hasTerminal } = useDesktopCapabilities();
   const workspacePanels = useWorkspacePanels({
     selected,
@@ -334,11 +335,10 @@ export function useWorkspaceState() {
     setDeletedNotice,
     noteKept,
     attention,
-    setAttention,
-    attentionRef,
-    pendingReads,
+    attentionOp,
     planTurns,
     markRead,
+    autoRead,
     marked,
     setMarked,
     threadList,

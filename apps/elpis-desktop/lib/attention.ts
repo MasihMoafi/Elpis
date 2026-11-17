@@ -1,29 +1,33 @@
 import { appStorage } from "./projects";
+import { apply, view, type Op } from "./attention-state.cts";
 
 const KEY = "elpis-chat-attention-v1";
-
-/** Which chats need you, kept on this computer: replies nobody has opened (`unread`) and plans that finished in Plan
- * mode and wait for review (`plans`: chat → the plan's turn). The sidebar draws them (components/workspace-shell.tsx). */
+const CHANGE = "elpis:attention-changed";
 export type Attention = { unread: string[]; plans: Record<string, string> };
 
 export function readAttention(): Attention {
-  try {
-    const value = JSON.parse(appStorage().getItem(KEY) || "{}");
-    const unread = Array.isArray(value.unread)
-      ? value.unread.filter((id: unknown): id is string => typeof id === "string")
-      : [];
-    const plans =
-      value.plans && typeof value.plans === "object" && !Array.isArray(value.plans)
-        ? Object.fromEntries(
-            Object.entries(value.plans).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-          )
-        : {};
-    return { unread, plans };
-  } catch {
-    return { unread: [], plans: {} };
+  try { return view(appStorage().getItem(KEY)); }
+  catch { return { unread: [], plans: {} }; }
+}
+
+/** Native writes are serialized in the main process; browser-only windows use their local store. */
+export async function applyAttention(op: Op): Promise<void> {
+  const native = window.elpisDesktop?.storage?.attention;
+  if (native) await native(op);
+  else {
+    const storage = appStorage();
+    const before = storage.getItem(KEY), after = apply(before, op);
+    if (before !== after) {
+      storage.setItem(KEY, after);
+      window.dispatchEvent(new Event(CHANGE));
+    }
   }
 }
 
-export function saveAttention(value: Attention) {
-  appStorage().setItem(KEY, JSON.stringify(value));
+export function subscribeAttention(listener: () => void) {
+  const changed = (event: StorageEvent) => { if (event.key === KEY) listener(); };
+  window.addEventListener("storage", changed);
+  window.addEventListener(CHANGE, listener);
+  const off = window.elpisDesktop?.storage?.onChange?.(key => { if (key === KEY) listener(); });
+  return () => { window.removeEventListener("storage", changed); window.removeEventListener(CHANGE, listener); off?.(); };
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { readAttention, saveAttention, type Attention } from "@/lib/attention";
+import { applyAttention, readAttention, subscribeAttention, type Attention } from "@/lib/attention";
+import type { Op } from "./attention-state.cts";
 import { readPins, savePins } from "@/lib/pins";
 import { readBookmarks, saveBookmarks } from "@/lib/bookmarks";
 import { appStorage } from "@/lib/projects";
@@ -12,46 +13,25 @@ export function useChatAttention(planAnswered: Record<string, string>, onError: 
   const [attention, setAttention] = useState<Attention>({ unread: [], plans: {} });
   const attentionRef = useRef(attention);
   attentionRef.current = attention;
-  const pendingReads = useRef(new Set<string>());
-  const [loaded, setLoaded] = useState(false);
   const planTurns = useRef(new Map<string, string>());
   useEffect(() => {
-    setAttention(readAttention());
-    setLoaded(true);
+    const refresh = () => setAttention(readAttention());
+    const off = subscribeAttention(refresh);
+    refresh();
+    return off;
   }, []);
-  useEffect(() => {
-    if (loaded)
-      try {
-        saveAttention(attention);
-      } catch {
-        onError("Could not save chat attention on this device.");
-      }
-  }, [attention, loaded, onError]);
-  useEffect(() => {
-    for (const id of pendingReads.current) if (!attention.unread.includes(id)) pendingReads.current.delete(id);
-  }, [attention]);
+  const attentionOp = useCallback((op: Op) => {
+    void applyAttention(op).catch(() => onError("Could not save chat attention on this device."));
+  }, [onError]);
   const markRead = useCallback(
-    (id: string) => {
-      pendingReads.current.delete(id);
-      setAttention(previous =>
-        previous.unread.includes(id)
-          ? { ...previous, unread: previous.unread.filter(value => value !== id) }
-          : previous,
-      );
-    },
-    [],
+    (id: string) => attentionOp({ kind: "read", id, manual: true }), [attentionOp],
   );
+  const autoRead = useCallback((id: string) => attentionOp({ kind: "read", id, manual: false }), [attentionOp]);
   useEffect(() => {
-    setAttention(previous => {
-      const answered = Object.keys(previous.plans).filter(id => previous.plans[id] === planAnswered[id]);
-      if (!answered.length) return previous;
-      return {
-        ...previous,
-        plans: Object.fromEntries(Object.entries(previous.plans).filter(([id]) => !answered.includes(id))),
-      };
-    });
-  }, [planAnswered]);
-  return { attention, attentionRef, pendingReads, setAttention, planTurns, markRead };
+    for (const [id, turn] of Object.entries(attention.plans))
+      if (turn === planAnswered[id]) attentionOp({ kind: "clearPlan", id, turn });
+  }, [planAnswered, attention.plans, attentionOp]);
+  return { attention, attentionRef, attentionOp, planTurns, markRead, autoRead };
 }
 
 function useChatMarks(read: () => string[], save: (ids: string[]) => void) {
