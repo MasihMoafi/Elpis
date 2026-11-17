@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { availableDefault } from "./default-model.mts";
+import { availableDefault } from "../lib/default-model.mts";
 
 const models = [{ model: "claude/opus" }, { model: "gpt-6.1-sol", isDefault: true }];
 const providers = { openai: { auth: { state: "signedIn" } }, claude: { state: "notConnected" } };

@@ -2,7 +2,7 @@ import { BridgeError } from "./validate.mts";
 import { MAX_BRIDGE_MESSAGE_BYTES } from "./client-paths.mts";
 import { appIdentity } from "./app-identity.mts";
 import { body, json, pageQuery } from "./server-http.mts";
-import { availableDefault } from "./default-model.mts";
+import { availableDefault } from "../lib/default-model.mts";
 
 export async function handleSettingsRoutes(
   state: import("./server-http.mts").ServerState,

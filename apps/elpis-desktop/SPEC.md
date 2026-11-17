@@ -4,6 +4,8 @@ These are the required behaviors, numbered 1–91 without gaps; refer to one as 
 
 ## Sidebar and chat list
 
+Sidebar section headings use the theme accent and show their item counts when folded. Empty Projects offers Add project; empty Recents is hidden. Working chats have a filled square and a subtle row tint in both themes.
+
 1. Session Manager is removed; no background process archives chats on its own. (S18)
 2. Pinned, Projects and Recents show chats the person started or placed. Recents excludes project chats. Workflows and background runs have separate, collapsible sections controlled by switches that default to off; search returns matching chats, including children, in one flat list. Hiding a chat does not archive or delete it. (S13, S18, OM1, OM2, R41)
 3. Native subagents, chats created by a listed chat, workflow steps and manually arranged chats form one recursive tree. Provider chats retain their recorded parents when added through fallback history or recovered from the helper registry. Each generation has one indentation step; only rows with children show a chevron. Branches start collapsed on reload and do not open merely because their chat opens. When the person archives a parent, its recorded `create_thread` children are archived with it. Load-more controls expose further children without losing their parents; orphaned chats remain visible. (S23, O1, C4, A154, R23, R45, R73)
@@ -59,10 +61,6 @@ These are the required behaviors, numbered 1–91 without gaps; refer to one as 
 41. The companion's music control only mutes or unmutes the existing player and restores the prior volume. A drag does not activate the chat or move the content underneath it. A screenshot is taken once, only on request, through the system picker; cancelling returns no image. (C7)
 42. Love Spot keeps text working and hides unavailable audio controls, including for legacy Love Spot chats. Unavailable controls never start speech or capture the microphone. Do not show a Matilda voice-call button. (C14, R71)
 
-Sidebar section headings use the theme accent and show their item counts when folded. Empty Projects offers Add project; empty Recents is hidden. Working chats have a filled square and a subtle row tint in both themes.
-
-Settings search finds “default model” and opens Configuration; groups without matching rows are hidden. A saved new-chat default on a known disconnected subscription moves to a connected listed model with a notice; discovery failures preserve the existing choice. Explicit models in existing chats and scheduled runs remain explicit.
-
 ## Voice and read aloud
 
 43. Dictation inserts editable text without sending it. Live voice, dictation and read aloud are distinct actions. Settings offers a saved call voice from the active connected protocol and advanced transcription options; unsupported voices are refused and a changed voice applies to the next call. A call has truthful connection state, microphone mute and End; ending it, or leaving an ordinary chat, releases microphone and peer resources. (V2–V4)
@@ -115,6 +113,8 @@ The requirements with their checks and evidence: [production.md](../../docs/spec
 72. Changing a loaded helper's permissions or opening its live history uses its owning runtime. Unknown helpers and grants above the ceiling are refused. (`bridge/helper-desktop.test.mts`)
 
 ## Settings, models and accounts
+
+Settings search finds “default model” and opens Configuration; groups without matching rows are hidden. A saved new-chat default on a known disconnected subscription moves to a connected listed model with a notice; discovery failures preserve the existing choice. Explicit models in existing chats and scheduled runs remain explicit.
 
 73. Settings navigation fits the available height without a scrollbar, keeps every destination reachable at smaller sizes and does not clip its title. Categories are plain group labels, not link-only overview pages. Shared rows keep consistent width, alignment and spacing; unsupported Flex is absent. (C11, R21, R67)
 74. Known models and providers are selected from menus; custom model IDs are behind an explicit Advanced option. Provider order follows R35. The TUI and desktop use a live shared model catalogue, preserve the selection and show fetch failures. (S1, S2)

@@ -2,6 +2,7 @@
 
 import { useProviderUsage } from "@/components/provider-usage";
 import { usePreferences } from "@/lib/preferences";
+import { accountPlanLabel } from "@/lib/account-plan.mts";
 
 /** Who Elpis works as, from the accounts Settings > Models & accounts shows: the ChatGPT account with its plan, else the
  * Claude subscription that Elpis uses, else nobody. The row shows the part of the email before the @ (so it fits the
@@ -10,7 +11,7 @@ function whoIs(data: ReturnType<typeof useProviderUsage>["data"], error: string)
   if (!data) return { name: error ? "Account" : "…", plan: null, label: "Account" };
   const { auth } = data.openai ?? {};
   if (auth?.state === "signedIn") {
-    const plan = auth.plan ? auth.plan.charAt(0).toUpperCase() + auth.plan.slice(1) : null,
+    const plan = accountPlanLabel(auth.plan),
       who = auth.email || "ChatGPT account";
     return {
       name: auth.email?.split("@")[0] || "Signed in",

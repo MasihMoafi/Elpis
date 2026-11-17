@@ -90,6 +90,7 @@ export function providersSnapshot({
     | null;
   anthropic?: {
     signedOut?: unknown;
+    unavailable?: unknown;
   } | null;
   env?: NodeJS.ProcessEnv;
   saved?: Set<string>;
@@ -149,8 +150,8 @@ export function providersSnapshot({
       usageError: codex.length ? null : string(limits?.error),
     },
     claude:
-      anthropic?.signedOut === true
-        ? { state: "notConnected", models: [], usage: [], signedOut: true }
+      anthropic?.signedOut === true || anthropic?.unavailable === true
+        ? { state: "notConnected", models: [], usage: [], signedOut: anthropic.signedOut === true, unavailable: anthropic.unavailable === true }
         : { ...subscription("claude/", "claude"), signedOut: false },
     gemini: subscription("agy/", "antigravity"),
     openrouter: configured.filter(([, def]) => hostOf(def.base_url).endsWith("openrouter.ai")).map(describe),

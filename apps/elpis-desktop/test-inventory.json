@@ -138,7 +138,9 @@
     "bridge/codebase-projects.test.mts",
     "tests/workflows-view.test.mts",
     "tests/sidebar-fill.test.mts",
-    "bridge/default-model.test.mts"
+    "bridge/default-model.test.mts",
+    "tests/account-plan.test.mts",
+    "bridge/provider-availability.test.mts"
   ],
   "bridge": [
     "bridge/custom-characters.test.mts",

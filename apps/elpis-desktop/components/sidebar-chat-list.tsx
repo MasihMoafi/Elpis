@@ -1,5 +1,5 @@
 import type React from "react";
-import { ChevronRight, EyeOff } from "lucide-react";
+import { CheckCheck, ChevronRight, EyeOff } from "lucide-react";
 import { MoreMenu, RightClickMenu } from "@/components/action-menu";
 import type { useBrowser } from "@/components/browser-panel";
 import { GroupAndSortMenu } from "@/components/chat-groups";
@@ -221,8 +221,8 @@ export function SidebarChatList({
           <div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>
             {searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents", recentChats.length)}
             {!searchTerm && ordinaryUnread.length > 0 && (
-              <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>
-                Mark all as read
+              <Button variant="ghost" size="icon-xs" aria-label="Mark all as read" title="Mark all as read" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>
+                <CheckCheck size={16} />
               </Button>
             )}
             {!searchTerm && (

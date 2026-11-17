@@ -4,6 +4,8 @@ import type { ProviderSettings } from "@/lib/api";
 import { api } from "@/lib/api";
 import { useEffect } from "react";
 import { reloadSettings } from "@/lib/settings-store";
+import { useProviderUsage } from "@/components/provider-usage";
+import { availableDefault } from "@/lib/default-model.mts";
 
 export function useWorkspaceModels() {
   // The engine's live model list is shared by every model menu.
@@ -13,13 +15,14 @@ export function useWorkspaceModels() {
   const settingsSnapshot = useElpisSettings().data as unknown as ProviderSettings | null;
   const providerSettings =
     settingsSnapshot?.main && Array.isArray(settingsSnapshot.providers) ? settingsSnapshot : null;
+  const { data: providers } = useProviderUsage(0);
   useEffect(() => {
-    if (!models.length || catalog.loading || catalog.error) return;
+    if (!settingsSnapshot || !providers || catalog.loading || catalog.error || !availableDefault(settingsSnapshot.main, models, providers)) return;
     void api<ProviderSettings>("/settings/default-model", {}).then(next => {
       if (settingsSnapshot?.main.model && next.main?.model && next.main.model !== settingsSnapshot.main.model)
         window.dispatchEvent(new CustomEvent("elpis-default-model-change", { detail: `Default model changed to ${next.main.model}: the previous connection is unavailable.` }));
       return reloadSettings();
     }).catch(() => {});
-  }, [models, catalog.loading, catalog.error]);
+  }, [models, catalog.loading, catalog.error, settingsSnapshot?.main.model, providers]);
   return { catalog, models, settingsSnapshot, providerSettings, refreshModels: refreshModelCatalog };
 }

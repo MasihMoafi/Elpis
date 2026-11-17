@@ -21,6 +21,7 @@ export type Subscription = {
   models: string[];
   usage: UsageLimit[];
   signedOut?: boolean;
+  unavailable?: boolean;
 };
 export type OpenAIAccount = {
   auth: {
@@ -71,6 +72,7 @@ export function openAIUsage(account: OpenAIAccount): UsageStatus {
   return { kind: "ok", limits: account.usage };
 }
 export function subscriptionUsage(subscription: Subscription, name: string, signIn: string): UsageStatus {
+  if (subscription.unavailable) return { kind: "unauthenticated", hint: `${name} rejected account access. Check the account or choose another model.` };
   if (subscription.signedOut)
     return {
       kind: "unauthenticated",

@@ -272,6 +272,7 @@ export function createEngineMessageHandler({ AGENTS, TOOL_APPROVALS, addSubscrip
     if (parsed.id !== undefined && pendingConfigRead.has(parsed.id)) {
       pendingConfigRead.delete(parsed.id);
       const def = (await loadStore())._default;
+      if (def?.model && signedOutModel(def.model)) await updateStore(st => { delete st._default; });
       if (def?.model && !signedOutModel(def.model) && parsed.result?.config) {
         parsed.result.config = { ...parsed.result.config, model: def.model, model_reasoning_effort: def.effort ?? null };
         ws.send(JSON.stringify(parsed));

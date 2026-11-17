@@ -635,7 +635,8 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
         log(`Claude subscription: Elpis is ${msg.params.signedOut ? "signed out" : "signed in"}`);
         recordAccounts().catch((e) => log(`accounts: ${e.message}`));
       }
-      toTui({ id: msg.id, result: { signedOut: claudeSignedOut() } });
+      const signedOut = claudeSignedOut();
+      toTui({ id: msg.id, result: { signedOut, unavailable: !signedOut && AGENTS[0].signedOut?.() === true } });
     } catch (e) { toTui({ id: msg.id, error: { code: Number.isInteger((e as BridgeError).code) ? (e as BridgeError).code : -32603, message: (e as BridgeError).message ?? String(e) } }); }
   }
   async function claudeAccountsRequest(msg: GlobalRequest) {

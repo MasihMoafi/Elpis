@@ -17,9 +17,10 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
     // the terminal and the desktop follow it at once. While it is on, Claude's models, usage and turns are
     // gone from Elpis; Claude Code's own login (~/.claude) is never touched.
     const rejectedTokens = new Map<string, { token: string; until: number }>();
-    const claudeSignedOut = () => {
+    const claudeSignedOut = () => isSignedOut(STATE_DIR);
+    const claudeUnavailable = () => {
         const rejected = rejectedTokens.get(claudeAccounts.activeId());
-        return isSignedOut(STATE_DIR) || !!(rejected && rejected.until > Date.now() && rejected.token === claudeAccounts.credentials()?.accessToken);
+        return !!(rejected && rejected.until > Date.now() && rejected.token === claudeAccounts.credentials()?.accessToken);
     };
     // The subscriptions Elpis reaches through ACP, each by a model-id prefix. Antigravity (Gemini on
     // the Google sign-in) runs through agy-acp.mts and is offered only when `agy` is installed.
@@ -28,7 +29,7 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
         ProviderAgent,
         ...ProviderAgent[]
     ] = [
-        { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, get env() { return { CLAUDE_CODE_EXECUTABLE: CLAUDE, ...claudeAccounts.environment() }; }, catalogFile: CATALOG, signedOut: claudeSignedOut, limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
+        { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, get env() { return { CLAUDE_CODE_EXECUTABLE: CLAUDE, ...claudeAccounts.environment() }; }, catalogFile: CATALOG, signedOut: () => claudeSignedOut() || claudeUnavailable(), limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
         ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
             ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mts", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
             : []),
@@ -37,7 +38,7 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
     // Whether a model (or agent) is one Elpis has signed out of, and the error that refuses its turn.
     const signedOutModel = (model: unknown) => agentOf(model)?.signedOut?.() === true;
     const refuseSignedOut = (agent: ProviderAgent | undefined) => { if (agent?.signedOut?.())
-        throw Object.assign(new Error(SIGNED_OUT_MESSAGE), { signedOut: true }); };
+        throw Object.assign(new Error(claudeUnavailable() ? "The Claude account is unavailable. Check its account access in Models & accounts, or choose another model." : SIGNED_OUT_MESSAGE), { signedOut: true }); };
     const acpErrorMessage = (e: {
         signedOut?: boolean;
         message?: string;
