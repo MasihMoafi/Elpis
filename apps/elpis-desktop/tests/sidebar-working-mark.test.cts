@@ -4,6 +4,39 @@ const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const { fixture, CWD }: { fixture: typeof Fixture; CWD: string } = require('./parity-fixture.cts');
 const path: typeof import('node:path') = require('node:path');
+const sharp: typeof import('sharp') = require('sharp');
+
+test('accented corners end at the diagonal without a tail on rows, tabs or messages', async () => {
+  const f = await fixture({ width: 1100, height: 800 });
+  const page = f.page as unknown as Page;
+  try {
+    await f.open('chat-a');
+    for (const [name, selector, side] of [
+      ['sidebar', 'aside.sidebar .thread-row.active', 'left'],
+      ['chat-tab', '.task-tab.chat-tab.active', 'bottom'],
+      ['message', '.message.user', 'right'],
+    ] as const) {
+      const element = page.locator(selector).last();
+      await element.scrollIntoViewIfNeeded();
+      const cut = await element.evaluate(node => {
+        const style = getComputedStyle(node);
+        return parseFloat(style.getPropertyValue('--edge-cut') || style.getPropertyValue('--cut'));
+      });
+      const png = await element.screenshot({ animations: 'disabled', ...(process.env.ELPIS_REVIEW_SHOTS
+        ? { path: path.join(process.env.ELPIS_REVIEW_SHOTS, `corner-end-${name}.png`) } : {}) });
+      const { data, info: { width, height, channels } } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
+      const pixel = (x: number, y: number) => [0, 1, 2].map(channel => data[(y * width + x) * channels + channel] ?? 0);
+      const at = side === 'left' ? [Math.ceil(cut) + 1, 0] : side === 'bottom'
+        ? [width - 1, height - Math.ceil(cut) - 2] : [width - Math.ceil(cut) - 2, height - 1];
+      const away = side === 'left' ? [at[0]! + 4, at[1]!] : side === 'bottom'
+        ? [at[0]!, at[1]! - 4] : [at[0]! - 4, at[1]!];
+      const actual = pixel(at[0]!, at[1]!), adjacent = pixel(away[0]!, away[1]!);
+      assert.ok(actual.every((value, index) => Math.abs(value - adjacent[index]!) <= 8),
+        `${name}: the edge beyond the diagonal has no accent tail (${actual} vs ${adjacent})`);
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 
 for (const colorScheme of ['light', 'dark']) {
   test(`running chats animate distinctly from finished and waiting chats (${colorScheme})`, async () => {
