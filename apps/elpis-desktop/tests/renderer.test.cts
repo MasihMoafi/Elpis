@@ -102,6 +102,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     await page.locator('.worked-for > summary').last().click();
     await page.locator('.worked-for .activity-group > summary').first().click();
     const commandDetails = page.locator('.worked-for details.step > summary');
+    await commandDetails.first().waitFor();
     assert.equal(await commandDetails.count(), 2);
     await commandDetails.nth(0).click();
     await commandDetails.nth(1).click();

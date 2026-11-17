@@ -26,11 +26,11 @@ export function BackgroundProcesses({ threadId, active, entries }: { threadId: s
         hadJobs.current = jobs.length > 0;
         if (!jobs.length) setOpen(false);
         setState({ jobs, unavailable: false });
-        if (active || jobs.length) timer = setTimeout(refresh, 5000);
+        if (active || jobs.length) timer = setTimeout(() => { void refresh(); }, 5000);
       } catch {
         if (disposed) return;
         setState(previous => ({ ...previous, unavailable: true }));
-        if ((active || hadJobs.current || pending) && ++failures <= 3) timer = setTimeout(refresh, 5000);
+        if ((active || hadJobs.current || pending) && ++failures <= 3) timer = setTimeout(() => { void refresh(); }, 5000);
       }
     }
     void refresh();
