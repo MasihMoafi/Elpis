@@ -98,7 +98,9 @@ for (const colorScheme of ['light', 'dark']) {
           border: getComputedStyle(row, '::before').borderWidth,
           mask: getComputedStyle(row, '::before').maskImage,
         }));
-        assert.deepEqual(edge, { shadow: 'none', rowShadow: 'none', width: '2px', left: '0px', border: '0px', mask: 'none' }, `${id}: selection is only a thin left edge without a frame or shadow`);
+        assert.deepEqual(edge,
+          { shadow: 'none', rowShadow: 'none', width: '2px', left: '0px', border: '0px', mask: 'none' },
+          `${id}: selection is only a thin left edge without a frame or shadow`);
         if (id === 'chat-a' && process.env.ELPIS_REVIEW_SHOTS)
           await page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-no-shadow-${colorScheme}.png`) });
       }
