@@ -70,8 +70,8 @@ test('an invalid launch token remains actionable without automatic authenticatio
 test('bridge reads bypass the browser cache and preserve abort signals; writes remain POSTs', async t => {
   const original = globalThis.fetch;
   t.after(() => { globalThis.fetch = original; });
-  const requests: { url: string; options: RequestInit | undefined }[] = [];
-  globalThis.fetch = async (url, options) => { requests.push({ url: String(url), options }); return reply(200); };
+  const requests: { options: RequestInit | undefined }[] = [];
+  globalThis.fetch = async (_url, options) => { requests.push({ options }); return reply(200); };
   const signal = new AbortController().signal;
   await api('/models');
   await api('/models?provider=test', undefined, signal);

@@ -609,8 +609,148 @@ test("a scheduled workflow is offered to the open windows: one claims it and rep
   await post(`/api/automations/${task.id}`, { action: "result", token: offer.token, threadId: "root-chat-1" });
   assert.equal((await ran).runs[0].threadId, "root-chat-1");
 
+  // Pausing a pending offer revokes it, even if the task is resumed before the window claims it.
+  const pausedRun = post(`/api/automations/${task.id}`, { action: "run" });
+  const pausedOffer = await nextOffer();
+  await post(`/api/automations/${task.id}`, { action: "update", status: "paused" });
+  await post(`/api/automations/${task.id}`, { action: "update", status: "active" });
+  assert.deepEqual(await post(`/api/automations/${task.id}`, { action: "claim", token: pausedOffer.token }), { granted: false });
+  assert.equal((await pausedRun).runs.length, 1, "revoked offer is not recorded as a failed run");
+
+  // A workflow already claimed before a pause is allowed to report its result.
+  const claimedRun = post(`/api/automations/${task.id}`, { action: "run" });
+  const claimedOffer = await nextOffer();
+  assert.deepEqual(await post(`/api/automations/${task.id}`, { action: "claim", token: claimedOffer.token }), { granted: true });
+  await post(`/api/automations/${task.id}`, { action: "update", status: "paused" });
+  await post(`/api/automations/${task.id}`, { action: "result", token: claimedOffer.token, threadId: "root-chat-2" });
+  const claimed = await claimedRun;
+  assert.equal(claimed.runs[0].threadId, "root-chat-2");
+  assert.equal(claimed.status, "paused");
+  await post(`/api/automations/${task.id}`, { action: "update", status: "active" });
+
+  const failedRun = post(`/api/automations/${task.id}`, { action: "run" });
+  const failedOffer = await nextOffer();
+  assert.deepEqual(await post(`/api/automations/${task.id}`, { action: "claim", token: failedOffer.token }), { granted: true });
+  await post(`/api/automations/${task.id}`, { action: "update", status: "paused" });
+  await post(`/api/automations/${task.id}`, { action: "result", token: failedOffer.token, error: "Workflow start failed" });
+  assert.equal((await failedRun).runs[0].error, "Workflow start failed");
+  await post(`/api/automations/${task.id}`, { action: "update", status: "active" });
+
+  const toDelete = await post("/api/automations", {
+    title: "Delete pending", prompt: "Do not start", rule: rule("20261101T090000", "FREQ=DAILY"),
+    workflow: { id: "wf-1", name: "Review", board },
+  });
+  const deletedRun = post(`/api/automations/${toDelete.id}`, { action: "run" });
+  const deletedOffer = await nextOffer();
+  await post(`/api/automations/${toDelete.id}`, { action: "delete" });
+  assert.deepEqual(await post(`/api/automations/${toDelete.id}`, { action: "claim", token: deletedOffer.token }), { granted: false });
+  await deletedRun;
+
   // Nobody claims it: the run is recorded as missed.
   const missed = post(`/api/automations/${task.id}`, { action: "run" });
   await nextOffer();
   assert.match((await missed).runs[0].error, /No Elpis window was open/);
+});
+
+// A due automation must not deliver after it is deleted or paused while the runtime reconnects.
+async function reconnectingTask(t: import("node:test").TestContext, offline = 1) {
+  const { createTestTempDir, removeTestTempDir } = await import("../tests/temp-root.cts");
+  const root = createTestTempDir(path.join(os.homedir(), ".cache/elpis-tests/schedule-cancel-"));
+  t.after(() => removeTestTempDir(root));
+  const file = path.join(root, "tasks.json");
+  const before = harness(at(2026, 11, 13, 20), { models: { "": ["gpt-6.1-sol"] } });
+  const saved = createSchedule({ client: before.client, file, now: before.now, timers: before.timers });
+  const task = await saved.create({ title: "Check", prompt: "Do the check", rule: rule("20261101T070000", "FREQ=DAILY"), target: "new", model: "gpt-6.1-sol" });
+  await saved.close();
+  const h = harness(at(2026, 11, 14, 7, 43), { models: { "": ["gpt-6.1-sol"] }, offline });
+  const schedule = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  h.watch(schedule);
+  await schedule.list();
+  await h.advance(h.now());
+  assert.equal(h.reads.length, 1, "the overdue run is waiting for reconnection");
+  return { h, schedule, id: task.id };
+}
+
+test("deleting a missed automation while it waits prevents its delivery", async t => {
+  const { h, schedule, id } = await reconnectingTask(t);
+  try {
+    await schedule.remove(id);
+    await h.advance(h.now() + 1000);
+    assert.equal(h.made.length, 0);
+    assert.equal(h.sent.length, 0);
+    assert.deepEqual(await schedule.list(), []);
+  } finally { await schedule.close(); }
+});
+
+test("pausing a missed automation while it waits prevents its delivery, even if resumed before reconnect", async t => {
+  const { h, schedule, id } = await reconnectingTask(t);
+  try {
+    await schedule.update(id, { status: "paused" });
+    await schedule.update(id, { status: "active" });
+    await h.advance(h.now() + 1000);
+    assert.equal(h.made.length, 0);
+    assert.equal(h.sent.length, 0);
+    assert.equal((await schedule.list())[0]!.runs.length, 0);
+  } finally { await schedule.close(); }
+});
+
+test("a missed automation that remains enabled delivers after reconnecting", async t => {
+  const { h, schedule } = await reconnectingTask(t);
+  try {
+    await h.advance(h.now() + 1000);
+    assert.equal(h.made.length, 1);
+    assert.equal(h.sent.length, 1);
+    assert.equal((await latest(schedule))!.error, null);
+  } finally { await schedule.close(); }
+});
+
+test("a paused automation stops waiting even if the runtime stays disconnected", async t => {
+  const { h, schedule, id } = await reconnectingTask(t, Infinity);
+  try {
+    await schedule.update(id, { status: "paused" });
+    await h.advance(h.now() + 1000);
+    assert.equal(schedule.busy(), false);
+    assert.equal(h.made.length, 0);
+    assert.equal((await schedule.list())[0]!.runs.length, 0);
+  } finally { await schedule.close(); }
+});
+
+test("deletion while a chat is being created prevents the pending prompt from being sent", async t => {
+  const { h, schedule, id } = await reconnectingTask(t);
+  let release: () => void = () => {}, started: () => void = () => {};
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  const creating = new Promise<void>(resolve => { started = resolve; });
+  const original = h.client.createThread;
+  h.client.createThread = async body => { started(); await wait; return original(body); };
+  try {
+    const advance = h.advance(h.now() + 1000);
+    await creating;
+    await schedule.remove(id);
+    release();
+    await advance;
+    assert.equal(h.made.length, 1, "an already requested chat may have been created");
+    assert.equal(h.sent.length, 0, "the prompt was not sent");
+    assert.deepEqual(await schedule.list(), []);
+  } finally { release(); await schedule.close(); }
+});
+
+test("pausing after a send starts keeps that delivery and does not rearm the paused task", async t => {
+  const { h, schedule, id } = await reconnectingTask(t);
+  let release: () => void = () => {}, started: () => void = () => {};
+  const wait = new Promise<void>(resolve => { release = resolve; });
+  const sending = new Promise<void>(resolve => { started = resolve; });
+  const original = h.client.send;
+  h.client.send = async (thread, body) => { started(); await wait; return original(thread, body); };
+  try {
+    const advance = h.advance(h.now() + 1000);
+    await sending;
+    await schedule.update(id, { status: "paused" });
+    release();
+    await advance;
+    assert.equal(h.sent.length, 1, "an already started delivery is retained");
+    const [task] = await schedule.list();
+    assert.equal(task!.status, "paused");
+    assert.equal(task!.nextRunAt, null);
+    assert.equal(task!.runs.length, 1);
+  } finally { release(); await schedule.close(); }
 });

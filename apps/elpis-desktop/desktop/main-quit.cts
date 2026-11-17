@@ -30,7 +30,7 @@ function createMainQuitImpl({
       try {
         if (pendingRestartTarget && server?.canRestart && !(await server.canRestart()))
           throw Error(
-            "Wait for the voice call, Love Spot, Lab or workflow run in this window to finish, then restart.",
+            "Wait for Elpis, the voice call, Love Spot, Lab or workflow run in this window to finish, then restart.",
           );
         // Freeze input until every final draft is acknowledged. Failed saves restore editing below.
         await Promise.all(
@@ -71,7 +71,7 @@ function createMainQuitImpl({
         await state.getStore()?.flush();
         if (pendingRestartTarget && server?.canRestart && !(await server.canRestart()))
           throw Error(
-            "A voice call, Love Spot, Lab or workflow run started while preparing the update. Restart when it finishes.",
+            "Elpis, a voice call, Love Spot, Lab or workflow run started while preparing the update. Restart when it finishes.",
           );
         if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
         state.setClosing(true);

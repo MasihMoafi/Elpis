@@ -165,7 +165,7 @@ test('pruner effort-only save round trips Max and Default without changing the m
 test('pruner effort waits for its provider catalog and keeps the draft when saving is rejected', async () => {
   const original = globalThis.fetch;
   let release: (() => void) | undefined;
-  setMockFetch(async (path, init) => init ? { ok: false, status: 409, json: async () => ({ error: 'Settings changed elsewhere' }) }
+  setMockFetch(async (path, init) => init?.body !== undefined ? { ok: false, status: 409, json: async () => ({ error: 'Settings changed elsewhere' }) }
     : new Promise(resolve => { release = () => resolve({ ok: true, json: async () => ({ data: [{ ...models[0], supportedReasoningEfforts: ['medium', 'max'].map(reasoningEffort => ({ reasoningEffort })) }] }) }); }));
   const value = { ...settings, smartPrune: { ...settings.smartPrune, explicitOverride: { ...settings.smartPrune.explicitOverride, provider: 'home', reasoningEffort: 'max' } } };
   const view = fixture(MAINTENANCE, 'PrunerSettings', { value, models: [{ ...models[0], supportedReasoningEfforts: [{ reasoningEffort: 'low' }] }] });

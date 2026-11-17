@@ -74,6 +74,9 @@ export class MotherAgent {
   private app: MotherApp | undefined;
   private active = false;
   private queue: Promise<unknown> = Promise.resolve();
+  private transitions = 0;
+  private admissions = 0;
+  private intakes = 0;
   private error: string | undefined;
   private closed = false;
   private archived = false;
@@ -111,7 +114,8 @@ export class MotherAgent {
     });
   }
   private serialized<T>(work: () => Promise<T>): Promise<T> {
-    const next = this.queue.then(work);
+    this.transitions++;
+    const next = this.queue.then(work).finally(() => { this.transitions--; });
     this.queue = next.catch(() => {});
     return next;
   }
@@ -162,6 +166,14 @@ export class MotherAgent {
   }
   owns(id: string): boolean {
     return this.file.read().threadId === id;
+  }
+  /** Router work is owned by this bridge and must finish before it can be closed for an update. */
+  busy(): boolean {
+    const app = this.app;
+    return this.transitions > 0 || this.admissions > 0 || this.intakes > 0 || !!(this.active && app && (
+      app.working() || app.workers.sessions.sending.size > 0 ||
+      [...app.workers.sessions.agents.values()].some(agent => agent.status === "running")
+    ));
   }
   sessionLinks() {
     const { enabled, threadId } = this.file.read();
@@ -458,7 +470,7 @@ export class MotherAgent {
       "mentions",
       "expectedTurnId",
     ]) as Record<string, unknown>;
-    return this.deliver(id, input, () => attachmentInput(input.text, input.attachments, input.mentions));
+    return this.admit(() => this.deliver(id, input, () => attachmentInput(input.text, input.attachments, input.mentions)));
   }
   /**
    * An edited message of the Elpis chat goes to Elpis as a new message, with what the first one carried (pictures,
@@ -468,18 +480,24 @@ export class MotherAgent {
   async resend(id: string, raw: unknown) {
     this.writable(id);
     const input = object(raw, ["beforeTurnId", "text", "model", "effort"]) as Record<string, unknown>;
-    const turnId = typeof input.beforeTurnId === "string" ? input.beforeTurnId : "";
-    const original = await this.entry(id, turnId);
-    const first = replacementEligibility(original ? [original] : [], turnId, { historyComplete: true });
-    if (!first.allowed)
-      throw new BridgeError("That message is no longer in the Elpis chat, so it cannot be sent again.", 409);
-    if (typeof input.text !== "string" || !input.text.trim()) throw new BridgeError("Write a message");
-    const text = input.text;
-    const sent = await this.deliver(id, input, () => [
-      ...attachmentInput(text),
-      ...(first.kept as NonNullable<ChatMessage["content"]>),
-    ]);
-    return { ...sent, kept: true };
+    return this.admit(async () => {
+      const turnId = typeof input.beforeTurnId === "string" ? input.beforeTurnId : "";
+      const original = await this.entry(id, turnId);
+      const first = replacementEligibility(original ? [original] : [], turnId, { historyComplete: true });
+      if (!first.allowed)
+        throw new BridgeError("That message is no longer in the Elpis chat, so it cannot be sent again.", 409);
+      if (typeof input.text !== "string" || !input.text.trim()) throw new BridgeError("Write a message");
+      const text = input.text;
+      const sent = await this.deliver(id, input, () => [
+        ...attachmentInput(text),
+        ...(first.kept as NonNullable<ChatMessage["content"]>),
+      ]);
+      return { ...sent, kept: true };
+    });
+  }
+  private async admit<T>(work: () => Promise<T>): Promise<T> {
+    this.admissions++;
+    try { return await work(); } finally { this.admissions--; }
   }
   private writable(id: string): void {
     if (this.closed || !this.file.read().enabled)
@@ -502,6 +520,7 @@ export class MotherAgent {
     input: Record<string, unknown>,
     blocks: () => NonNullable<ChatMessage["content"]>,
   ) {
+    this.writable(id);
     await this.chooseRouter(input);
     await this.start();
     const app = this.app;
@@ -515,9 +534,10 @@ export class MotherAgent {
         .join("\n") || "[Image attachment]";
     const entry = await this.options.client.appendUser(id, { id: randomUUID(), text: message, content });
     // Intake is durable before acknowledgement; the pass loop performs inference in the background.
+    this.intakes++;
     void app.pump().catch(error => {
       this.error = error instanceof Error ? error.message : "Elpis routing failed";
-    });
+    }).finally(() => { this.intakes--; });
     return { turn: { id: entry.turnId }, routed: true };
   }
   /** The panel can configure a disabled Elpis without starting a session, worker, poll or model call. */

@@ -64,7 +64,8 @@ const TARGETS = ["reuse", "new"],
   /** How long a run waits for Elpis to connect to its runtime before it fails (14 Nov). */
   CONNECT_WAIT = 3 * 60_000,
   /** Thrown by a run still waiting for the connection when the app closes: not recorded, so it runs at the next start. */
-  STOPPED = new Error("Elpis closed before the run started");
+  STOPPED = new Error("Elpis closed before the run started"),
+  CANCELLED = new Error("Automation was paused or deleted before delivery");
 
 const routeOf = (task: Task): Route | null =>
   task.model ? { model: task.model, provider: task.provider ?? null, effort: task.effort ?? null } : null;
@@ -85,18 +86,21 @@ export function createSchedule({
   now = Date.now,
   timers = { set: setTimeout, clear: clearTimeout } as Timers,
   dispatchWorkflow,
+  cancelWorkflow,
 }: {
   client: Client;
   file: string;
   now?: () => number;
   timers?: Timers;
   dispatchWorkflow?: (job: object) => Promise<{ threadId: string }>;
+  cancelWorkflow?: (taskId: string) => void;
 }) {
   let tasks: Task[] = [],
     timer: object | undefined,
     closed = false,
     writing = Promise.resolve();
   const running = new Map<string, Promise<ReturnType<typeof shown>>>(); // task id -> its run in flight
+  const revisions = new WeakMap<Task, number>(); // pause or deletion revokes a run that has not yet sent
   const pauses = new Set<() => void>(); // runs waiting for the connection
   const loaded = (async () => {
     try {
@@ -144,10 +148,11 @@ export function createSchedule({
   /** The current model list for a run. While Elpis has no connection to its runtime (at its start, or reconnecting)
    * the read fails with 503 or 504; the run then waits, up to `wait` ms, and nothing is judged until the list is read
    * (14 Nov: two runs missed overnight failed at the app's start as "not in the current model list"). */
-  async function readModels(route: Route | null, wait: number) {
+  async function readModels(route: Route | null, wait: number, check?: () => void) {
     const named = route && { model: route.model, provider: workflowRoute(route.model, route.provider ?? "").provider };
     const deadline = now() + wait;
     for (let attempt = 0; ; attempt++) {
+      check?.();
       try {
         return await client.models!(route?.provider ? { provider: route.provider } : {});
       } catch (error) {
@@ -170,10 +175,10 @@ export function createSchedule({
   /** Throws the one line saying why the route cannot run: its model is not in the current list, or its subscription's
    * plan limit is reached. `quota`: also ask the subscriptions (at run time; a task being saved only needs the list).
    * `wait`: how long a run waits for Elpis to connect before the list is read; a task being saved does not wait. */
-  async function checkRoute(route: Route, quota: boolean, wait = 0) {
+  async function checkRoute(route: Route, quota: boolean, wait = 0, check?: () => void) {
     const named = { model: route.model, provider: workflowRoute(route.model, route.provider ?? "").provider };
     if (!client.models) return;
-    const listed = (await readModels(route, wait)) ?? { data: [] };
+    const listed = (await readModels(route, wait, check)) ?? { data: [] };
     if (!(listed?.data ?? []).some(item => item.model === route.model))
       throw new BridgeError(unlistedModelLine(named, "automation"));
     if (!quota || !client.providers) return;
@@ -208,33 +213,53 @@ export function createSchedule({
 
   /** One delivery: a scheduled workflow replays its saved board in an open window (6 Nov, Masih's choice), which
    * starts the run and reports its chat; any other task sends its prompt into its chat. Resolves to the chat's id. */
-  async function deliver(task: Task) {
+  async function deliver(task: Task, revision: number) {
+    const check = () => {
+      if (!tasks.includes(task) || (revisions.get(task) ?? 0) !== revision) throw CANCELLED;
+    };
+    check();
     if (task.workflow) {
       if (!dispatchWorkflow) throw new Error("Workflows run in the Elpis window, and none is connected");
-      return (
-        await dispatchWorkflow({
+      try {
+        return (await dispatchWorkflow({
           taskId: task.id,
           title: task.title,
           request: task.prompt,
           cwd: task.cwd,
           workflow: task.workflow,
-        })
-      ).threadId;
+        })).threadId;
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") check();
+        throw error;
+      }
     }
     let threadId: string | null | undefined = task.target === "reuse" ? task.threadId : null;
     // A chat that already exists keeps its own model; a new one starts on the task's, or on the app's default.
     const route = threadId ? null : routeOf(task);
     // Every run first waits for Elpis to be connected; one with a model reads the list it is judged by.
-    if (route) await checkRoute(route, true, CONNECT_WAIT);
-    else if (client.models) await readModels(null, CONNECT_WAIT);
+    try {
+      if (route) await checkRoute(route, true, CONNECT_WAIT, check);
+      else if (client.models) await readModels(null, CONNECT_WAIT, check);
+    } catch (error) {
+      check();
+      throw error;
+    }
+    check();
     if (!threadId) {
       const name = /^Workflows\s*[·:]/i.test(task.title) ? task.title : `Workflows · ${task.title}`;
-      const made = await client.createThread({
-        ...(task.cwd ? { cwd: task.cwd } : {}),
-        ...(route ? { model: route.model, ...(route.provider ? { provider: route.provider } : {}) } : {}),
-        name,
-        automatic: true,
-      });
+      let made: Awaited<ReturnType<Client["createThread"]>>;
+      try {
+        made = await client.createThread({
+          ...(task.cwd ? { cwd: task.cwd } : {}),
+          ...(route ? { model: route.model, ...(route.provider ? { provider: route.provider } : {}) } : {}),
+          name,
+          automatic: true,
+        });
+      } catch (error) {
+        check();
+        throw error;
+      }
+      check();
       threadId = made?.thread?.id;
       if (typeof threadId !== "string") throw new Error("Elpis did not start a chat for it");
       if (task.target === "reuse") task.threadId = threadId;
@@ -245,12 +270,13 @@ export function createSchedule({
 
   /** Runs a task once and records it, with its error if it failed; runs that came due meanwhile are one run. */
   function run(task: Task, scheduledFor: number | null) {
+    const revision = revisions.get(task) ?? 0;
     const work = (async () => {
       const record: Run = { at: now(), scheduledFor, threadId: null, error: null };
       try {
-        record.threadId = await deliver(task);
+        record.threadId = await deliver(task, revision);
       } catch (error) {
-        if (error === STOPPED) return shown(task);
+        if (error === STOPPED || error === CANCELLED) return shown(task);
         record.error = error instanceof Error ? error.message : String(error);
         // The kept chat was deleted: the next run starts a new one.
         if (task.target === "reuse" && /not found|no longer exists|unknown thread/i.test(record.error))
@@ -258,7 +284,7 @@ export function createSchedule({
       }
       task.runs = [record, ...(task.runs ?? [])].slice(0, RUN_LIMIT);
       task.lastRunAt = record.at;
-      if (scheduledFor != null) {
+      if (scheduledFor != null && (revisions.get(task) ?? 0) === revision) {
         task.nextRunAt = nextRun(task.rule, Math.max(now(), scheduledFor));
         if (task.nextRunAt == null) task.status = "ended";
       }
@@ -387,6 +413,10 @@ export function createSchedule({
       if (value.target && value.target !== task.target) task.threadId = null;
       if (value.workflow && !value.workflow.board) value.workflow.board = task.workflow?.board;
       await saveable({ ...task, ...value }, value);
+      if (value.status === "paused") {
+        revisions.set(task, (revisions.get(task) ?? 0) + 1);
+        cancelWorkflow?.(id);
+      }
       Object.assign(task, value, { updatedAt: now() });
       // An ended task given a new rule runs again; the next run counts from now.
       if (value.rule && task.status === "ended") task.status = "active";
@@ -398,7 +428,9 @@ export function createSchedule({
     },
     async remove(id: string) {
       await loaded;
-      find(id);
+      const task = find(id);
+      revisions.set(task, (revisions.get(task) ?? 0) + 1);
+      cancelWorkflow?.(id);
       tasks = tasks.filter(task => task.id !== id);
       await save();
       arm();

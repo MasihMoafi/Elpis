@@ -6,6 +6,7 @@ import os from "node:os";
 import { execFileSync } from "node:child_process";
 import { createExperimentLab } from "./experiment-lab.mts";
 import { startDesktopServer } from "./server.mts";
+import { MotherAgent } from "./router/mother-agent.mts";
 import { stage, input, Client, fixture, finish, until } from "./experiment-lab.fixtures.mts";
 
 test(
@@ -38,6 +39,9 @@ test(
       trashFile: path.join(dir, "trash.json"),
       loveSpot: { directory: path.join(dir, "drawing"), screenshots: path.join(dir, "screenshots") },
     });
+    const originalMotherBusy = MotherAgent.prototype.busy;
+    let motherBusy = false;
+    MotherAgent.prototype.busy = () => motherBusy;
     let starting;
     try {
       const url = new URL(app.url),
@@ -58,6 +62,10 @@ test(
       // 24 Oct: chats run in the background service, which outlives the window; a running chat no longer blocks the update.
       client.listThreads = async () => ({ data: [{ id: "busy-chat", status: { type: "active" } }], nextCursor: null });
       assert.equal(await app.canRestart(), true, "a running chat keeps running across the restart");
+      motherBusy = true;
+      assert.equal(await app.canRestart(), false, "Mother's held work prevents the bridge from closing");
+      motherBusy = false;
+      assert.equal(await app.canRestart(), true, "completed Mother work permits restart");
       starting = post({ ...input(), repetitions: 1 });
       await admitting;
       assert.equal(await app.canRestart(), false, "Lab is admitting a run before any model thread exists");
@@ -75,6 +83,7 @@ test(
       release();
       await starting?.catch(() => {});
       await app.close();
+      MotherAgent.prototype.busy = originalMotherBusy;
       execFileSync("gio", ["trash", dir]);
     }
   },

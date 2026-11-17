@@ -149,6 +149,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
         file: automationsFile,
         dispatchWorkflow: (job: object) =>
           workflowDispatcher.dispatch(job as import("./server-workflows.mts").ScheduledWorkflowJob),
+        cancelWorkflow: (taskId: string) => workflowDispatcher.cancel(taskId),
       })
     : null;
   /** @type {Set<import('node:http').ServerResponse>} */
@@ -336,6 +337,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
           loveAgents.busy() ||
           experimentLab.busy() ||
           automations?.busy() ||
+          mother.busy() ||
           client.hasLocalActivity?.()
         ),
       );

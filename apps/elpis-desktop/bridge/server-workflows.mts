@@ -159,7 +159,7 @@ export function createWorkflowDispatcher({
     {
       taskId: string;
       claimed: boolean;
-      settle: (error: string | null, threadId?: string) => void;
+      settle: (error: string | Error | null, threadId?: string) => void;
       timer: ReturnType<typeof setTimeout>;
     }
   >();
@@ -167,12 +167,12 @@ export function createWorkflowDispatcher({
     dispatch(job: ScheduledWorkflowJob): Promise<{ threadId: string }> {
       return new Promise((resolve, reject) => {
         const token = randomUUID();
-        const settle = (error: string | null, threadId?: string) => {
+        const settle = (error: string | Error | null, threadId?: string) => {
           const pending = workflowJobs.get(token);
           if (!pending) return;
           clearTimeout(pending.timer);
           workflowJobs.delete(token);
-          if (error) reject(new Error(error));
+          if (error) reject(error instanceof Error ? error : new Error(error));
           else resolve({ threadId: threadId as string });
         };
         workflowJobs.set(token, {
@@ -210,6 +210,12 @@ export function createWorkflowDispatcher({
       if (typeof fields.threadId === "string") job.settle(null, text(fields.threadId, "chat", 200));
       else job.settle(text(fields.error ?? "The workflow did not start", "error", 2000));
       return { recorded: true };
+    },
+    cancel(taskId: string) {
+      for (const job of workflowJobs.values()) {
+        if (job.taskId === taskId && !job.claimed)
+          job.settle(new DOMException("Automation was paused or deleted before delivery", "AbortError"));
+      }
     },
     close() {
       for (const job of workflowJobs.values()) job.settle("Elpis closed before the workflow started");

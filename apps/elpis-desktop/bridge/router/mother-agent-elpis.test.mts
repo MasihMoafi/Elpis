@@ -10,6 +10,71 @@ import { WebSocketServer } from "ws";
 import { CHAT, panel, fixture, roles } from "./mother-agent.fixtures.mts";
 import { elpisChatRefusal } from "./mother-agent.mts";
 
+test("restart guard follows real router sessions and delivery", async () => {
+  const h = fixture(), mother = h.create();
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    const app = (mother as unknown as { app: import("./app.mts").MotherApp }).app;
+    const sessions = app.workers.sessions, agent = sessions.agents.get(app.masterId)!;
+    assert.equal(mother.busy(), false);
+    agent.state("held-turn");
+    assert.equal(mother.busy(), true, "an active router session prevents restart");
+    agent.state(null);
+    assert.equal(mother.busy(), false, "a completed turn permits restart");
+    sessions.sending.set(app.masterId, Promise.resolve());
+    assert.equal(mother.busy(), true, "an in-flight delivery prevents restart");
+    sessions.sending.delete(app.masterId);
+    assert.equal(mother.busy(), false);
+  } finally {
+    await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true });
+  }
+});
+
+test("restart guard holds through appended message intake", async () => {
+  const h = fixture(), mother = h.create();
+  let releaseRead!: () => void, reachedRead!: () => void;
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    const originalRead = h.client.readThread.bind(h.client), originalAppend = h.client.appendUser.bind(h.client);
+    let armed = false;
+    const held = new Promise<void>(resolve => { releaseRead = resolve; });
+    const reached = new Promise<void>(resolve => { reachedRead = resolve; });
+    h.client.appendUser = async (...args) => { const entry = await originalAppend(...args); armed = true; return entry; };
+    h.client.readThread = async (...args) => { if (armed) { reachedRead(); await held; } return originalRead(...args); };
+    await mother.send(CHAT, { text: "Inspect this project" });
+    await reached;
+    assert.equal(mother.busy(), true, "the accepted message is still waiting for its history read");
+    armed = false; releaseRead();
+    await waitFor(() => assert.ok([...h.workers.threads.values()][0]?.turns.length));
+    assert.equal(mother.busy(), true, "routing remains protected after intake");
+  } finally {
+    releaseRead?.(); await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true });
+  }
+});
+
+test("restart guard holds while resend reads the original message", async () => {
+  const h = fixture(), mother = h.create();
+  let release!: () => void, reached!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const reading = new Promise<void>(resolve => { reached = resolve; });
+  try {
+    await h.client.initialize();
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    const originalRead = h.client.readThread.bind(h.client);
+    h.client.readThread = async (...args) => { reached(); await held; return originalRead(...args); };
+    const resend = mother.resend(CHAT, { beforeTurnId: "missing", text: "Try again" });
+    await reading;
+    assert.equal(mother.busy(), true);
+    release();
+    await assert.rejects(resend, /no longer/);
+    assert.equal(mother.busy(), false);
+  } finally {
+    release(); await mother.close(); h.client.close(); rmSync(h.home, { recursive: true, force: true });
+  }
+});
+
 test("an offline executor remains paused until Elpis is enabled, independently of the saved processing pause", async () => {
   const h = fixture(),
     mother = h.create();
