@@ -149,7 +149,8 @@ test("another window, an iframe and a foreign app origin cannot acknowledge a do
   await new Promise(setImmediate);
   assert.equal(settled, false);
   owner.reply(receipt);
-  assert.equal((await opening).opened, true);
+  const opened = await opening;
+  assert.ok("opened" in opened && opened.opened);
 });
 
 test("a changed chat cannot acknowledge or consume another chat document request", async t => {
