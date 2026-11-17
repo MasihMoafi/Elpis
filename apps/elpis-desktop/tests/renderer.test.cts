@@ -104,8 +104,7 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     const commandDetails = page.locator('.worked-for details.step > summary');
     await commandDetails.first().waitFor();
     assert.equal(await commandDetails.count(), 2);
-    await commandDetails.nth(0).click();
-    await commandDetails.nth(1).click();
+    assert.equal(await page.locator('.worked-for details.step[open]').count(), 2);
     await page.getByText('build passed',{exact:true}).waitFor();
     await page.getByText('build failed',{exact:true}).waitFor();
     // An existing chat opens writable: its own empty draft, followed live through a plain native rejoin.
