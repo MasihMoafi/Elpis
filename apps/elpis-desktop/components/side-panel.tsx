@@ -159,7 +159,7 @@ export function SidePanel({
         if (request.action === "open" && !document.querySelector(".files-pane")?.getClientRects().length)
           throw Error("The document editor is not visible. Open this chat and try again.");
         const doc = snapshot().docs[docKey(current.cwd, file.rel)];
-        if (request.action === "open" && doc?.status !== "ready")
+        if (request.action === "open" && doc?.status !== "ready" && !(request.view === "preview" && doc?.status === "preview"))
           throw Error(doc?.status === "error" ? doc.message : "This file could not be opened for editing.");
         return { unsavedChanges: !!(isDirty(doc) || (doc?.status === "ready" && doc.saving)) };
       }),

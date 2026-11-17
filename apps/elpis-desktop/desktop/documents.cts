@@ -9,7 +9,7 @@ const documentToolsImpl = [
   {
     name: "document_open",
     description:
-      "Open an existing local text file beside this chat. The user edits and saves the real file; unsaved changes are preserved.",
+      "Open an existing local text file beside this chat. Text is editable; Word documents open as read-only text previews. Unsaved changes are preserved.",
     inputSchema: {
       type: "object",
       properties: {
@@ -23,7 +23,7 @@ const documentToolsImpl = [
   {
     name: "document_read",
     description:
-      "Read the exact saved text of a local document shared beside this chat, and report whether its editor has unsaved changes. Never reads an unsaved draft.",
+      "Read saved text, or extracted Word-document text, beside this chat and report whether its editor has unsaved changes. Never reads an unsaved draft.",
     inputSchema: {
       type: "object",
       properties: { path: { type: "string", description: "Absolute local file path." } },
@@ -64,9 +64,9 @@ async function savedDocument(target: string) {
   } catch {
     throw Error("This document must be an existing regular file.");
   }
-  const { readFile } = await import("../bridge/files.mts");
+  const { readFile, MAX_VIEW } = await import("../bridge/files.mts");
   const saved = await readFile(path.dirname(real), path.basename(real));
-  if (saved.tooLarge || saved.preview === "text") throw Error("This document exceeds the text editor size limit.");
+  if (saved.tooLarge || (saved.preview === "text" && saved.format !== "docx")) throw Error("This document exceeds the text editor size limit.");
   if (
     !("content" in saved) ||
     typeof saved.content !== "string" ||
@@ -74,7 +74,16 @@ async function savedDocument(target: string) {
     typeof saved.mtimeMs !== "number"
   )
     throw Error("This document is not a supported UTF-8 text file.");
-  return { path: real, content: saved.content, mtimeMs: saved.mtimeMs };
+  let content = saved.content;
+  if (saved.format === "docx") {
+    for (let page = 1; page < (saved.pages ?? 1); page++) {
+      const next = await readFile(path.dirname(real), path.basename(real), { page, mtimeMs: saved.mtimeMs });
+      if (next.format !== "docx" || typeof next.content !== "string") throw Error("This document changed. Open it again.");
+      content += next.content;
+      if (Buffer.byteLength(content) > MAX_VIEW) throw Error("This document exceeds the document tool's text limit. Open it in Files to read its pages.");
+    }
+  }
+  return { path: real, content, mtimeMs: saved.mtimeMs, ...(saved.format === "docx" ? { readOnly: true as const } : {}) };
 }
 
 function createDocumentsImpl() {
@@ -165,7 +174,7 @@ function createDocumentsImpl() {
           threadId,
           action: name === "document_open" ? "open" : "read",
           path: initial.path,
-          view: args.view ?? "edit",
+          view: initial.readOnly ? "preview" : (args.view ?? "edit"),
         });
       } catch (error) {
         finish(id, error);
@@ -175,7 +184,7 @@ function createDocumentsImpl() {
     const saved = await savedDocument(initial.path);
     if (closed || !matches(entry, threadId)) throw Error("This document chat is closed or no longer shown.");
     return name === "document_open"
-      ? { opened: true, path: saved.path, unsavedChanges: receipt.unsavedChanges, mtimeMs: saved.mtimeMs }
+      ? { opened: true, path: saved.path, unsavedChanges: receipt.unsavedChanges, mtimeMs: saved.mtimeMs, ...(saved.readOnly ? { readOnly: true } : {}) }
       : { ...saved, unsavedChanges: receipt.unsavedChanges };
   }
   return {

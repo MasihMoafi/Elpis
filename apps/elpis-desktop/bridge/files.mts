@@ -4,6 +4,7 @@ import { BridgeError } from "./validate.mts";
 import { projectDirectory, skipped } from "./folders.mts";
 import { ATTACHMENT_LIMITS, imageMime } from "./attachments.mts";
 import { BoundedCache } from "./bounded-cache.mts";
+import { docxPage, docxText } from "./docx.mts";
 
 const MAX_DEPTH = 4;
 const MAX_ENTRIES = 2000;
@@ -40,7 +41,7 @@ export async function listFiles(cwd: unknown) {
 
 // The Files pane (components/files-pane.tsx): a tree of one folder at a time, a viewer and editor of one file, a
 // search of the contents. Every path is checked to lie inside the project folder after links are followed.
-const MAX_VIEW = 512 * 1024;
+export const MAX_VIEW = 512 * 1024;
 const TEXT_PAGE = 32 * 1024;
 const MAX_PREVIEW = ATTACHMENT_LIMITS.fileBytes;
 const MAX_DIRECTORY = 5000;
@@ -142,6 +143,7 @@ export type FileRead = {
   size: number;
   directory?: boolean;
   preview?: "pdf" | "image" | "text";
+  format?: "docx";
   tooLarge?: boolean;
   limit?: number;
   binary?: boolean;
@@ -215,18 +217,27 @@ export async function readFile(
     const info = await handle.stat(),
       preview = previewType(real),
       limit = MAX_PREVIEW;
-    if (preview && info.size > limit) return { path: rel, tooLarge: true, size: info.size, limit };
+    const docx = path.extname(real).toLowerCase() === ".docx";
+    if ((preview || docx) && info.size > limit) return { path: rel, tooLarge: true, size: info.size, limit };
     if (options.mtimeMs !== undefined && options.mtimeMs !== info.mtimeMs)
       throw new BridgeError("This file changed on disk. Reopen it before reading another page.", 409);
+    if (options.line !== undefined && (!Number.isSafeInteger(options.line) || options.line < 1))
+      throw new BridgeError("Invalid file line.");
+    if (options.line !== undefined && options.page !== undefined)
+      throw new BridgeError("Choose a file page or a line.");
+    if (docx) {
+      const text = await docxText(real, info, () => handle.readFile());
+      const after = await handle.stat();
+      if (after.mtimeMs !== info.mtimeMs || after.ctimeMs !== info.ctimeMs || after.size !== info.size)
+        throw new BridgeError("This file changed on disk. Reopen it before reading another page.", 409);
+      return { path: rel, preview: "text", format: "docx", size: info.size, mtimeMs: info.mtimeMs,
+        ...docxPage(text, TEXT_PAGE, options.page, options.line) };
+    }
     const paged = info.size > MAX_VIEW || options.page !== undefined;
     const pages = Math.max(1, Math.ceil(info.size / TEXT_PAGE));
     const requestedPage = options.page ?? 0;
     if (!Number.isSafeInteger(requestedPage) || requestedPage < 0 || requestedPage >= pages)
       throw new BridgeError("Invalid file page.");
-    if (options.line !== undefined && (!Number.isSafeInteger(options.line) || options.line < 1))
-      throw new BridgeError("Invalid file line.");
-    if (options.line !== undefined && options.page !== undefined)
-      throw new BridgeError("Choose a file page or a line.");
     const { page, firstLine } =
       paged && !preview ? await fileRegion(handle, real, info, requestedPage, options.line) : { page: 0, firstLine: 1 };
     const start = paged ? Math.max(0, page * TEXT_PAGE - 3) : 0;
@@ -290,6 +301,7 @@ export async function writeFile(cwd: unknown, target: unknown, content: unknown,
     throw new BridgeError("mtimeMs must be the time the file was read");
   const { real, rel, info } = await inside(cwd, target, "file");
   if (rel.split("/").includes(".git")) throw new BridgeError("Files inside .git cannot be saved.");
+  if (path.extname(real).toLowerCase() === ".docx") throw new BridgeError("Word previews are read-only. Edit the original in your document editor.");
   if (info.mtimeMs !== mtimeMs)
     throw new BridgeError("This file changed on disk after it was opened. Reload it before saving.", 409);
   await fs.writeFile(real, content).catch(() => {

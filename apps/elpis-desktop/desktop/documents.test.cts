@@ -106,6 +106,27 @@ test("read obtains the exact saved Unicode revision after the editor acknowledge
   });
 });
 
+test("Word document tools acknowledge a read-only preview and return every extracted page without modifying it", async t => {
+  const { makeDocx } = await import("../tests/fixtures/docx.mts");
+  const { convertDocx } = await import("../bridge/docx.mts");
+  const f = await fixture(t), window = f.windowFor("chat"), file = path.join(f.root, "قرارداد.docx");
+  const bytes = await makeDocx("# Agreement\n\n" + "متن فارسی — saved.\n\n".repeat(1200) + "Final paragraph.\n");
+  await fs.writeFile(file, bytes);
+  const opening = f.documents.call("chat", "document_open", { path: file });
+  const request = await Promise.race([window.next(), opening.then(() => { throw Error("Opened without acknowledgment"); })]);
+  assert.equal(request.view, "preview");
+  window.reply({ id: request.id, result: { unsavedChanges: false } });
+  const opened = await opening;
+  assert.ok("opened" in opened && opened.opened); assert.equal(opened.readOnly, true);
+  const reading = f.documents.call("chat", "document_read", { path: file });
+  const readRequest = await Promise.race([window.next(1), reading.then(() => { throw Error("Read without acknowledgment"); })]);
+  window.reply({ id: readRequest.id, result: { unsavedChanges: false } });
+  const result = await reading;
+  assert.ok("content" in result); assert.equal(result.content, (await convertDocx(bytes)).toString("utf8"));
+  assert.equal(result.readOnly, true);
+  assert.deepEqual(await fs.readFile(file), bytes);
+});
+
 test("another window, an iframe and a foreign app origin cannot acknowledge a document", async t => {
   const f = await fixture(t),
     owner = f.windowFor("chat"),

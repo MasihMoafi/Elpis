@@ -52,6 +52,7 @@ export const productionFiles = [
   "desktop/browser-agent.cts",
   "desktop/browser-identity.cts",
   "desktop/documents.cts",
+  "bridge/docx.mts",
   "desktop/main-error-guard.cts",
   "desktop/output-errors.cts",
   "desktop/screen-capture.cts",

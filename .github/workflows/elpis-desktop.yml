@@ -115,7 +115,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/elpis-ui" --no-save --ignore-scripts --no-audit --no-fund playwright-core@1.62.1
           test -x /usr/bin/google-chrome
           # The browser-tab test types and clicks as the person, through X input.
-          sudo apt-get install -y --no-install-recommends xdotool || { sudo apt-get update && sudo apt-get install -y --no-install-recommends xdotool; }
+          sudo apt-get install -y --no-install-recommends xdotool pandoc || { sudo apt-get update && sudo apt-get install -y --no-install-recommends xdotool pandoc; }
       - name: Verify the exact renderer against retained and current UI regressions
         env:
           ELPIS_PLAYWRIGHT_PACKAGE: ${{ runner.temp }}/elpis-ui/node_modules/playwright-core
@@ -216,7 +216,7 @@ jobs:
       - name: Install PDF text and audio tools the attachment and transcription tests use
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends poppler-utils ffmpeg
+          sudo apt-get install -y --no-install-recommends poppler-utils ffmpeg pandoc
       - name: Run the gate (${{ matrix.tiers }})
         run: node scripts/test-gate.mts ${{ matrix.tiers }}
       - if: ${{ !cancelled() }}
