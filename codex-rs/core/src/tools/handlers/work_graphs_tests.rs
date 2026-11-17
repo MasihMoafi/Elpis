@@ -442,8 +442,8 @@ fn repository_paths_cannot_escape() {
     assert!(err.to_string().contains("invalid repository-relative path"));
 }
 
-#[test]
-fn engine_snapshot_identifies_modified_created_and_deleted_files() {
+#[tokio::test]
+async fn engine_snapshot_identifies_modified_created_and_deleted_files() {
     let workspace = tempfile::tempdir().expect("workspace");
     std::fs::create_dir(workspace.path().join("src")).expect("scope");
     std::fs::write(workspace.path().join("src/modified.rs"), "before").expect("seed modified");
@@ -468,13 +468,13 @@ fn engine_snapshot_identifies_modified_created_and_deleted_files() {
         "repo",
     );
     task.workspace_path = Some(workspace.path().display().to_string());
-    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    let baseline = snapshot_task_scopes(&task).await.expect("baseline");
 
     std::fs::write(workspace.path().join("src/modified.rs"), "after").expect("modify");
     std::fs::write(workspace.path().join("src/created.rs"), "new").expect("create");
     std::fs::remove_file(workspace.path().join("src/deleted.rs")).expect("delete");
 
-    let current = snapshot_task_scopes(&task).expect("current");
+    let current = snapshot_task_scopes(&task).await.expect("current");
     assert_eq!(
         changed_paths(&baseline, &current).expect("changed paths"),
         BTreeSet::from([
@@ -485,8 +485,8 @@ fn engine_snapshot_identifies_modified_created_and_deleted_files() {
     );
 }
 
-#[test]
-fn engine_snapshot_measures_changes_outside_write_scopes() {
+#[tokio::test]
+async fn engine_snapshot_measures_changes_outside_write_scopes() {
     let workspace = tempfile::tempdir().expect("workspace");
     std::fs::create_dir(workspace.path().join("src")).expect("scope");
     let mut task = task(
@@ -498,9 +498,9 @@ fn engine_snapshot_measures_changes_outside_write_scopes() {
         "repo",
     );
     task.workspace_path = Some(workspace.path().display().to_string());
-    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    let baseline = snapshot_task_scopes(&task).await.expect("baseline");
     std::fs::write(workspace.path().join("outside.txt"), "outside").expect("outside change");
-    let current = snapshot_task_scopes(&task).expect("current");
+    let current = snapshot_task_scopes(&task).await.expect("current");
     assert_eq!(
         changed_paths(&baseline, &current).expect("changes"),
         BTreeSet::from(["outside.txt".to_string()])
@@ -518,6 +518,7 @@ fn engine_snapshot_refuses_oversized_files_before_hashing() {
         root.path(),
         &mut files,
         &mut SnapshotBudget::new(),
+        0,
     )
     .expect_err("large workspace must fail closed");
     assert!(error.to_string().contains("exceeds 256 MiB"));
@@ -531,8 +532,14 @@ fn engine_snapshot_bounds_directory_traversal() {
     std::fs::write(root.path().join("nested/file"), "contents").expect("file");
     let mut budget = SnapshotBudget::new();
     budget.entries_left = 1;
-    let error = snapshot_path(root.path(), root.path(), &mut BTreeMap::new(), &mut budget)
-        .expect_err("directory traversal must be bounded");
+    let error = snapshot_path(
+        root.path(),
+        root.path(),
+        &mut BTreeMap::new(),
+        &mut budget,
+        0,
+    )
+    .expect_err("directory traversal must be bounded");
     assert!(error.to_string().contains("too many entries"));
 }
 
@@ -541,13 +548,19 @@ fn engine_snapshot_refuses_expired_budget() {
     let root = tempfile::tempdir().expect("workspace");
     let mut budget = SnapshotBudget::new();
     budget.deadline = Instant::now();
-    let error = snapshot_path(root.path(), root.path(), &mut BTreeMap::new(), &mut budget)
-        .expect_err("elapsed budget must not produce a partial baseline");
+    let error = snapshot_path(
+        root.path(),
+        root.path(),
+        &mut BTreeMap::new(),
+        &mut budget,
+        0,
+    )
+    .expect_err("elapsed budget must not produce a partial baseline");
     assert!(error.to_string().contains("exceeded five seconds"));
 }
 
-#[test]
-fn engine_snapshot_does_not_count_git_ignored_files() {
+#[tokio::test]
+async fn engine_snapshot_does_not_count_git_ignored_files() {
     let workspace = tempfile::tempdir().expect("workspace");
     let output = std::process::Command::new("git")
         .args(["init", "-q"])
@@ -567,7 +580,7 @@ fn engine_snapshot_does_not_count_git_ignored_files() {
         "repo",
     );
     task.workspace_path = Some(workspace.path().display().to_string());
-    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    let baseline = snapshot_task_scopes(&task).await.expect("baseline");
     assert!(baseline.get("src/__pycache__/old.pyc").is_none());
     assert!(
         baseline
@@ -580,7 +593,7 @@ fn engine_snapshot_does_not_count_git_ignored_files() {
         .expect("modify cache");
     std::fs::write(workspace.path().join("src/__pycache__/new.pyc"), "new").expect("create cache");
     std::fs::write(workspace.path().join("src/calc.py"), "source").expect("source change");
-    let current = snapshot_task_scopes(&task).expect("current");
+    let current = snapshot_task_scopes(&task).await.expect("current");
     assert_eq!(
         changed_paths(&baseline, &current).expect("changes"),
         BTreeSet::from(["src/calc.py".to_string()])
@@ -588,7 +601,91 @@ fn engine_snapshot_does_not_count_git_ignored_files() {
 }
 
 #[test]
-fn engine_snapshot_uses_paths_relative_to_selected_workspace() {
+fn engine_snapshot_limits_total_bytes_across_files() {
+    let root = tempfile::tempdir().expect("workspace");
+    for name in ["first", "second"] {
+        std::fs::write(root.path().join(name), "12345").expect("file");
+    }
+    let mut budget = SnapshotBudget::new();
+    budget.bytes_left = 8;
+    let error = snapshot_path(
+        root.path(),
+        root.path(),
+        &mut BTreeMap::new(),
+        &mut budget,
+        0,
+    )
+    .expect_err("several small files must share the budget");
+    assert!(error.to_string().contains("exceeds 256 MiB"));
+}
+
+#[test]
+fn engine_snapshot_bounds_directory_depth() {
+    let root = tempfile::tempdir().expect("workspace");
+    let mut nested = root.path().to_path_buf();
+    for _ in 0..65 {
+        nested.push("d");
+        std::fs::create_dir(&nested).expect("nested directory");
+    }
+    let error = snapshot_path(
+        root.path(),
+        root.path(),
+        &mut BTreeMap::new(),
+        &mut SnapshotBudget::new(),
+        0,
+    )
+    .expect_err("deep traversal must fail without exhausting the stack");
+    assert!(error.to_string().contains("nesting exceeds 64"));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn engine_snapshot_times_out_and_reaps_stalled_enumeration() {
+    let child = tokio::process::Command::new("sh")
+        .args(["-c", "exec sleep 30"])
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("child");
+    let pid = child.id().expect("child id");
+    let started = Instant::now();
+    let error = snapshot_command_output(child, started + Duration::from_millis(100), 16)
+        .await
+        .expect_err("stalled output must time out");
+    assert!(error.to_string().contains("enumeration exceeded"));
+    assert!(started.elapsed() < Duration::from_secs(5));
+    let status = std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .expect("check process");
+    assert!(!status.success(), "timed-out enumeration must be reaped");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn engine_snapshot_bounds_enumeration_output() {
+    let child = tokio::process::Command::new("sh")
+        .args(["-c", "printf '0123456789'; exec sleep 30"])
+        .stdout(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("child");
+    let pid = child.id().expect("child id");
+    let error = snapshot_command_output(child, Instant::now() + Duration::from_secs(5), 8)
+        .await
+        .expect_err("excess output must not grow the capture indefinitely");
+    assert!(error.to_string().contains("file list exceeds 8 bytes"));
+    let status = std::process::Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
+        .status()
+        .expect("check process");
+    assert!(!status.success(), "oversized enumeration must be reaped");
+}
+
+#[tokio::test]
+async fn engine_snapshot_uses_paths_relative_to_selected_workspace() {
     let repo = tempfile::tempdir().expect("repo");
     let workspace = repo.path().join("app");
     std::fs::create_dir_all(workspace.join("src")).expect("scope");
@@ -614,7 +711,7 @@ fn engine_snapshot_uses_paths_relative_to_selected_workspace() {
         "repo",
     );
     task.workspace_path = Some(workspace.display().to_string());
-    let baseline = snapshot_task_scopes(&task).expect("baseline");
+    let baseline = snapshot_task_scopes(&task).await.expect("baseline");
     assert_eq!(
         baseline
             .as_object()
@@ -625,7 +722,7 @@ fn engine_snapshot_uses_paths_relative_to_selected_workspace() {
         vec!["src/calc.py"]
     );
     std::fs::write(workspace.join("src/calc.py"), "after").expect("modify source");
-    let current = snapshot_task_scopes(&task).expect("current");
+    let current = snapshot_task_scopes(&task).await.expect("current");
     assert_eq!(
         changed_paths(&baseline, &current).expect("changes"),
         BTreeSet::from(["src/calc.py".to_string()])

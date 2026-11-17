@@ -55,7 +55,9 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::io::AsyncReadExt;
 use tokio::time::Duration;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
@@ -513,7 +515,7 @@ async fn report_work_task(
                 task.task_id
             ))
         })?;
-        let current = snapshot_task_scopes(task).map_err(|err| {
+        let current = snapshot_task_scopes(task).await.map_err(|err| {
             FunctionCallError::Fatal(format!(
                 "failed to measure changed files for task `{}`: {err}",
                 task.task_id
@@ -985,7 +987,7 @@ async fn run_scheduler(
                 .with_current_permissions(Arc::clone(&step_context))
                 .await
                 .map(|step| step.inherited_permissions());
-            let setup = (|| {
+            let setup = async {
                 let prompt = build_worker_prompt(&task, tasks.as_slice())?;
                 let mut environments = task_environment_selection(
                     options.environments.as_slice(),
@@ -1012,13 +1014,14 @@ async fn run_scheduler(
                     .apply_to(&mut base_config)
                     .map_err(anyhow::Error::msg)?;
                 let spawn_config = scoped_spawn_config(&base_config, &task, &environments[0])?;
-                let baseline = task
-                    .kind
-                    .is_writable()
-                    .then(|| snapshot_task_scopes(&task))
-                    .transpose()?;
+                let baseline = if task.kind.is_writable() {
+                    Some(snapshot_task_scopes(&task).await?)
+                } else {
+                    None
+                };
                 Ok::<_, anyhow::Error>((prompt, environments, spawn_config, baseline))
-            })();
+            }
+            .await;
             let (prompt, environments, spawn_config, baseline) = match setup {
                 Ok(setup) => setup,
                 Err(err) => {
@@ -1632,7 +1635,7 @@ impl SnapshotBudget {
     }
 }
 
-fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Value> {
+async fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Value> {
     let workspace = task
         .workspace_path
         .as_deref()
@@ -1642,8 +1645,10 @@ fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Val
     let mut budget = SnapshotBudget::new();
     // Measure the workspace, including paths outside the scopes. Git enumerates
     // tracked and untracked files without ignored output or repository metadata.
-    let output = std::process::Command::new("git")
+    let child = tokio::process::Command::new("git")
         .args([
+            "-c",
+            "core.fsmonitor=false",
             "ls-files",
             "--cached",
             "--others",
@@ -1653,26 +1658,63 @@ fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Val
             ".",
         ])
         .current_dir(root)
-        .output()?;
-    if output.status.success() {
-        for path in output
-            .stdout
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .spawn()?;
+    let (status, paths) = snapshot_command_output(child, budget.deadline, 16 * 1024 * 1024).await?;
+    if status.success() {
+        for path in paths
             .split(|byte| *byte == 0)
             .filter(|path| !path.is_empty())
         {
             let path = std::str::from_utf8(path)?;
-            snapshot_path(root, &root.join(path), &mut files, &mut budget)?;
+            snapshot_path(root, &root.join(path), &mut files, &mut budget, 0)?;
         }
     } else if root.ancestors().any(|path| path.join(".git").exists()) {
-        bail!(
-            "failed to enumerate workspace files: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        bail!("failed to enumerate workspace files with Git ({status})");
     } else {
-        snapshot_path(root, root, &mut files, &mut budget)?;
+        snapshot_path(root, root, &mut files, &mut budget, 0)?;
     }
     budget.check_time()?;
     Ok(serde_json::to_value(files)?)
+}
+
+async fn snapshot_command_output(
+    mut child: tokio::process::Child,
+    deadline: Instant,
+    max_output: usize,
+) -> anyhow::Result<(std::process::ExitStatus, Vec<u8>)> {
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| anyhow!("missing Git stdout"))?;
+    let result = tokio::time::timeout_at(deadline, async {
+        let mut paths = Vec::new();
+        stdout
+            .take(max_output as u64 + 1)
+            .read_to_end(&mut paths)
+            .await?;
+        if paths.len() > max_output {
+            bail!(
+                "workspace file list exceeds {max_output} bytes; select a smaller project workspace"
+            );
+        }
+        let status = child.wait().await?;
+        Ok::<_, anyhow::Error>((status, paths))
+    })
+    .await
+    .unwrap_or_else(|_| {
+        Err(anyhow!(
+            "workspace Git enumeration exceeded five seconds; select a smaller project workspace"
+        ))
+    });
+    if result.is_err() {
+        // Explicitly reap on failure; kill_on_drop also covers caller cancellation.
+        let _ = child.kill().await;
+    }
+    result
 }
 
 fn snapshot_path(
@@ -1680,8 +1722,12 @@ fn snapshot_path(
     path: &Path,
     files: &mut BTreeMap<String, String>,
     budget: &mut SnapshotBudget,
+    depth: usize,
 ) -> anyhow::Result<()> {
     budget.visit()?;
+    if depth > 64 {
+        bail!("workspace directory nesting exceeds 64 levels; select a smaller project workspace");
+    }
     if path.file_name().is_some_and(|name| name == ".git") {
         return Ok(());
     }
@@ -1692,7 +1738,7 @@ fn snapshot_path(
     };
     if metadata.is_dir() {
         for entry in std::fs::read_dir(path)? {
-            snapshot_path(root, &entry?.path(), files, budget)?;
+            snapshot_path(root, &entry?.path(), files, budget, depth + 1)?;
         }
         return Ok(());
     }
@@ -1714,7 +1760,7 @@ fn snapshot_path(
         }
         let mut hasher = Sha256::new();
         let mut file = std::fs::File::open(path)?;
-        let mut buffer = [0_u8; 64 * 1024];
+        let mut buffer = [0_u8; 8 * 1024];
         loop {
             let count = file.read(&mut buffer)?;
             if count == 0 {
