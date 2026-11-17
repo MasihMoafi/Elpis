@@ -48,6 +48,53 @@ fn cursor_to_anchor_preserves_recency_tie_breaker() {
     );
 }
 
+#[tokio::test]
+async fn list_threads_db_keeps_missing_paginated_metadata_for_search() -> anyhow::Result<()> {
+    let root = TempDir::new()?;
+    let sqlite = codex_state::SqliteConfig::new_for_testing(root.path().abs());
+    let runtime =
+        codex_state::StateRuntime::init(sqlite.clone(), "test-provider".to_string()).await?;
+    let thread_id = ThreadId::new();
+    let mut builder = ThreadMetadataBuilder::new(
+        thread_id,
+        root.path()
+            .join(format!("rollout-2026-01-01T00-00-00-{thread_id}.jsonl")),
+        Utc::now(),
+        SessionSource::Cli,
+    );
+    builder.history_mode = ThreadHistoryMode::Paginated;
+    let mut metadata = builder.build("test-provider");
+    metadata.name = Some("Adjust Odoo clock".to_string());
+    metadata.preview = Some("saved preview".to_string());
+    runtime.upsert_thread(&metadata).await?;
+    let page = list_threads_db(
+        Some(runtime.as_ref()),
+        &sqlite,
+        10,
+        None,
+        ThreadSortKey::CreatedAt,
+        SortDirection::Desc,
+        &[],
+        None,
+        None,
+        None,
+        false,
+        None,
+        None,
+        Some("odoo"),
+    )
+    .await
+    .expect("state list");
+    assert_eq!(page.items.len(), 1);
+    assert_eq!(page.items[0].id, thread_id);
+    let retained = runtime
+        .get_thread(thread_id)
+        .await?
+        .expect("metadata retained");
+    assert_eq!(retained.rollout_path, metadata.rollout_path);
+    Ok(())
+}
+
 /// A runtime for another SQLite home must not be queried or clean up rows when
 /// a caller supplies a mismatched configuration.
 #[tokio::test]

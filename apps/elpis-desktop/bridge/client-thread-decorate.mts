@@ -105,6 +105,7 @@ export type DecoratedInput = {
   source?: ThreadSource | undefined;
   status?: { type?: string } | undefined;
   canAcceptDirectInput?: boolean | null | undefined;
+  extra?: { missingSourceRollout?: boolean | null } | null | undefined;
   workflowTaskTitle?: string | undefined;
   [key: string]: unknown;
 };
@@ -219,6 +220,7 @@ export function internal_decorate<T>(this: DesktopClient, clientState: ClientSta
     thread.parentThreadId ??= recorded.rootThreadId;
   }
   const background = isAgentRun(thread);
+  const missingSource = thread.extra?.missingSourceRollout === true;
   const parentOwned =
     background ||
     thread.canAcceptDirectInput === false ||
@@ -227,10 +229,12 @@ export function internal_decorate<T>(this: DesktopClient, clientState: ClientSta
   return {
     ...thread,
     desktopAccess: {
-      writable: !parentOwned,
-      mode: parentOwned ? "continue" : "direct",
-      canContinue: parentOwned && ["idle", "notLoaded"].includes(thread.status?.type as string),
-      reason: parentOwned ? AGENT_RUN_NOTICE : null,
+      writable: !missingSource && !parentOwned,
+      mode: missingSource ? "unavailable" : parentOwned ? "continue" : "direct",
+      canContinue: !missingSource && parentOwned && ["idle", "notLoaded"].includes(thread.status?.type as string),
+      reason: missingSource
+        ? "This chat’s source file is missing. Retained messages are read-only and may have gaps, including recent messages. Restore the source file to continue this chat."
+        : parentOwned ? AGENT_RUN_NOTICE : null,
     },
   };
 }

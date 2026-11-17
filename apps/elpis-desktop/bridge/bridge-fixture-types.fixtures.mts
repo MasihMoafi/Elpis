@@ -19,6 +19,7 @@ export type FixtureThread = {
   parentThreadId?: string | null;
   forkedFromId?: string;
   canAcceptDirectInput?: boolean;
+  extra?: { missingSourceRollout?: boolean };
   collaborationMode?: { mode: string; settings?: object };
   reasoningEffort?: string;
 };

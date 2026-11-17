@@ -71,6 +71,7 @@ type ItemPage = {
   }[];
   nextCursor?: string | null;
   backwardsCursor?: string | null;
+  earliestHistoryMissing?: boolean;
 };
 export type RpcResponses = {
   "smartPrune/log/list": SmartPruneLogListResponse;
@@ -246,6 +247,7 @@ const thread = z.looseObject({
   archived: z.boolean().optional(),
   workflowTaskTitle: text.optional(),
   canAcceptDirectInput: z.boolean().nullish(),
+  extra: z.looseObject({ missingSourceRollout: z.boolean().nullish() }).nullish(),
 });
 const threadResponse = z.looseObject({
   thread,

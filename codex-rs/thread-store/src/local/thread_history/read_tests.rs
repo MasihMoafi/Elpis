@@ -791,6 +791,98 @@ INSERT INTO thread_realtime_items (
 }
 
 #[tokio::test]
+async fn missing_source_recovers_only_selected_projected_items() {
+    let (home, store, thread_id) = store_with_mode(ThreadHistoryMode::Paginated).await;
+    let db = history_db(&store).await;
+    insert_item(db, thread_id, "turn-1", "item-1", 11).await;
+    insert_item(db, thread_id, "turn-1", "item-2", 12).await;
+    insert_item(db, thread_id, "turn-1", "item-3", 13).await;
+    sqlx::query("INSERT INTO thread_history_projection_state (thread_id, next_rollout_byte_offset, next_rollout_ordinal) VALUES (?, 100, 14)")
+        .bind(thread_id.to_string()).execute(db).await.expect("projection state");
+    let params = || item_params(thread_id, None, None, 2, SortDirection::Desc);
+    let intact = store.list_items(params()).await.expect("intact source");
+    assert!(!intact.earliest_history_missing);
+    assert_eq!(item_ids(&intact), vec!["item-3", "item-2"]);
+
+    fs::remove_file(rollout_path(home.path(), thread_id)).expect("remove fixture source");
+    let recovered = store.list_items(params()).await.expect("retained segment");
+    assert!(recovered.earliest_history_missing);
+    assert_eq!(item_ids(&recovered), vec!["item-3", "item-2"]);
+    let first_cursor = recovered.next_cursor.clone().expect("next page cursor");
+    let second_page = store
+        .list_items(item_params(
+            thread_id,
+            None,
+            recovered.next_cursor,
+            2,
+            SortDirection::Desc,
+        ))
+        .await
+        .expect("second retained page");
+    assert!(second_page.earliest_history_missing);
+    assert_eq!(item_ids(&second_page), vec!["item-1"]);
+
+    let state = store.state_db().await.expect("state database");
+    let mut metadata = state
+        .get_thread(thread_id)
+        .await
+        .expect("read metadata")
+        .expect("metadata");
+    let replacement_id = ThreadId::default();
+    metadata.rollout_path = rollout_path(home.path(), replacement_id);
+    state
+        .upsert_thread(&metadata)
+        .await
+        .expect("select replacement");
+    assert!(
+        store.list_items(params()).await.is_err(),
+        "old projection must not stand in for selected replacement"
+    );
+
+    insert_item(db, replacement_id, "turn-2", "replacement-1", 21).await;
+    insert_item(db, replacement_id, "turn-2", "replacement-2", 22).await;
+    sqlx::query("INSERT INTO thread_history_projection_state (thread_id, next_rollout_byte_offset, next_rollout_ordinal) VALUES (?, 100, 23)")
+        .bind(replacement_id.to_string()).execute(db).await.expect("replacement projection state");
+    let replacement = store
+        .list_items(params())
+        .await
+        .expect("selected replacement segment");
+    assert!(replacement.earliest_history_missing);
+    assert_eq!(
+        item_ids(&replacement),
+        vec!["replacement-2", "replacement-1"]
+    );
+    assert!(
+        store
+            .list_items(item_params(
+                thread_id,
+                None,
+                Some(first_cursor),
+                2,
+                SortDirection::Desc
+            ))
+            .await
+            .is_err(),
+        "recovered cursor must not cross selected rollout changes"
+    );
+
+    metadata.rollout_path = rollout_path(home.path(), thread_id);
+    state
+        .upsert_thread(&metadata)
+        .await
+        .expect("restore selection");
+    sqlx::query("DELETE FROM thread_history_projection_state WHERE thread_id = ?")
+        .bind(thread_id.to_string())
+        .execute(db)
+        .await
+        .expect("remove projection evidence");
+    assert!(
+        store.list_items(params()).await.is_err(),
+        "items without projection state are not recovery evidence"
+    );
+}
+
+#[tokio::test]
 async fn list_items_reads_what_remains_when_an_earlier_rollout_is_gone() {
     // His rust-obsidian chat (24 Oct): the chat's rollout continues one that was deleted. Its items
     // still list, and every page says the earliest part is missing.

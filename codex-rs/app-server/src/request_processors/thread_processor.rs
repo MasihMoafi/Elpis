@@ -3190,6 +3190,18 @@ impl ThreadRequestProcessor {
             thread_status,
             has_live_in_progress_turn,
         );
+        // A projected segment can be read without its rollout, but it cannot be
+        // safely resumed without the missing session metadata and lineage.
+        if loaded_thread.is_none()
+            && matches!(thread.history_mode, ApiThreadHistoryMode::Paginated)
+            && let Some(path) = thread.path.as_ref()
+            && codex_rollout::existing_rollout_path(path).await.is_none()
+        {
+            thread.can_accept_direct_input = Some(false);
+            thread.extra = Some(codex_app_server_protocol::ThreadExtra {
+                missing_source_rollout: true,
+            });
+        }
         Ok(thread)
     }
 
@@ -4015,6 +4027,24 @@ impl ThreadRequestProcessor {
             }
         };
         let (thread_history, resume_source_thread) = resume_result?;
+        // An explicit path must not bypass the selected missing paginated rollout.
+        // Supplied raw history takes the separate Forked path with a new identity.
+        if let InitialHistory::Resumed(resumed) = &thread_history
+            && let Some(stored) = self
+                .read_stored_thread_for_read(
+                    resumed.conversation_id,
+                    /*include_history*/ false,
+                )
+                .await
+                .map_err(thread_read_view_error)?
+            && matches!(stored.history_mode, ThreadHistoryMode::Paginated)
+            && let Some(path) = stored.rollout_path.as_ref()
+            && codex_rollout::existing_rollout_path(path).await.is_none()
+        {
+            return Err(invalid_request(
+                "the selected thread history source is missing; retained items are read-only",
+            ));
+        }
         // Path-based resume can use an empty request thread ID. Coordinate once its real
         // identity is known; unrelated loaded threads never wait for this cold startup.
         let _goal_resume_guard = if let InitialHistory::Resumed(resumed) = &thread_history {

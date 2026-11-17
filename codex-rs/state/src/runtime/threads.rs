@@ -1493,13 +1493,15 @@ fn push_thread_filters_with_preview<'a>(
         None => {}
     }
     if let Some(search_term) = search_term {
-        builder.push(" AND (instr(COALESCE(threads.name, ''), ");
+        builder.push(" AND (instr(lower(COALESCE(threads.name, '')), lower(");
         builder.push_bind(search_term);
-        builder.push(") > 0 OR instr(threads.title, ");
+        builder.push(")) > 0 OR instr(lower(threads.title), lower(");
         builder.push_bind(search_term);
-        builder.push(") > 0 OR instr(threads.preview, ");
+        builder.push(")) > 0 OR instr(lower(threads.preview), lower(");
         builder.push_bind(search_term);
-        builder.push(") > 0)");
+        builder.push(")) > 0 OR instr(lower(COALESCE(threads.first_user_message, '')), lower(");
+        builder.push_bind(search_term);
+        builder.push(")) > 0)");
     }
     if let Some(anchor) = anchor {
         let anchor_ts = datetime_to_epoch_millis(anchor.ts);
@@ -2139,6 +2141,51 @@ mod tests {
             .await?;
         assert!(logs.is_empty());
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn list_threads_searches_name_and_first_message_without_ascii_case() {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(
+            crate::SqliteConfig::new_for_testing(codex_home.as_path().abs()),
+            "test-provider".to_string(),
+        )
+        .await
+        .expect("state db");
+        let thread_id = ThreadId::default();
+        let mut metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        metadata.name = Some("Adjust Odoo clock".to_string());
+        metadata.preview = Some("visible preview".to_string());
+        metadata.first_user_message = Some("Distinct Message".to_string());
+        runtime
+            .upsert_thread(&metadata)
+            .await
+            .expect("insert metadata");
+        for (term, expected) in [("odoo", true), ("MESSAGE", true), ("absent", false)] {
+            let page = runtime
+                .list_threads(
+                    10,
+                    ThreadFilterOptions {
+                        archived_only: false,
+                        allowed_sources: &[],
+                        model_providers: None,
+                        cwd_filters: None,
+                        section: None,
+                        project_id: None,
+                        anchor: None,
+                        sort_key: SortKey::CreatedAt,
+                        sort_direction: SortDirection::Desc,
+                        search_term: Some(term),
+                    },
+                )
+                .await
+                .expect("search");
+            assert_eq!(
+                page.items.iter().any(|item| item.id == thread_id),
+                expected,
+                "{term}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -602,7 +602,9 @@ jobs:
             recompute_token_usage record_initial_history_seeds_token_info_from_rollout
           # A chat whose earlier rollout is gone still opens (24 Oct, his rust-obsidian chat).
           cargo test --profile dev-small --locked -p codex-thread-store --lib -- \
-            rollout_lineage model_context list_items_reads_what_remains list_items_pages_whole_thread
+            rollout_lineage model_context list_items_reads_what_remains list_items_pages_whole_thread missing_source_recovers
+          cargo test --profile dev-small --locked -p codex-rollout --lib -- list_threads_db_keeps_missing_paginated_metadata_for_search
+          cargo test --profile dev-small --locked -p codex-state --lib -- list_threads_searches_name_and_first_message_without_ascii_case
           # Its history pages say the earliest part is missing (the desktop's note).
           cargo test --profile dev-small --locked -p codex-app-server-protocol --lib -- thread_items_list_round_trips
       - name: Context and session integration tests
@@ -618,7 +620,7 @@ jobs:
             deferred_executor_loads_agents_md_when_environment_becomes_ready \
             auto_compact_accounts_for_encrypted_reasoning 2>&1 | tee "$RUNNER_TEMP/elpis-integration-checks.log"
           cargo test --profile dev-small --locked -p codex-app-server --test all -- \
-            elpis_instructions_read turn_settings_update smart_prune_log thread_read_paginated_carrier_persists_before_first_turn \
+            elpis_instructions_read turn_settings_update smart_prune_log thread_missing_source thread_read_paginated_carrier_persists_before_first_turn \
             thread_register_copied_codex_rollout_lists_reads_resumes_and_forks_idempotently \
             thread_register_rejects_external_and_malformed_rollouts \
             list_models_refresh \

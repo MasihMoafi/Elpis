@@ -466,6 +466,12 @@ pub async fn list_threads_db(
                     item.rollout_path.display()
                 );
                 warn!("state db discrepancy during list_threads_db: stale_db_path_retained");
+                // Paginated metadata can still describe projected history even when the
+                // selected rollout is gone. Keep it discoverable; readers determine whether
+                // any matching projection survives and whether input is allowed.
+                if item.history_mode == ThreadHistoryMode::Paginated {
+                    items.push(item);
+                }
             }
         }
 

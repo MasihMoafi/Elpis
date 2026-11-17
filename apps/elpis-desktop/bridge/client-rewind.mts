@@ -395,7 +395,10 @@ export async function internal_current(this: DesktopClient, clientState: ClientS
   await internal_attach.call(this, clientState, id);
   const { thread } = await internal_rpc(this, clientState, "thread/read", { threadId: id, includeTurns: false });
   if (thread?.id !== id) throw new BridgeError("Elpis returned another thread", 502);
-  return internal_decorate.call(this, clientState, thread);
+  const current = internal_decorate.call(this, clientState, thread);
+  if (current.desktopAccess.mode === "unavailable")
+    throw new BridgeError(current.desktopAccess.reason!, 409);
+  return current;
 }
 
 export function internal_effort(this: DesktopClient, _clientState: ClientState, value: unknown) {

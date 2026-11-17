@@ -318,6 +318,55 @@ test("opening a completed parent-owned child reads history without resuming it",
   }
 });
 
+test("missing source history is readable but cannot resume, send, fork, rewind, compact or run commands", async t => {
+  const { client, socket, threads } = fixture();
+  t.after(() => client.close());
+  await client.initialize();
+  Object.assign(required(threads.get(ROOT)), {
+    extra: { missingSourceRollout: true }, canAcceptDirectInput: false, status: { type: "notLoaded" },
+  });
+  const opened = await client.readThread(ROOT);
+  assert.equal(opened.thread.desktopAccess.mode, "unavailable");
+  assert.equal(opened.thread.desktopAccess.canContinue, false);
+  assert.match(opened.thread.desktopAccess.reason!, /gaps, including recent messages/);
+  assert.ok(opened.data.length);
+  assert.equal((await client.resume(ROOT, {})).thread.desktopAccess.writable, false);
+  for (const operation of [
+    () => client.send(ROOT, { text: "continue" }),
+    () => client.send(ROOT, { text: "continue", continueAs: "New chat" }),
+    () => client.continueThread(ROOT, {}),
+    () => client.forkThread(ROOT, {}),
+    () => client.revert(ROOT, { beforeTurnId: "turn-1" }),
+    () => client.compact(ROOT, {}),
+    () => client.shellCommand(ROOT, { command: "pwd" }),
+  ]) await assert.rejects(operation, /source file is missing/);
+  assert.equal(socket.sent.some(row => ["thread/resume", "thread/subscribe", "thread/fork", "turn/start", "thread/revert", "thread/compact/start", "thread/shellCommand"].includes(row.method ?? "")), false);
+});
+
+test("missing source without readable projection retains metadata and reports unavailable history", async t => {
+  const { client, socket, threads } = fixture();
+  t.after(() => client.close());
+  await client.initialize();
+  Object.assign(required(threads.get(ROOT)), {
+    extra: { missingSourceRollout: true }, canAcceptDirectInput: false, status: { type: "notLoaded" },
+  });
+  const send = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== "thread/items/list") return send(raw);
+    queueMicrotask(() => socket.emit("message", JSON.stringify({ id: request.id, error: { code: -32600, message: "No matching projection" } })));
+  };
+  const opened = await client.readThread(ROOT);
+  assert.equal(opened.thread.id, ROOT);
+  assert.deepEqual(opened.data, []);
+  assert.equal(opened.earliestHistoryMissing, true);
+  assert.match(opened.thread.desktopAccess.reason!, /could not be recovered/);
+  assert.equal(opened.thread.desktopAccess.canContinue, false);
+  await assert.rejects(client.readThread(ROOT, { cursor: "previous-projection" }), /Elpis/);
+  delete required(threads.get(ROOT)).extra;
+  await assert.rejects(client.readThread(ROOT), /Elpis/);
+});
+
 test("a child in a legacy drain reports history-only until its viewer reconnects", async () => {
   const { client, socket, threads } = fixture();
   await client.initialize();

@@ -179,7 +179,7 @@ export function WorkspaceComposer({
           className="mx-auto flex w-full max-w-[var(--transcript-width,740px)] flex-col gap-3 rounded-lg border p-4 text-sm text-muted-foreground"
           role="status"
         >
-          <p>{AGENT_RUN_NOTICE}</p>
+          <p>{selected?.desktopAccess?.reason ?? AGENT_RUN_NOTICE}</p>
           {selected?.desktopAccess?.canContinue && !activeTurn && selected.status?.type !== "active" && (
             <Button
               variant="outline"

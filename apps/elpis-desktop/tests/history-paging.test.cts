@@ -128,6 +128,35 @@ for (const colorScheme of ['light']) {
   });
 }
 
+test('missing source exposes retained messages or an unavailable notice without a composer or Continue', async () => {
+  for (const recovered of [true, false]) {
+    const reason = recovered
+      ? 'This chat’s source file is missing. Retained messages are read-only and may have gaps, including recent messages. Restore the source file to continue this chat.'
+      : 'This chat’s source file is missing, and its retained messages could not be recovered. Restore the source file to read or continue this chat.';
+    const f = await fixture({ routes: {
+      '/api/threads/chat-b': () => ({
+        thread: { id: 'chat-b', name: 'Missing source', cwd: '/history', status: { type: 'notLoaded' },
+          desktopAccess: { writable: false, mode: 'unavailable', canContinue: false, reason } },
+        data: recovered ? [{ turnId: 'retained', item: { id: 'saved', type: 'agentMessage', text: 'Retained evidence' } }] : [],
+        nextCursor: null, earliestHistoryMissing: true,
+      }),
+    } });
+    try {
+      await f.open('chat-b');
+      await f.page.getByText(reason, { exact: true }).waitFor();
+      assert.equal(await f.composer.count(), 0);
+      assert.equal(await f.page.getByRole('button', { name: 'Continue here', exact: true }).count(), 0);
+      assert.equal(await f.page.getByText('Retained evidence', { exact: true }).count(), recovered ? 1 : 0);
+      await f.page.getByRole('note').filter({ hasText: 'Messages may be missing anywhere' }).waitFor();
+      assert.equal(f.requests.some((request: { path: string }) => request.path === '/api/threads/chat-b/resume'), false);
+      await f.open('chat-a');
+      await f.composer.waitFor();
+      assert.equal(await f.page.getByText(reason, { exact: true }).count(), 0);
+      assert.deepEqual(f.errors, []);
+    } finally { await f.close(); }
+  }
+});
+
 test('a complete chat shows no missing-history note', async () => {
   const chat = [['t0', 'Whole prompt', 'Whole reply']];
   const entries = [{ turnId: 't0', item: { id: 'u-t0', type: 'userMessage', content: [{ type: 'text', text: 'Whole prompt' }] } }, { turnId: 't0', item: { id: 'a-t0', type: 'agentMessage', text: 'Whole reply' } }];

@@ -6,6 +6,8 @@ use sqlx::Row;
 
 use super::super::LocalThreadStore;
 use super::super::rollout_lineage::RolloutLineage;
+use super::super::rollout_lineage::RolloutLineageSegment;
+use super::super::thread_rollout_resolver;
 use super::segment_paging::page_item_rows;
 use super::segment_paging::page_turn_rows;
 use super::segment_paging::validate_page_size;
@@ -42,6 +44,13 @@ pub(super) struct HistoryCursor {
     pub rollout_ordinal: u64,
     pub include_anchor: bool,
     pub scope: CursorScope,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RecoveredItemsCursor {
+    recovery_rollout_id: ThreadId,
+    cursor: String,
 }
 
 #[derive(Clone, Copy)]
@@ -162,7 +171,7 @@ pub(in crate::local) async fn list_turns(
 
 pub(in crate::local) async fn list_items(
     store: &LocalThreadStore,
-    params: ListItemsParams,
+    mut params: ListItemsParams,
 ) -> ThreadStoreResult<ItemPage> {
     validate_thread_for_paginated_reads(
         store,
@@ -172,11 +181,69 @@ pub(in crate::local) async fn list_items(
     )
     .await?;
     validate_page_size(params.page_size)?;
-    let lineage = store
+    let (lineage, recovered_path) = match store
         .resolve_rollout_lineage(params.thread_id, /*initial_path*/ None)
-        .await?;
+        .await
+    {
+        Ok(lineage) => (lineage, None),
+        Err(error) => match missing_source_projection(store, params.thread_id).await? {
+            Some(lineage) => {
+                let path = lineage.segments[0].rollout_path.clone();
+                (lineage, Some(path))
+            }
+            None => return Err(error),
+        },
+    };
+    let recovery_id = recovered_path
+        .as_ref()
+        .map(|_| lineage.segments[0].rollout_id);
+    if let Some(crate::ListItemsPosition::Cursor(cursor)) = &params.position {
+        let recovered_cursor = serde_json::from_str::<RecoveredItemsCursor>(cursor).ok();
+        match (recovery_id, recovered_cursor) {
+            (Some(expected), Some(bound)) if bound.recovery_rollout_id == expected => {
+                params.position = Some(crate::ListItemsPosition::Cursor(bound.cursor));
+            }
+            (Some(_), _) | (None, Some(_)) => {
+                return Err(invalid_cursor("recovered history selection changed"));
+            }
+            (None, None) => {}
+        }
+    }
     let pool = store.thread_history_db().await?;
-    let page = page_item_rows(pool, &lineage, &params).await?;
+    let mut page = page_item_rows(pool, &lineage, &params).await?;
+    if let Some(recovery_rollout_id) = recovery_id {
+        let bind = |cursor: String| {
+            serde_json::to_string(&RecoveredItemsCursor {
+                recovery_rollout_id,
+                cursor,
+            })
+            .map_err(super::thread_history_error)
+        };
+        page.next_cursor = page.next_cursor.map(&bind).transpose()?;
+        page.backwards_cursor = page.backwards_cursor.map(bind).transpose()?;
+    }
+    if let Some(path) = recovered_path {
+        let Some(state) = store.state_db().await else {
+            return Err(ThreadStoreError::InvalidRequest {
+                message: "thread selection changed while reading recovered history".to_string(),
+            });
+        };
+        let current =
+            state
+                .get_thread(params.thread_id)
+                .await
+                .map_err(|err| ThreadStoreError::Internal {
+                    message: format!("failed to read thread metadata: {err}"),
+                })?;
+        if !current.is_some_and(|metadata| {
+            metadata.history_mode == ThreadHistoryMode::Paginated && metadata.rollout_path == path
+        }) || codex_rollout::existing_rollout_path(&path).await.is_some()
+        {
+            return Err(ThreadStoreError::InvalidRequest {
+                message: "thread selection changed while reading recovered history".to_string(),
+            });
+        }
+    }
 
     Ok(ItemPage {
         items: page.rows.into_iter().map(|row| row.item).collect(),
@@ -184,6 +251,63 @@ pub(in crate::local) async fn list_items(
         backwards_cursor: page.backwards_cursor,
         earliest_history_missing: lineage.missing_earlier(),
     })
+}
+
+// The projection is keyed by the selected rollout UUID, not the logical thread ID.
+// Its session metadata and any inherited history are gone, so this is only a
+// read-only view of the selected segment and must always report missing history.
+async fn missing_source_projection(
+    store: &LocalThreadStore,
+    thread_id: ThreadId,
+) -> ThreadStoreResult<Option<RolloutLineage>> {
+    let Some(state) = store.state_db().await else {
+        return Ok(None);
+    };
+    let Some(metadata) =
+        state
+            .get_thread(thread_id)
+            .await
+            .map_err(|err| ThreadStoreError::Internal {
+                message: format!("failed to read thread metadata: {err}"),
+            })?
+    else {
+        return Ok(None);
+    };
+    if metadata.history_mode != ThreadHistoryMode::Paginated
+        || codex_rollout::existing_rollout_path(&metadata.rollout_path)
+            .await
+            .is_some()
+    {
+        return Ok(None);
+    }
+    let Ok(rollout_id) = thread_rollout_resolver::rollout_id_from_path_or_legacy_thread_id(
+        &metadata.rollout_path,
+        thread_id,
+        ThreadHistoryMode::Paginated,
+    ) else {
+        return Ok(None);
+    };
+    let pool = store.thread_history_db().await?;
+    let present: i64 = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM thread_history_projection_state WHERE thread_id = ?) AND EXISTS(SELECT 1 FROM thread_items WHERE thread_id = ?)",
+    )
+    .bind(rollout_id.to_string())
+    .bind(rollout_id.to_string())
+    .fetch_one(pool)
+    .await
+    .map_err(|err| ThreadStoreError::Internal { message: format!("failed to check history projection: {err}") })?;
+    if present == 0 {
+        return Ok(None);
+    }
+    Ok(Some(RolloutLineage {
+        segments: vec![RolloutLineageSegment {
+            rollout_id,
+            rollout_path: metadata.rollout_path,
+            start_ordinal: 0,
+            end: None,
+        }],
+        missing_earlier: true,
+    }))
 }
 
 pub(super) async fn validate_thread_for_paginated_reads(

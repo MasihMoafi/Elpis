@@ -35,6 +35,10 @@ export function internal_attach(
       (knownThread as DecoratedInput | null) ??
       (await internal_rpc(this, clientState, "thread/read", { threadId: id, includeTurns: false })).thread;
     if (!thread || thread.id !== id) throw new BridgeError("Elpis returned another thread", 502);
+    if (thread.extra?.missingSourceRollout === true) {
+      clientState.owned.delete(id);
+      return { thread };
+    }
     if (
       thread.canAcceptDirectInput === false ||
       (thread.status?.type !== "active" && !internal_decorate.call(this, clientState, thread).desktopAccess.writable)
@@ -171,6 +175,10 @@ export async function impl_readThread(
     cursor: options.cursor,
     limit: options.limit ?? 30,
     sortDirection: "desc",
+  }).catch(error => {
+    if (thread.desktopAccess.mode !== "unavailable" || options.cursor) throw error;
+    thread.desktopAccess.reason = "This chat’s source file is missing, and its retained messages could not be recovered. Restore the source file to read or continue this chat.";
+    return { data: [], nextCursor: null, earliestHistoryMissing: true };
   });
   // A missed renderer event must not leave its Stop/Working state behind the saved
   // conversation. A newer live turn always takes precedence over this read.
@@ -184,7 +192,7 @@ export async function impl_readThread(
       data: { method: "thread/status/changed", params: { threadId: id, status: thread.status } },
     });
   }
-  const data = clientState.chatHistory.merge(thread.id, items);
+  const data = thread.desktopAccess.mode === "unavailable" ? items.data : clientState.chatHistory.merge(thread.id, items);
   return { thread, ...items, data: await internal_withTurnModels(clientState, thread.path, data, !!options.cursor) };
 }
 

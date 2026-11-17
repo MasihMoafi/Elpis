@@ -124,8 +124,15 @@ export function useOpenConversation({
           stickToBottom.current = true;
         }
         select(remember(result.thread));
-        applyHistoryPage(thread.id, result, historyRevision, switching && !!shown);
+        const recovered = result.thread.desktopAccess?.mode === "unavailable";
+        if (recovered) liveVersions.current.clear();
+        applyHistoryPage(thread.id, result, historyRevision, !recovered && switching && !!shown);
         setDisplayedThreadId(thread.id);
+        if (recovered) {
+          setActiveTurns(previous => without(previous, thread.id));
+          setLiveError(previous => without(previous, thread.id));
+          return;
+        }
         // The engine lists a chat's items only once it has loaded the chat; until then a saved chat reads as empty. Like
         // the Codex TUI, which resumes before it reads history, read it again once the resume below has loaded it.
         unread = !result.data.length && !result.nextCursor;

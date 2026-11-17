@@ -193,7 +193,9 @@ export function WorkspaceTranscript({
             selected &&
             historyGaps.has(selected.id) && (
               <div className="context-event" role="note">
-                The earliest part of this chat is missing, so it opened with the history that remains.
+                {selected.desktopAccess?.mode === "unavailable"
+                  ? "This is incomplete retained history. Messages may be missing anywhere in the conversation."
+                  : "The earliest part of this chat is missing, so it opened with the history that remains."}
               </div>
             )
           )}

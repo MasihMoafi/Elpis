@@ -318,6 +318,8 @@ export async function impl_continueThread(this: DesktopClient, clientState: Clie
     });
     if (result.thread?.id !== id) throw new BridgeError("Elpis returned another thread", 502);
     const thread = internal_decorate.call(this, clientState, result.thread);
+    if (thread.desktopAccess.mode === "unavailable")
+      throw new BridgeError(thread.desktopAccess.reason!, 409);
     if (thread.desktopAccess.writable) throw new BridgeError("This is already a normal chat.", 409);
     if (!thread.desktopAccess.canContinue)
       throw new BridgeError("Wait for this background run to finish before continuing here.", 409);
@@ -330,8 +332,9 @@ export async function impl_renameThread(this: DesktopClient, clientState: Client
   const name = text(body.name, "name", 120).trim();
   if (!name) throw new BridgeError("Enter a name");
   return internal_mutate(clientState, id, async () => {
+    const current = await internal_current.call(this, clientState, id);
     await internal_rpc(this, clientState, "thread/name/set", { threadId: threadId(id), name });
-    return { thread: { ...(await internal_current.call(this, clientState, id)), name } };
+    return { thread: { ...current, name } };
   });
 }
 

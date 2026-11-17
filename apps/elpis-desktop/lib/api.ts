@@ -24,7 +24,7 @@ export type Thread = {
   canAcceptDirectInput?: boolean | null;
   source?: string | { subAgent?: unknown; custom?: string };
   status?: { type: string; activeFlags?: string[] } | undefined;
-  desktopAccess?: { writable: boolean; mode?: "direct" | "continue"; canContinue?: boolean; reason: string | null };
+  desktopAccess?: { writable: boolean; mode?: "direct" | "continue" | "unavailable"; canContinue?: boolean; reason: string | null };
 };
 export type Item = {
   id: string;
