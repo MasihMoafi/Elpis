@@ -39,7 +39,7 @@ type Props = {
   setCollapsedProjects: ReturnType<typeof useSidebarFolds>["setCollapsedProjects"];
   chatReorder: ReturnType<typeof useReorder>;
   projectReorder: ReturnType<typeof useReorder>;
-  foldable: (key: string, name: string) => React.ReactNode;
+  foldable: (key: string, name: string, count?: number) => React.ReactNode;
   addProject: ReturnType<typeof createProjectActions>["addProject"];
   removeProject: ReturnType<typeof createProjectActions>["removeProject"];
   selectProject: ReturnType<typeof createProjectActions>["selectProject"];
@@ -102,7 +102,6 @@ export function SidebarChatList({
     loveChats,
     workflowChats,
     recentChats,
-    roots,
     ordinaryUnread,
     filtered,
     agentRuns,
@@ -143,7 +142,7 @@ export function SidebarChatList({
       )}
       {!searchTerm && browserPins.pins.length > 0 && (
         <section aria-label="Pinned browser pages">
-          <div className="section-label-row">{foldable("browser", "Browser")}</div>
+          <div className="section-label-row">{foldable("browser", "Browser", browserPins.pins.length)}</div>
           {!collapsedSections.browser &&
             browserPins.pins.map(pin => (
               <div key={pin.url} className="thread-row">
@@ -174,13 +173,13 @@ export function SidebarChatList({
       )}
       {pinnedChats.length > 0 && (
         <section aria-label="Pinned">
-          <div className="section-label-row">{foldable("pinned", "Pinned")}</div>
+          <div className="section-label-row">{foldable("pinned", "Pinned", pinnedChats.length)}</div>
           {(searchTerm || !collapsedSections.pinned) && pinnedChats.map(chatRows)}
         </section>
       )}
       {loveChats.length > 0 && (
         <section role="group" aria-label="Love Spot">
-          <div className="section-label-row">{foldable("love", "Love Spot")}</div>
+          <div className="section-label-row">{foldable("love", "Love Spot", loveChats.length)}</div>
           {!collapsedSections.love &&
             loveChats.map(thread => (
               <div key={thread.id}>
@@ -193,7 +192,7 @@ export function SidebarChatList({
       {workflowChats.length > 0 && (
         <section role="group" aria-label="Workflows">
           <div className="section-label-row">
-            {foldable("workflows", "Workflows")}
+            {foldable("workflows", "Workflows", workflowChats.length)}
             <Button
               variant="ghost"
               size="icon-xs"
@@ -214,13 +213,13 @@ export function SidebarChatList({
           {!collapsedSections.workflows && workflowChats.map(thread => threadBranch(thread, 0, new Set(), true))}
         </section>
       )}
-      {(searchTerm ? recentChats.length > 0 : roots.length > 0 || ordinaryThreads.length > 0) && (
+      {recentChats.length > 0 && (
         <section
           aria-label={searchTerm ? "Results" : "Recents"}
           {...(!searchTerm ? chatReorder.targetProps("recents", true) : {})}
         >
           <div className="section-label-row" {...(grouped ? chatReorder.targetProps("recents", true) : {})}>
-            {searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents")}
+            {searchTerm ? <div className="section-label">Results</div> : foldable("recents", "Recents", recentChats.length)}
             {!searchTerm && ordinaryUnread.length > 0 && (
               <Button variant="ghost" size="xs" onClick={() => setAttention(previous => ({ ...previous, unread: [] }))}>
                 Mark all as read

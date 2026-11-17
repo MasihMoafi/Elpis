@@ -1,4 +1,5 @@
 "use client";
+import { OptionSelect } from "@/components/ui/option-select";
 
 import { routerMessageText } from "@/lib/router-message-text";
 import { CollabAgentStep, SubAgentStep } from "@/components/chat-message-agent-steps";
@@ -250,7 +251,7 @@ export function ChatMessage({
             {
               id: "read-aloud",
               label: speaking ? "Stop" : "Read aloud",
-              title: speaking ? "Stop reading aloud" : "Read aloud · Kokoro, on this computer",
+              title: speaking ? "Stop reading aloud" : "Read aloud · selected voice",
               icon: speaking ? <StopIcon size={14} /> : <Volume2 size={14} />,
               run: () => {
                 const selected = selectedSpeech.current;
@@ -352,6 +353,11 @@ export function ChatMessage({
         {actions.length > 0 && (
           <InkRow className="message-actions">
             <MessageButtons actions={actions} />
+            {speaking && speech && (
+              <OptionSelect aria-label="Read aloud speed" value={String(speech.speed)} onChange={event => speech.setSpeed(Number(event.target.value))}>
+                {[0.5, 0.75, 1, 1.25, 1.3, 1.4, 1.5, 1.75, 2].map(value => <option key={value} value={String(value)}>{value}×</option>)}
+              </OptionSelect>
+            )}
           </InkRow>
         )}
       </RightClickMenu>

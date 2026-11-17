@@ -94,7 +94,7 @@ const TABS = [
     group: "personal",
     scope: "new chats",
     Icon: FileEditIcon,
-    words: "approval sandbox web search output reasoning background model smart prune pruning config file",
+    words: "default model provider new chats approval sandbox web search output reasoning background model smart prune pruning config file",
   },
   {
     id: "personalization",
@@ -245,6 +245,10 @@ export function SettingsView({
     setTab(next);
     if (settingsLoaded() && CONFIG_PAGES.includes(next)) reloadSettings().catch(() => {});
   };
+  const matches = shown.map(item => item.id).join(" ");
+  useEffect(() => {
+    if (query.trim() && !shown.some(item => item.id === tab) && shown[0]) selectTab(shown[0].id);
+  }, [query, tab, matches]);
   useEffect(() => {
     setQuery("");
     selectTab(initialTab);

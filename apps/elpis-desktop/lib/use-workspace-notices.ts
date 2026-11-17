@@ -23,6 +23,13 @@ export function useWorkspaceNotices() {
   // "Undone: …" / "Redone: …" after Ctrl+Z or Ctrl+Shift+Z on a chat action (lib/chat-undo.ts), 8 s.
   const [historyNotice, setHistoryNotice] = useState("");
   useEffect(() => {
+    const changed = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === "string") setHistoryNotice(event.detail);
+    };
+    window.addEventListener("elpis-default-model-change", changed);
+    return () => window.removeEventListener("elpis-default-model-change", changed);
+  }, []);
+  useEffect(() => {
     if (!historyNotice) return;
     const timer = setTimeout(() => setHistoryNotice(""), 8000);
     return () => clearTimeout(timer);

@@ -31,6 +31,8 @@ export type Speech = {
   live: (id: string) => LiveSpeech | null;
   stop: () => void;
   warm: () => void;
+  speed: number;
+  setSpeed: (speed: number) => void;
 };
 
 /** After a read the call stays open this long, so the next Read aloud only sends its text. */
@@ -115,14 +117,14 @@ export function selectedPieces(text: string): string[] {
 
 /** The chosen read-aloud source; refresh after Settings changes it. */
 export function useReadAloudSource() {
-  const [source, setSource] = useState<{ available: boolean; revision?: string }>({ available: false });
+  const [source, setSource] = useState<{ available: boolean; revision?: string; streaming?: boolean }>({ available: false });
   useEffect(() => {
     let active = true,
       request = 0;
     const load = () => {
       const current = ++request;
       void sessionReady()
-        .then(() => api<{ available: boolean; revision?: string }>("/read-aloud"))
+        .then(() => api<{ available: boolean; revision?: string; streaming?: boolean }>("/read-aloud"))
         .then(
           result => {
             if (active && current === request) setSource(result);

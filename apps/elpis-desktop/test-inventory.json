@@ -137,7 +137,8 @@
     "bridge/codebase.test.mts",
     "bridge/codebase-projects.test.mts",
     "tests/workflows-view.test.mts",
-    "tests/sidebar-fill.test.mts"
+    "tests/sidebar-fill.test.mts",
+    "bridge/default-model.test.mts"
   ],
   "bridge": [
     "bridge/custom-characters.test.mts",
@@ -272,7 +273,8 @@
     "components/mother/marks.test.mts",
     "bridge/provider-keys.test.mts",
     "bridge/file-paging.test.mts",
-    "bridge/rollout-performance.test.mts"
+    "bridge/rollout-performance.test.mts",
+    "bridge/local-speech.test.mts"
   ],
   "desktop": [
     "desktop/app-menu.test.cts",
@@ -505,7 +507,8 @@
     "tests/matilda-live-voice.test.cts",
     "tests/file-opening-performance.test.cts",
     "tests/rendering-performance.test.cts",
-    "tests/elpis-single-entry.test.cts"
+    "tests/elpis-single-entry.test.cts",
+    "tests/sidebar-default-speech.test.cts"
   ],
   "opt-in": [
     "tests/screen-capture-electron.test.cts",

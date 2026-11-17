@@ -20,7 +20,7 @@ type Props = {
   chatReorder: ReturnType<typeof useReorder>;
   projectReorder: ReturnType<typeof useReorder>;
   setCollapsedProjects: ReturnType<typeof useSidebarFolds>["setCollapsedProjects"];
-  foldable: (key: string, name: string) => React.ReactNode;
+  foldable: (key: string, name: string, count?: number) => React.ReactNode;
   addProject: ReturnType<typeof createProjectActions>["addProject"];
   removeProject: ReturnType<typeof createProjectActions>["removeProject"];
   selectProject: ReturnType<typeof createProjectActions>["selectProject"];
@@ -52,7 +52,7 @@ export function SidebarProjects({
   return (
     <section aria-label="Projects">
       <div className="section-label-row">
-        {foldable("projects", "Projects")}
+        {projects.length > 0 && foldable("projects", "Projects", projects.length)}
         <Button
           variant="ghost"
           size="icon-xs"
@@ -61,6 +61,7 @@ export function SidebarProjects({
           onClick={() => void addProject()}
         >
           <PlusIcon size={13} />
+          {!projects.length && "Add project"}
         </Button>
       </div>
       {!collapsedSections.projects &&

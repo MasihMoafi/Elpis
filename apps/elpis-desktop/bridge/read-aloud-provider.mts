@@ -3,6 +3,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { BridgeError, object, text } from "./validate.mts";
 import { speechModelUnavailable, speechPcmRate } from "../lib/speech-model.mts";
+import type { Readable } from "node:stream";
 
 const DEFAULT = Object.freeze({ source: "local", model: null, voice: null });
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$/;
@@ -63,12 +64,15 @@ export function createReadAloudProvider({
     voices?: () => Promise<string[]>;
     available: () => boolean;
     speak: (text: string, voice: string | null) => Promise<Buffer>;
+    canStream?: (voice: string | null) => boolean;
+    stream?: (text: string, voice: string | null, signal?: AbortSignal) => Promise<Readable>;
   };
   provider: (source: string) => Promise<{ baseUrl: string; key: string }>;
   fetchImpl?: typeof fetch;
 }) {
   const file = path.join(home, "read-aloud.json");
   let writing: Promise<unknown> = Promise.resolve();
+  const prepared = new Map<string, { text: string; revision: string; at: number }>();
   function validate(input: unknown) {
     const value = object(input, ["source", "model", "voice"]) as Record<string, unknown>;
     if (typeof value.source !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.source))
@@ -141,7 +145,7 @@ export function createReadAloudProvider({
         };
       try {
         await kokoro.voices?.();
-        return { ...choice, revision: revision(choice), available: true };
+        return { ...choice, revision: revision(choice), available: true, streaming: !!kokoro.stream && !!kokoro.canStream?.(choice.voice) };
       } catch (error) {
         return { ...choice, revision: revision(choice), available: false, reason: (error as Error).message };
       }
@@ -215,5 +219,28 @@ export function createReadAloudProvider({
     const audio = await audioBytes(response);
     return rate ? { audio: pcmWav(audio, rate), type: "audio/wav" } : { audio, type: "audio/mpeg" };
   }
-  return { read, save, status, speak };
+  async function prepare(raw: unknown) {
+    const input = object(raw, ["text", "revision"]) as Record<string, unknown>;
+    const value = text(input.text, "read aloud text", 4000);
+    const choice = await read();
+    if (!value.trim() || choice.source !== "local" || !kokoro.stream || !kokoro.canStream?.(choice.voice))
+      throw new BridgeError("Choose an installed streaming voice.");
+    if (input.revision !== undefined && input.revision !== revision(choice))
+      throw new BridgeError("Read aloud source changed. Try again.", 409);
+    for (const [id, job] of prepared) if (Date.now() - job.at > 120_000) prepared.delete(id);
+    if (prepared.size >= 24) throw new BridgeError("Stop the previous reading before starting another.", 429);
+    const id = randomUUID();
+    prepared.set(id, { text: value, revision: revision(choice), at: Date.now() });
+    return { url: `/api/read-aloud/audio/${id}` };
+  }
+  async function stream(id: string, signal: AbortSignal) {
+    const job = prepared.get(id);
+    prepared.delete(id);
+    if (!job || Date.now() - job.at > 120_000) throw new BridgeError("This reading has expired. Read it again.", 404);
+    const choice = await read();
+    if (choice.source !== "local" || job.revision !== revision(choice) || !kokoro.stream)
+      throw new BridgeError("The read aloud source changed. Read it again.", 409);
+    return kokoro.stream(job.text, choice.voice, signal);
+  }
+  return { read, save, status, speak, prepare, stream };
 }

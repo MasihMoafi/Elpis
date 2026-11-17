@@ -32,9 +32,10 @@ export function useWorkspaceSidebarState(
     collapsedProjects = folds.projects,
     collapsedSections = folds.sections;
   /** The heading of a sidebar section: every one of them folds its list the same way. */
-  const foldable = (key: string, name: string) => (
+  const foldable = (key: string, name: string, count?: number) => (
     <SectionToggle
       name={name}
+      count={count}
       open={!collapsedSections[key]}
       onToggle={() =>
         changeFolds(value => ({ ...value, sections: { ...value.sections, [key]: !value.sections[key] } }))

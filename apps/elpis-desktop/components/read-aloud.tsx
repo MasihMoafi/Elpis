@@ -28,6 +28,18 @@ export function ReadAloud({
 }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
+  const [speed, updateSpeed] = useState(() => {
+    try { const value = Number(localStorage.getItem("elpis-read-aloud-speed")); return value >= 0.5 && value <= 2 ? value : 1; } catch { return 1; }
+  });
+  const speedRef = useRef(speed);
+  function setSpeed(value: number) {
+    if (!Number.isFinite(value) || value < 0.5 || value > 2) return;
+    speedRef.current = value;
+    updateSpeed(value);
+    if (local.current) local.current.audio.playbackRate = value;
+    if (call.current?.audio) call.current.audio.playbackRate = value;
+    try { localStorage.setItem("elpis-read-aloud-speed", String(value)); } catch { /* Applies for this session. */ }
+  }
   const call = useRef<Playback | null>(null);
   const source = useReadAloudSource(),
     local = useRef<{ controller: AbortController; audio: HTMLAudioElement } | null>(null);
@@ -40,8 +52,15 @@ export function ReadAloud({
       mine = { controller, audio };
     local.current = mine;
     setActive(id);
-    const voice = (piece: string) =>
-      fetch("/api/read-aloud", {
+    audio.preservesPitch = true;
+    audio.playbackRate = speedRef.current;
+    const voice = async (piece: string) => {
+      if (source.streaming) {
+        const result = await api<{ url: string }>("/read-aloud/prepare", { text: piece, ...(source.revision ? { revision: source.revision } : {}) });
+        if (!/^\/api\/read-aloud\/audio\/[a-f0-9-]{36}$/.test(result.url)) throw new Error("The local reader returned an invalid audio address.");
+        return result.url;
+      }
+      return fetch("/api/read-aloud", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: piece, ...(source.revision ? { revision: source.revision } : {}) }),
@@ -51,8 +70,11 @@ export function ReadAloud({
           const result = await response.json().catch(() => ({}));
           throw new Error(typeof result?.error === "string" ? result.error : "Read aloud could not voice this reply.");
         }
-        return URL.createObjectURL(await response.blob());
+        const url = URL.createObjectURL(await response.blob());
+        if (controller.signal.aborted) URL.revokeObjectURL(url);
+        return url;
       });
+    };
     const pieces: string[] = [],
       voiced: Promise<string>[] = [];
     let played = 0,
@@ -78,14 +100,16 @@ export function ReadAloud({
           }
           prepare();
           const url = await voiced[played]!;
+          if (controller.signal.aborted || local.current !== mine) { if (url.startsWith("blob:")) URL.revokeObjectURL(url); break; }
           audio.src = url;
+          audio.playbackRate = speedRef.current;
           await new Promise<void>((resolve, reject) => {
             audio.onended = () => resolve();
             audio.onerror = () => reject(new Error("This reply could not be played."));
             controller.signal.addEventListener("abort", () => resolve(), { once: true });
             void audio.play().catch(reject);
           });
-          URL.revokeObjectURL(url);
+          if (url.startsWith("blob:")) URL.revokeObjectURL(url);
           played++;
         }
       } catch (cause) {
@@ -434,6 +458,8 @@ export function ReadAloud({
               },
               stop,
               warm,
+              speed,
+              setSpeed,
             }
       }
     >

@@ -19,6 +19,10 @@ export function useSettingsRowFilter(page: RefObject<HTMLElement | null>, terms:
       const misses = rows.filter(row => !words.every(term => text(row).includes(term)));
       if (misses.length === rows.length) return;
       for (const row of misses) row.dataset.searchMiss = "";
+      for (const group of panel.querySelectorAll<HTMLElement>(".settings-group")) {
+        const items = [...group.querySelectorAll<HTMLElement>(".settings-row:not(.settings-actions)")];
+        if (items.length && items.every(row => row.hasAttribute("data-search-miss"))) group.dataset.searchMiss = "";
+      }
     };
     apply();
     // Pages load their rows after they open; only added or changed content re-applies (not our own attribute writes).

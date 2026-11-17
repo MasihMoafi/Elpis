@@ -16,7 +16,11 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
     // Elpis's own sign-out of the Claude subscription (anthropic-signout.mts), read whenever it matters, so
     // the terminal and the desktop follow it at once. While it is on, Claude's models, usage and turns are
     // gone from Elpis; Claude Code's own login (~/.claude) is never touched.
-    const claudeSignedOut = () => isSignedOut(STATE_DIR);
+    const rejectedTokens = new Map<string, { token: string; until: number }>();
+    const claudeSignedOut = () => {
+        const rejected = rejectedTokens.get(claudeAccounts.activeId());
+        return isSignedOut(STATE_DIR) || !!(rejected && rejected.until > Date.now() && rejected.token === claudeAccounts.credentials()?.accessToken);
+    };
     // The subscriptions Elpis reaches through ACP, each by a model-id prefix. Antigravity (Gemini on
     // the Google sign-in) runs through agy-acp.mts and is offered only when `agy` is installed.
     const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
@@ -62,6 +66,7 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
             headers: { Authorization: `Bearer ${creds.accessToken}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
             signal: AbortSignal.timeout(15000),
         });
+        if (r.status === 403) rejectedTokens.set(claudeAccounts.activeId(), { token: creds.accessToken, until: Date.now() + 60_000 });
         if (!r.ok)
             throw new Error(`Claude usage request failed (HTTP ${r.status})`);
         const u = await r.json() as {

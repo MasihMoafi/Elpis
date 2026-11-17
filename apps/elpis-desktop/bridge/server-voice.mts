@@ -2,6 +2,7 @@ import { object } from "./validate.mts";
 import { elpisHome } from "./client-paths.mts";
 import { recordVoiceCall } from "./voice.mts";
 import { body, json } from "./server-http.mts";
+import { pipeline } from "node:stream/promises";
 
 export async function handleVoiceRoutes(
   state: import("./server-http.mts").ServerState,
@@ -11,6 +12,22 @@ export async function handleVoiceRoutes(
   method: string,
 ) {
   const { client, options, readAloud, kokoro, voice, transcription, tools } = state;
+  if (url.pathname === "/api/read-aloud/prepare" && method === "POST") {
+    json(response, 200, await readAloud.prepare(await body(request)));
+    return true;
+  }
+  const audio = url.pathname.match(/^\/api\/read-aloud\/audio\/([a-f0-9-]{36})$/);
+  if (audio && method === "GET") {
+    const controller = new AbortController();
+    const cancel = () => controller.abort();
+    response.once("close", cancel);
+    try {
+      const stream = await readAloud.stream(audio[1]!, controller.signal);
+      response.writeHead(200, { "Content-Type": "audio/wav", "Cache-Control": "no-store", "Accept-Ranges": "none" });
+      await pipeline(stream, response);
+    } finally { response.removeListener("close", cancel); }
+    return true;
+  }
   if (url.pathname === "/api/voice/report" && method === "POST") {
     json(response, 200, await recordVoiceCall(options.elpisHome ?? elpisHome(), await body(request)));
     return true;

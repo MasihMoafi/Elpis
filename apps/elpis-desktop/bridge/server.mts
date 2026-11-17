@@ -10,7 +10,7 @@ import { createSchedule } from "./schedule.mts";
 import { createTools } from "./tools.mts";
 import { createTranscription } from "./transcription.mts";
 import { createVoice } from "./voice.mts";
-import { createKokoro } from "./kokoro.mts";
+import { createLocalSpeech } from "./local-speech.mts";
 import { createReadAloudProvider } from "./read-aloud-provider.mts";
 import { createImportChats } from "./import-chats.mts";
 import { createCharacters } from "./custom-characters.mts";
@@ -174,7 +174,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     environment: () => client.transcriptionEnvironment(),
   });
   const voice = createVoice(client);
-  const kokoro = options.kokoro ?? createKokoro();
+  const kokoro = options.kokoro ?? createLocalSpeech();
   const readAloud = createReadAloudProvider({
     home: options.elpisHome ?? elpisHome(),
     kokoro,

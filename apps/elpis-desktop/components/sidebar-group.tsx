@@ -93,7 +93,7 @@ export function SidebarGroup({
 }
 
 /** A section heading (Projects, Pinned, Recents) that folds its list, with the chevron a project row has. */
-export function SectionToggle({ name, open, onToggle }: { name: string; open: boolean; onToggle: () => void }) {
+export function SectionToggle({ name, count, open, onToggle }: { name: string; count?: number | undefined; open: boolean; onToggle: () => void }) {
   return (
     <div className="section-label">
       <Button
@@ -101,11 +101,14 @@ export function SectionToggle({ name, open, onToggle }: { name: string; open: bo
         variant="ghost"
         size="logo"
         className="section-toggle"
+        aria-label={name}
+        aria-description={count === undefined ? undefined : `${count} items`}
         aria-expanded={open}
         onClick={onToggle}
       >
         <ChevronRight size={14} className="section-chevron" aria-hidden="true" />
         {name}
+        {count !== undefined && <span className="section-count" aria-hidden="true">{count}</span>}
       </Button>
     </div>
   );

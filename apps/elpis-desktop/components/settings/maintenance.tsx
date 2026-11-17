@@ -30,7 +30,7 @@ const PAIRS = {
   main: {
     name: "Main",
     model: "New chats start with this model, here and in the TUI. Change it per chat in the composer.",
-    provider: "The connection the main model runs on.",
+    provider: "The connection used by the default model for new chats.",
   },
   background: {
     name: "Background",
@@ -92,7 +92,7 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
     );
   return (
     <>
-      <SettingRow title={title} description={PAIRS[which].model}>
+      <SettingRow title={which === "main" ? "Default model" : title} description={PAIRS[which].model}>
         <ModelChoice
           label={title}
           value={current.model}
@@ -105,7 +105,7 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
         />
       </SettingRow>
       <SettingRow
-        title={`${name} provider`}
+        title={which === "main" ? "Default provider" : `${name} provider`}
         description={pinned ? "Pinned by your requirements." : PAIRS[which].provider}
       >
         <OptionSelect
@@ -125,6 +125,7 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
       </SettingRow>
       <SettingsActions feedback={<SaveFeedback outcome={saver.outcome} onReload={reload} />}>
         <Button
+          aria-label={`Save ${name.toLowerCase()} model`}
           disabled={saver.pending !== null || !Object.keys(draft).length || (which === "main" && !current.model)}
           onClick={() =>
             void saver.run(
@@ -137,7 +138,7 @@ function ModelPair({ which, value, models }: { which: keyof typeof PAIRS; value:
             )
           }
         >
-          {saver.pending === "save" ? "Saving…" : `Save ${name.toLowerCase()} model`}
+          {saver.pending === "save" ? "Saving…" : `Save ${which === "main" ? "default" : name.toLowerCase()} model`}
         </Button>
       </SettingsActions>
     </>

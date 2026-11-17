@@ -73,7 +73,7 @@ export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, ag
       const claudePick = isBridged(modelEdit?.value);
       if (modelEdit) {
         const effort = msg.params.edits.find(e => e.keyPath === "model_reasoning_effort")?.value;
-        updateStore((st) => { if (claudePick && typeof modelEdit.value === "string") st._default = { model: modelEdit.value, effort: typeof effort === "string" && effort !== "default" ? effort : null }; else delete st._default; });
+        await updateStore((st) => { if (claudePick && typeof modelEdit.value === "string") st._default = { model: modelEdit.value, effort: typeof effort === "string" && effort !== "default" ? effort : null }; else delete st._default; });
       }
       if (claudePick) msg.params.edits = msg.params.edits.filter(e => e.keyPath !== "model" && e.keyPath !== "model_reasoning_effort");
       if (claudePick && msg.params.edits.length === 0) { toTui({ id: msg.id, result: { status: "ok", version: "elpis-claude", filePath: `${HOME}/.elpis-next/config.toml`, overriddenMetadata: null } }); return; }
