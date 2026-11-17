@@ -113,7 +113,15 @@ async function client(name = 'e2e-desktop') {
 }
 const until = async <T,>(what: string, check: () => T | Promise<T>, ms = 120_000) => {
   const end = Date.now() + ms;
-  for (;;) { const v = await check(); if (v) return v; assert.ok(Date.now() < end, `timed out: ${what}\n${fs.readFileSync(env.ACP_BRIDGE_LOG, 'utf8').split('\n').slice(-25).join('\n')}`); await pause(200); }
+  for (;;) {
+    const value = await check(); if (value) return value;
+    if (Date.now() >= end) {
+      let log = '';
+      try { log = fs.readFileSync(env.ACP_BRIDGE_LOG, 'utf8').split('\n').slice(-25).join('\n'); } catch { /* The handover case uses its own log. */ }
+      assert.fail(`timed out: ${what}\n${log}`);
+    }
+    await pause(200);
+  }
 };
 const runFile = (id: string): RunState => JSON.parse(fs.readFileSync(path.join(home, 'workflows/runs', id, 'run.json'), 'utf8'));
 const runsDir = path.join(home, 'workflows/runs');
@@ -248,6 +256,9 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
     const dir = path.join(root, name); fs.mkdirSync(dir);
     for (const file of fs.readdirSync(tools).filter((f) => (f.endsWith('.mjs') || f.endsWith('.mts')) || f === 'package.json')) fs.copyFileSync(path.join(tools, file), path.join(dir, file));
     fs.symlinkSync(path.join(tools, 'node_modules'), path.join(dir, 'node_modules'));
+    // The MCP server imports these resources too; omitting them hides every workflow tool.
+    const matilda = path.join(tools, 'matilda');
+    fs.symlinkSync(fs.existsSync(matilda) ? matilda : fileURLToPath(new URL('../bridge/', import.meta.url)), path.join(dir, 'matilda'));
     return dir;
   };
   const [older, newer] = [bundle('bundle-a'), bundle('bundle-b')];
@@ -280,7 +291,8 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
   await c.ok('turn/start', { threadId: chat, input: [{ type: 'text', text: 'ultracode WF:handover', text_elements: [] }] });
   await until('the launch turn ends', () => c.events.slice(before).some((m) => m.method === 'turn/completed' && m.params.threadId === chat));
   const runs2 = path.join(home2, 'workflows/runs');
-  const id = fs.readdirSync(runs2)[0]; assert.ok(id);
+  const id = fs.readdirSync(runs2)[0];
+  assert.ok(id, `Workflow was not admitted: ${replyOf((await c.ok('thread/turns/list', { threadId: chat, limit: 1, sortDirection: 'desc', itemsView: 'full' })).data[0])}`);
   const file = (): RunState & { owner?: { pid: number }; result: unknown } => JSON.parse(fs.readFileSync(path.join(runs2, id, 'run.json'), 'utf8'));
   await until('one agent done and the slow one working', () => { const a = file().agents; return a.some((x) => x.state === 'done') && a.some((x) => x.label.startsWith('hand two') && x.state === 'running'); });
   const owner = file().owner; assert.ok(owner); assert.equal(owner.pid, oldPid);
