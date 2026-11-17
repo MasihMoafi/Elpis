@@ -20,7 +20,7 @@ for (const colorScheme of ['light']) {
       { turnId, item: { id: `u-${turnId}`, type: 'userMessage', content: [{ type: 'text', text: prompt }] } },
       ...work.map(item => ({ turnId, item })),
       ...(reply ? [{ turnId, item: { id: `a-${turnId}`, type: 'agentMessage', text: reply } }] : []),
-    ].map((entry, position) => ({ ...entry, startedAtMs: 1700000000000 + index * 10000 + position })));
+    ].map((entry, position) => ({ ...entry, startedAtMs: 1700000000000 + index * 10000 + position, completedAtMs: 1700000000000 + index * 10000 + position + 1 })));
     let rejectNext = true;
     const reads: number[] = [];
     const f = await fixture({ desktop: true, width: 1440, height: 900, colorScheme, chat, routes: {

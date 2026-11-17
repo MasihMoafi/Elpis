@@ -5,7 +5,7 @@ import { CollapseDetails } from "@/components/step";
 import { WorkingMark } from "@/components/working-mark";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import type { Entry } from "@/lib/api";
-import { elapsed, stepLabel, summaryParts } from "@/lib/steps";
+import { compactionEntry, elapsed, stepLabel, summaryParts } from "@/lib/steps";
 import { ImageThumb, fileKind } from "@/components/file-cards";
 import { Counts } from "@/components/diff-view";
 import { turnEdits } from "@/lib/diff";
@@ -44,7 +44,7 @@ export function Flow({
       flush();
       blocks.push(
         <div key={entry.item.id}>
-          {renderItem({ ...entry, item: { id: entry.item.id, type: "contextCompaction" } })}
+          {renderItem(compactionEntry(entry, live))}
         </div>,
       );
     } else if (

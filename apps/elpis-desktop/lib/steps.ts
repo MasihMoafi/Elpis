@@ -1,4 +1,14 @@
-import type { Item } from "./api";
+import type { Entry, Item } from "./api";
+
+/** Native compaction items have no status; their lifecycle is recorded on the entry. */
+export function compactionEntry(entry: Entry, live = false): Entry {
+  let status = entry.item.status ?? "unknown";
+  if (status !== "failed" && status !== "interrupted") {
+    if (entry.completedAtMs !== undefined || status === "completed") status = "completed";
+    else if (entry.startedAtMs !== undefined || status === "inProgress") status = live ? "inProgress" : "interrupted";
+  }
+  return { ...entry, item: { ...entry.item, type: "contextCompaction", status } };
+}
 
 /** How the chat words and draws one step of agent work, as Claude's desktop app does: a command's script without
  * its shell wrapper, coloured as shell, and the sentence a running or finished step reads as. No dependencies. */
@@ -424,7 +434,13 @@ export function summaryParts(items: Item[]): SummaryPart[] {
       case "agents":
         return { text: countWord(list.length, "worked with an agent", "worked with agents"), failed };
       case "compaction":
-        return { text: "compacted the context", failed };
+        return {
+          text: list.some(item => item.status === "inProgress") ? "compacting the context"
+            : list.some(item => item.status === "interrupted" || item.status === "failed") ? "compaction did not complete"
+            : list.some(item => item.status === "unknown") ? "context compaction"
+            : "compacted the context",
+          failed,
+        };
       default:
         return { text: countWord(list.length, "viewed an image", "viewed # images"), failed };
     }

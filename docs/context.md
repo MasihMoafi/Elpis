@@ -22,6 +22,8 @@ Each applied admission records the source and admitted forms under `logs/smart-p
 
 **Native compaction.** `/compact` compacts immediately; `/compact <text>` adds summary guidance. `/compact N` instead saves a remaining-context pressure threshold in `$ELPIS_HOME/compaction.json`: N must be finite and greater than 0 and less than 70; decimals and `%` are accepted. The runtime checks the full window before turns and between model/tool iterations. If compaction cannot relieve pressure, further pressure compactions are suppressed for that turn until pressure clears; native context-limit protection remains active. Without the setting, native policy applies. [Command](../codex-rs/tui/src/chatwidget/elpis_commands.rs); [threshold](../codex-rs/core/src/pressure_compaction.rs); [turn loop](../codex-rs/core/src/session/turn.rs).
 
+The chat says “Compacting the context” while compaction is running, and “Compacted the context” only after completion evidence. An interrupted compaction must not report success; reopening a chat preserves this distinction.
+
 Compaction and pruning can lose detail. Check consequential claims against the transcript and artifacts; do not treat pruned tokens as total cost savings. See [evaluation evidence](evals/RESULTS.md).
 
 ## 3. Memory and checkpoints

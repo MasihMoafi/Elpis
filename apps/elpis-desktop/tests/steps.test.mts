@@ -3,7 +3,19 @@
 // is "verb + what" phrases in the order the work began ("Edited and read app.ts, used rag, ran 2 commands (1 failed)").
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { elapsed, foldSummary, stepDuration, stepLabel, summarize, unwrapShell } from '../lib/steps.ts';
+import { compactionEntry, elapsed, foldSummary, stepDuration, stepLabel, summarize, unwrapShell } from '../lib/steps.ts';
+
+test('compaction wording distinguishes running, interrupted and completed work', () => {
+  const item = { id: 'compact', type: 'contextCompaction' };
+  assert.equal(summarize([{ ...item, status: 'inProgress' }]), 'Compacting the context');
+  assert.equal(summarize([{ ...item, status: 'interrupted' }]), 'Compaction did not complete');
+  assert.equal(summarize([{ ...item, status: 'completed' }]), 'Compacted the context');
+  const entry = { turnId: 'turn', item, startedAtMs: 100 };
+  assert.equal(compactionEntry(entry, true).item.status, 'inProgress', 'reopened pending history stays pending');
+  assert.equal(compactionEntry(entry, false).item.status, 'interrupted');
+  assert.equal(compactionEntry({ ...entry, completedAtMs: 200 }, true).item.status, 'completed', 'a completed compact remains completed while the turn continues');
+  assert.equal(summarize([compactionEntry({ turnId: 'turn', item }).item]), 'Context compaction', 'missing evidence cannot claim completion');
+});
 
 const command = (id: string, extra: Record<string, unknown> = {}) => ({ id, type: 'commandExecution', command: `run ${id}`, status: 'completed', exitCode: 0, commandActions: [{ type: 'unknown', command: `run ${id}` }], ...extra });
 const read = (id: string, path: string) => command(id, { commandActions: [{ type: 'read', command: `sed ${path}`, name: path.split('/').at(-1), path }] });

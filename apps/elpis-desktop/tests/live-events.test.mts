@@ -22,6 +22,17 @@ import type { Entry } from '../lib/api.ts';
 
 function at<T>(items: T[], index: number): T { const item = items[index]; assert.ok(item); return item; }
 
+test('compaction start and completion carry distinct lifecycle evidence', () => {
+  const params = { threadId: 'chat', turnId: 'turn', item: { id: 'compact', type: 'contextCompaction' } };
+  const started = mergeLiveItem([], 'item/started', params, 'chat');
+  assert.ok(at(started, 0).startedAtMs);
+  assert.equal(at(started, 0).completedAtMs, undefined);
+  const completed = mergeLiveItem(started, 'item/completed', params, 'chat');
+  assert.equal(at(completed, 0).startedAtMs, at(started, 0).startedAtMs);
+  assert.ok(at(completed, 0).completedAtMs);
+  assert.equal(completed.length, 1);
+});
+
 test('reopened cached live output survives an older page, in order before newer saved work', () => {
   const entry = (id: string, text: string): Entry => ({ turnId: 'turn', item: { id, type: 'agentMessage', text }, completedAtMs: 50 });
   const before = entry('before', 'Earlier'), latest = entry('latest', 'Completed live reply'), extra = entry('extra', 'Live commentary');

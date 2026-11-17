@@ -30,6 +30,32 @@ type Thread = { id: string; name: string; preview: string; cwd: string; model: s
 const { fixture, THREADS }: { fixture(options: object): Promise<Fixture>; THREADS: Thread[] } = require('./parity-fixture.cts');
 const { scrollToLoadEarlier }: { scrollToLoadEarlier(page: Page): Promise<void> } = require('./controls.cts');
 
+for (const mode of ['live', 'reopened', 'interrupted']) test(`compaction completion is reported only after its completion event (${mode})`, async t => {
+  const original = THREADS[0]; assert.ok(original);
+  const thread = { ...original, status: { type: 'active' } };
+  const item = { id: 'pending-compact', type: 'contextCompaction' };
+  const entries = [{ turnId: 't4', item, startedAtMs: Date.now() }];
+  const f = await fixture({ running: true, routes: mode === 'reopened' ? {
+    '/api/threads/chat-a': () => ({ thread, data: entries, nextCursor: null }),
+  } : {} });
+  t.after(() => f.close());
+  await f.open('chat-a');
+  if (mode !== 'reopened') f.emit('message', { method: 'item/started', params: { threadId: 'chat-a', turnId: 't4', item } });
+  const line = f.page.locator('.context-event');
+  await line.getByText('Compacting the context', { exact: true }).waitFor();
+  assert.equal(await line.getByText('Compacted the context', { exact: true }).count(), 0);
+  if (mode === 'interrupted') {
+    f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-a', status: { type: 'idle' } } });
+    await line.getByText('Compaction did not complete', { exact: true }).waitFor();
+    assert.equal(await line.getByText('Compacted the context', { exact: true }).count(), 0);
+  } else {
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item } });
+    await line.getByText('Compacted the context', { exact: true }).waitFor();
+    assert.equal(await line.getByText('Compacting the context', { exact: true }).count(), 0);
+  }
+  assert.deepEqual(f.errors, []);
+});
+
 test('a follow-up stays after earlier work when the loaded history starts mid-turn', async t => {
   const turnId = 't4';
   const original = THREADS[0]; assert.ok(original);
@@ -39,7 +65,7 @@ test('a follow-up stays after earlier work when the loaded history starts mid-tu
     entry({ id: 'command-before', type: 'commandExecution', command: 'echo first', status: 'completed' }),
     entry({ id: 'reply-before', type: 'agentMessage', text: 'Earlier reply.' }),
     entry({ id: 'command-next', type: 'commandExecution', command: 'echo second', status: 'completed' }),
-    entry({ id: 'compaction', type: 'contextCompaction' }),
+    entry({ id: 'compaction', type: 'contextCompaction', status: 'completed' }),
     entry({ id: 'reply-latest', type: 'agentMessage', text: 'All green.' }),
   ];
   const f = await fixture({ running: true, routes: {

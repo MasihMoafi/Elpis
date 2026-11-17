@@ -131,9 +131,12 @@ export function mergeLiveItem(
     }
   }
   const index = entries.findIndex(entry => entry.turnId === event.turnId && entry.item.id === item.id);
-  if (index < 0) return [...entries, { turnId: event.turnId, item, ...(event.model ? { model: event.model } : {}) }];
+  const timing = item.type === "contextCompaction"
+    ? method === "item/started" ? { startedAtMs: Date.now() } : { completedAtMs: Date.now() }
+    : {};
+  if (index < 0) return [...entries, { turnId: event.turnId, item, ...timing, ...(event.model ? { model: event.model } : {}) }];
   return entries.map((entry, i) =>
-    i === index ? { ...entry, item, ...(event.model ? { model: event.model } : {}) } : entry,
+    i === index ? { ...entry, item, ...timing, ...(event.model ? { model: event.model } : {}) } : entry,
   );
 }
 

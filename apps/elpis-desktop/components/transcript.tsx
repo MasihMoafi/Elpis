@@ -9,7 +9,7 @@ import { Fragment, createContext, useContext, useCallback, useEffect, useLayoutE
 import { createPortal } from "react-dom";
 import { pruneOf } from "@/lib/smart-prune";
 import type { Entry } from "@/lib/api";
-import { foldSummary, reasoningOf, summarize } from "@/lib/steps";
+import { compactionEntry, foldSummary, reasoningOf, summarize } from "@/lib/steps";
 import { CreatedFiles } from "@/components/file-cards";
 
 import { TurnChanges } from "@/components/edit-rows";
@@ -290,7 +290,7 @@ function Turn({
   if (!active && compact && compactOnly) {
     return (
       <section className="turn" aria-label="Turn">
-        {renderItem({ ...compact, item: { id: compact.item.id, type: "contextCompaction" } })}
+        {renderItem(compactionEntry(compact))}
       </section>
     );
   }
