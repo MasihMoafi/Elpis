@@ -1,6 +1,7 @@
 "use client";
 
 import { ElpisBand } from "@/components/elpis-band";
+import { BackgroundProcesses } from "@/components/background-processes";
 import type { ReactNode } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { WorkspaceTranscript } from "@/components/workspace-transcript";
@@ -148,6 +149,9 @@ export function WorkspaceChatPage({
           >
             {transcriptAlerts}
           </WorkspaceTranscript>
+          {selected && !selected.motherAgent && (
+            <BackgroundProcesses key={selected.id} threadId={selected.id} active={!!activeTurn} entries={shownEntries} />
+          )}
           <WorkspaceComposer
             session={session}
             runtime={runtime}

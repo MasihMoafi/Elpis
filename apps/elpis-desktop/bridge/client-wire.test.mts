@@ -169,6 +169,10 @@ const cases = {
   "thread/unarchive": threadReply,
   "thread/register": threadReply,
   "thread/list": { valid: { data: [{ id: CHAT }], nextCursor: null }, invalid: { data: [{ id: 42 }] } },
+  "thread/backgroundTerminals/list": {
+    valid: { data: [{ itemId: "item", processId: "42", command: "sleep 10", cwd: "/tmp" }], nextCursor: null },
+    invalid: { data: [{ processId: "42" }] },
+  },
   "thread/turns/list": { valid: { data: [{ id: "turn" }], nextCursor: null }, invalid: { data: [{ id: 42 }] } },
   "thread/items/list": {
     valid: {

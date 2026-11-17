@@ -305,6 +305,9 @@ export class DesktopClient extends EventEmitter {
   async contextFiles(id?: unknown) {
     return clientContext.impl_contextFiles.call(this, this.#state, id);
   }
+  async backgroundProcesses(id?: unknown, cursor?: string) {
+    return clientContext.impl_backgroundProcesses.call(this, this.#state, id, cursor);
+  }
   async goal(id?: unknown) {
     return clientContext.impl_goal.call(this, this.#state, id);
   }

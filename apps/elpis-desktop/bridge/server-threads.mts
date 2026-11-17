@@ -225,6 +225,12 @@ export async function handleThreadRoutes(
     return true;
   }
   const contextFiles = url.pathname.match(/^\/api\/threads\/([^/]+)\/context-files$/);
+  const backgroundProcesses = url.pathname.match(/^\/api\/threads\/([^/]+)\/background-processes$/);
+  if (backgroundProcesses && method === "GET") {
+    const cursor = url.searchParams.get("cursor") ?? undefined;
+    json(response, 200, await client.backgroundProcesses(decodeURIComponent(backgroundProcesses[1] ?? ""), cursor));
+    return true;
+  }
   if (contextFiles) {
     const id = decodeURIComponent(contextFiles[1] ?? "");
     if (method === "GET") {

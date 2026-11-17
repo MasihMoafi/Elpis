@@ -56,6 +56,7 @@ const READ_RPCS = new Set([
   "thread/list",
   "thread/read",
   "thread/items/list",
+  "thread/backgroundTerminals/list",
   "thread/turns/list",
   "model/list",
   "experimentalFeature/list",

@@ -83,6 +83,7 @@ export type RpcResponses = {
   "thread/list": ThreadPage;
   "thread/turns/list": TurnPage;
   "thread/items/list": ItemPage;
+  "thread/backgroundTerminals/list": { data: { itemId: string; processId: string; command: string; cwd: string }[]; nextCursor?: string | null };
   "turn/start": {
     turn: {
       id: string;
@@ -299,6 +300,7 @@ const results = {
   "thread/list": page(thread),
   "thread/turns/list": page(summaryTurn),
   "thread/items/list": page(z.looseObject({ turnId: text, item })),
+  "thread/backgroundTerminals/list": page(z.looseObject({ itemId: text, processId: text, command: text, cwd: text })),
   "turn/start": z.looseObject({ turn: z.looseObject({ id: text }) }),
   "review/start": z.looseObject({ turn: z.looseObject({ id: text }), reviewThreadId: text }),
   "turn/settings/update": z.looseObject({ status: text }),

@@ -18,6 +18,11 @@ import { internal_rpc, internal_writeConfig } from "./client-rpc.mts";
 import type { DesktopClient } from "./client.mts";
 import type { ClientState } from "./client-state.mts";
 
+export async function impl_backgroundProcesses(this: DesktopClient, clientState: ClientState, id: unknown, cursor?: string) {
+  threadId(id);
+  return internal_rpc(this, clientState, "thread/backgroundTerminals/list", { threadId: id, limit: 100, ...(cursor ? { cursor } : {}) });
+}
+
 /** Context sources and admission use the same engine functions as the TUI Ledger. */
 export async function impl_contextFiles(this: DesktopClient, clientState: ClientState, id: unknown) {
   threadId(id);
