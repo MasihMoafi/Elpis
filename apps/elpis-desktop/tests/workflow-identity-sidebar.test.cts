@@ -157,7 +157,8 @@ test('hiding Workflows supports immediate Undo and both Redo shortcuts without c
     await workflows(page).waitFor();
     await page.keyboard.press('Control+y');
     await workflows(page).waitFor({ state: 'detached' });
-    assert.equal(f.posts.some(post => /\/(?:trash|undo|archive|delete|interrupt|stop)$/.test(post.path)), false, 'visibility history never changes chats or restores unrelated trash');
+    assert.equal(f.posts.some(post => /\/(?:trash|undo|archive|delete|interrupt|stop)$/.test(post.path)), false,
+      'visibility history never changes chats or restores unrelated trash');
     await page.reload(); await sidebar(page).waitFor();
     assert.equal(await workflows(page).count(), 0, 'redo persists the hidden setting');
     assert.deepEqual(f.errors, []);

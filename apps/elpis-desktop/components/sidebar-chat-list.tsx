@@ -212,8 +212,8 @@ export function SidebarChatList({
                   recordChatStep({
                     kind: "visibility",
                     label: "hid Workflows from the sidebar",
-                    undo: async () => savePreferences({ sidebarWorkflows: true }),
-                    redo: async () => savePreferences({ sidebarWorkflows: false }),
+                    undo: () => Promise.resolve(savePreferences({ sidebarWorkflows: true })),
+                    redo: () => Promise.resolve(savePreferences({ sidebarWorkflows: false })),
                   });
                 } catch {
                   /* the section stays */
