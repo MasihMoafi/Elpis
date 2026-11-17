@@ -10,6 +10,7 @@ import { SidebarProjects } from "@/components/sidebar-projects";
 import { Button } from "@/components/ui/button";
 import type { Thread } from "@/lib/api";
 import type { useBrowserPins } from "@/lib/browser-pins";
+import { recordChatStep } from "@/lib/chat-undo";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import type { createProjectActions } from "@/lib/project-actions";
 import type { useConversationList } from "@/lib/use-conversation-list";
@@ -118,7 +119,7 @@ export function SidebarChatList({
     </Button>
   );
   return (
-    <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
+    <div className="thread-list" ref={threadList} tabIndex={-1} onKeyDown={listKeys} {...chatListOrder.pointer}>
       {!recentChats.length && markRead && <div className="section-label-row justify-end">{markRead}</div>}
       {workflowCatalog.error && (
         <p role="alert" className="px-2 text-xs text-destructive">
@@ -208,6 +209,13 @@ export function SidebarChatList({
               onClick={() => {
                 try {
                   savePreferences({ sidebarWorkflows: false });
+                  recordChatStep({
+                    kind: "visibility",
+                    label: "hid Workflows from the sidebar",
+                    undo: () => Promise.resolve(savePreferences({ sidebarWorkflows: true })),
+                    redo: () => Promise.resolve(savePreferences({ sidebarWorkflows: false })),
+                  });
+                  threadList.current?.focus();
                 } catch {
                   /* the section stays */
                 }

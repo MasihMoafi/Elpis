@@ -142,6 +142,87 @@ test('the Workflows section hides from the sidebar, stays hidden, and comes back
   } finally { await f.close(); }
 });
 
+test('hiding Workflows supports immediate Undo and both Redo shortcuts without changing any chats', async () => {
+  const f = await open('light'), { page } = f;
+  try {
+    const names = await workflows(page).locator('.thread-row:not(.child) .thread-title').allTextContents();
+    await workflows(page).getByRole('button', { name: 'Hide Workflows from the sidebar', exact: true }).click();
+    await workflows(page).waitFor({ state: 'detached' });
+    await page.keyboard.press('Control+z');
+    await workflows(page).waitFor();
+    assert.deepEqual(await workflows(page).locator('.thread-row:not(.child) .thread-title').allTextContents(), names);
+    await page.keyboard.press('Control+Shift+z');
+    await workflows(page).waitFor({ state: 'detached' });
+    await page.keyboard.press('Control+z');
+    await workflows(page).waitFor();
+    await page.keyboard.press('Control+y');
+    await workflows(page).waitFor({ state: 'detached' });
+    assert.equal(f.posts.some(post => /\/(?:trash|undo|archive|delete|interrupt|stop)$/.test(post.path)), false,
+      'visibility history never changes chats or restores unrelated trash');
+    await page.reload(); await sidebar(page).waitFor();
+    assert.equal(await workflows(page).count(), 0, 'redo persists the hidden setting');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('hiding Workflows can be undone after visiting Settings with the Persian keyboard layout', async () => {
+  const f = await open('light'), { page } = f;
+  try {
+    await workflows(page).getByRole('button', { name: 'Hide Workflows from the sidebar', exact: true }).click();
+    await workflows(page).waitFor({ state: 'detached' });
+    await openSettings(page, 'General');
+    await leaveSettings(page);
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement | null)?.blur();
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ظ', code: 'KeyZ', ctrlKey: true, bubbles: true }));
+    });
+    await workflows(page).waitFor();
+    await page.reload(); await sidebar(page).waitFor();
+    await workflows(page).waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('Undo in the composer keeps Workflows hidden and restores typing before sidebar history', async () => {
+  const f = await open('light'), { page, composer } = f;
+  try {
+    await workflows(page).getByRole('button', { name: 'Hide Workflows from the sidebar', exact: true }).click();
+    await workflows(page).waitFor({ state: 'detached' });
+    await composer.click();
+    await page.keyboard.type('keep this draft');
+    await page.keyboard.press('Control+z');
+    await eventually(async () => assert.notEqual(await composer.inputValue(), 'keep this draft'));
+    assert.equal(await workflows(page).count(), 0, 'typing undo does not undo hiding');
+    await page.keyboard.press('Control+Shift+z');
+    await eventually(async () => assert.equal(await composer.inputValue(), 'keep this draft'));
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    await page.keyboard.press('Control+z');
+    await workflows(page).waitFor();
+    assert.equal(await composer.inputValue(), 'keep this draft', 'sidebar undo keeps the draft');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('hiding Workflows keeps Undo in the sidebar while the workflow Board is open', async () => {
+  const f = await open('light'), { page } = f;
+  try {
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    await page.locator('.agents-canvas').waitFor();
+    const draft = () => page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1'));
+    const before = await draft();
+    await workflows(page).getByRole('button', { name: 'Hide Workflows from the sidebar', exact: true }).click();
+    await workflows(page).waitFor({ state: 'detached' });
+    await page.keyboard.press('Control+z');
+    await workflows(page).waitFor();
+    assert.equal(await draft(), before, 'sidebar Undo does not change the board');
+    await page.keyboard.press('Control+Shift+z');
+    await workflows(page).waitFor({ state: 'detached' });
+    assert.equal(await draft(), before, 'sidebar Redo does not change the board');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('two runs in one root chat stay separate and never borrow one another’s steps', async () => {
   const saved: Run[] = [{ ...runs[0], status: 'succeeded', mother: { sessionId: 'review-old' }, tasks: [...runs[0].tasks, { id: 'bad', title: 'Ignore self membership', assignedThreadId: 'chat-a' }] }, { ...runs[1], rootThreadId: 'chat-a' }];
   const f = await open('light', saved), { page } = f;

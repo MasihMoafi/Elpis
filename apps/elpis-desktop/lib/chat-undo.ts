@@ -1,9 +1,9 @@
-/** The one undo history for chat actions (shared system, requirement 4): rename, move into or out of a project, archive
- * and delete each record a step with its inverse, and Ctrl+Z / Ctrl+Shift+Z outside a text field
+/** The one undo history for chat and sidebar actions (shared system, requirement 4): rename, move into or out of a project,
+ * archive, delete and hide each record a step with its inverse, and Ctrl+Z / Ctrl+Shift+Z outside a text field
  * (lib/history-shortcut.ts through lib/shortcuts.ts) run the newest step back or forward. Text fields keep their own
  * undo. The history lives as long as the window; the bridge's trash keeps deletions across a reload. */
 export type ChatStep = {
-  kind: "rename" | "move" | "archive" | "delete";
+  kind: "rename" | "move" | "archive" | "delete" | "visibility";
   /** What was done, as the notice repeats it: "renamed “A” to “B”". */
   label: string;
   undo: () => Promise<unknown>;
