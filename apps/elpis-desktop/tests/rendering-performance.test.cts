@@ -10,6 +10,30 @@ const report = async (name: string, value: unknown) => {
   if (process.env.ELPIS_RENDER_REPORT) await fs.appendFile(process.env.ELPIS_RENDER_REPORT, JSON.stringify({ name, value }) + '\n');
 };
 
+test('code actions stay above short, overflowing and multiline code in a narrow pane', async () => {
+  const samples = ['echo done', `printf '%s' ${'long_argument_'.repeat(80)}`, 'first line\nsecond line\nthird line'];
+  const text = samples.map(code => `\`\`\`bash\n${code}\n\`\`\``).join('\n\n');
+  const f = await fixture({ width: 820, height: 900, chat: [['code', 'Show the commands', text]] });
+  try {
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    const blocks = f.page.locator('.message.agent .code-block');
+    await blocks.first().waitFor();
+    assert.equal(await blocks.count(), samples.length);
+    for (let index = 0; index < samples.length; index++) {
+      const block = blocks.nth(index);
+      await block.scrollIntoViewIfNeeded();
+      const bounds = await block.evaluate((element: HTMLElement) => {
+        const bar = element.querySelector('.code-block-bar')!.getBoundingClientRect();
+        const code = element.querySelector('pre')!.getBoundingClientRect();
+        return { actionBottom: bar.bottom, codeTop: code.top };
+      });
+      assert.ok(bounds.actionBottom <= bounds.codeTop, `code block ${index}: actions overlap the source`);
+      await block.getByRole('button', { name: 'Copy code', exact: true }).click();
+      assert.equal(await f.copied(), samples[index], 'the actions copy only the complete source');
+    }
+  } finally { await f.close(); }
+});
+
 test('scrolling a long chat releases visited turns and preserves selection and navigation', async () => {
   const chat = Array.from({ length: 120 }, (_, index) => [`t${index}`, `Prompt ${index}`, Array.from({ length: 12 }, (_, line) => `Reply ${index} paragraph ${line}.`).join('\n\n')]);
   const f = await fixture({ width: 1440, height: 900, chat, ...(process.env.ELPIS_TEST_STATIC_DIR ? { staticDir: process.env.ELPIS_TEST_STATIC_DIR } : {}) });
