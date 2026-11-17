@@ -2,6 +2,44 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 
+test('reconnection preserves received output, accepts newer saved output and keeps chats separate', async () => {
+  let savedReply = 'All green.';
+  const f = await fixture({ running: true, chat: [['t4', 'Check the result', savedReply]], routes: {
+    '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Chat A', cwd: '/tmp/parity-fixture' }, data: [
+      { turnId: 't4', item: { id: 'a-t4', type: 'agentMessage', text: savedReply } },
+      { turnId: 't4', item: { id: 'u-t4', type: 'userMessage', content: [{ type: 'text', text: 'Check the result' }] } },
+    ], nextCursor: null }),
+  } });
+  const reconnect = async () => {
+    f.emit('connection', { connected: false });
+    await f.page.locator('.status-dot.connected').waitFor({ state: 'hidden' });
+    const read = f.page.waitForResponse((response: import('playwright-core').Response) =>
+      new URL(response.url()).pathname === '/api/threads/chat-a');
+    f.emit('connection', { connected: true });
+    await (await read).finished();
+    await f.page.waitForTimeout(150);
+  };
+  try {
+    await f.open('chat-a');
+    for (const [id, text] of [['a-t4', 'All green. Updated stream.'], ['new-update', 'A newly received message.']]) {
+      f.emit('message', { method: 'item/completed', params: {
+        threadId: 'chat-a', turnId: 't4', item: { id, type: 'agentMessage', text },
+      } });
+    }
+    await f.page.getByText('A newly received message.', { exact: true }).waitFor();
+    await reconnect();
+    assert.equal(await f.page.getByText('All green. Updated stream.', { exact: true }).count(), 1);
+    assert.equal(await f.page.getByText('A newly received message.', { exact: true }).count(), 1);
+    savedReply = 'All green. Updated stream. A later saved continuation.';
+    await reconnect();
+    assert.equal(await f.page.getByText(savedReply, { exact: true }).count(), 1);
+    await f.open('chat-b');
+    assert.equal(await f.page.getByText(savedReply, { exact: true }).count(), 0);
+    assert.equal(await f.page.getByText('A newly received message.', { exact: true }).count(), 0);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('returning to a running chat never replaces already received output with an older history page', async () => {
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERING_STATIC, running: true });
   try {

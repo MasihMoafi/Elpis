@@ -157,7 +157,7 @@ export function useRuntimeEvents({
               ? (async () => {
                   const result = await api<HistoryPage & { thread: Thread }>(historyPath(id));
                   if (shown()) {
-                    applyHistoryPage(id, result, historyRevision);
+                    applyHistoryPage(id, result, historyRevision, true);
                   }
                   return !result.data.length && !result.nextCursor;
                 })()
@@ -175,7 +175,7 @@ export function useRuntimeEvents({
           if (results[0].status === "fulfilled" && results[0].value && results[1].status === "fulfilled" && shown()) {
             const again = await api<HistoryPage>(historyPath(id)).catch(() => null);
             if (again && Array.isArray(again.data) && shown()) {
-              applyHistoryPage(id, again, historyRevision);
+              applyHistoryPage(id, again, historyRevision, true);
             }
           }
           const failed = results.find(result => result.status === "rejected");
