@@ -16,7 +16,9 @@ test("streaming reads are single-use and a changed source cannot play prepared a
     speak: async () => { throw Error("A streaming voice must not wait for a complete file"); },
     stream: async text => { spoken.push(text); return Readable.from([Buffer.from("audio")]); },
   }, provider: async () => { throw Error("No network provider should be called"); } });
-  assert.equal((await reader.status()).streaming, true);
+  const status = await reader.status();
+  assert.ok("streaming" in status);
+  assert.equal(status.streaming, true);
   const prepared = await reader.prepare({ text: "First sentence." });
   assert.equal(spoken.length, 0, "prefetch does not load the model or start unused synthesis");
   const id = prepared.url.split("/").at(-1)!;
@@ -53,7 +55,10 @@ def load():
     def tobytes(self): return b'\\x01\\x00' * 2400
 def clip(*_): return PCM()
 `);
-  const reader = createQwen({ ...process.env, ELPIS_READ_ALOUD_ROOT: root, READ_ALOUD_QWEN_PYTHON: "/usr/bin/python3", READ_ALOUD_QWEN_MODEL: path.join(root, "model"), QWEN_TEST_PID: path.join(root, "pid") });
+  const reader = createQwen({
+    ...process.env, ELPIS_READ_ALOUD_ROOT: root, READ_ALOUD_QWEN_PYTHON: "/usr/bin/python3",
+    READ_ALOUD_QWEN_MODEL: path.join(root, "model"), QWEN_TEST_PID: path.join(root, "pid"),
+  });
   t.after(() => reader.close());
   assert.equal(reader.available(), true);
   const controller = new AbortController(), started = Date.now();

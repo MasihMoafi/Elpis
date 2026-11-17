@@ -40,7 +40,10 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
   let ready: Promise<void> | null = null;
   let idle: ReturnType<typeof setTimeout> | undefined;
   const jobs = new Map<string, { audio: PassThrough; started: boolean }>();
-  const available = () => [paths.python, path.join(paths.worker, "synthesis.py"), path.join(paths.model, "model.safetensors"), path.join(paths.model, "speech_tokenizer/model.safetensors")].every(file => existsSync(file));
+  const available = () => [
+    paths.python, path.join(paths.worker, "synthesis.py"), path.join(paths.model, "model.safetensors"),
+    path.join(paths.model, "speech_tokenizer/model.safetensors"),
+  ].every(file => existsSync(file));
   function close() {
     clearTimeout(idle);
     const running = child;
@@ -72,7 +75,12 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
           const line = pending.slice(0, end); pending = pending.slice(end + 1);
           let message: { ready?: boolean; id?: string; pcm?: string; rate?: number; done?: boolean; error?: string };
           try { message = JSON.parse(line); } catch { continue; }
-          if (message.ready !== undefined) { clearTimeout(timer); if (message.ready) resolve(); else { reject(new BridgeError(message.error ?? "Qwen could not start.", 503)); close(); } continue; }
+          if (message.ready !== undefined) {
+            clearTimeout(timer);
+            if (message.ready) resolve();
+            else { reject(new BridgeError(message.error ?? "Qwen could not start.", 503)); close(); }
+            continue;
+          }
           const job = message.id ? jobs.get(message.id) : undefined;
           if (!job) continue;
           if (message.error) { job.audio.destroy(new BridgeError(message.error, 502)); jobs.delete(message.id!); }
@@ -92,7 +100,7 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
   }
   return {
     available,
-    voices: async () => VOICES,
+    voices: () => Promise.resolve(VOICES),
     defaultVoice: "qwen_aiden",
     async stream(text: string, voice: string | null, signal?: AbortSignal) {
       if (!text.trim() || text.length > 4000) throw new BridgeError("Read aloud takes up to 4000 characters at a time.");

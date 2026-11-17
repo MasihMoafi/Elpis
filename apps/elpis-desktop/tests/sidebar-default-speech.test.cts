@@ -16,7 +16,10 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar hierarchy and running
     assert.equal(mark.state, 'working');
     assert.notEqual(mark.fill, 'rgba(0, 0, 0, 0)');
     assert.notEqual(mark.shape, '50%');
-    const colors = await f.page.locator('.thread-list').evaluate((root: HTMLElement) => [getComputedStyle(root.querySelector('.section-label')!).color, getComputedStyle(root.querySelector('[data-thread-id="chat-b"] .thread-title')!).color]);
+    const colors = await f.page.locator('.thread-list').evaluate((root: HTMLElement) => [
+      getComputedStyle(root.querySelector('.section-label')!).color,
+      getComputedStyle(root.querySelector('[data-thread-id="chat-b"] .thread-title')!).color,
+    ]);
     assert.notEqual(colors[0], colors[1], 'headings use the theme accent rather than chat text color');
     await heading.click();
     assert.equal(await heading.getAttribute('aria-expanded'), 'false');
@@ -47,7 +50,10 @@ test('default model search opens its actual control and hides groups with no mat
     await f.page.getByLabel('Search settings', { exact: true }).fill('default');
     await f.page.getByRole('tab', { name: 'General', exact: true }).click();
     const panel = f.page.locator('[role="tabpanel"]:not([hidden])');
-    const empty = await panel.locator('.settings-group').evaluateAll((groups: HTMLElement[]) => groups.filter(g => g.getClientRects().length && g.querySelectorAll('.settings-row:not(.settings-actions)').length && ![...g.querySelectorAll<HTMLElement>('.settings-row:not(.settings-actions)')].some(r => r.getClientRects().length)).map(g => g.getAttribute('aria-label')));
+    const empty = await panel.locator('.settings-group').evaluateAll((groups: HTMLElement[]) => groups.filter(g => {
+      const rows = [...g.querySelectorAll<HTMLElement>('.settings-row:not(.settings-actions)')];
+      return g.getClientRects().length && rows.length && !rows.some(r => r.getClientRects().length);
+    }).map(g => g.getAttribute('aria-label')));
     assert.deepEqual(empty, []);
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
@@ -57,7 +63,9 @@ test('streaming Read aloud begins before synthesis finishes and speed changes du
   let completed = false;
   const header = Buffer.alloc(44);
   header.write('RIFF'); header.writeUInt32LE(0x7ffffffe, 4); header.write('WAVEfmt ', 8);
-  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22); header.writeUInt32LE(24000, 24); header.writeUInt32LE(48000, 28); header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(0x7fffffda, 40);
+  header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(24000, 24); header.writeUInt32LE(48000, 28);
+  header.writeUInt16LE(2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(0x7fffffda, 40);
   const id = '11111111-1111-4111-8111-111111111111';
   const f = await fixture({ chat: [['t1', 'Read this.', 'A sentence read by the local streaming voice.']], routes: {
     '/api/read-aloud': () => ({ available: true, streaming: true, revision: 'local' }),
@@ -71,15 +79,23 @@ test('streaming Read aloud begins before synthesis finishes and speed changes du
   try {
     await f.page.addInitScript(() => {
       const Original = window.Audio;
-      window.Audio = function(src?: string) { const audio = new Original(src); (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio = audio; return audio; } as typeof Audio;
+      window.Audio = function(src?: string) {
+        const audio = new Original(src);
+        (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio = audio;
+        return audio;
+      } as unknown as typeof Audio;
     });
     await f.page.reload(); await f.open('chat-a');
     const reply = f.page.locator('.message.assistant').first();
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
-    await f.page.waitForFunction(() => ((window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio?.currentTime ?? 0) > 0, { timeout: 2000 });
+    await f.page.waitForFunction(() => ((window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio?.currentTime ?? 0) > 0, null, { timeout: 2000 });
     assert.equal(completed, false, 'first playback precedes the last generated chunk');
     await chooseOption(reply.getByLabel('Read aloud speed'), '1.5');
-    assert.deepEqual(await f.page.evaluate(() => { const audio = (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio!; return { rate: audio.playbackRate, pitch: audio.preservesPitch }; }), { rate: 1.5, pitch: true });
+    const playback = await f.page.evaluate(() => {
+      const audio = (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio!;
+      return { rate: audio.playbackRate, pitch: audio.preservesPitch };
+    });
+    assert.deepEqual(playback, { rate: 1.5, pitch: true });
     await reply.getByRole('button', { name: 'Stop', exact: true }).click();
     await f.page.reload(); await f.open('chat-a');
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();

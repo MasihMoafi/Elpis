@@ -13,6 +13,9 @@ test("temporary discovery failure and a healthy chosen model preserve the defaul
   assert.equal(availableDefault({ model: "claude/opus", provider: "openai" }, [], providers), null);
 });
 test("an account rejection outweighs cached models and never selects a disconnected replacement", () => {
-  assert.deepEqual(availableDefault({ model: "claude/opus", provider: "openai" }, models, { ...providers, claude: { state: "available", unavailable: true } }), { model: "gpt-6.1-sol", provider: "openai" });
+  assert.deepEqual(
+    availableDefault({ model: "claude/opus", provider: "openai" }, models, { ...providers, claude: { state: "available", unavailable: true } }),
+    { model: "gpt-6.1-sol", provider: "openai" },
+  );
   assert.equal(availableDefault({ model: "claude/opus", provider: "openai" }, models, { ...providers, openai: { auth: { state: "signedOut" } } }), null);
 });
