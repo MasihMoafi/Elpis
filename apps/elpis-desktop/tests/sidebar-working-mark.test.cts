@@ -74,6 +74,10 @@ for (const colorScheme of ['light', 'dark']) {
       assert.deepEqual(animation, { rotation: '4s', blink: '2s', masks: 0 });
       for (const id of ['chat-a', 'chat-b', 'chat-c']) {
         await f.open(id);
+        await page.mouse.move(0, 0);
+        const fills = await page.locator('aside.sidebar .thread-row').evaluateAll(rows =>
+          rows.map(row => ({ id: row.getAttribute('data-thread-id'), fill: getComputedStyle(row).backgroundColor })));
+        assert.ok(fills.every(row => row.fill === 'rgba(0, 0, 0, 0)'), `selected and running chats have no persistent fill: ${JSON.stringify(fills)}`);
         const selected = page.locator(`aside.sidebar .thread-row.active[data-thread-id="${id}"]`);
         const edge = await selected.evaluate(row => ({
           shadow: getComputedStyle(row, '::after').boxShadow,

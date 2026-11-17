@@ -479,7 +479,6 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .brand .brand-home:hover, .brand .brand-home:active, .brand .brand-home[aria-expanded="true"] { background:transparent; }
 .thread-row { display:flex; align-items:center; gap:2px; min-width:0; padding-right:2px; min-height:var(--row-h); }
 .thread-row:hover, .thread-row[data-popup-open] { background:var(--hover); }
-.thread-row.active { background:var(--selected); }
 .thread-row.child .thread-link { color:var(--muted-foreground); }
 .thread-row.child.active .thread-link, .thread-row.child:hover .thread-link { color:var(--foreground); }
 .thread-row .thread-actions { opacity:0; flex-shrink:0; transition:opacity .15s; }
