@@ -34,10 +34,10 @@ export const SHORTCUTS: Shortcut[] = [
   {
     id: "undo-delete",
     group: "Chat",
-    label: "Undo the last rename, move, archive or delete of a chat (outside text fields)",
+    label: "Undo the last chat action or sidebar hide (outside text fields)",
     keys: ["Ctrl+Z"],
   },
-  { id: "redo-chat", group: "Chat", label: "Redo that chat action (outside text fields)", keys: ["Ctrl+Shift+Z", "Ctrl+Y"] },
+  { id: "redo-chat", group: "Chat", label: "Redo the last undone action (outside text fields)", keys: ["Ctrl+Shift+Z", "Ctrl+Y"] },
   { id: "command-menu", group: "Navigation", label: "Command menu", keys: ["Ctrl+K"] },
   { id: "go-loveSpot", group: "Navigation", label: "Open Love Spot", keys: ["Ctrl+L"] },
   { id: "go-mother", group: "Navigation", label: "Open Elpis", keys: ["Ctrl+E"] },

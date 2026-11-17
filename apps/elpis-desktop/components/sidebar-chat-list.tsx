@@ -10,6 +10,7 @@ import { SidebarProjects } from "@/components/sidebar-projects";
 import { Button } from "@/components/ui/button";
 import type { Thread } from "@/lib/api";
 import type { useBrowserPins } from "@/lib/browser-pins";
+import { recordChatStep } from "@/lib/chat-undo";
 import { savePreferences, type useAppPreferences } from "@/lib/preferences";
 import type { createProjectActions } from "@/lib/project-actions";
 import type { useConversationList } from "@/lib/use-conversation-list";
@@ -208,6 +209,12 @@ export function SidebarChatList({
               onClick={() => {
                 try {
                   savePreferences({ sidebarWorkflows: false });
+                  recordChatStep({
+                    kind: "visibility",
+                    label: "hid Workflows from the sidebar",
+                    undo: async () => savePreferences({ sidebarWorkflows: true }),
+                    redo: async () => savePreferences({ sidebarWorkflows: false }),
+                  });
                 } catch {
                   /* the section stays */
                 }
