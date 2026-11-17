@@ -10,7 +10,8 @@ for (const colorScheme of ['light', 'dark']) {
       { id: 'chat-b', name: 'Finished chat', status: { type: 'idle' } },
       { id: 'chat-c', name: 'Waiting chat', status: { type: 'active', activeFlags: ['waitingOnUserInput'] } },
     ].map(thread => ({ ...thread, cwd: CWD }));
-    const f = await fixture({ colorScheme, threads, staticDir: process.env.ELPIS_STATUS_STATIC_DIR });
+    const staticDir = process.env.ELPIS_STATUS_STATIC_DIR;
+    const f = await fixture({ colorScheme, threads, ...(staticDir ? { staticDir } : {}) });
     try {
       await f.page.locator('[data-thread-id="chat-a"] .elpis-working-mark').waitFor({ timeout: 2000 });
       const states = await f.page.evaluate(() =>
