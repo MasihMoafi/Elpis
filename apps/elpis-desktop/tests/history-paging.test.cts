@@ -147,7 +147,9 @@ test('missing source exposes retained messages or an unavailable notice without 
       assert.equal(await f.composer.count(), 0);
       assert.equal(await f.page.getByRole('button', { name: 'Continue here', exact: true }).count(), 0);
       assert.equal(await f.page.getByText('Retained evidence', { exact: true }).count(), recovered ? 1 : 0);
-      await f.page.getByRole('note').filter({ hasText: 'Messages may be missing anywhere' }).waitFor();
+      await f.page.getByRole('note').filter({ hasText: recovered ? 'Messages may be missing anywhere' : 'no retained messages could be loaded' }).waitFor();
+      assert.equal(await f.page.getByRole('heading', { name: 'This conversation has no messages yet.', exact: true }).count(), 0);
+      assert.equal(await f.page.getByRole('heading', { name: 'This chat’s messages are unavailable.', exact: true }).count(), recovered ? 0 : 1);
       assert.equal(f.requests.some((request: { path: string }) => request.path === '/api/threads/chat-b/resume'), false);
       await f.open('chat-a');
       await f.composer.waitFor();

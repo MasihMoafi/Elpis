@@ -194,7 +194,9 @@ export function WorkspaceTranscript({
             historyGaps.has(selected.id) && (
               <div className="context-event" role="note">
                 {selected.desktopAccess?.mode === "unavailable"
-                  ? "This is incomplete retained history. Messages may be missing anywhere in the conversation."
+                  ? shownEntries.length
+                    ? "This is incomplete retained history. Messages may be missing anywhere in the conversation."
+                    : "The source file is missing, and no retained messages could be loaded."
                   : "The earliest part of this chat is missing, so it opened with the history that remains."}
               </div>
             )
@@ -223,8 +225,8 @@ export function WorkspaceTranscript({
             <div className="empty-state">
               {selected ? (
                 <>
-                  <h2>This conversation has no messages yet.</h2>
-                  <p>Messages and tool activity appear here.</p>
+                  <h2>{selected.desktopAccess?.mode === "unavailable" ? "This chat’s messages are unavailable." : "This conversation has no messages yet."}</h2>
+                  <p>{selected.desktopAccess?.mode === "unavailable" ? "Restore its source file to read this conversation." : "Messages and tool activity appear here."}</p>
                 </>
               ) : (
                 <>
