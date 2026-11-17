@@ -1,0 +1,48 @@
+name: Desktop animation profile
+on:
+  workflow_dispatch:
+  push:
+    branches: ['profile/elpis-animation']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: desktop-animation-profile-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/elpis-desktop
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '26.1.0'
+          cache: npm
+          cache-dependency-path: apps/elpis-desktop/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: renderer
+          run-id: 44066984171
+          github-token: ${{ github.token }}
+          path: apps/elpis-desktop
+      - name: Compare the approved renderer's two animation implementations
+        env:
+          ELPIS_CHROMIUM: /usr/bin/google-chrome
+          ELPIS_PROFILE_OUTPUT: ${{ runner.temp }}/wordmark-profile
+        run: |
+          test "$(cat out/.commit)" = 586ca0a5b2147a755ebc8f1ff54fc754b4bb908b
+          node scripts/profile-wordmark.cts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: ${{ always() }}
+        with:
+          name: wordmark-profile
+          path: ${{ runner.temp }}/wordmark-profile
+          if-no-files-found: warn
+          retention-days: 14
