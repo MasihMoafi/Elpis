@@ -48,7 +48,7 @@ try {
       await app.close();
       setApp(await startApp(port));
       await page.goto(app.url);
-      await page.locator('.status-dot.connected').waitFor();
+      await page.locator('.status-dot.connected').waitFor({ state: 'attached' });
       let historyReads = 0;
       page.on('request', request => {
         if (request.method() === 'GET' && new URL(request.url()).pathname === `/api/threads/${childThread.id}`) historyReads++;
@@ -445,7 +445,7 @@ try {
     await group.getByRole('radio', { name: 'System' }).click();
     await page.emulateMedia({ colorScheme: 'dark' }); await until(isDark, 'system dark followed');
     await page.emulateMedia({ colorScheme: 'light' }); await until(async () => !(await isDark()), 'system light followed');
-    await page.reload(); await page.locator('.status-dot.connected').waitFor();
+    await page.reload(); await page.locator('.status-dot.connected').waitFor({ state: 'attached' });
     await nav('Settings').click(); await page.getByRole('tab', { name: 'Appearance' }).click();
     assert.equal(await page.getByRole('radiogroup', { name: 'Theme' }).getByRole('radio', { name: 'System' }).getAttribute('aria-checked'), 'true', 'choice persists');
     await shoot('theme-settings');

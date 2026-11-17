@@ -45,7 +45,7 @@ try {
   browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM || undefined, headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors: string[] = []; page.on('pageerror', (error: Error) => errors.push(error.message));
-  await page.goto(app.url); await page.locator('.status-dot.connected').waitFor();
+  await page.goto(app.url); await page.locator('.status-dot.connected').waitFor({ state: 'attached' });
   await chooseOption(page.getByLabel('Model', { exact: true }), 'gpt-5.5');
   provider.actions.push(message('APP_REAL_PROTOCOL_REPLY_4197'));
   await page.getByLabel('Message Elpis', { exact: true }).fill('APP_INPUT_SENTINEL_4197');

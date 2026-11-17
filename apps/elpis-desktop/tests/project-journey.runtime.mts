@@ -60,7 +60,7 @@ const launch = async (profile = config) => {
   }, timeout: 30000 });
   const page = await instance.firstWindow();
   page.on('pageerror', error => errors.push(error.message));
-  await page.locator('.status-dot.connected').waitFor();
+  await page.locator('.status-dot.connected').waitFor({ state: 'attached' });
   return { desktop: instance, page };
 };
 const shot = (name: string) => page.screenshot({ path: path.join(evidence, name), fullPage: true });

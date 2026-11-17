@@ -52,7 +52,7 @@ for (const oversized of [false, true]) test(`reconnection keeps live output and 
   } });
   const reconnect = async () => {
     f.emit('connection', { connected: false });
-    await f.page.locator('.status-dot.connected').waitFor({ state: 'hidden' });
+    await f.page.locator('.status-dot.connected').waitFor({ state: 'detached' });
     const read = f.page.waitForResponse((response: import('playwright-core').Response) =>
       new URL(response.url()).pathname === '/api/threads/chat-a');
     f.emit('connection', { connected: true });

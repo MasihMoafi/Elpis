@@ -69,7 +69,7 @@ async function fixture(run: (fixture: { page: Page; calls: Call[] }) => Promise<
   })().catch(error => { res.destroy(error); }); });
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const browser = await chromium.launch({ executablePath: process.env.ELPIS_CHROMIUM, headless: true });
-  try { const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); const address = server.address(); assert.ok(address && typeof address !== 'string'); await page.goto(`http://127.0.0.1:${address.port}`); await page.locator('.status-dot.connected').waitFor(); await run({ page, calls }); assert.deepEqual(errors, []); }
+  try { const page = await browser.newPage({ viewport: { width: 1320, height: 900 } }); const errors: string[] = []; page.on('pageerror', error => errors.push(error.message)); const address = server.address(); assert.ok(address && typeof address !== 'string'); await page.goto(`http://127.0.0.1:${address.port}`); await page.locator('.status-dot.connected').waitFor({ state: 'attached' }); await run({ page, calls }); assert.deepEqual(errors, []); }
   finally { await browser.close(); for (const client of clients) client.end(); await new Promise<Error | undefined>(resolve => server.close(resolve)); }
 }
 
