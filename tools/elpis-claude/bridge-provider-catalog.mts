@@ -22,6 +22,10 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
         const rejected = rejectedTokens.get(claudeAccounts.activeId());
         return !!(rejected && rejected.until > Date.now() && rejected.token === claudeAccounts.credentials()?.accessToken);
     };
+    const rejectClaudeAccount = () => {
+        const token = claudeAccounts.credentials()?.accessToken;
+        if (token) rejectedTokens.set(claudeAccounts.activeId(), { token, until: Date.now() + 60_000 });
+    };
     // The subscriptions Elpis reaches through ACP, each by a model-id prefix. Antigravity (Gemini on
     // the Google sign-in) runs through agy-acp.mts and is offered only when `agy` is installed.
     const AGY_BIN = process.env.AGY_BIN ?? `${HOME}/.local/bin/agy`;
@@ -42,7 +46,11 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
     const acpErrorMessage = (e: {
         signedOut?: boolean;
         message?: string;
-    } | null | undefined, agent = AGENTS[0]) => (e?.signedOut ? e.message : `${agent.speaker} (ACP) error: ${e?.message ?? JSON.stringify(e)}`);
+    } | null | undefined, agent = AGENTS[0]) => {
+        if (agent.key === "claude" && /account (?:can't|cannot) receive replies|portal\.anthropic\.com\/verify|(?:account|organization).{0,60}(?:disabled|suspended|banned)/i.test(e?.message ?? ""))
+            rejectClaudeAccount();
+        return e?.signedOut ? e.message : `${agent.speaker} (ACP) error: ${e?.message ?? JSON.stringify(e)}`;
+    };
     // A dropped or timed-out connection is no error to show: the chat retries on its own (any message retries at once).
     const RECONNECT_MS = Number(process.env.ELPIS_RECONNECT_MS) || 180000;
     const connectionDropped = (e: {
@@ -67,7 +75,7 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
             headers: { Authorization: `Bearer ${creds.accessToken}`, "anthropic-beta": "oauth-2025-04-20", Accept: "application/json" },
             signal: AbortSignal.timeout(15000),
         });
-        if (r.status === 403) rejectedTokens.set(claudeAccounts.activeId(), { token: creds.accessToken, until: Date.now() + 60_000 });
+        if (r.status === 403) rejectClaudeAccount();
         if (!r.ok)
             throw new Error(`Claude usage request failed (HTTP ${r.status})`);
         const u = await r.json() as {

@@ -23,6 +23,10 @@ for (const status of [403, 500]) test(`Claude availability distinguishes account
   if (status === 403) assert.throws(() => catalog.refuseSignedOut(agent), /account is unavailable/);
   await fs.writeFile(credential, JSON.stringify({ claudeAiOauth: { accessToken: "test-token-after-sign-in" } }));
   assert.equal(agent.signedOut?.(), false, "new credentials immediately clear the old rejection");
+  catalog.acpErrorMessage({ message: "API Error: connection timed out" }, agent);
+  assert.equal(agent.signedOut?.(), false, "a transport failure is not an account rejection");
+  catalog.acpErrorMessage({ message: "Your account can't receive replies from Claude right now." }, agent);
+  assert.equal(agent.signedOut?.(), true, "the observed account-blocked reply invalidates a cached model list");
 });
 
 test("a known account rejection outweighs cached model names and usage", () => {
