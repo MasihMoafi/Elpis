@@ -14,7 +14,8 @@ for (const colorScheme of ['light', 'dark']) {
     ].map(thread => ({ ...thread, cwd: CWD }));
     const staticDir = process.env.ELPIS_STATUS_STATIC_DIR;
     const f = await fixture({ colorScheme, threads, ...(staticDir ? { staticDir } : {}) });
-    const page = f.page as Page;
+    // The shared fixture exposes a minimal facade; its page is a real Playwright Page.
+    const page = f.page as unknown as Page;
     try {
       await f.page.locator('[data-thread-id="chat-a"] .elpis-working-mark').waitFor({ timeout: 2000 });
       const states = await f.page.evaluate(() =>
