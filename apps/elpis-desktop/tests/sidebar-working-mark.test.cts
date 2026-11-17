@@ -6,13 +6,12 @@ const { fixture, CWD }: { fixture: typeof Fixture; CWD: string } = require('./pa
 const path: typeof import('node:path') = require('node:path');
 const sharp: typeof import('sharp') = require('sharp');
 
-test('accented corners end at the diagonal without a tail on rows, tabs or messages', async () => {
+test('accented corners end at the diagonal without a tail on tabs or messages', async () => {
   const f = await fixture({ width: 1100, height: 800 });
   const page = f.page as unknown as Page;
   try {
     await f.open('chat-a');
     for (const [name, selector, side] of [
-      ['sidebar', 'aside.sidebar .thread-row.active', 'left'],
       ['chat-tab', '.task-tab.chat-tab.active', 'bottom'],
       ['message', '.message.user', 'right'],
     ] as const) {
@@ -26,9 +25,9 @@ test('accented corners end at the diagonal without a tail on rows, tabs or messa
         ? { path: path.join(process.env.ELPIS_REVIEW_SHOTS, `corner-end-${name}.png`) } : {}) });
       const { data, info: { width, height, channels } } = await sharp(png).raw().toBuffer({ resolveWithObject: true });
       const pixel = (x: number, y: number) => [0, 1, 2].map(channel => data[(y * width + x) * channels + channel] ?? 0);
-      const at = side === 'left' ? [Math.ceil(cut) + 1, 0] : side === 'bottom'
+      const at = side === 'bottom'
         ? [width - 1, height - Math.ceil(cut) - 2] : [width - Math.ceil(cut) - 2, height - 1];
-      const away = side === 'left' ? [at[0]! + 4, at[1]!] : side === 'bottom'
+      const away = side === 'bottom'
         ? [at[0]!, at[1]! - 4] : [at[0]! - 4, at[1]!];
       const actual = pixel(at[0]!, at[1]!), adjacent = pixel(away[0]!, away[1]!);
       assert.ok(actual.every((value, index) => Math.abs(value - adjacent[index]!) <= 8),
@@ -93,19 +92,32 @@ for (const colorScheme of ['light', 'dark']) {
         const edge = await selected.evaluate(row => ({
           shadow: getComputedStyle(row, '::after').boxShadow,
           rowShadow: getComputedStyle(row).boxShadow,
-          width: getComputedStyle(row, '::before').width,
+          inset: getComputedStyle(row, '::before').inset,
           left: getComputedStyle(row, '::before').left,
           border: getComputedStyle(row, '::before').borderWidth,
-          mask: getComputedStyle(row, '::before').maskImage,
+          spansRow: Math.abs(parseFloat(getComputedStyle(row, '::before').width) - row.getBoundingClientRect().width) < 1,
+          fill: getComputedStyle(row, '::before').backgroundColor,
+          inheritsShape: getComputedStyle(row, '::before').getPropertyValue('corner-shape') ===
+            getComputedStyle(row).getPropertyValue('corner-shape'),
+          animation: getComputedStyle(row, '::before').animationName,
         }));
         assert.deepEqual(edge,
-          { shadow: 'none', rowShadow: 'none', width: '2px', left: '0px', border: '0px', mask: 'none' },
-          `${id}: selection is only a thin left edge without a frame or shadow`);
+          { shadow: 'none', rowShadow: 'none', inset: '0px', left: '0px', border: '1px', inheritsShape: true,
+            spansRow: true, fill: 'rgba(0, 0, 0, 0)',
+            animation: id === 'chat-a' ? 'elpis-selection-pulse' : 'none' },
+          `${id}: the angled outline pulses only while working, without a shadow`);
         if (id === 'chat-a' && process.env.ELPIS_REVIEW_SHOTS)
-          await page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-no-shadow-${colorScheme}.png`) });
+          await page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-outline-${colorScheme}.png`) });
       }
+      await f.open('chat-a');
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      assert.equal(await page.locator('.thread-row.active').evaluate(row =>
+        getComputedStyle(row, '::before').animationName), 'none', 'reduced motion keeps the selection outline steady');
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
       f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-a', status: { type: 'idle' } } });
       await f.page.locator('[data-thread-id="chat-a"] .elpis-working-mark').waitFor({ state: 'detached' });
+      assert.equal(await page.locator('.thread-row.active').evaluate(row =>
+        getComputedStyle(row, '::before').animationName), 'none', 'finishing the turn stops the outline pulse');
     } finally {
       await f.close();
     }

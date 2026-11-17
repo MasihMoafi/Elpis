@@ -445,15 +445,18 @@
 [data-reorder][data-drop="before"] { box-shadow:inset 0 2px 0 0 var(--primary); }
 [data-reorder][data-drop="after"] { box-shadow:inset 0 -2px 0 0 var(--primary); }
 [data-reorder][data-drop="into"] { background:var(--selected); box-shadow:inset 0 0 0 1px var(--primary); }
-/* Sidebar selection uses only a straight left edge, without a corner extension, glow or fill.
+/* Selected chats follow the shared angled row shape with an outline, without glow or fill.
  * Tabs and message boxes retain their angular edge:
  *   selected chat tab:    the whole bottom side, bending into the bottom-right cut;
  *   your message box:     the whole right side, bending into the bottom-right cut. */
 :root { --edge-line:2px; }
 .thread-row.active::before {
-  content:""; position:absolute; left:0; top:var(--edge-cut, var(--cut)); bottom:0;
-  width:var(--edge-line); background:var(--primary); pointer-events:none;
+  content:""; position:absolute; inset:0; border:1px solid var(--primary);
+  border-radius:inherit; corner-shape:inherit; pointer-events:none;
 }
+.thread-row.active:has(.thread-dot[data-state="working"])::before { animation:elpis-selection-pulse 2s ease-in-out infinite; }
+@keyframes elpis-selection-pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+@media(prefers-reduced-motion:reduce) { .thread-row.active::before { animation:none!important; } }
 .task-tab.chat-tab.active::before, .message.user::after {
   content:""; position:absolute; inset:0; pointer-events:none; border:var(--edge-line) solid transparent;
   border-radius:inherit; corner-shape:inherit; background:var(--edge-paint);
@@ -466,7 +469,7 @@
 .task-tab.chat-tab.active { --edge-paint:var(--edge-ink) left bottom / 100% var(--edge-line) no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
 .message.user { position:relative; --edge-cut:var(--cut-lg); --edge-color:color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent);
   --edge-paint:var(--edge-ink) right top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
-/* Chat tabs keep their line glow; selected sidebar rows use only the crisp edge above. */
+/* Chat tabs keep their line glow; selected sidebar rows use only the outline above. */
 .task-tab.chat-tab.active::after { left:0; right:var(--edge-cut, var(--cut)); bottom:0; height:var(--edge-line); background:none; box-shadow:var(--edge-glow); }
 /* One focus ring, round the whole row, and only for the keyboard (a click only highlights the row, as in Claude). */
 .thread-link:focus-visible { outline:none; }

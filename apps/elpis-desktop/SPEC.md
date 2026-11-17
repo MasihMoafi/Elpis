@@ -4,7 +4,7 @@ These are the required behaviors, numbered 1–91 without gaps; refer to one as 
 
 ## Sidebar and chat list
 
-Sidebar section headings use the theme accent and show their item counts when folded. Empty Projects offers Add project; empty Recents is hidden. Working chats have a filled square and a subtle row tint in both themes. Workflow rows stay flat, with a selection border and no running fill or selection glow.
+Sidebar section headings use the theme accent and show their item counts when folded. Empty Projects offers Add project; empty Recents is hidden. Working chats use the rotating hexagon with six visible vertex-to-center spokes. The selected chat has a thin outline following the shared angled row shape, with no running fill or selection shadow; its outline pulses only while working and stays steady with reduced motion.
 
 1. Session Manager is removed; no background process archives chats on its own. (S18)
 2. Pinned, Projects and Recents show chats the person started or placed. Recents excludes project chats. Workflows and background runs have separate, collapsible sections controlled by switches that default to off; search returns matching chats, including children, in one flat list. Hiding a chat does not archive or delete it. Ctrl+Z restores the hidden Workflows section, including after visiting Settings; redo hides it again. Text fields keep their own undo. (S13, S18, OM1, OM2, R41)
