@@ -89,7 +89,7 @@ export function createChatSend({
   loadThread,
   sendAfterFiles,
 }: SendInputs) {
-  const { selected, busy, sending, setBusy, request, stickToBottom, setSubmissions, entries, setThreads, selectedRef } =
+  const { selected, busy, sending, setBusy, request, stickToBottom, setSubmissions, entries, setThreads, selectedRef, setDisplayedThreadId } =
     session;
   const { model, newMode, effort, newPlan, setThreadPlans, setNewPlan, setNextTurn } = options;
   const { projectChanging, cwd, projectId } = projectState;
@@ -198,6 +198,7 @@ export function createChatSend({
           saveDraft(originalId, "");
           saveAttachments(originalId, []);
           select(thread);
+          setDisplayedThreadId(thread.id);
         }
         setThreads(prev => [thread!, ...prev]);
         if (projectId) await assignProject(thread.id, projectId);

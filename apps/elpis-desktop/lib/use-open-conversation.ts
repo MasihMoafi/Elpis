@@ -47,6 +47,7 @@ export function useOpenConversation({
     setLoading,
     setEntries,
     setDisplayedThreadId,
+    setReadIntent,
   } = session;
   const { textRef, setText } = composer;
   const { setHistoryOnly, turnRevisions, modeRevisions, setActiveTurns, completedTurns, setLiveError } = runtime;
@@ -186,6 +187,8 @@ export function useOpenConversation({
   // Navigation to the visible chat preserves its live transcript, draft and scroll. Explicit reloads still use loadThread.
   const openThread = useCallback(
     async (thread: Thread) => {
+      if (document.visibilityState === "visible" && document.hasFocus())
+        setReadIntent({ id: thread.id, request: request.current + (selectedRef.current?.id === thread.id ? 0 : 1) });
       if (selectedRef.current?.id === thread.id) {
         setView("chat");
         setSidebar(false);

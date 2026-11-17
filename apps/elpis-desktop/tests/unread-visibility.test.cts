@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture, THREADS } = require('./parity-fixture.cts');
+const { apply } = require('../lib/attention-state.cts');
 const visibility = (page: import('playwright-core').Page, visible: boolean, focused = visible) => page.evaluate((value: { visible: boolean; focused: boolean }) => {
   Object.defineProperty(document, 'visibilityState', { configurable: true, value: value.visible ? 'visible' : 'hidden' });
   Object.defineProperty(document, 'hasFocus', { configurable: true, value: () => value.focused });
@@ -49,6 +50,9 @@ test('background replies remain unread until their own visible chat regains focu
     await visibility(page, true);
     await page.waitForTimeout(100);
     assert.ok((await unread()).includes('chat-a'), 'manual unread is retained on refocus');
+    await f.open('chat-b');
+    await f.open('chat-a');
+    await page.waitForFunction(() => !(JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []).includes('chat-a'));
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
@@ -72,7 +76,8 @@ test('failed, slow and stale history loads retain unread until the matching repl
   let mode: 'fail' | 'slow' = 'fail', turn = 'reply-one', release: (() => void) | undefined;
   let gate = Promise.resolve();
   const hold = () => { gate = new Promise<void>(resolve => { release = resolve; }); };
-  const f = await fixture({ routes: {
+  const initial = apply(null, { kind: 'unread', id: 'chat-b' });
+  const f = await fixture({ storage: { 'elpis-chat-attention-v1': initial }, routes: {
     '/api/threads/chat-b': async () => {
       if (mode === 'fail') return { __http: 500, error: 'History unavailable' };
       const current = turn;
@@ -99,6 +104,9 @@ test('failed, slow and stale history loads retain unread until the matching repl
     await page.getByText('Displayed reply-one', { exact: true }).waitFor();
     await page.waitForFunction(() => !(JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []).includes('chat-b'));
 
+    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-b', turnId: 'reply-two',
+      item: { id: 'progress-two', type: 'agentMessage', phase: 'commentary', text: 'Still working' } } });
+    await page.getByText('Still working', { exact: true }).waitFor();
     await f.open('chat-a');
     turn = 'reply-two'; finish(turn); hold();
     await page.waitForFunction(() => (JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}').unread || []).includes('chat-b'));
@@ -111,4 +119,30 @@ test('failed, slow and stale history loads retain unread until the matching repl
     assert.ok((await unread()).includes('chat-b'), 'a stale response after switching cannot mark it read');
     assert.deepEqual(f.errors, []);
   } finally { release?.(); await f.close(); }
+});
+
+test('a newly created chat reads its first reply when that reply appears', async () => {
+  const created = { ...THREADS[0], id: 'fresh-chat', name: 'Fresh chat' };
+  let started = false;
+  const f = await fixture({ routes: {
+    '/api/threads': (body: unknown, url: URL) => body ? (started = true, { thread: created }) :
+      { data: url.searchParams.has('ancestorThreadId') ? [] : [...THREADS, ...(started ? [created] : [])], nextCursor: null },
+    '/api/threads/fresh-chat/turns': () => ({ turn: { id: 'fresh-turn' } }),
+  } }), { page } = f;
+  try {
+    await f.composer.fill('Start a new chat');
+    const sent = page.waitForResponse((response: { url(): string }) => response.url().endsWith('/fresh-chat/turns'));
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
+    await sent;
+    f.emit('message', { method: 'item/completed', params: { threadId: 'fresh-chat', turnId: 'fresh-turn',
+      item: { id: 'fresh-answer', type: 'agentMessage', text: 'Fresh answer' } } });
+    f.emit('message', { method: 'turn/completed', params: { threadId: 'fresh-chat',
+      turn: { id: 'fresh-turn', status: 'completed', items: [] } } });
+    await page.getByText('Fresh answer', { exact: true }).waitFor();
+    await page.waitForFunction(() => {
+      const value = JSON.parse(localStorage.getItem('elpis-chat-attention-v1') || '{}');
+      return value.chats?.['fresh-chat']?.replies?.['fresh-turn'] === true;
+    });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
 });

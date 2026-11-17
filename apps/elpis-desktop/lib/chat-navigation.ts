@@ -63,6 +63,8 @@ export function createChatNavigation({
     restoreScroll,
     pendingPosition,
     setEntries,
+    setDisplayedThreadId,
+    setReadIntent,
     setLoading,
   } = session;
   const { setProjectId, setCwd } = projectState;
@@ -81,6 +83,8 @@ export function createChatNavigation({
     pendingPosition.current = null;
     select(null);
     setEntries([]);
+    setDisplayedThreadId(null);
+    setReadIntent(null);
     setItemCursor(null);
     setText(savedDraft(draftKey));
     setError("");

@@ -20,6 +20,7 @@ type Inputs = {
   agentRunsOpen: boolean;
   newDraftKey: RefObject<string>;
   autoRead: (id: string, turn?: string) => void;
+  markRead: (id: string) => void;
   pending: Record<string, string[]>;
 };
 
@@ -34,6 +35,7 @@ export function useConversationView({
   agentRunsOpen,
   newDraftKey,
   autoRead,
+  markRead,
   pending,
 }: Inputs) {
   const {
@@ -48,6 +50,9 @@ export function useConversationView({
     stickToBottom,
     loading,
     displayedThreadId,
+    readIntent,
+    setReadIntent,
+    request,
   } = session;
   const { ready, liveError } = runtime,
     { loadChildren } = children;
@@ -79,8 +84,15 @@ export function useConversationView({
       const outstanding = new Set(pending[selected.id] ?? []);
       const turns = new Set(shownEntries.filter(entry =>
         (entry.item.type === "agentMessage" || entry.item.type === "plan") &&
+        (!entry.item.phase || entry.item.phase === "final_answer") &&
         typeof entry.item.text === "string" && entry.item.text.trim(),
       ).map(entry => entry.turnId));
+      if (readIntent?.id === selected.id && readIntent.request === request.current && turns.size &&
+          [...outstanding].every(turn => turns.has(turn))) {
+        setReadIntent(null);
+        markRead(selected.id);
+        return;
+      }
       for (const turn of turns) if (outstanding.has(turn)) autoRead(selected.id, turn);
     };
     readDisplayed();
@@ -90,6 +102,6 @@ export function useConversationView({
       window.removeEventListener("focus", readDisplayed);
       document.removeEventListener("visibilitychange", readDisplayed);
     };
-  }, [view, selected?.id, displayedThreadId, loading, shownEntries, pending, autoRead]);
+  }, [view, selected?.id, displayedThreadId, loading, shownEntries, pending, autoRead, readIntent, markRead]);
   return { selectedLiveError, related, shownEntries, newestPrompt };
 }
