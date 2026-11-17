@@ -668,8 +668,40 @@ async function reconnectingTask(t: import("node:test").TestContext, offline = 1)
   await schedule.list();
   await h.advance(h.now());
   assert.equal(h.reads.length, 1, "the overdue run is waiting for reconnection");
-  return { h, schedule, id: task.id };
+  return { h, schedule, id: task.id, file };
 }
+
+test("editing a waiting missed run preserves its due time across restart", async t => {
+  const { schedule, id, file } = await reconnectingTask(t, Infinity);
+  const due = at(2026, 11, 14, 7);
+  await schedule.update(id, { title: "Renamed", rule: rule("20261101T070000", "FREQ=DAILY;INTERVAL=1;BYHOUR=7;BYMINUTE=0"), status: "active" });
+  await schedule.close();
+  const h = harness(at(2026, 11, 14, 7, 43), { models: { "": ["gpt-6.1-sol"] } });
+  const reopened = createSchedule({ client: h.client, file, now: h.now, timers: h.timers });
+  h.watch(reopened);
+  try {
+    assert.equal((await reopened.list())[0]!.nextRunAt, due);
+    await h.advance(h.now());
+    assert.equal(h.sent.length, 1);
+    assert.equal((await latest(reopened))!.scheduledFor, due);
+  } finally { await reopened.close(); }
+});
+
+test("changing a waiting task's rule recalculates its next time", async t => {
+  const { schedule, id } = await reconnectingTask(t, Infinity);
+  try {
+    const changed = await schedule.update(id, { rule: rule("20261101T080000", "FREQ=DAILY") });
+    assert.equal(changed.nextRunAt, at(2026, 11, 14, 8));
+  } finally { await schedule.close(); }
+});
+
+test("pausing and resuming a waiting task schedules its next future time", async t => {
+  const { schedule, id } = await reconnectingTask(t, Infinity);
+  try {
+    assert.equal((await schedule.update(id, { status: "paused" })).nextRunAt, null);
+    assert.equal((await schedule.update(id, { status: "active" })).nextRunAt, at(2026, 11, 15, 7));
+  } finally { await schedule.close(); }
+});
 
 test("deleting a missed automation while it waits prevents its delivery", async t => {
   const { h, schedule, id } = await reconnectingTask(t);

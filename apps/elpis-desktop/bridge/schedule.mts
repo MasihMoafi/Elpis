@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { BridgeError, object, projectFolder, text, threadId as chatId } from "./validate.mts";
-import { describeRule, legacyRule, nextRun, parseRule } from "./schedule-rules.mts";
+import { describeRule, legacyRule, nextRun, parseRule, sameRule } from "./schedule-rules.mts";
 import {
   quotaStopLine,
   unconnectedLine,
@@ -413,6 +413,9 @@ export function createSchedule({
       if (value.target && value.target !== task.target) task.threadId = null;
       if (value.workflow && !value.workflow.board) value.workflow.board = task.workflow?.board;
       await saveable({ ...task, ...value }, value);
+      const timingChanged =
+        (value.rule !== undefined && (!sameRule(value.rule, task.rule) || task.status === "ended")) ||
+        (value.status !== undefined && value.status !== task.status);
       if (value.status === "paused") {
         revisions.set(task, (revisions.get(task) ?? 0) + 1);
         cancelWorkflow?.(id);
@@ -420,8 +423,10 @@ export function createSchedule({
       Object.assign(task, value, { updatedAt: now() });
       // An ended task given a new rule runs again; the next run counts from now.
       if (value.rule && task.status === "ended") task.status = "active";
-      task.nextRunAt = task.status === "active" ? nextRun(task.rule, now()) : null;
-      if (task.status === "active" && task.nextRunAt == null) task.status = "ended";
+      if (timingChanged) {
+        task.nextRunAt = task.status === "active" ? nextRun(task.rule, now()) : null;
+        if (task.status === "active" && task.nextRunAt == null) task.status = "ended";
+      }
       await save();
       arm();
       return shown(task);

@@ -80,6 +80,18 @@ const basic = (wall: number) => new Date(wall).toISOString().replace(/[-:]/g, ""
 /** The rule over UTC-shaped wall times, which rrule enumerates without zone arithmetic. */
 const floating = (rule: { wall: number; rrule: string }) => rrulestr(`DTSTART:${basic(rule.wall)}Z\n${rule.rrule}`);
 
+/** The editor may spell default recurrence options explicitly without changing the schedule. */
+export function sameRule(left: string, right: string) {
+  if (left === right) return true;
+  const options = (text: string) => {
+    const rule = parts(text);
+    const recurrence = floating(rule);
+    if (!("options" in recurrence)) throw new BridgeError("The repeat rule could not be compared");
+    return JSON.stringify([rule.timeZone, recurrence.options]);
+  };
+  return options(left) === options(right);
+}
+
 /** The rule as sent by the page or an agent, checked and normalised; throws a BridgeError saying what is wrong. */
 export function parseRule(value: unknown) {
   if (typeof value !== "string" || value.length > 2000) throw new BridgeError("Choose when the automation runs");
