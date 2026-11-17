@@ -36,11 +36,15 @@ export function WorkingMark({
           </mask>
         </defs>
       )}
-      <path
-        className="elpis-working-rotor"
-        d="M32 4 56.25 18V46L32 60 7.75 46V18Z"
-        mask={animatedEdges ? `url(#${maskId})` : undefined}
-      />
+      <g className="elpis-working-rotor">
+        <g stroke="currentColor" strokeWidth="1.5" opacity=".7">
+          {edges.map(([x, y], index) => <line key={index} x1={x} y1={y} x2="32" y2="32" />)}
+        </g>
+        <path
+          d="M32 4 56.25 18V46L32 60 7.75 46V18Z"
+          mask={animatedEdges ? `url(#${maskId})` : undefined}
+        />
+      </g>
       <circle className="elpis-working-dot" cx="32" cy="32" r="7" />
     </svg>
   );

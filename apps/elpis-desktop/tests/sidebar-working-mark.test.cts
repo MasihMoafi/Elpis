@@ -69,9 +69,20 @@ for (const colorScheme of ['light', 'dark']) {
           rotation: rotor && getComputedStyle(rotor).animationDuration,
           blink: dot && getComputedStyle(dot).animationDuration,
           masks: mark?.querySelectorAll('mask').length,
+          spokes: rotor ? [...rotor.querySelectorAll('line')].map(line => ({
+            vertex: [line.x1.baseVal.value, line.y1.baseVal.value],
+            center: [line.x2.baseVal.value, line.y2.baseVal.value],
+            width: getComputedStyle(line).strokeWidth,
+          })) : [],
         };
       });
-      assert.deepEqual(animation, { rotation: '4s', blink: '2s', masks: 0 });
+      const { spokes, ...timing } = animation;
+      assert.deepEqual(timing, { rotation: '4s', blink: '2s', masks: 0 });
+      assert.deepEqual(spokes.map(spoke => spoke.vertex), [[32, 4], [56.25, 18], [56.25, 46], [32, 60], [7.75, 46], [7.75, 18]]);
+      for (const spoke of spokes) {
+        assert.deepEqual(spoke.center, [32, 32], 'every vertex connects to the center inside the rotating group');
+        assert.equal(spoke.width, '1.5px', 'spokes are thinner than the outline');
+      }
       for (const id of ['chat-a', 'chat-b', 'chat-c']) {
         await f.open(id);
         await page.mouse.move(0, 0);
@@ -84,7 +95,7 @@ for (const colorScheme of ['light', 'dark']) {
           rowShadow: getComputedStyle(row).boxShadow,
           border: getComputedStyle(row, '::before').borderLeftWidth,
         }));
-        assert.deepEqual(edge, { shadow: 'none', rowShadow: 'none', border: '1px' }, `${id}: selection keeps a thin edge without a shadow`);
+        assert.deepEqual(edge, { shadow: 'none', rowShadow: 'none', border: '2px' }, `${id}: selection keeps its original angled edge without a shadow`);
         if (id === 'chat-a' && process.env.ELPIS_REVIEW_SHOTS)
           await page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-no-shadow-${colorScheme}.png`) });
       }

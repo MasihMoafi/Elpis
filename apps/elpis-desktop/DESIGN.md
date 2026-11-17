@@ -18,6 +18,10 @@ In `app/globals.css` (`:root` and `.dark`). Never use a literal where a token ex
 | Shape | `--cut-sm` 4 px, `--cut` 7 px, `--cut-lg` 10 px; `.hud-cut` on controls, `.hud-cut-sm` on controls 24 px or less, `--cut-lg` on panels. Round only dots, rings, switches |
 | Motion | `--motion-fast` .12 s, `--motion` .2 s, `--ease` |
 
+The context chart uses bright, distinct category colours shared by its bar and legend; categories retain their colours across theme accents. The surrounding controls still follow the theme.
+
+The selected chat keeps its original 2 px left edge and angled corner, without glow, dark shadow or persistent row shading.
+
 ### The chat thread follows the ChatGPT app
 Masih, 29 Oct: "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it". [specs/chatgpt-chat-style.md](specs/chatgpt-chat-style.md) holds ChatGPT's measured thread values and maps its scale to the tokens above ("Shared scale"). The thread tokens `--thread-tertiary`, `--thread-hairline`, `--thread-inset`, `--thread-edge-fade` and `--shadow-xl` carry them; change a value there and in the spec together. The Elpis marks stay: your messages are bevelled cards with the gold right edge (Masih, 29 Oct: "That needs to come back.").
 
@@ -38,7 +42,7 @@ Masih, 29 Oct: "map every style feature of chatgpt app into a clear spec that's 
 ## 5. Layout
 `title-bar` → `aside.sidebar` (brand, nav, search, chat list, footer) + `main.workspace` (header, one page column, composer) + optional side panel (browser, files, terminal). Settings replaces the sidebar and has its own page column. Sidebar footer, left to right: the user's name (shown, never clickable), a status line, the Theme button, the Settings gear.
 
-The accepted Working status: `WorkingPlacement` portals `WorkingStatus` into `.composer-working`, directly above the composer, on its left edge, with an 18 px gap. Keep it there through window resize, full-size restore and opening either side panel. Never position it with viewport or panel offsets. The rotor, dot and six independently phased edge opacities animate.
+The accepted Working status: `WorkingPlacement` portals `WorkingStatus` into `.composer-working`, directly above the composer, on its left edge, with an 18 px gap. Keep it there through window resize, full-size restore and opening either side panel. Never position it with viewport or panel offsets. The rotor, dot and six independently phased edge opacities animate. Six very thin spokes connect the vertices to the center and rotate with the outline.
 
 The prompt rail keeps a 28 px target inside the existing 32 px gutter, so showing it does not resize the transcript.
 

@@ -14,7 +14,7 @@ type Frame = { popup: Box | null; app: Box | null; composer: Box | null };
 type TraceWindow = typeof window & { __contextOpeningFrames: Frame[]; __traceContextOpening: boolean };
 const popupOf = (page: Page) => page.getByRole('dialog', { name: 'Context window usage', exact: true });
 async function open(f: Fixture) { await f.open('chat-a'); await f.page.locator('.composer .context-ring').click(); await popupOf(f.page).getByRole('switch', { name: 'Include ES.md', exact: true }).waitFor(); }
-for (const colorScheme of ['light', 'dark'] as const) test(`the open ledger follows custom accents (${colorScheme})`, async () => {
+for (const colorScheme of ['light', 'dark'] as const) test(`the ledger keeps bright distinct category colours with custom accents (${colorScheme})`, async () => {
   const categories = ['userMessages', 'agentMessages', 'reasoning', 'toolCalls', 'toolResults',
     'systemInstructions', 'developerMessages', 'toolDefinitions', 'unrecognizedItems'].map(id => ({ id, label: id, tokens: 5000 }));
   const f = await fixture({ colorScheme, routes: { ...contextRoutes(),
@@ -29,13 +29,13 @@ for (const colorScheme of ['light', 'dark'] as const) test(`the open ledger foll
     for (const accent of ['rgb(150, 40, 110)', 'rgb(30, 110, 180)']) {
       const colors = await popupOf(f.page).evaluate((element, accent) => {
         element.style.setProperty('--primary', accent);
-        return ['.context-files-heading', '[data-included="true"] .context-file-state', '.context-bar-segment'].map(selector => {
+        return ['.context-files-heading', '[data-included="true"] .context-file-state'].map(selector => {
           const node = element.querySelector(selector)!;
           const style = getComputedStyle(node);
-          return selector === '.context-bar-segment' ? style.backgroundColor : style.color;
+          return style.color;
         });
       }, accent);
-      assert.deepEqual(colors, [accent, accent, accent]);
+      assert.deepEqual(colors, [accent, accent]);
       const swatches = await popupOf(f.page).evaluate(element => [...element.querySelectorAll('.context-bar-segment[data-category]')].map(segment => {
         const row = element.querySelector(`.context-ledger-row[data-category="${segment.getAttribute('data-category')}"]`)!;
         return [getComputedStyle(segment).backgroundColor, getComputedStyle(row, '::before').backgroundColor];
@@ -43,7 +43,16 @@ for (const colorScheme of ['light', 'dark'] as const) test(`the open ledger foll
       assert.equal(new Set(swatches.map(([bar]) => bar)).size, categories.length, 'every category is visually distinct');
       for (const [bar, swatch] of swatches) assert.equal(bar, swatch, 'legend and bar use the same category colour');
       const current = swatches.map(([bar]) => bar!);
-      if (previous) current.forEach((color, index) => assert.notEqual(color, previous![index], 'all category colours follow an accent change'));
+      if (previous) assert.deepEqual(current, previous, 'chart categories retain their identity when the accent changes');
+      const rgb = current.map(color => color.match(/[\d.]+/g)!.map(Number));
+      for (const [index, channels] of rgb.entries()) {
+        const linear = channels.map(value => { const s = value / 255; return s <= .04045 ? s / 12.92 : ((s + .055) / 1.055) ** 2.4; });
+        const luminance = linear[0]! * .2126 + linear[1]! * .7152 + linear[2]! * .0722;
+        assert.ok(luminance >= .18, `${categories[index]!.id}: the swatch must not collapse into a dark accent shade`);
+        for (const other of rgb.slice(index + 1)) assert.ok(
+          Math.hypot(...channels.map((value, channel) => value - other[channel]!)) >= 60,
+          'categories need separated colours, not barely different shades');
+      }
       previous = current;
     }
     assert.deepEqual(f.errors, []);

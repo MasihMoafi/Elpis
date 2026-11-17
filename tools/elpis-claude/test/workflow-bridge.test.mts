@@ -113,6 +113,7 @@ if (process.argv.includes("app-server")) {
       ACP_ADAPTER: path.join(source, "test/fake-acp-agent.mts"), FAKE_ACP_LOG: acpLog, FAKE_ACP_MODELS: "default,haiku", ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: path.join(root, "bridge.log"),
       ELPIS_WORKFLOW_RETRY_MS: "20" };
     const bridge = spawn(process.execPath, [path.join(source, "acp-bridge.mts")], { env, cwd: root, detached: true, stdio: ["ignore", "ignore", "pipe"] });
+    const bridgeClosed = new Promise<void>(resolve => bridge.once("close", () => resolve()));
     let stderr = "";
     bridge.stderr.on("data", (d) => { stderr += d; });
     const mcps: Client[] = [];
@@ -123,6 +124,7 @@ if (process.argv.includes("app-server")) {
       for (const m of mcps) await m.close().catch(() => {});
       ws?.close();
       try { process.kill(-bridgePid, "SIGKILL"); } catch {}
+      await bridgeClosed;
       if (!process.env.WF_KEEP) removeTestTempDir(root);
     });
     const until = async <T,>(what: string, check: () => T | Promise<T>, ms = 20_000): Promise<Exclude<T, false | 0 | "" | null | undefined>> => {

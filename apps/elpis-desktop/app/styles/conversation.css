@@ -369,14 +369,16 @@
 .context-ledger-head:hover:not(:disabled) .context-ledger-caret { color:var(--foreground); }
 .context-ledger-note { padding:0 16px; line-height:1.35; color:var(--muted-foreground); }
 .context-bar { display:flex; height:4px; margin:2px 16px; border-radius:999px; overflow:hidden; background:var(--muted); }
-.context-ledger [data-category="agentMessages"] { --context-category:oklch(from var(--primary) l c calc(h + 40)); }
-.context-ledger [data-category="reasoning"] { --context-category:oklch(from var(--primary) l c calc(h + 80)); }
-.context-ledger [data-category="toolCalls"] { --context-category:oklch(from var(--primary) l c calc(h + 120)); }
-.context-ledger [data-category="toolResults"] { --context-category:oklch(from var(--primary) l c calc(h + 160)); }
-.context-ledger [data-category="systemInstructions"] { --context-category:oklch(from var(--primary) l c calc(h + 200)); }
-.context-ledger [data-category="developerMessages"] { --context-category:oklch(from var(--primary) l c calc(h + 240)); }
-.context-ledger [data-category="toolDefinitions"] { --context-category:oklch(from var(--primary) l c calc(h + 280)); }
-.context-ledger [data-category="unrecognizedItems"] { --context-category:oklch(from var(--primary) l c calc(h + 320)); }
+/* Stable chart colours: category identity stays recognisable across themes and accents. */
+.context-ledger [data-category="userMessages"] { --context-category:#3b82f6; }
+.context-ledger [data-category="agentMessages"] { --context-category:#22c55e; }
+.context-ledger [data-category="reasoning"] { --context-category:#a855f7; }
+.context-ledger [data-category="toolCalls"] { --context-category:#f97316; }
+.context-ledger [data-category="toolResults"] { --context-category:#06b6d4; }
+.context-ledger [data-category="systemInstructions"] { --context-category:#ef4444; }
+.context-ledger [data-category="developerMessages"] { --context-category:#ec4899; }
+.context-ledger [data-category="toolDefinitions"] { --context-category:#eab308; }
+.context-ledger [data-category="unrecognizedItems"] { --context-category:#94a3b8; }
 .context-bar-segment { flex:none; height:100%; background:var(--context-category, var(--primary)); }
 .context-bar-segment:not(:first-child) { box-shadow:-1px 0 0 var(--card); }
 .context-bar-segment:only-child:not([data-category]) { min-width:4px; }
@@ -459,7 +461,7 @@
   --edge-color:var(--primary); --edge-ink:linear-gradient(var(--edge-color), var(--edge-color));
   --edge-corner:var(--edge-cut, var(--cut));
 }
-.thread-row.active { --edge-line:1px; --edge-paint:var(--edge-ink) left top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) left top / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
+.thread-row.active { --edge-paint:var(--edge-ink) left top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) left top / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
 .task-tab.chat-tab.active { --edge-paint:var(--edge-ink) left bottom / 100% var(--edge-line) no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
 .message.user { position:relative; --edge-cut:var(--cut-lg); --edge-color:color-mix(in oklch, var(--gold, var(--primary)) 70%, transparent);
   --edge-paint:var(--edge-ink) right top / var(--edge-line) 100% no-repeat border-box, var(--edge-ink) right bottom / var(--edge-corner) var(--edge-corner) no-repeat border-box; }
