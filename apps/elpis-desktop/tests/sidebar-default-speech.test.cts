@@ -12,7 +12,11 @@ for (const colorScheme of ['light', 'dark']) test(`sidebar hierarchy and running
     assert.equal(await heading.locator('.section-count').textContent(), '3');
     const working = f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-dot');
     await working.locator('..').waitFor();
-    const mark = await working.evaluate((e: HTMLElement) => ({ state: e.dataset.state, fill: getComputedStyle(e).backgroundColor, shape: getComputedStyle(e).borderRadius }));
+    const mark = await working.evaluate((e: HTMLElement) => ({
+      state: e.dataset.state,
+      fill: getComputedStyle(e.querySelector('.elpis-working-dot')!).fill,
+      shape: getComputedStyle(e).borderRadius,
+    }));
     assert.equal(mark.state, 'working');
     assert.notEqual(mark.fill, 'rgba(0, 0, 0, 0)');
     assert.notEqual(mark.shape, '50%');
