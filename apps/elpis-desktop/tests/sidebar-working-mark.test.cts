@@ -80,7 +80,7 @@ for (const colorScheme of ['light', 'dark']) {
           rowShadow: getComputedStyle(row).boxShadow,
           border: getComputedStyle(row, '::before').borderLeftWidth,
         }));
-        assert.deepEqual(edge, { shadow: 'none', rowShadow: 'none', border: '2px' }, `${id}: selection keeps its edge without a shadow`);
+        assert.deepEqual(edge, { shadow: 'none', rowShadow: 'none', border: '1px' }, `${id}: selection keeps a thin edge without a shadow`);
         if (id === 'chat-a' && process.env.ELPIS_REVIEW_SHOTS)
           await page.locator('aside.sidebar').screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, `sidebar-no-shadow-${colorScheme}.png`) });
       }
