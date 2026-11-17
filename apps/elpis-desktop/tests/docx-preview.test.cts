@@ -20,7 +20,9 @@ async function setup(text = '# Agreement\n\nمتن فارسی — saved.\n') {
   await fs.writeFile(path.join(root, 'broken.docx'), 'Not a Word container');
   await fs.writeFile(path.join(root, 'notes.txt'), 'Keep this ordinary text editable.');
   const f = await fixture({ cwd: root, width: 1400, height: 850,
-    chat: [['t1', 'Read these documents.', `Open [the Word document](${file}), [the damaged document](${root}/broken.docx) or [notes](${root}/notes.txt).`]],
+    chat: [['t1', 'Read these documents.',
+      `Open [the Word document](${file}), [the damaged document](${root}/broken.docx) or [notes](${root}/notes.txt).`],
+    ['t2', 'Ready?', 'Documents ready.']],
     routes: {
       '/api/file': async (_body, url) => {
         try { return await files.readFile(url.searchParams.get('cwd'), url.searchParams.get('path'), {
@@ -32,7 +34,8 @@ async function setup(text = '# Agreement\n\nمتن فارسی — saved.\n') {
     },
   });
   const page = f.page as unknown as Page;
-  await f.open('chat-a');
+  try { await f.open('chat-a'); }
+  catch (error) { await f.close(); await promisify(execFile)('gio', ['trash', root]); throw error; }
   return { ...f, page, root, file, bytes,
     editor: (name: string) => page.getByRole('textbox', { name: `Contents of ${name}`, exact: true }),
     link: (name: string) => page.locator('.message.agent').getByRole('button', { name, exact: true }),
