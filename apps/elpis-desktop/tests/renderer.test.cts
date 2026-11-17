@@ -101,6 +101,10 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     await page.waitForFunction(()=>!document.body.textContent?.includes('1 background process running'),undefined,{timeout:8000});
     await page.locator('.worked-for > summary').last().click();
     await page.locator('.worked-for .activity-group > summary').first().click();
+    const commandDetails = page.locator('.worked-for details.step > summary');
+    assert.equal(await commandDetails.count(), 2);
+    await commandDetails.nth(0).click();
+    await commandDetails.nth(1).click();
     await page.getByText('build passed',{exact:true}).waitFor();
     await page.getByText('build failed',{exact:true}).waitFor();
     // An existing chat opens writable: its own empty draft, followed live through a plain native rejoin.
