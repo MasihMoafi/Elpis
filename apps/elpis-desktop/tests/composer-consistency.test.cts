@@ -2,6 +2,50 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 
+test('composer keeps native typing and selection-replacement undo groups', async () => {
+  const f = await fixture();
+  try {
+    await f.open('chat-a');
+    await f.composer.fill('Base');
+    await f.composer.press('End');
+    await f.composer.pressSequentially(' abcdef', { delay: 30 });
+    await f.composer.press('Control+z');
+    assert.equal(await f.composer.inputValue(), 'Base');
+    await f.composer.press('Control+Shift+z');
+    assert.equal(await f.composer.inputValue(), 'Base abcdef');
+
+    await f.composer.fill('one two three');
+    await f.composer.evaluate((box: HTMLTextAreaElement) => box.setSelectionRange(4, 7));
+    await f.composer.pressSequentially('TWO', { delay: 30 });
+    assert.equal(await f.composer.inputValue(), 'one TWO three');
+    await f.composer.press('Control+z');
+    assert.equal(await f.composer.inputValue(), 'one two three');
+    await f.composer.press('Control+Shift+z');
+    assert.equal(await f.composer.inputValue(), 'one TWO three');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
+test('composer isolates undo by draft owner even when two chats have identical drafts', async () => {
+  const f = await fixture();
+  try {
+    await f.open('chat-a');
+    await f.composer.fill('Private earlier text');
+    await f.composer.press('Control+a');
+    await f.composer.pressSequentially('Shared draft', { delay: 20 });
+    await f.open('chat-b');
+    await f.composer.fill('Shared draft');
+    await f.open('chat-a');
+    assert.equal(await f.composer.inputValue(), 'Shared draft');
+    await f.composer.press('Control+z');
+    assert.equal(await f.composer.inputValue(), 'Shared draft');
+    await f.open('chat-b');
+    await f.composer.press('Control+z');
+    assert.equal(await f.composer.inputValue(), 'Shared draft');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 
 
 // A wrapped draft grows until its input ceiling; width changes must not clip it or add an early scrollbar.

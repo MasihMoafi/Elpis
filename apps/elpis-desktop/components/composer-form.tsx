@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { X } from "lucide-react";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { MentionMenu, type useMentionMenu } from "@/components/mention-menu";
@@ -58,10 +58,17 @@ export function ComposerForm({
   focusComposer,
   children,
 }: Props) {
-  const { text, shellMode, composerRef, filePickerRef, setCaret } = composer;
+  const { text, textRef, shellMode, composerRef, filePickerRef, setCaret } = composer;
   const { attachments, attachmentsRef, attaching, setAttachments, fileNotice, setFileNotice, addFiles } =
     attachmentsState;
   const { saveAttachments } = drafts;
+  const draftOwner = selectedRef.current?.id || newDraftKey.current;
+  // React's controlled textarea updates defaultValue on every key, breaking Chromium's native undo groups.
+  // Native edits already update textRef through onChange; synchronize only restored or replaced drafts.
+  useLayoutEffect(() => {
+    const box = composerRef.current;
+    if (box && box.value !== textRef.current) box.value = textRef.current;
+  }, [composerRef, textRef, text, draftOwner]);
   // The page's HTML shows this box before its script runs, and starting replaces the text with the chat's saved draft:
   // what was typed before then was lost (a split pane typed in at once). The box takes typing only once the window has
   // started; this effect's update renders after every start-up effect of the same commit.
@@ -133,6 +140,7 @@ export function ComposerForm({
       )}
       {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
       <Textarea
+        key={draftOwner}
         ref={composerRef}
         aria-label="Message Elpis"
         {...(mention.open ? mention.inputProps : slash.inputProps)}
@@ -143,7 +151,6 @@ export function ComposerForm({
         }}
         onSelect={e => setCaret(e.currentTarget.selectionStart)}
         placeholder={composerPlaceholder}
-        value={text}
         onChange={onComposerChange}
         onPaste={onComposerPaste}
         disabled={projectChanging}
