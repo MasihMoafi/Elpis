@@ -52,7 +52,7 @@ const within = (child: string, parent: string) => child === parent || child.star
 const outside = (kind: string) => new BridgeError(`That ${kind} is outside the project.`);
 
 /** Where `target` (relative to the project, or absolute) really is, if it is an existing file or folder inside the project. */
-async function inside(cwd: unknown, target: unknown, kind: string, root = false) {
+async function inside(cwd: unknown, target: unknown, kind: string, root = false, allowFolder = false) {
   const folder = await projectDirectory(cwd);
   if (typeof target !== "string" || target.length > 4096 || target.includes("\0") || (!target && !root))
     throw new BridgeError("path must name a path inside the project");
@@ -73,7 +73,8 @@ async function inside(cwd: unknown, target: unknown, kind: string, root = false)
     return found;
   }
   if (!within(real, top)) throw outside(kind);
-  if (kind === "file" ? !info.isFile() : !info.isDirectory()) throw new BridgeError(`Not a ${kind}.`);
+  if (kind === "file" ? !(info.isFile() || (allowFolder && info.isDirectory())) : !info.isDirectory())
+    throw new BridgeError(`Not a ${kind}.`);
   return { real, rel: rel.split(path.sep).join("/"), info };
 }
 /** The most recently changed `<folder>/<rel>` file among the project's direct subfolders, still inside the project. */
@@ -139,6 +140,7 @@ const assetMime = (real: string, bytes: Buffer) =>
 export type FileRead = {
   path: string;
   size: number;
+  directory?: boolean;
   preview?: "pdf" | "image" | "text";
   tooLarge?: boolean;
   limit?: number;
@@ -204,7 +206,8 @@ export async function readFile(
   target: unknown,
   options: { page?: number | undefined; line?: number | undefined; mtimeMs?: number | undefined } = {},
 ): Promise<FileRead> {
-  const { real, rel } = await inside(cwd, target, "file");
+  const { real, rel, info: initial } = await inside(cwd, target, "file", true, true);
+  if (initial.isDirectory()) return { path: rel, size: 0, directory: true };
   const handle = await fs.open(real, "r").catch(() => {
     throw new BridgeError("This file cannot be read.");
   });

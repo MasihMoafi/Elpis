@@ -7,13 +7,14 @@ import { api } from "@/lib/api";
 import { resolveRef, type FileRef } from "@/lib/file-refs";
 import { isAudioPath } from "./audio-path.mts";
 import { MATILDA_CHANGED } from "@/lib/matilda";
-import { errorText } from "./error-text.mts";
+import { errorText, plainMessage } from "./error-text.mts";
 
 export type Entry = { name: string; dir: boolean; link?: boolean };
 export type Listing =
   { status: "loading" } | { status: "error"; message: string } | { status: "ready"; entries: Entry[] };
 export type Doc =
   | { status: "loading" }
+  | { status: "folder" }
   | { status: "error"; message: string }
   | { status: "binary" | "large"; size: number; limit?: number | undefined }
   | { status: "image" | "pdf"; src: string }
@@ -75,7 +76,7 @@ const set = (next: Partial<State>) => {
   state = { ...state, ...next };
   for (const listener of listeners) listener();
 };
-const message = (cause: unknown) => errorText(cause);
+const message = (cause: unknown) => plainMessage(errorText(cause));
 const enc = encodeURIComponent;
 
 export const docKey = (cwd: string, path: string) => resolveRef({ path }, cwd).abs;
@@ -228,6 +229,10 @@ export async function loadDoc(cwd: string, path: string) {
       controller.signal,
     );
     if (controller.signal.aborted || hasDraft(state.docs[key])) return;
+    if (result.directory) {
+      set({ docs: { ...state.docs, [key]: { status: "folder" } } });
+      return;
+    }
     if (result.preview === "pdf" || result.preview === "image") {
       set({ docs: { ...state.docs, [key]: { status: result.preview, src: fileAssetUrl(source.cwd, source.path) } } });
       return;

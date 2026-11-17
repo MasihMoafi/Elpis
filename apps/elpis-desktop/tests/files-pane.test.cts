@@ -286,6 +286,41 @@ test('PDF files open in a document frame, served as a PDF, instead of raw bytes 
   } finally { await f.close(); }
 });
 
+test('folder links browse nested, outside and empty folders while preserving an edited file', async () => {
+  const outside = `${CWD}-outside`;
+  const f = await open({ chat: [
+    ['folders', 'Open these folders', `[Inside](docs) [Outside](${outside}) [Empty](empty-folder)`],
+    ['folder-tail', 'Ready', 'All green.'],
+  ] });
+  try {
+    await fs.mkdir(path.join(CWD, 'empty-folder'));
+    await fs.mkdir(outside, { recursive: true });
+    await fs.writeFile(path.join(outside, 'outside.txt'), 'Outside folder contents');
+    await openWidePanel(f);
+    await f.ref('Inside').click();
+    await f.view.getByRole('treeitem', { name: 'guide.md', exact: true }).waitFor();
+    assert.equal(await f.view.getByRole('alert').count(), 0);
+    await f.view.getByRole('treeitem', { name: 'guide.md', exact: true }).press('Enter');
+    await f.view.getByRole('button', { name: 'Edit', exact: true }).click();
+    await f.editor('docs/guide.md').fill('Keep this unsaved edit');
+    await f.ref('Outside').click();
+    await f.view.getByRole('treeitem', { name: 'outside.txt', exact: true }).click();
+    await f.editor(`${outside}/outside.txt`).waitFor();
+    assert.equal(await f.editor(`${outside}/outside.txt`).inputValue(), 'Outside folder contents');
+    await f.ref('Empty').click();
+    await f.view.getByText('Folder is empty', { exact: true }).waitFor();
+    assert.equal(await f.view.getByRole('alert').count(), 0);
+    await f.tabs.getByRole('tab', { name: 'guide.md', exact: true }).click();
+    assert.equal(await f.editor('docs/guide.md').inputValue(), 'Keep this unsaved edit');
+    assert.deepEqual(f.errors, []);
+    if (process.env.ELPIS_REVIEW_SHOTS) {
+      await f.ref('Inside').click();
+      await f.view.getByRole('treeitem', { name: 'guide.md', exact: true }).waitFor();
+      await f.page.screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, 'folder-reference.png') });
+    }
+  } finally { await f.close(); await execFile('gio', ['trash', outside]); }
+});
+
 test('a path in a reply is a button that opens the Files tab on the file at its lines and shows it in the tree', async () => {
   const f = await open();
   try {

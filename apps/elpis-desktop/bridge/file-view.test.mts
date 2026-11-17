@@ -88,6 +88,22 @@ test("refuses a folder outside the project, a file named as a folder and a missi
   await refused(listDirectory("relative", ""), 400, /absolute/i);
 });
 
+test("folder references open as directories while writes and escaped links stay refused", async t => {
+  const { root, outside } = await project();
+  cleanup(t, root, outside);
+  await fs.mkdir(path.join(root, "empty folder"));
+  for (const target of ["docs", path.join(root, "empty folder"), "."]) {
+    const result = await readFile(root, target);
+    assert.equal(result.directory, true);
+    assert.equal(result.content, undefined);
+  }
+  await fs.symlink(outside, path.join(root, "outside-folder"));
+  await assert.rejects(readFile(root, "outside-folder"), /outside/i);
+  await assert.rejects(readFile(root, "missing-folder"), /No such/i);
+  await assert.rejects(writeFile(root, "docs", "do not replace a folder", 0), /Not a file/i);
+  assert.equal((await readFile(root, "docs/guide.md")).content, "Guide about the PARSER.\n");
+});
+
 test("reads a text file by a path inside the project, relative or absolute, with its size and modification time", async t => {
   const { root, outside } = await project();
   cleanup(t, root, outside);

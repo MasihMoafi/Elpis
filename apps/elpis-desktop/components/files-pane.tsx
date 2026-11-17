@@ -10,6 +10,8 @@ import { FileEditor } from "@/components/file-editor";
 import { MarkdownText } from "@/components/markdown-text";
 import { HtmlFilePreview, LargeTextPreview } from "@/components/file-preview";
 import { FileTree } from "@/components/file-tree";
+import { FolderIcon } from "@/components/elpis-icons";
+import { resolveRef } from "@/lib/file-refs";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,6 +32,7 @@ import {
   edit,
   fileScope,
   isDirty,
+  openFile,
   paneIn,
   refresh,
   reveal,
@@ -68,6 +71,7 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
       abs,
       rel: file.path,
       inside: !file.path.startsWith("/"),
+      dir: doc?.status === "folder",
       ...(file.line === undefined ? {} : { line: file.line }),
     },
     setNote,
@@ -95,6 +99,11 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
         Reading the file…
       </p>
     );
+  else if (doc.status === "folder")
+    body = <FileTree cwd={abs} onOpenFile={(path, keep, line) => {
+      const target = resolveRef({ path: `${abs.replace(/\/+$/, "")}/${path}` }, cwd);
+      void openFile(cwd, target.rel, { preview: !keep, line, endLine: line, show: true });
+    }} />;
   else if (doc.status === "error")
     body = (
       <p className="files-note files-error" role="alert">
@@ -350,7 +359,7 @@ export function FilesPane({ cwd }: { cwd: string }) {
         <TabStrip label="Open files" add={null} activeKey={pane.active}>
           {pane.open.map(file => {
             const name = nameOf(file.path),
-              Icon = fileKind(name).Icon,
+              Icon = files.docs[docKey(cwd, file.path)]?.status === "folder" ? FolderIcon : fileKind(name).Icon,
               dirty = isDirty(files.docs[docKey(cwd, file.path)]);
             const actions: MenuAction[] = [
               ...(cwd ? [{ id: "reveal", label: "Reveal in file tree", run: () => reveal(cwd, file.path) }] : []),

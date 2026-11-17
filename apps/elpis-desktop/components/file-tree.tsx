@@ -23,13 +23,13 @@ import {
 } from "@/lib/files-pane";
 import { isAudioPath } from "@/lib/audio-path.mts";
 import { rankFiles } from "@/lib/mentions";
-import { errorText } from "@/lib/error-text.mts";
+import { errorText, plainMessage } from "@/lib/error-text.mts";
 
 const SHOWN = 200;
 type Match = { path: string; line: number; text: string };
 const pad = (depth: number) => 10 + depth * 14;
 const folderOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
-const message = (cause: unknown) => errorText(cause, "Could not search.");
+const message = (cause: unknown) => plainMessage(errorText(cause, "Could not search."));
 
 /** One line of the tree or of a list of finds: a folder (with its chevron), a file, or a file found by name (its folder beside
  * it). A click opens a folder or previews a file; a double click or Enter keeps it; the right-click menu is `fileActions`. */
@@ -112,7 +112,7 @@ function marked(text: string, query: string) {
 /** The Files tab's left side: a filter that finds by name (and by contents after "?") and the project's tree, one folder read at
  * a time. The tree is Claude's: folders open and close, arrows move, Right and Left open and close, a path asked for from a
  * reply is opened on the way to it, selected and brought into view. */
-export function FileTree({ cwd }: { cwd: string }) {
+export function FileTree({ cwd, onOpenFile }: { cwd: string; onOpenFile?: (path: string, keep: boolean, line?: number) => void }) {
   const files = useFiles(),
     pane = paneIn(files, cwd),
     { hidden } = pane;
@@ -183,10 +183,11 @@ export function FileTree({ cwd }: { cwd: string }) {
       setProblem("");
       if (dir) toggleDir(cwd, path);
       else if (isAudioPath(path)) {
-        if (!openRef({ path }, { onError: setProblem })) setProblem("Open a project folder to play this file.");
-      } else void openFile(cwd, path, { preview: !keep, ...(line === undefined ? {} : { line, endLine: line }) });
+        if (!openRef({ path: `${cwd.replace(/\/+$/, "")}/${path}` }, { onError: setProblem })) setProblem("Open a project folder to play this file.");
+      } else if (onOpenFile) onOpenFile(path, keep, line);
+      else void openFile(cwd, path, { preview: !keep, ...(line === undefined ? {} : { line, endLine: line }) });
     },
-    [cwd],
+    [cwd, onOpenFile],
   );
   const onError = useCallback((text: string) => setProblem(text), []);
 

@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 
-/** A message as he should read it: no "Error:" prefix and no diagnostic code or request ID (6 Nov, Masih: "I don't like to see
- * such errors ... like this ever"). */
-export const plainMessage = (text: string) =>
-  text.replace(/^(?:Type)?Error:\s*/, "").replace(/\s*\(ELPIS_[A-Z_]+(?:; request [a-f0-9-]+)?\)\s*$/, "");
+export { plainMessage } from "./error-text.mts";
 
 /** The workspace's own notices, under the chat: the last error (it fades after 10 s), "Deleted …" with its Undo (8 s), what
  * an undo or redo of a chat action did (8 s), and the worktrees a delete or archive kept. */
