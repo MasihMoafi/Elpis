@@ -50,6 +50,7 @@ Sidebar section headings use the theme accent and show their item counts when fo
 29. Tab selection supports Shift ranges and grouped, icon-led actions. Close other tabs and Close tabs to the right affect the intended tabs; unselected tabs and deliberate panel sizes are preserved. An empty pane does not reopen as a wide blank view. (C9, R76)
 30. Drawing uses the browser's own box over a still image; Add or Close restores the live page without moving the surrounding layout. Style opens and closes without changing marks or the selected tool. Chat pauses drawing and focuses the composer; Resume restores the marks and Discard is explicit. (S21, M1, M2, A151)
 31. Enter sends a browser annotation once and in order. The sent message shows the person's comments, not the internal note for the model. Popup and dialog elements can be annotated without activating or dismissing them. (S17, C9, A147)
+   In a narrow browser panel, new comments, edits and pending comments keep a readable field and every action inside the panel.
 32. Shared web skills use bounded, standard interaction rules and give screenshots useful names. (C13)
 
 ## Love Spot and Matilda

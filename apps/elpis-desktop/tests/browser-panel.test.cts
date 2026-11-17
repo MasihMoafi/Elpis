@@ -112,6 +112,26 @@ async function fixture(t: TestContext, { running = false, scoped = false, hold =
   return { page, posts, errors, commands, shoot };
 }
 
+for (const mode of ['new', 'edit', 'pending'] as const) test(`annotation controls fit a narrow panel with ${mode} comments`, async t => {
+  const { page, errors, shoot } = await fixture(t);
+  await widenSidePanel(page, 400);
+  await page.evaluate(mode => (window as PanelWindow).__push({
+    annotating: true,
+    annotations: [{ id: 'saved', number: 1, kind: 'element', label: 'A long saved target label', body: 'Saved comment' }],
+    draft: mode === 'pending' ? null : { id: 'selected', number: 2, kind: 'element', label: 'A long selected target label', body: 'A readable comment', editing: mode === 'edit' },
+  }), mode);
+  await eventually(async () => {
+    const panel = required(await page.locator('.browser-panel').boundingBox());
+    for (const button of await page.locator('.annotation-editor button, .annotation-bar > button').all()) {
+      const box = required(await button.boundingBox());
+      assert.ok(box.x >= panel.x && box.x + box.width <= panel.x + panel.width + 1, `${await button.innerText()} stays inside the panel`);
+    }
+    if (mode !== 'pending') assert.ok(required(await page.getByRole('textbox', { name: 'Comment', exact: true }).boundingBox()).width >= 160, 'the comment field remains readable');
+  });
+  await shoot(`annotation-narrow-${mode}`);
+  assert.deepEqual(errors, []);
+});
+
 test('Annotate: the editor takes a comment and Send gives the chat the comments and one screenshot sheet', async t => {
   const { page, posts, errors, commands, shoot } = await fixture(t);
   const annotate = page.getByRole('button', { name: 'Annotate this page' });

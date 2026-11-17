@@ -63,9 +63,17 @@
   .browser-annotate-label { display:none; }
   .browser-annotate { position:relative; width:28px; padding:0; justify-content:center; }
   .browser-badge { position:absolute; top:-3px; inset-inline-end:-3px; }
+  .annotation-editor { display:grid; grid-template-columns:minmax(0,1fr) auto; height:auto; }
+  .annotation-target { grid-column:1 / -1; max-width:100%; padding-top:0; }
+  .annotation-editor textarea { min-width:0; width:100%; }
+  .annotation-bar { flex-wrap:wrap; }
 }
 @container browser-panel (max-width:459px) {
   .browser-security-text { display:none; }
   .browser-address:has(.browser-security) input { padding-inline-start:28px; }
 }
-@container browser-panel (max-width:394px) { .browser-external { display:none; } }
+@container browser-panel (max-width:394px) {
+  .browser-external { display:none; }
+  .annotation-editor textarea { grid-column:1 / -1; }
+  .annotation-editor-actions { grid-column:1 / -1; justify-content:flex-end; }
+}
