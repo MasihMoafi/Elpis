@@ -15,6 +15,45 @@ async function waitForDraftFit(page: { evaluate<T>(fn: () => T): Promise<T>; wai
   });
 }
 
+test('composer fits multiline text and wrapping, then scrolls at its height limit without losing selection', async () => {
+  const f = await fixture({ width: 1100, height: 700 });
+  try {
+    await f.open('chat-a');
+    await f.composer.fill('First line\nSecond line\nThird line');
+    await waitForDraftFit(f.page);
+    const multiline = await f.composer.evaluate((input: HTMLTextAreaElement) => ({ height: input.clientHeight, overflow: getComputedStyle(input).overflowY }));
+    assert.ok(multiline.height > 44 && multiline.height < 240);
+    assert.equal(multiline.overflow, 'hidden');
+
+    const draft = 'A message that wraps when the composer becomes narrower. '.repeat(5);
+    await f.composer.fill(draft);
+    await f.composer.evaluate((input: HTMLTextAreaElement) => input.setSelectionRange(4, 17));
+    const before = await f.composer.evaluate((input: HTMLTextAreaElement) => input.clientHeight);
+    await f.page.locator('.composer').evaluate((element: HTMLElement) => { element.style.width = '320px'; });
+    await waitForDraftFit(f.page);
+    const wrapped = await f.composer.evaluate((input: HTMLTextAreaElement) => ({ height: input.clientHeight, start: input.selectionStart, end: input.selectionEnd, value: input.value, overflow: getComputedStyle(input).overflowY }));
+    assert.ok(wrapped.height > before && wrapped.height < 240);
+    assert.equal(wrapped.overflow, 'hidden');
+    assert.deepEqual([wrapped.start, wrapped.end, wrapped.value], [4, 17, draft]);
+
+    await f.composer.fill('Long line to keep the draft scrollable.\n'.repeat(50));
+    await waitForDraftFit(f.page);
+    const capped = await f.composer.evaluate((input: HTMLTextAreaElement) => {
+      input.scrollTop = input.scrollHeight;
+      return { height: input.clientHeight, scrollHeight: input.scrollHeight, scrollTop: input.scrollTop, overflow: getComputedStyle(input).overflowY };
+    });
+    assert.ok(capped.height >= 239 && capped.height <= 240);
+    assert.equal(capped.overflow, 'auto');
+    assert.ok(capped.scrollHeight > capped.height && capped.scrollTop > 0);
+    await f.composer.evaluate((input: HTMLTextAreaElement) => { input.setSelectionRange(10, 10); input.scrollTop = 100; });
+    await f.page.locator('.composer').evaluate((element: HTMLElement) => { element.style.width = '300px'; });
+    await waitForDraftFit(f.page);
+    const afterResize = await f.composer.evaluate((input: HTMLTextAreaElement) => ({ scrollTop: input.scrollTop, caret: input.selectionStart }));
+    assert.deepEqual(afterResize, { scrollTop: 100, caret: 10 });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 // The composer's toolbar is one layout whatever the chat, provider or neighbouring pane: the model button names the model
 // only (the provider never rides inside it), the permission label is the full "Approve for me" until the workspace itself
 // is narrow, the box's inset follows the workspace's width (not the window's), and nothing leaves the box.

@@ -60,7 +60,7 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
   const loaded = { exports: {} as { useKeyUses(props: { providers: Provider[]; refreshKey: number; active: boolean }): (provider: Provider) => unknown } };
   compileFunction(code, ['require', 'module', 'exports'])((id: string) => id === 'react' ? hooks : mocks[id] || require(id), loaded, loaded.exports);
-  const props = { providers, refreshKey: 0, active: true };
+  const props = { providers, refreshKey: 0, providerGeneration: 0, active: true };
   const elements = (node: unknown): TestElement[] => React.isValidElement(node) ? [node as TestElement, ...React.Children.toArray((node as TestElement).props.children).flatMap(elements)] : Array.isArray(node) ? node.flatMap(elements) : [];
   const render = () => { cursor = 0; const uses = loaded.exports.useKeyUses(props); return providers.map(item => uses(item)); };
   const settle = async () => { for (let round = 0; round < 3; round++) { render(); for (const effect of pending.splice(0)) effect(); await new Promise(setImmediate); } };
@@ -73,7 +73,7 @@ function harness({ providers = [ROUTER, OTHER], speech = { source: 'local', mode
   const choose = async (label: string, value: string) => { const change = required(find(label)).props.onChange; assert.ok(change); change({ target: { value } }); await settle(); };
   const save = (key: Provider, feature: string) => required(elements(render()[providers.indexOf(key)]).find(item => item.props['aria-label'] === `Save ${feature} for ${key.name}`));
   const options = (label: string) => React.Children.toArray(required(find(label)).props.children).flat().filter(React.isValidElement).map((item: TestElement) => item.props.value).filter(Boolean);
-  return { settle, box, find, text, tick, choose, save, click, options, posts, reads, settings, state };
+  return { settle, box, find, text, tick, choose, save, click, options, posts, reads, settings, state, props };
 }
 
 test('ticking read aloud on the OpenRouter key routes read aloud to it', async () => {
@@ -229,4 +229,47 @@ test('a key that lists no speech-to-text models greys the Dictation picker out w
   assert.equal(app.save(ROUTER, 'Dictation').props.disabled, true);
   assert.match(app.text(OTHER), /This provider has no speech-to-text models\./);
   assert.deepEqual(app.posts, []);
+});
+
+test('saved routes stay visibly checked when their key is unavailable', async () => {
+  const key = { ...ROUTER, auth: { keySet: false } };
+  const app = harness({ providers: [key], main: { provider: key.id, model: 'qwen/coder' }, speech: { source: key.id, model: 'fish/voice', voice: null } });
+  await app.settle();
+  for (const feature of ['Chat', 'Read aloud']) {
+    assert.equal(app.box(key, feature).props.checked, true, `${feature} shows its saved provider`);
+    assert.equal(app.box(key, feature).props.disabled, true, `${feature} cannot be changed while unavailable`);
+  }
+});
+
+test('unconfigured unavailable routes stay unchecked', async () => {
+  const key = { ...ROUTER, auth: { keySet: false } };
+  const app = harness({ providers: [key] }); await app.settle();
+  for (const feature of ['Chat', 'Read aloud']) assert.equal(app.box(key, feature).props.checked, false);
+});
+
+test('a pending model list finishes after another feature opens', async () => {
+  let resolveSpeech: (value: unknown) => void = () => {};
+  const pending = new Promise(resolve => { resolveSpeech = resolve; });
+  const app = harness({ api: route => route.includes('outputModality=speech') ? pending : undefined });
+  await app.settle();
+  await app.tick(ROUTER, 'Read aloud', true);
+  await app.tick(ROUTER, 'Chat', true);
+  resolveSpeech({ data: [{ model: 'fish/voice', displayName: 'Fish' }] });
+  await app.settle();
+  await app.tick(ROUTER, 'Read aloud', true);
+  assert.deepEqual(app.options('Read aloud model for OpenRouter'), ['fish/voice']);
+});
+
+test('a provider configuration change refreshes the catalog and ignores an older response', async () => {
+  let resolveOld: (value: unknown) => void = () => {};
+  const old = new Promise(resolve => { resolveOld = resolve; });
+  let calls = 0;
+  const app = harness({ api: route => route.includes('outputModality=speech') ? (++calls === 1 ? old : { data: [{ model: 'new/voice' }] }) : undefined });
+  await app.settle();
+  await app.tick(ROUTER, 'Read aloud', true);
+  app.props.providerGeneration++;
+  await app.settle();
+  assert.deepEqual(app.options('Read aloud model for OpenRouter'), ['new/voice']);
+  resolveOld({ data: [{ model: 'old/voice' }] }); await app.settle();
+  assert.deepEqual(app.options('Read aloud model for OpenRouter'), ['new/voice']);
 });

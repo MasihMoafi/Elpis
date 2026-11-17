@@ -208,3 +208,91 @@ for (const connected of [0, 3]) for (const colorScheme of ['light']) test(`accou
   assert.deepEqual(app.errors, []);
  } finally { reportAccounts.resolve?.(); await app.close(); }
 });
+
+test('saved provider routes remain checked when the key is unavailable', async () => {
+ const routes = keyRoutes({ speech: { source: 'openrouter', model: 'fish/voice', voice: null } });
+ const keyWithoutSecret = { ...ROUTER_KEY, auth: { ...ROUTER_KEY.auth, keySet: false } };
+ const settings = routes['/api/settings']();
+ const app = await fixture({ routes: {
+  ...routes,
+  '/api/settings': () => ({ ...settings, main: { provider: 'openrouter', model: 'sol' } }),
+  '/api/providers/settings': () => ({ version: 'v1', write: { available: true }, managed: {}, providers: [keyWithoutSecret, OTHER_KEY] }),
+ } });
+ try {
+  await openAccounts(app.page);
+  const group = app.page.getByRole('group', { name: 'Use OpenRouter for', exact: true });
+  await group.getByText('Add an API key first.').first().waitFor();
+  for (const feature of ['Chat', 'Read aloud']) {
+   const box = group.getByRole('checkbox', { name: `Use OpenRouter for ${feature}`, exact: true });
+   assert.equal(await box.getAttribute('aria-checked'), 'true', `${feature} still shows its saved provider`);
+   assert.equal(await box.getAttribute('aria-disabled') ?? await box.getAttribute('data-disabled'), 'true');
+  }
+  assert.deepEqual(app.posts, []);
+  assert.deepEqual(app.errors, []);
+ } finally { await app.close(); }
+});
+
+test('a model list completes after the user opens a different feature', async () => {
+ let release: (value: unknown) => void = () => {};
+ const held = new Promise(resolve => { release = resolve; });
+ const routes = keyRoutes();
+ const app = await fixture({ routes: {
+  ...routes,
+  '/api/models': (body: unknown, url: URL) => url.searchParams.get('outputModality') === 'speech' ? held : routes['/api/models'](body, url),
+ } });
+ try {
+  await openAccounts(app.page);
+  const group = app.page.getByRole('group', { name: 'Use OpenRouter for', exact: true });
+  await group.getByRole('checkbox', { name: 'Use OpenRouter for Read aloud', exact: true }).click();
+  await group.getByRole('combobox', { name: 'Read aloud model for OpenRouter', exact: true }).waitFor();
+  await group.getByRole('checkbox', { name: 'Use OpenRouter for Chat', exact: true }).click();
+  release({ data: [{ model: 'fish/voice', displayName: 'Fish Audio' }] });
+  await group.getByRole('checkbox', { name: 'Use OpenRouter for Read aloud', exact: true }).click();
+  await chooseOption(group.getByRole('combobox', { name: 'Read aloud model for OpenRouter', exact: true }), 'fish/voice');
+  assert.deepEqual(app.posts, []);
+  assert.deepEqual(app.errors, []);
+ } finally { release({ data: [] }); await app.close(); }
+});
+
+for (const change of ['key', 'endpoint']) test(`replacing a provider ${change} refreshes its models even when the old response arrives last`, async () => {
+ let releaseOld: (value: unknown) => void = () => {};
+ const old = new Promise(resolve => { releaseOld = resolve; });
+ let count = 0;
+ let config = { version: 'v1', write: { available: true }, managed: {}, providers: [ROUTER_KEY, OTHER_KEY] };
+ const routes = keyRoutes();
+ const settings = routes['/api/settings']();
+ const app = await fixture({ routes: {
+  ...routes,
+  '/api/settings': () => ({ ...settings, main: { provider: 'api-other', model: 'sol' } }),
+  '/api/providers/settings': (body: Write | null) => {
+   if (body) config = { ...config, version: 'v2', providers: [ROUTER_KEY, { ...OTHER_KEY, baseUrl: body.baseUrl }] };
+   return config;
+  },
+  '/api/models': (body: unknown, url: URL) => {
+   if (url.searchParams.get('provider') !== 'api-other') return routes['/api/models'](body, url);
+   return ++count === 1 ? old : { data: [{ model: 'new/model', displayName: 'New model' }] };
+  },
+ } });
+ try {
+  await openAccounts(app.page);
+  const panel = app.page.getByRole('tabpanel', { name: 'Models & accounts', exact: true });
+  const group = panel.getByRole('group', { name: 'Use Other API for', exact: true });
+  await group.getByRole('combobox', { name: 'Chat model for Other API', exact: true }).waitFor();
+  await panel.getByRole('button', { name: 'Edit Other API', exact: true }).click();
+  if (change === 'key') {
+   await chooseOption(panel.getByLabel('API key action', { exact: true }), 'replace');
+   await panel.getByLabel('Provider API key', { exact: true }).fill('fixture-only-new-key');
+  } else await panel.getByLabel('API endpoint', { exact: true }).fill('https://replacement.example.test/v1');
+  await panel.getByRole('button', { name: 'Save provider', exact: true }).click();
+  await panel.getByRole('status').filter({ hasText: 'Saved for new conversations' }).waitFor();
+  const model = group.getByRole('combobox', { name: 'Chat model for Other API', exact: true });
+  await chooseOption(model, 'new/model');
+  const oldResponse = app.page.waitForResponse((response: { url(): string }) => response.url().includes('/api/models?provider=api-other'));
+  releaseOld({ data: [{ model: 'old/model', displayName: 'Old model' }] });
+  await oldResponse;
+  await chooseOption(model, 'new/model');
+  assert.equal(await controlValue(model), 'new/model');
+  assert.equal(count, 2, 'the same provider id caused a fresh catalog request');
+  assert.deepEqual(app.errors, []);
+ } finally { releaseOld({ data: [] }); await app.close(); }
+});

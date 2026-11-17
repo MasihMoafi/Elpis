@@ -48,6 +48,7 @@ export function ProvidersSettings({
   const [error, setError] = useState("");
   const [waiting, setWaiting] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [providerGeneration, setProviderGeneration] = useState(0);
   const loadConfig = useCallback(async () => {
     setConfig(await readProviderConfig());
   }, []);
@@ -84,6 +85,7 @@ export function ProvidersSettings({
         existing: editing.existing,
         action: editing.credential,
       });
+      setProviderGeneration(value => value + 1);
       setEditing(null);
       await load();
       await onChanged?.();
@@ -149,6 +151,7 @@ export function ProvidersSettings({
         provider => provider.id !== "openai" && provider.auth.source !== "subscription" && !provider.gateway,
       ) ?? [],
     refreshKey,
+    providerGeneration,
     active,
   });
   const custom =
@@ -176,7 +179,14 @@ export function ProvidersSettings({
       <SettingsHeader
         title="Models & accounts"
         description="Account connections and keys are on this device. Default models apply to new chats under Configuration."
-        action={<RefreshButton onClick={() => void load()} />}
+        action={
+          <RefreshButton
+            onClick={() => {
+              setProviderGeneration(value => value + 1);
+              void load();
+            }}
+          />
+        }
       />
       <div className="settings-stack">
         {(error || accountsError) && <SettingsNotice tone="alert">{error || accountsError}</SettingsNotice>}
@@ -240,6 +250,7 @@ export function ProvidersSettings({
                   provider="anthropic"
                   label="Anthropic"
                   onSaved={() => {
+                    setProviderGeneration(value => value + 1);
                     void load();
                     void onChanged?.();
                   }}

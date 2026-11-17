@@ -117,10 +117,12 @@ const catalogRoute = (feature: Feature, id: string) =>
 export function useKeyUses({
   providers,
   refreshKey,
+  providerGeneration = 0,
   active = true,
 }: {
   providers: KeyProvider[];
   refreshKey: number;
+  providerGeneration?: number;
   active?: boolean;
 }): (provider: KeyProvider) => ReactNode {
   const { data: settings, error: settingsError } = useElpisSettings();
@@ -204,28 +206,24 @@ export function useKeyUses({
       FEATURES.filter(
         ([feature]) =>
           feature !== "live" && !reason(provider, feature) && (drafted(provider, feature) || saved(provider, feature)),
-      ).map(([feature]) => `${refreshKey}|${feature}|${provider.id}`),
+      ).map(([feature]) => `${refreshKey}|${providerGeneration}|${feature}|${provider.id}`),
     )
     .join(" ");
   useEffect(() => {
     if (!active || !open) return;
-    let alive = true;
     for (const key of open.split(" ")) {
       if (catalogs[key]) continue;
-      const [, feature, id] = key.split("|") as [string, Feature, string];
+      const [, , feature, id] = key.split("|") as [string, string, Feature, string];
       setCatalogs(old => ({ ...old, [key]: "loading" }));
       void api<{ data: Model[] }>(catalogRoute(feature, id))
         .then(readModels)
         .then(models => {
-          if (alive) setCatalogs(old => ({ ...old, [key]: models }));
+          setCatalogs(old => ({ ...old, [key]: models }));
         })
         .catch(() => {
-          if (alive) setCatalogs(old => ({ ...old, [key]: "failed" }));
+          setCatalogs(old => ({ ...old, [key]: "failed" }));
         });
     }
-    return () => {
-      alive = false;
-    };
   }, [active, open]);
 
   async function perform(provider: KeyProvider, action: () => Promise<string>) {
@@ -325,10 +323,10 @@ export function useKeyUses({
             current = saved(provider, feature),
             pending = drafted(provider, feature);
           const pick = pending ?? current,
-            checked = !why && !!pick;
+            checked = !!pick;
           const holder =
             pending && !current ? providers.find(item => item.id !== provider.id && saved(item, feature)) : undefined;
-          const catalog = catalogs[`${refreshKey}|${feature}|${provider.id}`];
+          const catalog = catalogs[`${refreshKey}|${providerGeneration}|${feature}|${provider.id}`];
           const models = Array.isArray(catalog) ? catalog : [];
           const none = Array.isArray(catalog) && !models.length;
           const chosen = models.find(item => item.model === pick?.model);
@@ -360,7 +358,7 @@ export function useKeyUses({
                 {label}
               </label>
               {why && <span className="key-use-note">{why}</span>}
-              {checked && pick && (
+              {checked && pick && !why && (
                 <>
                   <OptionSelect
                     aria-label={`${label} model for ${provider.name}`}

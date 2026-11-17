@@ -9,8 +9,9 @@ export function useComposerHeight(ref: RefObject<HTMLTextAreaElement | null>, de
     if (!box) return;
     const fit = () => {
       box.style.height = "auto";
-      box.style.height = `${Math.min(240, Math.max(44, box.scrollHeight))}px`;
-      box.style.overflowY = box.scrollHeight > 241 ? "auto" : "hidden";
+      const height = box.scrollHeight;
+      box.style.height = `${Math.min(240, Math.max(44, height))}px`;
+      box.style.overflowY = height > 241 ? "auto" : "hidden";
     };
     fit();
     let width = box.clientWidth;

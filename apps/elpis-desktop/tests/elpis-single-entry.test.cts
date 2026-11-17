@@ -8,6 +8,83 @@ const chat = (id: string, name: string, extra: object = {}) => ({
   desktopAccess: { writable: true, mode: 'direct' }, ...extra,
 });
 
+test('background work is shown in Elpis and ordinary chats, and disappears when the runtime reports none', async () => {
+  let motherJobs = [{ itemId: 'mother-command', processId: 'mother-process', command: 'mother task', cwd: '/tmp' }];
+  let motherUnavailable = false;
+  let motherDisabled = false;
+  let motherRequests = 0;
+  const f = await fixture({
+    threads: [chat('elpis', 'Elpis', { motherAgent: true }), chat('chat-a', 'Native chat'), chat('empty', 'Empty chat')],
+    readyThreadId: 'chat-a',
+    routes: {
+      '/api/threads/elpis/background-processes': () => {
+        motherRequests++;
+        return motherDisabled ? { state: 'disabled' } : motherUnavailable ? { __http: 503, error: 'unavailable' } : { data: motherJobs, nextCursor: null };
+      },
+      '/api/threads/chat-a/background-processes': () => ({ data: [{ itemId: 'native', processId: 'native', command: 'native task', cwd: '/tmp' }], nextCursor: null }),
+      '/api/threads/empty/background-processes': () => ({ data: [], nextCursor: null }),
+    },
+  });
+  try {
+    const { page } = f;
+    const running = page.getByText('1 background process running', { exact: true });
+    const openRunning = async () => {
+      await running.waitFor();
+      if (!(await running.locator('..').evaluate((details: HTMLDetailsElement) => details.open))) await running.click();
+    };
+    await openRunning();
+    await page.getByText('native task', { exact: true }).waitFor();
+    await page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Elpis', exact: true }).click();
+    await openRunning();
+    await page.getByText('mother task', { exact: true }).waitFor();
+    motherUnavailable = true;
+    await page.getByText('Background process status unavailable', { exact: true }).waitFor({ timeout: 8000 });
+    await page.getByText('mother task', { exact: true }).waitFor();
+    motherUnavailable = false;
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await running.waitFor();
+    motherJobs = [];
+    await running.waitFor({ state: 'detached', timeout: 8000 });
+    await page.locator('aside.sidebar .thread-row').filter({ hasText: 'Empty chat' }).click();
+    await page.getByRole('tab', { name: 'Empty chat', exact: true }).waitFor();
+    assert.equal(await running.count(), 0);
+    motherDisabled = true;
+    const disabledResponse = page.waitForResponse((reply: { url(): string }) => reply.url().includes('/elpis/background-processes'));
+    await page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Elpis', exact: true }).click();
+    await disabledResponse;
+    await page.getByRole('tab', { name: 'Elpis', exact: true }).waitFor();
+    await page.waitForFunction(() => !document.body.textContent?.includes('Background process status unavailable'));
+    assert.equal(await running.count(), 0);
+    motherDisabled = false;
+    motherJobs = [{ itemId: 'enabled', processId: 'enabled', command: 'enabled work', cwd: '/tmp' }];
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await running.waitFor();
+    await page.locator('aside.sidebar .thread-row').filter({ hasText: 'Empty chat' }).click();
+    await page.getByRole('tab', { name: 'Empty chat', exact: true }).waitFor();
+    motherUnavailable = true;
+    await page.locator('aside.sidebar nav[aria-label="Workspace"]').getByRole('button', { name: 'Elpis', exact: true }).click();
+    await page.getByText('Background process status unavailable', { exact: true }).waitFor();
+    assert.equal(await running.count(), 0);
+    const unavailable = page.getByText('Background process status unavailable', { exact: true });
+    if (!(await unavailable.locator('..').evaluate((details: HTMLDetailsElement) => details.open))) await unavailable.click();
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    for (let i = 0; i < 4; i++) {
+      const count = motherRequests;
+      const response = page.waitForResponse((reply: { url(): string }) => reply.url().includes('/elpis/background-processes'));
+      await retry.click();
+      await response;
+      assert.ok(motherRequests > count);
+    }
+    motherUnavailable = false;
+    motherJobs = [{ itemId: 'again', processId: 'again', command: 'resumed work', cwd: '/tmp' }];
+    await retry.click();
+    await running.waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally {
+    await f.close();
+  }
+});
+
 test('the router chat opens from the Elpis entry and is not a row among the chats', async () => {
   const f = await fixture({
     threads: [chat('elpis', 'Elpis', { motherAgent: true }), chat('chat-a', 'Fix the parser')], readyThreadId: 'chat-a',
