@@ -1590,6 +1590,48 @@ fn changed_files_outside_scopes(
         .collect())
 }
 
+// Measure the complete workspace, but never hash a home folder's caches and
+// datasets indefinitely before its first worker can start. Exceeding a limit
+// refuses the task; a partial baseline must never authorize a writer.
+struct SnapshotBudget {
+    deadline: Instant,
+    entries_left: usize,
+    bytes_left: u64,
+}
+
+impl SnapshotBudget {
+    fn new() -> Self {
+        Self {
+            deadline: Instant::now() + Duration::from_secs(5),
+            entries_left: 100_000,
+            bytes_left: 256 * 1024 * 1024,
+        }
+    }
+
+    fn check_time(&self) -> anyhow::Result<()> {
+        if Instant::now() >= self.deadline {
+            bail!("workspace snapshot exceeded five seconds; select a smaller project workspace");
+        }
+        Ok(())
+    }
+
+    fn visit(&mut self) -> anyhow::Result<()> {
+        self.check_time()?;
+        self.entries_left = self.entries_left.checked_sub(1).ok_or_else(|| {
+            anyhow!("workspace snapshot has too many entries; select a smaller project workspace")
+        })?;
+        Ok(())
+    }
+
+    fn read_bytes(&mut self, count: u64) -> anyhow::Result<()> {
+        self.check_time()?;
+        self.bytes_left = self.bytes_left.checked_sub(count).ok_or_else(|| {
+            anyhow!("workspace snapshot exceeds 256 MiB; select a smaller project workspace")
+        })?;
+        Ok(())
+    }
+}
+
 fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Value> {
     let workspace = task
         .workspace_path
@@ -1597,6 +1639,7 @@ fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Val
         .ok_or_else(|| anyhow::anyhow!("task has no native workspace path"))?;
     let root = Path::new(workspace);
     let mut files = BTreeMap::<String, String>::new();
+    let mut budget = SnapshotBudget::new();
     // Measure the workspace, including paths outside the scopes. Git enumerates
     // tracked and untracked files without ignored output or repository metadata.
     let output = std::process::Command::new("git")
@@ -1618,7 +1661,7 @@ fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Val
             .filter(|path| !path.is_empty())
         {
             let path = std::str::from_utf8(path)?;
-            snapshot_path(root, &root.join(path), &mut files)?;
+            snapshot_path(root, &root.join(path), &mut files, &mut budget)?;
         }
     } else if root.ancestors().any(|path| path.join(".git").exists()) {
         bail!(
@@ -1626,8 +1669,9 @@ fn snapshot_task_scopes(task: &codex_state::WorkGraphTask) -> anyhow::Result<Val
             String::from_utf8_lossy(&output.stderr)
         );
     } else {
-        snapshot_path(root, root, &mut files)?;
+        snapshot_path(root, root, &mut files, &mut budget)?;
     }
+    budget.check_time()?;
     Ok(serde_json::to_value(files)?)
 }
 
@@ -1635,7 +1679,9 @@ fn snapshot_path(
     root: &Path,
     path: &Path,
     files: &mut BTreeMap<String, String>,
+    budget: &mut SnapshotBudget,
 ) -> anyhow::Result<()> {
+    budget.visit()?;
     if path.file_name().is_some_and(|name| name == ".git") {
         return Ok(());
     }
@@ -1646,7 +1692,7 @@ fn snapshot_path(
     };
     if metadata.is_dir() {
         for entry in std::fs::read_dir(path)? {
-            snapshot_path(root, &entry?.path(), files)?;
+            snapshot_path(root, &entry?.path(), files, budget)?;
         }
         return Ok(());
     }
@@ -1661,6 +1707,11 @@ fn snapshot_path(
     let digest = if metadata.file_type().is_symlink() {
         Sha256::digest(std::fs::read_link(path)?.to_string_lossy().as_bytes()).to_vec()
     } else {
+        // Reject large files before reading; account actual reads too, so a
+        // file growing during the snapshot cannot evade the total bound.
+        if metadata.len() > budget.bytes_left {
+            bail!("workspace snapshot exceeds 256 MiB; select a smaller project workspace");
+        }
         let mut hasher = Sha256::new();
         let mut file = std::fs::File::open(path)?;
         let mut buffer = [0_u8; 64 * 1024];
@@ -1669,6 +1720,7 @@ fn snapshot_path(
             if count == 0 {
                 break;
             }
+            budget.read_bytes(count as u64)?;
             hasher.update(&buffer[..count]);
         }
         hasher.finalize().to_vec()

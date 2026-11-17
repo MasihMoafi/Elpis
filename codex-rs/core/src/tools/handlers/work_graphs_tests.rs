@@ -508,6 +508,45 @@ fn engine_snapshot_measures_changes_outside_write_scopes() {
 }
 
 #[test]
+fn engine_snapshot_refuses_oversized_files_before_hashing() {
+    let root = tempfile::tempdir().expect("workspace");
+    let file = std::fs::File::create(root.path().join("large.bin")).expect("file");
+    file.set_len(257 * 1024 * 1024).expect("sparse file");
+    let mut files = BTreeMap::new();
+    let error = snapshot_path(
+        root.path(),
+        root.path(),
+        &mut files,
+        &mut SnapshotBudget::new(),
+    )
+    .expect_err("large workspace must fail closed");
+    assert!(error.to_string().contains("exceeds 256 MiB"));
+    assert!(files.is_empty());
+}
+
+#[test]
+fn engine_snapshot_bounds_directory_traversal() {
+    let root = tempfile::tempdir().expect("workspace");
+    std::fs::create_dir(root.path().join("nested")).expect("directory");
+    std::fs::write(root.path().join("nested/file"), "contents").expect("file");
+    let mut budget = SnapshotBudget::new();
+    budget.entries_left = 1;
+    let error = snapshot_path(root.path(), root.path(), &mut BTreeMap::new(), &mut budget)
+        .expect_err("directory traversal must be bounded");
+    assert!(error.to_string().contains("too many entries"));
+}
+
+#[test]
+fn engine_snapshot_refuses_expired_budget() {
+    let root = tempfile::tempdir().expect("workspace");
+    let mut budget = SnapshotBudget::new();
+    budget.deadline = Instant::now();
+    let error = snapshot_path(root.path(), root.path(), &mut BTreeMap::new(), &mut budget)
+        .expect_err("elapsed budget must not produce a partial baseline");
+    assert!(error.to_string().contains("exceeded five seconds"));
+}
+
+#[test]
 fn engine_snapshot_does_not_count_git_ignored_files() {
     let workspace = tempfile::tempdir().expect("workspace");
     let output = std::process::Command::new("git")
