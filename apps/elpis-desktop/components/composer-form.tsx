@@ -1,5 +1,5 @@
 import type React from "react";
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { MentionMenu, type useMentionMenu } from "@/components/mention-menu";
@@ -58,17 +58,26 @@ export function ComposerForm({
   focusComposer,
   children,
 }: Props) {
-  const { text, textRef, shellMode, composerRef, filePickerRef, setCaret } = composer;
+  const { textRef, shellMode, composerRef, filePickerRef, setCaret } = composer;
   const { attachments, attachmentsRef, attaching, setAttachments, fileNotice, setFileNotice, addFiles } =
     attachmentsState;
   const { saveAttachments } = drafts;
   const draftOwner = selectedRef.current?.id || newDraftKey.current;
+  const restoreFocus = useRef(false);
+  const bindComposer = useCallback((box: HTMLTextAreaElement | null) => {
+    if (!box) restoreFocus.current = document.activeElement === composerRef.current;
+    composerRef.current = box;
+    if (box && restoreFocus.current) {
+      restoreFocus.current = false;
+      box.focus({ preventScroll: true });
+    }
+  }, [composerRef]);
   // React's controlled textarea updates defaultValue on every key, breaking Chromium's native undo groups.
   // Native edits already update textRef through onChange; synchronize only restored or replaced drafts.
   useLayoutEffect(() => {
     const box = composerRef.current;
     if (box && box.value !== textRef.current) box.value = textRef.current;
-  }, [composerRef, textRef, text, draftOwner]);
+  }); // A command can restore the same state value while changing the DOM, such as stripping the initial "!".
   // The page's HTML shows this box before its script runs, and starting replaces the text with the chat's saved draft:
   // what was typed before then was lost (a split pane typed in at once). The box takes typing only once the window has
   // started; this effect's update renders after every start-up effect of the same commit.
@@ -141,7 +150,7 @@ export function ComposerForm({
       {!shellMode && promptKeys.status && <PromptStatusLine status={promptKeys.status} />}
       <Textarea
         key={draftOwner}
-        ref={composerRef}
+        ref={bindComposer}
         aria-label="Message Elpis"
         {...(mention.open ? mention.inputProps : slash.inputProps)}
         onBlur={() => {
