@@ -476,9 +476,8 @@ export function AutomationsView({
                               )}
                             </Button>
                           )}
-                          <Button size="sm" variant="ghost" disabled={working} onClick={() => setEditing(task)}>
-                            <Pencil />
-                            Edit
+                          <Button size="icon-sm" variant="ghost" aria-label="Edit" title="Edit automation" disabled={working} onClick={() => setEditing(task)}>
+                            <Pencil aria-hidden="true" />
                           </Button>
                           <Button size="sm" variant="ghost" disabled={working} onClick={() => setDeleting(task)}>
                             <Trash2 />

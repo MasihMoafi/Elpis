@@ -2,6 +2,7 @@
 
 import { countdown, tightest, useProviderUsage, windowLabel } from "@/components/provider-usage";
 import { Button } from "@/components/ui/button";
+import { Gauge } from "lucide-react";
 
 /** The current connection's reported allowance, sharing the sidebar's account data and refresh. */
 export function ComposerUsage({ provider, refreshKey, onOpen }: {
@@ -25,7 +26,8 @@ export function ComposerUsage({ provider, refreshKey, onOpen }: {
   return (
     <Button type="button" variant="ghost" size="xs" className="composer-chip composer-account-usage"
       aria-label={`${name} usage: ${remaining}% left`} title={detail} onClick={onOpen}>
-      Usage {remaining}% left
+      <Gauge size={14} aria-hidden="true" />
+      {remaining}% left
     </Button>
   );
 }

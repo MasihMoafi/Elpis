@@ -29,13 +29,14 @@ test('composer allowance follows the chat account, shares usage reads and never 
   try {
     await f.open('chat-a');
     const allowance = f.page.locator('.composer-account-usage');
-    await allowance.getByText('Usage 58% left', { exact: true }).waitFor();
+    await allowance.getByText('58% left', { exact: true }).waitFor();
+    assert.equal(await allowance.locator('svg[aria-hidden="true"]').count(), 1, 'usage is an icon with the remaining allowance still visible');
     assert.equal(await allowance.getAttribute('aria-label'), 'ChatGPT usage: 58% left');
     await allowance.click();
     await f.page.getByRole('tabpanel', { name: 'Usage & limits', exact: true }).waitFor();
     await leaveSettings(f.page);
     await f.open('chat-b');
-    await allowance.getByText('Usage 3% left', { exact: true }).waitFor();
+    await allowance.getByText('3% left', { exact: true }).waitFor();
     assert.equal(await allowance.getAttribute('aria-label'), 'Anthropic usage: 3% left');
     await f.open('chat-c');
     assert.equal(await allowance.count(), 0, 'API usage is not the subscription allowance');

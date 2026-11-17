@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { Pencil } from "lucide-react";
 import {
   type ProviderConfigItem as ProviderConfig,
   type ProviderConfigsSnapshot as ProviderConfigs,
@@ -65,10 +66,13 @@ export function ConfiguredList({
               {provider && (
                 <Button
                   variant="outline"
+                  size="icon"
+                  aria-label={`Edit ${item.name}`}
+                  title={`Edit ${item.name}`}
                   disabled={!config?.write?.available || !provider.editable}
                   onClick={() => onEdit(provider)}
                 >
-                  Edit {item.name}
+                  <Pencil aria-hidden="true" />
                 </Button>
               )}
             </div>

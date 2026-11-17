@@ -20,7 +20,7 @@ In `app/globals.css` (`:root` and `.dark`). Never use a literal where a token ex
 
 The context chart uses bright, distinct category colours shared by its bar and legend; categories retain their colours across theme accents. The surrounding controls still follow the theme.
 
-The selected chat keeps its original 2 px left edge and angled corner, without glow, dark shadow or persistent row shading.
+The selected chat has only a straight 2 px left edge, without a corner extension, surrounding frame, glow, dark shadow or persistent row shading. Repeated case: selection must not paint the top-left diagonal.
 
 ### The chat thread follows the ChatGPT app
 Masih, 29 Oct: "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it". [specs/chatgpt-chat-style.md](specs/chatgpt-chat-style.md) holds ChatGPT's measured thread values and maps its scale to the tokens above ("Shared scale"). The thread tokens `--thread-tertiary`, `--thread-hairline`, `--thread-inset`, `--thread-edge-fade` and `--shadow-xl` carry them; change a value there and in the spec together. The Elpis marks stay: your messages are bevelled cards with the gold right edge (Masih, 29 Oct: "That needs to come back.").

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Eye, Pencil } from "lucide-react";
 import { selectPaneContent } from "@/lib/pane-select";
 import { api } from "@/lib/api";
 import {
@@ -108,11 +109,12 @@ export function FileSettings({ kind, label }: { kind: "instructions" | "memory";
       >
         <div className="settings-field-stack">
           <Segmented
+            iconOnly
             label={`${label} view`}
             value={mode}
             options={[
-              { value: "edit", label: "Edit" },
-              { value: "preview", label: "Preview" },
+              { value: "edit", label: "Edit", icon: <Pencil aria-hidden="true" /> },
+              { value: "preview", label: "Preview", icon: <Eye aria-hidden="true" /> },
             ]}
             onChange={setMode}
             disabled={!saved}

@@ -179,6 +179,7 @@ export function Segmented<T extends string>({
   onChange,
   disabled,
   className,
+  iconOnly = false,
 }: {
   label: string;
   value: T;
@@ -186,6 +187,7 @@ export function Segmented<T extends string>({
   onChange: (value: T) => void;
   disabled?: boolean;
   className?: string;
+  iconOnly?: boolean;
 }) {
   return (
     <div role="radiogroup" aria-label={label} className={className ? `segmented ${className}` : "segmented"}>
@@ -193,17 +195,18 @@ export function Segmented<T extends string>({
         <Button
           data-slot="segment"
           key={option.value}
-          title={option.title}
+          title={option.title ?? (iconOnly ? option.label : undefined)}
+          aria-label={iconOnly ? option.label : undefined}
           type="button"
           variant="ghost"
-          size="sm"
+          size={iconOnly ? "icon-sm" : "sm"}
           role="radio"
           aria-checked={value === option.value}
           disabled={disabled || option.disabled}
           onClick={() => onChange(option.value)}
         >
           {option.icon}
-          {option.label}
+          {!iconOnly && option.label}
         </Button>
       ))}
     </div>

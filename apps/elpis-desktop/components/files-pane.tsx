@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { selectPaneContent } from "@/lib/pane-select";
-import { PanelLeft, PanelLeftClose, RefreshCw, Undo2 } from "lucide-react";
+import { Code2, Eye, PanelLeft, PanelLeftClose, Pencil, RefreshCw, Undo2 } from "lucide-react";
 import { MoreMenu, type MenuAction } from "@/components/action-menu";
 import { useFileActions } from "@/components/file-actions";
 import { fileKind } from "@/components/file-cards";
@@ -189,20 +189,24 @@ function FileViewer({ cwd, file, doc }: { cwd: string; file: OpenFile; doc: Doc 
             <Button
               type="button"
               variant={source ? "ghost" : "secondary"}
-              size="xs"
+              size="icon-xs"
+              aria-label="Preview"
+              title="Preview"
               aria-pressed={!source}
               onClick={() => setFileView(cwd, file.path, "preview")}
             >
-              Preview
+              <Eye aria-hidden="true" />
             </Button>
             <Button
               type="button"
               variant={source ? "secondary" : "ghost"}
-              size="xs"
+              size="icon-xs"
+              aria-label={editLabel}
+              title={editLabel}
               aria-pressed={source}
               onClick={() => setFileView(cwd, file.path, "source")}
             >
-              {editLabel}
+              {editLabel === "Edit" ? <Pencil aria-hidden="true" /> : <Code2 aria-hidden="true" />}
             </Button>
           </div>
         )}
