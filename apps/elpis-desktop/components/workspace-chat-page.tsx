@@ -151,6 +151,7 @@ export function WorkspaceChatPage({
           <WorkspaceComposer
             session={session}
             runtime={runtime}
+            usageProvider={selectedModel.dictationProvider}
             projectState={projectState}
             sideChat={sideChat}
             setSideChat={setSideChat}
