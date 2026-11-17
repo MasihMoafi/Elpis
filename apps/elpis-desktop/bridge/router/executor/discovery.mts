@@ -312,7 +312,8 @@ export async function listSessions(options: {
           }
         }
       }
-      if (existing) rows.splice(rows.indexOf(existing), 1);
+      for (let index = rows.length - 1; index >= 0; index--)
+        if (rows[index]!.runtime === "elpis" && rows[index]!.id === id) rows.splice(index, 1);
       rows.push({
         runtime: "gemini",
         id,
@@ -325,5 +326,15 @@ export async function listSessions(options: {
       });
     }
   }
-  return rows.sort((a, b) => (b.lastActivity ?? "").localeCompare(a.lastActivity ?? ""));
+  // A resumed chat can have several rollouts. Keep process evidence when any copy is held;
+  // otherwise the latest readable transcript supplies its metadata. Never remove transcript files.
+  const unique = new Map<string, Session>();
+  const held = (row: Session) => row.state === "live" || row.state === "idle";
+  for (const row of rows) {
+    const key = `${row.runtime}:${row.id}`, previous = unique.get(key);
+    if (!previous || (held(row) && !held(previous)) ||
+      (held(row) === held(previous) && (row.lastActivity ?? "") > (previous.lastActivity ?? "")))
+      unique.set(key, row);
+  }
+  return [...unique.values()].sort((a, b) => (b.lastActivity ?? "").localeCompare(a.lastActivity ?? ""));
 }
