@@ -203,6 +203,26 @@ test('Undo in the composer keeps Workflows hidden and restores typing before sid
   } finally { await f.close(); }
 });
 
+test('hiding Workflows keeps Undo in the sidebar while the workflow Board is open', async () => {
+  const f = await open('light'), { page } = f;
+  try {
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    await page.locator('.agents-canvas').waitFor();
+    const draft = () => page.evaluate(() => localStorage.getItem('elpis-workflow-draft-v1'));
+    const before = await draft();
+    await workflows(page).getByRole('button', { name: 'Hide Workflows from the sidebar', exact: true }).click();
+    await workflows(page).waitFor({ state: 'detached' });
+    await page.keyboard.press('Control+z');
+    await workflows(page).waitFor();
+    assert.equal(await draft(), before, 'sidebar Undo does not change the board');
+    await page.keyboard.press('Control+Shift+z');
+    await workflows(page).waitFor({ state: 'detached' });
+    assert.equal(await draft(), before, 'sidebar Redo does not change the board');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('two runs in one root chat stay separate and never borrow one another’s steps', async () => {
   const saved: Run[] = [{ ...runs[0], status: 'succeeded', mother: { sessionId: 'review-old' }, tasks: [...runs[0].tasks, { id: 'bad', title: 'Ignore self membership', assignedThreadId: 'chat-a' }] }, { ...runs[1], rootThreadId: 'chat-a' }];
   const f = await open('light', saved), { page } = f;

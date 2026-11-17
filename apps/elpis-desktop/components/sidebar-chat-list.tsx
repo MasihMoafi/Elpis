@@ -119,7 +119,7 @@ export function SidebarChatList({
     </Button>
   );
   return (
-    <div className="thread-list" ref={threadList} onKeyDown={listKeys} {...chatListOrder.pointer}>
+    <div className="thread-list" ref={threadList} tabIndex={-1} onKeyDown={listKeys} {...chatListOrder.pointer}>
       {!recentChats.length && markRead && <div className="section-label-row justify-end">{markRead}</div>}
       {workflowCatalog.error && (
         <p role="alert" className="px-2 text-xs text-destructive">
@@ -215,6 +215,7 @@ export function SidebarChatList({
                     undo: () => Promise.resolve(savePreferences({ sidebarWorkflows: true })),
                     redo: () => Promise.resolve(savePreferences({ sidebarWorkflows: false })),
                   });
+                  threadList.current?.focus();
                 } catch {
                   /* the section stays */
                 }
