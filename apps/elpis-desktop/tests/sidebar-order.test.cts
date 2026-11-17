@@ -143,13 +143,18 @@ test('A102: Pinned stays separate; project and custom groups use the same priori
 });
 
 test('A102: status updates and reading cannot move rows under the pointer, including a held click outside', async () => {
-  const f = await open([chat('chat-a', 30), chat('chat-b', 20), chat('chat-c', 10)]);
+  const chats = [chat('chat-a', 30), chat('chat-b', 20), chat('chat-c', 10)];
+  let completed = false;
+  const f = await open(chats, {}, { '/api/threads/chat-c': () => ({ thread: chats[2],
+    data: completed ? [{ turnId: 'done', item: { id: 'done-reply', type: 'agentMessage', text: 'Completed reply' } }] : [],
+    nextCursor: null }) });
   const { page } = f;
   try {
     const recents = section(page, 'Recents');
     await row(page, 'chat-a').locator('.thread-link').hover();
     const before = await ids(recents);
     await page.mouse.down();
+    completed = true;
     f.emit('message', { method: 'turn/completed', params: { threadId: 'chat-c', turn: { id: 'done', status: 'completed', items: [] } } });
     await eventually(async () => assert.equal(await row(page, 'chat-c').locator('.thread-dot').getAttribute('data-state'), 'unread'));
     assert.deepEqual(await ids(recents), before);
@@ -165,6 +170,7 @@ test('A102: status updates and reading cannot move rows under the pointer, inclu
     await eventually(async () => assert.deepEqual(await ids(recents), ['chat-c', 'chat-a', 'chat-b']));
     await row(page, 'chat-c').locator('.thread-link').click();
     assert.deepEqual(await ids(recents), ['chat-c', 'chat-a', 'chat-b'], 'reading does not move the clicked row until the pointer leaves');
+    await page.getByText('Completed reply', { exact: true }).waitFor();
     await page.mouse.move(700, 300);
     await eventually(async () => assert.deepEqual(await ids(recents), ['chat-a', 'chat-b', 'chat-c']));
     assert.deepEqual(f.errors, []);
