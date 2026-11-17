@@ -51,6 +51,7 @@ if (process.argv.includes("app-server")) {
     switch (msg.method) {
       case "initialize": return ok({ userAgent: "workflow-fixture" });
       case "config/read": return ok({ config: { model: "fake-model", features: { multi_agent: false } } });
+      case "configRequirements/read": return ok({ requirements: null });
       case "model/list": return ok({ data: [] });
       case "thread/start": {
         const thread: Thread = { id: randomUUID(), cwd: p.cwd ?? home, model: p.model ?? "fake-model", modelProvider: p.modelProvider ?? "fake", status: { type: "idle" }, turns: [], preview: "", createdAt: 1, updatedAt: 1, config: p.config ?? null };

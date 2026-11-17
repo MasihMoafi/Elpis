@@ -63,6 +63,7 @@ if (role) {
     if (msg.id === undefined) return;
     let result = {};
     if (role === "engine") {
+      if (msg.method === "configRequirements/read") result = { requirements: null };
       if (process.env.APPROVAL_READ_ONLY === "1" && msg.method === "config/read") result = { config: { approval_policy: "never", default_permissions: ":read-only" } };
       // Full access is what a new chat gets by default (apps/elpis-desktop bridge/client.mts createThread).
       if (msg.method === "thread/resume") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [] }, model: "gpt-test", ...(process.env.APPROVAL_FULL === "1"

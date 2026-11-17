@@ -83,6 +83,7 @@ if (process.argv.includes("--elpis-local-bridge")) {
     if (msg.method === "thread/read" || msg.method === "thread/resume") result = { thread: { id: "chat", cwd: process.env.HOME, turns: [], status: { type: "idle" } } };
     if (msg.method === "thread/list") result = { data: [{ id: "chat", cwd: process.env.HOME, preview: "saved native chat" }], nextCursor: null };
     if (msg.method === "thread/turns/list") result = { data: [], nextCursor: null };
+    if (msg.method === "configRequirements/read") result = { requirements: null };
     const answer = () => send({ id: msg.id, result });
     if (process.env.IDLE_DELAY === msg.method) setTimeout(answer, 600);
     else answer();
