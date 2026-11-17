@@ -46,7 +46,7 @@ test('past ten agents the Father agent runs the rest in his own chat, after the 
     // The run: her ten first, in her chat; when her part has succeeded, the bridge starts his three in his own chat and
     // delivers his report to hers. The screen sends one run and only shows what the bridge reports (A41).
     await canvas.getByRole('button', { name: 'Run graph', exact: true }).click();
-    await page.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes('Finished'), null, { timeout: 15000 });
+    await canvas.locator('.canvas-header').getByRole('status').filter({ hasText: 'Finished' }).waitFor({ timeout: 15000 });
     assert.equal(posts.filter((post: Post) => post.path === '/api/workflows/run').length, 1, 'the screen sends one run');
     assert.equal(runs.length, 2, 'her run, then his, which the bridge started');
     const [hers, his] = runs, chats = posts.filter((post: Post) => post.path === '/api/threads');
