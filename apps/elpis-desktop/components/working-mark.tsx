@@ -37,7 +37,7 @@ export function WorkingMark({
         </defs>
       )}
       <g className="elpis-working-rotor">
-        <g stroke="currentColor" strokeWidth="1.5" opacity=".7">
+        <g stroke="currentColor" strokeWidth="2.5">
           {edges.map(([x, y], index) => <line key={index} x1={x} y1={y} x2="32" y2="32" />)}
         </g>
         <path

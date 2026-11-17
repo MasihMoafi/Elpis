@@ -1,6 +1,5 @@
 import type React from "react";
 import { BranchChip } from "@/components/branch-chip";
-import { ComposerUsage } from "@/components/composer-usage";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { EnvironmentMenu, ProjectMenu } from "@/components/project-picker";
 import { QueuedFollowUps } from "@/components/queued-follow-ups";
@@ -24,7 +23,6 @@ import type { ComposerPanel, SideChatState } from "@/lib/use-composer-panels";
 type Props = {
   session: ReturnType<typeof useConversationSession>;
   runtime: ReturnType<typeof useRuntimeState>;
-  usageProvider: string;
   projectState: ReturnType<typeof useProjectState>;
   sideChat: SideChatState;
   setSideChat: React.Dispatch<React.SetStateAction<SideChatState>>;
@@ -61,7 +59,6 @@ type Props = {
 export function WorkspaceComposer({
   session,
   runtime,
-  usageProvider,
   projectState,
   sideChat,
   setSideChat,
@@ -218,7 +215,6 @@ export function WorkspaceComposer({
         {selected?.cwd && !selected.motherAgent && (
           <BranchChip key={selected.id} threadId={selected.id} running={!!activeTurn} onNotice={setSlashNotice} />
         )}
-        <ComposerUsage provider={usageProvider} refreshKey={runtime.accountRefresh} onOpen={() => openSettings("usage")} />
         <span className="composer-hint">
           {selectedLiveError
             ? `Not following live (${selectedLiveError}); the chat refreshes every few seconds.`

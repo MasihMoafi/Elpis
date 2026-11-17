@@ -11,9 +11,8 @@ const { MOTHER_SETTINGS } = require('./parity-fixture.cts');
 
 const limit = (limitId: string, limitName: string, usedPercent: number) => ({ limitId, limitName, planType: null, primary: { usedPercent, windowDurationMins: 300, resetsAt: null }, secondary: null, reached: null });
 
-test('composer allowance follows the chat account, shares usage reads and never borrows subscription quota for an API connection', async () => {
+test('usage stays available in the sidebar without a duplicate in the chat box', async () => {
   const { fixture } = require('./parity-fixture.cts');
-  let signedOut = false;
   const threads = [
     { id: 'chat-a', name: 'ChatGPT work', model: 'sol', modelProvider: 'openai' },
     { id: 'chat-b', name: 'Claude work', model: 'claude/opus', modelProvider: 'openai' },
@@ -21,38 +20,23 @@ test('composer allowance follows the chat account, shares usage reads and never 
   ].map(thread => ({ ...thread, cwd: '/tmp/parity-fixture', preview: thread.name, status: { type: 'idle' }, desktopAccess: { writable: true, mode: 'direct' } }));
   const f = await fixture({ threads, routes: {
     '/api/providers': () => ({
-      openai: { auth: { state: signedOut ? 'signedOut' : 'signedIn', method: 'ChatGPT' }, usage: signedOut ? [] : [limit('codex', 'Codex', 42)], usageError: null },
+      openai: { auth: { state: 'signedIn', method: 'ChatGPT' }, usage: [limit('codex', 'Codex', 42)], usageError: null },
       claude: { state: 'connected', models: ['Opus'], usage: [limit('claude', 'Claude', 97)] },
       gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [],
     }),
   } });
   try {
-    await f.open('chat-a');
-    const allowance = f.page.locator('.composer-account-usage');
-    await allowance.getByText('58% left', { exact: true }).waitFor();
-    assert.equal(await allowance.locator('svg[aria-hidden="true"]').count(), 1, 'usage is an icon with the remaining allowance still visible');
-    assert.equal(await allowance.getAttribute('aria-label'), 'ChatGPT usage: 58% left');
-    await allowance.click();
+    for (const id of ['chat-a', 'chat-b', 'chat-c']) {
+      await f.open(id);
+      assert.equal(await f.page.locator('.composer-account-usage').count(), 0);
+    }
+    const usage = f.page.getByRole('button', { name: 'Usage and limits', exact: true });
+    await usage.getByText('58% left', { exact: true }).waitFor();
+    await usage.click();
     await f.page.getByRole('tabpanel', { name: 'Usage & limits', exact: true }).waitFor();
     await leaveSettings(f.page);
-    await f.open('chat-b');
-    await allowance.getByText('3% left', { exact: true }).waitFor();
-    assert.equal(await allowance.getAttribute('aria-label'), 'Anthropic usage: 3% left');
-    await f.open('chat-c');
-    assert.equal(await allowance.count(), 0, 'API usage is not the subscription allowance');
-    await f.open('chat-a');
-    await allowance.waitFor();
-    for (const width of [1100, 390]) {
-      await f.page.setViewportSize({ width, height: 700 });
-      const box = await allowance.boundingBox();
-      assert.ok(box && box.x >= 0 && box.x + box.width <= width && box.y + box.height <= 700);
-    }
-    if (process.env.ELPIS_REVIEW_SHOTS) {
-      await f.page.setViewportSize({ width: 1100, height: 700 });
-      await f.page.screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, 'composer-account-usage.png') });
-    }
-    signedOut = true; f.emit('account', {});
-    await allowance.waitFor({ state: 'detached' });
+    if (process.env.ELPIS_REVIEW_SHOTS)
+      await f.page.screenshot({ path: path.join(process.env.ELPIS_REVIEW_SHOTS, 'usage-sidebar-only.png') });
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

@@ -81,7 +81,7 @@ for (const colorScheme of ['light', 'dark']) {
       assert.deepEqual(spokes.map(spoke => spoke.vertex), [[32, 4], [56.25, 18], [56.25, 46], [32, 60], [7.75, 46], [7.75, 18]]);
       for (const spoke of spokes) {
         assert.deepEqual(spoke.center, [32, 32], 'every vertex connects to the center inside the rotating group');
-        assert.equal(spoke.width, '1.5px', 'spokes are thinner than the outline');
+        assert.equal(spoke.width, '2.5px', 'spokes remain thinner than the outline but visible at sidebar size');
       }
       for (const id of ['chat-a', 'chat-b', 'chat-c']) {
         await f.open(id);
