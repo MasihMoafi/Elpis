@@ -47,7 +47,13 @@ export function useTurnReplacementView({
             }),
       ]),
     );
-    return { turnEntries, replacementOptions, replacementOptionsKey: JSON.stringify([...replacementOptions]) };
+    // The transcript already depends on shownEntries for prompt text and attachments.
+    // This key tracks eligibility only; serializing every prompt on each streamed token
+    // duplicates large histories and creates avoidable garbage collection.
+    const replacementOptionsKey = JSON.stringify(
+      [...replacementOptions].map(([id, option]) => [id, option.allowed, option.allowed ? option.messageId : option.reason]),
+    );
+    return { turnEntries, replacementOptions, replacementOptionsKey };
   }, [shownEntries, entries, loading, itemCursor]);
   const regenerate = (() => {
     if (!replaceable) return null;
