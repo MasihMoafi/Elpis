@@ -21,16 +21,17 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::TurnStartedEvent;
+use codex_protocol::user_input::UserInput;
 use codex_rollout::RolloutItem;
-use codex_thread_store::AppendThreadItemsParams;
 use codex_thread_store::CreateThreadParams;
+use codex_thread_store::LiveThread;
 use codex_thread_store::LocalThreadStore;
 use codex_thread_store::LocalThreadStoreConfig;
 use codex_thread_store::PersistContext;
 use codex_thread_store::ThreadPersistenceMetadata;
-use codex_thread_store::ThreadStore;
 use codex_utils_absolute_path::test_support::PathExt;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use tokio::time::timeout;
@@ -38,10 +39,15 @@ use uuid::Uuid;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 
-async fn create_thread(store: &LocalThreadStore, home: &Path, with_item: bool) -> Result<ThreadId> {
+async fn create_thread(
+    store: &Arc<LocalThreadStore>,
+    home: &Path,
+    with_item: bool,
+) -> Result<ThreadId> {
     let id = ThreadId::new();
-    store
-        .create_thread(CreateThreadParams {
+    let live = LiveThread::create(
+        store.clone(),
+        CreateThreadParams {
             creator_user_id: None,
             creator_account_id: None,
             session_id: id.into(),
@@ -66,39 +72,39 @@ async fn create_thread(store: &LocalThreadStore, home: &Path, with_item: bool) -
                 model_provider: "mock_provider".to_string(),
                 memory_mode: ThreadMemoryMode::Enabled,
             },
-        })
-        .await?;
-    store.persist_thread(id, PersistContext::Standard).await?;
+        },
+    )
+    .await?;
+    live.persist(PersistContext::Standard).await?;
     if with_item {
-        store
-            .append_items(AppendThreadItemsParams {
+        live.append_items(&[
+            RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
+                turn_attribution: None,
+                turn_id: "turn-1".to_string(),
+                root_turn_id: None,
+                trace_id: None,
+                started_at: Some(10),
+                model_context_window: None,
+                collaboration_mode_kind: Default::default(),
+            })),
+            RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
                 thread_id: id,
-                items: vec![
-                    RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
-                        turn_attribution: None,
-                        turn_id: "turn-1".to_string(),
-                        root_turn_id: None,
-                        trace_id: None,
-                        started_at: Some(10),
-                        model_context_window: None,
-                        collaboration_mode_kind: Default::default(),
-                    })),
-                    RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
-                        thread_id: id,
-                        turn_id: "turn-1".to_string(),
-                        item: TurnItem::UserMessage(UserMessageItem {
-                            id: "retained-user".to_string(),
-                            client_id: None,
-                            content: Vec::new(),
-                        }),
-                        started_at_ms: Some(0),
-                        completed_at_ms: 1,
-                    })),
-                ],
-            })
-            .await?;
+                turn_id: "turn-1".to_string(),
+                item: TurnItem::UserMessage(UserMessageItem {
+                    id: "retained-user".to_string(),
+                    client_id: None,
+                    content: vec![UserInput::Text {
+                        text: "A retained fixture message".to_string(),
+                        text_elements: Vec::new(),
+                    }],
+                }),
+                started_at_ms: Some(0),
+                completed_at_ms: 1,
+            })),
+        ])
+        .await?;
     }
-    store.shutdown_thread(id).await?;
+    live.shutdown().await?;
     Ok(id)
 }
 
@@ -132,17 +138,36 @@ async fn missing_source_is_read_only_and_only_retained_projection_is_available()
     let sqlite = codex_state::SqliteConfig::new_for_testing(home.path().abs());
     let state =
         codex_state::StateRuntime::init(sqlite.clone(), "mock_provider".to_string()).await?;
-    let store = LocalThreadStore::new(
+    let store = Arc::new(LocalThreadStore::new(
         LocalThreadStoreConfig {
             codex_home: home.path().to_path_buf(),
-            sqlite,
+            sqlite: sqlite.clone(),
             default_model_provider_id: "mock_provider".to_string(),
         },
         Some(state.clone()),
-    );
+    ));
     let recovered = create_thread(&store, home.path(), true).await?;
     let intact = create_thread(&store, home.path(), true).await?;
     let unavailable = create_thread(&store, home.path(), false).await?;
+    let history = codex_state::open_thread_history_db(&sqlite).await?;
+    let marker: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM thread_history_projection_state WHERE thread_id = ?",
+    )
+    .bind(recovered.to_string())
+    .fetch_one(&history)
+    .await?;
+    let retained: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM thread_items WHERE thread_id = ? AND item_id = ?")
+            .bind(recovered.to_string())
+            .bind("retained-user")
+            .fetch_one(&history)
+            .await?;
+    let empty: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM thread_items WHERE thread_id = ?")
+        .bind(unavailable.to_string())
+        .fetch_one(&history)
+        .await?;
+    assert_eq!((marker, retained, empty), (1, 1, 0), "fixture projections");
+    history.close().await;
     let selected = state
         .get_thread(recovered)
         .await?
@@ -180,7 +205,9 @@ async fn missing_source_is_read_only_and_only_retained_projection_is_available()
     let items: ThreadItemsListResponse = timeout(TIMEOUT, mcp.read_response(item_id)).await??;
     assert!(items.earliest_history_missing);
     assert!(items.data.iter().any(
-        |entry| matches!(&entry.item, ThreadItem::UserMessage { id, .. } if id == "retained-user")
+        |entry| matches!(&entry.item, ThreadItem::UserMessage { id, content, .. }
+            if id == "retained-user" && content.iter().any(|item| matches!(item,
+                codex_app_server_protocol::UserInput::Text { text, .. } if text == "A retained fixture message")))
     ));
 
     let normal = read(&mut mcp, intact).await?.thread;
