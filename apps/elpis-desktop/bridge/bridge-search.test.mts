@@ -340,7 +340,8 @@ test("missing source history is readable but cannot resume, send, fork, rewind, 
     () => client.compact(ROOT, {}),
     () => client.shellCommand(ROOT, { command: "pwd" }),
   ]) await assert.rejects(operation, /source file is missing/);
-  assert.equal(socket.sent.some(row => ["thread/resume", "thread/subscribe", "thread/fork", "turn/start", "thread/revert", "thread/compact/start", "thread/shellCommand"].includes(row.method ?? "")), false);
+  const mutations = ["thread/resume", "thread/subscribe", "thread/fork", "turn/start", "thread/revert", "thread/compact/start", "thread/shellCommand"];
+  assert.equal(socket.sent.some(row => mutations.includes(row.method ?? "")), false);
 });
 
 test("missing source without readable projection retains metadata and reports unavailable history", async t => {
