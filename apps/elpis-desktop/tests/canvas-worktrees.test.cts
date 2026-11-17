@@ -120,18 +120,28 @@ test('an ordinary task failure shows its reason without a merge notice or merge 
   } finally { await close(); }
 });
 
-// 28 Oct (live check for Masih): Mother's model was silently claude/opus, and with Claude unavailable Run graph showed
-// only ELPIS_REQUEST_REJECTED. A Mother model that is not offered gives way to the best one that is, and the notice
-// says so; an offered one is kept.
-for (const offered of [false, true]) test(`Mother agent saved on Opus ${offered ? 'keeps it when it is offered' : 'runs on the best offered model when Opus is not, and says so'}`, async () => {
-  const graph = { ...TEAM, mother: { brief: 'Build it', model: 'claude/opus', provider: null } };
-  const f = await openCanvas({ graph, extraModels: offered ? [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }] : [] });
+// A saved route never changes subscription merely because its model is unavailable.
+for (const entry of [
+  { name: 'keeps the available subscription model', offered: true, provider: null, starts: true },
+  { name: 'stops when the saved subscription model is unavailable', offered: false, provider: null, starts: false },
+  { name: 'does not substitute the same model from another provider', offered: true, provider: 'anthropic-credits', starts: false },
+]) test(`Mother agent ${entry.name}`, async () => {
+  const graph = { ...TEAM, mother: { brief: 'Build it', model: 'claude/opus', provider: entry.provider } };
+  const f = await openCanvas({ graph, extraModels: entry.offered ? [{ id: 'opus', model: 'claude/opus', displayName: 'Opus 5.5' }] : [] });
   try {
     await run(f.canvas);
-    const sent = await eventually(() => f.posts.find((post: { path: string; body: { model: string } }) => post.path === '/api/threads'), 'the run chat was asked for');
-    assert.equal(sent.body.model, offered ? 'claude/opus' : 'gpt-6.1-sol');
-    const notice = f.canvas.getByText("Mother agent's model, claude/opus, is not available here, so she runs on Sol 6.1.");
-    if (offered) assert.equal(await notice.count(), 0); else await notice.waitFor();
+    if (entry.starts) {
+      const sent = await eventually(() => f.posts.find((post: { path: string }) => post.path === '/api/threads'), 'the run chat was asked for');
+      assert.equal(sent.body.model, 'claude/opus');
+      assert.equal(sent.body.provider, undefined);
+      const workflow = await eventually(() => f.posts.find((post: { path: string }) => post.path === '/api/workflows/run'), 'the workflow was asked for');
+      assert.equal(workflow.body.motherModel.model, 'claude/opus');
+    } else {
+      await f.canvas.getByText(/Mother agent's model.*is unavailable. Choose an available model in Mother agent settings and run again/).waitFor();
+      assert.equal(f.posts.some((post: { path: string }) => ['/api/threads', '/api/workflows/run', '/api/canvas/plan'].includes(post.path)), false);
+      assert.equal((await f.saved()).mother.model, 'claude/opus');
+      assert.equal((await f.saved()).mother.provider, entry.provider);
+    }
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

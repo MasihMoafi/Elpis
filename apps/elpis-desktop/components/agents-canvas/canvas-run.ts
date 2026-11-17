@@ -17,7 +17,7 @@ import { type LogLine } from "@/lib/run-log";
 import type * as React from "react";
 import { Run, Props } from "./types";
 import { over, OFFLINE_WORKFLOW, runFailure } from "./run-state";
-import { DRAWN, RUN_MINUTES, MOTHER_FIRST } from "./constants";
+import { DRAWN, RUN_MINUTES } from "./constants";
 import { useProjectFolders } from "./folders";
 
 export function canvasRun({
@@ -170,6 +170,19 @@ export function canvasRun({
       setNotice("Choose the project the agents work in, then run again.");
       return;
     }
+    const motherRoute = mother.model ? { model: mother.model, provider: mother.provider ?? null } : null;
+    if (motherRoute) {
+      const offered = [...models.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
+      const available = offered.some(
+        item => item.model === motherRoute.model && (item.provider ?? null) === motherRoute.provider,
+      );
+      if (!available) {
+        setNotice(
+          `Mother agent's model, ${motherRoute.model}, is unavailable. Choose an available model in Mother agent settings and run again.`,
+        );
+        return;
+      }
+    }
     startingRun.current = true;
     setStarting(true);
     try {
@@ -208,23 +221,6 @@ export function canvasRun({
         identity?.rootThreadId ? crypto.randomUUID() : graph.workflowId || crypto.randomUUID(),
         ready.name,
       );
-      // Mother runs on her model only while it is offered here: a saved claude/opus with Claude signed out made Run graph
-      // fail with a bare ELPIS_REQUEST_REJECTED (28 Oct). Otherwise she takes the best one offered, and the notice says so.
-      const offered = [...models.map(item => ({ model: item.model, provider: null as string | null })), ...catalog];
-      const offers = (model: string, provider?: string | null) =>
-        offered.some(item => item.model === model && (item.provider ?? null) === (provider ?? null));
-      const named = (model: string) =>
-        catalog.find(item => item.model === model)?.label ??
-        models.find(item => item.model === model)?.displayName ??
-        model;
-      let motherRoute = mother.model ? { model: mother.model, provider: mother.provider ?? null } : null;
-      if (motherRoute && offered.length && !offers(motherRoute.model, motherRoute.provider)) {
-        const instead = MOTHER_FIRST.map(test => offered.find(item => test.test(item.model))).find(Boolean) ?? null;
-        setNotice(
-          `Mother agent's model, ${named(motherRoute.model)}, is not available here, so she runs on ${instead ? named(instead.model) : "the default model"}.`,
-        );
-        motherRoute = instead;
-      }
       const created = await api<{ thread: Thread }>("/threads", {
         ...(cwd ? { cwd } : {}),
         agents: true,
