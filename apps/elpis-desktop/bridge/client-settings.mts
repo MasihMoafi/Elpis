@@ -190,14 +190,14 @@ export async function impl_savePruner(this: DesktopClient, clientState: ClientSt
 }
 
 export async function impl_providers(this: DesktopClient, clientState: ClientState) {
-  const [account, limits, read, models, anthropic] = await Promise.all([
+  const [account, limits, read, models] = await Promise.all([
     internal_rpc(this, clientState, "account/read", { refreshToken: false }).catch(error => ({ error: error.message })),
     internal_rpc(this, clientState, "account/rateLimits/read", {}).catch(error => ({ error: error.message })),
     internal_rpc(this, clientState, "config/read", { includeLayers: true }),
     internal_modelList.call(this, clientState, { limit: 100, includeHidden: false }).catch(() => null),
-    // Elpis's own Anthropic sign-out; a bridge that predates it has none.
-    internal_rpc(this, clientState, "claudeSubscription/read", {}).catch(() => null),
   ]);
+  // Read this after usage: its response may have just established that cached Claude models cannot be used.
+  const anthropic = await internal_rpc(this, clientState, "claudeSubscription/read", {}).catch(() => null);
   return providersSnapshot({
     account,
     limits: limits as Exclude<Parameters<typeof providersSnapshot>[0]["limits"], undefined>,
