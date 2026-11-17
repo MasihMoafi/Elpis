@@ -11,6 +11,7 @@ import { createRequire } from 'node:module';
 import { execFileSync, spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { existingSocket } from '../bridge/client.mts';
+import { stopSmokeProcesses } from '../scripts/smoke-launch.mts';
 import type { ElectronApplication } from 'playwright-core';
 import type { EventEmitter } from 'node:events';
 type Tool = { name: string; type: string; tools: Tool[]; namespace?: string };
@@ -77,7 +78,7 @@ const cleanup: { desktop?: ElectronApplication } = {};
 const results: string[] = [];
 async function check(name: string, run: () => Promise<void>) {
   try { await run(); results.push(name); console.log(`PASS ${name}`); }
-  catch (error) { const caught = error instanceof Error ? error : new Error(String(error)); failed = true; console.log(`FAIL ${name}: ${String(caught.message).split('\n')[0]}`); if(provider.error)console.log(`Mock failure: ${provider.error.stack}`);await fs.writeFile(path.join(shots,'mock-requests.json'),JSON.stringify(provider.requests,null,2));try { grab(`failed-${results.length}`); } catch {} }
+  catch (error) { const caught = error instanceof Error ? error : new Error(String(error)); failed = true; console.log(`FAIL ${name}: ${String(caught.message).split('\n')[0]}`); if(provider.error)console.log(`Mock failure: ${provider.error.stack}`);await fs.writeFile(path.join(shots,'mock-requests.json'),JSON.stringify(provider.requests,null,2));try { grab(`failed-${name.replace(/[^a-z0-9]+/gi, '-').slice(0, 70)}`); } catch {} }
 }
 try {
   await until(() => fs.stat(socket).then(() => true), 'engine socket');
@@ -93,6 +94,8 @@ try {
   await app.getByRole('textbox', { name: 'Message Elpis', exact: true }).waitFor();
   await until(()=>app.evaluate(async()=>(await fetch('/api/health')).ok),'private app session');
   await app.locator('.startup-splash').waitFor({state:'detached',timeout:10000});
+  // This is a fresh profile; complete its first-run dialog before driving the browser controls.
+  await app.getByRole('button', { name: 'Not now', exact: true }).click();
   const pageView = async (url: string) => until(() => desktop.context().pages().find(page => page !== app && page.url().startsWith(url)), `page ${url}`);
 
   // Exercise the engine's registered MCP connection, not a renderer/Playwright click substitute.
@@ -263,7 +266,7 @@ try {
     await until(() => comment.evaluate(element => element === document.activeElement), 'the comment has the cursor');
     await comment.pressSequentially('Make this button the accent colour and full width');
     grab('elpis-real-annotate-editor');
-    await comment.press('Enter');
+    await comment.press('Control+Enter');
     await app.getByRole('button', { name: 'Edit comment 1: button “Sign in”' }).waitFor();
   });
 
@@ -273,7 +276,7 @@ try {
     const comment = app.getByRole('textbox', { name: 'Comment', exact: true });
     await until(async () => /Area 2/.test(await app.locator('.annotation-target').innerText()), 'area draft');
     await wait(300); grab('elpis-real-annotate-area');
-    await comment.fill('Too much text here; shorten it'); await comment.press('Enter');
+    await comment.fill('Too much text here; shorten it'); await comment.press('Control+Enter');
     await app.getByRole('button', { name: 'Send 2 pending annotations' }).waitFor();
     await wait(300); grab('elpis-real-annotate-pending');
   });
@@ -283,8 +286,7 @@ try {
     const files = app.locator('.composer').getByRole('list', { name: 'Message attachments', exact: true });
     await files.getByRole('button', { name: 'Remove Browser comments', exact: true }).waitFor();
     await files.getByRole('button', { name: 'Remove Browser comments.jpg', exact: true }).waitFor();
-    // A new chat's composer files are kept under the "new" draft key in the app's own storage.
-    const parts: { type: string; text: string; dataUrl: string }[] = JSON.parse(await app.evaluate(() => { const storage = window.elpisDesktop?.storage; if (!storage) throw Error('Desktop storage missing'); return storage.getItem('elpis-attachments-v1:new') ?? '[]'; }));
+    const parts: { type: string; text: string; dataUrl: string }[] = JSON.parse(await app.evaluate(id => { const storage = window.elpisDesktop?.storage; if (!storage) throw Error('Desktop storage missing'); return storage.getItem(`elpis-attachments-v1:${id}`) ?? '[]'; }, browserFixtureThread.id));
     const text = parts.find(part => part.type === 'text'), image = parts.find(part => part.type === 'image');
     assert.ok(image);
     assert.ok(image?.dataUrl?.startsWith('data:image/jpeg;base64,'), 'a JPEG sheet is attached');
@@ -357,6 +359,7 @@ try {
   engineSocket?.close();
   await cleanup.desktop?.close().catch(() => {});
   runtime.kill(); xvfb.kill(); site.close();
+  await stopSmokeProcesses(home);
   if (approvalEval) provider.close();
 }
 console.log(`${results.length} passed${failed ? ', some failed' : ''}; shots in ${shots}; throwaway profile in ${root}`);
