@@ -10,46 +10,6 @@ import { WebSocketServer } from "ws";
 import { CHAT, panel, fixture, roles } from "./mother-agent.fixtures.mts";
 import { elpisChatRefusal } from "./mother-agent.mts";
 
-test("background processes use the active orchestrator thread and reject unavailable or stale sessions", async () => {
-  const h = fixture(), mother = h.create();
-  try {
-    await h.client.initialize();
-    assert.deepEqual(await mother.backgroundProcesses(), { state: "disabled" });
-    await mother.save({ version: mother.snapshot().version, enabled: true });
-    const app = (mother as unknown as { app: import("./app.mts").MotherApp }).app;
-    const agent = app.workers.sessions.agents.get(app.masterId)!;
-    const engineId = agent.record.threadId!;
-    assert.notEqual(engineId, CHAT);
-    const calls: unknown[][] = [];
-    h.client.backgroundProcesses = async (id, cursor) => {
-      calls.push([id, cursor]);
-      return { data: [{ itemId: "item", processId: cursor ?? "process", command: "build", cwd: "/tmp" }], nextCursor: cursor ? null : "next" };
-    };
-    const result = await mother.backgroundProcesses();
-    assert.ok(result.data);
-    assert.equal(result.data.length, 2);
-    assert.deepEqual(calls, [[engineId, undefined], [engineId, "next"]]);
-    await assert.rejects(mother.backgroundProcesses("next"), /expired/);
-    agent.record.runtime = "claude";
-    await assert.rejects(mother.backgroundProcesses(), /unavailable/);
-    agent.record.runtime = "elpis";
-    let release!: () => void;
-    h.client.backgroundProcesses = async () => {
-      await new Promise<void>(resolve => { release = resolve; });
-      return { data: [], nextCursor: null };
-    };
-    const pending = mother.backgroundProcesses();
-    agent.record.threadId = "changed";
-    release();
-    await assert.rejects(pending, /session changed/);
-    agent.record.threadId = engineId;
-  } finally {
-    await mother.close();
-    h.client.close();
-    rmSync(h.home, { recursive: true, force: true });
-  }
-});
-
 test("an offline executor remains paused until Elpis is enabled, independently of the saved processing pause", async () => {
   const h = fixture(),
     mother = h.create();

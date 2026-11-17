@@ -90,7 +90,15 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     }
     backgroundFailure=503;
     await page.getByText('Background process status unavailable',{exact:true}).waitFor({timeout:8000});
+    for (let attempt=0; attempt<4; attempt++) {
+      const checked=page.waitForResponse((reply: { url(): string })=>reply.url().includes('/existing/background-processes'));
+      await page.getByRole('button',{name:'Retry',exact:true}).click();
+      await checked;
+      await page.getByText('Background process status unavailable',{exact:true}).waitFor();
+    }
     backgroundFailure=0;
+    await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+    await page.getByText('2 background processes running',{exact:true}).waitFor({timeout:8000});
     backgroundJobs=backgroundJobs.slice(1);
     emit('item/completed',{threadId:'existing',turnId:'old',item:{id:'cmd',type:'commandExecution',
       command:'long build',status:'completed',exitCode:0,aggregatedOutput:'build passed'}});

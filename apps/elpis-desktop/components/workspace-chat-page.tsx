@@ -149,8 +149,8 @@ export function WorkspaceChatPage({
           >
             {transcriptAlerts}
           </WorkspaceTranscript>
-          {selected && (
-            <BackgroundProcesses key={selected.id} threadId={selected.id} active={!!activeTurn} entries={shownEntries} showUnavailable={!!selected.motherAgent} />
+          {selected && !selected.motherAgent && (
+            <BackgroundProcesses key={selected.id} threadId={selected.id} active={!!activeTurn} entries={shownEntries} />
           )}
           <WorkspaceComposer
             session={session}

@@ -125,9 +125,7 @@ async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Prom
     response = await fetch(
       `/api${path}`,
       body === undefined
-        ? signal
-          ? { signal }
-          : undefined
+        ? { cache: "no-store", ...(signal ? { signal } : {}) }
         : {
             method: "POST",
             headers: { "Content-Type": "application/json" },

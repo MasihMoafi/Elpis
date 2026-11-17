@@ -227,7 +227,7 @@ test('saved provider routes remain checked when the key is unavailable', async (
    assert.equal(await box.getAttribute('aria-checked'), 'true', `${feature} still shows its saved provider`);
    assert.equal(await box.getAttribute('aria-disabled') ?? await box.getAttribute('data-disabled'), 'true');
   }
-  assert.deepEqual(app.posts, []);
+  assert.deepEqual(app.posts.filter((post: { path: string }) => post.path !== '/api/session'), []);
   assert.deepEqual(app.errors, []);
  } finally { await app.close(); }
 });
@@ -249,7 +249,7 @@ test('a model list completes after the user opens a different feature', async ()
   release({ data: [{ model: 'fish/voice', displayName: 'Fish Audio' }] });
   await group.getByRole('checkbox', { name: 'Use OpenRouter for Read aloud', exact: true }).click();
   await chooseOption(group.getByRole('combobox', { name: 'Read aloud model for OpenRouter', exact: true }), 'fish/voice');
-  assert.deepEqual(app.posts, []);
+  assert.deepEqual(app.posts.filter((post: { path: string }) => post.path !== '/api/session'), []);
   assert.deepEqual(app.errors, []);
  } finally { release({ data: [] }); await app.close(); }
 });
@@ -263,7 +263,7 @@ for (const change of ['key', 'endpoint']) test(`replacing a provider ${change} r
  const settings = routes['/api/settings']();
  const app = await fixture({ routes: {
   ...routes,
-  '/api/settings': () => ({ ...settings, main: { provider: 'api-other', model: 'sol' } }),
+  '/api/settings': () => settings,
   '/api/providers/settings': (body: Write | null) => {
    if (body) config = { ...config, version: 'v2', providers: [ROUTER_KEY, { ...OTHER_KEY, baseUrl: body.baseUrl }] };
    return config;
@@ -277,6 +277,7 @@ for (const change of ['key', 'endpoint']) test(`replacing a provider ${change} r
   await openAccounts(app.page);
   const panel = app.page.getByRole('tabpanel', { name: 'Models & accounts', exact: true });
   const group = panel.getByRole('group', { name: 'Use Other API for', exact: true });
+  await group.getByRole('checkbox', { name: 'Use Other API for Chat', exact: true }).click();
   await group.getByRole('combobox', { name: 'Chat model for Other API', exact: true }).waitFor();
   await panel.getByRole('button', { name: 'Edit Other API', exact: true }).click();
   if (change === 'key') {

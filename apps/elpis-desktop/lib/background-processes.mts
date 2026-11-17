@@ -1,7 +1,6 @@
 import type { Entry } from './api.ts';
 
 export type BackgroundProcess = { itemId: string; processId: string; command: string; cwd: string };
-export class BackgroundProcessesDisabled extends Error {}
 
 /** A partial list is not a complete list, especially if the runtime fails on a later page. */
 export async function listBackgroundProcesses(read: (cursor?: string) => Promise<unknown>): Promise<BackgroundProcess[]> {
@@ -9,10 +8,6 @@ export async function listBackgroundProcesses(read: (cursor?: string) => Promise
   let cursor: string | undefined;
   do {
     const page = await read(cursor) as { data?: unknown; nextCursor?: unknown };
-    if (page && (page as { state?: unknown }).state === 'disabled') {
-      if (cursor) throw new Error('Background process status changed during pagination');
-      throw new BackgroundProcessesDisabled();
-    }
     if (!page || !Array.isArray(page.data) || (page.nextCursor != null && typeof page.nextCursor !== 'string'))
       throw new Error('Invalid background process list');
     for (const row of page.data) {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BackgroundProcessesDisabled, listBackgroundProcesses, processView } from '../lib/background-processes.mts';
+import { listBackgroundProcesses, processView } from '../lib/background-processes.mts';
 
 const job = (id: string) => ({ itemId: id, processId: id, command: `run ${id}`, cwd: '/tmp' });
 
@@ -14,7 +14,6 @@ test('all pages are read and incomplete or repeated pages never mean no processe
   assert.deepEqual(result.map(row => row.processId), ['one', 'two']);
   await assert.rejects(listBackgroundProcesses(async () => ({ data: [], nextCursor: 'same' })));
   await assert.rejects(listBackgroundProcesses(async () => ({ data: null, nextCursor: null })));
-  await assert.rejects(listBackgroundProcesses(async () => ({ state: 'disabled' })), BackgroundProcessesDisabled);
 });
 
 test('running processes remain inspectable after the turn, with live output and no invented result', () => {

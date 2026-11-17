@@ -31,7 +31,10 @@ test('composer fits multiline text and wrapping, then scrolls at its height limi
     const before = await f.composer.evaluate((input: HTMLTextAreaElement) => input.clientHeight);
     await f.page.locator('.composer').evaluate((element: HTMLElement) => { element.style.width = '320px'; });
     await waitForDraftFit(f.page);
-    const wrapped = await f.composer.evaluate((input: HTMLTextAreaElement) => ({ height: input.clientHeight, start: input.selectionStart, end: input.selectionEnd, value: input.value, overflow: getComputedStyle(input).overflowY }));
+    const wrapped = await f.composer.evaluate((input: HTMLTextAreaElement) => ({
+      height: input.clientHeight, start: input.selectionStart, end: input.selectionEnd,
+      value: input.value, overflow: getComputedStyle(input).overflowY,
+    }));
     assert.ok(wrapped.height > before && wrapped.height < 240);
     assert.equal(wrapped.overflow, 'hidden');
     assert.deepEqual([wrapped.start, wrapped.end, wrapped.value], [4, 17, draft]);

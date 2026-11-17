@@ -4,7 +4,6 @@ import { createHash, randomUUID } from "node:crypto";
 import { join, resolve } from "node:path";
 import type { DesktopClient } from "../client.mts";
 import { BridgeError, object } from "../validate.mts";
-import { listBackgroundProcesses } from "../../lib/background-processes.mts";
 import { replacementEligibility } from "../../lib/turn-replacement.ts";
 import type { ChatMessage } from "./sources/elpis-chat-history.mts";
 import { elpisHome, existingSocket } from "../client-paths.mts";
@@ -163,25 +162,6 @@ export class MotherAgent {
   }
   owns(id: string): boolean {
     return this.file.read().threadId === id;
-  }
-  /** The visible chat is a transport; the orchestrator runs in its own runtime thread. */
-  async backgroundProcesses(cursor?: string) {
-    if (!this.file.read().enabled && !this.active) return { state: "disabled" as const };
-    const app = this.app;
-    const agent = app?.workers.sessions.agents.get(app.masterId);
-    const record = agent?.record;
-    if (!this.active || !app || !agent || !record?.threadId || record.runtime !== "elpis")
-      throw new BridgeError("Background process status is unavailable for this Elpis session.", 503);
-    if (cursor) throw new BridgeError("The Elpis background process page has expired.", 409);
-    const id = record.threadId;
-    const data = await listBackgroundProcesses(async next => {
-      const page = await this.options.client.backgroundProcesses(id, next);
-      if (this.app !== app || !this.active || app.workers.sessions.agents.get(app.masterId) !== agent ||
-          agent.record.threadId !== id || agent.record.runtime !== "elpis")
-        throw new BridgeError("The Elpis session changed while checking background processes.", 503);
-      return page;
-    });
-    return { data, nextCursor: null };
   }
   sessionLinks() {
     const { enabled, threadId } = this.file.read();

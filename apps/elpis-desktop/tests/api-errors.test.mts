@@ -66,3 +66,19 @@ test('an invalid launch token remains actionable without automatic authenticatio
   assert.equal(f.requests.length, 1);
   assert.equal(f.replacements.length, 0);
 });
+
+test('bridge reads bypass the browser cache and preserve abort signals; writes remain POSTs', async t => {
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  const requests: { url: string; options: RequestInit | undefined }[] = [];
+  globalThis.fetch = async (url, options) => { requests.push({ url: String(url), options }); return reply(200); };
+  const signal = new AbortController().signal;
+  await api('/models');
+  await api('/models?provider=test', undefined, signal);
+  await api('/settings', { version: 'v1' });
+  assert.equal(requests[0]?.options?.cache, 'no-store');
+  assert.equal(requests[1]?.options?.cache, 'no-store');
+  assert.equal(requests[1]?.options?.signal, signal);
+  assert.equal(requests[2]?.options?.method, 'POST');
+  assert.equal(requests[2]?.options?.body, '{"version":"v1"}');
+});

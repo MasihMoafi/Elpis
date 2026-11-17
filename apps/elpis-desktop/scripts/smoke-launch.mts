@@ -76,21 +76,73 @@ async function saveEvidence(dir: string, port: number | undefined, output: strin
   } catch (error) { console.error(`smoke-launch: evidence incomplete: ${error instanceof Error ? error.message : String(error)}`); }
 }
 
+/** The child must not inherit a real runtime, auth store, socket, session bus or network credentials. */
+export function smokeEnvironment(scratch: string, engine?: string): NodeJS.ProcessEnv {
+  const home = path.join(scratch, 'home'), runtime = path.join(scratch, 'run'), tmp = path.join(scratch, 'tmp');
+  for (const dir of [home, runtime, tmp]) fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return {
+    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8', HOME: home,
+    ELPIS_HOME: path.join(home, 'elpis'), ELPIS_CONFIG_DIR: path.join(home, 'elpis'),
+    CODEX_HOME: path.join(home, 'codex'), CODEX_AUTH_HOME: path.join(home, 'auth'),
+    ELPIS_DESKTOP_PROFILE: path.join(scratch, 'profile'),
+    XDG_CONFIG_HOME: path.join(home, '.config'), XDG_CACHE_HOME: path.join(home, '.cache'),
+    XDG_DATA_HOME: path.join(home, '.local', 'share'), XDG_STATE_HOME: path.join(home, '.local', 'state'),
+    XDG_RUNTIME_DIR: runtime, TMPDIR: tmp, GSETTINGS_BACKEND: 'memory',
+    XDG_SESSION_TYPE: 'x11', ELECTRON_OZONE_PLATFORM_HINT: 'x11',
+    ...(engine ? { ELPIS_ENGINE_BIN: engine } : {}),
+  };
+}
+
+/** Packaged launchers choose their embedded engine; installed renderer packages need the selected engine. */
+export function smokeEngine(packageDir: string, launcher: string, env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (env.ELPIS_ENGINE_BIN) return fs.realpathSync(env.ELPIS_ENGINE_BIN);
+  if (launcher !== path.join(packageDir, 'launch')) return undefined;
+  const selected = path.join(env.HOME || os.homedir(), '.local', 'bin', 'elpis-next');
+  return fs.existsSync(selected) ? fs.realpathSync(selected) : undefined;
+}
+
+/** The shared bridge detaches from the window. Only stop processes with this run's exact private HOME. */
+export async function stopSmokeProcesses(home: string): Promise<void> {
+  if (!path.isAbsolute(home) || path.basename(home) !== 'home') throw new Error('Invalid smoke home');
+  const belongs = (pid: number) => {
+    if (pid === process.pid) return false;
+    try {
+      return fs.readFileSync(`/proc/${pid}/environ`).toString().split('\0').includes(`HOME=${home}`);
+    } catch { return false; } // A process may exit between listing and reading /proc.
+  };
+  const owned = () => fs.readdirSync('/proc').filter(name => /^\d+$/.test(name)).map(Number).filter(belongs);
+  for (const signal of ['SIGTERM', 'SIGKILL'] as const) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const pids = owned();
+      if (!pids.length) return;
+      for (const pid of pids) {
+        // Check again immediately before signalling, in case a PID has been reused.
+        if (!belongs(pid)) continue;
+        try { process.kill(pid, signal); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error;
+        }
+      }
+      await sleep(50);
+    }
+  }
+  if (owned().length) throw new Error('Could not stop isolated smoke processes');
+}
+
 /** Resolves when the package's window is ready; rejects with what the app printed if it exits, or never gets there. */
 export async function smokeLaunch(packageDir: string, { timeoutMs = 90_000, launcher = path.join(packageDir, 'launch'), evidence = '', sandbox = false } = {}) {
   if (!fs.existsSync(launcher)) throw new Error(`${launcher} does not exist.`);
+  const engine = smokeEngine(packageDir, launcher);
   // In the home cache, not /tmp: gio trash refuses folders on /tmp here (2 Nov).
   const cache = path.join(os.homedir(), '.cache', 'elpis-smoke'); fs.mkdirSync(cache, { recursive: true });
   const scratch = fs.mkdtempSync(path.join(cache, 'run-'));
-  const home = path.join(scratch, 'home');
-  const screen = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
+  const env = smokeEnvironment(scratch, engine), home = env.ELPIS_HOME!;
+  const screen = spawn('Xvfb', ['-displayfd', '3', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { env, cwd: env.HOME, stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
   let app: ReturnType<typeof spawn> | undefined, output = '', port: number | undefined, last = 'no window';
   try {
     const display = await new Promise<string>((resolve, reject) => { screen.stdio[3]!.once('data', data => resolve(`:${data.toString().trim()}`)); screen.once('error', () => reject(new Error('Xvfb is needed for the launch check and could not start.'))); screen.once('exit', code => reject(new Error(`Xvfb exited ${code}`))); });
     port = await freePort();
-    const env: NodeJS.ProcessEnv = { ...process.env, DISPLAY: display, XDG_SESSION_TYPE: 'x11', ELECTRON_OZONE_PLATFORM_HINT: 'x11', ELPIS_HOME: home, ELPIS_DESKTOP_PROFILE: path.join(scratch, 'profile') };
-    delete env.WAYLAND_DISPLAY;
-    app = spawn(launcher, [...(sandbox ? [] : ['--no-sandbox']), '--ozone-platform=x11', `--remote-debugging-port=${port}`], { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    env.DISPLAY = display;
+    app = spawn(launcher, [...(sandbox ? [] : ['--no-sandbox']), '--ozone-platform=x11', `--remote-debugging-port=${port}`], { env, cwd: env.HOME, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     for (const stream of [app.stdout, app.stderr]) stream!.on('data', chunk => { output = (output + chunk).slice(-3000); });
     let exited: number | null = null; app.once('exit', code => { exited = code; });
     const until = Date.now() + timeoutMs;
@@ -111,6 +163,7 @@ export async function smokeLaunch(packageDir: string, { timeoutMs = 90_000, laun
     if (evidence) await saveEvidence(evidence, port, output, home, last);
     if (app?.pid) { try { process.kill(-app.pid, 'SIGKILL'); } catch { /* Already gone. */ } }
     screen.kill();
+    await stopSmokeProcesses(env.HOME!);
     // GitHub's runners may lack gio; their scratch goes with the runner.
     try { execFileSync('gio', ['trash', scratch], { stdio: 'ignore' }); } catch { /* Left in ~/.cache/elpis-smoke. */ }
   }

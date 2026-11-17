@@ -4,10 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { Disclosure, DisclosureSummary } from "@/components/ui/disclosure-summary";
 import { Button } from "@/components/ui/button";
 import { api, type Entry } from "@/lib/api";
-import { BackgroundProcessesDisabled, listBackgroundProcesses, processView, type BackgroundProcess } from "@/lib/background-processes.mts";
+import { listBackgroundProcesses, processView, type BackgroundProcess } from "@/lib/background-processes.mts";
 
 /** The runtime, not the turn's transcript, decides whether a terminal is still running. */
-export function BackgroundProcesses({ threadId, active, entries, showUnavailable = false }: { threadId: string; active: boolean; entries: Entry[]; showUnavailable?: boolean }) {
+export function BackgroundProcesses({ threadId, active, entries }: { threadId: string; active: boolean; entries: Entry[] }) {
   const [state, setState] = useState<{ jobs: BackgroundProcess[]; unavailable: boolean }>({ jobs: [], unavailable: false });
   const [open, setOpen] = useState(false);
   const [retry, setRetry] = useState(0);
@@ -36,18 +36,16 @@ export function BackgroundProcesses({ threadId, active, entries, showUnavailable
         if (!jobs.length) setOpen(false);
         setState({ jobs, unavailable: false });
         if (active || jobs.length) schedule(5000);
-      } catch (error) {
+      } catch {
         if (disposed) return;
-        const disabled = error instanceof BackgroundProcessesDisabled;
-        setState(previous => ({ ...previous, unavailable: !disabled || previous.jobs.length > 0 }));
-        if (disabled) schedule(60000);
-        else if (active || hadJobs.current || pending || showUnavailable) schedule(Math.min(60000, 5000 * 2 ** failures++));
+        setState(previous => ({ ...previous, unavailable: true }));
+        if (active || hadJobs.current || pending) schedule(Math.min(60000, 5000 * 2 ** failures++));
       }
     }
     void refresh();
     return () => { disposed = true; abort.abort(); clearTimeout(timer); document.removeEventListener("visibilitychange", visible); };
-  }, [threadId, active, pending, showUnavailable, retry]);
-  if (!state.jobs.length && !(state.unavailable && (pending || showUnavailable))) return null;
+  }, [threadId, active, pending, retry]);
+  if (!state.jobs.length && !(state.unavailable && pending)) return null;
   const jobs = processView(state.jobs, entries);
   return (
     <Disclosure className="activity-group mx-auto w-full max-w-[var(--transcript-width,740px)] px-4"

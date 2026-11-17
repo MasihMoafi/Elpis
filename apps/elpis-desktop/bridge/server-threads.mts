@@ -228,8 +228,7 @@ export async function handleThreadRoutes(
   const backgroundProcesses = url.pathname.match(/^\/api\/threads\/([^/]+)\/background-processes$/);
   if (backgroundProcesses && method === "GET") {
     const cursor = url.searchParams.get("cursor") ?? undefined;
-    const id = decodeURIComponent(backgroundProcesses[1] ?? "");
-    json(response, 200, await (state.mother.owns(id) ? state.mother.backgroundProcesses(cursor) : client.backgroundProcesses(id, cursor)));
+    json(response, 200, await client.backgroundProcesses(decodeURIComponent(backgroundProcesses[1] ?? ""), cursor));
     return true;
   }
   if (contextFiles) {
