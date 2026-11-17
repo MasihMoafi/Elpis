@@ -1,7 +1,7 @@
 /* Every chat reserves the same chevron column, including chats without agents. */
 /* Activity is separate from the manually chosen conversation colour. */
 .thread-dot { flex-shrink:0; box-sizing:border-box; width:9px; height:9px; margin:0 2px 0 26px; border:1.5px solid var(--subtle-foreground); border-radius:50%; background:transparent; }
-.thread-dot[data-state="working"] { border-color:var(--primary); background:var(--primary); border-radius:2px; }
+.thread-dot[data-state="working"] { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border:0; background:transparent; border-radius:0; }
 .thread-row:has(.thread-dot[data-state="working"]) .thread-title { font-weight:600; }
 .thread-row:has(.thread-dot[data-state="working"]) { background:color-mix(in oklab, var(--primary) 10%, var(--sidebar)); }
 .thread-dot[data-state="waiting"] { border-color:var(--warning); background:var(--warning); }

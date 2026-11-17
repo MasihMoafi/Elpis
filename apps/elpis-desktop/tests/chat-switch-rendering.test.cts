@@ -6,8 +6,14 @@ test('returning to a running chat never replaces already received output with an
   const f = await fixture({ staticDir: process.env.ELPIS_RENDERING_STATIC, running: true });
   try {
     await f.open('chat-a');
-    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: { id: 'a-t4', type: 'agentMessage', text: 'The latest completed update must stay visible.' } } });
-    f.emit('message', { method: 'item/completed', params: { threadId: 'chat-a', turnId: 't4', item: { id: 'new-update', type: 'agentMessage', text: 'More work arrived after the stored page.' } } });
+    f.emit('message', { method: 'item/completed', params: {
+      threadId: 'chat-a', turnId: 't4',
+      item: { id: 'a-t4', type: 'agentMessage', text: 'The latest completed update must stay visible.' },
+    } });
+    f.emit('message', { method: 'item/completed', params: {
+      threadId: 'chat-a', turnId: 't4',
+      item: { id: 'new-update', type: 'agentMessage', text: 'More work arrived after the stored page.' },
+    } });
     await f.page.getByText('More work arrived after the stored page.', { exact: true }).waitFor();
     await f.page.waitForTimeout(100);
     await f.open('chat-b');

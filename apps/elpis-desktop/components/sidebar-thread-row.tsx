@@ -4,6 +4,7 @@ import { AgentIdentity, type agentColourSlots } from "@/components/agent-identit
 import { ReorderItem, type useReorder } from "@/components/reorder";
 import { ThreadActions } from "@/components/thread-actions";
 import { Button } from "@/components/ui/button";
+import { WorkingMark } from "@/components/working-mark";
 import { agentState, attentionLine, stateLabels } from "@/lib/agents";
 import { isAgent, isAgentRun, title, type Thread } from "@/lib/api";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
@@ -233,7 +234,9 @@ export function createSidebarThreadRow({
                   data-state={state}
                   aria-label={stateLabels[state]}
                   title={stateLabels[state]}
-                />
+                >
+                  {state === "working" && <WorkingMark animatedEdges={false} />}
+                </span>
               )}
             </span>
             <button
