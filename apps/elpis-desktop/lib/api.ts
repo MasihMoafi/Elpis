@@ -397,7 +397,7 @@ export function providerChoices(models: Model[], settings: ProviderSettings | nu
     ...(settings?.providers?.find(item => item.id === provider)?.needsKey ? { needsKey: true } : {}),
   });
   const others: ProviderChoice[] = [
-    ...SUBSCRIPTIONS.map(item => ({
+    ...(settings?.managed?.modelProvider ? [] : SUBSCRIPTIONS).map(item => ({
       id: item.prefix,
       label: item.label,
       models: models.filter(model => model.model.startsWith(item.prefix)),

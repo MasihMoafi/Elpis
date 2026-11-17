@@ -66,7 +66,9 @@ if (process.argv.includes('app-server')) {
     switch (msg.method) {
       case 'initialize': return reply({ userAgent: 'a166-fixture' });
       case 'config/read': return reply({ config: fs.existsSync(path.join(home, 'permission-defaults.json')) ? JSON.parse(fs.readFileSync(path.join(home, 'permission-defaults.json'), 'utf8')) : {} });
-      case 'configRequirements/read': return reply({ requirements: fs.existsSync(path.join(home, 'requirements.json')) ? JSON.parse(fs.readFileSync(path.join(home, 'requirements.json'), 'utf8')) : null });
+      case 'configRequirements/read':
+        if (fs.existsSync(path.join(home, 'requirements-error'))) return send({ id: msg.id, error: { code: -32603, message: 'policy unavailable' } });
+        return reply({ requirements: fs.existsSync(path.join(home, 'requirements.json')) ? JSON.parse(fs.readFileSync(path.join(home, 'requirements.json'), 'utf8')) : null });
       case 'config/batchWrite':
         if (fs.existsSync(path.join(home, 'hold-profile'))) fs.writeFileSync(path.join(home, 'permission-defaults.json'), JSON.stringify({ approval_policy: 'never', default_permissions: ':danger-full-access' }));
         return reply({});
@@ -174,6 +176,61 @@ if (process.argv.includes('app-server')) {
     server.listen(socket);
   } else readline.createInterface({ input: process.stdin }).on('line', line => handle(JSON.parse(line), msg => process.stdout.write(JSON.stringify(msg) + '\n')));
 } else {
+  test('managed provider pin refuses a subscription thread start', { timeout: 20000 }, async t => {
+    const root = createTestTempDir(path.join(os.tmpdir(), 'provider-policy-'));
+    const socketPath = path.join(root, 'bridge.sock'), engine = path.join(root, 'engine.mjs');
+    fs.writeFileSync(engine, `#!${process.execPath}\nawait import(${JSON.stringify(self)});\n`, { mode: 0o755 });
+    fs.writeFileSync(path.join(root, 'requirements.json'), JSON.stringify({ modelProvider: 'openai' }));
+    const env = { PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
+      ELPIS_SHARED_BRIDGE: '1', ELPIS_BRIDGE_SOCKET: socketPath, ELPIS_ENGINE_BIN: engine, ELPIS_NO_AGY: '1', ACP_BRIDGE_NO_AGENTS: '1',
+      ACP_BRIDGE_STORE: path.join(root, 'sessions.json'), ACP_BRIDGE_LOG: path.join(root, 'bridge.log') };
+    const bridge = spawn(process.execPath, [path.join(source, 'acp-bridge.mts')], { env, cwd: root, detached: true, stdio: 'ignore' });
+    const pid = bridge.pid; assert.ok(pid); let socket: WebSocket | undefined;
+    t.after(async () => {
+      socket?.close();
+      if (bridge.exitCode === null && bridge.signalCode === null) { const ended = once(bridge, 'exit'); bridge.kill('SIGTERM'); await ended; }
+      try { process.kill(-pid, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+      removeTestTempDir(root);
+    });
+    const deadline = Date.now() + 8000;
+    while (!fs.existsSync(socketPath)) { assert.ok(Date.now() < deadline, 'bridge startup'); await pause(10); }
+    socket = new WebSocket(`ws+unix://${socketPath}:/`); await once(socket, 'open');
+    const pending = new Map<number, (value: RestrictionReply) => void>(); let seq = 0;
+    const events: { method?: string; params?: { turn?: { status?: string; error?: { message?: string } } } }[] = [];
+    socket.on('message', data => { const msg: RestrictionReply & { method?: string; params?: { turn?: { status?: string; error?: { message?: string } } } } = JSON.parse(String(data)); events.push(msg); const resolve = pending.get(msg.id); if (resolve) { resolve(msg); pending.delete(msg.id); } });
+    const rpc = (method: string, params: object) => new Promise<RestrictionReply>(resolve => { const id = ++seq; pending.set(id, resolve); socket?.send(JSON.stringify({ id, method, params })); });
+    await rpc('initialize', { clientInfo: { name: 'provider-policy-test' }, capabilities: { experimentalApi: true } });
+    const reply = await rpc('thread/start', { model: 'claude/haiku', cwd: root });
+    assert.match(reply.error?.message ?? '', /provider.*restricted|restricted.*provider/i);
+    const native = await rpc('thread/start', { model: 'gpt-test', cwd: root });
+    assert.ifError(native.error); const threadId = native.result?.thread?.id; assert.ok(threadId);
+    const change = await rpc('thread/settings/update', { threadId, model: 'claude/haiku' });
+    assert.match(change.error?.message ?? '', /provider.*restricted|restricted.*provider/i);
+    const explicitTurn = await rpc('turn/start', { threadId, model: 'claude/haiku', input: [{ type: 'text', text: 'synthetic' }] });
+    assert.match(explicitTurn.error?.message ?? '', /provider.*restricted|restricted.*provider/i);
+    const defaultChange = await rpc('config/batchWrite', { edits: [{ keyPath: 'model', value: 'claude/haiku', mergeStrategy: 'replace' }] });
+    assert.match(defaultChange.error?.message ?? '', /provider.*restricted|restricted.*provider/i);
+    fs.unlinkSync(path.join(root, 'requirements.json'));
+    const allowed = await rpc('thread/start', { model: 'claude/haiku', cwd: root });
+    assert.ifError(allowed.error); const subscriptionThread = allowed.result?.thread?.id; assert.ok(subscriptionThread);
+    const savedDefault = await rpc('config/batchWrite', { edits: [{ keyPath: 'model', value: 'claude/haiku', mergeStrategy: 'replace' }] });
+    assert.ifError(savedDefault.error);
+    fs.writeFileSync(path.join(root, 'requirements.json'), JSON.stringify({ modelProvider: 'openai' }));
+    const implicit = await rpc('thread/start', { cwd: root });
+    assert.match(implicit.error?.message ?? '', /provider.*restricted|restricted.*provider/i);
+    const turn = await rpc('turn/start', { threadId: subscriptionThread, input: [{ type: 'text', text: 'synthetic' }] });
+    assert.ifError(turn.error);
+    const waitUntil = Date.now() + 5000;
+    while (!events.some(event => event.method === 'turn/completed' && event.params?.turn?.status === 'failed')) { assert.ok(Date.now() < waitUntil, 'restricted turn must finish with an error'); await pause(10); }
+    assert(events.some(event => /provider.*restricted|restricted.*provider/i.test(event.params?.turn?.error?.message ?? '')));
+    fs.unlinkSync(path.join(root, 'requirements.json'));
+    fs.writeFileSync(path.join(root, 'requirements-error'), '1');
+    const unavailable = await rpc('thread/start', { model: 'claude/haiku', cwd: root });
+    assert.match(unavailable.error?.message ?? '', /policy unavailable/i);
+    const unavailableDefault = await rpc('config/batchWrite', { edits: [{ keyPath: 'model', value: 'claude/haiku', mergeStrategy: 'replace' }] });
+    assert.match(unavailableDefault.error?.message ?? '', /policy unavailable/i);
+  });
+
   for (const reject of [false, true]) test(`native helper waits for ${reject ? 'a refused' : 'a confirmed'} restriction before its turn`, { timeout: 20000 }, async t => {
     const root = createTestTempDir(path.join(os.tmpdir(), 'helper-restriction-'));
     const socketPath = path.join(root, 'bridge.sock'), engine = path.join(root, 'engine.mjs');

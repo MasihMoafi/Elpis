@@ -23,7 +23,7 @@ export function createProviderTurn({
   childIds, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort,
   materializedProviders, sessionModel, threadAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode,
   tokenSums, ctxChars, devChars, addChars, transcriptOf, lastTurnUsage, sendUsage, ensureAcp, catalogFor, dropThreadSession, releaseUnusedAcps,
-  engineCall, elpisInstructions, subagentsAllowed, activeTurns, reconnects, pendingMirrors, priorTranscript,
+  engineCall, assertSubscriptionAllowed, elpisInstructions, subagentsAllowed, activeTurns, reconnects, pendingMirrors, priorTranscript,
   askTui, newLane, runNext,
 }: Dependencies) {
   // A37: a background job Claude started can end after its reply. Claude then answers on its own,
@@ -98,6 +98,8 @@ export function createProviderTurn({
     const accountId = agent.key === "claude" ? claudeAccounts.activeId() : null;
     let lastClaudeMessageId = null;
     try {
+      // A follow-up only records events from an already-running provider session.
+      if (!followup) await assertSubscriptionAllowed();
       const { acp, sessionId, freshSession, ask, subagents, policy } = await prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sessionMode, devChars, ensureAcp, catalogFor, dropThreadSession, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd });
       sessionReady(sessionId);
       // The chat's updates draw into this turn; a subagent's come under its own ACP session and

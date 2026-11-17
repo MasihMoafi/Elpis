@@ -59,6 +59,18 @@ test('a provider without a catalog never receives another provider’s models or
   assert(!managed.some(choice => choice.provider === 'openrouter'));
 });
 
+test('a managed provider pin excludes separate subscription routes and keeps the pinned provider', () => {
+  const available = [...models, { id: 'agy', model: 'agy/gemini', displayName: 'Gemini' }];
+  for (const pin of ['openai', 'anthropic-credits', 'claude']) {
+    const choices = providerChoices(available, { ...settings, main: { model: 'configured-model', provider: pin }, managed: { modelProvider: pin } });
+    assert.equal(choices[0]?.provider, pin);
+    assert(!choices.some(choice => choice.id === 'claude/' || choice.id === 'agy/'), `${pin} cannot select a separate ACP subscription`);
+  }
+  const unrestricted = providerChoices(available, settings);
+  assert(unrestricted.some(choice => choice.id === 'claude/'));
+  assert(unrestricted.some(choice => choice.id === 'agy/'));
+});
+
 test('configured catalogs follow the saved configuration revision without changing route identities', () => {
   const old = providerChoices(models, { ...settings, version: 'v1' });
   const next = providerChoices(models, { ...settings, version: 'v2' });

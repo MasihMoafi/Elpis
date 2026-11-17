@@ -116,6 +116,7 @@ The requirements with their checks and evidence: [production.md](../../docs/spec
 ## Permissions
 
 70. Full access is the initial default in desktop and TUI for every provider and means no ordinary approval with full filesystem access; Bypass is a separate explicit choice. The saved default applies to chats without an explicit choice; a chat's selection survives reload. Retain identifiable older explicit choices; legacy fallbacks follow the default. Managed restrictions disable forbidden choices and reject them at the runtime boundary. (P1–P4, A233, A251)
+   A pinned native provider excludes ACP subscription routes for defaults, chat changes and new turns; an unreadable policy never starts a subscription turn. Check: `tests/provider-choices.test.mts` and `tools/elpis-claude/test/helper-desktop.test.mts`.
 71. Automatically started helpers operate within their declared scope and managed restrictions without asking the person for ordinary tool approval. A helper cannot grant itself a higher permission ceiling. (P3, R59, R60)
 72. Changing a loaded helper's permissions or opening its live history uses its owning runtime. Unknown helpers and grants above the ceiling are refused. (`bridge/helper-desktop.test.mts`)
 

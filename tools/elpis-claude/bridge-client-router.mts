@@ -9,7 +9,7 @@ import type { GlobalRequest } from "./bridge-types.mts";
 import type { ClientRouterDependencies } from "./bridge-connection.mts";
 
 /** Route one frontend connection's requests to its owning provider or engine. */
-export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, agentOf, answerChild, appMcpConfig, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws }: ClientRouterDependencies) {
+export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, agentOf, answerChild, appMcpConfig, assertSubscriptionAllowed, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws }: ClientRouterDependencies) {
   const stringRecord = (value: unknown): value is Record<string, string> => wireObject(value) && Object.values(value).every(v => typeof v === "string");
   const bridgedModel = (value: string) => isBridged(value);
   function prepareOpening(msg: GlobalRequest) {
@@ -23,7 +23,7 @@ export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, ag
       else openingEnvironment.set(msg.id, environment);
     }
   }
-  function handleMessage(data: WebSocket.RawData | string, recovered = false) {
+  function handleMessage(data: WebSocket.RawData | string, recovered = false, policyChecked = false) {
     const line = data.toString();
     let value: unknown;
     try { value = JSON.parse(line); } catch { engine.stdin.write(line + "\n"); return; }
@@ -37,6 +37,13 @@ export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, ag
     const request = readClientRequest(value);
     if (!request) { engine.stdin.write(line + "\n"); return; }
     const msg = request;
+    const subscriptionChange = (msg.method === "thread/settings/update" || msg.method === "turn/start") && isBridged(msg.params?.model)
+      || msg.method === "config/batchWrite" && msg.params.edits?.some(edit => edit.keyPath === "model" && isBridged(edit.value));
+    if (subscriptionChange && !policyChecked) {
+      void assertSubscriptionAllowed().then(() => handleMessage(data, recovered, true))
+        .catch((error: Error) => toTui({ id: msg.id, error: { code: -32600, message: error.message } }));
+      return;
+    }
     if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-agents") helperConns.add(ws);
     if (msg.method === "initialize" && msg.params?.clientInfo?.name === "elpis-workflow") workflowToolConns.add(ws);
     if (context.failed && msg.method && msg.id !== undefined) { toTui({ id: msg.id, error: { code: -32603, message: "The session backend disconnected; reopen this chat." } }); return; }
@@ -57,7 +64,12 @@ export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, ag
     if (msg.method === "claudeAccounts/read" || msg.method === "claudeAccounts/write") { void claudeAccountsRequest(msg); return; }
     if (msg.method === "thread/start") {
       if (!isStartRequest(msg)) { engine.stdin.write(line + "\n"); return; }
-      prepareOpening(msg); startThread(msg); return;
+      prepareOpening(msg);
+      void startThread(msg).catch((error: Error) => {
+        openingReplies.delete(msg.id); openingMcp.delete(msg.id); openingEnvironment.delete(msg.id); permissionWrites.delete(msg.id);
+        toTui({ id: msg.id, error: { code: -32600, message: error.message } });
+      });
+      return;
     }
     if (msg.method === "thread/loaded/list") pendingChildList.set(msg.id, null);
     if (msg.method === "thread/list") {

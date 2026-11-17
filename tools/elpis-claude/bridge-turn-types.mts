@@ -84,6 +84,7 @@ export type Dependencies = {
     dropThreadSession: (threadId: string) => void;
     releaseUnusedAcps: () => void;
     engineCall: EngineCall;
+    assertSubscriptionAllowed: () => Promise<void>;
     elpisInstructions: (threadId: string, developerInstructions?: string | null) => Promise<string>;
     subagentsAllowed: (cwd: string | undefined) => Promise<boolean>;
     activeTurns: Map<string, ProviderTurn>;

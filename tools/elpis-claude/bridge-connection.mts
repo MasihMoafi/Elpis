@@ -381,6 +381,17 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     });
     engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   }); }
+  async function assertSubscriptionAllowed() {
+    const reply = await engineCall("configRequirements/read", {}, 5000).catch(() => {
+      throw new Error("Provider policy unavailable; try again after reconnecting.");
+    });
+    if (!Object.hasOwn(reply, "requirements") || (reply.requirements != null && !wireObject(reply.requirements)))
+      throw new Error("Provider policy is unavailable; try again after reconnecting.");
+    const pin = reply.requirements?.modelProvider;
+    if (pin != null && (typeof pin !== "string" || !pin))
+      throw new Error("Provider policy is unavailable; try again after reconnecting.");
+    if (pin) throw new Error("This subscription provider is restricted by managed settings.");
+  }
   let handleMessage: (data: WebSocket.RawData | string, recovered?: boolean) => void;
   const textOf = (content: PromptInput[] | undefined) => (content ?? []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
   async function elpisInstructions(threadId: string, developerInstructions?: string | null) {
@@ -502,7 +513,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     childIds, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort,
     materializedProviders, sessionModel, threadAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode,
     tokenSums, ctxChars, devChars, addChars, transcriptOf, lastTurnUsage, sendUsage, ensureAcp, catalogFor,
-    engineCall, elpisInstructions, subagentsAllowed, activeTurns, reconnects, pendingMirrors, priorTranscript,
+    engineCall, assertSubscriptionAllowed, elpisInstructions, subagentsAllowed, activeTurns, reconnects, pendingMirrors, priorTranscript,
     askTui, newLane, runNext: threadId => runNext(threadId), dropThreadSession, releaseUnusedAcps,
   });
 
@@ -512,6 +523,17 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   async function startThread(msg: { id: RequestId; params?: { elpisParentThreadId?: string; elpisRequestedScope?: string; permissions?: string; sandbox?: Ceiling; elpisWorkflow?: { runId?: string; agentId?: string | null }; approvalPolicy?: AskForApproval; parentThreadId?: string; model?: string | null; config?: Record<string, unknown> & { model_reasoning_effort?: string | null }; cwd?: string } }) {
     const p = msg.params ?? {};
     const helper = !!p.elpisParentThreadId;
+    let pick = null;
+    if (isBridged(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
+    else {
+      await storeChain();
+      const def = (await loadStore())._default;
+      engineDefault ??= engineCall("config/read", { includeLayers: false }).then((r) => r?.config?.model ?? null, () => null);
+      // A saved Claude default waits while Elpis is signed out of it: the new chat gets the engine's own model.
+      // A helper keeps the model its delegate named, even the engine's default (A49: gpt-6.1-sol helpers ran on Claude).
+      if (!helper && def?.model && !signedOutModel(def.model) && (p.model == null || p.model === await engineDefault)) pick = def;
+    }
+    if (pick) await assertSubscriptionAllowed();
     if (p.elpisParentThreadId) {
       // Resolve this helper's shared default or deliberately requested task scope.
       const parentThreadId = p.elpisParentThreadId;
@@ -533,16 +555,6 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
       p.parentThreadId = parentThreadId;
     }
     delete p.elpisWorkflow;
-    let pick = null;
-    if (isBridged(p.model)) pick = { model: p.model, effort: p.config?.model_reasoning_effort ?? null };
-    else {
-      await storeChain();
-      const def = (await loadStore())._default;
-      engineDefault ??= engineCall("config/read", { includeLayers: false }).then((r) => r?.config?.model ?? null, () => null);
-      // A saved Claude default waits while Elpis is signed out of it: the new chat gets the engine's own model.
-      // A helper keeps the model its delegate named, even the engine's default (A49: gpt-6.1-sol helpers ran on Claude).
-      if (!helper && def?.model && !signedOutModel(def.model) && (p.model == null || p.model === await engineDefault)) pick = def;
-    }
     if (pick) {
       rememberStart(msg.id, pick);
       p.model = null;
@@ -589,6 +601,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     let status = "completed", error = null, sessionId = null, a = null;
     structuredStarting.add(threadId);
     try {
+      await assertSubscriptionAllowed();
       // Hidden requests always go to Claude (Haiku), whichever subscription the chat uses.
       refuseSignedOut(AGENTS[0]);
       a = await ensureAcp(AGENTS[0]);
@@ -678,7 +691,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   };
   engine.stdout.on("exit", engineExited);
   (engine as { once?: (event: "exit", listener: () => void) => void }).once?.("exit", engineExited);
-  const router = { AGENTS, HOME, acpKey, acps, activeTurns, agentOf, answerChild, appMcpConfig, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, releaseUnusedAcps, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws };
+  const router = { AGENTS, HOME, acpKey, acps, activeTurns, agentOf, answerChild, appMcpConfig, assertSubscriptionAllowed, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, releaseUnusedAcps, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws };
   const engineMessages = { AGENTS, TOOL_APPROVALS, addSubscriptionLimits, adoptHelper, agentOf, announceLimits, archivingThreads, authorityOf, automaticThreads, blockedAutomaticThreads, catalogFor, chatAccess, chatBack, checkIdle, claimProvider, claudeEffort, claudeModel, connectionId, deletingThreads, dropThreadSession, engine, engineCall, engineReqs, engineTurns, explicitChatChoices, failHelper, forkParent, fullFor, helperConns, helperScope, helperThreads, loadStore, log, markHelpers, missingThreadUntil, nameModel, noteAccess, notePlan, notify, now, openHelper, openingEnvironment, openingMcp, ownModel, pendingAdopt, pendingArchive, pendingChildList, pendingConfigRead, pendingDelegation, pendingHelperMark, pendingHelperTurns, pendingHelpers, pendingItemsList, pendingLimitsRead, pendingModelList, pendingNativeRoutes, pendingResume, pendingStart, pendingThreadList, pendingTurnsList, permissionChoices, permissionRefreshes, permissionWrites, providerOwners, queues, relayToTui, relayed, replayPlan, restrictHelper, resumeHistory, resumeOptions, resumeResults, sessions, settleRelay, shareHelper, signedOutModel, smartPrune, startingProviders, stopIfReduced, storeChain, storedChildren, subscriptions, threadCwd, threadEnvironment, threadMcp, threadPolicy, threadSeen, toOthers, toTui, unlistedClaudeThreads, updateStore, ws };
   return { router, engineMessages, activate(handler: (data: WebSocket.RawData | string, recovered?: boolean) => void, engineHandler: (line: string) => void) {
     handleMessage = handler;
