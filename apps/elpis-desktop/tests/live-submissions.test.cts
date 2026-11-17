@@ -39,11 +39,15 @@ for (const mode of ['live', 'reopened', 'interrupted']) test(`compaction complet
     '/api/threads/chat-a': () => ({ thread, data: entries, nextCursor: null }),
   } : {} });
   t.after(() => f.close());
-  await f.open('chat-a');
+  if (mode === 'reopened') await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+  else await f.open('chat-a');
   if (mode !== 'reopened') f.emit('message', { method: 'item/started', params: { threadId: 'chat-a', turnId: 't4', item } });
   const line = f.page.locator('.context-event');
   await line.getByText('Compacting the context', { exact: true }).waitFor();
   assert.equal(await line.getByText('Compacted the context', { exact: true }).count(), 0);
+  const shots = path.join(process.env.HOME ?? '.', '.cache/elpis-shots');
+  await fs.mkdir(shots, { recursive: true });
+  await f.page.screenshot({ path: path.join(shots, `compaction-${mode}-running.png`) });
   if (mode === 'interrupted') {
     f.emit('message', { method: 'thread/status/changed', params: { threadId: 'chat-a', status: { type: 'idle' } } });
     await line.getByText('Compaction did not complete', { exact: true }).waitFor();
@@ -53,6 +57,7 @@ for (const mode of ['live', 'reopened', 'interrupted']) test(`compaction complet
     await line.getByText('Compacted the context', { exact: true }).waitFor();
     assert.equal(await line.getByText('Compacting the context', { exact: true }).count(), 0);
   }
+  await f.page.screenshot({ path: path.join(shots, `compaction-${mode}-settled.png`) });
   assert.deepEqual(f.errors, []);
 });
 
