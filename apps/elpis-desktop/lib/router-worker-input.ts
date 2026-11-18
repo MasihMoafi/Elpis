@@ -1,3 +1,4 @@
+import { routerEnvelopeBody } from "./router-envelope.mts";
 import type { Entry } from "@/lib/api";
 
 /** What the router sends a worker is written for the model: the ticket as JSON with its IDs
@@ -42,9 +43,8 @@ export function noteRouterNotices(entries: Entry[]): Entry[] {
     const body = (entry.item.content ?? [])
       .map(part => (typeof part.text === "string" ? part.text : ""))
       .join("\n")
-      .replace(/^<elpis-router-message [^>]*>\n?/, "")
       .trim();
-    const note = routerNotice(body);
+    const note = routerNotice(routerEnvelopeBody(body) ?? body);
     if (!note) return entry;
     changed = true;
     return { ...entry, item: { id: entry.item.id, type: "routerNote", text: note } };

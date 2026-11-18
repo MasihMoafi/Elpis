@@ -502,3 +502,29 @@ test("a temporary side conversation is never listed as a chat, in the list or in
     client.close();
   }
 });
+
+test("the desktop lists, searches and opens router chats under readable names without renaming their transcripts", async t => {
+  const { client, threads } = fixture();
+  t.after(() => client.close());
+  await client.initialize();
+  const saved = required(threads.get(ROOT));
+  const marker = '<elpis-router-message id="router%3Aassignment%3Aexample">';
+  const ticket = marker + '\n' + JSON.stringify({ ticket_id: "ticket", title: "Repair history", trigger: { text: "My chat jumps" } });
+  saved.preview = ticket;
+  saved.name = ticket;
+  const listed = (await client.listThreads({ searchTerm: "Repair history" })).data.find(row => row.id === ROOT);
+  assert.equal(listed?.name, "Repair history");
+  assert.equal((await client.readThread(ROOT)).thread.name, "Repair history");
+  assert.equal(saved.name, ticket);
+  saved.name = marker;
+  assert.equal((await client.readThread(ROOT)).thread.name, "Repair history", "the preview fills in a clipped name");
+  saved.name = "My own chat name";
+  assert.equal((await client.readThread(ROOT)).thread.name, saved.name, "a real rename wins");
+  saved.name = marker;
+  saved.preview = marker + '\n' + JSON.stringify({ kind: "candidate", from: "local-user", text: "Check my files\nSecond line" });
+  assert.equal((await client.readThread(ROOT)).thread.name, "Check my files");
+  saved.preview = marker + '\n{"ticket_id":';
+  assert.equal((await client.readThread(ROOT)).thread.name, "Message from Elpis");
+  saved.name = "Notes on " + marker;
+  assert.equal((await client.readThread(ROOT)).thread.name, saved.name, "quoting a marker in an ordinary name is literal");
+});

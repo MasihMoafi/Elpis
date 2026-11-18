@@ -1,4 +1,5 @@
 import { AGENT_RUN_NOTICE, agentParentId, isAgentRun } from "../lib/agent-runs.mts";
+import { routerLabels } from "../lib/router-envelope.mts";
 import { BridgeError, threadId } from "./validate.mts";
 import { createdThread } from "./spawn-links.mts";
 import { interviewTurns, legacyInterview } from "./love-interview.mts";
@@ -228,6 +229,7 @@ export function internal_decorate<T>(this: DesktopClient, clientState: ClientSta
       typeof subAgentSource(thread.source)?.thread_spawn?.agent_path === "string");
   return {
     ...thread,
+    ...routerLabels(thread),
     desktopAccess: {
       writable: !missingSource && !parentOwned,
       mode: missingSource ? "unavailable" : parentOwned ? "continue" : "direct",

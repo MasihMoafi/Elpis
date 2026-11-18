@@ -186,6 +186,7 @@ export const productionFiles = [
   "desktop/love-spot-icon.png",
   "desktop/love-spot-icon.svg",
   "lib/agent-runs.mts",
+  "lib/router-envelope.mts",
   "lib/projects.ts",
   "lib/chat-groups.ts",
   "lib/service-tier.mts",
