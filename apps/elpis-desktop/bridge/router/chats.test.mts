@@ -1,4 +1,10 @@
 import { it } from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { createRequire } from "node:module";
+import { chatTools, chatToolsHost } from "./app/tools/chats.mts";
+const { createStateStore }: typeof import("../../desktop/state.cts") = createRequire(import.meta.url)("../../desktop/state.cts");
 import { expect } from "expect";
 import { chatState, createChats, type ChatsClient } from "./chats.mts";
 
@@ -173,4 +179,35 @@ it("attaches pictures to a message it writes or starts a chat with, and nothing 
     ["send", "a", { text: "no picture" }],
     ["send", "new", { text: "what is wrong here", attachments: [picture] }],
   ]);
+});
+
+it("files and nests chats in the persistent desktop sidebar without overwriting chosen placements", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "elpis-router-sidebar-"));
+  try {
+    const path = join(dir, "workspace.json"), store = createStateStore(path);
+    const projects = [{ id: "root", name: "Work", cwd: "/work" }, { id: "p", name: "Pin", cwd: "/work/pin" }];
+    await store.set("elpis-projects-v1", JSON.stringify({ projects }));
+    const threads: Record<string, { id: string; name: string; cwd?: string; parentThreadId?: string }> = {
+      worker: { id: "worker", name: "Drag tasks", cwd: "/work/pin/src" },
+      router: { id: "router", name: "Mother 1" }, other: { id: "other", name: "Other" },
+      elpis: { id: "elpis", name: "Elpis" }, child: { id: "child", name: "Native child", parentThreadId: "worker" },
+    };
+    const { fake } = client({ readThread: async id => ({ thread: threads[id], data: [], nextCursor: null }) });
+    const chats = createChats(fake, store);
+    const change = chatTools(chatToolsHost(chats, { home: dir, threadId: "elpis" }, () => ({ sources: {} })))
+      .find(tool => tool.name === "chats_change")!;
+    const run = (args: Record<string, unknown>) => change.execute(args, new AbortController().signal);
+    await run({ chat: "worker", action: "file" });
+    await run({ chat: "worker", action: "nest", parent: "router" });
+    await run({ chat: "worker", action: "nest", parent: "router" });
+    await expect(run({ chat: "worker", action: "nest", parent: "other" })).rejects.toThrow("different parent");
+    await expect(run({ chat: "router", action: "nest", parent: "child" })).rejects.toThrow("cycle");
+    await expect(run({ chat: "worker", action: "nest", parent: "elpis" })).rejects.toThrow("own chat");
+    await expect(run({ chat: "other", action: "file" })).rejects.toThrow("no recorded working folder");
+    const saved = createStateStore(path).snapshot().values!;
+    expect(JSON.parse(saved["elpis-project-chats-v1"]!)).toEqual({ worker: "p" });
+    expect(JSON.parse(saved["elpis-chat-groups-v1"]!).parents).toEqual({ worker: "router" });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

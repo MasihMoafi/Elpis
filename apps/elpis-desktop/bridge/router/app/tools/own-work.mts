@@ -7,7 +7,7 @@
  * real job sounds like one. The first line is the main Session's own instructions (prompts/chats.md).
  */
 const CHAT_ORDER =
-  /\b(archive|unarchive|restore|rename|stop|start|open|tell|ask|message|write (?:in|to))\b[^.\n]*\b(chats?|conversations?)\b/i;
+  /\b(tidy|organize|clean up|archive|unarchive|restore|rename|stop|start|open|tell|ask|message|write (?:in|to))\b[^.\n]*\b(chats?|conversations?)\b/i;
 /** The same order with the chat named first ("in the Rust chat, tell the agent to rebase"). */
 const CHAT_FIRST =
   /\b(chats?|conversations?)\b[^.\n]*\b(archive|unarchive|restore|rename|stop|tell|ask)\b/i;

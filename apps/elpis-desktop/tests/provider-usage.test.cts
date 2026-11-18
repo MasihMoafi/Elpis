@@ -41,6 +41,34 @@ test('usage stays available in the sidebar without a duplicate in the chat box',
   } finally { await f.close(); }
 });
 
+test('a usage refresh cannot show the previous ChatGPT account’s quota after a failed account switch', async () => {
+  const { fixture } = require('./parity-fixture.cts');
+  let account = 'first', available = true;
+  const f = await fixture({ routes: {
+    '/api/providers': () => ({
+      openai: { auth: { state: 'signedIn', method: 'ChatGPT', email: account + '@example.org' },
+        usage: available ? [limit('codex', 'Codex', account === 'first' ? 42 : 13)] : [],
+        usageError: available ? null : 'GET https://chatgpt.com/backend-api/wham/usage failed: 404 Not Found' },
+      claude: { state: 'notConnected', models: [], usage: [] }, gemini: { state: 'notConnected', models: [], usage: [] }, openrouter: [],
+    }),
+  } });
+  try {
+    await f.page.getByRole('button', { name: 'Usage and limits' }).click();
+    const panel = f.page.getByRole('tabpanel', { name: 'Usage & limits' });
+    const card = panel.locator('[data-provider="openai"]');
+    await card.getByText('42% used').waitFor();
+    account = 'second'; available = false;
+    await panel.getByRole('button', { name: 'Refresh' }).click();
+    await card.getByRole('alert').waitFor();
+    assert.doesNotMatch(await card.innerText(), /42%|wham|https:/);
+    assert.equal(await f.page.getByRole('button', { name: 'Usage and limits' }).getByText('58% left').count(), 0);
+    available = true;
+    await panel.getByRole('button', { name: 'Refresh' }).click();
+    await card.getByText('13% used').waitFor();
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('usage is one shared store whose reported values stay until sign-out; gateways are not listed as servers', async () => {
   const clients = new Set<import('node:http').ServerResponse>(); let requests = 0, active = 0, busiest = 0, claudeSignedOut = false, modelListUnread = false;
   // The first answer reports Antigravity's usage; later ones omit it, as the subscription bridge does while it rereads.

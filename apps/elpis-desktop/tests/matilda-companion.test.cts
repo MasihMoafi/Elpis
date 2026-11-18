@@ -385,10 +385,10 @@ test('pinned Matilda says when the sidebar is full, and Tidy asks Elpis', async 
     id, name, preview: name, cwd: '/tmp/parity-fixture', model: 'sol', modelProvider: 'openai', status: { type: 'idle' },
     desktopAccess: { writable: true, mode: 'direct' }, ...extra,
   });
-  const loose = Array.from({ length: 11 }, (_, n) => chat(`loose-${n}`, `Loose chat ${n}`));
+  const loose = Array.from({ length: 11 }, (_, n) => chat(`loose-${n}`, n === 0 ? 'mother' : `Loose chat ${n}`));
   const working = chat('busy', 'A chat at work', { status: { type: 'active', activeFlags: [] } });
-  const asked: { text: string }[] = [];
-  const more = { threads: [chat('elpis', 'Elpis', { motherAgent: true }), working, ...loose], readyThreadId: 'loose-0' };
+  let attempts = 0;
+  const more = { threads: [working, ...loose], readyThreadId: 'loose-0' };
   let pinned = true;
   const f = await fixture({ width: 1100, height: 800, ...more,
     routes: {
@@ -397,7 +397,7 @@ test('pinned Matilda says when the sidebar is full, and Tidy asks Elpis', async 
         if (body?.action === 'pin') pinned = true;
         return { pinned, face: FACE_DATA_URL, threadId: null, favorite: null, music: null, reason: '' };
       },
-      '/api/threads/elpis/turns': body => { asked.push({ text: body?.text ?? '' }); return { turn: { id: 'router-1' }, routed: true }; },
+      '/api/mother-agent/tidy': () => ++attempts === 1 ? { __http: 503, error: 'Router temporarily unavailable' } : { turn: { id: 'router-1' }, routed: true },
     } });
   try {
     const { page } = f;
@@ -406,8 +406,11 @@ test('pinned Matilda says when the sidebar is full, and Tidy asks Elpis', async 
     await note.waitFor();
     assert.match(await note.innerText(), /Your sidebar is filling up: 11 chats outside a project\. Shall Elpis tidy it\?/, 'the chat at work is not counted');
     await note.getByRole('button', { name: 'Tidy', exact: true }).click();
+    await note.getByRole('alert').filter({ hasText: 'Router temporarily unavailable' }).waitFor();
+    await note.getByRole('button', { name: 'Tidy', exact: true }).click();
     await note.waitFor({ state: 'detached' });
-    assert.deepEqual(asked, [{ text: 'Tidy my chats: archive the leftovers and tell me what you archived.' }]);
+    assert.equal(attempts, 2);
+    assert.equal(f.posts.some(post => post.path === '/api/threads/loose-0/turns'), false);
     await page.getByRole('button', { name: 'Pin Matilda', exact: true }).waitFor();
     pinned = true;
     await page.reload();

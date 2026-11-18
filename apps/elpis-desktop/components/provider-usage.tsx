@@ -68,7 +68,10 @@ const resetTime = (resetsAt: number | null) =>
 export function openAIUsage(account: OpenAIAccount): UsageStatus {
   if (account.auth.state === "signedOut")
     return { kind: "unauthenticated", hint: "Sign in with ChatGPT to see ChatGPT usage." };
-  if (account.usageError) return { kind: "error", message: account.usageError };
+  if (account.usageError) {
+    const missing = /\/wham\/usage failed: 404\b/i.test(account.usageError);
+    return { kind: "error", message: missing ? "ChatGPT returned no usage data (HTTP 404)." : account.usageError };
+  }
   return { kind: "ok", limits: account.usage };
 }
 export function subscriptionUsage(subscription: Subscription, name: string, signIn: string): UsageStatus {
@@ -153,21 +156,16 @@ export type Providers = {
   openrouter: ConfiguredProvider[];
 };
 
-/** A later answer can omit an account's usage while its bridge rereads it (a subscription then reads "available").
- * A reported value stays until the account signs out or reports a new one; it is never replaced by "not reported". */
+/** The subscription bridges may omit a reading while refreshing. ChatGPT always uses the current response:
+ * its workspace can change even when the reported email and plan stay the same. */
 export function keepReportedUsage(previous: Providers | null, next: Providers): Providers {
   if (!previous) return next;
-  const openai =
-    next.openai?.auth?.state === "signedOut" || next.openai?.usage?.length || !previous.openai?.usage?.length
-      ? next.openai
-      : { ...next.openai, usage: previous.openai.usage, usageError: null };
   const subscription = (before: Subscription, after: Subscription): Subscription =>
     after?.state === "notConnected" || after?.usage?.length || !before?.usage?.length
       ? after
       : { ...after, state: "connected", usage: before.usage };
   return {
     ...next,
-    openai,
     claude: subscription(previous.claude, next.claude),
     gemini: subscription(previous.gemini, next.gemini),
   };

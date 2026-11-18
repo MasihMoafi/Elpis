@@ -45,6 +45,7 @@ import { createHistoryCursors, handleThreadRoutes } from "./server-threads.mts";
 import { MotherAgent } from "./router/mother-agent.mts";
 
 type DesktopServerOptions = {
+  workspaceStore?: import("./router/chats.mts").ChatWorkspace;
   client?: DesktopClient;
   socketPath?: string;
   elpisHome?: string;
@@ -77,6 +78,7 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     }));
   const mother = new MotherAgent({
     client,
+    ...(options.workspaceStore ? { workspace: options.workspaceStore } : {}),
     home: options.elpisHome ?? elpisHome(),
     ...(options.socketPath ? { socketPath: options.socketPath } : {}),
   });

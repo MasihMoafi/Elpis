@@ -15,7 +15,7 @@ import { runtimeAdapters, type RuntimeAdapter } from "./executor/adapters.mts";
 import { readSettings, type RoleModel } from "./executor/settings.mts";
 import { createElpisChatTransport } from "./sources/elpis-chat-transport.mts";
 import { modelCatalog } from "./model.mts";
-import { createChats } from "./chats.mts";
+import { createChats, type ChatWorkspace } from "./chats.mts";
 import { subprocess } from "./subprocess.mts";
 import type { ListedThread, ThreadListOptions } from "../client-thread-list.mts";
 import { handleMotherHttp } from "./app/http.mts";
@@ -24,6 +24,7 @@ import type { Health } from "./sources/host.mts";
 import { workerSessionId } from "./executor/messages.mts";
 
 interface Options {
+  workspace?: ChatWorkspace;
   client: DesktopClient;
   home: string;
   socketPath?: string;
@@ -388,7 +389,7 @@ export class MotherAgent {
         adapters,
         subprocess,
         transport: createElpisChatTransport(client),
-        chats: createChats(client),
+        chats: createChats(client, this.options.workspace),
         settings: () => {
           const value = readSettings(home);
           return {
@@ -459,6 +460,14 @@ export class MotherAgent {
       return result;
     });
   }
+  async tidy() {
+    const { enabled, threadId } = this.file.read();
+    if (!enabled || !threadId) throw new BridgeError("Turn Elpis on in Settings → Configuration to tidy your chats.", 409);
+    return this.send(threadId, {
+      text: "Tidy my chats. Archive temporary or unwanted chats. Leave my chat named mother alone. File clear project matches, group task chats under the chat directing them, and tell me what changed and what needs my attention.",
+    });
+  }
+
   async send(id: string, raw: unknown) {
     this.writable(id);
     const input = object(raw, [
@@ -556,7 +565,7 @@ export class MotherAgent {
           executor: { ...initial.executor, model: config.roles.worker ?? initial.executor.model },
         }),
         transport: createElpisChatTransport(this.options.client),
-        chats: createChats(this.options.client),
+        chats: createChats(this.options.client, this.options.workspace),
         models: modelCatalog(this.options.client),
         routerModelChanged: () => {
           void this.start();

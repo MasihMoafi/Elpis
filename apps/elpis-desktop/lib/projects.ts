@@ -1,10 +1,10 @@
 import type {} from "./desktop";
 export type Project = { id: string; name: string; cwd: string };
-const CHATS_KEY = "elpis-project-chats-v1";
+export const CHATS_KEY = "elpis-project-chats-v1";
 
 /** Membership is chosen explicitly, independent of a chat's working folder. */
-export function readProjectChats(): Record<string, string> {
-  const raw = appStorage().getItem(CHATS_KEY);
+export function readProjectChats(storage: Pick<Storage, "getItem"> = appStorage()): Record<string, string> {
+  const raw = storage.getItem(CHATS_KEY);
   if (!raw) return {};
   const value: unknown = JSON.parse(raw);
   if (
@@ -26,8 +26,8 @@ export async function saveProjectChats(chats: Record<string, string>) {
 export function appStorage(): Pick<Storage, "getItem" | "setItem" | "removeItem"> {
   return window.elpisDesktop?.storage ?? window.localStorage;
 }
-export function readProjects(): { projects: Project[]; selectedId: string | null } {
-  const value = JSON.parse(appStorage().getItem("elpis-projects-v1") || '{"projects":[],"selectedId":null}');
+export function readProjects(storage: Pick<Storage, "getItem"> = appStorage()): { projects: Project[]; selectedId: string | null } {
+  const value = JSON.parse(storage.getItem("elpis-projects-v1") || '{"projects":[],"selectedId":null}');
   if (
     !Array.isArray(value.projects) ||
     value.projects.some(

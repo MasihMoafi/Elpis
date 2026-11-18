@@ -180,6 +180,7 @@ function createMainBackendImpl({
             await startDesktopServer({
               client,
               staticDir: path.join(appDir, "../out"),
+              workspaceStore: store,
               trashFile: path.join(app.getPath("userData"), "deleted-chats.json"),
               automations: true,
             }),

@@ -46,5 +46,6 @@ it("refuses such a request once, then lets the same one through, so a real job i
 it("sees an order that names the chat first, and a sweep that names none", () => {
   expect(ownWork("in the Rust chat, tell the agent to rebase")).toMatch(/order to one of his chats/);
   expect(ownWork("archive everything older than a week")).toMatch(/order to one of his chats/);
+  expect(ownWork("Organize my chats")).toMatch(/order to one of his chats/);
   expect(ownWork("tidy my sidebar")).toMatch(/order to one of his chats/);
 });

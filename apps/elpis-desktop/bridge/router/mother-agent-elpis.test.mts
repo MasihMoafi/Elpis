@@ -273,6 +273,26 @@ test("changing the router model replaces its session and the sidebar never lists
   }
 });
 
+test("Tidy goes to the configured Elpis chat and can be retried after enabling it", async () => {
+  const h = fixture(), mother = h.create();
+  try {
+    await h.client.initialize();
+    await mother.start();
+    await assert.rejects(mother.tidy(), /Turn Elpis on/);
+    assert.equal(h.adapterStarts, 0);
+    await mother.save({ version: mother.snapshot().version, enabled: true });
+    assert.equal((await mother.tidy()).routed, true);
+    const main = [...h.workers.threads.keys()][0]!;
+    await waitFor(() => assert.ok(h.workers.threads.get(main)?.turns.length));
+    const input = h.workers.threads.get(main)!.turns[0]!.items[0] as { content: { text: string }[] };
+    assert.match(input.content[0]!.text, /Tidy my chats/);
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});
+
 test("real bridge chat storage stays offline until enabled, then routes persisted input and reopens one Elpis chat", async () => {
   const h = fixture(),
     { home, workers, calls, client, create } = h;

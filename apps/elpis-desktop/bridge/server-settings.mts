@@ -19,6 +19,11 @@ export async function handleSettingsRoutes(
     json(response, 200, main ? await client.saveSettings({ version: settings.version, main }) : settings);
     return true;
   }
+  if (url.pathname === "/api/mother-agent/tidy" && method === "POST") {
+    object(await body(request), []);
+    json(response, 200, await state.mother.tidy());
+    return true;
+  }
   if (url.pathname === "/api/mother-agent") {
     json(response, 200, method === "GET" ? state.mother.snapshot() : await state.mother.save(await body(request)));
     return true;

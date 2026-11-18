@@ -1,6 +1,6 @@
 import { useEffect, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { activeTab } from "@/lib/chat-tabs";
-import { readProjectChats, readProjects } from "@/lib/projects";
+import { CHATS_KEY, readProjectChats, readProjects } from "@/lib/projects";
 import { errorText } from "@/lib/error-text.mts";
 import type { useProjectState } from "@/lib/use-project-state";
 import type { useComposerState } from "@/lib/use-composer-state";
@@ -56,5 +56,15 @@ export function useWorkspaceRestoration({
       restoreAttachments(shown.draftKey);
     }
   }, []);
+  useEffect(() => window.elpisDesktop?.storage?.onChange?.(key => {
+    if (key !== CHATS_KEY) return;
+    try {
+      const next = readProjectChats();
+      projectChatsRef.current = next;
+      setProjectChats(next);
+    } catch (error) {
+      setError(errorText(error));
+    }
+  }), [projectChatsRef, setProjectChats, setError]);
   useEffect(() => window.elpisDesktop?.storage?.onError(setError), []);
 }

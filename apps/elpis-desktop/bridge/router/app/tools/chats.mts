@@ -210,7 +210,7 @@ function changeTool(host: ChatToolsHost): Tool {
     description:
       "Change one of his chats when he asks: stop its running turn, rename it, archive it (it leaves the " +
       "sidebar and can be restored) or restore it from the archive. To archive or restore many at once, as " +
-      "when tidying, pass their ids in chats.",
+      "when tidying, pass their ids in chats. File puts an unassigned chat in the existing project matching its folder. Nest places a task chat under its verified directing chat.",
     schema: z
       .object({
         chat: ChatId.optional(),
@@ -220,11 +220,12 @@ function changeTool(host: ChatToolsHost): Tool {
           .max(BATCH)
           .optional()
           .describe(`Several chats at once, for archive and restore only, ${BATCH} at most.`),
-        action: z.enum(["stop", "rename", "archive", "restore"]),
+        action: z.enum(["stop", "rename", "archive", "restore", "file", "nest"]),
+        parent: ChatId.optional().describe("The directing chat, for nest."),
         name: z.string().trim().min(1).max(120).optional().describe("The new title, for rename."),
       })
       .strict(),
-    execute: async ({ chat, chats, action, name }) => {
+    execute: async ({ chat, chats, action, name, parent }) => {
       if (chats) {
         if (chat) throw new Error("Give chat or chats, not both");
         if (action !== "archive" && action !== "restore") throw new Error(`${action} takes one chat at a time`);
@@ -232,6 +233,16 @@ function changeTool(host: ChatToolsHost): Tool {
       }
       if (!chat) throw new Error("Give chat, the chat's id");
       const found = await target(host, chat);
+      if (action === "file") {
+        if (!host.chats.file) throw Error("Project filing is unavailable in this workspace.");
+        return { chat: found.title, project: await host.chats.file(found) };
+      }
+      if (action === "nest") {
+        if (!parent || !host.chats.nest) throw Error("Nesting requires a directing chat and a desktop workspace.");
+        const owner = await target(host, parent);
+        await host.chats.nest(found, owner);
+        return { chat: found.title, parent: owner.title };
+      }
       if (action === "rename") {
         if (!name) throw new Error("rename needs name, the new title");
         await host.chats.rename(found.id, name);

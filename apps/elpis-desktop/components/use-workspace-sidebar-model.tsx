@@ -172,13 +172,12 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     ordered,
   } = sidebarModel;
   // His pinned agent offers a tidy when Recents fills up with chats at rest (lib/sidebar-fill.ts).
-  const loose = recentChats.filter(thread => !["working", "waiting"].includes(agentState(thread))).length,
-    elpisId = threads.find(thread => thread.motherAgent)?.id ?? null;
+  const loose = recentChats.filter(thread => !["working", "waiting"].includes(agentState(thread))).length;
   // Before his chats have loaded the list is empty, and that is no report: it would wipe what she already said.
   const loaded = threads.length > 0;
   useEffect(() => {
-    if (loaded) reportSidebar(loose, elpisId);
-  }, [loaded, loose, elpisId]);
+    if (loaded) reportSidebar(loose);
+  }, [loaded, loose]);
   useWorkspaceShortcuts({
     shortcutAction,
     selected,

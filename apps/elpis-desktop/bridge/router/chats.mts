@@ -3,11 +3,19 @@
  * uses, so the router sees and does what he would in the sidebar. Nothing here deletes a chat.
  */
 import { z } from "zod";
+import { resolve, sep } from "node:path";
+import { agentParentId } from "../../lib/agent-runs.mts";
+import { CHATS_KEY, readProjectChats, readProjects } from "../../lib/projects.ts";
+import { GROUPS_KEY } from "../../lib/chat-groups.ts";
+
+export type ChatWorkspace = Pick<import("../../desktop/main-backend.cts").StateStore, "snapshot" | "patch">;
+
 
 export type ChatState = "working" | "needs you" | "failed" | "idle";
 export interface Chat {
   id: string;
   title: string;
+  parentId?: string;
   state: ChatState;
   folder?: string;
   model?: string;
@@ -47,6 +55,8 @@ export interface Chats {
   read(id: string, limit: number): Promise<{ chat: Chat; messages: ChatMessage[] }>;
   send(id: string, text: string, pictures?: ChatPicture[]): Promise<void>;
   start(input: ChatStart): Promise<Chat>;
+  file?(chat: Chat): Promise<string>;
+  nest?(chat: Chat, parent: Chat): Promise<void>;
   stop(id: string): Promise<void>;
   rename(id: string, name: string): Promise<void>;
   archive(id: string): Promise<void>;
@@ -70,6 +80,8 @@ const ThreadSchema = z.looseObject({
   id: z.string(),
   name: z.string().nullish(),
   preview: z.string().nullish(),
+  parentThreadId: z.string().nullish(),
+  source: z.unknown().optional(),
   cwd: z.string().nullish(),
   model: z.string().nullish(),
   updatedAt: z.number().nullish(),
@@ -111,8 +123,10 @@ const iso = (time: number | null | undefined): string | undefined =>
 function chat(thread: Thread): Chat {
   const first = (thread.preview ?? "").trim().split("\n")[0] ?? "";
   const updated = iso(thread.recencyAt ?? thread.updatedAt);
+  const parentId = agentParentId({ parentThreadId: thread.parentThreadId ?? null, source: thread.source });
   return {
     id: thread.id,
+    ...(parentId ? { parentId } : {}),
     title: thread.name?.trim() || first.slice(0, TITLE_CHARS) || "Untitled chat",
     state: chatState(thread.status),
     ...(thread.cwd ? { folder: thread.cwd } : {}),
@@ -138,7 +152,15 @@ function message(raw: unknown): ChatMessage[] {
 
 /** The router's view of his chats, over the desktop client. */
 const attached = (pictures?: ChatPicture[]) => (pictures?.length ? { attachments: pictures } : {});
-export function createChats(client: ChatsClient): Chats {
+export function createChats(client: ChatsClient, workspace?: ChatWorkspace): Chats {
+  function placement() {
+    const snapshot = workspace?.snapshot();
+    if (!snapshot?.values || snapshot.revision === undefined)
+      throw Error(snapshot?.error || "Open the desktop workspace to organize its sidebar.");
+    const { values, revision } = snapshot;
+    return { storage: { getItem: (key: string) => values[key] ?? null }, revision };
+  }
+
   /** The last `limit` messages. A chat's history is mostly tool steps, so it reads on until it has them. */
   const read = async (id: string, limit: number) => {
     const messages: ChatMessage[] = [];
@@ -200,6 +222,40 @@ export function createChats(client: ChatsClient): Chats {
         ...(folder ? { folder } : {}),
         ...(model ? { model } : {}),
       };
+    },
+    async file(chat) {
+      const { storage, revision } = placement();
+      const memberships = readProjectChats(storage);
+      const { projects } = readProjects(storage);
+      if (Object.hasOwn(memberships, chat.id)) throw Error("This chat already has a project.");
+      if (!chat.folder?.startsWith("/")) throw Error("This chat has no recorded working folder.");
+      const folder = resolve(chat.folder);
+      const matches = projects.map(project => ({ project, root: resolve(project.cwd) }))
+        .filter(({ root }) => folder === root || folder.startsWith(root.endsWith(sep) ? root : root + sep))
+        .sort((a, b) => b.root.length - a.root.length);
+      const match = matches[0];
+      if (!match || match.root === matches[1]?.root) throw Error("No single existing project matches this folder.");
+      await workspace!.patch({ key: CHATS_KEY, baseRevision: revision, value: JSON.stringify({ ...memberships, [chat.id]: match.project.id }) });
+      return match.project.name;
+    },
+    async nest(chat, parent) {
+      const { storage, revision } = placement();
+      const groups = z.looseObject({ parents: z.record(z.string(), z.string().nullable()).optional() })
+        .parse(JSON.parse(storage.getItem(GROUPS_KEY) ?? "{}"));
+      const parents = groups.parents ?? {};
+      if (chat.id === parent.id) throw Error("A chat cannot control itself.");
+      const existing = Object.hasOwn(parents, chat.id) ? parents[chat.id] : chat.parentId;
+      if (existing === parent.id) return;
+      if (Object.hasOwn(parents, chat.id) || existing) throw Error("This chat already has an explicit placement or a different parent.");
+      const seen = new Set([chat.id]);
+      let ancestor: Chat | undefined = parent;
+      while (ancestor) {
+        if (seen.has(ancestor.id)) throw Error("This placement would create a cycle.");
+        seen.add(ancestor.id);
+        const above: string | null | undefined = Object.hasOwn(parents, ancestor.id) ? parents[ancestor.id] : ancestor.parentId;
+        ancestor = above ? (await read(above, 1)).chat : undefined;
+      }
+      await workspace!.patch({ key: GROUPS_KEY, baseRevision: revision, value: JSON.stringify({ ...groups, parents: { ...parents, [chat.id]: parent.id } }) });
     },
     async stop(id) {
       await client.interrupt(id, {});

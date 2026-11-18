@@ -5,7 +5,7 @@ import { readPins, savePins } from "@/lib/pins";
 import { readBookmarks, saveBookmarks } from "@/lib/bookmarks";
 import { appStorage } from "@/lib/projects";
 import { defaultFolds, readFolds, writeFolds, type SidebarFolds } from "@/lib/sidebar-folds";
-import { emptyGroups, readGroups, writeGroups, type ChatGroups } from "@/lib/chat-groups";
+import { GROUPS_KEY, emptyGroups, readGroups, writeGroups, type ChatGroups } from "@/lib/chat-groups";
 
 /** Which chats have an answer not yet read and which wait on a plan, kept on this computer. A plan the person has answered stops waiting.
  * `planTurns` remembers each chat's latest plan turn while the window is open. */
@@ -85,7 +85,15 @@ export function useChatGroups(onError: (message: string) => void, releaseOrder: 
   const chatGroupsRef = useRef(chatGroups);
   chatGroupsRef.current = chatGroups;
   useEffect(() => {
-    setChatGroups(readGroups(appStorage()));
+    const reload = () => {
+      const groups = readGroups(appStorage());
+      chatGroupsRef.current = groups;
+      setChatGroups(groups);
+    };
+    reload();
+    return window.elpisDesktop?.storage?.onChange?.(key => {
+      if (key === GROUPS_KEY) reload();
+    });
   }, []);
   const commitGroups = (next: ChatGroups) => {
     releaseOrder();
