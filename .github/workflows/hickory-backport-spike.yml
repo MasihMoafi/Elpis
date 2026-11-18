@@ -27,7 +27,7 @@ jobs:
         run: cargo check --locked --tests -p codex-network-proxy
       - name: Test DNS adapter against a local server
         working-directory: codex-rs
-        run: cargo test --locked -p rama-dns backport_tests
+        run: cargo test --locked -p codex-network-proxy hickory_backport_tests
       - name: Test proxy policies
         working-directory: codex-rs
         run: cargo test --locked -p codex-network-proxy

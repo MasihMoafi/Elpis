@@ -9,6 +9,8 @@ mod connect_policy;
 mod connection_lifecycle;
 mod credential_broker;
 mod environment_policy;
+#[cfg(test)]
+mod hickory_backport_tests;
 mod http_proxy;
 mod mitm;
 mod mitm_hook;

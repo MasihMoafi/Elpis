@@ -53,6 +53,7 @@ rustls-native-certs = { workspace = true }
 sha2 = { workspace = true }
 
 [dev-dependencies]
+rama-dns = { version = "=0.3.0-alpha.4" }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
 
