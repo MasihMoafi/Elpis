@@ -2,6 +2,34 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { fixture } = require('./parity-fixture.cts');
 
+test('a cached chat opens at its reading position on the first painted frame', async () => {
+  const chat = Array.from({ length: 25 }, (_, i) => [`turn-${i}`, `Question ${i}`, `Answer ${i}`]);
+  const f = await fixture({ chat });
+  try {
+    await f.open('chat-a');
+    await f.page.locator('.chat-scroll').evaluate((el: HTMLElement) => {
+      el.dispatchEvent(new WheelEvent('wheel'));
+      el.scrollTop = el.scrollHeight * 0.4;
+    });
+    await f.open('chat-b');
+    const frames = f.page.evaluate(() => new Promise<number[]>((resolve, reject) => {
+      const offsets: number[] = [], deadline = performance.now() + 4000;
+      const sample = () => {
+        const reading = document.querySelector<HTMLElement>('.chat-scroll[data-thread="chat-a"]');
+        if (reading?.querySelector('.turn')) offsets.push(reading.scrollTop);
+        if (offsets.length >= 20) resolve(offsets);
+        else if (performance.now() > deadline) reject(new Error('Chat did not paint'));
+        else requestAnimationFrame(sample);
+      };
+      sample();
+    }));
+    await f.open('chat-a');
+    const offsets = await frames;
+    assert.ok(offsets[0] > 0, 'the reader had scrolled into the conversation');
+    assert.ok(Math.max(...offsets) - Math.min(...offsets) <= 2, `Reading position shifted: ${offsets.join(', ')}`);
+  } finally { await f.close(); }
+});
+
 test('returning after the latest page advances never puts an old follow-up below new replies', async () => {
   let advanced = false;
   const f = await fixture({ running: true, chat: [['t4', 'Task', 'Before switch']], routes: {

@@ -206,7 +206,8 @@
 /* Long chats: a turn off screen skips style, layout and paint until it nears the view (the browser's own
  * virtualisation, so find, selection and scroll position keep working); the size it last had holds its place. */
 /* A reply's last line sits 44px above the next prompt, as in ChatGPT: its final reply's 40px (components/message-actions.css) and 4px here. */
-.turn { margin-bottom:4px; content-visibility:auto; contain-intrinsic-size:auto 320px; }
+/* Transcript defers old turns in large histories. Mounted turns need their real height on the first frame. */
+.turn { margin-bottom:4px; }
 .turn-time { text-align:center; color:var(--muted-foreground); font-size:var(--text-small, 13px); margin:28px 0 20px; }
 .turn .user-turn { margin-bottom:24px; }
 .message.agent { position:relative; margin-bottom:18px; }

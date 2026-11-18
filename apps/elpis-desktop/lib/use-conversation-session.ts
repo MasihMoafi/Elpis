@@ -26,7 +26,7 @@ export function useConversationSession() {
       element = scroll.current;
     if (!id || !element) return;
     // The turn at the top of the view, counted from the end, and how far down it sits. Pixels alone drift: turns off screen
-    // render at an estimated height until seen (content-visibility), and a chat reloads only its latest page (C5; 10 Nov).
+    // can be virtualized in long histories, and a chat reloads only its latest page.
     const box = element.getBoundingClientRect(),
       turns = [...element.querySelectorAll(".turn")],
       index = turns.findIndex(turn => turn.getBoundingClientRect().bottom > box.top),

@@ -41,8 +41,7 @@ export function useTranscriptPresentation({
   loading,
   view,
 }: Inputs) {
-  // A restored place stays on its element for a moment: turns near it finish rendering from their estimated height
-  // (content-visibility) over the next frames and would drag the view (C3, C5; 10 Nov: 700px after earlier messages).
+  // Keep the restored message in place while a long history fills in nearby virtualized turns.
   const pinned = useRef<{ element: Element; offset: number; until: number } | null>(null);
   const keep = (element: HTMLElement) => {
     const pin = pinned.current;

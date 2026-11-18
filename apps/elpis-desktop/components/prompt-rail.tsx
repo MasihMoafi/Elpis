@@ -208,7 +208,7 @@ export function PromptRail({
         setTarget(current => (current === target ? null : current));
         return true;
       };
-      // Offscreen turns use estimated heights (content-visibility). Rendering them changes
+      // Virtualized turns use estimated heights. Rendering them changes
       // the destination after the first scroll; finish positioning before releasing the target.
       const settle = () => {
         if (superseded() || !goTo(target)) return;
