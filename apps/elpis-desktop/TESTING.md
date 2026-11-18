@@ -8,7 +8,6 @@ Masih, 24 Oct: "make sure all the issues are fixed not just addressed and also e
 2. **Unit tests for the logic, property tests for its rules.** Every changed function has unit tests that assert behaviour, not lines walked or source text. Logic with a rule that must hold for any input (paging and ordering, list and tree building, journal and resume, archive then unarchive) gets property-based tests over many inputs and the edges: empty, one, boundary, Unicode.
 3. **F.I.R.S.T.** Tests are fast, independent (one failure never cascades), repeatable (wait for states, never for luck; a busy machine must not fail them), self-validating (pass or fail, no log reading) and written first.
 4. **The whole gate is green.** `npx tsc --noEmit -p .`, `npm test` (fast, bridge, desktop and every UI file) and every opt-in runtime test the change touches, run on the integrated commit before any install.
-5. **A fresh adversarial review.** Before any install, a reviewer that did not write the change (a fresh session, a different model where possible) reads the diff and its tests with the brief "assume it has bugs": the wrong thing built against his words, missed edge cases, tests that would not catch a regression, leftovers (debug code, unused helpers), personal data in logs, SPEC.md not updated. Its findings are fixed and re-tested.
 
 ## The gate
 
