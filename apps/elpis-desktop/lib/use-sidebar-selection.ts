@@ -21,7 +21,7 @@ export function useSidebarSelection({ selected, openSplit, openThread }: Inputs)
   ];
   const rowOf = (element: Element | null) => element?.closest<HTMLElement>(".thread-row")?.dataset.threadId ?? null;
   /** A click opens the chat; Ctrl+click marks or unmarks it; Shift+click marks the range from the last click, as in a file manager. */
-  function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>) {
+  function clickRow(thread: Thread, event: React.MouseEvent<HTMLButtonElement>, onOpen?: () => void) {
     if (event.altKey) {
       event.preventDefault();
       openSplit(thread);
@@ -47,6 +47,7 @@ export function useSidebarSelection({ selected, openSplit, openThread }: Inputs)
     } else {
       setMarked([]);
       markAnchor.current = thread.id;
+      onOpen?.();
       void openThread(thread);
     }
   }

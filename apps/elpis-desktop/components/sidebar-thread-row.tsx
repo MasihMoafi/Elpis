@@ -58,7 +58,7 @@ type Inputs = {
   markRead: ReturnType<typeof useChatAttention>["markRead"];
   prefetchThread: (thread: Thread) => void;
   openInNewTab: (thread: Thread) => void;
-  clickRow: (thread: Thread, event: React.MouseEvent<HTMLButtonElement>) => void;
+  clickRow: (thread: Thread, event: React.MouseEvent<HTMLButtonElement>, onOpen?: () => void) => void;
 };
 
 export function createSidebarThreadRow({
@@ -120,6 +120,7 @@ export function createSidebarThreadRow({
     const run = recordedRun ?? workflowRoots.get(thread.id),
       identity = run ? workflowCatalog.identities[run.id] : undefined,
       name = identity?.name ?? sidebarTitle(thread);
+    const active = selected?.id === thread.id && view === "chat" && (!run || model.selectedWorkflow?.id === run.id);
     const expandId = run ? `workflow:${run.id}` : thread.id,
       open = run ? workflowOpen(run) : branchOpen(thread.id);
     const state = run
@@ -179,7 +180,7 @@ export function createSidebarThreadRow({
             enabled={!searchTerm}
             render={
               <div
-                className={`thread-row${origin === "Love Spot" ? " love-chat accent-scope" : ""}${depth ? " child" : ""}${selected?.id === thread.id && view === "chat" ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`}
+                className={`thread-row${origin === "Love Spot" ? " love-chat accent-scope" : ""}${depth ? " child" : ""}${active ? " active" : ""}${marked.includes(thread.id) ? " selected" : ""}`}
                 data-thread-id={thread.id}
                 data-workflow-run={run?.id}
                 data-depth={depth}
@@ -253,7 +254,7 @@ export function createSidebarThreadRow({
                   openInNewTab(thread);
                 }
               }}
-              onClick={event => clickRow(thread, event)}
+              onClick={event => clickRow(thread, event, () => model.setOpenedRunId(run?.id))}
               title={name}
             >
               <>

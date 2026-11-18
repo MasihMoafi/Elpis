@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import type { MenuAction } from "@/components/action-menu";
 import { useChatListOrder } from "@/components/chat-groups";
 import { agentParentId } from "@/lib/agent-runs.mts";
@@ -89,7 +89,11 @@ export function useSidebarThreads({
   } = useWorkflowSidebar(ready && connected, threads, hidden, ended =>
     setExpanded(previous => ({ ...previous, ...Object.fromEntries(ended.map(run => [`workflow:${run.id}`, false])) })),
   );
-  const selectedWorkflow = selected ? workflowRoots.get(selected.id) : undefined;
+  const [openedRunId, setOpenedRunId] = useState<string>();
+  const selectedWorkflow = selected && (
+    workflowRuns.find(run => run.id === openedRunId && run.rootThreadId === selected.id && !run.chatHosted)
+    ?? workflowRoots.get(selected.id)
+  ) || undefined;
   const sidebarThreads = useMemo(
     () => [
       ...threads,
@@ -377,6 +381,7 @@ export function useSidebarThreads({
     workflowSteps,
     sidebarTitle,
     selectedWorkflow,
+    setOpenedRunId,
     sidebarThreads,
     nativeParents,
     treeParents,

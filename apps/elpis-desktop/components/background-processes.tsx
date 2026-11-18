@@ -48,7 +48,7 @@ export function BackgroundProcesses({ threadId, active, entries }: { threadId: s
   if (!state.jobs.length && !(state.unavailable && pending)) return null;
   const jobs = processView(state.jobs, entries);
   return (
-    <Disclosure className="activity-group mx-auto w-full max-w-[var(--transcript-width,740px)] px-4"
+    <Disclosure className="activity-group background-processes"
       onToggle={event => { if (event.target === event.currentTarget) setOpen(event.currentTarget.open); }}>
       <DisclosureSummary>
         {state.unavailable ? "Background process status unavailable" : `${jobs.length} background ${jobs.length === 1 ? "process" : "processes"} running`}

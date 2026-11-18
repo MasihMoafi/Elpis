@@ -81,6 +81,11 @@ test('actual exported renderer: chat, steering, interrupt, existing writable his
     await page.getByText('Background process status unavailable',{exact:true}).waitFor();
     backgroundFailure=0;
     await page.getByText('2 background processes running',{exact:true}).waitFor({timeout:8000});
+    const jobsSummary = page.getByText('2 background processes running', {exact:true});
+    const jobsColumn = await jobsSummary.locator('..').boundingBox();
+    const composerColumn = await page.locator('.composer').boundingBox();
+    assert.ok(jobsColumn && composerColumn && Math.abs(jobsColumn.x - composerColumn.x) <= 1
+      && Math.abs(jobsColumn.width - composerColumn.width) <= 1, 'background commands align with the composer');
     assert.equal(await page.getByText('building now',{exact:true}).count(),0, 'collapsed logs are not mounted');
     await page.getByText('2 background processes running',{exact:true}).click();
     await page.getByText('building now',{exact:true}).waitFor();
