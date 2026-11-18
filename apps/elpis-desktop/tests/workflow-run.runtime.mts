@@ -230,6 +230,8 @@ test('workflows run to the end from a chat whose person asked, with the Subagent
       const a = runFile(id).agents;
       return a.filter((x) => x.state === 'done').length === 2 && a.some((x) => x.label.startsWith('slow') && x.state === 'running');
     });
+    await until('the provider receives the request to interrupt', () =>
+      requests().some(r => r.kind === 'agent' && r.prompt === 'slow three SLOWONCE:15000'));
     c.ws.close();
     await killAll(); // the runtime dies with its engines, mid-turn
     assert.equal(runFile(id).status, 'running');
@@ -296,6 +298,8 @@ test('an update hands a running workflow to the newer runtime, which takes it wi
   const file = (): RunState & { owner?: { pid: number }; result: unknown } => JSON.parse(fs.readFileSync(path.join(runs2, id, 'run.json'), 'utf8'));
   await until('one agent done and the slow one working', () => { const a = file().agents; return a.some((x) => x.state === 'done') && a.some((x) => x.label.startsWith('hand two') && x.state === 'running'); });
   const owner = file().owner; assert.ok(owner); assert.equal(owner.pid, oldPid);
+  await until('the provider receives the request before handover', () =>
+    requests().some(r => r.kind === 'agent' && r.prompt === 'hand two SLOWONCE:15000'));
   await launch(newer); // the update
   await until('the newer runtime serves', () => state().pid && state().pid !== oldPid, 30_000);
   const served = Date.now(), newPid = state().pid;
