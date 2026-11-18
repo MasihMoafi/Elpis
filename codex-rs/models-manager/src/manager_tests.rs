@@ -440,7 +440,7 @@ async fn file_cache_refresh_ttl_renews_expired_entry_without_serving_it_stale() 
 async fn picker_retains_account_models_on_catalog_outage_but_reports_an_auth_failure() {
     let models = vec![remote_model("new-model", "New model", 0)];
     let endpoint = TestModelsEndpoint::new(vec![models.clone()]);
-    for code in ["404", "403"] {
+    for code in ["404", "404", "403"] {
         endpoint
             .responses
             .lock()
@@ -458,12 +458,21 @@ async fn picker_retains_account_models_on_catalog_outage_but_reports_an_auth_fai
                 },
             )));
     }
-    let manager = OpenAiModelsManager::new_without_cache(
-        endpoint,
-        Some(AuthManager::from_auth_for_testing(
-            CodexAuth::create_dummy_chatgpt_auth_for_testing(),
-        )),
-    );
+    let home = tempdir().expect("temp dir");
+    let cache = Arc::new(FileModelsCache::new(
+        home.path().join(MODEL_CACHE_FILE),
+        DEFAULT_MODEL_CACHE_TTL,
+    ));
+    let start = || {
+        OpenAiModelsManager::new_with_cache(
+            cache.clone(),
+            endpoint.clone(),
+            Some(AuthManager::from_auth_for_testing(
+                CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+            )),
+        )
+    };
+    let manager = start();
     manager
         .refresh_now(DEFAULT_HTTP_CLIENT_FACTORY)
         .await
@@ -472,6 +481,17 @@ async fn picker_retains_account_models_on_catalog_outage_but_reports_an_auth_fai
         .refresh_now(DEFAULT_HTTP_CLIENT_FACTORY)
         .await
         .expect("same-account catalog");
+    assert_eq!(manager.get_remote_models().await, models);
+    drop(manager);
+    let version = crate::client_version_to_whole();
+    let mut entry = cache.load(&version).await.unwrap().unwrap();
+    entry.fetched_at = Utc::now() - chrono::Duration::hours(1);
+    cache.store(&entry).await.unwrap();
+    let manager = start();
+    manager
+        .refresh_now(DEFAULT_HTTP_CLIENT_FACTORY)
+        .await
+        .expect("restart during outage");
     assert_eq!(manager.get_remote_models().await, models);
     assert!(
         manager

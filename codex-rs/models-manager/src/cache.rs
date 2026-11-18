@@ -33,6 +33,14 @@ pub trait ModelsCache: fmt::Debug + Send + Sync {
         client_version: &'a str,
     ) -> ModelsCacheFuture<'a, Result<Option<ModelsCacheEntry>, ModelsCacheError>>;
 
+    /// Loads the last catalog for this client version when the account endpoint is unavailable.
+    fn load_last_known<'a>(
+        &'a self,
+        client_version: &'a str,
+    ) -> ModelsCacheFuture<'a, Result<Option<ModelsCacheEntry>, ModelsCacheError>> {
+        self.load(client_version)
+    }
+
     /// Stores `entry`, replacing the snapshot for this cache implementation's lookup identity.
     ///
     /// The implementation derives that identity from its own configuration and the entry metadata.
@@ -141,6 +149,18 @@ impl FileModelsCache {
 }
 
 impl ModelsCache for FileModelsCache {
+    fn load_last_known<'a>(
+        &'a self,
+        client_version: &'a str,
+    ) -> ModelsCacheFuture<'a, Result<Option<ModelsCacheEntry>, ModelsCacheError>> {
+        Box::pin(async move {
+            Ok(load_file(&self.cache_path)
+                .await
+                .map_err(cache_error)?
+                .filter(|entry| entry.client_version.as_deref() == Some(client_version)))
+        })
+    }
+
     fn load<'a>(
         &'a self,
         client_version: &'a str,

@@ -258,6 +258,9 @@ jobs:
           cargo test --profile dev-small --locked -p codex-http-client --lib ipv4_only
           cargo test --profile dev-small --locked -p codex-websocket-client --lib ipv4_only
           cargo test --profile dev-small --locked -p codex-model-provider-info --lib
+      - name: Account model catalog survives a restart during an outage
+        working-directory: codex-rs
+        run: cargo test --profile dev-small --locked -p codex-models-manager --lib picker_retains_account_models
       - name: Build the runtime, Code Mode host, and sandbox
         id: runtime_build
         if: ${{ !cancelled() && inputs.verification != 'ui' }}

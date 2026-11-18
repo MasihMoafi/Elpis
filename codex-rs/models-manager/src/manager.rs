@@ -370,7 +370,7 @@ impl OpenAiModelsManager {
             remote_models: RwLock::new(ModelsCacheEntry {
                 fetched_at: Utc::now(),
                 etag: None,
-                client_version: Some(crate::client_version_to_whole()),
+                client_version: None,
                 identity: endpoint_client.identity(),
                 models: remote_models,
             }),
@@ -424,30 +424,9 @@ impl ModelsManager for OpenAiModelsManager {
         http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, Result<(), String>> {
         Box::pin(async move {
-            match self
-                .refresh_available_models(RefreshStrategy::Online, &http_client_factory)
+            self.refresh_available_models(RefreshStrategy::Online, &http_client_factory)
                 .await
-            {
-                Err(error)
-                    if matches!(error.http_status_code_value(), Some(404 | 429 | 500..=599))
-                        && matches!(self.catalog_source, CatalogSource::Default)
-                        && self.endpoint_client.uses_codex_backend().await =>
-                {
-                    // A temporary catalog failure can reuse this account's models.
-                    if self.try_load_cache().await {
-                        return Ok(());
-                    }
-                    let entry = self.remote_models.read().await;
-                    if entry.identity.is_some()
-                        && entry.identity == self.endpoint_client.identity()
-                        && !entry.models.is_empty()
-                    {
-                        return Ok(());
-                    }
-                    Err(error.to_string())
-                }
-                result => result.map_err(|err| err.to_string()),
-            }
+                .map_err(|err| err.to_string())
         })
     }
 
@@ -614,17 +593,17 @@ impl OpenAiModelsManager {
                 refresh_strategy,
                 RefreshStrategy::Offline | RefreshStrategy::OnlineIfUncached
             ) {
-                self.try_load_cache().await;
+                self.try_load_cache(false).await;
             }
             return Ok(());
         }
         match refresh_strategy {
             RefreshStrategy::Offline => {
-                self.try_load_cache().await;
+                self.try_load_cache(false).await;
                 Ok(())
             }
             RefreshStrategy::OnlineIfUncached => {
-                if self.try_load_cache().await {
+                if self.try_load_cache(false).await {
                     return Ok(());
                 }
                 self.fetch_and_update_models(http_client_factory).await
@@ -650,6 +629,25 @@ impl OpenAiModelsManager {
         {
             Ok(response) => response,
             Err(error) => {
+                if matches!(error.http_status_code_value(), Some(404 | 429 | 500..=599))
+                    && matches!(self.catalog_source, CatalogSource::Default)
+                    && self.endpoint_client.uses_codex_backend().await
+                    && request_identity.is_some()
+                    && request_identity == self.endpoint_client.identity()
+                {
+                    let current = self.remote_models.read().await;
+                    if current.client_version.as_ref() == Some(&client_version)
+                        && current.identity == request_identity
+                        && current.fetched_at != DateTime::<Utc>::MIN_UTC
+                        && !current.models.is_empty()
+                    {
+                        return Ok(());
+                    }
+                    drop(current);
+                    if self.try_load_cache(true).await {
+                        return Ok(());
+                    }
+                }
                 if matches!(&self.catalog_source, CatalogSource::ExplicitProvider(_)) {
                     {
                         let mut current = self.remote_models.write().await;
@@ -772,8 +770,8 @@ impl OpenAiModelsManager {
         true
     }
 
-    /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
-    async fn try_load_cache(&self) -> bool {
+    /// Load a matching catalog. Only an endpoint outage permits an expired snapshot.
+    async fn try_load_cache(&self, allow_expired: bool) -> bool {
         let Some(cache) = self.cache.as_ref() else {
             return false;
         };
@@ -793,7 +791,12 @@ impl OpenAiModelsManager {
                 return false;
             }
         }
-        let cache_entry = match cache.load(&client_version).await {
+        let lookup = if allow_expired {
+            cache.load_last_known(&client_version)
+        } else {
+            cache.load(&client_version)
+        };
+        let cache_entry = match lookup.await {
             Ok(Some(cache_entry)) => cache_entry,
             Ok(None) => {
                 info!("models cache: no usable cache entry");
