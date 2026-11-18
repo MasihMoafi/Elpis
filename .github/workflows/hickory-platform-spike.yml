@@ -1,0 +1,31 @@
+name: Hickory platform spike
+
+on:
+  push:
+    branches: [probe/elpis-hickory-platform]
+
+permissions:
+  contents: read
+
+jobs:
+  proxy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '2'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Install Rust
+        run: rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - name: Check proxy and tests
+        working-directory: codex-rs
+        run: cargo check --locked --tests -p codex-network-proxy
+      - name: Run DNS and proxy tests
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-network-proxy
