@@ -424,9 +424,30 @@ impl ModelsManager for OpenAiModelsManager {
         http_client_factory: HttpClientFactory,
     ) -> ModelsManagerFuture<'_, Result<(), String>> {
         Box::pin(async move {
-            self.refresh_available_models(RefreshStrategy::Online, &http_client_factory)
+            match self
+                .refresh_available_models(RefreshStrategy::Online, &http_client_factory)
                 .await
-                .map_err(|err| err.to_string())
+            {
+                Err(error)
+                    if matches!(error.http_status_code_value(), Some(404 | 429 | 500..=599))
+                        && matches!(self.catalog_source, CatalogSource::Default)
+                        && self.endpoint_client.uses_codex_backend().await =>
+                {
+                    // A temporary catalog failure can reuse this account's models.
+                    if self.try_load_cache().await {
+                        return Ok(());
+                    }
+                    let entry = self.remote_models.read().await;
+                    if entry.identity.is_some()
+                        && entry.identity == self.endpoint_client.identity()
+                        && !entry.models.is_empty()
+                    {
+                        return Ok(());
+                    }
+                    Err(error.to_string())
+                }
+                result => result.map_err(|err| err.to_string()),
+            }
         })
     }
 
