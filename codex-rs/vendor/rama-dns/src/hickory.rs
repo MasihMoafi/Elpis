@@ -116,11 +116,17 @@ impl HickoryDns {
     /// This will use `/etc/resolv.conf` on Unix OSes and the registry on Windows.
     pub fn try_new_system() -> Result<Self, OpaqueError> {
         tracing::trace!("try to create HickoryDns resolver using system config");
-        Ok(TokioResolver::builder_tokio()
+        let mut builder = TokioResolver::builder_tokio()
             .context("build async dns resolver with system conf")
             .inspect_err(|err| {
                 tracing::debug!("failed to create HickoryDns resolver using system config: {err:?}")
-            })?
+            })?;
+        preserve_legacy_limits(builder.options_mut());
+        #[cfg(windows)]
+        {
+            builder.options_mut().edns0 = false;
+        }
+        Ok(builder
             .build()
             .context("build async dns resolver with system conf")?
             .into())
@@ -170,6 +176,9 @@ impl HickoryDnsBuilder {
         );
         if let Some(options) = self.options {
             *resolver_builder.options_mut() = options;
+        } else {
+            preserve_legacy_limits(resolver_builder.options_mut());
+            resolver_builder.options_mut().edns0 = false;
         }
         HickoryDns(
             resolver_builder
@@ -178,6 +187,12 @@ impl HickoryDnsBuilder {
                 .map_err(|err| Arc::from(err.to_string())),
         )
     }
+}
+
+// Hickory 0.25 cached 32 responses and allowed 33 in-flight TCP requests.
+fn preserve_legacy_limits(options: &mut self::resolver::config::ResolverOpts) {
+    options.cache_size = 32;
+    options.max_active_requests = 33;
 }
 
 impl DnsResolver for HickoryDns {
