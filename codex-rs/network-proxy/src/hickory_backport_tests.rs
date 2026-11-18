@@ -16,11 +16,8 @@ mod backport_tests {
             loop {
                 let (len, peer) = socket.recv_from(&mut bytes).await.unwrap();
                 let query = &bytes[..len];
-                assert_eq!(
-                    &query[10..12],
-                    &[0, 0],
-                    "default lookup must not enable EDNS"
-                );
+                let edns = query[13..].starts_with(b"edns");
+                assert_eq!(&query[10..12], &[0, u8::from(edns)]);
                 let mut end = 12;
                 while query[end] != 0 {
                     end += 1 + query[end] as usize;
@@ -58,7 +55,7 @@ mod backport_tests {
         let nameserver =
             NameServerConfig::new(IpAddr::V4(Ipv4Addr::LOCALHOST), true, vec![connection]);
         let config = ResolverConfig::from_parts(None, vec![], vec![nameserver]);
-        let resolver = HickoryDns::builder().with_config(config).build();
+        let resolver = HickoryDns::builder().with_config(config.clone()).build();
         let domain = Domain::from_static("answer.test");
         assert_eq!(
             resolver.ipv4_lookup(domain.clone()).await.unwrap(),
@@ -77,6 +74,19 @@ mod backport_tests {
                 .ipv4_lookup(Domain::from_static("missing.test"))
                 .await
                 .is_err()
+        );
+        let mut options = rama_dns::hickory::resolver::config::ResolverOpts::default();
+        options.edns0 = true;
+        let resolver_with_edns = HickoryDns::builder()
+            .with_config(config)
+            .with_options(options)
+            .build();
+        assert_eq!(
+            resolver_with_edns
+                .ipv4_lookup(Domain::from_static("edns.test"))
+                .await
+                .unwrap(),
+            vec![Ipv4Addr::new(192, 0, 2, 5)]
         );
         server.abort();
     }

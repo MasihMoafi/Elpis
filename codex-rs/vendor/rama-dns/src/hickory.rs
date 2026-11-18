@@ -122,6 +122,7 @@ impl HickoryDns {
                 tracing::debug!("failed to create HickoryDns resolver using system config: {err:?}")
             })?;
         preserve_legacy_limits(builder.options_mut());
+        // Unix system settings already honor resolv.conf; Windows previously defaulted off.
         #[cfg(windows)]
         {
             builder.options_mut().edns0 = false;
