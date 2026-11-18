@@ -18,9 +18,9 @@ Status words: `todo`, `doing`, `done: <evidence>`, `his call` (waits for Masih).
 
 | # | Item | Acceptance check | Status |
 | --- | --- | --- | --- |
-| P1 | Every CI workflow passes on the release commit. | `gh run list --commit <sha>`: Lint, Security Check, Elpis desktop and Rust clippy all `success`. | done: on `ca4591a05` Lint, Security Check and Elpis desktop all pass on GitHub (12 Nov), and the push to `main` passed the repository's own full check. The four `hickory-proto` advisories are accepted with their reasons at Masih's word; upstream Codex carries the same four, and -0491 is reachable on Linux (a hostile DNS server can make the network proxy use about 18 MB for a moment). The Rust clippy workflow did not run: no Rust source changed |
+| P1 | Every CI workflow passes on the release commit. | Check the candidate commit’s Lint, Security Check, desktop and native results. | Open. The desktop gate and lint passed for the installed reader update. The dependency audit reports three unresolved advisories for hickory-proto 0.25.2. [Security Check](https://github.com/MasihMoafi/Elpis/actions/runs/44249946361) |
 | P2 | Each CI check has one owner. | `rg -l 'cargo audit' .github/workflows` names one file. | done: `security-check.yml` only (push, pull request, weekly) |
-| P3 | The installed app is the release commit, installed by `install-desktop.mts`. | `readlink ~/.local/bin/elpis-app` ends in the release commit. | done: `local-fixes-38ba44df5`; later commits change no app file |
+| P3 | The installed app matches the chosen release commit. | Compare the installed manifest and renderer receipt with the release SHA. | Open for release. The [project state](../../ES.md) records the locally installed candidate and its verification. |
 
 ## B. Router: the one assistant he talks to
 
