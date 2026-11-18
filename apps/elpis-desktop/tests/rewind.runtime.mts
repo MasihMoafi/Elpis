@@ -52,6 +52,8 @@ try {
     const send = async (prompt: string, reply: string) => { provider.actions.push(message(reply)); await composer.fill(prompt); await composer.press('Enter'); await page.getByText(reply, { exact: true }).waitFor({ timeout: 30000 }); await page.getByRole('button', { name: 'Stop response', exact: true }).waitFor({ state: 'hidden' }); };
     await page.getByText(`FIRST_REPLY_${mode}`, { exact: true }).waitFor(); await fs.writeFile(path.join(cwd, 'code.txt'), `before second ${mode}\n`);
     await send(`SECOND_${mode}`, `SECOND_REPLY_${mode}`); await fs.writeFile(path.join(cwd, 'code.txt'), `after second ${mode}\n`);
+    // Rewind belongs to earlier messages; the newest exchange offers Delete message.
+    await send(`THIRD_${mode}`, `THIRD_REPLY_${mode}`);
     await page.locator('.message.user', { hasText: `SECOND_${mode}` }).click({ button: 'right' }); await page.getByRole('menuitem', { name: 'Rewind to here', exact: true }).click();
     const dialog = page.getByRole('alertdialog'); await chooseOption(dialog.getByLabel('Restore', { exact: true }), { label: { both: 'Code and conversation', conversation: 'Conversation only', code: 'Code only' }[mode] });
     await dialog.getByRole('button', { name: 'Rewind', exact: true }).click(); await dialog.waitFor({ state: 'hidden' });

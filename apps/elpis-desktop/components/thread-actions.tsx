@@ -37,6 +37,7 @@ type Props = {
   onBookmark?: (thread: Thread) => void;
   /** Set by the rename shortcut; the rename dialog opens once. */
   renameRequested?: boolean;
+  tabActions?: MenuAction[];
   onRenameRequestHandled?: () => void;
   /** The trigger's name; the header's copy is "Chat actions", as in the ChatGPT app. */
   label?: string;
@@ -68,6 +69,7 @@ export function ThreadActions({
   bookmarked,
   onBookmark,
   renameRequested,
+  tabActions = [],
   onRenameRequestHandled,
   label,
   area,
@@ -213,7 +215,7 @@ export function ThreadActions({
       : undefined,
   ];
   const openItems = openIn.filter((action): action is MenuAction => !!action);
-  const actions = (
+  const chatActions = (
     many
       ? [organize, archive, remove]
       : [
@@ -290,6 +292,7 @@ export function ThreadActions({
           remove,
         ]
   ).filter((action): action is MenuAction => !!action);
+  const actions = [...tabActions, ...chatActions];
   return (
     <>
       <RightClickMenu

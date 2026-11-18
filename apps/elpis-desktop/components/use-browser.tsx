@@ -1,7 +1,8 @@
 "use client";
+import { tabCloseActions } from "@/components/tab-strip";
 
 import { lazy, useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink, RefreshCw, X, Copy, Link, Pencil, Volume2, VolumeX } from "lucide-react";
+import { ExternalLink, RefreshCw, Copy, Link, Pencil, Volume2, VolumeX } from "lucide-react";
 import { PinIcon, PlusIcon } from "@/components/elpis-icons";
 import type { MenuAction } from "@/components/action-menu";
 import type { BrowserCommand, BrowserState, BrowserTab, DesktopBrowser } from "@/lib/desktop";
@@ -169,16 +170,6 @@ export function browserTabActions(
       icon: muted ? <Volume2 size={16} /> : <VolumeX size={16} />,
       run: () => void batch("mute", !muted),
     },
-    {
-      id: "close",
-      label: many ? `Close ${selected.length} tabs` : "Close tab",
-      icon: <X size={16} />,
-      separated: true,
-      run: close,
-    },
-    ...(closeOthers ? [{ id: "closeOthers", label: "Close other tabs", icon: <X size={16} />, run: closeOthers }] : []),
-    ...(closeRight
-      ? [{ id: "closeRight", label: "Close tabs to the right", icon: <X size={16} />, run: closeRight }]
-      : []),
+    ...tabCloseActions(selected.length, close, closeOthers, closeRight),
   ];
 }

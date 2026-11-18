@@ -128,6 +128,7 @@ export function WorkspaceHeader({
         {view === "chat" && desktop && !split.pane ? (
           <TabStrip
             label="Chat tabs"
+            multiple
             activeKey={tabs.activeId}
             add={
               <Button

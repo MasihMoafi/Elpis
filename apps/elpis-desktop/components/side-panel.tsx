@@ -14,6 +14,7 @@ import { AlertDialog, AlertDialogClose, AlertDialogContent, AlertDialogDescripti
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { selectInOrder } from "@/lib/ordered-selection";
 import { Tab, TabStrip } from "@/components/tab-strip";
 import { BrowserPanel, browserTabActions, type Browser } from "@/components/browser-panel";
 import { TerminalView, type TerminalLaunch } from "@/components/terminal-view";
@@ -86,22 +87,9 @@ export function SidePanel({
     if (key) setSelection(previous => (previous.includes(key) ? previous : [key]));
   }, [browser.state?.activeId]);
   function selectPage(key: string, event: MouseEvent<HTMLButtonElement>) {
-    let next: string[];
-    if (event.shiftKey) {
-      const from = pageKeys.indexOf(anchor.current ?? (panel.shown?.kind === "browser" ? panel.shown.key : key)),
-        to = pageKeys.indexOf(key);
-      const range = pageKeys.slice(Math.min(Math.max(0, from), to), Math.max(from, to) + 1);
-      next = event.ctrlKey || event.metaKey ? [...new Set([...selected, ...range])] : range;
-    } else if (event.ctrlKey || event.metaKey) {
-      next =
-        selected.includes(key) && selected.length > 1
-          ? selected.filter(item => item !== key)
-          : [...new Set([...selected, key])];
-      anchor.current = key;
-    } else {
-      next = [key];
-      anchor.current = key;
-    }
+    const picked = selectInOrder(pageKeys, selected, anchor.current ?? panel.shown?.key ?? null, key, event);
+    const next = picked.length ? picked : [key];
+    if (!event.shiftKey) anchor.current = key;
     setSelection(next);
     panel.select(next.includes(key) ? key : next.at(-1)!);
   }

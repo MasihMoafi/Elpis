@@ -1,4 +1,7 @@
-import { cloneElement, type ReactElement, type ReactNode } from "react";
+import { selectInOrder } from "@/lib/ordered-selection";
+import { tabCloseActions } from "@/components/tab-strip";
+import type { MenuAction } from "@/components/action-menu";
+import { cloneElement, useRef, useState, type ReactElement, type ReactNode } from "react";
 import { ChatIcon } from "@/components/elpis-icons";
 import { ThreadActions } from "@/components/thread-actions";
 import { Tab } from "@/components/tab-strip";
@@ -36,10 +39,10 @@ type Inputs = {
   openSessionWindow: (thread: Thread) => void;
   setRenameRequest: (value: boolean) => void;
   showTab: (tab: ChatTab) => void;
-  closeChatTab: (id: string) => void;
+  closeChatTab: (id: string | string[]) => void;
 };
 
-export function createWorkspaceChatTabs({
+export function useWorkspaceChatTabs({
   model,
   placement,
   selected,
@@ -67,13 +70,18 @@ export function createWorkspaceChatTabs({
   showTab,
   closeChatTab,
 }: Inputs) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const anchor = useRef<string | null>(null);
+  const ids = tabs.tabs.map(tab => tab.id);
+  const selection = picked.includes(tabs.activeId) ? picked.filter(id => ids.includes(id)) : [tabs.activeId];
   const { sidebarTitle, workflowRoots, workflowSteps, workflowCatalog } = model;
   const { movingIds, organizationActions } = placement;
   /** A chat's menu around its tab or title: the "…" button and right-click on `area` share one list. The shown chat's is "Chat actions". */
-  const threadMenu = (thread: Thread, area: ReactElement, content: (menu: ReactNode) => ReactNode, shown: boolean) => {
+  const threadMenu = (thread: Thread, area: ReactElement, content: (menu: ReactNode) => ReactNode, shown: boolean, tabActions?: MenuAction[]) => {
     return (
       <ThreadActions
         {...(shown ? { label: "Chat actions" } : {})}
+        {...(tabActions ? { tabActions } : {})}
         thread={{ ...thread, name: sidebarTitle(thread) }}
         attention={attentionFor(thread.id)}
         {...(marked.includes(thread.id) ? { selection: chatsOf(marked) } : {})}
@@ -116,6 +124,12 @@ export function createWorkspaceChatTabs({
     const shown = tab.id === tabs.activeId,
       thread = tab.threadId ? (shown && selected?.id === tab.threadId ? selected : find(tab.threadId)) : undefined;
     const label = thread ? sidebarTitle(thread) : tab.threadId ? tab.title || "Chat" : "New chat";
+    const targets = selection.includes(tab.id) ? selection : [tab.id];
+    const others = ids.filter(id => !targets.includes(id));
+    const right = ids.slice(Math.max(...targets.map(id => ids.indexOf(id))) + 1);
+    const actions = tabCloseActions(targets.length, () => closeChatTab(targets),
+      others.length ? () => closeChatTab(others) : undefined,
+      right.length ? () => closeChatTab(right) : undefined);
     const identity = thread
       ? workflowCatalog.identities[workflowSteps.get(thread.id)?.runId ?? workflowRoots.get(thread.id)?.id ?? ""]
       : undefined;
@@ -126,16 +140,27 @@ export function createWorkspaceChatTabs({
         icon={identity ? <WorkflowMark identity={identity} neutral /> : <ChatIcon size={14} />}
         label={label}
         active={shown}
+        selected={selection.includes(tab.id)}
+        working={!!thread && model.sidebarState(thread) === "working"}
+        actions={actions}
         closeLabel={`Close ${label} tab`}
         trailing={shown}
-        {...(thread
+        {...(thread && targets.length === 1
           ? {
               wrap: (area: ReactElement, content: (menu: ReactNode) => ReactNode) =>
-                threadMenu(thread, area, content, shown),
+                threadMenu(thread, area, content, shown, actions),
             }
           : {})}
-        onSelect={() => showTab(tab)}
-        onClose={() => closeChatTab(tab.id)}
+        onSelect={event => {
+          const next = selectInOrder(ids, selection, anchor.current ?? tabs.activeId, tab.id, event);
+          if (!next.length) next.push(tab.id);
+          if (!event.shiftKey) anchor.current = tab.id;
+          setPicked(next);
+          const activeId = next.includes(tab.id) ? tab.id : next.at(-1);
+          const nextTab = tabs.tabs.find(item => item.id === activeId);
+          if (nextTab) showTab(nextTab);
+        }}
+        onClose={() => closeChatTab(targets)}
       />
     );
   }

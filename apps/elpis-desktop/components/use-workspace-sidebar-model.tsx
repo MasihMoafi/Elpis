@@ -16,7 +16,7 @@ import { createSidebarChatSelection } from "@/lib/sidebar-chat-selection";
 import { useWorkspaceOrder } from "@/lib/use-workspace-order";
 import { createWorkspaceCommandMenu } from "@/lib/workspace-command-menu";
 import { createSidebarAttention } from "@/lib/sidebar-attention";
-import { createWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
+import { useWorkspaceChatTabs } from "@/components/workspace-chat-tabs";
 import type { WorkspaceActions } from "./use-workspace-actions";
 
 export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
@@ -330,7 +330,7 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
     openInNewTab,
     clickRow,
   });
-  const { chatActions, chatTab } = createWorkspaceChatTabs({
+  const { chatActions, chatTab } = useWorkspaceChatTabs({
     model: sidebarModel,
     placement,
     selected,

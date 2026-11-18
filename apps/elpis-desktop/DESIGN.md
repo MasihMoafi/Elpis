@@ -22,7 +22,7 @@ The context chart uses bright, distinct category colours shared by its bar and l
 
 Usage stays in the sidebar and Usage & limits settings; do not duplicate it in the chat box.
 
-The selected chat has a thin outline following the shared angled row shape, without glow, shadow or persistent row shading. Its outline pulses only while working and stays steady with reduced motion.
+The current chat has the same two-pixel accent outline and angled corners in the sidebar and the tab strip. Its outline pulses only while working and stays steady with reduced motion. Other tabs in a multiple selection use a secondary fill.
 
 ### The chat thread follows the ChatGPT app
 Masih, 29 Oct: "map every style feature of chatgpt app into a clear spec that's reusable and make our design match it". [specs/chatgpt-chat-style.md](specs/chatgpt-chat-style.md) holds ChatGPT's measured thread values and maps its scale to the tokens above ("Shared scale"). The thread tokens `--thread-tertiary`, `--thread-hairline`, `--thread-inset`, `--thread-edge-fade` and `--shadow-xl` carry them; change a value there and in the spec together. The Elpis marks stay: your messages are bevelled cards with the gold right edge (Masih, 29 Oct: "That needs to come back.").

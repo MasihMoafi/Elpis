@@ -3,7 +3,23 @@
 import { useEffect, useRef, type MouseEvent, type ReactElement, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { RightClickMenu, type MenuAction } from "@/components/action-menu";
+import { MoreMenu, RightClickMenu, type MenuAction } from "@/components/action-menu";
+
+export function tabCloseActions(count: number, close: () => void, closeOthers?: () => void, closeRight?: () => void): MenuAction[] {
+  return [
+    {
+      id: "close",
+      label: count > 1 ? `Close ${count} tabs` : "Close tab",
+      icon: <X size={16} />,
+      separated: true,
+      run: close,
+    },
+    ...(closeOthers ? [{ id: "closeOthers", label: "Close other tabs", icon: <X size={16} />, run: closeOthers }] : []),
+    ...(closeRight
+      ? [{ id: "closeRight", label: "Close tabs to the right", icon: <X size={16} />, run: closeRight }]
+      : []),
+  ];
+}
 
 /** A row of tabs with a button after them (the strip scrolls to the shown tab; the button stays). The one tab style of
  * the top strip (chats) and the side panel (terminals and pages), as in the ChatGPT app and Obsidian. */
@@ -51,6 +67,7 @@ export function Tab({
   title,
   active,
   selected = active,
+  working = false,
   chat,
   preview,
   closeLabel,
@@ -66,6 +83,7 @@ export function Tab({
   title?: string;
   active: boolean;
   selected?: boolean;
+  working?: boolean;
   chat?: boolean;
   /** A tab the next one replaces (a file previewed from the tree): drawn in italics. */ preview?: boolean;
   closeLabel: string;
@@ -79,6 +97,7 @@ export function Tab({
   const area = (
     <div
       data-selected={selected || undefined}
+      data-working={working || undefined}
       onContextMenuCapture={onContextMenu}
       className={`task-tab${chat ? " chat-tab" : ""}${preview ? " preview" : ""}${active ? " active" : ""}`}
     />
@@ -106,7 +125,7 @@ export function Tab({
     wrap(area, content)
   ) : (
     <RightClickMenu actions={actions ?? []} area={area}>
-      {content(null)}
+      {content(trailing && actions?.length ? <MoreMenu actions={actions} label="Tab actions" title="Tab actions" /> : null)}
     </RightClickMenu>
   );
 }

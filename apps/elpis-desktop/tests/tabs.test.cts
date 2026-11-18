@@ -101,6 +101,35 @@ test('middle-click on a sidebar chat opens it in its own tab; an open chat bring
   await eventually(async () => assert.deepEqual(await names(), ['Fix the parser', 'Plan the release']), 'a plain click replaces only the shown tab');
 }));
 
+test('chat tabs toggle, extend and add ranges; close others keeps the group without deleting chats', () => fixture(async ({ page, link, strip, names, posts }) => {
+  await link('chat-one').click();
+  await link('chat-two').click({ button: 'middle' });
+  await link('chat-three').click({ button: 'middle' });
+  await page.getByRole('button', { name: 'New chat tab', exact: true }).click();
+  const [first, second, third, fourth] = await names();
+  const tab = (name: string) => strip.getByRole('tab', { name, exact: true });
+  await tab(first!).click();
+  await tab(third!).click({ modifiers: ['Control'] });
+  assert.equal(await strip.getByRole('tab', { selected: true }).count(), 2);
+  await tab(fourth!).click({ modifiers: ['Control', 'Shift'] });
+  assert.equal(await strip.getByRole('tab', { selected: true }).count(), 3);
+  await tab(third!).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Close other tabs', exact: true }).click();
+  assert.deepEqual(await names(), [first, third, fourth]);
+  await tab(first!).click();
+  await tab(third!).click({ modifiers: ['Shift'] });
+  assert.equal(await strip.getByRole('tab', { selected: true }).count(), 2);
+  await tab(fourth!).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Close other tabs', exact: true }).click();
+  assert.deepEqual(await names(), [fourth]);
+  await page.reload();
+  await tab(fourth!).waitFor();
+  assert.deepEqual(await names(), [fourth]);
+  await link('chat-two').click();
+  await tab(second!).waitFor();
+  assert.ok(!posts.some(url => /archive|delete/.test(url)));
+}));
+
 test('open tabs and the shown one are kept across a restart; drafts of a chat come back with its tab', () => fixture(async ({ page, link, names, shown, composer, reads }) => {
   await link('chat-one').click();
   await link('chat-two').click({ button: 'middle' });

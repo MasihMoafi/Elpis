@@ -129,14 +129,14 @@ export function createChatNavigation({
     setCwd("");
     openNewChat(tabDraftKey(tab));
   }
-  function closeChatTab(id: string) {
-    const before = tabsRef.current,
-      next = closeTab(before, id);
-    if (next === before) return;
-    const closed = before.tabs.find(tab => tab.id === id);
-    if (closed) browser.closeSession(closed.threadId ?? `draft:${closed.id}`);
+  function closeChatTab(ids: string | string[]) {
+    const before = tabsRef.current, closing = new Set(typeof ids === "string" ? [ids] : ids);
+    const closed = before.tabs.filter(tab => closing.has(tab.id));
+    if (!closed.length) return;
+    const next = closed.reduce((state, tab) => closeTab(state, tab.id), before);
+    for (const tab of closed) browser.closeSession(tab.threadId ?? `draft:${tab.id}`);
     updateTabs(next);
-    if (id === before.activeId) openTab(activeTab(next)!);
+    if (next.activeId !== before.activeId) openTab(activeTab(next)!);
   }
   function cycleTabs(delta: number) {
     const next = cycle(tabsRef.current, delta);

@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { selectInOrder } from "./ordered-selection";
 import type React from "react";
 import type { Thread } from "@/lib/api";
 import { useSteadyRowList } from "@/lib/whole-rows";
@@ -34,15 +35,10 @@ export function useSidebarSelection({ selected, openSplit, openThread }: Inputs)
           .filter((id): id is string => !!id),
       ),
     ];
-    if (event.ctrlKey || event.metaKey) {
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
       const base = marked.length ? marked : selected && ids.includes(selected.id) ? [selected.id] : [];
-      setMarked(base.includes(thread.id) ? base.filter(id => id !== thread.id) : [...base, thread.id]);
-      markAnchor.current = thread.id;
-    } else if (event.shiftKey) {
-      const to = ids.indexOf(thread.id),
-        at = ids.indexOf(markAnchor.current ?? selected?.id ?? thread.id),
-        from = at < 0 ? to : at;
-      setMarked(ids.slice(Math.min(from, to), Math.max(from, to) + 1));
+      setMarked(selectInOrder(ids, base, markAnchor.current ?? selected?.id ?? null, thread.id, event));
+      if (!event.shiftKey) markAnchor.current = thread.id;
       event.currentTarget.focus();
     } else {
       setMarked([]);
