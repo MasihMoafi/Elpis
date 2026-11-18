@@ -1,0 +1,37 @@
+name: DNS adapter compatibility
+
+on:
+  push:
+    paths:
+      - 'codex-rs/vendor/rama-dns/**'
+      - 'codex-rs/network-proxy/**'
+      - '.github/workflows/dns-adapter.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  proxy:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '2'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
+      - name: Install Rust
+        run: rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - name: Test DNS resolution and proxy policies
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-network-proxy
