@@ -464,7 +464,8 @@ export class MotherAgent {
     const { enabled, threadId } = this.file.read();
     if (!enabled || !threadId) throw new BridgeError("Turn Elpis on in Settings → Configuration to tidy your chats.", 409);
     return this.send(threadId, {
-      text: "Tidy my chats. Archive temporary or unwanted chats. Leave my chat named mother alone. File clear project matches, group task chats under the chat directing them, and tell me what changed and what needs my attention.",
+      text: "Tidy my chats. Archive temporary or unwanted chats. Leave my chat named mother alone. " +
+        "File clear project matches, group task chats under the chat directing them, and tell me what changed and what needs my attention.",
     });
   }
 

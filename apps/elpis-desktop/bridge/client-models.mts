@@ -131,21 +131,16 @@ export function internal_modelList(
 ) {
   const request = (input: Record<string, unknown>) =>
     internal_rpc(this, clientState, "model/list", input) as Promise<EngineModelList>;
-  if (params.cursor || params.limit !== 100 || params.includeHidden !== false)
-    return request(refresh ? { ...params, refresh } : params);
-  if (refresh) {
-    const pending = request({ ...params, refresh });
-    // A failed refresh is the menu's error; the last good list stays for the other readers.
-    pending.then(
-      () => {
-        clientState.catalog = pending;
-      },
-      () => {},
-    );
-    return pending;
-  }
-  if (!clientState.catalog) {
-    const pending = request(params);
+  const read = () => refresh
+    ? request({ ...params, refresh }).catch((error: unknown) => {
+        // The engine can have a newer account catalog even while the provider endpoint is unavailable.
+        if (!(error instanceof Error) || !/unexpected status (?:404|429|5\d\d)\b/i.test(error.message)) throw error;
+        return request(params);
+      })
+    : request(params);
+  if (params.cursor || params.limit !== 100 || params.includeHidden !== false) return read();
+  if (refresh || !clientState.catalog) {
+    const pending = read();
     clientState.catalog = pending;
     pending.catch(() => {
       if (clientState.catalog === pending) clientState.catalog = null;

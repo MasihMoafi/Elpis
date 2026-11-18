@@ -245,6 +245,28 @@ test("Subagents permits optional delegation and refreshes its policy on the next
   }
 });
 
+test("a missing online catalog rereads native models while authentication failures remain visible", async () => {
+  const { client, socket } = fixture();
+  let models = ["previous"], status = 404;
+  const original = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw);
+    if (request.method !== "model/list") return original.call(socket, raw);
+    const reply = request.params.refresh
+      ? { error: { code: -32603, message: `Could not fetch the model list from openai: unexpected status ${status}` } }
+      : { result: { data: models.map(model => ({ model })), nextCursor: null } };
+    queueMicrotask(() => socket.emit("message", JSON.stringify({ id: request.id, ...reply })));
+  };
+  try {
+    assert.deepEqual((await client.models()).data.map(item => item.model), ["previous"]);
+    models = ["new-sol", "new-astra"];
+    assert.deepEqual((await client.models({ refresh: true })).data.map(item => item.model), models);
+    assert.deepEqual((await client.models()).data.map(item => item.model), models);
+    status = 403;
+    await assert.rejects(client.models({ refresh: true }), /403/);
+  } finally { client.close(); }
+});
+
 test("idle account usage and concurrent desktop readers share one model list; account changes refresh it", async () => {
   const { client, socket } = fixture();
   const reads = () => socket.sent.filter(request => request.method === "model/list").length;

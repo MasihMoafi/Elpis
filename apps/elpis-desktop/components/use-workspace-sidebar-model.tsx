@@ -174,7 +174,7 @@ export function useWorkspaceSidebarModel(previous: WorkspaceActions) {
   // His pinned agent offers a tidy when Recents fills up with chats at rest (lib/sidebar-fill.ts).
   const loose = recentChats.filter(thread => !["working", "waiting"].includes(agentState(thread))).length;
   // Before his chats have loaded the list is empty, and that is no report: it would wipe what she already said.
-  const loaded = threads.length > 0;
+  const loaded = threads.length > 0 && !search.searchTerm;
   useEffect(() => {
     if (loaded) reportSidebar(loose);
   }, [loaded, loose]);
