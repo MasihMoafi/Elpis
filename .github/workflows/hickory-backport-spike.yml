@@ -1,0 +1,30 @@
+name: Hickory backport spike
+
+on:
+  push:
+    branches: [fix/elpis-hickory-backport]
+
+permissions:
+  contents: read
+
+jobs:
+  proxy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CODEX_SKIP_BWRAP_BUILD: '1'
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '2'
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Install build dependencies and Rust
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
+          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+      - name: Check proxy and tests
+        working-directory: codex-rs
+        run: cargo check --locked --tests -p codex-network-proxy
+      - name: Test proxy policies
+        working-directory: codex-rs
+        run: cargo test --locked -p codex-network-proxy
