@@ -656,6 +656,7 @@ inherits = "test"
 opt-level = 0
 
 [patch.crates-io]
+# Temporary Hickory backport; remove when the Rama proxy can use an upstream fixed release.
 rama-dns = { path = "vendor/rama-dns" }
 # Uncomment to debug local changes.
 # ratatui = { path = "../../ratatui" }
