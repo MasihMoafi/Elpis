@@ -77,15 +77,13 @@ def clip(*_): return PCM()
   });
   t.after(() => reader.close());
   assert.equal(reader.available(), true);
-  const warming = reader.warm();
+  const retained = reader.warm().then(() => true, () => false);
   const early = new AbortController();
   const discarded = reader.stream("Discard this.", "qwen_aiden", early.signal);
-  const checked = Promise.all([
-    warming,
-    assert.rejects(discarded, /Reading was stopped/).finally(() => fs.writeFile(path.join(root, "worker/ready"), "")),
-  ]);
   early.abort();
-  await checked;
+  await assert.rejects(discarded, /Reading was stopped/);
+  await fs.writeFile(path.join(root, "worker/ready"), "");
+  assert.equal(await retained, true, "stopping one read must preserve the chat's model load");
   const controller = new AbortController(), started = Date.now();
   const stream = await reader.stream("Hello.", "qwen_aiden", controller.signal);
   const first = await new Promise<Buffer>((resolve, reject) => { stream.once("data", resolve); stream.once("error", reject); });
