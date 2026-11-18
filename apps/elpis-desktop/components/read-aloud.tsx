@@ -10,6 +10,7 @@ import { api, sessionReady } from "@/lib/api";
 import { READ_ALOUD_AUDIO } from "@/lib/love-spot-audio";
 import { errorText } from "@/lib/error-text.mts";
 import { playStreamingAudio } from "@/lib/streaming-audio";
+import { appStorage } from "@/lib/projects";
 const SpeechContext = createContext<Speech | null>(null);
 export const useReadAloud = () => useContext(SpeechContext);
 
@@ -29,41 +30,52 @@ export function ReadAloud({
 }) {
   const [active, setActive] = useState<string | null>(null);
   const [error, setError] = useState<Speech["error"]>(null);
-  const [speed, updateSpeed] = useState(() => {
-    try { const value = Number(localStorage.getItem("elpis-read-aloud-speed")); return value >= 0.5 && value <= 2 ? value : 1; } catch { return 1; }
+  const source = useReadAloudSource();
+  const speedKey = "elpis-read-aloud-speed";
+  const [chosenSpeed, updateSpeed] = useState<number | null>(() => {
+    try {
+      const value = Number(appStorage().getItem(speedKey) ?? localStorage.getItem(speedKey));
+      return value >= 0.5 && value <= 2 ? value : null;
+    } catch { return null; }
   });
+  const speed = chosenSpeed ?? source.preferredSpeed ?? 1;
   const speedRef = useRef(speed);
+  speedRef.current = speed;
   function setSpeed(value: number) {
     if (!Number.isFinite(value) || value < 0.5 || value > 2) return;
     speedRef.current = value;
     updateSpeed(value);
-    if (local.current) local.current.audio.playbackRate = value;
+    if (local.current) local.current.audio.playbackRate = value / local.current.generatedSpeed;
     if (call.current?.audio) call.current.audio.playbackRate = value;
-    try { localStorage.setItem("elpis-read-aloud-speed", String(value)); } catch { /* Applies for this session. */ }
+    try { appStorage().setItem(speedKey, String(value)); } catch { /* Applies for this session. */ }
   }
   const call = useRef<Playback | null>(null);
-  const source = useReadAloudSource(),
-    local = useRef<{ controller: AbortController; audio: HTMLAudioElement } | null>(null);
+  const local = useRef<{ controller: AbortController; audio: HTMLAudioElement; generatedSpeed: number } | null>(null);
   /** One live reading: text may keep arriving while earlier pieces play; the next pieces are voiced ahead of playback. */
   function openLive(id: string, literal = false): LiveSpeech {
     stop();
     setError(null);
     const controller = new AbortController(),
       audio = new Audio(),
-      mine = { controller, audio };
+      mine = { controller, audio, generatedSpeed: 1 };
     local.current = mine;
     setActive(id);
     audio.preservesPitch = true;
     audio.playbackRate = speedRef.current;
     const streams = new Map<string, Promise<Response>>();
+    const generatedSpeeds = new Map<string, number>();
     const voice = async (piece: string) => {
       if (source.streaming) {
-        const result = await api<{ url: string }>("/read-aloud/prepare", { text: piece, ...(source.revision ? { revision: source.revision } : {}) });
+        const generatedSpeed = source.nativeTempo ? speedRef.current : 1;
+        const result = await api<{ url: string }>("/read-aloud/prepare", {
+          text: piece, ...(source.revision ? { revision: source.revision } : {}), ...(source.nativeTempo ? { speed: generatedSpeed } : {}),
+        });
         if (!/^\/api\/read-aloud\/audio\/[a-f0-9-]{36}$/.test(result.url)) throw new Error("The local reader returned an invalid audio address.");
         if (!controller.signal.aborted) {
           const stream = fetch(result.url, { signal: controller.signal });
           stream.catch(() => {});
           streams.set(result.url, stream);
+          generatedSpeeds.set(result.url, generatedSpeed);
         }
         return result.url;
       }
@@ -108,10 +120,12 @@ export function ReadAloud({
           prepare();
           const url = await voiced[played]!;
           if (controller.signal.aborted || local.current !== mine) { if (url.startsWith("blob:")) URL.revokeObjectURL(url); break; }
-          audio.playbackRate = speedRef.current;
+          mine.generatedSpeed = generatedSpeeds.get(url) ?? 1;
+          audio.playbackRate = speedRef.current / mine.generatedSpeed;
           if (source.streaming) {
             await playStreamingAudio(audio, url, controller.signal, streams.get(url));
             streams.delete(url);
+            generatedSpeeds.delete(url);
           }
           else {
             audio.src = url;

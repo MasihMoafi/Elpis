@@ -117,15 +117,16 @@ export function selectedPieces(text: string): string[] {
 }
 
 /** The chosen read-aloud source; refresh after Settings changes it. */
+type ReaderStatus = { available: boolean; revision?: string; streaming?: boolean; nativeTempo?: boolean; preferredSpeed?: number };
 export function useReadAloudSource() {
-  const [source, setSource] = useState<{ available: boolean; revision?: string; streaming?: boolean }>({ available: false });
+  const [source, setSource] = useState<ReaderStatus>({ available: false });
   useEffect(() => {
     let active = true,
       request = 0;
     const load = () => {
       const current = ++request;
       void sessionReady()
-        .then(() => api<{ available: boolean; revision?: string; streaming?: boolean }>("/read-aloud"))
+        .then(() => api<ReaderStatus>("/read-aloud"))
         .then(
           result => {
             if (active && current === request) setSource(result);

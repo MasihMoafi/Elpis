@@ -4,27 +4,30 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createReadAloudProvider } from "./read-aloud-provider.mts";
-import { createQwen } from "./qwen.mts";
+import { createReaderWorker } from "./qwen.mts";
 import { Readable } from "node:stream";
 
 test("streaming reads are single-use and a changed source cannot play prepared audio", async t => {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "speech-stream-"));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
-  const spoken: string[] = [];
+  const spoken: { text: string; speed?: number | undefined }[] = [];
   const reader = createReadAloudProvider({ home, kokoro: {
     available: () => true, voices: async () => ["qwen_aiden"], canStream: () => true,
+    nativeTempo: true, preferredSpeed: 1.3,
     speak: async () => { throw Error("A streaming voice must not wait for a complete file"); },
-    stream: async text => { spoken.push(text); return Readable.from([Buffer.from("audio")]); },
+    stream: async (text, _voice, _signal, speed) => { spoken.push({ text, speed }); return Readable.from([Buffer.from("audio")]); },
   }, provider: async () => { throw Error("No network provider should be called"); } });
   const status = await reader.status();
   assert.ok("streaming" in status);
   assert.equal(status.streaming, true);
-  const prepared = await reader.prepare({ text: "First sentence." });
+  assert.equal(status.preferredSpeed, 1.3);
+  await assert.rejects(reader.prepare({ text: "Invalid speed.", speed: 0 }), /speed/);
+  const prepared = await reader.prepare({ text: "First sentence.", speed: 1.3 });
   assert.equal(spoken.length, 0, "prefetch does not load the model or start unused synthesis");
   const id = prepared.url.split("/").at(-1)!;
   const stream = await reader.stream(id, new AbortController().signal);
   for await (const _ of stream) { /* drain */ }
-  assert.deepEqual(spoken, ["First sentence."]);
+  assert.deepEqual(spoken, [{ text: "First sentence.", speed: 1.3 }]);
   const unused = await reader.prepare({ text: "A cancelled prefetch." });
   const unusedId = unused.url.split("/").at(-1)!;
   reader.release(unusedId);
@@ -33,7 +36,7 @@ test("streaming reads are single-use and a changed source cannot play prepared a
   const stale = await reader.prepare({ text: "Obsolete." });
   await reader.save({ source: "local", model: null, voice: "qwen_aiden" });
   await assert.rejects(reader.stream(stale.url.split("/").at(-1)!, new AbortController().signal), /changed/);
-  assert.deepEqual(spoken, ["First sentence."]);
+  assert.equal(spoken.length, 1);
 });
 
 test("Qwen streams audio before synthesis ends and Stop cancels generation while retaining the warm model", async t => {
@@ -59,7 +62,7 @@ def load():
     def tobytes(self): return b'\\x01\\x00' * 2400
 def clip(*_): return PCM()
 `);
-  const reader = createQwen({
+  const reader = createReaderWorker({
     ...process.env, ELPIS_READ_ALOUD_ROOT: root, READ_ALOUD_QWEN_PYTHON: "/usr/bin/python3",
     READ_ALOUD_QWEN_MODEL: path.join(root, "model"), QWEN_TEST_PID: path.join(root, "pid"),
   });
@@ -88,7 +91,7 @@ def clip(*_): return PCM()
 });
 
 test("a missing Qwen installation rejects before starting a subprocess", async () => {
-  const reader = createQwen({ HOME: "/nonexistent-elpis-speech-home" });
+  const reader = createReaderWorker({ HOME: "/nonexistent-elpis-speech-home" });
   assert.equal(reader.available(), false);
   await assert.rejects(reader.stream("Hello.", null), /Install/);
   reader.close();

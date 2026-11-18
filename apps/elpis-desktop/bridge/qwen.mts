@@ -25,13 +25,15 @@ export function qwenPaths(env: NodeJS.ProcessEnv = process.env) {
 }
 
 /** The same installed GPU model and generator as Read Aloud; no model download or CPU fallback. */
-export function createQwen(env: NodeJS.ProcessEnv = process.env) {
+export function createReaderWorker(env: NodeJS.ProcessEnv = process.env, kokoro?: { python: string; voices: string[]; defaultVoice: string }) {
   const paths = qwenPaths(env);
+  const voices = kokoro?.voices ?? VOICES;
+  const defaultVoice = kokoro?.defaultVoice ?? "qwen_aiden";
   let child: ChildProcessWithoutNullStreams | null = null;
   let ready: Promise<void> | null = null;
   let idle: ReturnType<typeof setTimeout> | undefined;
   const jobs = new Map<string, { audio: PassThrough }>();
-  const available = () => [
+  const available = () => kokoro ? !!paths.worker && existsSync(kokoro.python) : [
     paths.python, path.join(paths.worker, "synthesis.py"), path.join(paths.model, "model.safetensors"),
     path.join(paths.model, "speech_tokenizer/model.safetensors"),
   ].every(file => existsSync(file));
@@ -46,19 +48,23 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
   function start() {
     clearTimeout(idle);
     if (ready) return ready;
-    const running = spawn(paths.python, ["-u", fileURLToPath(new URL("./qwen-worker.py", import.meta.url)), paths.worker], {
-      env: { ...env, READ_ALOUD_QWEN_MODEL: paths.model, HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1", OMP_NUM_THREADS: "2" },
+    const running = spawn(kokoro?.python ?? paths.python, ["-u", fileURLToPath(new URL("./qwen-worker.py", import.meta.url)), paths.worker, kokoro ? "kokoro" : "qwen"], {
+      env: { ...env, READ_ALOUD_VOICE: defaultVoice, READ_ALOUD_QWEN_MODEL: paths.model, HF_HUB_OFFLINE: "1", TRANSFORMERS_OFFLINE: "1", OMP_NUM_THREADS: "2" },
       stdio: ["pipe", "pipe", "pipe"],
     });
     child = running;
     running.stderr.resume();
     ready = new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => { reject(new BridgeError("The Qwen voice took too long to load.", 503)); close(); }, 120_000);
+      const timer = setTimeout(() => {
+        reject(new BridgeError("The local voice took too long to load.", 503));
+        if (child === running) close();
+      }, 120_000);
       let pending = "";
-      running.once("error", () => { clearTimeout(timer); reject(new BridgeError("The Qwen voice could not start.", 503)); if (child === running) close(); });
-      running.once("exit", () => { clearTimeout(timer); reject(new BridgeError("The Qwen voice stopped.", 503)); if (child === running) close(); });
+      running.once("error", () => { clearTimeout(timer); reject(new BridgeError("The local voice could not start.", 503)); if (child === running) close(); });
+      running.once("exit", () => { clearTimeout(timer); reject(new BridgeError("The local voice stopped.", 503)); if (child === running) close(); });
       running.stdin.on("error", () => { if (child === running) close(); });
       running.stdout.on("data", (chunk: Buffer) => {
+        if (child !== running) return;
         pending += chunk.toString();
         if (pending.length > 4 * 1024 * 1024) { close(); return; }
         let end;
@@ -69,7 +75,7 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
           if (message.ready !== undefined) {
             clearTimeout(timer);
             if (message.ready) resolve();
-            else { reject(new BridgeError(message.error ?? "Qwen could not start.", 503)); close(); }
+            else { reject(new BridgeError(message.error ?? "The local voice could not start.", 503)); close(); }
             continue;
           }
           const job = message.id ? jobs.get(message.id) : undefined;
@@ -90,12 +96,12 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
   }
   return {
     available,
-    voices: () => Promise.resolve(VOICES),
-    defaultVoice: "qwen_aiden",
-    async stream(text: string, voice: string | null, signal?: AbortSignal) {
+    voices: () => Promise.resolve(voices),
+    defaultVoice,
+    async stream(text: string, voice: string | null, signal?: AbortSignal, speed = 1) {
       if (!text.trim() || text.length > 4000) throw new BridgeError("Read aloud takes up to 4000 characters at a time.");
-      if (!available()) throw new BridgeError("Install the local GPU Qwen reader before using this voice.", 503);
-      if (voice && !VOICES.includes(voice)) throw new BridgeError("Choose an installed Qwen voice.");
+      if (!available()) throw new BridgeError("Install the local GPU reader before using this voice.", 503);
+      if (voice && !voices.includes(voice)) throw new BridgeError("Choose an installed voice.");
       if (signal?.aborted) throw new BridgeError("Reading was stopped.", 499);
       const loading = () => { if (!jobs.size) close(); };
       signal?.addEventListener("abort", loading, { once: true });
@@ -112,7 +118,7 @@ export function createQwen(env: NodeJS.ProcessEnv = process.env) {
       };
       signal?.addEventListener("abort", cancel, { once: true });
       audio.once("close", () => signal?.removeEventListener("abort", cancel));
-      child.stdin.write(`${JSON.stringify({ id, text, voice: voice ?? "qwen_aiden" })}\n`);
+      child.stdin.write(`${JSON.stringify({ id, text, voice: voice ?? defaultVoice, speed })}\n`);
       return audio;
     },
     close,

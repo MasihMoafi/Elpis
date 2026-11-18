@@ -66,14 +66,16 @@ export function createReadAloudProvider({
     speak: (text: string, voice: string | null, signal?: AbortSignal) => Promise<Buffer>;
     format?: (voice: string | null) => string;
     canStream?: (voice: string | null) => boolean;
-    stream?: (text: string, voice: string | null, signal?: AbortSignal) => Promise<Readable>;
+    stream?: (text: string, voice: string | null, signal?: AbortSignal, speed?: number) => Promise<Readable>;
+    nativeTempo?: boolean;
+    preferredSpeed?: number;
   };
   provider: (source: string) => Promise<{ baseUrl: string; key: string }>;
   fetchImpl?: typeof fetch;
 }) {
   const file = path.join(home, "read-aloud.json");
   let writing: Promise<unknown> = Promise.resolve();
-  const prepared = new Map<string, { text: string; revision: string; at: number }>();
+  const prepared = new Map<string, { text: string; revision: string; at: number; speed: number }>();
   function validate(input: unknown) {
     const value = object(input, ["source", "model", "voice"]) as Record<string, unknown>;
     if (typeof value.source !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(value.source))
@@ -146,7 +148,11 @@ export function createReadAloudProvider({
         };
       try {
         await kokoro.voices?.();
-        return { ...choice, revision: revision(choice), available: true, streaming: !!kokoro.stream && !!kokoro.canStream?.(choice.voice) };
+        return {
+          ...choice, revision: revision(choice), available: true,
+          streaming: !!kokoro.stream && !!kokoro.canStream?.(choice.voice),
+          ...(kokoro.nativeTempo ? { nativeTempo: true, preferredSpeed: kokoro.preferredSpeed } : {}),
+        };
       } catch (error) {
         return { ...choice, revision: revision(choice), available: false, reason: (error as Error).message };
       }
@@ -221,7 +227,10 @@ export function createReadAloudProvider({
     return rate ? { audio: pcmWav(audio, rate), type: "audio/wav" } : { audio, type: "audio/mpeg" };
   }
   async function prepare(raw: unknown) {
-    const input = object(raw, ["text", "revision"]) as Record<string, unknown>;
+    const input = object(raw, ["text", "revision", "speed"]) as Record<string, unknown>;
+    const speed = input.speed === undefined ? 1 : input.speed;
+    if (typeof speed !== "number" || !Number.isFinite(speed) || speed < 0.5 || speed > 2)
+      throw new BridgeError("Choose a reading speed between 0.5× and 2×.");
     const value = text(input.text, "read aloud text", 4000);
     const choice = await read();
     if (!value.trim() || choice.source !== "local" || !kokoro.stream || !kokoro.canStream?.(choice.voice))
@@ -231,7 +240,7 @@ export function createReadAloudProvider({
     for (const [id, job] of prepared) if (Date.now() - job.at > 120_000) prepared.delete(id);
     if (prepared.size >= 24) throw new BridgeError("Stop the previous reading before starting another.", 429);
     const id = randomUUID();
-    prepared.set(id, { text: value, revision: revision(choice), at: Date.now() });
+    prepared.set(id, { text: value, revision: revision(choice), at: Date.now(), speed });
     return { url: `/api/read-aloud/audio/${id}` };
   }
   async function stream(id: string, signal: AbortSignal) {
@@ -241,7 +250,7 @@ export function createReadAloudProvider({
     const choice = await read();
     if (choice.source !== "local" || job.revision !== revision(choice) || !kokoro.stream)
       throw new BridgeError("The read aloud source changed. Read it again.", 409);
-    return kokoro.stream(job.text, choice.voice, signal);
+    return kokoro.stream(job.text, choice.voice, signal, job.speed);
   }
   const release = (id: string) => { prepared.delete(id); };
   return { read, save, status, speak, prepare, stream, release };
