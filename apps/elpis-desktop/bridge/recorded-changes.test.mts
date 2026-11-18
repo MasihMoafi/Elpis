@@ -78,10 +78,19 @@ test(
       row => row.payload?.item?.type === "FileChange" && row.payload.item.status === "completed",
     );
     assert.ok(completed.length > 1, "use a real session containing completed fileChange items");
-    const expected = [...new Set(completed.flatMap(row => Object.keys(row.payload.item.changes)))]
-      .map(name => path.relative(meta.cwd, name))
-      .sort();
-    const copy = original.split(meta.cwd).join(folder);
+    const names = [...new Set(completed.flatMap(row => Object.keys(row.payload.item.changes)))];
+    const displayPaths = new Map<string, string>();
+    let copy = original;
+    for (const [i, name] of names.entries()) {
+      const relative = path.relative(meta.cwd, path.resolve(meta.cwd, name));
+      if (relative === ".." || relative.startsWith(`..${path.sep}`)) {
+        const external = path.join(root, "external", String(i), path.basename(name));
+        copy = copy.replaceAll(JSON.stringify(name), JSON.stringify(external));
+        displayPaths.set(name, external);
+      } else displayPaths.set(name, relative);
+    }
+    const expected = [...displayPaths.values()].sort();
+    copy = copy.split(meta.cwd).join(folder);
     await fs.writeFile(path.join(sessions, `rollout-2026-10-17T23-33-38-${meta.id}.jsonl`), copy);
     const env = {
       PATH: process.env.PATH,
@@ -97,7 +106,7 @@ test(
     const runtimes: { client: DesktopClient; stop: () => Promise<void> }[] = [];
     const open = async () => {
       const child = spawn(engine, ["app-server", "--listen", "stdio://"], {
-        cwd: folder,
+        cwd: root,
         env,
         stdio: ["pipe", "pipe", "pipe"],
       });
@@ -168,7 +177,7 @@ test(
       .flatMap(row => Object.keys(row.payload.item.changes))
       .find((name, i, all) => all.indexOf(name) !== i);
     assert.ok(repeated, "the real session must contain repeated edits");
-    const filePath = path.relative(meta.cwd, repeated);
+    const filePath = displayPaths.get(repeated)!;
     const first = (await (await get(`?view=file&path=${encodeURIComponent(filePath)}`)).json()) as { diff: string };
     assert.ok(first.diff.length > 0);
     const recorded = completed
@@ -187,8 +196,10 @@ test(
         offset = at;
       }
     }
-    await fs.mkdir(path.dirname(path.join(folder, filePath)), { recursive: true });
-    await fs.writeFile(path.join(folder, filePath), "A later manual edit.");
+    const manualFile = path.resolve(folder, filePath);
+    assert.ok(manualFile.startsWith(root + path.sep));
+    await fs.mkdir(path.dirname(manualFile), { recursive: true });
+    await fs.writeFile(manualFile, "A later manual edit.");
     assert.deepEqual(
       await (await get(`?view=file&path=${encodeURIComponent(filePath)}`)).json(),
       first,
@@ -205,6 +216,9 @@ test(
       assert.equal((await get(query)).status, 400, query);
     assert.equal((await get("?view=file&path=unknown.txt")).status, 409);
     assert.equal((await fetch(origin + route + "?view=changes")).status, 401);
+    await fs.rename(folder, path.join(root, "moved-notes"));
+    assert.deepEqual(await (await get("?view=changes")).json(), list, "a retired worktree keeps its recorded changes");
+    assert.deepEqual(await (await get(`?view=file&path=${encodeURIComponent(filePath)}`)).json(), first);
     await app.close();
     app = null;
     await runtimes[0]!.stop();

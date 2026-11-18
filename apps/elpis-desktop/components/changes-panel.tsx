@@ -201,7 +201,7 @@ export function ChangesPanel({ threadId, running }: { threadId: string | undefin
       ) : (
         <>
           {list.recorded && (
-            <p className="changes-note">This folder has no Git, so these are the edits this chat made.</p>
+            <p className="changes-note">Showing edits saved in this chat.</p>
           )}
           <ul className="change-list" aria-label="Changed files">
             {list.files.map(file => (

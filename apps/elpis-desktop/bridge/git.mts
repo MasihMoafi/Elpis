@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { stat } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { BridgeError } from "./validate.mts";
@@ -7,6 +8,8 @@ import { CHAT_WORKTREE } from "../lib/chat-worktree.ts";
 
 const DIFF_LIMIT = 400_000;
 export const NOT_A_REPOSITORY = "This chat's folder is not a Git repository.";
+/** Live Git data is unavailable. Read-only change views can still show the saved edits. */
+export class GitUnavailable extends BridgeError {}
 // Read-only Git, with the repository's own helpers switched off: its config may name programs to run.
 // A file's name is read as a name: no glob, no pathspec magic.
 const SAFE = [
@@ -37,16 +40,14 @@ function run(
       },
       (error, stdout, stderr) => {
         if (!error || (typeof error.code === "number" && okCodes.includes(error.code))) return resolve(stdout);
-        if (error.code === "ENOENT") return reject(new BridgeError("Git is not installed on this computer.", 501));
+        if (error.code === "ENOENT" || error.code === "ENOTDIR") {
+          return stat(cwd as string, (_err, dir) => reject(dir?.isDirectory()
+            ? new GitUnavailable("Git is unavailable on this computer.", 501)
+            : new GitUnavailable("This chat’s folder is no longer available.", 409)));
+        }
         if (error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return resolve(String(stdout ?? ""));
-        reject(
-          new BridgeError(
-            /not a git repository/i.test(stderr)
-              ? NOT_A_REPOSITORY
-              : `Git could not read this folder: ${String(stderr).trim().split("\n")[0]!.slice(0, 200)}`,
-            409,
-          ),
-        );
+        if (/not a git repository/i.test(stderr)) return reject(new GitUnavailable(NOT_A_REPOSITORY, 409));
+        reject(new BridgeError(`Git could not read this folder: ${String(stderr).trim().split("\n")[0]!.slice(0, 200)}`, 409));
       },
     ),
   );

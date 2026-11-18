@@ -223,7 +223,7 @@ for (const colorScheme of ['light'] as const) test(`Changes tab outside Git: pla
     await openChanges({ page, side });
     const diff = side.getByRole('region', { name: 'Diff of notes.md' });
     await diff.locator('.diff-line.add').first().waitFor();
-    assert.match(await side.innerText(), /This folder has no Git, so these are the edits this chat made\./);
+    assert.match(await side.innerText(), /Showing edits saved in this chat\./);
     assert.deepEqual(await diff.locator('.diff-line.add .diff-text').allInnerTexts(), ['one', 'two', 'three']);
     assert.deepEqual(await diff.locator('.diff-line.del .diff-text').allInnerTexts(), ['two']);
     await shoot(`recorded-${colorScheme}`);

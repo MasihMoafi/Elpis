@@ -1,6 +1,6 @@
 import { BridgeError, object, threadId } from "./validate.mts";
 import {
-  NOT_A_REPOSITORY,
+  GitUnavailable,
   changedFiles,
   currentBranch,
   discardFile,
@@ -44,7 +44,7 @@ export async function impl_git(
               : workingDiff(cwd));
   } catch (error) {
     // Outside Git, the changes are the edits this chat recorded (bridge/recorded-changes.mts); /review needs Git.
-    if ((error as Error).message !== NOT_A_REPOSITORY || !["changes", "file", "diff"].includes(view)) throw error;
+    if (!(error instanceof GitUnavailable) || !["changes", "file", "diff"].includes(view)) throw error;
     const recorded = recordedChanges(
       cwd!,
       (await internal_chatItems.call(this, clientState, id)) as Parameters<typeof recordedChanges>[1],
