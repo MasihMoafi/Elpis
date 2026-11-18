@@ -136,6 +136,7 @@ export type Mother = Partial<StoredTask> & {
 };
 
 export type WorkflowRecord = {
+  chatHosted?: boolean;
   id: string;
   rootThreadId: string;
   name: string;

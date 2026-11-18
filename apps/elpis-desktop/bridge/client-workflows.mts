@@ -17,7 +17,6 @@ import type { ClientState } from "./client-state.mts";
 export type FinishedWorkflow = {
   id: string;
   rootThreadId: string;
-  chatHosted?: boolean;
   status: string;
   error?: unknown;
   tasks: { title: string; status: string; result?: unknown; failureReason?: unknown }[];
