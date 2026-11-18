@@ -18,7 +18,7 @@ Status words: `todo`, `doing`, `done: <evidence>`, `his call` (waits for Masih).
 
 | # | Item | Acceptance check | Status |
 | --- | --- | --- | --- |
-| P1 | Every CI workflow passes on the release commit. | Check the candidate commit’s Lint, Security Check, desktop and native results. | Open. The desktop gate and lint passed for the installed reader update. The dependency audit reports three unresolved advisories for hickory-proto 0.25.2. [Security Check](https://github.com/MasihMoafi/Elpis/actions/runs/44249946361) |
+| P1 | Every CI workflow passes on the release commit. | Check the candidate commit’s Lint, Security Check, desktop and native results. | Open for release. The integrated Hickory 0.26.3 update passes the [dependency audit](https://github.com/MasihMoafi/Elpis/actions/runs/44290894664) and [DNS tests on Linux, macOS and Windows](https://github.com/MasihMoafi/Elpis/actions/runs/44290896231). The [desktop checks](https://github.com/MasihMoafi/Elpis/actions/runs/44291894022) passed on the subsequent Tidy change. See [project state](../../ES.md) for local installation. |
 | P2 | Each CI check has one owner. | `rg -l 'cargo audit' .github/workflows` names one file. | done: `security-check.yml` only (push, pull request, weekly) |
 | P3 | The installed app matches the chosen release commit. | Compare the installed manifest and renderer receipt with the release SHA. | Open for release. The [project state](../../ES.md) records the locally installed candidate and its verification. |
 
