@@ -22,6 +22,22 @@ test('a chat hosting native work graphs keeps its name, children and search resu
   } finally { await f.close(); }
 });
 
+test('selecting a workflow row opens that run when two runs share a conversation', async () => {
+  const saved = [runs[0], { ...runs[2], rootThreadId: runs[0].rootThreadId }];
+  const f = await open('light', saved, {}, {}, { '/api/workflows': () => ({ data: saved }) });
+  try {
+    const report = f.page.getByRole('region', { name: 'Workflow run', exact: true });
+    for (const run of [saved[0]!, saved[1]!, saved[0]!]) {
+      const item = workflows(f.page).locator(`[data-workflow-run="${run.id}"]`);
+      await item.locator('.thread-link').click();
+      await report.getByRole('heading').filter({ hasText: run.name }).waitFor();
+      assert.equal(await workflows(f.page).locator('.thread-row.active').count(), 1);
+      assert.equal(await item.evaluate(el => el.classList.contains('active')), true);
+    }
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 for (const colorScheme of ['light']) test(`workflow history keeps running work visible, reports a failed Remove and restores with Undo (${colorScheme})`, async () => {
   const saved = [{ ...runs[0], removable: false, removalReason: 'Finish this workflow before removing it from history.' }, { ...runs[2], removable: true }];
   const removed: string[] = []; let refuse = true;

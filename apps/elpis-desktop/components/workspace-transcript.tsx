@@ -208,6 +208,7 @@ export function WorkspaceTranscript({
           )}
           {selectedWorkflow && (
             <WorkflowChat
+              key={selectedWorkflow.id}
               threads={threads}
               run={selectedWorkflow}
               {...(workflowIdentity !== undefined ? { identity: workflowIdentity } : {})}

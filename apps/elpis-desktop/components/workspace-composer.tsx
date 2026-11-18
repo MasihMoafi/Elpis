@@ -1,4 +1,5 @@
 import type React from "react";
+import { BackgroundProcesses } from "@/components/background-processes";
 import { BranchChip } from "@/components/branch-chip";
 import { ElpisFeatures } from "@/components/elpis-features";
 import { EnvironmentMenu, ProjectMenu } from "@/components/project-picker";
@@ -9,7 +10,7 @@ import { DiffPanel, ReviewPanel, SessionPanel } from "@/components/slash-panels"
 import { TaskList } from "@/components/task-list";
 import { Button } from "@/components/ui/button";
 import { ViewBoundary } from "@/components/view-boundary";
-import { AGENT_RUN_NOTICE } from "@/lib/api";
+import { AGENT_RUN_NOTICE, type Entry } from "@/lib/api";
 import type { createChatSend } from "@/lib/chat-send";
 import type { createCommandActions } from "@/lib/command-actions";
 import type { createConversationActions } from "@/lib/conversation-actions";
@@ -21,6 +22,7 @@ import type { useRuntimeState } from "@/lib/use-runtime-state";
 import type { ComposerPanel, SideChatState } from "@/lib/use-composer-panels";
 
 type Props = {
+  entries: Entry[];
   session: ReturnType<typeof useConversationSession>;
   runtime: ReturnType<typeof useRuntimeState>;
   projectState: ReturnType<typeof useProjectState>;
@@ -57,6 +59,7 @@ type Props = {
 };
 
 export function WorkspaceComposer({
+  entries,
   session,
   runtime,
   projectState,
@@ -98,6 +101,9 @@ export function WorkspaceComposer({
   const folder = (path?: string | null) => (path ? path.split("/").filter(Boolean).at(-1) || path : "");
   return (
     <div className="composer-wrap">
+      {selected && !selected.motherAgent && (
+        <BackgroundProcesses key={selected.id} threadId={selected.id} active={!!activeTurn} entries={entries} />
+      )}
       {sideChat && selected?.id === sideChat.parentId && (
         <SideChat
           key={`${sideChat.parentId}:${sideChat.question?.kind === "recap" ? sideChat.question.id : "side"}`}
