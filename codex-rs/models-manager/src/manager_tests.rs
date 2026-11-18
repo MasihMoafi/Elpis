@@ -437,6 +437,51 @@ async fn file_cache_refresh_ttl_renews_expired_entry_without_serving_it_stale() 
 }
 
 #[tokio::test]
+async fn picker_retains_account_models_on_catalog_outage_but_reports_an_auth_failure() {
+    let models = vec![remote_model("new-model", "New model", 0)];
+    let endpoint = TestModelsEndpoint::new(vec![models.clone()]);
+    for code in ["404", "403"] {
+        endpoint
+            .responses
+            .lock()
+            .expect("responses")
+            .push_back(Err(CodexErr::UnexpectedStatus(
+                codex_protocol::error::UnexpectedResponseError {
+                    status: code.parse().expect("status code"),
+                    body: String::new(),
+                    user_message: None,
+                    url: None,
+                    cf_ray: None,
+                    request_id: None,
+                    identity_authorization_error: None,
+                    identity_error_code: None,
+                },
+            )));
+    }
+    let manager = OpenAiModelsManager::new_without_cache(
+        endpoint,
+        Some(AuthManager::from_auth_for_testing(
+            CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        )),
+    );
+    manager
+        .refresh_now(DEFAULT_HTTP_CLIENT_FACTORY)
+        .await
+        .expect("online catalog");
+    manager
+        .refresh_now(DEFAULT_HTTP_CLIENT_FACTORY)
+        .await
+        .expect("same-account catalog");
+    assert_eq!(manager.get_remote_models().await, models);
+    assert!(
+        manager
+            .refresh_now(DEFAULT_HTTP_CLIENT_FACTORY)
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn manager_without_cache_fetches_on_every_refresh() {
     let remote_models = vec![remote_model("remote", "Remote", /*priority*/ 0)];
     let endpoint = TestModelsEndpoint::new(vec![remote_models.clone(), remote_models.clone()]);

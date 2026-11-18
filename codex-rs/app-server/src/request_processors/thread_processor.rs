@@ -5841,9 +5841,10 @@ impl ThreadRequestProcessor {
 
             let mut filtered = Vec::with_capacity(page.items.len());
             for it in page.items {
-                // Recovery metadata can outlive its transcript. Keep it addressable
-                // by ID without offering a chat that cannot be resumed.
-                if let Some(path) = it.rollout_path.as_ref()
+                // The history picker offers resumable chats. Relationship queries
+                // also serve workflow bookkeeping, which outlives the transcript.
+                if relation_filter.is_none()
+                    && let Some(path) = it.rollout_path.as_ref()
                     && codex_rollout::existing_rollout_path(path).await.is_none()
                     && self.thread_manager.get_thread(it.thread_id).await.is_err()
                 {

@@ -1040,6 +1040,38 @@ sqlite = true
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(request_id)).await??;
     assert_eq!(scanned_response.data.len(), 0);
 
+    // Losing the transcript leaves its recovery record, but it must disappear
+    // from ordinary session pickers even when they list from SQLite.
+    let selected = state_db
+        .get_thread(thread_uuid)
+        .await?
+        .expect("saved thread");
+    fs::remove_file(&selected.rollout_path)?;
+    let page: ThreadListResponse = mcp
+        .request(|request_id| ClientRequest::ThreadList {
+            request_id,
+            params: codex_app_server_protocol::ThreadListParams {
+                model_providers: Some(vec!["mock_provider".to_string()]),
+                use_state_db_only: true,
+                cursor: None,
+                limit: Some(10),
+                sort_key: None,
+                sort_direction: None,
+                source_kinds: None,
+                originators: None,
+                archived: None,
+                section_id: None,
+                project_id: None,
+                cwd: None,
+                search_term: None,
+                parent_thread_id: None,
+                ancestor_thread_id: None,
+            },
+        })
+        .await?;
+    assert!(page.data.iter().all(|thread| thread.id != thread_id));
+    assert!(state_db.get_thread(thread_uuid).await?.is_some());
+
     Ok(())
 }
 
