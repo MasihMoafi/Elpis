@@ -7,23 +7,6 @@ ignore = [
     "RUSTSEC-2023-0089", # atomic-polyfill via postcard/heapless/pagable; upstream crate is unmaintained
     "RUSTSEC-2024-0320", # yaml-rust via syntect; remove when syntect drops or updates it
     "RUSTSEC-2025-0141", # bincode via syntect; remove when syntect drops or updates it
-    "RUSTSEC-2026-0118", # hickory-proto via rama-dns/rama-tcp; remove when rama updates to hickory 0.26.1 or hickory-net
-    "RUSTSEC-2026-0119", # hickory-proto via rama-dns/rama-tcp; remove when rama updates to hickory 0.26.1 or hickory-net
-    # Reviewed 2026-11-11: hickory-proto 0.25.2 via rama-dns/rama-tcp =0.3.0-alpha.4 (codex-network-proxy); the fix needs rama 0.3.0+, which uses hickory 0.26; remove when rama is upgraded to hickory >=0.26.2.
-    "RUSTSEC-2026-0487", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
-    "RUSTSEC-2026-0489", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
-    "RUSTSEC-2026-0490", # zone-file text parser (feature text-parsing) is not enabled, so this code is not compiled in
-    # Accepted 2026-11-12 at Masih's word: DNSSEC validation faults in hickory 0.25.2 via rama-dns =0.3.0-alpha.4 (codex-network-proxy); the build has no dnssec feature (`cargo tree --locked --offline -p hickory-proto@0.25.2 -f '{p} [{f}]' --depth 0` gives [futures-io,std,tokio], hickory-resolver gives [system-config,tokio]); remove when rama moves to hickory >=0.26.2.
-    "RUSTSEC-2026-0504", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
-    "RUSTSEC-2026-0505", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
-    "RUSTSEC-2026-0511", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
-    "RUSTSEC-2026-0512", # hickory-proto: DNSSEC validation (dnssec feature not enabled, code not compiled in)
-    "RUSTSEC-2026-0514", # hickory-resolver: DNSSEC validation (dnssec feature not enabled, code not compiled in)
-    # Accepted 2026-11-14 at Masih's word, on the same evidence: three more DNSSEC proof faults (NSEC and NSEC3 at a zone cut) in hickory-proto 0.25.2, no fixed release.
-    "RUSTSEC-2026-0530", # hickory-proto: DNSSEC validation, parent-side NSEC (dnssec feature not enabled, code not compiled in)
-    "RUSTSEC-2026-0531", # hickory-proto: DNSSEC validation, child-side NSEC or NSEC3 (dnssec feature not enabled, code not compiled in)
-    "RUSTSEC-2026-0532", # hickory-proto: DNSSEC validation, parent-side NSEC3 (dnssec feature not enabled, code not compiled in)
-    "RUSTSEC-2026-0491", # REACHABLE on Linux/Windows: the proxy resolves hostnames with rama's default HickoryDns and decodes DNS replies; a reply from the DNS server's address can force a short ~18 MB allocation (DoS)
     "RUSTSEC-2026-0194", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     "RUSTSEC-2026-0195", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
     # Reviewed 2026-11-10: sqlx-sqlite 0.9 requires libsqlite3-sys 0.37; remove when sqlx permits >=0.39.
