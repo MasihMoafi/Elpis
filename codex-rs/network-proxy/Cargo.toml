@@ -42,13 +42,13 @@ tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
-rama-core = { version = "=0.3.0-alpha.4" }
-rama-http = { version = "=0.3.0-alpha.4" }
-rama-http-backend = { version = "=0.3.0-alpha.4", features = ["tls"] }
-rama-net = { version = "=0.3.0-alpha.4", features = ["http", "tls"] }
-rama-socks5 = { version = "=0.3.0-alpha.4" }
-rama-tcp = { version = "=0.3.0-alpha.4", features = ["http"] }
-rama-tls-rustls = { version = "=0.3.0-alpha.4", features = ["http"] }
+rama-core = { version = "=0.3.0" }
+rama-http = { version = "=0.3.0" }
+rama-http-backend = { version = "=0.3.0", features = ["tls"] }
+rama-net = { version = "=0.3.0", features = ["http"] }
+rama-socks5 = { version = "=0.3.0" }
+rama-tcp = { version = "=0.3.0" }
+rama-tls-rustls = { version = "=0.3.0", features = ["http"] }
 rustls-native-certs = { workspace = true }
 sha2 = { workspace = true }
 
@@ -58,10 +58,10 @@ tempfile = { workspace = true }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 libc = { workspace = true }
-rama-unix = { version = "=0.3.0-alpha.4" }
+rama-unix = { version = "=0.3.0" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-rama-dns = { version = "=0.3.0-alpha.4" }
+rama-dns = { version = "=0.3.0" }
 security-framework = "3"
 
 [target.'cfg(windows)'.dependencies]

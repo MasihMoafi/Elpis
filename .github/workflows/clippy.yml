@@ -31,7 +31,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
-          rustup toolchain install 1.95.0 --profile minimal --component clippy --no-self-update
+          rustup toolchain install 1.96.0 --profile minimal --component clippy --no-self-update
       - name: Download and verify the pinned sandbox V8
         shell: bash
         run: |

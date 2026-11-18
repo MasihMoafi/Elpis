@@ -39,7 +39,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.96.0 --profile minimal --no-self-update
       - id: schema_cache
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
@@ -100,7 +100,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.96.0 --profile minimal --no-self-update
       - name: Download and verify the pinned sandbox V8
         shell: bash
         env:
@@ -191,7 +191,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux ripgrep
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.96.0 --profile minimal --no-self-update
           # This disposable runner must permit the namespaces that the sandbox tests create.
           # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
@@ -517,7 +517,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux ripgrep
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.96.0 --profile minimal --no-self-update
           # This disposable runner must permit the namespaces that the sandbox tests create.
           # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
