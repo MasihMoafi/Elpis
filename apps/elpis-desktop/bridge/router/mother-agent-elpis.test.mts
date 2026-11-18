@@ -293,6 +293,24 @@ test("Tidy goes to the configured Elpis chat and can be retried after enabling i
   }
 });
 
+test("Tidy during startup waits for the enabled Elpis router and delivers once", async () => {
+  const h = fixture({ fresh: true }), mother = h.create();
+  try {
+    await assert.rejects(mother.tidy(), /reconnect/i);
+    assert.equal(h.adapterStarts, 0);
+    await h.client.initialize();
+    const [, result] = await Promise.all([mother.start(), mother.tidy()]);
+    assert.equal(result.routed, true);
+    assert.equal(h.calls.filter(call => call.method === "thread/start").length, 1);
+    const main = [...h.workers.threads.keys()][0]!;
+    await waitFor(() => assert.equal(h.workers.threads.get(main)?.turns.length, 1));
+  } finally {
+    await mother.close();
+    h.client.close();
+    rmSync(h.home, { recursive: true, force: true });
+  }
+});
+
 test("real bridge chat storage stays offline until enabled, then routes persisted input and reopens one Elpis chat", async () => {
   const h = fixture(),
     { home, workers, calls, client, create } = h;

@@ -461,8 +461,15 @@ export class MotherAgent {
     });
   }
   async tidy() {
-    const { enabled, threadId } = this.file.read();
-    if (!enabled || !threadId) throw new BridgeError("Turn Elpis on in Settings → Configuration to tidy your chats.", 409);
+    let config = this.file.read();
+    if (config.enabled && !config.threadId && this.options.client.connected) {
+      await this.start();
+      config = this.file.read();
+    }
+    if (!config.enabled) throw new BridgeError("Turn Elpis on in Settings → Configuration to tidy your chats.", 409);
+    if (!this.options.client.connected || this.closed) throw new BridgeError("Reconnect Elpis to tidy your chats.", 503);
+    const { threadId } = config;
+    if (!threadId) throw new BridgeError(this.error ?? "Elpis could not open its router chat. Try Tidy again.", 503);
     return this.send(threadId, {
       text: "Tidy my chats. Archive temporary or unwanted chats. Leave my chat named mother alone. " +
         "File clear project matches, group task chats under the chat directing them, and tell me what changed and what needs my attention.",
