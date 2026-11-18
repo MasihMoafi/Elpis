@@ -40,9 +40,13 @@ export function createLocalSpeech(env: NodeJS.ProcessEnv = process.env) {
     return library?.voices.includes(saved) ? saved : library?.selected ?? qwen.defaultVoice;
   };
   let active: typeof qwen | null = null;
-  function stream(text: string, voice: string | null, signal?: AbortSignal, speed = 1) {
+  function readerFor(voice: string | null) {
     const name = voice ?? selected();
     const reader = name.startsWith("qwen_") ? qwen : sharedKokoro;
+    return { name, reader };
+  }
+  function stream(text: string, voice: string | null, signal?: AbortSignal, speed = 1) {
+    const { name, reader } = readerFor(voice);
     if (!reader) throw Error("The selected streaming voice is unavailable.");
     if (active && active !== reader) active.close();
     active = reader;
@@ -52,6 +56,16 @@ export function createLocalSpeech(env: NodeJS.ProcessEnv = process.env) {
   return {
     available: () => !!sharedKokoro || qwen.available(),
     voices: async () => library?.voices ?? qwen.voices(),
+    warm(voice: string | null) {
+      const { reader } = readerFor(voice);
+      if (!reader) return;
+      if (active && active !== reader) {
+        if (active.busy()) return;
+        active.close();
+      }
+      active = reader;
+      return reader.warm();
+    },
     get defaultVoice() { return selected(); },
     get preferredSpeed() {
       const value = Number(preference("speed"));

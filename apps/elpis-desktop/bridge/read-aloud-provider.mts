@@ -62,6 +62,7 @@ export function createReadAloudProvider({
   home: string;
   kokoro: {
     voices?: () => Promise<string[]>;
+    warm?: (voice: string | null) => Promise<void> | undefined;
     available: () => boolean;
     speak: (text: string, voice: string | null, signal?: AbortSignal) => Promise<Buffer>;
     format?: (voice: string | null) => string;
@@ -148,6 +149,8 @@ export function createReadAloudProvider({
         };
       try {
         await kokoro.voices?.();
+        // Load the selected GPU voice while the chat is visible. Playback joins this load.
+        void kokoro.warm?.(choice.voice)?.catch(() => {});
         return {
           ...choice, revision: revision(choice), available: true,
           streaming: !!kokoro.stream && !!kokoro.canStream?.(choice.voice),

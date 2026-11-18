@@ -32,7 +32,15 @@ export function createReaderWorker(env: NodeJS.ProcessEnv = process.env, kokoro?
   let child: ChildProcessWithoutNullStreams | null = null;
   let ready: Promise<void> | null = null;
   let idle: ReturnType<typeof setTimeout> | undefined;
+  let waiting = 0;
   const jobs = new Map<string, { audio: PassThrough }>();
+  function releaseWhenIdle() {
+    clearTimeout(idle);
+    if (!jobs.size) {
+      idle = setTimeout(close, 30 * 60_000);
+      idle.unref();
+    }
+  }
   const available = () => kokoro ? !!paths.worker && existsSync(kokoro.python) : [
     paths.python, path.join(paths.worker, "synthesis.py"), path.join(paths.model, "model.safetensors"),
     path.join(paths.model, "speech_tokenizer/model.safetensors"),
@@ -88,7 +96,7 @@ export function createReaderWorker(env: NodeJS.ProcessEnv = process.env, kokoro?
               job.audio.once("drain", () => running.stdout.resume());
             }
           }
-          if (!jobs.size) { clearTimeout(idle); idle = setTimeout(close, 30 * 60_000); idle.unref(); }
+          releaseWhenIdle();
         }
       });
     });
@@ -98,15 +106,22 @@ export function createReaderWorker(env: NodeJS.ProcessEnv = process.env, kokoro?
     available,
     voices: () => Promise.resolve(voices),
     defaultVoice,
+    busy: () => waiting > 0 || jobs.size > 0,
+    async warm() {
+      if (!available()) return;
+      await start();
+      releaseWhenIdle();
+    },
     async stream(text: string, voice: string | null, signal?: AbortSignal, speed = 1) {
       if (!text.trim() || text.length > 4000) throw new BridgeError("Read aloud takes up to 4000 characters at a time.");
       if (!available()) throw new BridgeError("Install the local GPU reader before using this voice.", 503);
       if (voice && !voices.includes(voice)) throw new BridgeError("Choose an installed voice.");
       if (signal?.aborted) throw new BridgeError("Reading was stopped.", 499);
-      const loading = () => { if (!jobs.size) close(); };
+      waiting++;
+      const loading = () => { if (waiting === 1 && !jobs.size) close(); };
       signal?.addEventListener("abort", loading, { once: true });
-      try { await start(); } finally { signal?.removeEventListener("abort", loading); }
-      if (signal?.aborted || !child) { if (!jobs.size) close(); throw new BridgeError("Reading was stopped.", 499); }
+      try { await start(); } finally { waiting--; signal?.removeEventListener("abort", loading); }
+      if (signal?.aborted || !child) { if (!waiting && !jobs.size) close(); throw new BridgeError("Reading was stopped.", 499); }
       const id = randomUUID(), audio = new PassThrough();
       jobs.set(id, { audio });
       const cancel = () => {
@@ -114,7 +129,7 @@ export function createReaderWorker(env: NodeJS.ProcessEnv = process.env, kokoro?
         child?.stdin.write(`${JSON.stringify({ cancel: id })}\n`);
         child?.stdout.resume();
         audio.destroy(new BridgeError("Reading was stopped.", 499));
-        if (!jobs.size) { clearTimeout(idle); idle = setTimeout(close, 30 * 60_000); idle.unref(); }
+        releaseWhenIdle();
       };
       signal?.addEventListener("abort", cancel, { once: true });
       audio.once("close", () => signal?.removeEventListener("abort", cancel));

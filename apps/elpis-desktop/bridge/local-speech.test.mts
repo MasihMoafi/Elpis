@@ -11,13 +11,18 @@ test("streaming reads are single-use and a changed source cannot play prepared a
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "speech-stream-"));
   t.after(() => fs.rm(home, { recursive: true, force: true }));
   const spoken: { text: string; speed?: number | undefined }[] = [];
+  const warming = Promise.withResolvers<void>();
+  const warmed: (string | null)[] = [];
   const reader = createReadAloudProvider({ home, kokoro: {
     available: () => true, voices: async () => ["qwen_aiden"], canStream: () => true,
+    warm: voice => { warmed.push(voice); return warming.promise; },
     nativeTempo: true, preferredSpeed: 1.3,
     speak: async () => { throw Error("A streaming voice must not wait for a complete file"); },
     stream: async (text, _voice, _signal, speed) => { spoken.push({ text, speed }); return Readable.from([Buffer.from("audio")]); },
   }, provider: async () => { throw Error("No network provider should be called"); } });
   const status = await reader.status();
+  assert.deepEqual(warmed, [null], "opening the chat starts loading the default voice without waiting");
+  warming.resolve();
   assert.ok("streaming" in status);
   assert.equal(status.streaming, true);
   assert.equal(status.preferredSpeed, 1.3);
