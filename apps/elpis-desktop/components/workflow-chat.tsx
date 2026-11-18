@@ -225,12 +225,12 @@ export function WorkflowChat({
         retryAfter = 1500;
         const active = ACTIVE.has(next.status) || (next.next && !next.next.reported && ACTIVE.has(next.next.status));
         if (active || !["succeeded", "completed"].includes(next.status))
-          timer = setTimeout(read, active ? 1500 : 5000);
+          timer = setTimeout(() => void read(), active ? 1500 : 5000);
       } catch (cause) {
         if (controller.signal.aborted) return;
         setReadError(errorText(cause));
         if (retryableReadError(cause)) {
-          timer = setTimeout(read, retryAfter);
+          timer = setTimeout(() => void read(), retryAfter);
           retryAfter = Math.min(retryAfter * 2, 30000);
         }
       }
