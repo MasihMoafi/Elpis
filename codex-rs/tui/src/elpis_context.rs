@@ -174,9 +174,7 @@ pub(crate) async fn write_session_checkpoint(
         return Ok(None);
     };
     let latest_result = turn.items.iter().rev().find_map(|item| match item {
-        ThreadItem::AgentMessage { text, .. } if !text.trim().is_empty() => {
-            Some(truncate_chars(text.trim(), MAX_RESULT_CHARS))
-        }
+        ThreadItem::AgentMessage { text, .. } if !text.trim().is_empty() => Some(text.trim()),
         _ => None,
     });
     let mut changed_files = Vec::new();
@@ -256,10 +254,8 @@ pub(crate) async fn write_session_checkpoint(
     content.push_str("\n## Latest Result\n\n");
     let result_budget =
         MAX_RESULT_CHARS.min(MAX_CHECKPOINT_CHARS.saturating_sub(content.chars().count() + 128));
-    content.push_str(&truncate_chars(
-        latest_result
-            .as_deref()
-            .unwrap_or("No final agent result was recorded."),
+    content.push_str(&result_excerpt(
+        latest_result.unwrap_or("No final agent result was recorded."),
         result_budget,
     ));
     append_recent_checkpoint_entries(&mut content, "Changed Files", &changed_files, 1_500);
@@ -366,6 +362,28 @@ async fn clear_owned_file(
 #[cfg(test)]
 fn workspace_dir(memories_root: Option<&Path>, cwd: &Path) -> Option<PathBuf> {
     crate::legacy_core::elpis_context::workspace_context_dir(memories_root, cwd)
+}
+
+/// Keep the conclusion as well as the opening when a result exceeds its share of the checkpoint.
+fn result_excerpt(value: &str, budget: usize) -> String {
+    if budget == 0 {
+        return String::new();
+    }
+    if value.chars().nth(budget).is_none() {
+        return value.to_string();
+    }
+    let head_chars = budget / 2;
+    let tail_chars = budget - head_chars - 1;
+    let tail_start = value
+        .char_indices()
+        .rev()
+        .take(tail_chars)
+        .last()
+        .map_or(value.len(), |(index, _)| index);
+    let mut out: String = value.chars().take(head_chars).collect();
+    out.push('…');
+    out.push_str(&value[tail_start..]);
+    out
 }
 
 fn truncate_chars(value: &str, max_chars: usize) -> String {
@@ -853,7 +871,10 @@ mod tests {
             items: vec![
                 ThreadItem::AgentMessage {
                     id: "result".into(),
-                    text: "Next: verify IDE; preserve user changes. ".repeat(150),
+                    text: format!(
+                        "Verified: earlier history returns. {} Next: verify IDE; preserve user changes.",
+                        "ی界 ".repeat(2_000)
+                    ),
                     phase: None,
                     memory_citation: None,
                     delivery: None,
@@ -884,6 +905,7 @@ mod tests {
                 .context("checkpoint path")?;
         let content = tokio::fs::read_to_string(path).await?;
         assert!(content.chars().count() <= 8_000);
+        assert!(content.contains("Verified: earlier history returns."));
         assert!(content.contains("Next: verify IDE; preserve user changes."));
         assert!(content.contains("## Exact Evidence"));
         assert!(content.contains("src/99-"));

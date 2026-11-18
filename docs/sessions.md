@@ -79,7 +79,7 @@ Both files are written to a temporary path and renamed into place, so a crash mi
 
 With workspace saving enabled, the responding root agent may call `save_memory` before its final answer to replace ES's Consolidated State; [Memory and checkpoints](context.md#3-memory-and-checkpoints) owns its rules. Per thread, a turn-start baseline, a checkpoint lock, size checks and a final concurrent-edit check reject a save when a newer checkpoint appeared first. The bridge CLI save uses the same thread storage but captures its baseline when the tool is invoked, not when the bridge turn starts.
 
-The automatic per-turn write keeps the thread's Consolidated State and records bounded result, file and command evidence. While an agent save holds the thread's checkpoint lock, the TUI defers its write. Unrelated writers do not obey Elpis locks.
+The automatic per-turn write keeps the thread's Consolidated State and records bounded result, file and command evidence. If a reply exceeds its share of the checkpoint, Elpis keeps the opening and ending with an ellipsis between them. The full reply stays in the transcript. While an agent save holds the thread's checkpoint lock, the TUI defers its write. Unrelated writers do not obey Elpis locks.
 
 An interrupted turn with no result, file or command evidence leaves the thread's checkpoint intact; a first interruption still creates one, and later progress replaces only that thread's file. Concurrent chats keep separate goals, checkpoints, locks and save receipts. The shared memory lock serializes all Elpis memory saves, and a shared memory change invalidates older native baselines.
 
