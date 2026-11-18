@@ -250,6 +250,7 @@ function sessionFixture({ loveSpotApp = false } = {}) {
   vm.runInNewContext(stripTypeScriptTypes(fs.readFileSync(path.join(__dirname, "session-windows.cts"), "utf8")), {
     __dirname,
     module,
+    process: { platform: process.platform },
     console: { ...console, error: noop },
     URL,
     require: (name: string) => (stubs as Record<string, unknown>)[name] ?? require(name),
