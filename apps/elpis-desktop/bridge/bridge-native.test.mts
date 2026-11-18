@@ -310,6 +310,7 @@ test("workflow history includes native teams discovered through their task chats
     assert.ok(result.data[0]);
     assert.equal(result.data[0].id, id);
     assert.equal(result.data[0].rootThreadId, ROOT);
+    assert.equal(result.data[0].chatHosted, true, "a native team keeps its host conversation's identity");
   } finally {
     client.close();
   }

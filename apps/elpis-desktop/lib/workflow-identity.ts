@@ -10,6 +10,7 @@ export type WorkflowIdentity = { id: string; name: string; colour: WorkflowColou
 export type WorkflowRun = {
   id: string;
   rootThreadId: string;
+  chatHosted?: boolean;
   name?: string;
   status: string;
   startedAt?: number;

@@ -44,7 +44,7 @@ async function internal_workflowRecords(this: DesktopClient, clientState: Client
   const native = [];
   for (const rootThreadId of roots) {
     const listed = await internal_rpc(this, clientState, "workGraph/list", { rootThreadId });
-    native.push(...(listed.data ?? []).map(record => ({ ...record, rootThreadId })));
+    native.push(...(listed.data ?? []).map(record => ({ ...record, rootThreadId, chatHosted: true })));
   }
   const byId = new Map([...native, ...saved].map(record => [record.id, record]));
   return [...byId.values()].sort((a, b) => (b.startedAt ?? b.createdAt ?? 0) - (a.startedAt ?? a.createdAt ?? 0));

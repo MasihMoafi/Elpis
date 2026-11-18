@@ -31,7 +31,7 @@ export function useWorkflowSidebar(
   const roots = useMemo(
     () =>
       new Map(
-        [...runs]
+        runs.filter(run => !run.chatHosted)
           .sort((a, b) => (a.startedAt ?? a.createdAt ?? 0) - (b.startedAt ?? b.createdAt ?? 0))
           .map(run => [run.rootThreadId, run]),
       ),

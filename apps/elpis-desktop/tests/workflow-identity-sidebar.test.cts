@@ -5,6 +5,23 @@ const { chooseTheme, openSettings, leaveSettings } = require('./controls.cts');
 import type { Run } from "./workflow-identity.fixtures.cts";
 const { runs, base, graph, open, sidebar, workflows, row, markColor, eventually, shot }: import("./workflow-identity.fixtures.cts").Fixtures = require("./workflow-identity.fixtures.cts");
 
+test('a chat hosting native work graphs keeps its name, children and search result', async () => {
+  const hosted = { ...runs[0], chatHosted: true };
+  const f = await open('light', [hosted, runs[2]], {}, { 'chat-a': 'mother' });
+  const { page } = f;
+  try {
+    await row(page, 'chat-a').getByRole('button', { name: 'mother', exact: true }).waitFor();
+    assert.equal(await workflows(page).locator('[data-thread-id="chat-a"]').count(), 0);
+    await workflows(page).getByText('Research pricing', { exact: true }).waitFor();
+    await row(page, 'chat-a').getByRole('button', { name: 'Expand agents in mother' }).click();
+    await row(page, 'step-0-0').waitFor();
+    await page.getByRole('textbox', { name: 'Search conversations' }).fill('mother');
+    await row(page, 'chat-a').getByRole('button', { name: 'mother', exact: true }).waitFor();
+    assert.equal(await row(page, 'chat-a').count(), 1);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 for (const colorScheme of ['light']) test(`workflow history keeps running work visible, reports a failed Remove and restores with Undo (${colorScheme})`, async () => {
   const saved = [{ ...runs[0], removable: false, removalReason: 'Finish this workflow before removing it from history.' }, { ...runs[2], removable: true }];
   const removed: string[] = []; let refuse = true;
