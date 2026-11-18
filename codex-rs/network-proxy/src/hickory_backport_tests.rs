@@ -16,6 +16,11 @@ mod backport_tests {
             loop {
                 let (len, peer) = socket.recv_from(&mut bytes).await.unwrap();
                 let query = &bytes[..len];
+                assert_eq!(
+                    &query[10..12],
+                    &[0, 0],
+                    "default lookup must not enable EDNS"
+                );
                 let mut end = 12;
                 while query[end] != 0 {
                     end += 1 + query[end] as usize;
