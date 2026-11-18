@@ -20,5 +20,5 @@ pub fn bundled_models_response()
 /// OpenAI gates model discovery by the catalog compatibility version, independently
 /// of Elpis's package version. This schema supports the GPT-6.2 catalog.
 pub fn client_version_to_whole() -> String {
-    "0.169.1".to_string()
+    codex_login::default_client::OPENAI_CLIENT_VERSION.to_string()
 }

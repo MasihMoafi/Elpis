@@ -213,6 +213,23 @@ supports_websockets = true
 }
 
 #[test]
+fn openai_inference_meets_gpt62_minimum_client_version() {
+    let provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None)
+        .to_api_provider(Some(AuthMode::Chatgpt))
+        .expect("OpenAI provider should build API provider");
+    let version: Vec<u32> = provider.headers["version"]
+        .to_str()
+        .expect("client version header")
+        .split('.')
+        .map(|part| part.parse().expect("numeric client version"))
+        .collect();
+    assert!(
+        version.as_slice() >= [0, 166, 0].as_slice(),
+        "GPT-6.2 inference rejects older client versions even when discovery lists it"
+    );
+}
+
+#[test]
 fn test_personal_access_token_uses_chatgpt_codex_base_url() {
     let api_provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None)
         .to_api_provider(Some(AuthMode::PersonalAccessToken))

@@ -257,6 +257,7 @@ jobs:
         run: |
           cargo test --profile dev-small --locked -p codex-http-client --lib ipv4_only
           cargo test --profile dev-small --locked -p codex-websocket-client --lib ipv4_only
+          cargo test --profile dev-small --locked -p codex-model-provider-info --lib
       - name: Build the runtime, Code Mode host, and sandbox
         id: runtime_build
         if: ${{ !cancelled() && inputs.verification != 'ui' }}
