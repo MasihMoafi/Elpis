@@ -138,6 +138,15 @@ contextBridge.exposeInMainWorld("elpisDesktop", {
     },
   },
   openSessionWindow: threadId => ipcRenderer.invoke("elpis:session-window", threadId).then(checked),
+  ...(typeof process !== "undefined" && process.platform === "linux" && { windowControls: {
+    perform: (action: "minimize" | "toggle-maximize" | "close") => ipcRenderer.invoke("elpis:window-control", action),
+    maximized: () => ipcRenderer.invoke("elpis:window-control", "state"),
+    onMaximized: (listener: (maximized: boolean) => void) => {
+      const receive = (_event: IpcRendererEvent, maximized: boolean) => listener(maximized);
+      ipcRenderer.on("elpis:window-maximized", receive);
+      return () => { ipcRenderer.removeListener("elpis:window-maximized", receive); };
+    },
+  } }),
   chooseFolder: () => ipcRenderer.invoke("elpis:folder"),
   setTheme: (dark, details) =>
     ipcRenderer.send("elpis:theme", dark === true, { source: details?.source, background: details?.background }),

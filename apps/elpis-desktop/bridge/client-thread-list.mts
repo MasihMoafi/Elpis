@@ -138,7 +138,8 @@ export async function impl_listThreads(this: DesktopClient, clientState: ClientS
       (thread: ListedThread) =>
         subAgentSource(thread.source)?.other !== "guardian" && (includeAgentRuns || !isAgentRun(thread)),
     )
-    .map((thread: ListedThread) => internal_decorate.call(this, clientState, thread));
+    .map((thread: ListedThread) => internal_decorate.call(this, clientState, thread))
+    .filter(thread => thread.desktopAccess.mode !== "unavailable" || thread.status?.type === "active");
   // Follow working agents live: only subscribers receive their items, approvals and deltas.
   if (!options.archived)
     for (const thread of data)

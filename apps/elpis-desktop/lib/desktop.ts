@@ -168,6 +168,11 @@ declare global {
       onOpenThread?: (callback: (threadId: string) => void) => () => void;
       /** A new chat from Quick Entry (sent with its text) or the tray's New chat (empty). */
       openSessionWindow?: (threadId?: string) => Promise<void>;
+      windowControls?: {
+        perform: (action: "minimize" | "toggle-maximize" | "close") => Promise<void>;
+        maximized: () => Promise<boolean>;
+        onMaximized: (listener: (maximized: boolean) => void) => () => void;
+      };
       onNewChat?: (callback: (text: string) => void) => () => void;
       screenshotPopup?: {
         show: (shot: { id: string; name: string; dataURL: string; count?: number }) => void;

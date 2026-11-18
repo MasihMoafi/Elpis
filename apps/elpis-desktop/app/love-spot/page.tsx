@@ -6,6 +6,7 @@ import { ViewBoundary } from "@/components/view-boundary";
 import { appStorage } from "@/lib/projects";
 import { PREFERENCES_KEY } from "@/lib/preferences";
 import { AppUpdate } from "@/components/app-update";
+import { WindowControls } from "@/components/window-controls";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { ReadAloud } from "@/components/read-aloud";
 
@@ -49,6 +50,7 @@ export default function LoveSpotWindow() {
           <div className="title-bar-actions">
             <MatildaCompanion />
             {desktop && <AppUpdate inTitleBar />}
+            {desktop && <WindowControls />}
           </div>
         </div>
         <ViewBoundary label="Love Spot">

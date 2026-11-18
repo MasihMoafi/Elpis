@@ -9,7 +9,7 @@ type Options = {
     removeListener: (channel: string, listener: Listener) => unknown;
   };
   nativeTheme: NativeTheme;
-  titleBar: Record<"dark" | "light", TitleBarOverlayOptions>;
+  titleBar?: Record<"dark" | "light", TitleBarOverlayOptions>;
   browser: { setBackground: (color: string) => void };
   onDark?: (dark: boolean) => void;
 };
@@ -29,7 +29,7 @@ function registerThemeImpl({ host, ipcMain, nativeTheme, titleBar, browser, onDa
     if (event.sender !== host.webContents || event.senderFrame !== host.webContents.mainFrame || host.isDestroyed())
       return;
     onDark?.(dark === true);
-    host.setTitleBarOverlay(titleBar[dark === true ? "dark" : "light"]);
+    if (titleBar) host.setTitleBarOverlay(titleBar[dark === true ? "dark" : "light"]);
     if (details?.source !== undefined && CHOICES.includes(details.source))
       nativeTheme.themeSource = details.source as "system" | "light" | "dark";
     if (typeof details?.background === "string" && COLOR.test(details.background))

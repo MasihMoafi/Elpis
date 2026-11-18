@@ -168,7 +168,7 @@ function createSessionWindowsImpl({
       backgroundColor: "#151515",
       show: false,
       titleBarStyle: "hidden",
-      titleBarOverlay: { ...TITLE_BAR.dark, height: Math.round(36 * ZOOM) },
+      titleBarOverlay: process.platform === "linux" ? false : { ...TITLE_BAR.dark, height: Math.round(36 * ZOOM) },
       webPreferences: {
         zoomFactor: ZOOM,
         nodeIntegration: false,
@@ -221,7 +221,7 @@ function createSessionWindowsImpl({
       host,
       ipcMain,
       nativeTheme,
-      titleBar: TITLE_BAR,
+      ...(process.platform === "linux" ? {} : { titleBar: TITLE_BAR }),
       browser,
       onDark,
     } as Parameters<typeof registerTheme>[0]);
@@ -290,6 +290,21 @@ function createSessionWindowsImpl({
       changeThis: point => window.webContents.send("elpis:improve:point", point),
     });
     window.once("ready-to-show", () => window.show());
+    if (process.platform === "linux") {
+      const notify = () => window.webContents.send("elpis:window-maximized", window.isMaximized());
+      window.on("maximize", notify);
+      window.on("unmaximize", notify);
+      ipcMain.handle("elpis:window-control", (event, action) => {
+        if (!trustedBrowserSender(event, window.webContents, origin)) throw Error("Elpis application frame required");
+        switch (action) {
+          case "state": return window.isMaximized();
+          case "minimize": return window.minimize();
+          case "toggle-maximize": return window.isMaximized() ? window.unmaximize() : window.maximize();
+          case "close": return window.close();
+          default: throw Error("Unknown window control");
+        }
+      });
+    }
     ipcMain.handle("elpis:session-window", async (event: IpcMainInvokeEvent, id: unknown) => {
       if (!trustedBrowserSender(event, window.webContents, origin)) throw Error("Elpis application frame required");
       if (id !== undefined && !validThreadId(id)) throw Error("Invalid session");
@@ -301,6 +316,7 @@ function createSessionWindowsImpl({
       if (disposed) return;
       disposed = true;
       ipcMain.removeHandler("elpis:session-window");
+      if (process.platform === "linux") ipcMain.removeHandler("elpis:window-control");
       detachContextMenu();
       disposeImprove();
       disposeDocuments();

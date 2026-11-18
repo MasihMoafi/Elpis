@@ -318,6 +318,21 @@ test("opening a completed parent-owned child reads history without resuming it",
   }
 });
 
+test("history and search omit a missing source while its readable child remains visible", async t => {
+  const { client, threads } = fixture();
+  t.after(() => client.close());
+  await client.initialize();
+  Object.assign(required(threads.get(ROOT)), {
+    extra: { missingSourceRollout: true }, canAcceptDirectInput: false, status: { type: "notLoaded" },
+  });
+  for (const options of [{}, { searchTerm: required(threads.get(ROOT)).name || ROOT }, { includeAgentRuns: true }]) {
+    const page = await client.listThreads(options);
+    assert.ok(!page.data.some(thread => thread.id === ROOT), "normal history must omit a chat with no source");
+  }
+  assert.ok((await client.listThreads({ includeAgentRuns: true })).data.some(thread => thread.id === CHILD),
+    "a readable child stays discoverable when the parent transcript is missing");
+});
+
 test("missing source history is readable but cannot resume, send, fork, rewind, compact or run commands", async t => {
   const { client, socket, threads } = fixture();
   t.after(() => client.close());

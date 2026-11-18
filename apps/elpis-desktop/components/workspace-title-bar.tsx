@@ -2,6 +2,7 @@ import type { Dispatch, RefObject, SetStateAction } from "react";
 import { PanelLeft } from "lucide-react";
 import { AppMenus } from "@/components/app-menus";
 import { AppUpdate } from "@/components/app-update";
+import { WindowControls } from "@/components/window-controls";
 import { MatildaCompanion } from "@/components/matilda-companion";
 import { NavButtons } from "@/components/nav-buttons";
 import { Button } from "@/components/ui/button";
@@ -86,6 +87,7 @@ export function WorkspaceTitleBar({
           <div className="title-bar-actions">
             <MatildaCompanion />
             <AppUpdate inTitleBar />
+            <WindowControls />
           </div>
         </div>
       )}
