@@ -9,7 +9,7 @@ import { MarkdownText } from "@/components/markdown-text";
 import { WorkflowProgress, useWorkflowTeam, workflowThreadActive } from "@/components/workflow-progress";
 import { agentParentId } from "@/lib/agent-runs.mts";
 import { WorkflowMark } from "@/components/workflow-identity";
-import { api, providerChoices, type Model, type ProviderSettings, type Thread } from "@/lib/api";
+import { api, providerChoices, retryableReadError, type Model, type ProviderSettings, type Thread } from "@/lib/api";
 import { useElpisSettings } from "@/lib/settings-store";
 import { arrange, withMother, type CanvasGraph, type CanvasNode, type TaskStatus } from "@/lib/canvas";
 import type { WorkflowIdentity, WorkflowRun } from "@/lib/workflow-identity";
@@ -70,8 +70,8 @@ export function taskState(value?: string): TaskStatus {
   );
 }
 /** Both presentations read the exact retained run, never the latest run on a different root. */
-export async function readWorkflowRun(ref: WorkflowRunRef): Promise<RecordedWorkflow> {
-  const listed = await api<{ data: RecordedWorkflow[] }>(`/workflows?threadId=${encodeURIComponent(ref.rootThreadId)}`);
+export async function readWorkflowRun(ref: WorkflowRunRef, signal?: AbortSignal): Promise<RecordedWorkflow> {
+  const listed = await api<{ data: RecordedWorkflow[] }>(`/workflows?threadId=${encodeURIComponent(ref.rootThreadId)}`, undefined, signal);
   const found = listed.data?.find(run => run.id === ref.id);
   if (!found || (found.rootThreadId && found.rootThreadId !== ref.rootThreadId))
     throw Error("This saved workflow could not be loaded. Refresh and try again.");
@@ -198,6 +198,7 @@ export function WorkflowChat({
   onOpenCanvas: (run: WorkflowRun) => void;
 }) {
   const [record, setRecord] = useState<RecordedWorkflow>(run),
+    [readError, setReadError] = useState(""),
     [error, setError] = useState(""),
     [pending, setPending] = useState(false),
     [revision, setRevision] = useState(0);
@@ -213,27 +214,30 @@ export function WorkflowChat({
   }, [run.id, run.rootThreadId]); // Preserve a live record across catalog refreshes.
   useEffect(() => {
     if (!ready) return;
-    let live = true,
-      timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>, retryAfter = 1500;
     const read = async () => {
       try {
-        const next = await readWorkflowRun(run);
-        if (!live) return;
+        const next = await readWorkflowRun(run, controller.signal);
+        if (controller.signal.aborted) return;
         setRecord(next);
-        setError("");
-        timer = setTimeout(
-          () => {
-            void read();
-          },
-          ACTIVE.has(next.status) || (next.next && !next.next.reported && ACTIVE.has(next.next.status)) ? 1500 : 5000,
-        );
+        setReadError("");
+        retryAfter = 1500;
+        const active = ACTIVE.has(next.status) || (next.next && !next.next.reported && ACTIVE.has(next.next.status));
+        if (active || !["succeeded", "completed"].includes(next.status))
+          timer = setTimeout(read, active ? 1500 : 5000);
       } catch (cause) {
-        if (live) setError(errorText(cause));
+        if (controller.signal.aborted) return;
+        setReadError(errorText(cause));
+        if (retryableReadError(cause)) {
+          timer = setTimeout(read, retryAfter);
+          retryAfter = Math.min(retryAfter * 2, 30000);
+        }
       }
     };
     void read();
     return () => {
-      live = false;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [run.id, run.rootThreadId, run.status, ready, revision]);
@@ -327,9 +331,9 @@ export function WorkflowChat({
         </p>
       )}
       {!ready && <p role="status">Reconnect to refresh or resume this workflow. Its saved state remains visible.</p>}
-      {error && (
+      {(error || readError) && (
         <p role="alert" className="text-destructive">
-          {error}
+          {error || readError}
         </p>
       )}
       {!tasks.length && <p>No task details have been recorded for this run.</p>}

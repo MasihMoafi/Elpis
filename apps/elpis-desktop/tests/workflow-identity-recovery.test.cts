@@ -4,6 +4,30 @@ const assert: typeof import('node:assert/strict') = require('node:assert/strict'
 const { chooseTheme } = require('./controls.cts');
 const { base, open, row, eventually, shot }: import("./workflow-identity.fixtures.cts").Fixtures = require("./workflow-identity.fixtures.cts");
 
+test('workflow chat recovers from a failed read and stops polling once the run succeeds', async () => {
+  const run = { id: 'recover-read', rootThreadId: 'chat-a', name: 'Saved run', status: 'running', tasks: [] };
+  let reads = 0;
+  const f = await open('light', [run], {}, {}, {
+    '/api/workflows': (_body, url) => {
+      if (url.searchParams.get('threadId') !== run.rootThreadId) return { data: [run] };
+      reads++;
+      return reads === 1 ? { __http: 503, error: 'Workflow history temporarily unavailable' }
+        : { data: [{ ...run, status: 'succeeded', tasks: [{ id: 'final', title: 'Final check', status: 'succeeded' }] }] };
+    },
+  });
+  try {
+    await row(f.page, 'chat-a').locator('.thread-link').click();
+    const summary = f.page.getByRole('region', { name: 'Workflow run', exact: true });
+    await summary.getByRole('alert').filter({ hasText: 'temporarily unavailable' }).waitFor();
+    await summary.getByText('succeeded · 1/1 tasks complete', { exact: true }).waitFor({ timeout: 12000 });
+    assert.equal(await summary.getByRole('alert').count(), 0);
+    const settled = reads;
+    await new Promise(resolve => setTimeout(resolve, 5500));
+    assert.equal(reads, settled, 'a completed run does not poll its saved history');
+    assert.equal(f.posts.some(post => post.path.endsWith('/resume') && post.path.includes('/workflows/')), false);
+  } finally { await f.close(); }
+});
+
 test('failed workflow follows a resumed agent and paginated descendants without duplicate recovery', async () => {
   const saved = { id: 'observed-run', rootThreadId: 'chat-a', name: 'Observed team', status: 'failed', tasks: [
     { id: 'inspect', title: 'Inspect evidence', kind: 'research', assignedThreadId: 'observed-child', status: 'failed', failureReason: 'Previous attempt reached the weekly limit.', writeScopes: [], acceptanceCriteria: [], dependsOn: [] },

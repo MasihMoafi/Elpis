@@ -119,6 +119,8 @@ class SessionError extends Error {
   }
 }
 export const retryableSessionError = (error: unknown) => error instanceof SessionError && error.retryable;
+export const retryableReadError = (error: unknown) => retryableSessionError(error) ||
+  (error instanceof RequestError && (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500));
 async function call<T>(path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   let response: Response;
   try {
@@ -177,7 +179,7 @@ function exchangeSession(): Promise<void> {
         .then(() => history.replaceState(null, "", location.pathname + location.search))
         .catch(error => {
           const status = error instanceof RequestError ? error.status : undefined;
-          mayRetrySession = status === 0 || status === 408 || status === 429 || (status !== undefined && status >= 500);
+          mayRetrySession = retryableReadError(error);
           throw new SessionError(
             status === 401 || status === 403
               ? "Could not sign in to Elpis. Reopen this window to refresh its connection token."
