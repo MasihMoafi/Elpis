@@ -118,10 +118,19 @@ export function createReaderWorker(env: NodeJS.ProcessEnv = process.env, kokoro?
       if (voice && !voices.includes(voice)) throw new BridgeError("Choose an installed voice.");
       if (signal?.aborted) throw new BridgeError("Reading was stopped.", 499);
       waiting++;
-      const loading = () => { if (waiting === 1 && !jobs.size) close(); };
-      signal?.addEventListener("abort", loading, { once: true });
-      try { await start(); } finally { waiting--; signal?.removeEventListener("abort", loading); }
-      if (signal?.aborted || !child) { if (!waiting && !jobs.size) close(); throw new BridgeError("Reading was stopped.", 499); }
+      // Stop belongs to this reading. The chat and other readings share the model load.
+      const stopped = Promise.withResolvers<never>();
+      const abortLoadWait = () => stopped.reject(new BridgeError("Reading was stopped.", 499));
+      signal?.addEventListener("abort", abortLoadWait, { once: true });
+      try {
+        const loading = start();
+        await (signal ? Promise.race([loading, stopped.promise]) : loading);
+      } finally {
+        waiting--;
+        signal?.removeEventListener("abort", abortLoadWait);
+        if (signal?.aborted && !waiting) releaseWhenIdle();
+      }
+      if (signal?.aborted || !child) throw new BridgeError("Reading was stopped.", 499);
       const id = randomUUID(), audio = new PassThrough();
       jobs.set(id, { audio });
       const cancel = () => {

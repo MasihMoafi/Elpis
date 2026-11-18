@@ -44,7 +44,7 @@ test("streaming reads are single-use and a changed source cannot play prepared a
   assert.equal(spoken.length, 1);
 });
 
-test("Qwen streams audio before synthesis ends and Stop cancels generation while retaining the warm model", async t => {
+test("Stop discards a read during model loading or synthesis without losing the shared worker", { timeout: 8000 }, async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "qwen-adapter-"));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   await fs.mkdir(path.join(root, "worker"));
@@ -53,7 +53,11 @@ test("Qwen streams audio before synthesis ends and Stop cancels generation while
   await fs.writeFile(path.join(root, "model/speech_tokenizer/model.safetensors"), "fixture");
   await fs.writeFile(path.join(root, "worker/synthesis.py"), `import time, os
 def load():
+    while not os.path.isfile(os.path.join(os.path.dirname(__file__), 'ready')):
+        time.sleep(.01)
     def generate(text, voice):
+        if text == 'Discard this.':
+            open(os.path.join(os.path.dirname(__file__), 'discarded-text-reached-worker'), 'w').close()
         with open(os.environ['QWEN_TEST_PID'], 'w') as f: f.write(str(os.getpid()))
         yield object(), 24000, None
         for _ in range(40 if text == 'Hello.' else 1):
@@ -73,6 +77,15 @@ def clip(*_): return PCM()
   });
   t.after(() => reader.close());
   assert.equal(reader.available(), true);
+  const warming = reader.warm();
+  const early = new AbortController();
+  const discarded = reader.stream("Discard this.", "qwen_aiden", early.signal);
+  const checked = Promise.all([
+    warming,
+    assert.rejects(discarded, /Reading was stopped/).finally(() => fs.writeFile(path.join(root, "worker/ready"), "")),
+  ]);
+  early.abort();
+  await checked;
   const controller = new AbortController(), started = Date.now();
   const stream = await reader.stream("Hello.", "qwen_aiden", controller.signal);
   const first = await new Promise<Buffer>((resolve, reject) => { stream.once("data", resolve); stream.once("error", reject); });
@@ -86,6 +99,7 @@ def clip(*_): return PCM()
   const next = await reader.stream("Warm.", "qwen_aiden");
   await new Promise<void>((resolve, reject) => { next.once("data", () => resolve()); next.once("error", reject); });
   assert.ok(Date.now() - warm < 500, "cancelled generation cannot hold up the next reading");
+  await assert.rejects(fs.access(path.join(root, "worker/discarded-text-reached-worker")), { code: "ENOENT" });
   next.on("error", () => {});
   reader.close();
   for (let retry = 0; retry < 30; retry++) {
