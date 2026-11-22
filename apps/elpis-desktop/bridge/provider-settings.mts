@@ -54,6 +54,12 @@ export const BUILT_IN_KEY_PROVIDERS: Record<string, Definition> = {
     wire_api: "chat",
     http_headers: { "X-OpenRouter-Title": "Elpis" },
   },
+  deepseek: {
+    name: "DeepSeek",
+    base_url: "https://api.deepseek.com/v1",
+    env_key: "DEEPSEEK_API_KEY",
+    wire_api: "chat",
+  },
 };
 /** A provider's definition: the user's config first, then the engine's built-in one. */
 export const providerDefinition = (read: ConfigRead, id: string) =>
