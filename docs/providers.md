@@ -12,6 +12,7 @@ Who owns what is [TUI item 2](TUI_SPEC.md#foundation); switching provider keeps 
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | Chat Completions, through the gateway |
 | `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` | Anthropic Messages, through the gateway |
 | `google-gemini` | `https://generativelanguage.googleapis.com/v1beta` | `GEMINI_API_KEY` | Gemini `streamGenerateContent`, through the gateway |
+| `deepseek` | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` | Chat Completions, through the gateway |
 | `amazon-bedrock` | `https://bedrock-mantle.us-east-1.api.aws/openai/v1` | AWS credentials | OpenAI Responses |
 | `ollama` | `http://localhost:11434/v1` | none | OpenAI Responses |
 | `lmstudio` | `http://localhost:1234/v1` | none | OpenAI Responses |
@@ -31,7 +32,7 @@ Gateway providers list the vendor's own models; a listing that cannot be read yi
 | `--provider gemini-flash` | `~google/gemini-flash-latest` |
 
 ```bash
-export ANTHROPIC_API_KEY='...'      # or OPENROUTER_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY
+export ANTHROPIC_API_KEY='...'      # or OPENROUTER_API_KEY, GEMINI_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY
 elpis --provider anthropic
 elpis --provider ollama --model llama3          # no key
 elpis --provider openrouter --model tencent/hy3:free

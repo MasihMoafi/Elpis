@@ -49,6 +49,27 @@ fn built_in_anthropic_is_a_responses_provider_pointing_at_the_gateway() {
 }
 
 #[test]
+fn built_in_deepseek_is_a_chat_provider_routed_through_the_gateway() {
+    let providers: HashMap<_, _> = built_in_gateway_providers().into_iter().collect();
+    let deepseek = &providers[DEEPSEEK_PROVIDER_ID];
+
+    assert_eq!(deepseek.wire_api, WireApi::Responses);
+    assert_eq!(deepseek.base_url.as_deref(), Some(UNSTARTED_BASE_URL));
+    // Core must neither send the key itself nor fail on a missing variable.
+    assert_eq!(deepseek.env_key, None);
+    assert!(!deepseek.requires_openai_auth);
+    assert_eq!(
+        gateway_route(deepseek),
+        Some(GatewayRoute {
+            provider_id: DEEPSEEK_PROVIDER_ID.to_string(),
+            wire: GatewayWire::Chat,
+            upstream_base_url: DEEPSEEK_BASE_URL.to_string(),
+            env_key: Some(DEEPSEEK_API_KEY_ENV.to_string()),
+        })
+    );
+}
+
+#[test]
 fn built_in_catalog_names_the_gateway_providers_and_leaves_openai_direct() {
     let providers = crate::built_in_model_providers(/*openai_base_url*/ None);
     let routed = |id: &str| {
@@ -67,6 +88,7 @@ fn built_in_catalog_names_the_gateway_providers_and_leaves_openai_direct() {
         Some(GatewayWire::GeminiGenerateContent)
     );
     assert_eq!(routed(OPENROUTER_PROVIDER_ID), Some(GatewayWire::Chat));
+    assert_eq!(routed(DEEPSEEK_PROVIDER_ID), Some(GatewayWire::Chat));
     assert_eq!(routed(crate::OPENAI_PROVIDER_ID), None);
     assert_eq!(routed(crate::OLLAMA_OSS_PROVIDER_ID), None);
 }

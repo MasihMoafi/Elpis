@@ -9,8 +9,8 @@
 //! `x-elpis-*` headers below tell the gateway where each request really goes.
 //!
 //! The same routing serves the built-in providers (`anthropic`,
-//! `google-gemini`, `openrouter`) and any configured provider that names one of
-//! these protocols, as v0.3.0 configs did:
+//! `google-gemini`, `openrouter`, `deepseek`) and any configured provider that
+//! names one of these protocols, as v0.3.0 configs did:
 //!
 //! ```toml
 //! [model_providers.deepseek]
@@ -60,6 +60,10 @@ pub const OPENROUTER_PROVIDER_ID: &str = "openrouter";
 pub const OPENROUTER_PROVIDER_NAME: &str = "OpenRouter";
 pub const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 pub const OPENROUTER_API_KEY_ENV: &str = "OPENROUTER_API_KEY";
+pub const DEEPSEEK_PROVIDER_ID: &str = "deepseek";
+pub const DEEPSEEK_PROVIDER_NAME: &str = "DeepSeek";
+pub const DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
+pub const DEEPSEEK_API_KEY_ENV: &str = "DEEPSEEK_API_KEY";
 
 /// A vendor protocol the gateway translates Responses requests into.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,7 +223,7 @@ struct BuiltInGatewayProvider {
     headers: &'static [(&'static str, &'static str)],
 }
 
-const BUILT_IN_GATEWAY_PROVIDERS: [BuiltInGatewayProvider; 3] = [
+const BUILT_IN_GATEWAY_PROVIDERS: [BuiltInGatewayProvider; 4] = [
     BuiltInGatewayProvider {
         id: ANTHROPIC_PROVIDER_ID,
         name: ANTHROPIC_PROVIDER_NAME,
@@ -243,6 +247,14 @@ const BUILT_IN_GATEWAY_PROVIDERS: [BuiltInGatewayProvider; 3] = [
         base_url: OPENROUTER_BASE_URL,
         env_key: OPENROUTER_API_KEY_ENV,
         headers: &[("X-OpenRouter-Title", "Elpis")],
+    },
+    BuiltInGatewayProvider {
+        id: DEEPSEEK_PROVIDER_ID,
+        name: DEEPSEEK_PROVIDER_NAME,
+        wire: GatewayWire::Chat,
+        base_url: DEEPSEEK_BASE_URL,
+        env_key: DEEPSEEK_API_KEY_ENV,
+        headers: &[],
     },
 ];
 
