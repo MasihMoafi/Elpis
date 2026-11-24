@@ -482,6 +482,62 @@ const AGY_PROVIDER: &str = "antigravity";
 const AGY_MODEL: &str = "agy/gemini-3.8-flash-high";
 const AGY_NAME: &str = "Gemini 3.8 Flash (High) (Antigravity)";
 
+#[tokio::test]
+async fn openai_api_credits_picker_requires_a_bridged_model_and_identifies_its_route() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
+    const PROVIDER: &str = "openai-credits";
+    const MODEL: &str = "openai-credits/gpt-6.2-sol";
+    const NAME: &str = "OpenAI API credits";
+
+    chat.open_elpis_provider_popup();
+    let providers = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(!providers.contains(NAME), "{providers}");
+
+    let mut credits = get_available_model(&chat, "gpt-5.5");
+    credits.id = MODEL.to_string();
+    credits.model = MODEL.to_string();
+    credits.display_name = "GPT-6.2 Sol".to_string();
+    credits.is_default = false;
+    Arc::make_mut(&mut chat.model_catalog).models.push(credits);
+    chat.open_elpis_provider_popup();
+    let providers = render_bottom_popup(&chat, /*width*/ 120);
+    assert!(providers.contains(NAME), "{providers}");
+
+    chat.open_elpis_provider_models(PROVIDER.to_string(), Ok(Vec::new()));
+    let popup = render_bottom_popup(&chat, /*width*/ 120);
+    assert_eq!(
+        row_names(&popup),
+        vec!["Change provider…", "GPT-6.2 Sol"],
+        "{popup}"
+    );
+    assert!(popup.contains("Elpis using the OpenAI API"), "{popup}");
+    std::iter::from_fn(|| rx.try_recv().ok()).for_each(drop);
+    for ch in "sol".chars() {
+        chat.handle_key_event(KeyEvent::from(KeyCode::Char(ch)));
+    }
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    let preset = assert_matches!(
+        rx.try_recv(),
+        Ok(AppEvent::OpenReasoningPopup { model }) => model
+    );
+    assert_eq!(preset.model, MODEL);
+    assert_eq!(chat.config.model_provider_id, "openai");
+    chat.set_model(MODEL);
+    let status = lines_to_single_string(
+        &chat
+            .status_output_cell(
+                /*refreshing_rate_limits*/ false, /*request_id*/ None,
+            )
+            .display_lines(/*width*/ 120),
+    );
+    assert!(
+        status
+            .lines()
+            .any(|line| line.contains("Model provider") && line.contains(NAME)),
+        "{status}"
+    );
+}
+
 /// Adds an Antigravity model to the app server's list, as the bridge does.
 fn add_antigravity_model(chat: &mut ChatWidget) {
     let mut agy = get_available_model(chat, "gpt-5.5");

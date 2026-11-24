@@ -23,11 +23,13 @@ pub(super) const ELPIS_PROVIDER_LOADING_VIEW_ID: &str = "elpis-provider-loading"
 /// The pickers' id for the Claude subscription.
 pub(crate) const CLAUDE_SUBSCRIPTION_PROVIDER_ID: &str = "claude-subscription";
 pub(super) const ANTIGRAVITY_PROVIDER_ID: &str = "antigravity";
+const OPENAI_CREDITS_PROVIDER_ID: &str = "openai-credits";
 
 /// The providers the pickers offer first, in this order. Configured vendors
 /// follow; other built-ins (Gemini, Ollama, LM Studio, Bedrock) appear only while active.
-const LISTED_PROVIDERS: [&str; 5] = [
+const LISTED_PROVIDERS: [&str; 6] = [
     codex_model_provider_info::OPENAI_PROVIDER_ID,
+    OPENAI_CREDITS_PROVIDER_ID,
     CLAUDE_SUBSCRIPTION_PROVIDER_ID,
     codex_model_provider_info::ANTHROPIC_PROVIDER_ID,
     ANTIGRAVITY_PROVIDER_ID,
@@ -57,7 +59,7 @@ pub(crate) struct BridgedProvider {
     limit_id_prefix: &'static str,
 }
 
-static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
+static BRIDGED_PROVIDERS: [BridgedProvider; 3] = [
     BridgedProvider {
         model_prefix: "claude/",
         id: CLAUDE_SUBSCRIPTION_PROVIDER_ID,
@@ -77,6 +79,16 @@ static BRIDGED_PROVIDERS: [BridgedProvider; 2] = [
         answers: "Antigravity answers; this conversation and its provider stay.",
         account_key: "agy",
         limit_id_prefix: "antigravity",
+    },
+    BridgedProvider {
+        model_prefix: "openai-credits/",
+        id: OPENAI_CREDITS_PROVIDER_ID,
+        name: "OpenAI API credits",
+        credential: "your OpenAI API key",
+        route: "Elpis using the OpenAI API",
+        answers: "Elpis uses the OpenAI API to answer.",
+        account_key: OPENAI_CREDITS_PROVIDER_ID,
+        limit_id_prefix: OPENAI_CREDITS_PROVIDER_ID,
     },
 ];
 
