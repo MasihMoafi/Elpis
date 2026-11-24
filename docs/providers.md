@@ -9,6 +9,7 @@ Who owns what is [TUI item 2](TUI_SPEC.md#foundation); switching provider keeps 
 | Provider ID | API base URL | Key | Protocol |
 | :--- | :--- | :--- | :--- |
 | `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` / OAuth | OpenAI Responses |
+| `openai-credits` (Elpis ACP agent) | `https://api.openai.com/v1` | Dedicated API organization | OpenAI Responses |
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | Chat Completions, through the gateway |
 | `anthropic` | `https://api.anthropic.com/v1` | `ANTHROPIC_API_KEY` | Anthropic Messages, through the gateway |
 | `google-gemini` | `https://generativelanguage.googleapis.com/v1beta` | `GEMINI_API_KEY` | Gemini `streamGenerateContent`, through the gateway |
@@ -38,6 +39,16 @@ elpis --provider openrouter --model tencent/hy3:free
 ```
 
 A gateway key comes from, in order: a bearer token core attached (`experimental_bearer_token` or command auth), a key saved from the terminal (owner-only `provider-keys.json` in the Elpis home), then the provider's environment variable. Keys never appear in logs or error messages (`codex-rs/elpis-gateway/src/keys.rs`), and native keys are never forwarded to OpenRouter.
+
+### Dedicated OpenAI API credits chat
+
+Run `elpis-credits` to open a chat or `elpis-credits resume` to return to one.
+The launcher keeps these chats in a separate Elpis profile. The Elpis agent lists
+models from the credit organization, streams replies through the Responses API,
+and asks permission before calling an MCP tool. Its credential comes from
+`OPENAI_CREDITS_API_KEY` or an `OPENAI_API_KEY` entry in the owner-only
+`~/.config/elpis/openai-credits.env` file. Billing and balance information is
+available in the organization's OpenAI Platform dashboard.
 
 ## 3. Wire translation
 

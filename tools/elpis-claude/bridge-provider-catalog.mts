@@ -3,6 +3,7 @@ import type { ClaudeWindow, AgyBucket, AgyGroup, RateLimit, ProviderAgent, Catal
 import { isSignedOut, SIGNED_OUT_MESSAGE } from "./anthropic-signout.mts";
 import { ClaudeAccounts } from "./claude-accounts.mts";
 import { execFile } from "node:child_process";
+import { hasCreditKey } from "./openai-credits.mts";
 import { existsSync } from "node:fs";
 export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claudeAccounts, log }: {
     HOME: string;
@@ -34,6 +35,11 @@ export function createProviderCatalog({ HOME, STATE_DIR, CLAUDE, ADAPTER, claude
         ...ProviderAgent[]
     ] = [
         { key: "claude", speaker: "Claude", prefix: "claude/", label: "Claude subscription", description: "Claude Code on your Pro/Max plan", adapter: ADAPTER, get env() { return { CLAUDE_CODE_EXECUTABLE: CLAUDE, ...claudeAccounts.environment() }; }, catalogFile: CATALOG, signedOut: () => claudeSignedOut() || claudeUnavailable(), limits: () => (claudeSignedOut() ? Promise.resolve([]) : claudeLimitsCached().then((one) => [one])) },
+        {
+            key: "openai-credits", prefix: "openai-credits/", speaker: "OpenAI", label: "OpenAI API credits",
+            description: "Elpis using the OpenAI API", adapter: new URL("./openai-credits-acp.mts", import.meta.url).pathname,
+            env: {}, available: hasCreditKey, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-openai-credits.json"), limits: async () => [],
+        },
         ...(!process.env.ELPIS_NO_AGY && existsSync(AGY_BIN)
             ? [{ key: "agy", speaker: "Gemini", prefix: "agy/", label: "Antigravity", description: "Antigravity, your Google sign-in", adapter: new URL("./agy-acp.mts", import.meta.url).pathname, env: { AGY_BIN }, catalogFile: CATALOG.replace(/catalog\.json$/, "catalog-agy.json"), limits: () => agyLimitsCached() }]
             : []),

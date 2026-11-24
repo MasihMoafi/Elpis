@@ -103,7 +103,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   }
   const context: BridgeContext = {
     failed: false,
-    claudeBusy: () => [...activeTurns.keys()].some((tid: string) => agentOf(claudeModel.get(tid))?.key === "claude") || structured.size > 0,
+    claudeBusy: () => [...activeTurns.keys()].some((tid: string) => agentOf(claudeModel.get(tid))?.key === "claude") || [...structured.values()].some(request => request.key.startsWith("claude:")),
     stopProvider: (tid: string) => stopProvider(tid, "deleted"),
     stopProviderFor: (tid: string, action) => stopProvider(tid, action),
     resumeQueue: (tid: string) => { if (queues.has(tid)) runNext(tid); },
@@ -237,11 +237,10 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   const isBridged = (m: unknown): m is string => !!agentOf(m);
   const acpKey = (agentKey: string, accountId = claudeAccounts.activeId()) => agentKey === "claude" ? `claude:${accountId}` : agentKey;
   const bootingAcps = new Set<Acp>();
-  const structuredStarting = new Set<string>();
   const isAcpUsed = (key: string, acp: Acp) => {
     if (acp.discovering) return true;
     if (bootingAcps.has(acp) && clients.size > 0) return true;
-    if (key === acpKey(AGENTS[0].key) && (structured.size > 0 || structuredStarting.size > 0)) return true;
+    if ([...structured.values()].some(request => request.key === key)) return true;
     for (const tid of activeTurns.keys()) {
       const s = sessions.get(tid);
       const agentKey = s?.agent ?? agentOf(claudeModel.get(tid))?.key ?? "";
@@ -448,7 +447,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   };
   const activeTurns = new BusyMap<string, ProviderTurn>(); // native history copies do not own the provider's turn status
   const engineTurns = new BusyMap<string, string>(); // thread id -> its running engine turn
-  const structured = new BusyMap<string, string>(); // hidden thread -> its Claude session
+  const structured = new BusyMap<string, { key: string; sessionId?: string; cancelled?: boolean }>();
   const { unlistedClaudeThreads, missingThreadUntil } = createThreadList({ engineCall, activeTurns, ownModel, storeChain, loadStore, now, log });
   const { claudeTurnsOf, providerHistory, resumeHistory, listProviderHistory, priorTranscript } = createProviderHistory({ forkParent, engineCall, resumeResults, activeTurns, childIds, storedChildren, threadSeen, providerOwners, forwarded, ws, toTui, storeChain, loadStore, textOf, log });
   const { authorityOf, stopIfReduced, confirmations, ownHelpers, releaseHelpers, failHelper, enforceHelper, restrictHelper, openHelper, boundAccess, adoptHelper } = createHelperPermissions({ threadAccess, threadPolicy, UNSANDBOXED, AUTHORITY, accessModeOf, activeTurns, notify, engineCall, log, helperScope, engineTurns, helperConns, ws, context, engine, threadSandbox, claudeModel, lowest, isBridged, claimEngineHelper, explicitChatChoices, updateStore });
@@ -587,9 +586,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     claudeTurn({ id: msg.id, kind: "review", reviewHint: hint, params: { threadId, input: [{ type: "text", text: `${REVIEW_RULES}\n\n${REVIEW_FORMAT}\n\n${ask}`, text_elements: [] }] } });
   }
 
-  // Chat titles and /recap on a Claude chat: the TUI starts a hidden ephemeral thread on the
-  // chat's model and asks for JSON. A one-off Claude session with no tools, no MCP servers and
-  // no user settings answers it; nothing is recorded in the store or the engine.
+  // Titles and recaps use a disposable session without tools or user settings.
   async function structuredClaude(msg: ThreadRequest) {
     const { threadId, input = [], outputSchema = null } = msg.params;
     const turnId = randomUUID();
@@ -599,36 +596,38 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     notify("turn/started", { threadId, turn: { ...turn, startedAt } });
     const items = [];
     let status = "completed", error = null, sessionId = null, a = null;
-    structuredStarting.add(threadId);
+    const selected = claudeModel.get(threadId) ?? msg.params.model;
+    const source = agentOf(selected);
+    const provider = source?.key === "openai-credits" ? source : AGENTS[0];
+    const model = provider.key === "openai-credits" && selected ? selected.slice(provider.prefix.length) : STRUCTURED_MODEL;
+    const request: { key: string; sessionId?: string; cancelled?: boolean } = { key: acpKey(provider.key) };
+    structured.set(threadId, request);
     try {
       await assertSubscriptionAllowed();
-      // Hidden requests always go to Claude (Haiku), whichever subscription the chat uses.
-      refuseSignedOut(AGENTS[0]);
-      a = await ensureAcp(AGENTS[0]);
-      sessionId = (await a.call("session/new", { cwd: threadCwd.get(threadId) ?? process.cwd(), mcpServers: [], _meta: { systemPrompt: STRUCTURED_SYSTEM, claudeCode: { options: { tools: [], settingSources: [] } } } })).sessionId;
+      refuseSignedOut(provider);
+      a = await ensureAcp(provider);
+      sessionId = (await a.call("session/new", { cwd: threadCwd.get(threadId) ?? process.cwd(), mcpServers: [], _meta: { ephemeral: true, systemPrompt: STRUCTURED_SYSTEM, claudeCode: { options: { tools: [], settingSources: [] } } } })).sessionId;
       let text = "";
       a.bySession.set(sessionId, { onUpdate: ({ update: u }) => { if (u.sessionUpdate === "agent_message_chunk" && u.content?.type === "text") text += u.content.text; } });
-      structured.set(threadId, sessionId);
-      structuredStarting.delete(threadId);
-      await a.call("session/set_config_option", { sessionId, configId: "model", value: STRUCTURED_MODEL });
+      request.sessionId = sessionId;
+      await a.call("session/set_config_option", { sessionId, configId: "model", value: model });
       const ask = outputSchema ? `${inputSummary(input)}\n\nAnswer with only one JSON object that matches this JSON Schema:\n${JSON.stringify(outputSchema)}` : inputSummary(input);
-      const r = await a.call("session/prompt", { sessionId, prompt: [{ type: "text", text: ask }] });
+      const r = request.cancelled ? { stopReason: "cancelled" } : await a.call("session/prompt", { sessionId, prompt: [{ type: "text", text: ask }] });
       if (r.stopReason === "cancelled") status = "interrupted";
       else {
         const answer = outputSchema ? jsonIn(text) : text.trim();
-        if (!answer) throw new Error(`Claude did not answer with JSON: ${text.slice(0, 200)}`);
+        if (!answer) throw new Error(`The agent did not return the requested answer: ${text.slice(0, 200)}`);
         const item = { type: "agentMessage", id: `msg_${randomUUID()}`, text: answer, phase: null, memoryCitation: null, delivery: null, questions: null };
         notify("item/started", { item, threadId, turnId, startedAtMs: now() });
         notify("item/completed", { item, threadId, turnId, completedAtMs: now() });
         items.push(item);
       }
-      log(`structured request on Claude ${STRUCTURED_MODEL} for hidden thread ${threadId}: ${status}`);
+      log(`structured request on ${provider.label} ${model} for hidden thread ${threadId}: ${status}`);
     } catch (e) {
       status = "failed";
       error = { message: acpErrorMessage(e as BridgeError), codexErrorInfo: acpErrorInfo(e as BridgeError), additionalDetails: null };
       log(`structured request error ${JSON.stringify((e as BridgeError)?.message ?? e)}`);
     }
-    structuredStarting.delete(threadId);
     structured.delete(threadId);
     if (sessionId) { a?.bySession.delete(sessionId); a?.call("session/delete", { sessionId }).catch(() => {}); }
     releaseUnusedAcps();
@@ -691,7 +690,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
   };
   engine.stdout.on("exit", engineExited);
   (engine as { once?: (event: "exit", listener: () => void) => void }).once?.("exit", engineExited);
-  const router = { AGENTS, HOME, acpKey, acps, activeTurns, agentOf, answerChild, appMcpConfig, assertSubscriptionAllowed, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, releaseUnusedAcps, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws };
+  const router = { AGENTS, catalogFor, HOME, acps, activeTurns, agentOf, answerChild, appMcpConfig, assertSubscriptionAllowed, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, releaseUnusedAcps, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws };
   const engineMessages = { AGENTS, TOOL_APPROVALS, addSubscriptionLimits, adoptHelper, agentOf, announceLimits, archivingThreads, authorityOf, automaticThreads, blockedAutomaticThreads, catalogFor, chatAccess, chatBack, checkIdle, claimProvider, claudeEffort, claudeModel, connectionId, deletingThreads, dropThreadSession, engine, engineCall, engineReqs, engineTurns, explicitChatChoices, failHelper, forkParent, fullFor, helperConns, helperScope, helperThreads, loadStore, log, markHelpers, missingThreadUntil, nameModel, noteAccess, notePlan, notify, now, openHelper, openingEnvironment, openingMcp, ownModel, pendingAdopt, pendingArchive, pendingChildList, pendingConfigRead, pendingDelegation, pendingHelperMark, pendingHelperTurns, pendingHelpers, pendingItemsList, pendingLimitsRead, pendingModelList, pendingNativeRoutes, pendingResume, pendingStart, pendingThreadList, pendingTurnsList, permissionChoices, permissionRefreshes, permissionWrites, providerOwners, queues, relayToTui, relayed, replayPlan, restrictHelper, resumeHistory, resumeOptions, resumeResults, sessions, settleRelay, shareHelper, signedOutModel, smartPrune, startingProviders, stopIfReduced, storeChain, storedChildren, subscriptions, threadCwd, threadEnvironment, threadMcp, threadPolicy, threadSeen, toOthers, toTui, unlistedClaudeThreads, updateStore, ws };
   return { router, engineMessages, activate(handler: (data: WebSocket.RawData | string, recovered?: boolean) => void, engineHandler: (line: string) => void) {
     handleMessage = handler;

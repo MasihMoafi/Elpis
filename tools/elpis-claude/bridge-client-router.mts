@@ -2,6 +2,7 @@ import { shouldMergeThreadList } from "./bridge-thread-list.mts";
 import type WebSocket from "ws";
 import { SIGNED_OUT_MESSAGE } from "./anthropic-signout.mts";
 import { redactSecrets } from "./log-redaction.mts";
+import { addSubscriptionModels } from "./bridge-model-list.mts";
 import { isStartRequest,isThreadRequest,readClientRequest } from "./bridge-client-protocol.mts";
 import { wireId,wireObject } from "./bridge-wire.mts";
 import type { GlobalRequest } from "./bridge-types.mts";
@@ -9,7 +10,7 @@ import type { GlobalRequest } from "./bridge-types.mts";
 import type { ClientRouterDependencies } from "./bridge-connection.mts";
 
 /** Route one frontend connection's requests to its owning provider or engine. */
-export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, agentOf, answerChild, appMcpConfig, assertSubscriptionAllowed, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws }: ClientRouterDependencies) {
+export function createClientRouter({ AGENTS, catalogFor, HOME, acps, activeTurns, agentOf, answerChild, appMcpConfig, assertSubscriptionAllowed, archiveProvider, archivingThreads, boundAccess, cancelClaudeSteers, cancelWaitingClaudeSteers, checkIdle, childIds, childThreads, claimProvider, claudeAccountsRequest, claudeEffort, claudeModel, claudeSubscriptionRequest, claudeTurn, context, contexts, deleteThread, deletedThreads, deletingThreads, dropThreadSession, enforceHelper, engine, engineCall, explicitChatChoices, forkProviderChat, goalRequest, helperConns, helperScope, isBridged, listProviderHistory, loadStore, loadStoreSnapshot, log, markHelpers, now, openingEnvironment, openingMcp, openingReplies, ownHelpers, pendingArchive, pendingChildList, pendingConfigRead, pendingHelperMark, pendingHelperTurns, pendingItemsList, pendingLimitsRead, pendingMirrors, pendingModelList, pendingNativeRoutes, pendingResume, pendingSteers, pendingThreadList, pendingTurnsList, permissionWrites, providerContextFiles, providerHistory, providerOwners, queueRequest, queues, recoverClaudeTurn, relayed, rememberStart, resumeOptions, resumeResults, resumeThread, revertThread, reviewClaude, runWorkGraph, sendClient, sessions, settleRelay, signedOutModel, startThread, steerClaude, storeChain, structured, structuredClaude, subscriptions, threadCollab, threadEnvironment, threadMcp, threadSeen, toTui, updateStore, viewers, workflowRequest, workflowToolConns, ws }: ClientRouterDependencies) {
   const stringRecord = (value: unknown): value is Record<string, string> => wireObject(value) && Object.values(value).every(v => typeof v === "string");
   const bridgedModel = (value: string) => isBridged(value);
   function prepareOpening(msg: GlobalRequest) {
@@ -35,8 +36,45 @@ export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, ag
       return;
     }
     const request = readClientRequest(value);
-    if (!request) { engine.stdin.write(line + "\n"); return; }
+    if (!request) {
+      if (wireObject(value) && wireId(value.id) && value.method === "turn/start" && wireObject(value.params)) {
+        const { model, threadId } = value.params;
+        if (process.env.ELPIS_OPENAI_CREDITS_ONLY === "1" || isBridged(model) || (model == null && typeof threadId === "string" && claudeModel.has(threadId))) {
+          toTui({ id: value.id, error: { code: -32602, message: "The selected agent could not read this turn." } });
+          return;
+        }
+      }
+      engine.stdin.write(line + "\n"); return;
+    }
     const msg = request;
+    if (process.env.ELPIS_OPENAI_CREDITS_ONLY === "1") {
+      const provider = AGENTS.find(agent => agent.key === "openai-credits");
+      if (msg.method === "account/read") {
+        toTui({ id: msg.id, result: { account: null, requiresOpenaiAuth: false } });
+        return;
+      }
+      if (msg.method === "model/list" && provider) {
+        const data: Record<string, unknown>[] = [];
+        void addSubscriptionModels(data, [provider], catalogFor, log)
+          .then(() => toTui({ id: msg.id, result: { data, nextCursor: null } }))
+          .catch(() => toTui({ id: msg.id, error: { code: -32603, message: "Could not read the OpenAI API credit models." } }));
+        return;
+      }
+      if (msg.method === "account/rateLimits/read") {
+        // The Responses API does not expose the organization's credit balance.
+        const rateLimits = { limitId: "openai-credits", limitName: provider?.label ?? null, normalModelSlug: null, primary: null,
+          secondary: null, credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null };
+        toTui({ id: msg.id, result: { rateLimits, rateLimitsByLimitId: null, rateLimitResetCredits: null } });
+        return;
+      }
+      if (msg.method === "turn/start") {
+        const model = msg.params.model ?? (msg.params.threadId && claudeModel.get(msg.params.threadId));
+        if (!provider || typeof model !== "string" || !model.startsWith(provider.prefix)) {
+          toTui({ id: msg.id, error: { code: -32602, message: "Select an OpenAI API credit model for this chat." } });
+          return;
+        }
+      }
+    }
     const subscriptionChange = (msg.method === "thread/settings/update" || msg.method === "turn/start") && isBridged(msg.params?.model)
       || msg.method === "config/batchWrite" && msg.params.edits?.some(edit => edit.keyPath === "model" && isBridged(edit.value));
     if (subscriptionChange && !policyChecked) {
@@ -299,8 +337,9 @@ export function createClientRouter({ AGENTS, HOME, acpKey, acps, activeTurns, ag
       return;
     }
     if (msg.method === "turn/interrupt" && structured.has(msg.params?.threadId)) {
-      const sessionId = structured.get(msg.params.threadId);
-      if (sessionId) acps.get(acpKey(AGENTS[0].key))?.send({ method: "session/cancel", params: { sessionId } });
+      const request = structured.get(msg.params.threadId);
+      if (request) request.cancelled = true;
+      if (request?.sessionId) acps.get(request.key)?.send({ method: "session/cancel", params: { sessionId: request.sessionId } });
       toTui({ id: msg.id, result: {} });
       return;
     }

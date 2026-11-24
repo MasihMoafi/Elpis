@@ -38,7 +38,7 @@ export function readClientRequest(value: unknown): GlobalRequest | null {
   if (!wireEnvelope(value) || !wireId(value.id) || !string(value.method)) return null;
   const raw = value.params == null ? {} : value.params;
   // In the app-server schema these null overrides mean the same as omission.
-  const optionalNulls = ["threadId", "cwd", "config", "approvalPolicy", "approvalsReviewer", "permissions", "sandbox", "sandboxPolicy",
+  const optionalNulls = ["threadId", "parentThreadId", "cwd", "config", "approvalPolicy", "approvalsReviewer", "permissions", "sandbox", "sandboxPolicy",
     "cursor", "limit", "sortKey", "sortDirection", "itemsView", "turnId", "modelProviders", "sourceKinds", "archived", "searchTerm",
     "beforeTurnId", "lastTurnId", "initialTurnsPage", "collaborationMode"];
   const p = wireObject(raw) ? { ...raw } : raw;

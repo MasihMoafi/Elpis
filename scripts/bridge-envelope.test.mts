@@ -43,6 +43,12 @@ if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
     } else send({ id: msg.id, result: {} });
   });
 } else {
+  test("a new TUI root with a null parent reaches the bridge", () => {
+    const start = { id: "startup-thread-start", method: "thread/start", params: { parentThreadId: null, model: "openai-credits/gpt-6.2-sol" } };
+    assert.ok(readClientRequest(start));
+    assert.equal(readClientRequest({ ...start, params: { parentThreadId: 42 } }), null);
+  });
+
   test("client null overrides follow the native collaboration and history schemas", () => {
     const collaborationMode: CollaborationMode = { mode: "plan", settings: { model: "claude/sonnet", reasoning_effort: null, developer_instructions: null } };
     const initialTurnsPage: ThreadResumeInitialTurnsPageParams = { limit: null, sortDirection: null, itemsView: null };
@@ -54,7 +60,7 @@ if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
     assert.equal(request({ initialTurnsPage: { ...initialTurnsPage, limit: "25" } }), null);
   });
 
-  test("global requests and unknown engine events survive malformed neighbouring events", { timeout: 20000 }, async t => {
+  for (const creditOnly of [false, true]) test(creditOnly ? "a credit profile cannot dispatch native turns or read a subscription" : "global requests and unknown engine events survive malformed neighbouring events", { timeout: 20000 }, async t => {
     const root = createTestTempDir(path.join(os.tmpdir(), "elpis-envelope-"));
     const engine = path.join(root, "engine.mjs"), trace = path.join(root, "trace"), log = path.join(root, "bridge.log");
     fs.writeFileSync(engine, `#!${process.execPath}\nimport ${JSON.stringify(fileURLToPath(import.meta.url))};\n`, { mode: 0o755 });
@@ -63,7 +69,7 @@ if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
     const bridge = process.env.ELPIS_ENVELOPE_TEST_BRIDGE ?? fileURLToPath(new URL("../tools/elpis-claude/acp-bridge.mts", import.meta.url));
     const child = spawn(process.execPath, [bridge], { cwd: root, stdio: ["ignore", "ignore", "pipe"], env: {
       PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, CODEX_HOME: root, CODEX_AUTH_HOME: root, XDG_RUNTIME_DIR: root, TMPDIR: root,
-      ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: log,
+      ELPIS_ENGINE_BIN: engine, ACP_BRIDGE_STORE: path.join(root, "sessions.json"), ACP_BRIDGE_LOG: log, ELPIS_OPENAI_CREDITS_ONLY: creditOnly ? "1" : "0",
       ACP_BRIDGE_NO_AGENTS: "1", ELPIS_NO_AGY: "1", PORT: "0", BRIDGE_ENVELOPE_ENGINE: "1", BRIDGE_ENVELOPE_TRACE: trace,
     } });
     let stderr = "", socket: WebSocket | undefined;
@@ -102,6 +108,17 @@ if (process.env.BRIDGE_ENVELOPE_ENGINE === "1") {
       socket?.send(JSON.stringify({ id: next, method, params }));
     });
     assert.ok((await call("initialize", { clientInfo: { name: "fixture", version: "1" } })).result);
+    if (creditOnly) {
+      assert.deepEqual((await call("account/read", {})).result, { account: null, requiresOpenaiAuth: false });
+      const limits = (await call("account/rateLimits/read", {})).result;
+      assert.ok(wireObject(limits) && wireObject(limits.rateLimits) && limits.rateLimits.credits === null);
+      for (const model of ["gpt-6.2-sol", "claude/sonnet", "openai-credits/gpt-6.2-sol"]) {
+        const input = model.startsWith("openai-credits/") ? 42 : [{ type: "text", text: "test" }];
+        assert.ok((await call("turn/start", { threadId: "fixture", model, input })).error);
+      }
+      assert.doesNotMatch(fs.readFileSync(trace, "utf8"), /"method":"(?:turn\/start|account\/read|account\/rateLimits\/read)"/);
+      return;
+    }
     const workflows = await call("workflowRun/list", { threadId: null });
     assert.ok(wireObject(workflows.result) && Array.isArray(workflows.result.data));
     const reply = await call("fixture/probe", { marker: "global" });

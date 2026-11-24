@@ -5,10 +5,12 @@
   "description": "Prototype: Claude (subscription, via ACP) answering turns in the Elpis TUI",
   "dependencies": {
     "@agentclientprotocol/claude-agent-acp": "0.94.0",
+    "@agentclientprotocol/sdk": "2.0.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "openai": "7.63.0",
     "ws": "^8"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/ws": "^8.18.2"
   }
 }

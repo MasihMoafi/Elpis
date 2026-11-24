@@ -9,7 +9,7 @@ export async function addSubscriptionModels(data: Record<string, unknown>[], AGE
         return Promise.race([catalogFor(agent), new Promise<typeof noModels>((resolve) => { timer = setTimeout(resolve, 30000, noModels); })])
           .finally(() => clearTimeout(timer));
       };
-      const lists = await Promise.all(AGENTS.map((agent) => agent.signedOut?.() ? noModels : catalogWithin(agent)));
+      const lists = await Promise.all(AGENTS.map((agent) => agent.available?.() === false || agent.signedOut?.() ? noModels : catalogWithin(agent)));
       const tpl = data[0] ?? {};
       const added: Record<string, unknown>[] = [];
       AGENTS.forEach((agent, i) => {

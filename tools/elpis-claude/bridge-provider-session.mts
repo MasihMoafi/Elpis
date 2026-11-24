@@ -19,6 +19,7 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
         await engineCall("thread/read", { threadId, includeTurns: true }, 5000);
         materializedProviders.add(threadId);
     }
+    if (agent.available?.() === false) throw new Error(`Configure ${agent.label} before sending a message in this chat.`);
     refuseSignedOut(agent);
     let live = sessions.get(threadId);
     if (!followup && live && (live.agent !== agent.key || (live.accountId ?? null) !== accountId)) {
