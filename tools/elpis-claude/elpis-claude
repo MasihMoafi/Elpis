@@ -8,7 +8,9 @@
 set -euo pipefail
 here="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 mkdir -p /tmp/acp-bridge
-out="$(NODE_USE_ENV_PROXY=1 node "$here/shared-runtime.mts" "$here/acp-bridge.mts")"
+proxy_env=(NODE_USE_ENV_PROXY=1)
+if [[ ${ELPIS_OPENAI_CREDITS_ONLY:-} == 1 ]]; then proxy_env=(); fi
+out="$(env "${proxy_env[@]}" node "$here/shared-runtime.mts" "$here/acp-bridge.mts")"
 endpoint="${out%%$'\n'*}" engine="${ELPIS_ENGINE_BIN:-$HOME/.local/bin/elpis}"
 case "$out" in *$'\n'"engine "*) engine="${out#*$'\n'engine }" ;; esac
 exec "$engine" --elpis-local-bridge --remote "$endpoint" "$@"

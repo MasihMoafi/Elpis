@@ -1,6 +1,6 @@
 import type { EventEmitter as Emitter } from "node:events";
 const { preloadPath }: typeof import("./preload-path.cts") = require("./preload-path.cts");
-const test = require("node:test");
+const { test }: typeof import("node:test") = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
