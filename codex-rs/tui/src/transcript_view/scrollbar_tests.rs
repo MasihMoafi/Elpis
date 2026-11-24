@@ -256,3 +256,45 @@ fn scrollbar_can_reach_the_middle_of_a_live_answer() {
         first.row
     );
 }
+
+#[test]
+fn thumb_moves_steadily_while_scrolling_through_tall_history() {
+    let cells: Vec<Arc<dyn HistoryCell>> = (0..90)
+        .map(|index| {
+            Arc::new(PlainHistoryCell::new(
+                (0..8)
+                    .map(|row| format!("{index:02} row {row}").into())
+                    .collect(),
+            )) as Arc<dyn HistoryCell>
+        })
+        .collect();
+    let height = 24;
+    let mut view = TranscriptView::default();
+    assert!(draw_at_height(&mut view, &cells, height).1);
+    let mut previous_top = height;
+
+    for _ in 0..195 {
+        let (buffer, _) = draw_at_height(&mut view, &cells, height);
+        let thumb: Vec<_> = (0..height)
+            .filter(|&row| buffer[(11, row)].symbol() == "┃")
+            .collect();
+        assert!((1..=2).contains(&thumb.len()), "thumb rows: {thumb:?}");
+        let top = thumb[0];
+        assert!(
+            top <= previous_top,
+            "thumb moved down from {previous_top} to {top}"
+        );
+        previous_top = top;
+        assert!(matches!(
+            view.handle_mouse(
+                MouseEvent {
+                    column: 1,
+                    ..press(MouseEventKind::ScrollUp, 1)
+                },
+                &cells,
+            ),
+            Some(ViewAction::Changed)
+        ));
+    }
+    assert!(view.visible.first().unwrap().index < 90 - 64);
+}

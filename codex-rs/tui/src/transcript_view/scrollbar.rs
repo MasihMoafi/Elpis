@@ -1,6 +1,6 @@
-//! A one-column scrollbar using the measured heights of recently visible messages.
+//! A one-column scrollbar using the measured heights of rendered messages.
 //!
-//! Unseen messages are estimated at one row, so scrolling never lays out the full history.
+//! Estimate unseen messages from measured heights without laying out the full history.
 
 use super::*;
 use crossterm::event::MouseButton;
@@ -8,6 +8,7 @@ use crossterm::event::MouseEvent;
 use crossterm::event::MouseEventKind;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
+use std::collections::BTreeMap;
 
 /// Scrollbar state; the column stays reserved once the conversation first overflows the screen,
 /// so text does not rewrap back and forth at the boundary.
@@ -16,41 +17,38 @@ pub(super) struct Scrollbar {
     reserved: bool,
     track: Option<Rect>,
     dragging: bool,
-    measured: Vec<(usize, EntryKey, usize)>,
+    measured: BTreeMap<usize, (EntryKey, usize)>,
+    estimate: usize,
     width: u16,
     count: usize,
 }
 
 impl Scrollbar {
     fn rows_before(&self, index: usize) -> usize {
-        index
-            + self
-                .measured
-                .iter()
-                .filter(|(i, _, _)| *i < index)
-                .map(|(_, _, rows)| rows.saturating_sub(1))
-                .sum::<usize>()
+        let mut unmeasured = index;
+        let mut rows = 0;
+        for (_, (_, height)) in self.measured.range(..index) {
+            unmeasured -= 1;
+            rows += height;
+        }
+        rows + unmeasured * self.estimate
     }
 
-    fn entry_at_row(&self, row: usize, count: usize) -> (usize, usize) {
-        let mut measured: Vec<_> = self
-            .measured
-            .iter()
-            .filter(|(i, _, _)| *i < count)
-            .collect();
-        measured.sort_unstable_by_key(|(index, _, _)| *index);
-        let mut extra = 0;
-        for (index, _, height) in measured {
-            let start = index + extra;
-            if row < start {
-                return (row.saturating_sub(extra), 0);
+    fn entry_at_row(&self, mut row: usize) -> (usize, usize) {
+        let mut next = 0;
+        for (&index, &(_, height)) in &self.measured {
+            let unseen_rows = (index - next) * self.estimate;
+            if row < unseen_rows {
+                return (next + row / self.estimate, row % self.estimate);
             }
-            if row < start + height {
-                return (*index, row - start);
+            row -= unseen_rows;
+            if row < height {
+                return (index, row);
             }
-            extra += height.saturating_sub(1);
+            row -= height;
+            next = index + 1;
         }
-        (row.saturating_sub(extra).min(count.saturating_sub(1)), 0)
+        (next + row / self.estimate, row % self.estimate)
     }
 }
 
@@ -95,8 +93,10 @@ impl TranscriptView {
         }
         if !self.scrollbar.dragging {
             self.scrollbar.count = cells.len().max(last.index + 1);
-            self.scrollbar.measured.retain(|(index, key, _)| {
-                *index <= cells.len()
+            let count = self.scrollbar.count;
+            let measured = &mut self.scrollbar.measured;
+            measured.retain(|index, (key, _)| {
+                *index < count
                     && cells
                         .get(*index)
                         .map(EntryKey::cell)
@@ -104,16 +104,11 @@ impl TranscriptView {
                         == *key
             });
             for row in &self.visible {
-                self.scrollbar
-                    .measured
-                    .retain(|(index, _, _)| *index != row.index);
-                self.scrollbar
-                    .measured
-                    .push((row.index, row.key, row.layout.row_count().max(1)));
+                measured.insert(row.index, (row.key, row.layout.row_count().max(1)));
             }
-            // Bound work to the recent viewport, like the layout cache.
-            let excess = self.scrollbar.measured.len().saturating_sub(64);
-            self.scrollbar.measured.drain(..excess);
+            let measured_rows: usize = measured.values().map(|(_, rows)| rows).sum();
+            // Limit the influence of an unusually tall answer on every unseen message.
+            self.scrollbar.estimate = (measured_rows / measured.len()).clamp(1, 16);
         }
         let at = |row: &VisibleRow, past: usize| {
             (self.scrollbar.rows_before(row.index) + row.row + past) as f64
@@ -167,7 +162,7 @@ impl TranscriptView {
             let height = usize::from(track.height);
             let position =
                 usize::from(row) * self.scrollbar.rows_before(self.scrollbar.count) / height;
-            let (index, target_row) = self.scrollbar.entry_at_row(position, self.scrollbar.count);
+            let (index, target_row) = self.scrollbar.entry_at_row(position);
             let index =
                 index.min((cells.len() + usize::from(self.live.is_some())).saturating_sub(1));
             self.jump_to_entry(cells, index);
