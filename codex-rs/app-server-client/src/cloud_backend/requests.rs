@@ -234,6 +234,8 @@ impl Requests {
                     data,
                     next_cursor: page.next_cursor,
                     backwards_cursor: page.backwards_cursor,
+                    // Cloud history does not depend on a local predecessor rollout.
+                    earliest_history_missing: false,
                 })?
             }
             Request::TurnStart { params, .. } => {

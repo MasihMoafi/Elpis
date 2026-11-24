@@ -467,12 +467,13 @@ async fn failed_archive_loaded_list_tracks_attachment_not_cached_metadata() -> R
                     }
                 );
                 for page in 0..2 {
-                    let _: protocol::ThreadItemsListResponse = requests_handle
+                    let items: protocol::ThreadItemsListResponse = requests_handle
                         .request_typed(protocol::ClientRequest::ThreadItemsList {
                             request_id: protocol::RequestId::Integer(7 + page),
                             params: serde_json::from_value(serde_json::json!({"threadId":"t"}))?,
                         })
                         .await?;
+                    assert!(!items.earliest_history_missing);
                     if page == 0 {
                         assert!(matches!(client.next_event().now_or_never().flatten(),
                             Some(AppServerEvent::ServerNotification(notification))

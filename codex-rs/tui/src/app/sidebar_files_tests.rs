@@ -583,6 +583,7 @@ fn sidebar_files_respect_page_boundaries_for_typed_voice_and_review_items() {
         ],
         next_cursor: Some("older".into()),
         backwards_cursor: None,
+        earliest_history_missing: false,
     }));
     assert!(files.apply_page(ThreadItemsListResponse {
         data: vec![
@@ -607,6 +608,7 @@ fn sidebar_files_respect_page_boundaries_for_typed_voice_and_review_items() {
         ],
         next_cursor: None,
         backwards_cursor: None,
+        earliest_history_missing: false,
     }));
     assert_eq!(
         files
