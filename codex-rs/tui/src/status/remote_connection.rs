@@ -30,18 +30,16 @@ pub(crate) fn remote_connection_status_value(
         AppServerTarget::Cloud => "Cloud".to_string(),
         AppServerTarget::LocalDaemon { endpoint, .. }
         | AppServerTarget::LocalBridge { endpoint }
-        | AppServerTarget::Remote { endpoint } => {
-            match endpoint {
-                RemoteAppServerEndpoint::WebSocket { websocket_url, .. } => {
-                    sanitized_websocket_url(websocket_url)
-                        .map(|url| url.to_string())
-                        .unwrap_or_else(|| "<invalid websocket URL>".to_string())
-                }
-                RemoteAppServerEndpoint::UnixSocket { socket_path } => {
-                    format!("unix://{}", socket_path.display())
-                }
+        | AppServerTarget::Remote { endpoint } => match endpoint {
+            RemoteAppServerEndpoint::WebSocket { websocket_url, .. } => {
+                sanitized_websocket_url(websocket_url)
+                    .map(|url| url.to_string())
+                    .unwrap_or_else(|| "<invalid websocket URL>".to_string())
             }
-        }
+            RemoteAppServerEndpoint::UnixSocket { socket_path } => {
+                format!("unix://{}", socket_path.display())
+            }
+        },
     };
     let version = server_version.map(|version| format!("v{version}"));
     Some(RemoteConnectionStatus {

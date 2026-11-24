@@ -15,7 +15,7 @@ A move to a newer release vendors it unmodified on its own branch, integrates it
 
 ## Where Elpis's changes live
 
-- Elpis-owned crates: `elpis-gateway/` and `elpis-claude-proxy/`.
+- Elpis-owned crates: `elpis-gateway/`, `elpis-claude-proxy/` and `elpis-trajectory/`.
 - Elpis-owned files inside upstream crates: those with `elpis` in the name,
   mostly in `tui/`, `core/`, `app-server/`, `app-server-protocol/` and `cli/`
   (`git ls-files codex-rs | rg -i elpis`).
@@ -28,6 +28,7 @@ Do not edit these by hand; change the source and rerun the command.
 | File | Source | Command |
 | --- | --- | --- |
 | `codex-rs/app-server-protocol/schema/` | protocol types in `app-server-protocol/src/` | `python3 codex-rs/app-server-protocol/scripts/write_schema_fixtures.py` |
+| `codex-rs/core/config.schema.json` | configuration types in `codex-rs/config/src/` | `(cd codex-rs && cargo run --locked -p codex-config-schema)` |
 | `docs/workflow-sources.md` | `apps/elpis-desktop/lib/workflow-sources.json` | `node scripts/workflow-sources.mts` (`--check` detects drift) |
 | `apps/elpis-trajectory/dist/` | `apps/elpis-trajectory/src/` | `npm run build` in `apps/elpis-trajectory` |
 | `website/technical.html` | `readme.md`, `website/technical-template.html` | `python3 scripts/build-public-content.py` |

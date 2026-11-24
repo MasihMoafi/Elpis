@@ -67,10 +67,8 @@ jobs:
       - name: Regenerate protocol and configuration schemas from the candidate
         working-directory: codex-rs
         run: |
-          export CODEX_APP_SERVER_SCHEMA_ROOT="$PWD/app-server-protocol/schema"
-          for experimental in 0 1; do
-            CODEX_APP_SERVER_SCHEMA_EXPERIMENTAL=$experimental cargo test --locked -p codex-app-server-protocol --lib schema_fixtures_tests::write_schema_fixtures_from_env -- --exact --ignored
-          done
+          python3 app-server-protocol/scripts/write_schema_fixtures.py
+          python3 app-server-protocol/scripts/write_schema_fixtures.py --experimental
           cargo run --locked -p codex-config-schema -- --out core/config.schema.json
           cargo test --locked -p codex-app-server-protocol --lib schema_fixtures_tests
           tar -czf ../schemas.tar.gz app-server-protocol/schema core/config.schema.json

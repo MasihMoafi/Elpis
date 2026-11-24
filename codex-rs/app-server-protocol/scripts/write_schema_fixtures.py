@@ -43,6 +43,7 @@ def main() -> None:
         [
             "cargo",
             "test",
+            "--locked",
             "-p",
             "codex-app-server-protocol",
             "--lib",
@@ -57,11 +58,12 @@ def main() -> None:
     )
 
     # Scratch exports and experimental-only bundles do not update checked-in SDK code.
+    sdk_root = workspace_root.parent / "sdk" / "python"
     if (
         not args.experimental
         and schema_root.resolve() == repository_schema_root.resolve()
+        and sdk_root.is_dir()
     ):
-        sdk_root = workspace_root.parent / "sdk" / "python"
         subprocess.run(
             [
                 sys.executable,

@@ -8,8 +8,8 @@ mod rollout_migration_state;
 mod thread_attachment;
 mod thread_goal;
 mod thread_metadata;
-mod work_graph;
 mod thread_metadata_builder;
+mod work_graph;
 
 pub use backfill_state::BackfillState;
 pub use backfill_state::BackfillStatus;

@@ -9,9 +9,9 @@ use codex_http_client::OutboundProxyRoute;
 #[cfg(windows)]
 use codex_http_client::WindowsProxyTls;
 use codex_http_client::build_rustls_client_config_with_custom_ca;
-use codex_http_client::ipv4_only;
 #[cfg(windows)]
 use codex_http_client::connect_windows_proxy;
+use codex_http_client::ipv4_only;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use rustls::ClientConfig;
