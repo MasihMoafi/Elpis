@@ -99,6 +99,7 @@ use tracing::warn;
 use tracing_appender::non_blocking;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::prelude::*;
+use url::Url;
 use uuid::Uuid;
 
 pub(crate) use codex_app_server_client::legacy_core;

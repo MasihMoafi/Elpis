@@ -3,6 +3,7 @@ use super::*;
 #[tokio::test]
 async fn elpis_delete_shortcut_opens_confirmation_without_deleting() {
     let mut state = PickerState::new(
+        BackendId::new(),
         FrameRequester::test_dummy(),
         Arc::new(|_| panic!("The prompt must not send a request")),
         ProviderFilter::Any,
@@ -11,6 +12,8 @@ async fn elpis_delete_shortcut_opens_confirmation_without_deleting() {
         SessionPickerAction::Resume,
     );
     state.all_rows = vec![Row {
+        backend_id: None,
+        history_mode: None,
         path: None,
         preview: "Saved answer".into(),
         thread_id: Some(ThreadId::new()),
@@ -51,9 +54,10 @@ fn delete_picker() -> (PickerState, Arc<Mutex<Vec<ThreadId>>>, ThreadId) {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let sink = requests.clone();
     let mut state = PickerState::new(
+        BackendId::new(),
         FrameRequester::test_dummy(),
         Arc::new(move |request| {
-            if let PickerLoadRequest::Delete { thread_id } = request {
+            if let PickerLoadRequest::Delete { thread_id, .. } = request {
                 sink.lock().unwrap().push(thread_id);
             }
         }),
@@ -65,6 +69,7 @@ fn delete_picker() -> (PickerState, Arc<Mutex<Vec<ThreadId>>>, ThreadId) {
     let thread_id = ThreadId::new();
     state.ingest_page(PickerPage {
         rows: vec![delete_row(thread_id, "Harbor retrieval")],
+        read_states: HashMap::new(),
         history_modes: HashMap::new(),
         next_cursor: None,
         num_scanned_files: 1,
@@ -75,6 +80,8 @@ fn delete_picker() -> (PickerState, Arc<Mutex<Vec<ThreadId>>>, ThreadId) {
 
 fn delete_row(thread_id: ThreadId, label: &str) -> Row {
     Row {
+        backend_id: None,
+        history_mode: None,
         path: None,
         preview: "Saved answer".into(),
         thread_id: Some(thread_id),
@@ -189,7 +196,7 @@ async fn elpis_delete_failure_keeps_row_and_allows_retry() {
 async fn elpis_delete_rejects_current_session_empty_rows_and_busy_archive() {
     let (mut state, requests, thread_id) = delete_picker();
     state.launch_context = SessionPickerLaunchContext::ExistingSession {
-        current_thread_id: Some(thread_id),
+        current_thread_id: Some((state.backend_id, thread_id)),
     };
     state.request_delete_for_selected_session();
     assert_eq!(state.delete_state, DeleteState::Idle);
@@ -201,7 +208,10 @@ async fn elpis_delete_rejects_current_session_empty_rows_and_busy_archive() {
             .contains("Close this session")
     );
     state.launch_context = SessionPickerLaunchContext::Startup;
-    state.archive_state = super::archive::ArchiveState::Pending { thread_id };
+    state.archive_state = super::archive::ArchiveState::Pending {
+        backend_id: state.backend_id,
+        thread_id,
+    };
     state.request_delete_for_selected_session();
     assert_eq!(state.delete_state, DeleteState::Idle);
     state.archive_state = super::archive::ArchiveState::Idle;
@@ -277,13 +287,11 @@ async fn elpis_delete_success_preserves_other_selection_and_rejects_stale_page()
         .handle_key(KeyEvent::from(KeyCode::Char('y')))
         .await
         .unwrap();
+    let key = (state.backend_id, thread_id);
     state
         .transcript_previews
-        .insert(thread_id, TranscriptPreviewState::Loaded(vec![]));
-    state
-        .thread_history_modes
-        .insert(thread_id, ThreadHistoryMode::Legacy);
-    state.expanded_thread_id = Some(thread_id);
+        .insert(key, TranscriptPreviewState::Loaded(vec![]));
+    state.expanded_thread_id = Some(key);
     state
         .handle_background_event(BackgroundEvent::Delete {
             thread_id,
@@ -296,11 +304,11 @@ async fn elpis_delete_success_preserves_other_selection_and_rejects_stale_page()
         state.filtered_rows[state.selected].thread_id,
         Some(other_id)
     );
-    assert!(!state.transcript_previews.contains_key(&thread_id));
-    assert!(!state.thread_history_modes.contains_key(&thread_id));
+    assert!(!state.transcript_previews.contains_key(&key));
     assert!(state.expanded_thread_id.is_none());
     state.ingest_page(PickerPage {
         rows: vec![delete_row(thread_id, "Harbor retrieval")],
+        read_states: HashMap::new(),
         history_modes: HashMap::new(),
         next_cursor: None,
         num_scanned_files: 1,
@@ -381,9 +389,10 @@ async fn elpis_delete_picker_uses_real_delete_rpc_and_preserves_other_chat()
         let other_path = rollout_path(home.path(), timestamp, &other_id);
         let other_bytes = std::fs::read(&other_path)?;
         let app_server = crate::start_embedded_app_server_for_picker(&config).await?;
+        let backend_id = app_server.backend_id();
         let handle = app_server.request_handle();
         let (tx, mut rx) = mpsc::unbounded_channel();
-        let loader = spawn_app_server_page_loader(
+        let PickerBackground { loader, task } = spawn_app_server_page_loader(
             false,
             app_server,
             handle,
@@ -393,6 +402,7 @@ async fn elpis_delete_picker_uses_real_delete_rpc_and_preserves_other_chat()
             tx,
         );
         let mut state = PickerState::new(
+            backend_id,
             FrameRequester::test_dummy(),
             loader,
             ProviderFilter::Any,
@@ -422,6 +432,8 @@ async fn elpis_delete_picker_uses_real_delete_rpc_and_preserves_other_chat()
         assert!(!target_path.exists());
         assert_eq!(std::fs::read(&other_path)?, other_bytes);
         assert!(state.filtered_rows.is_empty());
+        drop(state);
+        task.await?;
     }
     Ok(())
 }

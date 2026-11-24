@@ -48,14 +48,15 @@ impl SessionAccount {
         match self.display {
             Some(StatusAccountDisplay::ChatGpt { .. }) => Some(TelemetryAuthMode::Chatgpt),
             Some(StatusAccountDisplay::ApiKey) => Some(TelemetryAuthMode::ApiKey),
-            None => None,
+            Some(StatusAccountDisplay::Subscription { .. }) | None => None,
         }
     }
 
     pub(super) fn email(&self) -> Option<&str> {
         match &self.display {
             Some(StatusAccountDisplay::ChatGpt { email, .. }) => email.as_deref(),
-            Some(StatusAccountDisplay::ApiKey) | None => None,
+            Some(StatusAccountDisplay::ApiKey | StatusAccountDisplay::Subscription { .. })
+            | None => None,
         }
     }
 

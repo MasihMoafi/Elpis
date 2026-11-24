@@ -919,6 +919,11 @@ impl TextLayout {
         self.raw_link_at(row, column)?.reader_destination(documents)
     }
 
+    /// Resolve the destination with the same policy as terminal OSC-8 output.
+    pub(super) fn link_at(&self, row: usize, column: u16) -> Option<String> {
+        self.raw_link_at(row, column)?.terminal_destination()
+    }
+
     pub(super) fn raw_link_at(&self, row: usize, column: u16) -> Option<&TerminalHyperlink> {
         let (inset, links) = self.row_links(row)?;
         let column = usize::from(column).checked_sub(inset)?;

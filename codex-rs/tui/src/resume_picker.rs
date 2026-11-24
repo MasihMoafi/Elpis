@@ -231,6 +231,7 @@ enum PickerLoadRequest {
         thread_id: ThreadId,
     },
     Delete {
+        backend_id: BackendId,
         thread_id: ThreadId,
     },
 }
@@ -1106,7 +1107,7 @@ fn spawn_app_server_source(backend: AppServerPickerBackend) -> sources::Source {
                         .map_err(std::io::Error::other);
                     let _ = bg_tx.send(BackgroundEvent::Unarchive { thread_id, result });
                 }
-                PickerLoadRequest::Delete { thread_id } => {
+                PickerLoadRequest::Delete { thread_id, .. } => {
                     let result = app_server
                         .thread_delete(thread_id)
                         .await

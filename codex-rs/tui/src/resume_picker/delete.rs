@@ -76,7 +76,7 @@ impl PickerState {
             self.launch_context,
             SessionPickerLaunchContext::ExistingSession {
                 current_thread_id: Some(current_thread_id)
-            } if current_thread_id == thread_id
+            } if current_thread_id == (self.backend_id, thread_id)
         ) {
             self.inline_error =
                 Some("Close this session before deleting it from the resume list.".into());
@@ -113,7 +113,10 @@ impl PickerState {
                     label: label.clone(),
                 };
                 self.request_frame();
-                (self.picker_loader)(PickerLoadRequest::Delete { thread_id });
+                (self.picker_loader)(PickerLoadRequest::Delete {
+                    backend_id: self.backend_id,
+                    thread_id,
+                });
             }
             KeyCode::Esc | KeyCode::Enter => {
                 self.delete_state = DeleteState::Idle;

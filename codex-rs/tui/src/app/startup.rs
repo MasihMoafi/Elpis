@@ -58,7 +58,9 @@ pub(super) fn startup_config_cwd<'a>(
     app_server_target: &AppServerTarget,
 ) -> &'a Path {
     match app_server_target {
-        AppServerTarget::Embedded | AppServerTarget::LocalDaemon { .. } => config.cwd.as_path(),
+        AppServerTarget::Embedded
+        | AppServerTarget::LocalDaemon { .. }
+        | AppServerTarget::LocalBridge { .. } => config.cwd.as_path(),
         AppServerTarget::Remote { .. } | AppServerTarget::Cloud => {
             app_server.remote_cwd_override().unwrap_or(Path::new("."))
         }

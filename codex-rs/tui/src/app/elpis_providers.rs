@@ -7,6 +7,7 @@
 //! it, and a fork keeps the whole history while the old thread keeps its provider. A thread with
 //! no turns yet has nothing to carry, so it is replaced by a fresh session on the new provider.
 
+use super::session_lifecycle::FreshSessionStart;
 use super::session_lifecycle::ThreadAttachPresentation;
 use super::*;
 use crate::app_server_session::ForkGoalContinuation;
@@ -291,8 +292,11 @@ impl App {
         let Some(thread_id) = self.chat_widget.thread_id() else {
             let input = self.chat_widget.capture_thread_input_state();
             self.start_fresh_session(
-                tui, app_server, /*session_start_source*/ None,
-                /*initial_user_message*/ None, /*new_thread_name*/ None,
+                tui,
+                app_server,
+                FreshSessionStart::PreserveCurrentView(None),
+                /*initial_user_message*/ None,
+                /*new_thread_name*/ None,
             )
             .await;
             self.finish_provider_switch(/*source*/ None, input).await;
@@ -309,6 +313,9 @@ impl App {
             .fork_thread_at(
                 &self.local_settings,
                 fork_config,
+                app_server
+                    .uses_remote_workspace()
+                    .then(|| self.chat_widget.session_workspace_roots()),
                 thread_id,
                 /*last_turn_id*/ None,
                 /*before_turn_id*/ None,
@@ -357,8 +364,11 @@ impl App {
                 // No turns yet: nothing to carry over but the owner's input.
                 let input = self.chat_widget.capture_thread_input_state();
                 self.start_fresh_session(
-                    tui, app_server, /*session_start_source*/ None,
-                    /*initial_user_message*/ None, /*new_thread_name*/ None,
+                    tui,
+                    app_server,
+                    FreshSessionStart::PreserveCurrentView(None),
+                    /*initial_user_message*/ None,
+                    /*new_thread_name*/ None,
                 )
                 .await;
                 self.finish_provider_switch(Some(thread_id), input).await;

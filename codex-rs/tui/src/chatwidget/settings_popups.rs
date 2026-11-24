@@ -109,10 +109,7 @@ impl ChatWidget {
                 |items| format!("{} items", items.len()),
             ),
         );
-        let cwd = self.current_cwd.as_ref().map_or_else(
-            || self.config.cwd.display().to_string(),
-            |cwd| cwd.display().to_string(),
-        );
+        let cwd = self.current_cwd.to_string();
         self.bottom_pane
             .show_view(Box::new(crate::bottom_pane::ConfigPanelView::new(
                 section,

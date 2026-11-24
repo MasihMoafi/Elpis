@@ -26,6 +26,7 @@ use super::*;
 use crate::app_event::AgentsOverviewThreadRefresh;
 use crate::backend_id::BackendId;
 use crate::bottom_pane::BottomPaneView;
+use crate::bottom_pane::SelectionDescriptionLayout;
 use crate::chatwidget::ReadOnlyThread;
 use crate::chatwidget::ThreadInputStateRestoreMode;
 use crate::session_start::is_archived_session_error;
@@ -148,45 +149,17 @@ impl App {
         if matches!(self.app_server_target, AppServerTarget::Embedded)
             && codex_login::is_workload_identity_selected()
         {
-            let workload_identity_selected = codex_login::is_workload_identity_selected();
             self.chat_widget.show_selection_view(SelectionViewParams {
                 title: Some("Shared agents unavailable".to_string()),
                 subtitle: Some(
-                    if workload_identity_selected {
-                        "The agents dashboard is unavailable while workload identity is active."
-                    } else if cfg!(any(unix, windows)) {
-                        "This session isn’t connected to a shared background server."
-                    } else {
-                        "Connect to a remote background server to use the agents dashboard."
-                    }
-                    .to_string(),
+                    "The agents dashboard is unavailable while workload identity is active."
+                        .to_string(),
                 ),
-                footer_note: (cfg!(any(unix, windows)) && !workload_identity_selected).then(|| {
-                    Line::from(
-                        "Starting a background server will not interrupt or move this session."
-                            .dim(),
-                    )
-                }),
-                items: [
-                    #[cfg(any(unix, windows))]
-                    (!workload_identity_selected).then(|| SelectionItem {
-                        name: "Start background server".to_string(),
-                        description: Some(
-                            "Open `elpis agents` in another terminal afterward".to_string(),
-                        ),
-                        actions: vec![Box::new(|tx| tx.send(AppEvent::StartAgentsDaemon))],
-                        dismiss_on_select: true,
-                        ..Default::default()
-                    }),
-                    Some(SelectionItem {
-                        name: "Return to this session".to_string(),
-                        dismiss_on_select: true,
-                        ..Default::default()
-                    }),
-                ]
-                .into_iter()
-                .flatten()
-                .collect(),
+                items: vec![SelectionItem {
+                    name: "Return to this session".to_string(),
+                    dismiss_on_select: true,
+                    ..Default::default()
+                }],
                 description_layout: SelectionDescriptionLayout::HideWhenNarrow {
                     min_description_width: 28,
                 },

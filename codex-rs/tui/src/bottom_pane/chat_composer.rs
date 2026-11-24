@@ -1036,12 +1036,6 @@ impl ChatComposer {
         self.update_slash_command_catalog(|composer| composer.plugins_command_enabled = enabled);
     }
 
-    pub fn set_token_activity_command_enabled(&mut self, enabled: bool) {
-        self.update_slash_command_catalog(|composer| {
-            composer.token_activity_command_enabled = enabled
-        });
-    }
-
     pub fn set_mentions_v2_enabled(&mut self, enabled: bool) {
         self.mentions_v2_enabled = enabled;
         self.history.set_at_mention_restore_enabled(enabled);

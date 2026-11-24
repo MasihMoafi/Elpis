@@ -980,6 +980,7 @@ impl Tui {
             let colors = crate::terminal_probe::startup(
                 crate::terminal_probe::DEFAULT_TIMEOUT,
                 crate::terminal_probe::StartupKeyboardEnhancementProbe::Skip,
+                /*probe_herdr*/ false,
             )
             .ok()
             .and_then(|probe| probe.default_colors);

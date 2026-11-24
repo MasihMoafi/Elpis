@@ -3726,21 +3726,6 @@ impl App {
             AppEvent::SteerAgentsOverviewThread { thread_id, message } => {
                 Box::pin(self.steer_agents_overview_thread(app_server, thread_id, message)).await;
             }
-            #[cfg(any(unix, windows))]
-            AppEvent::StartAgentsDaemon => {
-                self.start_agents_daemon();
-            }
-            #[cfg(any(unix, windows))]
-            AppEvent::AgentsDaemonStarted { result } => match result {
-                Ok(()) => self.chat_widget.add_info_message(
-                    "Background server started. Run `elpis agents` in another terminal; this session remains unchanged."
-                        .to_string(),
-                    /*hint*/ None,
-                ),
-                Err(error) => self
-                    .chat_widget
-                    .add_error_message(format!("Failed to start the background server: {error}")),
-            },
             AppEvent::OpenAgentPicker => {
                 self.open_agent_picker(app_server).await;
             }
