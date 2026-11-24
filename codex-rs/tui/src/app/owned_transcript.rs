@@ -297,13 +297,9 @@ impl App {
             }
             None => (None, None),
         };
+        let previous = self.transcript_view.rendered_width();
         let mut prepared =
             self.prepare_conversation(screen_size.into(), caller_inset.or(live), &frames);
-        let previous = self.transcript_view.rendered_width();
-        if previous != 0 && previous != prepared.transcript_width {
-            // Repaint continuation cells from the previous wrapping width as well as text.
-            tui.terminal.invalidate_viewport();
-        }
         self.conversation_frame.sidebar = layout;
         self.conversation_frame.chat_strip = strip;
         self.conversation_frame.sidebar_input =
@@ -346,6 +342,10 @@ impl App {
                 .take()
                 .unwrap_or_else(|| tui.terminal.previous_buffer().clone())
         });
+        if previous != 0 && previous != prepared.transcript_width {
+            // Repaint continuation cells from the previous wrapping width as well as text.
+            tui.terminal.invalidate_viewport();
+        }
         let mut hud = self.workspace_hud(tui, screen_size.into());
         if let Some(hud) = &mut hud {
             hud.viewport = caller_inset;
