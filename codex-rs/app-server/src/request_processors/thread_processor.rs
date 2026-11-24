@@ -3710,14 +3710,11 @@ impl ThreadRequestProcessor {
             thread.turns = match thread.history_mode {
                 ApiThreadHistoryMode::Paginated => {
                     // Include the loaded thread's pending metadata before paging the index.
-                    loaded_thread
-                        .persist_rollout()
-                        .await
-                        .map_err(|err| {
-                            ThreadReadViewError::Internal(format!(
-                                "failed to persist thread {thread_id} before reading its history: {err}"
-                            ))
-                        })?;
+                    loaded_thread.persist_rollout().await.map_err(|err| {
+                        ThreadReadViewError::Internal(format!(
+                            "failed to persist thread {thread_id} before reading its history: {err}"
+                        ))
+                    })?;
                     self.paginated_thread_full_turns(thread_id)
                         .await
                         .map_err(ThreadReadViewError::JsonRpc)?
