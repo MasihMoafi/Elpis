@@ -2185,6 +2185,153 @@
         }
       ]
     },
+    "ClaudeAccount": {
+      "properties": {
+        "authenticated": {
+          "type": "boolean"
+        },
+        "duplicate": {
+          "type": "boolean"
+        },
+        "email": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "plan": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "signingIn": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "authenticated",
+        "duplicate",
+        "id",
+        "label",
+        "signingIn"
+      ],
+      "type": "object"
+    },
+    "ClaudeAccountsReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "title": "ClaudeAccountsReadParams",
+      "type": "object"
+    },
+    "ClaudeAccountsReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "accounts": {
+          "items": {
+            "$ref": "#/definitions/ClaudeAccount"
+          },
+          "type": "array"
+        },
+        "activeId": {
+          "type": "string"
+        },
+        "authUrl": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "accounts",
+        "activeId"
+      ],
+      "title": "ClaudeAccountsReadResponse",
+      "type": "object"
+    },
+    "ClaudeAccountsWriteParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "select"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "login"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "title": "Actionv2::ClaudeAccountsWriteParams",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "code"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "code",
+            "id"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "ClaudeAccountsWriteParams"
+    },
     "CliAuthCredentialsStoreMode": {
       "enum": [
         "file",
@@ -2371,6 +2518,30 @@
             },
             "method": {
               "enum": [
+                "thread/subscribe"
+              ],
+              "title": "Thread/subscribeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/subscribeRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/unsubscribe"
               ],
               "title": "Thread/unsubscribeRequestMethod",
@@ -2410,6 +2581,30 @@
             "params"
           ],
           "title": "Thread/name/setRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/approval/review"
+              ],
+              "title": "Thread/approval/reviewRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadApprovalReviewParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/approval/reviewRequest",
           "type": "object"
         },
         {
@@ -2923,6 +3118,30 @@
             },
             "method": {
               "enum": [
+                "workGraph/list"
+              ],
+              "title": "WorkGraph/listRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/WorkGraphListParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "WorkGraph/listRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/turns/list"
               ],
               "title": "Thread/turns/listRequestMethod",
@@ -2987,6 +3206,78 @@
             "params"
           ],
           "title": "Thread/injectItemsRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/elpisInstructions/read"
+              ],
+              "title": "Thread/elpisInstructions/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadElpisInstructionsReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/elpisInstructions/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/contextFiles/list"
+              ],
+              "title": "Thread/contextFiles/listRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadContextFilesListParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/contextFiles/listRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "thread/contextFiles/set"
+              ],
+              "title": "Thread/contextFiles/setRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadContextFilesSetParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/contextFiles/setRequest",
           "type": "object"
         },
         {
@@ -4665,6 +4956,54 @@
             "params"
           ],
           "title": "Config/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "claudeAccounts/read"
+              ],
+              "title": "ClaudeAccounts/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ClaudeAccountsReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ClaudeAccounts/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "claudeAccounts/write"
+              ],
+              "title": "ClaudeAccounts/writeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ClaudeAccountsWriteParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "ClaudeAccounts/writeRequest",
           "type": "object"
         },
         {
@@ -9585,6 +9924,10 @@
         "refreshToken": {
           "description": "When `true`, requests a proactive token refresh before returning.\n\nIn managed auth mode this triggers the normal refresh-token flow. In external auth mode this flag is ignored. Clients should refresh tokens themselves and call `account/login/start` with `chatgptAuthTokens`.",
           "type": "boolean"
+        },
+        "skipWorkspaceRouting": {
+          "description": "When `true`, returns the account as the server already knows it, without waiting for workspace routing discovery, which needs the network and can take many seconds. `workspaceRouting` is then `null`. The server keeps discovering in the background and sends `account/updated` once routing is known.",
+          "type": "boolean"
         }
       },
       "title": "GetAccountParams",
@@ -12794,6 +13137,13 @@
             "string",
             "null"
           ]
+        },
+        "refresh": {
+          "description": "When true, fetch the catalog from its source now; a failed fetch is an error, not the last list.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "title": "ModelListParams",
@@ -13413,7 +13763,8 @@
     "NonSteerableTurnKind": {
       "enum": [
         "review",
-        "compact"
+        "compact",
+        "workGraph"
       ],
       "type": "string"
     },
@@ -15730,6 +16081,34 @@
           "type": "object"
         }
       ]
+    },
+    "PrunerPromptEdit": {
+      "additionalProperties": false,
+      "description": "Omitted preserves the prompt; an explicit null inside this edit restores the default.",
+      "properties": {
+        "systemPrompt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "PrunerProviderChoice": {
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "displayName",
+        "id"
+      ],
+      "type": "object"
     },
     "QueuedSubmission": {
       "properties": {
@@ -18489,6 +18868,26 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/smartPrune/updated"
+              ],
+              "title": "Thread/smartPrune/updatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadSmartPruneUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/smartPrune/updatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "turn/started"
               ],
               "title": "Turn/startedNotificationMethod",
@@ -18543,6 +18942,46 @@
             "params"
           ],
           "title": "Turn/completedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "turn/activityUpdated"
+              ],
+              "title": "Turn/activityUpdatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/TurnActivityUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Turn/activityUpdatedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "turn/costUpdated"
+              ],
+              "title": "Turn/costUpdatedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/TurnCostUpdatedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Turn/costUpdatedNotification",
           "type": "object"
         },
         {
@@ -20275,6 +20714,261 @@
       "title": "SkillsListResponse",
       "type": "object"
     },
+    "SmartPruneEvent": {
+      "description": "One completed admission attempt, attached to its tool call in conversation history. Exact output stays in the immutable audit, loaded only when the user opens it.",
+      "properties": {
+        "admittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "callId": {
+          "type": "string"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kept": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "occurredAtMs": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "sourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "tool": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "admittedTokens",
+        "attemptId",
+        "callId",
+        "occurredAtMs",
+        "sourceTokens",
+        "tool"
+      ],
+      "type": "object"
+    },
+    "SmartPruneLogItem": {
+      "properties": {
+        "callId": {
+          "type": "string"
+        },
+        "compact": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decision": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "diff": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "estimatedAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "estimatedSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "kept": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "original": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "callId",
+        "decision",
+        "description",
+        "estimatedAdmittedTokens",
+        "estimatedSourceTokens",
+        "original"
+      ],
+      "type": "object"
+    },
+    "SmartPruneLogRecord": {
+      "properties": {
+        "attemptId": {
+          "type": "string"
+        },
+        "chatTitle": {
+          "type": "string"
+        },
+        "estimatedAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/SmartPruneLogItem"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "turnNumber": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "attemptId",
+        "chatTitle",
+        "items",
+        "model",
+        "reasoningEffort",
+        "threadId",
+        "timestamp",
+        "turnId"
+      ],
+      "type": "object"
+    },
+    "SmartPruneLogSummary": {
+      "properties": {
+        "attemptId": {
+          "type": "string"
+        },
+        "chatTitle": {
+          "type": "string"
+        },
+        "estimatedAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "estimatedSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        },
+        "turnNumber": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "attemptId",
+        "chatTitle",
+        "model",
+        "reasoningEffort",
+        "threadId",
+        "timestamp",
+        "turnId"
+      ],
+      "type": "object"
+    },
     "SortDirection": {
       "enum": [
         "asc",
@@ -20740,6 +21434,55 @@
       ],
       "type": "string"
     },
+    "ThreadApprovalReviewDecision": {
+      "enum": [
+        "approved",
+        "denied"
+      ],
+      "type": "string"
+    },
+    "ThreadApprovalReviewParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "cwd",
+        "reason",
+        "threadId"
+      ],
+      "title": "ThreadApprovalReviewParams",
+      "type": "object"
+    },
+    "ThreadApprovalReviewResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "decision": {
+          "$ref": "#/definitions/ThreadApprovalReviewDecision"
+        },
+        "rationale": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "rationale"
+      ],
+      "title": "ThreadApprovalReviewResponse",
+      "type": "object"
+    },
     "ThreadApproveGuardianDeniedActionParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -21082,6 +21825,12 @@
     "ThreadCompactStartParams": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "threadId": {
           "type": "string"
         }
@@ -21095,6 +21844,196 @@
     "ThreadCompactStartResponse": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "ThreadCompactStartResponse",
+      "type": "object"
+    },
+    "ThreadContextAttribution": {
+      "description": "Estimated composition of the exact request built for the latest provider attempt. Values are never padded to reconcile with provider token accounting.",
+      "properties": {
+        "agentMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "developerMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "estimatedTotal": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "outputSchema": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "reasoning": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "systemInstructions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolCalls": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolDefinitions": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "toolResults": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "unrecognizedItems": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "userMessages": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "agentMessages",
+        "developerMessages",
+        "estimatedTotal",
+        "outputSchema",
+        "reasoning",
+        "systemInstructions",
+        "toolCalls",
+        "toolDefinitions",
+        "toolResults",
+        "unrecognizedItems",
+        "userMessages"
+      ],
+      "type": "object"
+    },
+    "ThreadContextFile": {
+      "properties": {
+        "estimatedTokens": {
+          "description": "The core Ledger's capped estimate, rather than provider token accounting.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "group": {
+          "$ref": "#/definitions/ThreadContextFileGroup"
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "selectable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "estimatedTokens",
+        "group",
+        "included",
+        "name",
+        "path",
+        "reason",
+        "selectable"
+      ],
+      "type": "object"
+    },
+    "ThreadContextFileGroup": {
+      "enum": [
+        "sessionContinuity",
+        "durableMemory",
+        "instructions"
+      ],
+      "type": "string"
+    },
+    "ThreadContextFilesListParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Lists the thread's currently discoverable Ledger sources, including excluded files.",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadContextFilesListParams",
+      "type": "object"
+    },
+    "ThreadContextFilesListResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/definitions/ThreadContextFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "title": "ThreadContextFilesListResponse",
+      "type": "object"
+    },
+    "ThreadContextFilesSetParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Changes an existing Ledger source. Admission is shared by threads in the workspace, just as in the TUI; generated GOAL.md and ES.md contents remain thread-scoped.",
+      "properties": {
+        "included": {
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The exact path returned by thread/contextFiles/list. Unknown paths are refused.",
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "included",
+        "path",
+        "threadId"
+      ],
+      "title": "ThreadContextFilesSetParams",
+      "type": "object"
+    },
+    "ThreadContextFilesSetResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Returns the refreshed list because more than one instruction file can share a switch.",
+      "properties": {
+        "files": {
+          "items": {
+            "$ref": "#/definitions/ThreadContextFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "files"
+      ],
+      "title": "ThreadContextFilesSetResponse",
       "type": "object"
     },
     "ThreadDeleteParams": {
@@ -21128,6 +22067,49 @@
       "title": "ThreadDeletedNotification",
       "type": "object"
     },
+    "ThreadElpisInstructionsReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Reads the Elpis instruction text a thread's next model request carries, so a client that runs the thread's turns on another engine can give that model the same instructions.",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "ThreadElpisInstructionsReadParams",
+      "type": "object"
+    },
+    "ThreadElpisInstructionsReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Each field is `null` when the thread's model receives nothing from that source.",
+      "properties": {
+        "agentsMd": {
+          "description": "The global and project AGENTS.md text the Context Ledger admits.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "continuity": {
+          "description": "The admitted continuity section: MEMORY.md, development rules, GOAL.md, ES.md and files added with `/add`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "developerInstructions": {
+          "description": "The thread's configured `developer_instructions`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "ThreadElpisInstructionsReadResponse",
+      "type": "object"
+    },
     "ThreadEnvironment": {
       "description": "An environment selected by a loaded thread, independent of connection status.",
       "properties": {
@@ -21153,6 +22135,13 @@
     },
     "ThreadExtra": {
       "description": "Extra app-server data for a thread.",
+      "properties": {
+        "missingSourceRollout": {
+          "default": false,
+          "description": "The selected paginated rollout is unavailable; retained items are read-only.",
+          "type": "boolean"
+        }
+      },
       "type": "object"
     },
     "ThreadForkParams": {
@@ -21613,6 +22602,30 @@
     "ThreadItem": {
       "description": "A thread item and its recorded lifecycle times. The payload stays flat on the wire.",
       "oneOf": [
+        {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "prune": {
+              "$ref": "#/definitions/SmartPruneEvent"
+            },
+            "type": {
+              "enum": [
+                "smartPrune"
+              ],
+              "title": "SmartPruneThreadItemType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "prune",
+            "type"
+          ],
+          "title": "SmartPruneThreadItem",
+          "type": "object"
+        },
         {
           "properties": {
             "clientId": {
@@ -22712,6 +23725,10 @@
             "$ref": "#/definitions/ThreadItemEntry"
           },
           "type": "array"
+        },
+        "earliestHistoryMissing": {
+          "description": "Elpis: the earliest part of this thread's history is missing (an earlier rollout it continues was deleted), so these items are the history that remains.",
+          "type": "boolean"
         },
         "nextCursor": {
           "description": "Opaque cursor to pass to the next call to continue after the last item. if None, there are no more items to return.",
@@ -24719,6 +25736,288 @@
       "title": "ThreadShellCommandResponse",
       "type": "object"
     },
+    "ThreadSmartPruneAdmissionSnapshot": {
+      "properties": {
+        "admissionId": {
+          "type": "string"
+        },
+        "admittedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "auditPath": {
+          "type": "string"
+        },
+        "examinedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "requestInputSha256": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requestLinkageVerified": {
+          "type": "boolean"
+        },
+        "requestSequence": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "responseId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "responseLinkageVerified": {
+          "type": "boolean"
+        },
+        "responseUsage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenUsageBreakdown"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "admissionId",
+        "admittedOutputs",
+        "approxAdmittedTokens",
+        "approxSavedTokens",
+        "approxSourceTokens",
+        "auditPath",
+        "examinedOutputs",
+        "requestLinkageVerified",
+        "responseLinkageVerified"
+      ],
+      "type": "object"
+    },
+    "ThreadSmartPruneAttemptSnapshot": {
+      "properties": {
+        "admittedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "attemptId": {
+          "type": "string"
+        },
+        "auditPath": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "candidateOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "latencyMs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "modelSlug": {
+          "type": "string"
+        },
+        "reasoningEffort": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenUsageBreakdown"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "admittedOutputs",
+        "approxSavedTokens",
+        "attemptId",
+        "candidateOutputs",
+        "latencyMs",
+        "modelSlug",
+        "reasoningEffort",
+        "status"
+      ],
+      "type": "object"
+    },
+    "ThreadSmartPruneSnapshot": {
+      "properties": {
+        "admittedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxAdmittedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSavedTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "approxSourceTokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "examinedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "failedBatches": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadSmartPruneAdmissionSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latestAttempt": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadSmartPruneAttemptSnapshot"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "mainRequestSequence": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "optimizerLatencyMs": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "optimizerRequests": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "optimizerUsage": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TokenUsageBreakdown"
+            }
+          ],
+          "default": {
+            "cacheWriteInputTokens": 0,
+            "cachedInputTokens": 0,
+            "inputTokens": 0,
+            "outputTokens": 0,
+            "reasoningOutputTokens": 0,
+            "totalTokens": 0
+          }
+        },
+        "optimizerUsageReports": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "unchangedOutputs": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "admittedOutputs",
+        "approxAdmittedTokens",
+        "approxSavedTokens",
+        "approxSourceTokens",
+        "enabled",
+        "examinedOutputs",
+        "failedBatches",
+        "mainRequestSequence",
+        "unchangedOutputs"
+      ],
+      "type": "object"
+    },
+    "ThreadSmartPruneUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "description": "Thread-scoped Smart Prune state, sent after each token-usage update, after a config refresh changes the switch, and when a client attaches to a thread.\n\nThis is intentionally separate from token usage because a config change can happen without an active turn or a provider usage sample.",
+      "properties": {
+        "smartPrune": {
+          "$ref": "#/definitions/ThreadSmartPruneSnapshot"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "smartPrune",
+        "threadId"
+      ],
+      "title": "ThreadSmartPruneUpdatedNotification",
+      "type": "object"
+    },
     "ThreadSortKey": {
       "enum": [
         "created_at",
@@ -25219,6 +26518,16 @@
     },
     "ThreadTokenUsage": {
       "properties": {
+        "contextAttribution": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThreadContextAttribution"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "last": {
           "$ref": "#/definitions/TokenUsageBreakdown"
         },
@@ -25755,6 +27064,49 @@
       ],
       "type": "object"
     },
+    "TurnActivityStatus": {
+      "enum": [
+        "completed",
+        "failed",
+        "interrupted"
+      ],
+      "type": "string"
+    },
+    "TurnActivityUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "durationMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/TurnActivityStatus"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "timeToFirstTokenMs": {
+          "format": "int64",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "threadId",
+        "turnId"
+      ],
+      "title": "TurnActivityUpdatedNotification",
+      "type": "object"
+    },
     "TurnCompletedNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
@@ -25770,6 +27122,58 @@
         "turn"
       ],
       "title": "TurnCompletedNotification",
+      "type": "object"
+    },
+    "TurnCostAvailability": {
+      "enum": [
+        "subscriptionAuthentication",
+        "costObservationDisabled"
+      ],
+      "type": "string"
+    },
+    "TurnCostState": {
+      "oneOf": [
+        {
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/TurnCostAvailability"
+            },
+            "type": {
+              "enum": [
+                "unavailable"
+              ],
+              "title": "UnavailableTurnCostStateType",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "type"
+          ],
+          "title": "UnavailableTurnCostState",
+          "type": "object"
+        }
+      ]
+    },
+    "TurnCostUpdatedNotification": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "cost": {
+          "$ref": "#/definitions/TurnCostState"
+        },
+        "threadId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cost",
+        "threadId",
+        "turnId"
+      ],
+      "title": "TurnCostUpdatedNotification",
       "type": "object"
     },
     "TurnDiffUpdatedNotification": {
@@ -26842,6 +28246,236 @@
         "samplePaths"
       ],
       "title": "WindowsWorldWritableWarningNotification",
+      "type": "object"
+    },
+    "WorkGraphIsolation": {
+      "enum": [
+        "worktree"
+      ],
+      "type": "string"
+    },
+    "WorkGraphListParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "rootThreadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rootThreadId"
+      ],
+      "title": "WorkGraphListParams",
+      "type": "object"
+    },
+    "WorkGraphListResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "data": {
+          "items": {
+            "$ref": "#/definitions/WorkGraphSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "title": "WorkGraphListResponse",
+      "type": "object"
+    },
+    "WorkGraphRunTask": {
+      "properties": {
+        "acceptanceCriteria": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dependsOn": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "environmentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/WorkGraphRunTaskKind"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoningEffort": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Reasoning effort for this task's worker. Omitted or null inherits the coordinator's effort. A task model that does not offer the effort is refused before the run starts."
+        },
+        "title": {
+          "type": "string"
+        },
+        "writeScopes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "instruction",
+        "kind",
+        "title"
+      ],
+      "type": "object"
+    },
+    "WorkGraphRunTaskKind": {
+      "enum": [
+        "explore",
+        "implement",
+        "verify",
+        "fix"
+      ],
+      "type": "string"
+    },
+    "WorkGraphSummary": {
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "eventCount": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "maxConcurrency": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tasks": {
+          "items": {
+            "$ref": "#/definitions/WorkGraphTaskSummary"
+          },
+          "type": "array"
+        },
+        "worktreeReport": {
+          "description": "For a worktree-isolated run: its worktree paths, branches, and merge outcome.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "eventCount",
+        "id",
+        "maxConcurrency",
+        "name",
+        "status",
+        "tasks"
+      ],
+      "type": "object"
+    },
+    "WorkGraphTaskSummary": {
+      "properties": {
+        "assignedThreadId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dependencies": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "failureReason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "result": true,
+        "status": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "dependencies",
+        "evidence",
+        "id",
+        "kind",
+        "status",
+        "title"
+      ],
       "type": "object"
     },
     "WorkspaceMessage": {

@@ -22,8 +22,4 @@ includeHidden?: boolean | null,
 /**
  * When true, fetch the catalog from its source now; a failed fetch is an error, not the last list.
  */
-refresh?: boolean | null,
-/**
- * A configured provider to list instead of the one the server started with.
- */
-modelProvider?: string | null, };
+refresh?: boolean | null, };

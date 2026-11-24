@@ -886,6 +886,9 @@
             "auth_elicitation": {
               "type": "boolean"
             },
+            "automatic_context_pruning": {
+              "type": "boolean"
+            },
             "background_paginated_rollout_migration": {
               "type": "boolean"
             },
@@ -5157,6 +5160,24 @@
           },
           "type": "array"
         },
+        "default_enabled": {
+          "description": "Elpis: whether discovered skills are enabled before any `[[skills.config]]` rule. Elpis sets `false` so only skills the user turns on reach the model.",
+          "type": "boolean"
+        },
+        "dev_rule_roots": {
+          "description": "Elpis: ordered roots of the development-rule Markdown files listed in the Context Ledger.",
+          "items": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          },
+          "type": "array"
+        },
+        "extra_roots": {
+          "description": "Elpis: more directories whose immediate children hold `SKILL.md` files (v0.3.0), such as the skills a user chose outside `~/.agents/skills`.",
+          "items": {
+            "$ref": "#/definitions/AbsolutePathBuf"
+          },
+          "type": "array"
+        },
         "include_instructions": {
           "description": "Whether turns receive the automatic skills instructions block.",
           "type": "boolean"
@@ -5496,6 +5517,13 @@
           "description": "Summarize tool calls and collapse completed turns in the full-screen transcript. Defaults to `false`.",
           "type": "boolean"
         },
+        "context_ledger_width": {
+          "default": null,
+          "description": "Preferred Context Ledger width in terminal columns.",
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "copy_on_select": {
           "allOf": [
             {
@@ -5773,7 +5801,7 @@
         },
         "mouse_scroll_speed": {
           "default": null,
-          "description": "Mouse wheel speed multiplier for transcript scrolling, based on one row per event. Defaults to `1.0`. Positive fractional values slow scrolling; values above `1.0` speed it up.",
+          "description": "Mouse wheel speed multiplier for transcript scrolling, based on one row per event. Defaults to `3.0`, like Claude Code; fast consecutive events then build up to five times that speed. Positive fractional values slow scrolling.",
           "exclusiveMinimum": 0.0,
           "format": "double",
           "type": "number"
@@ -8078,6 +8106,14 @@
       "default": null,
       "description": "Optional policy instructions for the guardian auto-reviewer."
     },
+    "background_model": {
+      "description": "Model used for background work such as naming sessions and pruning context, instead of the built-in default. Saving memory uses the responding agent. Set this to move that work onto a cheaper or non-OpenAI provider without affecting the model that answers the user.",
+      "type": "string"
+    },
+    "background_provider": {
+      "description": "Provider id from `model_providers` that background work should talk to, when it differs from the provider answering the user. Requires `background_model` to name a model that provider serves.",
+      "type": "string"
+    },
     "background_terminal_max_timeout": {
       "description": "Maximum poll window for background terminal output (`write_stdin`), in milliseconds. Default: `300000` (5 minutes).",
       "format": "uint64",
@@ -8252,6 +8288,9 @@
           "type": "boolean"
         },
         "auth_elicitation": {
+          "type": "boolean"
+        },
+        "automatic_context_pruning": {
           "type": "boolean"
         },
         "background_paginated_rollout_migration": {

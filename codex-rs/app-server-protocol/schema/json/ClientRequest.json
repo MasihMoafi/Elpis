@@ -288,6 +288,78 @@
         }
       ]
     },
+    "ClaudeAccountsReadParams": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "ClaudeAccountsWriteParams": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "select"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "login"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "title": "ActionClaudeAccountsWriteParams",
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "enum": [
+                "code"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "code",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ClientInfo": {
       "properties": {
         "name": {
@@ -1742,6 +1814,10 @@
         "refreshToken": {
           "description": "When `true`, requests a proactive token refresh before returning.\n\nIn managed auth mode this triggers the normal refresh-token flow. In external auth mode this flag is ignored. Clients should refresh tokens themselves and call `account/login/start` with `chatgptAuthTokens`.",
           "type": "boolean"
+        },
+        "skipWorkspaceRouting": {
+          "description": "When `true`, returns the account as the server already knows it, without waiting for workspace routing discovery, which needs the network and can take many seconds. `workspaceRouting` is then `null`. The server keeps discovering in the background and sends `account/updated` once routing is known.",
+          "type": "boolean"
         }
       },
       "type": "object"
@@ -2569,6 +2645,13 @@
             "string",
             "null"
           ]
+        },
+        "refresh": {
+          "description": "When true, fetch the catalog from its source now; a failed fetch is an error, not the last list.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -3155,6 +3238,19 @@
           "type": "object"
         }
       ]
+    },
+    "PrunerPromptEdit": {
+      "additionalProperties": false,
+      "description": "Omitted preserves the prompt; an explicit null inside this edit restores the default.",
+      "properties": {
+        "systemPrompt": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "RealtimeConversationVersion": {
       "enum": [
@@ -4685,6 +4781,29 @@
       ],
       "type": "object"
     },
+    "ThreadApprovalReviewParams": {
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "command",
+        "cwd",
+        "reason",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadApproveGuardianDeniedActionParams": {
       "properties": {
         "event": {
@@ -4818,6 +4937,12 @@
     },
     "ThreadCompactStartParams": {
       "properties": {
+        "instructions": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "threadId": {
           "type": "string"
         }
@@ -4827,7 +4952,52 @@
       ],
       "type": "object"
     },
+    "ThreadContextFilesListParams": {
+      "description": "Lists the thread's currently discoverable Ledger sources, including excluded files.",
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadContextFilesSetParams": {
+      "description": "Changes an existing Ledger source. Admission is shared by threads in the workspace, just as in the TUI; generated GOAL.md and ES.md contents remain thread-scoped.",
+      "properties": {
+        "included": {
+          "type": "boolean"
+        },
+        "path": {
+          "description": "The exact path returned by thread/contextFiles/list. Unknown paths are refused.",
+          "type": "string"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "included",
+        "path",
+        "threadId"
+      ],
+      "type": "object"
+    },
     "ThreadDeleteParams": {
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "ThreadElpisInstructionsReadParams": {
+      "description": "Reads the Elpis instruction text a thread's next model request carries, so a client that runs the thread's turns on another engine can give that model the same instructions.",
       "properties": {
         "threadId": {
           "type": "string"
@@ -6677,6 +6847,105 @@
         "mode"
       ],
       "type": "object"
+    },
+    "WorkGraphIsolation": {
+      "enum": [
+        "worktree"
+      ],
+      "type": "string"
+    },
+    "WorkGraphListParams": {
+      "properties": {
+        "rootThreadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "rootThreadId"
+      ],
+      "type": "object"
+    },
+    "WorkGraphRunTask": {
+      "properties": {
+        "acceptanceCriteria": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "dependsOn": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "environmentId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "instruction": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/WorkGraphRunTaskKind"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reasoningEffort": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReasoningEffort"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Reasoning effort for this task's worker. Omitted or null inherits the coordinator's effort. A task model that does not offer the effort is refused before the run starts."
+        },
+        "title": {
+          "type": "string"
+        },
+        "writeScopes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "instruction",
+        "kind",
+        "title"
+      ],
+      "type": "object"
+    },
+    "WorkGraphRunTaskKind": {
+      "enum": [
+        "explore",
+        "implement",
+        "verify",
+        "fix"
+      ],
+      "type": "string"
     }
   },
   "description": "Request from the client to the server.",
@@ -6833,6 +7102,30 @@
         },
         "method": {
           "enum": [
+            "thread/subscribe"
+          ],
+          "title": "Thread/subscribeRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/subscribeRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
             "thread/unsubscribe"
           ],
           "title": "Thread/unsubscribeRequestMethod",
@@ -6872,6 +7165,30 @@
         "params"
       ],
       "title": "Thread/name/setRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/approval/review"
+          ],
+          "title": "Thread/approval/reviewRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadApprovalReviewParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/approval/reviewRequest",
       "type": "object"
     },
     {
@@ -7385,6 +7702,30 @@
         },
         "method": {
           "enum": [
+            "workGraph/list"
+          ],
+          "title": "WorkGraph/listRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/WorkGraphListParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "WorkGraph/listRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
             "thread/turns/list"
           ],
           "title": "Thread/turns/listRequestMethod",
@@ -7449,6 +7790,78 @@
         "params"
       ],
       "title": "Thread/injectItemsRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/elpisInstructions/read"
+          ],
+          "title": "Thread/elpisInstructions/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadElpisInstructionsReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/elpisInstructions/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/contextFiles/list"
+          ],
+          "title": "Thread/contextFiles/listRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadContextFilesListParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/contextFiles/listRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "thread/contextFiles/set"
+          ],
+          "title": "Thread/contextFiles/setRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ThreadContextFilesSetParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Thread/contextFiles/setRequest",
       "type": "object"
     },
     {
@@ -9127,6 +9540,54 @@
         "params"
       ],
       "title": "Config/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "claudeAccounts/read"
+          ],
+          "title": "ClaudeAccounts/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ClaudeAccountsReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "ClaudeAccounts/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "claudeAccounts/write"
+          ],
+          "title": "ClaudeAccounts/writeRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/ClaudeAccountsWriteParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "ClaudeAccounts/writeRequest",
       "type": "object"
     },
     {
