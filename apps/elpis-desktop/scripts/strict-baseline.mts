@@ -59,15 +59,18 @@ function typeCounts(config: string) {
   });
   if (!parsed) throw new Error(`Cannot read ${configPath}`);
   const host = ts.createCompilerHost(parsed.options);
-  const appModules = path.join(app, 'node_modules');
-  const realAppModules = fs.realpathSync(appModules);
+  const moduleRoots = [path.join(app, 'node_modules')];
+  const bridgeModules = path.resolve(app, '../../tools/elpis-claude/node_modules');
+  if (fs.existsSync(bridgeModules)) moduleRoots.push(bridgeModules);
+  const realModuleRoots = moduleRoots.map(root => fs.realpathSync(root));
   const allowed = (name: string) => {
     const absolute = path.resolve(name);
     const parts = absolute.split(path.sep);
     const index = parts.indexOf('node_modules');
     if (index < 0) return true;
     const root = parts.slice(0, index + 1).join(path.sep);
-    return root === appModules || absolute === realAppModules || absolute.startsWith(`${realAppModules}${path.sep}`);
+    return moduleRoots.includes(root)
+      || realModuleRoots.some(modules => absolute === modules || absolute.startsWith(`${modules}${path.sep}`));
   };
   const fileExists = host.fileExists.bind(host), directoryExists = host.directoryExists?.bind(host);
   host.fileExists = name => allowed(name) && fileExists(name);
