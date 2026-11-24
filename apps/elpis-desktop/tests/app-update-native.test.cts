@@ -139,10 +139,12 @@ test('installed update restarts real main and Love Spot windows only after idle 
   await until(async () => !await (await desktop.browserWindow(quick)).evaluate(host => host.isVisible()), 'Quick Entry did not hide with unsent text');
   await desktop.evaluate(() => { global.updateTest.control.canRestart = false; });
   await click(page.getByRole('button', { name: 'Update ready · Restart', exact: true }));
-  await page.getByRole('alert').filter({ hasText: 'End the voice call to restart.' }).waitFor();
+  const blocker = page.getByRole('alert').filter({ hasText: 'End the voice call to restart.' });
+  await blocker.waitFor();
   assert.equal(await composer.inputValue(), COMPOSER); assert.equal((await events(root)).filter(event => event.type === 'server-close').length, 0);
-  await desktop.evaluate(() => { global.updateTest.control.canRestart = true; });
   await capture(page, 'main-update-light.png');
+  await blocker.waitFor({ state: 'hidden' });
+  await desktop.evaluate(() => { global.updateTest.control.canRestart = true; });
   await click(page.getByRole('button', { name: 'Update ready · Restart', exact: true }));
   const restored = await until(async () => (await events(root)).find(event => ['restored', 'fatal'].includes(event.type)), 'Selected launcher did not reopen saved text');
   assert.equal(restored.type, 'restored', restored.message);
