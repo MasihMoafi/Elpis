@@ -112,7 +112,7 @@ fn thread_spawn_agent_path(source: &SessionSource) -> Option<String> {
     }
 }
 
-fn thread_spawn_parent_thread_id(source: &SessionSource) -> Option<ThreadId> {
+pub(super) fn thread_spawn_parent_thread_id(source: &SessionSource) -> Option<ThreadId> {
     match source {
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
             parent_thread_id, ..
@@ -141,6 +141,7 @@ mod tests {
             extra: None,
             session_id: thread_id.to_string(),
             forked_from_id: None,
+            attached_to_thread_id: None,
             parent_thread_id: None,
             preview: String::new(),
             ephemeral: false,
@@ -148,6 +149,7 @@ mod tests {
             section_entered_at: None,
             project_id: None,
             daybreak_enabled: None,
+            daybreak_program_propagation_enrolled: None,
             history_mode: Default::default(),
             model_provider: "openai".to_string(),
             model: None,
@@ -157,7 +159,7 @@ mod tests {
             recency_at: Some(0),
             status: ThreadStatus::Idle,
             path: None,
-            cwd: test_path_buf("/tmp").abs(),
+            cwd: test_path_buf("/tmp").abs().into(),
             cli_version: "0.0.0".to_string(),
             source,
             can_accept_direct_input: None,

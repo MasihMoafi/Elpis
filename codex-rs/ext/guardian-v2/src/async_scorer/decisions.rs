@@ -1,18 +1,24 @@
 //! Bounded Decisions transport for the optional Guardian comparison classifier.
 //! Admission retains the newest requests and cancels the oldest unfinished request at capacity.
-//! Unsupported evidence is rejected intact; errors never contain credentials or wire bodies.
-//! Only host-annotated trusted-tool evidence is appended to the developer-level rubric.
+//! Comparisons omit reasoning and compaction.
+//! Other unsupported evidence is rejected intact.
+//! Errors never contain credentials or wire bodies.
+//! Queued comparisons retain their credential source; runtime-bound threads pin it at startup.
+//! Evidence preserves message roles, content order, and boundaries.
 //! The caller records measurements after baseline publication; dropping its task aborts Decisions work.
 
-use super::sampler::LunaSampler;
-use super::sampler::LunaSamplingRequest;
-use codex_context_fragments::RenderedFragment;
-use codex_guardian_context::TrustedTool;
+use codex_features::RuntimeAuthMode;
 use codex_history::ResponseItemEnvelope;
-use codex_http_client::HttpClient;
+use codex_http_client::ClientRouteClass;
+use codex_http_client::HttpClientFactory;
+use codex_http_client::RouteAwareClientPool;
+use codex_login::AuthManager;
+use codex_login::CodexAuth;
+use codex_model_provider::ResolvedProviderAuth;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ImageReference;
 use codex_protocol::models::ResponseItem;
+use codex_runtime_agent_instance::RuntimeAuthBinding;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::VecDeque;
@@ -42,8 +48,14 @@ pub(super) enum DecisionsError {
     Credentials,
     #[error("Decisions HTTP client setup failed")]
     ClientSetup,
-    #[error("Decisions cannot represent the complete classifier evidence")]
-    UnsupportedEvidence,
+    #[error("Decisions received unexpected classifier request setup")]
+    UnexpectedRequestSetup,
+    #[error("Decisions cannot represent this input item")]
+    UnsupportedInputItem,
+    #[error("Decisions cannot represent this image evidence")]
+    UnsupportedImage,
+    #[error("Decisions cannot represent audio evidence")]
+    UnsupportedAudio,
     #[error("Decisions input exceeds the request limit")]
     InputTooLarge,
     #[error("Decisions request timed out")]
@@ -58,10 +70,50 @@ pub(super) enum DecisionsError {
     InvalidResponse,
 }
 
+pub(super) enum DecisionsCredential {
+    ApiKey(String),
+    SavedLogin(Arc<AuthManager>),
+    RuntimeLogin(Arc<AuthManager>, u64),
+}
+
+impl From<&str> for DecisionsCredential {
+    fn from(key: &str) -> Self {
+        Self::ApiKey(key.to_owned())
+    }
+}
+
+impl DecisionsCredential {
+    fn source_generation(&self) -> Option<u64> {
+        match self {
+            Self::ApiKey(_) => None,
+            Self::RuntimeLogin(_, source) => Some(*source),
+            Self::SavedLogin(manager) => {
+                let changes = manager.auth_change_state_receiver();
+                Some(changes.borrow().source_generation)
+            }
+        }
+    }
+
+    fn resolve(&self, source_generation: Option<u64>) -> Option<CodexAuth> {
+        match self {
+            Self::ApiKey(key) => Some(CodexAuth::from_api_key(key)),
+            Self::SavedLogin(manager) | Self::RuntimeLogin(manager, _) => {
+                let auth = manager.auth_cached()?;
+                let source = manager.auth_change_state_for(&auth)?.source_generation;
+                let key = auth.api_key()?;
+                (Some(source) == source_generation
+                    && super::startup::valid_implicit_decisions_key(key))
+                .then_some(auth)
+            }
+        }
+    }
+}
+
 pub(super) struct DecisionsSampler {
-    client: HttpClient,
+    client: RouteAwareClientPool,
     // No Debug implementation: credentials must not reach diagnostics.
-    api_key: String,
+    credential: DecisionsCredential,
+    runtime_auth: Option<(Arc<RuntimeAuthBinding>, RuntimeAuthMode)>,
     url: String,
     slots: Semaphore,
     active_requests: Mutex<VecDeque<AbortHandle>>,
@@ -97,16 +149,44 @@ impl DecisionsTask {
 
 impl DecisionsSampler {
     pub(super) fn new(
-        client: HttpClient,
-        api_key: String,
+        factory: HttpClientFactory,
+        credential: DecisionsCredential,
         url: String,
+        auth_context: Option<&codex_model_provider::ProviderAuthContext>,
     ) -> Result<Self, DecisionsError> {
-        if api_key.trim().is_empty() {
+        if matches!(&credential, DecisionsCredential::ApiKey(key) if key.trim().is_empty()) {
             return Err(DecisionsError::Credentials);
         }
+        let runtime_auth = if let Some(context) = auth_context
+            && codex_runtime_agent_instance::is_openai_api_url(&url)
+            && let Some((runtime, mode)) = context.runtime_auth.as_ref()
+        {
+            codex_model_provider::validate_runtime_environment(runtime, Some(&url))
+                .map_err(|_| DecisionsError::ClientSetup)?;
+            let binding = match &credential {
+                DecisionsCredential::ApiKey(key) => {
+                    runtime.bind_api_key(key, &context.credentials.runtime_config())
+                }
+                DecisionsCredential::SavedLogin(manager)
+                | DecisionsCredential::RuntimeLogin(manager, _) => {
+                    runtime.bind(Arc::clone(manager))
+                }
+            };
+            Some((binding, *mode))
+        } else {
+            None
+        };
+        let factory = if runtime_auth.is_some() {
+            factory.with_sensitive_header_protection()
+        } else {
+            factory
+        };
+        let client =
+            RouteAwareClientPool::new_without_request_logging(factory, ClientRouteClass::Api);
         Ok(Self {
             client,
-            api_key,
+            credential,
+            runtime_auth,
             url,
             // Keep HTTP concurrency bounded while evicted tasks release their permits.
             slots: Semaphore::new(MAX_CONCURRENT_REQUESTS),
@@ -114,36 +194,43 @@ impl DecisionsSampler {
         })
     }
 
-    /// Retain the newest requests; the caller joins after baseline publication.
-    pub(super) fn spawn(
+    pub(super) fn start_conversation_comparison(
         self: &Arc<Self>,
-        request: &LunaSamplingRequest,
-        max_input_tokens: usize,
+        input: &[ResponseItemEnvelope],
     ) -> DecisionsTask {
         let started = Instant::now();
-        let body = request_body(
-            &request.instructions,
-            &request.input,
-            request.parent_compaction.as_ref(),
-        )
-        .and_then(|body| {
-            // Reuse Guardian's complete budget without changing its sampling path.
-            // The temporary copy is dropped before admission; Responses prepares again.
-            let (_, tokens) = LunaSampler::prepare_input(
-                request,
-                /*history*/ None,
-                request
-                    .input
-                    .iter()
-                    .cloned()
-                    .map(ResponseItemEnvelope::new)
-                    .collect(),
-            );
-            if tokens > max_input_tokens.saturating_sub(/*rhs*/ 256) {
-                return Err(DecisionsError::InputTooLarge);
+        let source_generation = self.credential.source_generation();
+        let body = (|| {
+            let [tools, instructions, evidence @ ..] = input else {
+                return Err(DecisionsError::UnexpectedRequestSetup);
+            };
+            if !matches!(
+                &tools.item,
+                ResponseItem::AdditionalTools { role, tools, .. }
+                    if role == "developer" && tools.is_empty()
+            ) {
+                return Err(DecisionsError::UnexpectedRequestSetup);
             }
-            Ok(body)
-        });
+            let ResponseItem::Message { role, content, .. } = &instructions.item else {
+                return Err(DecisionsError::UnexpectedRequestSetup);
+            };
+            let [rubric] = content.as_slice() else {
+                return Err(DecisionsError::UnexpectedRequestSetup);
+            };
+            if role != "developer" {
+                return Err(DecisionsError::UnexpectedRequestSetup);
+            }
+            request_body(rubric, evidence.iter().map(|item| &item.item))
+        })();
+        self.spawn_request(body, started, source_generation)
+    }
+
+    fn spawn_request(
+        self: &Arc<Self>,
+        body: Result<Value, DecisionsError>,
+        started: Instant,
+        source_generation: Option<u64>,
+    ) -> DecisionsTask {
         let body = match body {
             Ok(body) => body,
             Err(error) => {
@@ -168,7 +255,7 @@ impl DecisionsSampler {
             let Ok(_permit) = sampler.slots.acquire().await else {
                 return (Err(DecisionsError::Transport), started.elapsed());
             };
-            let result = tokio::time::timeout(DEADLINE, sampler.request(body))
+            let result = tokio::time::timeout(DEADLINE, sampler.request(body, source_generation))
                 .await
                 .unwrap_or(Err(DecisionsError::Timeout));
             (result, started.elapsed())
@@ -180,12 +267,44 @@ impl DecisionsSampler {
         }
     }
 
-    async fn request(&self, body: Value) -> Result<&'static str, DecisionsError> {
-        let request = self
-            .client
-            .post(&self.url)
-            .bearer_auth(&self.api_key)
-            .json(&body);
+    async fn request(
+        &self,
+        body: Value,
+        source_generation: Option<u64>,
+    ) -> Result<&'static str, DecisionsError> {
+        let auth = self
+            .credential
+            .resolve(source_generation)
+            .ok_or(DecisionsError::Credentials)?;
+        let headers = http::HeaderMap::new();
+        let resolved = match &self.runtime_auth {
+            Some((binding, mode)) => {
+                let selected =
+                    codex_model_provider::select_runtime_auth_for(binding, &auth, &headers)
+                        .await
+                        .map_err(|_| DecisionsError::Credentials)?;
+                ResolvedProviderAuth {
+                    credential: Some(selected.auth().clone()),
+                    auth: selected.clone().into_auth_provider(*mode),
+                    agent_identity_telemetry: None,
+                    runtime: Some(selected),
+                }
+            }
+            None => codex_model_provider::auth_provider_for_request(
+                &auth, /*runtime*/ None, &headers,
+            )
+            .await
+            .map_err(|_| DecisionsError::Credentials)?,
+        };
+        let client = resolved
+            .bind_http_client_pool(&self.client)
+            .map_err(|_| DecisionsError::ClientSetup)?;
+        let headers = resolved
+            .auth
+            .apply_auth_headers(http::HeaderMap::new())
+            .await
+            .map_err(|_| DecisionsError::Credentials)?;
+        let request = client.post(&self.url).headers(headers).json(&body);
         drop(body);
         let mut response = request
             .send()
@@ -209,56 +328,43 @@ impl DecisionsSampler {
     }
 }
 
-fn request_body(
-    instructions: &RenderedFragment,
-    evidence: &[ResponseItem],
-    parent_compaction: Option<&ResponseItem>,
+fn request_body<'a>(
+    instructions: &ContentItem,
+    evidence: impl IntoIterator<Item = &'a ResponseItem>,
 ) -> Result<Value, DecisionsError> {
-    if parent_compaction.is_some() {
-        return Err(DecisionsError::UnsupportedEvidence);
-    }
-    let ContentItem::InputText { text: rubric } = instructions.annotated_content().content() else {
-        return Err(DecisionsError::UnsupportedEvidence);
+    let ContentItem::InputText { text: rubric } = instructions else {
+        return Err(DecisionsError::UnexpectedRequestSetup);
     };
-    let mut rubric = rubric.to_owned();
     let mut image_bytes = 0usize;
     let mut messages = Vec::new();
     for item in evidence {
+        if matches!(
+            item,
+            ResponseItem::Reasoning { .. }
+                | ResponseItem::Compaction { .. }
+                | ResponseItem::ContextCompaction { .. }
+        ) {
+            continue;
+        }
         let ResponseItem::Message {
             role,
             content,
-            internal_chat_message_metadata_passthrough: metadata,
+            phase,
             ..
         } = item
         else {
-            return Err(DecisionsError::UnsupportedEvidence);
+            return Err(DecisionsError::UnsupportedInputItem);
         };
-        let kinds = metadata
-            .as_ref()
-            .and_then(|metadata| metadata.content_item_kinds.as_deref());
-        // Decisions only accepts user input, so keep Codex's trusted-tool note in the rubric.
-        // This preserves its developer role; other developer messages remain unsupported.
-        match (role.as_str(), content.as_slice(), kinds) {
-            ("developer", [ContentItem::InputText { text }], Some([kind]))
-                if kind.0 == TrustedTool::KIND =>
-            {
-                rubric.push_str("\n\n");
-                rubric.push_str(text);
-                continue;
-            }
-            ("user", _, _) => {}
-            _ => return Err(DecisionsError::UnsupportedEvidence),
-        }
-        let mut parts = Vec::new();
+        let mut parts = Vec::with_capacity(content.len());
         for part in content {
             match part {
-                ContentItem::InputText { text } => {
-                    parts.push(json!({"type": "input_text", "text": text}));
+                ContentItem::InputText { .. } | ContentItem::OutputText { .. } => {
+                    parts.push(json!(part));
                 }
                 ContentItem::InputImage {
                     image: ImageReference::Inline { image_url },
                     ..
-                } if image_url.starts_with("data:") => {
+                } if role == "user" && image_url.starts_with("data:") => {
                     image_bytes = image_bytes.saturating_add(image_url.len());
                     if image_bytes > MAX_IMAGE_BYTES {
                         return Err(DecisionsError::InputTooLarge);
@@ -268,25 +374,28 @@ fn request_body(
                         json!({"type": "input_image", "image_url": image_url, "detail": null}),
                     );
                 }
-                ContentItem::InputImage { .. }
-                | ContentItem::InputAudio { .. }
-                | ContentItem::OutputText { .. } => {
-                    return Err(DecisionsError::UnsupportedEvidence);
+                ContentItem::InputImage { .. } => {
+                    return Err(DecisionsError::UnsupportedImage);
+                }
+                ContentItem::InputAudio { .. } => {
+                    return Err(DecisionsError::UnsupportedAudio);
                 }
             }
         }
-        // Harness annotations/IDs are not part of the Decisions contract. Preserve every
-        // user content part and message boundary.
-        let mut message = json!({"role": "user"});
+        // Harness annotations/IDs are not part of the Decisions contract.
+        let mut message = json!({"role": role});
         message["content"] = Value::Array(parts);
+        if let Some(phase) = phase {
+            message["phase"] = json!(phase);
+        }
         messages.push(message);
     }
     let mut body = json!({
         "model": MODEL,
         "questions": [{"type": "choice", "name": "guardian_risk",
+                       "instructions": rubric,
                        "choices": [{"value": "low"}, {"value": "high"}]}]
     });
-    body["questions"][0]["instructions"] = Value::String(rubric);
     body["input"] = Value::Array(messages);
     Ok(body)
 }

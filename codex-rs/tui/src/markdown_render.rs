@@ -38,8 +38,11 @@
 //! body rows, or even 3-char-wide columns cannot fit, body rows render as
 //! key/value records.
 //!
+//! Markdown prose uses foregrounds from the active syntax theme's markup scopes,
+//! retaining its usual modifiers and falling back when a scope has no foreground.
 //! Inline code and local file paths share the active syntax theme's raw-markup foreground.
 
+use crate::line_truncation::span_width;
 use crate::markdown_text_merge::DecodedTextMerge;
 use crate::render::highlight::current_syntax_theme;
 use crate::render::highlight::foreground_style_for_scopes;
@@ -49,10 +52,11 @@ use crate::render::line_utils::line_to_static;
 use crate::style::accent_color;
 use crate::style::table_separator_style;
 use crate::terminal_hyperlinks::HyperlinkLine;
+use crate::terminal_hyperlinks::TerminalHyperlink;
+use crate::terminal_hyperlinks::markdown_destination;
 use crate::terminal_hyperlinks::remap_wrapped_line;
+use crate::terminal_hyperlinks::source_span_width;
 use crate::terminal_hyperlinks::visible_lines;
-use crate::terminal_hyperlinks::web_destination;
-use crate::width::char_width;
 use crate::width::display_width;
 use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_line;
@@ -72,10 +76,15 @@ use ratatui::text::Text;
 use std::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
+use unicode_segmentation::UnicodeSegmentation;
 
 mod inline_directives;
 mod list_spacing;
 mod local_links;
+pub(crate) use local_links::FileLink;
+pub(crate) use local_links::SourceLocation;
+pub(crate) use local_links::is_markdown_file;
+pub(crate) use local_links::sidebar_file_link;
 mod math;
 mod mermaid;
 pub(crate) mod preferences;
@@ -101,6 +110,28 @@ mod list_spacing_tests;
 #[path = "markdown_render/task_list_tests.rs"]
 mod task_list_tests;
 pub(crate) use web_links::hide_web_link_destination;
+
+/// Find file destinations in source order, including Codex file citations.
+pub(crate) fn file_links(input: &str, cwd: Option<&Path>) -> Vec<FileLink> {
+    let options = Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES;
+    let directives = InlineDirectives::new(input, options);
+    directives
+        .events(
+            Parser::new_ext(&directives.markdown, options).into_offset_iter(),
+            cwd,
+        )
+        .filter_map(|(event, _)| match event {
+            Event::Start(Tag::Link { dest_url, .. } | Tag::Image { dest_url, .. }) => {
+                sidebar_file_link(&dest_url)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+pub(crate) fn hide_reader_link_destination(destination: &str) -> bool {
+    hide_web_link_destination(destination) || local_links::sidebar_file_link(destination).is_some()
+}
 use web_links::style_bare_web_urls;
 
 const TABLE_COLUMN_GAP: usize = 2;
@@ -133,13 +164,25 @@ impl Default for MarkdownStyles {
 
 impl MarkdownStyles {
     fn for_theme(theme: &syntect::highlighting::Theme) -> Self {
+        let foreground = |scopes: &[&str]| {
+            let mut style =
+                foreground_style_for_scopes_with_theme(theme, scopes).unwrap_or_default();
+            style.fg = style.fg.map(|foreground| {
+                crate::style::readable_color_on(foreground, /*background*/ None)
+            });
+            style
+        };
         Self {
-            h1: Style::new().bold().underlined(),
-            h2: Style::new().bold(),
-            h3: Style::new().bold().italic(),
-            h4: Style::new().italic(),
-            h5: Style::new().italic(),
-            h6: Style::new().italic(),
+            h1: foreground(&["markup.heading.1.markdown", "markup.heading.markdown"])
+                .bold()
+                .underlined(),
+            h2: foreground(&["markup.heading.2.markdown", "markup.heading.markdown"]).bold(),
+            h3: foreground(&["markup.heading.3.markdown", "markup.heading.markdown"])
+                .bold()
+                .italic(),
+            h4: foreground(&["markup.heading.4.markdown", "markup.heading.markdown"]).italic(),
+            h5: foreground(&["markup.heading.5.markdown", "markup.heading.markdown"]).italic(),
+            h6: foreground(&["markup.heading.6.markdown", "markup.heading.markdown"]).italic(),
             code: foreground_style_for_scopes_with_theme(
                 theme,
                 &[
@@ -148,13 +191,23 @@ impl MarkdownStyles {
                 ],
             )
             .unwrap_or_else(|| Style::new().fg(accent_color())),
-            emphasis: Style::new().italic(),
-            strong: Style::new().bold(),
+            emphasis: foreground(&["markup.italic.markdown"]).italic(),
+            strong: foreground(&["markup.bold.markdown"]).bold(),
             strikethrough: Style::new().crossed_out(),
-            ordered_list_marker: Style::new().light_blue(),
-            unordered_list_marker: Style::new(),
-            link: Style::new().fg(accent_color()).underlined(),
-            blockquote: Style::new().green(),
+            ordered_list_marker: Style::new()
+                .light_blue()
+                .patch(foreground(&["markup.list.numbered.markdown"])),
+            unordered_list_marker: foreground(&[
+                "markup.list.unnumbered.markdown",
+                "markup.list.bullet.markdown",
+            ]),
+            link: Style::new()
+                .fg(accent_color())
+                .patch(foreground(&["markup.underline.link.markdown"]))
+                .underlined(),
+            blockquote: Style::new()
+                .green()
+                .patch(foreground(&["markup.quote.markdown"])),
         }
     }
 }
@@ -186,6 +239,36 @@ impl IndentContext {
     }
 }
 
+/// Measures each span of an append-only line at most once, when a link needs its column.
+#[derive(Clone, Debug, Default)]
+struct SpanColumns {
+    measured_spans: usize,
+    width: usize,
+}
+
+impl SpanColumns {
+    fn measure(&mut self, line: &HyperlinkLine, width: impl Fn(&Span<'_>) -> usize) -> usize {
+        self.width += line.line.spans[self.measured_spans..]
+            .iter()
+            .map(width)
+            .sum::<usize>();
+        self.measured_spans = line.line.spans.len();
+        self.width
+    }
+
+    fn append_annotated(&mut self, line: &mut HyperlinkLine, mut appended: HyperlinkLine) {
+        if !appended.hyperlinks.is_empty() {
+            let shift = self.measure(line, span_width);
+            line.hyperlinks
+                .extend(appended.hyperlinks.into_iter().map(|mut link| {
+                    link.columns = link.columns.start + shift..link.columns.end + shift;
+                    link
+                }));
+        }
+        line.line.spans.append(&mut appended.line.spans);
+    }
+}
+
 /// Styled content of a single cell in the table being parsed.
 ///
 /// A cell can contain multiple lines (hard breaks inside the cell) and rich inline spans (bold,
@@ -195,6 +278,7 @@ impl IndentContext {
 struct TableCell {
     lines: Vec<HyperlinkLine>,
     copies: Vec<crate::markdown_copy::CopyLine>,
+    columns: SpanColumns,
 }
 
 // TableCell mutators inlined — called per-span during table event parsing.
@@ -207,11 +291,7 @@ impl TableCell {
         }
     }
 
-    fn push_annotated(
-        &mut self,
-        mut appended: HyperlinkLine,
-        inline: &[crate::markdown_copy::Inline],
-    ) {
+    fn push_annotated(&mut self, appended: HyperlinkLine, inline: &[crate::markdown_copy::Inline]) {
         self.ensure_line();
         if let Some(copy) = self.copies.last_mut() {
             copy.push(
@@ -225,13 +305,7 @@ impl TableCell {
             );
         }
         if let Some(line) = self.lines.last_mut() {
-            let shift = line.width();
-            line.line.spans.append(&mut appended.line.spans);
-            line.hyperlinks
-                .extend(appended.hyperlinks.into_iter().map(|mut link| {
-                    link.columns = link.columns.start + shift..link.columns.end + shift;
-                    link
-                }));
+            self.columns.append_annotated(line, appended);
         }
     }
 
@@ -239,6 +313,7 @@ impl TableCell {
     fn hard_break(&mut self) {
         self.lines.push(HyperlinkLine::new(Line::default()));
         self.copies.push(Default::default());
+        self.columns = SpanColumns::default();
     }
 
     fn plain_text(&self) -> String {
@@ -397,6 +472,22 @@ pub(crate) fn render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
     cwd: Option<&Path>,
     is_hidden_link_destination: &dyn Fn(&str) -> bool,
 ) -> Vec<HyperlinkLine> {
+    render_markdown_lines_with_list_spacing(
+        input,
+        width,
+        cwd,
+        is_hidden_link_destination,
+        ListSpacing::AfterMultiline,
+    )
+}
+
+pub(crate) fn render_markdown_lines_with_list_spacing(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    is_hidden_link_destination: &dyn Fn(&str) -> bool,
+    list_spacing: ListSpacing,
+) -> Vec<HyperlinkLine> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
@@ -407,6 +498,7 @@ pub(crate) fn render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
         math.events(Parser::new_ext(&math.markdown, options).into_offset_iter()),
     ));
     let mut w = Writer::new(input, width, cwd, is_hidden_link_destination);
+    w.list_spacing = list_spacing;
     // Drop the consumed parser before the rendering state, including on unwind.
     let mut parser = parser;
     w.run(&mut parser);
@@ -416,6 +508,7 @@ pub(crate) fn render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
 #[derive(Clone, Debug)]
 struct LinkState {
     destination: String,
+    source: usize,
     show_destination: bool,
     style_label: bool,
     has_visible_label: bool,
@@ -464,13 +557,15 @@ struct Writer<'a, 'policy> {
     in_code_block: bool,
     code_block_lang: Option<String>,
     code_block_buffer: String,
-    code_block_content_end: usize,
+    code_block_content: Range<usize>,
     wrap_width: Option<usize>,
     cwd: Option<PathBuf>,
     is_hidden_link_destination: &'policy dyn Fn(&str) -> bool,
     line_ends_with_local_link_target: bool,
     pending_local_link_soft_break: bool,
     current_line_content: Option<HyperlinkLine>,
+    display_columns: SpanColumns,
+    source_columns: SpanColumns,
     current_initial_indent: Vec<Span<'static>>,
     current_subsequent_indent: Vec<Span<'static>>,
     current_line_style: Style,
@@ -509,13 +604,15 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             in_code_block: false,
             code_block_lang: None,
             code_block_buffer: String::new(),
-            code_block_content_end: 0,
+            code_block_content: 0..0,
             wrap_width,
             cwd: cwd.map(Path::to_path_buf),
             is_hidden_link_destination,
             line_ends_with_local_link_target: false,
             pending_local_link_soft_break: false,
             current_line_content: None,
+            display_columns: SpanColumns::default(),
+            source_columns: SpanColumns::default(),
             current_initial_indent: Vec::new(),
             current_subsequent_indent: Vec::new(),
             current_line_style: Style::default(),
@@ -569,7 +666,8 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             Event::End(tag) => self.end_tag(tag, range),
             Event::Text(text) => {
                 if self.in_code_block {
-                    self.code_block_content_end = range.end;
+                    self.code_block_content.start = self.code_block_content.start.min(range.start);
+                    self.code_block_content.end = range.end;
                 }
                 self.text(text);
             }
@@ -636,7 +734,7 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                 self.quote_sources.push(source);
             }
             Tag::CodeBlock(kind) => {
-                self.code_block_content_end = range.end;
+                self.code_block_content = range.end..range.end;
                 let indent = match kind {
                     CodeBlockKind::Fenced(_) => None,
                     CodeBlockKind::Indented => Some(Span::from(" ".repeat(4))),
@@ -694,7 +792,7 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             Tag::Emphasis => self.push_inline_style(self.styles.emphasis),
             Tag::Strong => self.push_inline_style(self.styles.strong),
             Tag::Strikethrough => self.push_inline_style(self.styles.strikethrough),
-            Tag::Link { dest_url, .. } => self.push_link(dest_url.to_string()),
+            Tag::Link { dest_url, .. } => self.push_link(dest_url.to_string(), range.start),
             Tag::Table(alignments) => self.start_table(alignments),
             Tag::TableHead => self.start_table_head(),
             Tag::TableRow => self.start_table_row(range),
@@ -1128,9 +1226,13 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         if let Some(lang) = self.code_block_lang.take() {
             let code = std::mem::take(&mut self.code_block_buffer);
             if !code.is_empty() {
+                // Disabled Markdown tables are rendered with the opening fence in the text
+                // event. Ordinary fenced code text starts after the opening fence.
+                let literal_markdown_fence = self.code_block_content.start == range.start
+                    && crate::table_detect::is_markdown_fence_info(&lang, /*marker_len*/ 0);
                 let diagram = if preferences::current().mermaid
                     && lang == "mermaid"
-                    && mermaid::has_closing_fence(self.input, range, self.code_block_content_end)
+                    && mermaid::has_closing_fence(self.input, range, self.code_block_content.end)
                 {
                     let indent =
                         Self::spans_display_width(&self.prefix_spans(self.pending_marker_line));
@@ -1146,7 +1248,16 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     Some(diagram) => diagram,
                     None => highlight_code_to_lines(&code, &lang),
                 };
-                let source: std::sync::Arc<str> = code.into();
+                let source = if literal_markdown_fence
+                    && let Some(crate::markdown::CopyTarget::Code { content, .. }) =
+                        crate::markdown::extract_copy_targets(&code)
+                            .into_iter()
+                            .next()
+                {
+                    content
+                } else {
+                    code.into()
+                };
                 for hl_line in highlighted {
                     self.push_line(Line::default());
                     self.copy_line.code_source = Some(std::sync::Arc::clone(&source));
@@ -1320,11 +1431,19 @@ impl<'a, 'policy> Writer<'a, 'policy> {
 
     fn push_span_to_table_cell(&mut self, span: Span<'static>) {
         let span = self.style_link_label(span);
-        let mut annotated = HyperlinkLine::new(Line::default());
-        annotated.push_span(
-            span,
-            self.link.as_ref().map(|link| link.destination.as_str()),
-        );
+        let annotated = if let Some(path) = self.label_document_path() {
+            self.document_label_span(span, path)
+        } else {
+            let mut annotated = HyperlinkLine::default();
+            annotated.push_span(
+                span,
+                self.link.as_ref().map(|link| link.destination.as_str()),
+            );
+            if let Some(link) = annotated.hyperlinks.last_mut() {
+                link.markdown_source = self.link.as_ref().map(|link| link.source);
+            }
+            annotated
+        };
         if let Some(table_state) = self.table_state.as_mut()
             && let Some(cell) = table_state.current_cell.as_mut()
         {
@@ -1346,29 +1465,12 @@ impl<'a, 'policy> Writer<'a, 'policy> {
             if i > 0 {
                 self.push_table_cell_hard_break();
             }
-            self.push_text_spans_to_table_cell(line, style);
-        }
-    }
-
-    fn push_text_spans_to_table_cell(&mut self, text: &str, style: Style) {
-        let span = self.style_link_label(Span::styled(text.to_string(), style));
-        let destination = self
-            .link
-            .as_ref()
-            .and_then(|link| web_destination(&link.destination));
-        let mut annotated = if let Some(destination) = destination {
-            let mut annotated = HyperlinkLine::new(Line::default());
-            annotated.push_span(span, Some(&destination));
-            annotated
-        } else if self.link.is_some() || self.in_code_block {
-            HyperlinkLine::new(Line::from(span))
-        } else {
-            style_bare_web_urls(span, self.styles.link)
-        };
-        if let Some(table_state) = self.table_state.as_mut()
-            && let Some(cell) = table_state.current_cell.as_mut()
-        {
-            cell.push_annotated(std::mem::take(&mut annotated), &self.copy_inline);
+            let annotated = self.annotate_text_span(line, style);
+            if let Some(table_state) = self.table_state.as_mut()
+                && let Some(cell) = table_state.current_cell.as_mut()
+            {
+                cell.push_annotated(annotated, &self.copy_inline);
+            }
         }
     }
 
@@ -1516,6 +1618,25 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     TABLE_BODY_SEPARATOR_CHAR,
                     separator_style,
                 ));
+            }
+        }
+        // Include columns whose text ends before a neighbor wraps or whose value is empty.
+        let mut end = 0;
+        let edges: std::sync::Arc<[usize]> = column_widths
+            .iter()
+            .map(|width| {
+                end += width + 2 * TABLE_CELL_PADDING + TABLE_COLUMN_GAP;
+                end - TABLE_COLUMN_GAP / 2
+            })
+            .collect();
+        for line in &mut out {
+            if let Some(table) = line
+                .source
+                .as_mut()
+                .and_then(|source| source.copy.as_mut())
+                .and_then(|copy| std::sync::Arc::make_mut(copy).table.as_mut())
+            {
+                table.grid_columns = Some(std::sync::Arc::clone(&edges));
             }
         }
         RenderedTableLines {
@@ -1914,14 +2035,17 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         let mut out = HyperlinkLine::new(Line::default());
         let mut copy = None;
         let mut byte_offset = 1;
+        let mut output_column = 1;
         out.push_span("|".into(), /*destination*/ None);
         for cell in row {
             out.push_span(" ".into(), /*destination*/ None);
             byte_offset += 1;
+            output_column += 1;
             for (index, line) in cell.lines.iter().enumerate() {
                 if index > 0 {
                     out.push_span(" ".into(), /*destination*/ None);
                     byte_offset += 1;
+                    output_column += 1;
                 }
                 let text = line
                     .line
@@ -1929,43 +2053,78 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     .iter()
                     .map(|span| span.content.as_ref())
                     .collect::<String>();
-                let mut column = 0usize;
-                let mut current_destination = None;
+                // Link ranges count graphemes within each original span. Flattening
+                // the line can join graphemes across style boundaries.
+                let mut source_graphemes = line
+                    .line
+                    .spans
+                    .iter()
+                    .flat_map(|span| span.content.graphemes(/*is_extended*/ true))
+                    .peekable();
+                let mut source_byte = 0;
+                let mut source_column = 0;
+                let mut current_link = None;
+                let mut run_start = output_column;
                 let mut current_text = String::new();
                 let flush = |out: &mut HyperlinkLine,
                              current_text: &mut String,
-                             destination: Option<&str>| {
-                    if !current_text.is_empty() {
-                        out.push_span(Span::raw(std::mem::take(current_text)), destination);
+                             link: Option<&TerminalHyperlink>,
+                             columns: std::ops::Range<usize>| {
+                    if current_text.is_empty() {
+                        return;
+                    }
+                    let span = Span::raw(std::mem::take(current_text));
+                    out.push_span(span, /*destination*/ None);
+                    if let Some(link) = link
+                        && !columns.is_empty()
+                    {
+                        out.hyperlinks.push(link.with_columns(columns));
                     }
                 };
-                for (byte, ch) in text.char_indices() {
-                    let destination = line
+                for (byte, grapheme) in text.grapheme_indices(/*is_extended*/ true) {
+                    while let Some(source) =
+                        source_graphemes.next_if(|source| source_byte + source.len() <= byte)
+                    {
+                        source_byte += source.len();
+                        source_column += display_width(source);
+                    }
+                    let link = line
                         .hyperlinks
                         .iter()
-                        .find(|link| link.columns.contains(&column))
-                        .map(|link| link.destination.as_str());
-                    if destination != current_destination {
-                        flush(&mut out, &mut current_text, current_destination);
-                        current_destination = destination;
+                        .find(|link| link.columns.contains(&source_column));
+                    if link != current_link {
+                        flush(
+                            &mut out,
+                            &mut current_text,
+                            current_link,
+                            run_start..output_column,
+                        );
+                        current_link = link;
+                        run_start = output_column;
                     }
-                    if ch == '|' {
-                        current_text.push_str("\\|");
+                    if grapheme.starts_with('|') {
+                        current_text.push('\\');
                         byte_offset += 1;
-                    } else {
-                        current_text.push(ch);
+                        output_column += 1;
                     }
+                    current_text.push_str(grapheme);
                     if let Some(mut source) = line.source.clone() {
-                        source.range = byte..byte + ch.len_utf8();
+                        source.range = byte..byte + grapheme.len();
                         crate::markdown_copy::table::append(&mut copy, &source, byte_offset);
                     }
-                    byte_offset += ch.len_utf8();
-                    column += char_width(ch);
+                    byte_offset += grapheme.len();
+                    output_column += display_width(grapheme);
                 }
-                flush(&mut out, &mut current_text, current_destination);
+                flush(
+                    &mut out,
+                    &mut current_text,
+                    current_link,
+                    run_start..output_column,
+                );
             }
             out.push_span(" |".into(), /*destination*/ None);
             byte_offset += 2;
+            output_column += 2;
         }
         crate::markdown_copy::table::attach(&mut out, copy);
         out
@@ -2151,7 +2310,7 @@ impl<'a, 'policy> Writer<'a, 'policy> {
 
     fn style_link_label(&mut self, mut span: Span<'static>) -> Span<'static> {
         if let Some(link) = self.link.as_mut()
-            && web_destination(&link.destination).is_some()
+            && (link.style_label || markdown_destination(&link.destination).is_some())
         {
             link.has_visible_label |=
                 !span.content.trim().is_empty() && display_width(&span.content) > 0;
@@ -2160,17 +2319,18 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         span
     }
 
-    fn push_link(&mut self, dest_url: String) {
+    fn push_link(&mut self, dest_url: String, source: usize) {
         let style_label = (self.is_hidden_link_destination)(&dest_url);
         if style_label {
             self.push_inline_style(self.styles.link);
         }
         let show_destination = !style_label && should_render_link_destination(&dest_url);
         self.link = Some(LinkState {
+            source,
             show_destination,
             style_label,
             has_visible_label: false,
-            local_target_display: if is_local_path_like_link(&dest_url) {
+            local_target_display: if !style_label && is_local_path_like_link(&dest_url) {
                 Some(
                     render_local_link_target(&dest_url, self.cwd.as_deref())
                         .unwrap_or_else(|| dest_url.clone()),
@@ -2185,37 +2345,33 @@ impl<'a, 'policy> Writer<'a, 'policy> {
     }
 
     fn pop_link(&mut self) {
-        if let Some(link) = self.link.take() {
+        if let Some(mut link) = self.link.take() {
+            if link.style_label
+                && !link.has_visible_label
+                && local_links::sidebar_file_link(&link.destination).is_some()
+            {
+                link.local_target_display = Some(
+                    render_local_link_target(&link.destination, self.cwd.as_deref())
+                        .unwrap_or_else(|| link.destination.clone()),
+                );
+            }
             if link.style_label {
                 self.pop_inline_style();
             }
             if link.show_destination
-                || (!link.has_visible_label && web_destination(&link.destination).is_some())
+                || (!link.has_visible_label && markdown_destination(&link.destination).is_some())
             {
                 // Link destinations are rendered as " (url)" suffixes. When parsing table cells,
                 // append the suffix into the active cell buffer rather than the outer paragraph
                 // line to avoid detached url lines.
+                let span = Span::styled(link.destination.clone(), self.styles.link);
                 if self.in_table_cell() {
                     self.push_span_to_table_cell(" (".into());
-                    let mut destination = HyperlinkLine::new(Line::default());
-                    destination.push_span(
-                        Span::styled(link.destination.clone(), self.styles.link),
-                        web_destination(&link.destination).as_deref(),
-                    );
-                    if let Some(table_state) = self.table_state.as_mut()
-                        && let Some(cell) = table_state.current_cell.as_mut()
-                    {
-                        cell.push_annotated(destination, &self.copy_inline);
-                    }
+                    self.push_link_target(span, &link.destination, link.source);
                     self.push_span_to_table_cell(")".into());
                 } else {
                     self.push_span(" (".into());
-                    let mut destination = HyperlinkLine::new(Line::default());
-                    destination.push_span(
-                        Span::styled(link.destination.clone(), self.styles.link),
-                        web_destination(&link.destination).as_deref(),
-                    );
-                    self.push_annotated(destination);
+                    self.push_link_target(span, &link.destination, link.source);
                     self.push_span(")".into());
                 }
             } else if let Some(local_target_display) = link.local_target_display {
@@ -2244,7 +2400,7 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                         self.push_span_to_table_cell(" (".into());
                     }
                     self.copy_inline.push(crate::markdown_copy::Inline::Literal);
-                    self.push_span_to_table_cell(span);
+                    self.push_link_target(span, &link.destination, link.source);
                     self.copy_inline.pop();
                     if show_label {
                         self.push_span_to_table_cell(")".into());
@@ -2266,7 +2422,7 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                         self.push_span(" (".into());
                     }
                     self.copy_inline.push(crate::markdown_copy::Inline::Literal);
-                    self.push_span(span);
+                    self.push_link_target(span, &link.destination, link.source);
                     self.copy_inline.pop();
                     if show_label {
                         self.push_span(")".into());
@@ -2274,6 +2430,45 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     self.line_ends_with_local_link_target = true;
                 }
             }
+        }
+    }
+
+    fn label_document_path(&self) -> Option<FileLink> {
+        let link = self.link.as_ref().filter(|link| link.style_label)?;
+        local_links::sidebar_file_link(&link.destination)
+    }
+
+    fn document_label_span(&self, span: Span<'static>, path: FileLink) -> HyperlinkLine {
+        let width = span_width(&span);
+        let mut line = HyperlinkLine::new(Line::from(span));
+        let mut link = TerminalHyperlink::document(0..width, path);
+        link.markdown_source = self.link.as_ref().map(|link| link.source);
+        line.hyperlinks.push(link);
+        line
+    }
+
+    fn push_link_target(&mut self, span: Span<'static>, destination: &str, source: usize) {
+        let mut target = HyperlinkLine::default();
+        if let Some(link) = sidebar_file_link(destination) {
+            let width = span_width(&span);
+            target.line.push_span(span);
+            target
+                .hyperlinks
+                .push(TerminalHyperlink::document(0..width, link));
+        } else {
+            target.push_span(span, Some(destination));
+        }
+        if let Some(link) = target.hyperlinks.last_mut() {
+            link.markdown_source = Some(source);
+        }
+        if let Some(cell) = self
+            .table_state
+            .as_mut()
+            .and_then(|table| table.current_cell.as_mut())
+        {
+            cell.push_annotated(target, &self.copy_inline);
+        } else {
+            self.push_annotated(target);
         }
     }
 
@@ -2313,6 +2508,11 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         if let Some(mut line) = self.current_line_content.take() {
             let style = self.current_line_style;
             let mut source = crate::terminal_hyperlinks::LogicalLineSource::from_line(&line.line);
+            if !self.current_line_in_code_block
+                && crate::wrapping::text_contains_url_like(&source.text)
+            {
+                source.wrap_policy = crate::terminal_hyperlinks::LineWrapPolicy::UrlAware;
+            }
             source.copy = Some(std::sync::Arc::new(std::mem::take(&mut self.copy_line)));
             // NB we don't wrap code in code blocks, in order to preserve whitespace for copy/paste.
             if !self.current_line_in_code_block
@@ -2421,6 +2621,8 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         self.copy_line
             .push(line.spans.iter().map(|span| span.content.len()).sum(), &[]);
         self.current_line_content = Some(HyperlinkLine::new(line));
+        self.display_columns = SpanColumns::default();
+        self.source_columns = SpanColumns::default();
         self.current_line_in_code_block = self.in_code_block;
         self.line_ends_with_local_link_target = false;
 
@@ -2440,16 +2642,31 @@ impl<'a, 'policy> Writer<'a, 'policy> {
         if self.current_line_content.is_none() {
             self.push_line(Line::default());
         }
+        if let Some(path) = self.label_document_path() {
+            self.push_annotated(self.document_label_span(span, path));
+            return;
+        }
         if let Some(line) = self.current_line_content.as_mut() {
             self.copy_line.push(span.content.len(), &self.copy_inline);
-            line.push_span(
-                span,
-                self.link.as_ref().map(|link| link.destination.as_str()),
-            );
+            if let Some(destination) = self
+                .link
+                .as_ref()
+                .and_then(|link| markdown_destination(&link.destination))
+            {
+                // Inline code and HTML retain source columns until the transcript expands tabs.
+                let start = self.source_columns.measure(line, source_span_width);
+                let previous = line.hyperlinks.len();
+                line.push_linked_span(span, start, destination);
+                if let Some(link) = line.hyperlinks.get_mut(previous) {
+                    link.markdown_source = self.link.as_ref().map(|link| link.source);
+                }
+            } else {
+                line.line.push_span(span);
+            }
         }
     }
 
-    fn push_annotated(&mut self, mut appended: HyperlinkLine) {
+    fn push_annotated(&mut self, appended: HyperlinkLine) {
         if self.current_line_content.is_none() {
             self.push_line(Line::default());
         }
@@ -2463,32 +2680,35 @@ impl<'a, 'policy> Writer<'a, 'policy> {
                     .sum(),
                 &self.copy_inline,
             );
-            let shift = line.width();
-            line.line.spans.append(&mut appended.line.spans);
-            line.hyperlinks
-                .extend(appended.hyperlinks.into_iter().map(|mut link| {
-                    link.columns = link.columns.start + shift..link.columns.end + shift;
-                    link
-                }));
+            self.display_columns.append_annotated(line, appended);
         }
     }
 
     fn push_text_spans(&mut self, text: &str, style: Style) {
+        let annotated = self.annotate_text_span(text, style);
+        self.push_annotated(annotated);
+    }
+
+    fn annotate_text_span(&mut self, text: &str, style: Style) -> HyperlinkLine {
         let span = self.style_link_label(Span::styled(text.to_string(), style));
         let destination = self
             .link
             .as_ref()
-            .and_then(|link| web_destination(&link.destination));
-        let annotated = if let Some(destination) = destination {
+            .and_then(|link| markdown_destination(&link.destination));
+        if let Some(path) = self.label_document_path() {
+            self.document_label_span(span, path)
+        } else if let Some(destination) = destination {
             let mut annotated = HyperlinkLine::new(Line::default());
             annotated.push_span(span, Some(&destination));
+            if let Some(link) = annotated.hyperlinks.last_mut() {
+                link.markdown_source = self.link.as_ref().map(|link| link.source);
+            }
             annotated
         } else if self.link.is_some() || self.in_code_block {
             HyperlinkLine::new(Line::from(span))
         } else {
             style_bare_web_urls(span, self.styles.link)
-        };
-        self.push_annotated(annotated);
+        }
     }
 
     fn push_blank_line(&mut self) {
@@ -2575,7 +2795,6 @@ mod markdown_render_tests {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use ratatui::style::Stylize;
     use ratatui::text::Text;
 
     fn lines_to_strings(text: &Text<'_>) -> Vec<String> {
@@ -2657,12 +2876,13 @@ mod tests {
         let rendered =
             render_markdown_lines_with_width_and_cwd(markdown, Some(22), /*cwd*/ None);
         let source = rendered[0].source.as_ref().expect("blockquote source");
+        let styles = MarkdownStyles::default();
         assert_eq!(
             source.styled_range(0..source.text.len()),
             Line::from(vec![
-                "block quote with ".green(),
-                "content".green().bold(),
-                " that should wrap nicely".green(),
+                Span::styled("block quote with ", styles.blockquote),
+                Span::styled("content", styles.blockquote.patch(styles.strong)),
+                Span::styled(" that should wrap nicely", styles.blockquote),
             ])
         );
         let lines: Vec<_> = rendered.iter().map(|line| line.line.to_string()).collect();

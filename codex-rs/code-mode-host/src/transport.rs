@@ -5,25 +5,26 @@ use anyhow::Result;
 
 use crate::grpc_transport;
 
-/// The default transport retains the standalone host's original stdio behavior.
-pub const DEFAULT_LISTEN_URL: &str = "stdio";
+pub const DEFAULT_LISTEN_URL: &str = "grpc+stdio://";
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 enum ListenTransport {
-    Stdio,
+    GrpcStdio,
     Grpc(SocketAddr),
 }
 
-pub(crate) async fn run_transport(listen_url: &str) -> Result<()> {
+pub(crate) async fn run_transport(listen_url: &str, host: crate::GrpcCodeModeHost) -> Result<()> {
     match parse_listen_url(listen_url)? {
-        ListenTransport::Stdio => crate::run_stdio().await,
-        ListenTransport::Grpc(bind_address) => grpc_transport::run_tcp_listener(bind_address).await,
+        ListenTransport::GrpcStdio => crate::grpc_stdio::run(host).await,
+        ListenTransport::Grpc(bind_address) => {
+            grpc_transport::run_tcp_listener(bind_address, host).await
+        }
     }
 }
 
 fn parse_listen_url(listen_url: &str) -> Result<ListenTransport> {
-    if matches!(listen_url, "stdio" | "stdio://") {
-        return Ok(ListenTransport::Stdio);
+    if matches!(listen_url, "grpc+stdio://" | "stdio" | "stdio://") {
+        return Ok(ListenTransport::GrpcStdio);
     }
 
     if let Some(socket_addr) = listen_url.strip_prefix("grpc://") {
@@ -36,7 +37,7 @@ fn parse_listen_url(listen_url: &str) -> Result<ListenTransport> {
     }
 
     anyhow::bail!(
-        "unsupported --listen URL `{listen_url}`; expected `grpc://IP:PORT`, `stdio`, or `stdio://`"
+        "unsupported --listen URL `{listen_url}`; expected `grpc://IP:PORT`, `grpc+stdio://`, `stdio`, or `stdio://`"
     );
 }
 

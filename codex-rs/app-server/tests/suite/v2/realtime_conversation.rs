@@ -6,6 +6,8 @@ use app_test_support::create_command_execution_sse_response;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence_unchecked;
 use codex_app_server_protocol::CommandExecutionStatus;
+use codex_app_server_protocol::ExperimentalFeatureEnablementSetParams;
+use codex_app_server_protocol::ExperimentalFeatureEnablementSetResponse;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCError;
@@ -14,7 +16,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
 use codex_app_server_protocol::ThreadHistoryMode;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadItemsListParams;
 use codex_app_server_protocol::ThreadItemsListResponse;
 use codex_app_server_protocol::ThreadReadParams;
@@ -56,6 +58,7 @@ use codex_app_server_protocol::ThreadTimelineListParams;
 use codex_app_server_protocol::ThreadTimelineListResponse;
 use codex_app_server_protocol::ThreadTurnsListParams;
 use codex_app_server_protocol::ThreadTurnsListResponse;
+use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
@@ -93,6 +96,7 @@ use std::time::Duration;
 use tempfile::TempDir;
 use test_case::test_case;
 use test_case::test_matrix;
+use tokio::sync::Notify;
 use tokio::time::timeout;
 use uuid::Uuid;
 use wiremock::Match;
@@ -411,6 +415,7 @@ impl RealtimeE2eHarness {
                 realtime_end_instructions: None,
                 prompt: Some(Some("backend prompt".to_string())),
                 realtime_session_id: None,
+                voice_session_id: None,
                 transport: Some(ThreadRealtimeStartTransport::Webrtc {
                     sdp: offer_sdp.to_string(),
                 }),
@@ -473,6 +478,7 @@ impl RealtimeE2eHarness {
                 realtime_end_instructions: None,
                 prompt: Some(Some("backend prompt".to_string())),
                 realtime_session_id: None,
+                voice_session_id: None,
                 transport: None,
                 version: None,
                 voice: None,
@@ -511,6 +517,7 @@ impl RealtimeE2eHarness {
                 realtime_end_instructions: None,
                 prompt: Some(Some("backend prompt".to_string())),
                 realtime_session_id: None,
+                voice_session_id: None,
                 transport: None,
                 version: Some(RealtimeConversationVersion::V3),
                 voice: None,
@@ -701,6 +708,7 @@ async fn realtime_conversation_streams_timeline_items() -> Result<()> {
         .await?;
     mcp.initialize().await?;
     login_with_api_key(&mut mcp, "sk-test-key").await?;
+    enable_local_realtime_frames(&mut mcp).await?;
 
     let thread_request = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -729,6 +737,7 @@ async fn realtime_conversation_streams_timeline_items() -> Result<()> {
             realtime_end_instructions: None,
             prompt: None,
             realtime_session_id: None,
+            voice_session_id: None,
             transport: None,
             version: None,
             voice: None,
@@ -749,8 +758,11 @@ async fn realtime_conversation_streams_timeline_items() -> Result<()> {
     .await?;
     assert_eq!(session_started.item, session_completed.item);
     assert_eq!(
-        Uuid::parse_str(&session_started.item.id)?.get_version_num(),
-        7
+        session_started.item.id,
+        format!(
+            "realtime-session-start:{}",
+            session_started.item.realtime_session_id
+        )
     );
     assert!(matches!(
         session_completed.item.content,
@@ -927,6 +939,7 @@ async fn realtime_conversation_streams_v2_notifications() -> Result<()> {
             realtime_end_instructions: None,
             prompt: None,
             realtime_session_id: None,
+            voice_session_id: None,
             transport: None,
             version: None,
             voice: Some(RealtimeVoice::Cedar),
@@ -1240,6 +1253,7 @@ async fn realtime_timeline_splits_accepted_steering_and_persists_promoted_artifa
         ])]),
     )
     .await?;
+    enable_local_realtime_frames(&mut harness.mcp).await?;
     let thread_request = harness
         .mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -1273,6 +1287,16 @@ async fn realtime_timeline_splits_accepted_steering_and_persists_promoted_artifa
         .read_notification::<TurnStartedNotification>("turn/started")
         .await?;
 
+    // The initial user item also seals realtime transcript segments. Wait for
+    // it before speaking so only the steering under test can split this segment.
+    let initial_message = harness
+        .read_notification::<ItemCompletedNotification>("item/completed")
+        .await?;
+    assert!(matches!(
+        initial_message.item.payload,
+        ThreadItemPayload::UserMessage { .. }
+    ));
+
     harness
         .append_text(harness.thread_id.clone(), "Trigger speech")
         .await?;
@@ -1301,6 +1325,7 @@ async fn realtime_timeline_splits_accepted_steering_and_persists_promoted_artifa
                 additional_context: None,
                 client_user_message_id: None,
                 responsesapi_client_metadata: None,
+                responsesapi_client_metadata_patch: None,
             })
             .await?;
         let rejected = timeout(
@@ -1333,6 +1358,7 @@ async fn realtime_timeline_splits_accepted_steering_and_persists_promoted_artifa
             additional_context: None,
             client_user_message_id: Some("accepted-steer".to_string()),
             responsesapi_client_metadata: None,
+            responsesapi_client_metadata_patch: None,
         })
         .await?;
     let accepted: TurnSteerResponse =
@@ -1379,8 +1405,8 @@ async fn realtime_timeline_splits_accepted_steering_and_persists_promoted_artifa
                     item,
                     ..
                 } if matches!(
-                    item.as_ref(),
-                    ThreadItem::UserMessage { client_id, .. }
+                    &item.payload,
+                    ThreadItemPayload::UserMessage { client_id, .. }
                         if client_id.as_deref() == Some("accepted-steer")
                 )
             )
@@ -1393,7 +1419,7 @@ async fn realtime_timeline_splits_accepted_steering_and_persists_promoted_artifa
             .iter()
             .filter_map(|entry| match entry {
                 ThreadTimelineEntry::Item { item, .. }
-                    if matches!(item.as_ref(), ThreadItem::AgentMessage { id, .. } if id == "promoted-message") => Some("artifact"),
+                    if matches!(&item.payload, ThreadItemPayload::AgentMessage { id, .. } if id == "promoted-message") => Some("artifact"),
                 ThreadTimelineEntry::Realtime {
                     item: ThreadRealtimeItem {
                         content: ThreadRealtimeItemContent::BemItemPromoted { item_id, .. },
@@ -1408,7 +1434,17 @@ async fn realtime_timeline_splits_accepted_steering_and_persists_promoted_artifa
     );
     for entry in &page.data {
         if let ThreadTimelineEntry::Realtime { item, .. } = entry {
-            assert_eq!(Uuid::parse_str(&item.id)?.get_version_num(), 7);
+            if matches!(
+                item.content,
+                ThreadRealtimeItemContent::RealtimeSessionStarted
+            ) {
+                assert_eq!(
+                    item.id,
+                    format!("realtime-session-start:{}", item.realtime_session_id)
+                );
+            } else {
+                assert_eq!(Uuid::parse_str(&item.id)?.get_version_num(), 7);
+            }
         }
     }
 
@@ -1497,6 +1533,7 @@ async fn realtime_start_can_skip_startup_context() -> Result<()> {
             realtime_end_instructions: None,
             prompt: None,
             realtime_session_id: None,
+            voice_session_id: None,
             transport: None,
             version: None,
             voice: None,
@@ -1595,6 +1632,7 @@ async fn realtime_text_output_modality_requests_text_output_and_final_transcript
             realtime_end_instructions: None,
             prompt: None,
             realtime_session_id: None,
+            voice_session_id: None,
             transport: None,
             version: None,
             voice: None,
@@ -1711,6 +1749,7 @@ async fn realtime_list_voices_returns_supported_names() -> Result<()> {
                     RealtimeVoice::Marin,
                     RealtimeVoice::Cedar,
                 ],
+                v3: RealtimeVoicesList::builtin().v3,
                 default_v1: RealtimeVoice::Cove,
                 default_v2: RealtimeVoice::Marin,
             },
@@ -1763,6 +1802,7 @@ async fn realtime_conversation_stop_emits_closed_notification(
         .build_initialized_with_timeout(DEFAULT_TIMEOUT)
         .await?;
     login_with_api_key(&mut mcp, "sk-test-key").await?;
+    enable_local_realtime_frames(&mut mcp).await?;
 
     let thread_start_request_id = mcp
         .send_thread_start_request_with_auto_env(ThreadStartParams {
@@ -1810,7 +1850,8 @@ async fn realtime_conversation_stop_emits_closed_notification(
             realtime_start_instructions: None,
             realtime_end_instructions: None,
             prompt: Some(Some("backend prompt".to_string())),
-            realtime_session_id: None,
+            realtime_session_id: Some("call:Voice/one".into()),
+            voice_session_id: None,
             transport: None,
             version: Some(RealtimeConversationVersion::V1),
             voice: None,
@@ -1856,19 +1897,65 @@ async fn realtime_conversation_stop_emits_closed_notification(
                 cursor: None,
                 limit: None,
                 sort_direction: None,
+                defer_output: None,
             })
             .await?;
         let items: ThreadItemsListResponse =
             timeout(DEFAULT_TIMEOUT, mcp.read_response(request)).await??;
-        let tails = items.data.iter().filter(|entry| matches!(
-            &entry.item, ThreadItem::UserMessage { content, .. }
+        let has_tail = items.data.iter().any(|entry| matches!(
+            &entry.item.payload, ThreadItemPayload::UserMessage { content, .. }
             if content.iter().any(|part| matches!(part, V2UserInput::Text { text, .. }
                 if text.contains("<source>transcript_tail_flush</source>") && text.contains("user: final words")))
-        )).collect::<Vec<_>>();
-        assert_eq!(tails.len(), 1);
-        if let Some(id) = &running_turn_id {
-            assert_eq!(&tails[0].turn_id, id);
-        }
+        ));
+        assert!(has_tail, "protocol V1 keeps its legacy carryover behavior");
+        let request = mcp
+            .send_request(
+                "thread/realtime/list",
+                Some(serde_json::json!({"threadId": started.thread_id})),
+            )
+            .await?;
+        let history: codex_app_server_protocol::ThreadRealtimeListResponse =
+            timeout(DEFAULT_TIMEOUT, mcp.read_response(request)).await??;
+        let start_id = "realtime-session-start:call:Voice/one";
+        let request = mcp
+            .send_request(
+                "thread/realtime/list",
+                Some(serde_json::json!({"threadId": started.thread_id, "eventId": start_id})),
+            )
+            .await?;
+        let start: codex_app_server_protocol::ThreadRealtimeListResponse =
+            timeout(DEFAULT_TIMEOUT, mcp.read_response(request)).await??;
+        let [start] = start.data.as_slice() else {
+            panic!("the known call ID should resolve its opening marker");
+        };
+        assert_eq!(start.item.id, start_id);
+        assert!(matches!(
+            start.item.content,
+            ThreadRealtimeItemContent::RealtimeSessionStarted
+        ));
+        let end = history
+            .data
+            .iter()
+            .find(|entry| {
+                matches!(
+                    entry.item.content,
+                    ThreadRealtimeItemContent::RealtimeSessionClosed { .. }
+                )
+            })
+            .expect("a closed call has a closing marker");
+        assert!(start.position < end.position);
+        let realtime = history
+            .data
+            .iter()
+            .map(|entry| &entry.item)
+            .collect::<Vec<_>>();
+        assert!(
+            realtime.iter().any(|item| matches!(
+                &item.content, ThreadRealtimeItemContent::Frame { channels }
+                    if channels.voice_transcript.text == "final words"
+            )),
+            "sealed speech is readable immediately after Closed"
+        );
         let request = mcp
             .send_thread_turns_list_request(ThreadTurnsListParams {
                 thread_id: started.thread_id.clone(),
@@ -1880,7 +1967,6 @@ async fn realtime_conversation_stop_emits_closed_notification(
             .await?;
         let turns: ThreadTurnsListResponse =
             timeout(DEFAULT_TIMEOUT, mcp.read_response(request)).await??;
-        assert_eq!(tails[0].turn_id, turns.data[0].id);
         turns.data
     } else {
         let request = mcp
@@ -1891,23 +1977,28 @@ async fn realtime_conversation_stop_emits_closed_notification(
             .await?;
         let history: ThreadReadResponse =
             timeout(DEFAULT_TIMEOUT, mcp.read_response(request)).await??;
-        assert_eq!(history.thread.turns.iter().flat_map(|turn| &turn.items).filter(|item| matches!(
-            item, ThreadItem::UserMessage { content, .. }
+        assert_eq!(history.thread.turns.iter().flat_map(Turn::item_payloads).filter(|item| matches!(
+            item, ThreadItemPayload::UserMessage { content, .. }
             if content.iter().any(|part| matches!(part, V2UserInput::Text { text, .. }
                 if text.contains("<source>transcript_tail_flush</source>") && text.contains("user: final words")))
         )).count(), 1);
         history.thread.turns
     };
     assert_eq!(turns.len(), 1);
-    assert_eq!(
-        turns[0].status,
-        if running {
-            TurnStatus::InProgress
-        } else {
-            TurnStatus::Completed
+    if let Some(turn) = turns.first() {
+        assert_eq!(
+            turn.status,
+            if running {
+                TurnStatus::InProgress
+            } else {
+                TurnStatus::Completed
+            }
+        );
+        assert_eq!(Uuid::parse_str(&turn.id)?.get_version_num(), 7);
+        if let Some(id) = &running_turn_id {
+            assert_eq!(&turn.id, id);
         }
-    );
-    assert_eq!(Uuid::parse_str(&turns[0].id)?.get_version_num(), 7);
+    }
 
     response_tx.send(())?;
     if running {
@@ -1969,6 +2060,7 @@ async fn realtime_mode_uses_client_instructions_on_entry_and_exit() -> Result<()
             realtime_end_instructions: Some(end_instructions.to_string()),
             prompt: Some(Some("backend prompt".to_string())),
             realtime_session_id: None,
+            voice_session_id: None,
             transport: None,
             version: None,
             voice: None,
@@ -2255,6 +2347,7 @@ async fn realtime_webrtc_start_emits_sdp_notification() -> Result<()> {
             realtime_end_instructions: None,
             prompt: Some(Some("backend prompt".to_string())),
             realtime_session_id: None,
+            voice_session_id: None,
             transport: Some(ThreadRealtimeStartTransport::Webrtc {
                 sdp: "v=offer\r\n".to_string(),
             }),
@@ -2374,12 +2467,19 @@ async fn webrtc_v1_start_posts_offer_returns_sdp_and_joins_sideband() -> Result<
     // Phase 2: start through app-server and assert the app receives both the started notification
     // and the answer SDP.
     let started = harness.start_webrtc_realtime("v=offer\r\n").await?;
+    let call_request = harness.call_capture.single_request();
+    let session_id = call_request
+        .headers
+        .get("x-session-id")
+        .context("call session ID")?
+        .to_str()?;
+    assert_ne!(session_id, harness.thread_id);
     assert_eq!(
         started,
         StartedWebrtcRealtime {
             started: ThreadRealtimeStartedNotification {
                 thread_id: harness.thread_id.clone(),
-                realtime_session_id: Some(harness.thread_id.clone()),
+                realtime_session_id: Some(session_id.to_string()),
                 version: RealtimeConversationVersion::V1,
             },
             sdp: ThreadRealtimeSdpNotification {
@@ -2447,6 +2547,7 @@ async fn existing_call_attaches_without_reinitializing_the_client_session(
     expected_handshake_uri: &str,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
+    let voice_session_id = "voice-session-client-owned";
 
     let mut harness = RealtimeE2eHarness::new(
         RealtimeTestVersion::V1,
@@ -2474,6 +2575,7 @@ async fn existing_call_attaches_without_reinitializing_the_client_session(
             realtime_end_instructions: None,
             prompt: None,
             realtime_session_id: realtime_session_id.map(str::to_string),
+            voice_session_id: Some(voice_session_id.to_string()),
             transport: Some(ThreadRealtimeStartTransport::ExistingCall {
                 call_id: "rtc_existing".to_string(),
             }),
@@ -2503,13 +2605,21 @@ async fn existing_call_attaches_without_reinitializing_the_client_session(
         started,
         ThreadRealtimeStartedNotification {
             thread_id: harness.thread_id.clone(),
-            realtime_session_id: realtime_session_id.map(str::to_string),
+            realtime_session_id: Some(realtime_session_id.unwrap_or("rtc_existing").to_string()),
             version: expected_version,
         }
     );
     assert_eq!(
         harness.realtime_server.single_handshake().uri(),
         expected_handshake_uri
+    );
+    assert_eq!(
+        harness
+            .realtime_server
+            .single_handshake()
+            .header("voice-session-id")
+            .as_deref(),
+        Some(voice_session_id)
     );
     assert!(
         harness.realtime_server.single_connection().is_empty(),
@@ -2563,6 +2673,7 @@ async fn existing_call_rejects_client_owned_session_configuration(option: &str) 
         realtime_end_instructions: None,
         prompt: None,
         realtime_session_id: None,
+        voice_session_id: None,
         transport: Some(ThreadRealtimeStartTransport::ExistingCall {
             call_id: "rtc_existing".to_string(),
         }),
@@ -2626,12 +2737,19 @@ async fn webrtc_v3_start_posts_live_session_and_joins_without_session_update() -
             RealtimeConversationVersion::V3,
         )
         .await?;
+    let call_request = harness.call_capture.single_request();
+    let session_id = call_request
+        .headers
+        .get("x-session-id")
+        .context("call session ID")?
+        .to_str()?;
+    assert_ne!(session_id, harness.thread_id);
     assert_eq!(
         started,
         StartedWebrtcRealtime {
             started: ThreadRealtimeStartedNotification {
                 thread_id: harness.thread_id.clone(),
-                realtime_session_id: Some(harness.thread_id.clone()),
+                realtime_session_id: Some(session_id.to_string()),
                 version: RealtimeConversationVersion::V3,
             },
             sdp: ThreadRealtimeSdpNotification {
@@ -2644,7 +2762,7 @@ async fn webrtc_v3_start_posts_live_session_and_joins_without_session_update() -
     assert_call_create_multipart(
         harness.call_capture.single_request(),
         "v=offer\r\n",
-        r#"{"audio":{"output":{"voice":"cove"}},"delegation":{"ack_filler":false,"type":"client"},"instructions":"backend prompt\n\nstartup context","model":"gpt-live-1-codex"}"#,
+        r#"{"audio":{"output":{"voice":"marin"}},"delegation":{"ack_filler":false,"type":"client"},"instructions":"backend prompt\n\nstartup context","model":"gpt-live-1.1-codex"}"#,
         "/v1/live",
     )?;
     assert!(
@@ -2671,6 +2789,75 @@ async fn webrtc_v3_start_posts_live_session_and_joins_without_session_update() -
         "Frameless WebRTC sideband must not send a second session.update"
     );
 
+    harness.shutdown().await;
+    Ok(())
+}
+
+#[test_case(None, None, "marin"; "cleared setting uses API default")]
+#[test_case(Some("maple"), None, "maple"; "changed setting takes effect")]
+#[test_case(Some("maple"), Some("marin"), "marin"; "explicit voice overrides setting")]
+#[tokio::test]
+async fn webrtc_v3_uses_current_voice_setting(
+    saved_voice: Option<&str>,
+    requested_voice: Option<&str>,
+    expected_voice: &str,
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let mut harness = RealtimeE2eHarness::new(
+        RealtimeTestVersion::V1,
+        no_main_loop_responses(),
+        realtime_sideband(vec![open_realtime_sideband_connection(vec![vec![]])]),
+    )
+    .await?;
+    let config_path = harness._codex_home.path().join("config.toml");
+    let original_config = std::fs::read_to_string(&config_path)?;
+    std::fs::write(
+        &config_path,
+        original_config.replace("[realtime]", "[realtime]\nvoice = \"cove\""),
+    )?;
+    let request_id = harness
+        .mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams::default())
+        .await?;
+    let thread: ThreadStartResponse =
+        timeout(DEFAULT_TIMEOUT, harness.mcp.read_response(request_id)).await??;
+
+    // The thread retains Cove. The next call must use the current setting, including removal.
+    let updated_config = match saved_voice {
+        Some(voice) => {
+            original_config.replace("[realtime]", &format!("[realtime]\nvoice = {voice:?}"))
+        }
+        None => original_config,
+    };
+    std::fs::write(config_path, updated_config)?;
+    let request_id = harness
+        .mcp
+        .send_thread_realtime_start_request(serde_json::from_value(json!({
+            "threadId": thread.thread.id,
+            "version": "v3",
+            "transport": {"type": "webrtc", "sdp": "v=offer\r\n"},
+            "outputModality": "audio",
+            "includeStartupContext": false,
+            "prompt": "voice selection test",
+            "voice": requested_voice,
+        }))?)
+        .await?;
+    let _: ThreadRealtimeStartResponse =
+        timeout(DEFAULT_TIMEOUT, harness.mcp.read_response(request_id)).await??;
+    let _: ThreadRealtimeSdpNotification = harness.read_notification("thread/realtime/sdp").await?;
+    assert_call_create_multipart(
+        harness.call_capture.single_request(),
+        "v=offer\r\n",
+        &json!({
+            "audio": {"output": {"voice": expected_voice}},
+            "delegation": {"type": "client"},
+            "instructions": "backend prompt",
+            "model": "gpt-live-1.1-codex",
+        })
+        .to_string(),
+        "/v1/live",
+    )?;
     harness.shutdown().await;
     Ok(())
 }
@@ -3735,6 +3922,8 @@ async fn websocket_v2_background_agent_steering_ack_requests_response_create() -
     // the background-agent handoff stays active while realtime sends a second
     // tool call that should steer the active task.
     let main_loop_responses_server = responses::start_mock_server().await;
+    let request_received = Arc::new(Notify::new());
+    let notify_request_received = Arc::clone(&request_received);
     let (gate_completed_tx, gate_completed_rx) = mpsc::channel();
     let gated_response = responses::sse(vec![
         responses::ev_response_created("resp-1"),
@@ -3743,6 +3932,10 @@ async fn websocket_v2_background_agent_steering_ack_requests_response_create() -
     ]);
     Mock::given(method("POST"))
         .and(path_regex(".*/responses$"))
+        .and(move |_: &WiremockRequest| {
+            notify_request_received.notify_one();
+            true
+        })
         .respond_with(GatedSseResponse {
             gate_rx: Mutex::new(Some(gate_completed_rx)),
             response: gated_response,
@@ -3758,8 +3951,11 @@ async fn websocket_v2_background_agent_steering_ack_requests_response_create() -
             vec![
                 session_updated("sess_v2_steering_ack"),
                 v2_background_agent_tool_call("call_active", "start a task"),
-                v2_background_agent_tool_call("call_steer", "steer the active task"),
             ],
+            vec![v2_background_agent_tool_call(
+                "call_steer",
+                "steer the active task",
+            )],
             vec![],
             vec![],
             vec![],
@@ -3776,22 +3972,40 @@ async fn websocket_v2_background_agent_steering_ack_requests_response_create() -
         .await?;
     assert_eq!(turn_started.thread_id, harness.thread_id);
 
-    // Phase 2: the second tool call happens while `call_active` is still
-    // running, so app-server sends a steering acknowledgement as a function-call
-    // output for the second call.
+    // Phase 2: wait for the first model request, then use an audio frame to
+    // release the scripted steering call while the first response remains blocked.
+    timeout(DEFAULT_TIMEOUT, request_received.notified()).await?;
+    harness.append_audio(harness.thread_id.clone()).await?;
+    assert_eq!(
+        harness.sideband_outbound_request(/*request_index*/ 1).await["type"],
+        "input_audio_buffer.append",
+    );
     assert_v2_function_call_output(
-        &harness.sideband_outbound_request(/*request_index*/ 1).await,
+        &harness.sideband_outbound_request(/*request_index*/ 2).await,
         "call_steer",
         V2_STEERING_ACKNOWLEDGEMENT,
     );
 
     // Phase 3: realtime needs a `response.create` after the steering
     // acknowledgement so it can surface that acknowledgement to the user.
-    assert_v2_response_create(&harness.sideband_outbound_request(/*request_index*/ 2).await);
+    assert_v2_response_create(&harness.sideband_outbound_request(/*request_index*/ 3).await);
 
-    // Phase 4: release the gated delegated turn. Codex should then continue
-    // the same run with the steering text included in the follow-up Responses
-    // request, proving realtime did not merely acknowledge and drop it.
+    // Phase 4: the handoff notification follows core admission; the acknowledgement
+    // above does not. Wait for routing before releasing the first response.
+    timeout(
+        DEFAULT_TIMEOUT,
+        harness.mcp.read_stream_until_matching_notification(
+            "steering handoff routed",
+            |notification| {
+                notification.method == "thread/realtime/itemAdded"
+                    && notification.params.as_ref().is_some_and(|params| {
+                        params["item"]["type"] == "handoff_request"
+                            && params["item"]["handoff_id"] == "call_steer"
+                    })
+            },
+        ),
+    )
+    .await??;
     let _ = gate_completed_tx.send(());
     let turn_completed = harness
         .read_notification::<TurnCompletedNotification>("turn/completed")
@@ -3801,9 +4015,14 @@ async fn websocket_v2_background_agent_steering_ack_requests_response_create() -
     let requests = harness.main_loop_responses_requests().await?;
     assert_eq!(requests.len(), 2);
     assert!(
+        !response_request_contains_text(&requests[0], "steer the active task"),
+        "first Responses request should precede steering: {}",
+        requests[0],
+    );
+    assert!(
         response_request_contains_text(&requests[1], "steer the active task"),
-        "follow-up Responses request should contain steering prompt: {}",
-        requests[1]
+        "second Responses request should contain steering prompt: {}",
+        requests[1],
     );
 
     harness.shutdown().await;
@@ -3896,7 +4115,8 @@ async fn websocket_v2_tool_call_delegated_turn_can_execute_shell_tool() -> Resul
 
     // Phase 2: observe the delegated background agent turn executing the requested shell command.
     let started_command = wait_for_started_command_execution(&mut harness.mcp).await?;
-    let ThreadItem::CommandExecution { id, status, .. } = started_command.item else {
+    let ThreadItemPayload::CommandExecution { id, status, .. } = started_command.item.payload
+    else {
         unreachable!("helper returns command execution items");
     };
     assert_eq!(
@@ -3905,12 +4125,12 @@ async fn websocket_v2_tool_call_delegated_turn_can_execute_shell_tool() -> Resul
     );
 
     let completed_command = wait_for_completed_command_execution(&mut harness.mcp).await?;
-    let ThreadItem::CommandExecution {
+    let ThreadItemPayload::CommandExecution {
         id,
         status,
         aggregated_output,
         ..
-    } = completed_command.item
+    } = completed_command.item.payload
     else {
         unreachable!("helper returns command execution items");
     };
@@ -4083,6 +4303,7 @@ async fn realtime_webrtc_start_surfaces_backend_error() -> Result<()> {
             realtime_end_instructions: None,
             prompt: Some(Some("backend prompt".to_string())),
             realtime_session_id: None,
+            voice_session_id: None,
             transport: Some(ThreadRealtimeStartTransport::Webrtc {
                 sdp: "v=offer\r\n".to_string(),
             }),
@@ -4182,12 +4403,19 @@ async fn realtime_starts_on_forked_and_resumed_threads(
     }
 
     let started = harness.start_webrtc_realtime("v=offer\r\n").await?;
+    let call_request = harness.call_capture.single_request();
+    let session_id = call_request
+        .headers
+        .get("x-session-id")
+        .context("call session ID")?
+        .to_str()?;
+    assert_ne!(session_id, harness.thread_id);
     assert_eq!(
         started,
         StartedWebrtcRealtime {
             started: ThreadRealtimeStartedNotification {
                 thread_id: harness.thread_id.clone(),
-                realtime_session_id: Some(harness.thread_id.clone()),
+                realtime_session_id: Some(session_id.to_string()),
                 version: RealtimeConversationVersion::V1,
             },
             sdp: ThreadRealtimeSdpNotification {
@@ -4225,12 +4453,23 @@ async fn login_with_api_key(mcp: &mut TestAppServer, api_key: &str) -> Result<()
     Ok(())
 }
 
+async fn enable_local_realtime_frames(mcp: &mut TestAppServer) -> Result<()> {
+    let request = mcp
+        .send_experimental_feature_enablement_set_request(ExperimentalFeatureEnablementSetParams {
+            enablement: BTreeMap::from([("realtime_frames_local".to_string(), true)]),
+        })
+        .await?;
+    let _: ExperimentalFeatureEnablementSetResponse =
+        timeout(DEFAULT_TIMEOUT, mcp.read_response(request)).await??;
+    Ok(())
+}
+
 async fn wait_for_started_command_execution(
     mcp: &mut TestAppServer,
 ) -> Result<ItemStartedNotification> {
     loop {
         let started = read_notification::<ItemStartedNotification>(mcp, "item/started").await?;
-        if let ThreadItem::CommandExecution { .. } = &started.item {
+        if let ThreadItemPayload::CommandExecution { .. } = &started.item.payload {
             return Ok(started);
         }
     }
@@ -4242,7 +4481,7 @@ async fn wait_for_completed_command_execution(
     loop {
         let completed =
             read_notification::<ItemCompletedNotification>(mcp, "item/completed").await?;
-        if let ThreadItem::CommandExecution { .. } = &completed.item {
+        if let ThreadItemPayload::CommandExecution { .. } = &completed.item.payload {
             return Ok(completed);
         }
     }
@@ -4505,4 +4744,290 @@ fn assert_invalid_request(error: JSONRPCError, message: String) {
     assert_eq!(error.error.code, -32600);
     assert_eq!(error.error.message, message);
     assert_eq!(error.error.data, None);
+}
+
+#[test_case("websocket", "dual_header"; "websocket_dual_header")]
+#[test_case("websocket", "assertion_only"; "websocket_assertion_only")]
+#[test_case("webrtc", "dual_header"; "webrtc_reconnect_dual_header")]
+#[test_case("webrtc", "assertion_only"; "webrtc_reconnect_assertion_only")]
+#[test_case("existing_call", "dual_header"; "existing_call_reconnect_dual_header")]
+#[test_case("existing_call", "assertion_only"; "existing_call_reconnect_assertion_only")]
+#[test_case("voice_key", "dual_header"; "voice_key_dual_header")]
+#[test_case("voice_key", "assertion_only"; "voice_key_assertion_only")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn realtime_requests_use_runtime_auth(transport: &str, mode: &str) -> Result<()> {
+    use base64::Engine;
+    use core_test_support::runtime_auth::PROBE_SERVER;
+    use core_test_support::runtime_auth::run_harness_through_proxy;
+    use std::collections::BTreeSet;
+
+    skip_if_no_network!(Ok(()));
+    let sideband = matches!(transport, "webrtc" | "existing_call");
+    if let Ok(server_uri) = std::env::var(PROBE_SERVER) {
+        let home = TempDir::new()?;
+        std::fs::write(
+            home.path().join("config.toml"),
+            format!(
+                "experimental_realtime_ws_base_url = \"wss://chatgpt.com/v1\"\n\
+             experimental_realtime_webrtc_call_base_url = \"https://api.openai.com/v1\"\n\
+             experimental_realtime_ws_startup_context = \"startup context\"\n\
+             [features.runtime_agent_instances]\nenabled = true\nmode = {mode:?}\n\
+             [realtime]\nversion = \"v3\"\ntype = \"conversational\"\n"
+            ),
+        )?;
+        let mut app = TestAppServer::builder()
+            .with_codex_home(home.path())
+            .with_env_overrides(&[(
+                "OPENAI_API_KEY",
+                (transport == "voice_key").then_some("voice-key"),
+            )])
+            .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+            .await?;
+        if transport == "voice_key" {
+            // External ChatGPT credentials own the harness; Realtime can still use the
+            // explicit voice API key supplied by the embedding application.
+            let claims = json!({
+                "iss": "https://auth.openai.com/", "session_id": "voice-test-login",
+                "https://api.openai.com/auth": {"user_id": "actor", "chatgpt_account_id": "account"},
+            });
+            let token = format!(
+                "header.{}.signature",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(serde_json::to_vec(&claims)?)
+            );
+            let id = app
+                .send_chatgpt_auth_tokens_login_request(
+                    token,
+                    "account".into(),
+                    /*chatgpt_plan_type*/ None,
+                )
+                .await?;
+            let _: serde_json::Value = timeout(DEFAULT_TIMEOUT, app.read_response(id)).await??;
+        } else {
+            login_with_api_key(&mut app, "actor-key").await?;
+        }
+        let id = app
+            .send_thread_start_request_with_auto_env(ThreadStartParams::default())
+            .await?;
+        let thread: ThreadStartResponse = timeout(DEFAULT_TIMEOUT, app.read_response(id)).await??;
+        {
+            let id = app
+                .send_thread_realtime_start_request(ThreadRealtimeStartParams {
+                    thread_id: thread.thread.id.clone(),
+                    client_managed_handoffs: None,
+                    delegation_ack_filler: None,
+                    flush_transcript_tail_on_session_end: None,
+                    codex_response_item_prefix: None,
+                    codex_response_handoff_mode: None,
+                    backend_reasoning_status: false,
+                    codex_response_handoff_channel_prefixes: None,
+                    codex_responses_as_items: None,
+                    model: None,
+                    output_modality: RealtimeOutputModality::Audio,
+                    include_startup_context: None,
+                    initial_items: None,
+                    realtime_start_instructions: None,
+                    realtime_end_instructions: None,
+                    prompt: None,
+                    realtime_session_id: None,
+                    voice_session_id: None,
+                    transport: match transport {
+                        "webrtc" => Some(ThreadRealtimeStartTransport::Webrtc {
+                            sdp: "v=offer\r\n".into(),
+                        }),
+                        "existing_call" => Some(ThreadRealtimeStartTransport::ExistingCall {
+                            call_id: "rtc_existing".into(),
+                        }),
+                        _ => None,
+                    },
+                    version: Some(if sideband {
+                        RealtimeConversationVersion::V3
+                    } else {
+                        RealtimeConversationVersion::V2
+                    }),
+                    voice: None,
+                })
+                .await?;
+            let _: ThreadRealtimeStartResponse =
+                timeout(DEFAULT_TIMEOUT, app.read_response(id)).await??;
+            let _: ThreadRealtimeStartedNotification =
+                read_notification(&mut app, "thread/realtime/started").await?;
+            if sideband {
+                // The parent acknowledges the second handshake, caused by a server disconnect.
+                let client = codex_login::default_client::create_client_without_request_logging();
+                timeout(DEFAULT_TIMEOUT, async {
+                    loop {
+                        if client
+                            .get(format!("{server_uri}/realtime-ready"))
+                            .send()
+                            .await?
+                            .status()
+                            .is_success()
+                        {
+                            return Ok::<_, anyhow::Error>(());
+                        }
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                })
+                .await??;
+            }
+            let id = app
+                .send_thread_realtime_stop_request(ThreadRealtimeStopParams {
+                    thread_id: thread.thread.id.clone(),
+                })
+                .await?;
+            let _: ThreadRealtimeStopResponse =
+                timeout(DEFAULT_TIMEOUT, app.read_response(id)).await??;
+            let _: ThreadRealtimeClosedNotification =
+                read_notification(&mut app, "thread/realtime/closed").await?;
+        }
+        return Ok(());
+    }
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST")).and(path("/agent/register"))
+        .respond_with(|request: &WiremockRequest| {
+            let body: Value = request.body_json().expect("valid registration body");
+            let voice = body["actor_auth"]["credential"] == "voice-key";
+            let actor = if body["actor_auth"]["type"] == "oauth" {
+                json!({"kind": "chatgpt", "user_id": "actor", "account_id": "account"})
+            } else {
+                json!({"kind": "platform", "user_id": if voice {"voice"} else {"actor"}, "organization_id": "org-a", "project_id": null})
+            };
+            ResponseTemplate::new(200).set_body_json(json!({
+                "runtime_agent_instance_id": if voice {"runtime-voice"} else {"runtime-actor"},
+                "agent_host_id": "host-a", "actor": actor,
+            }))
+        }).mount(&server).await;
+    Mock::given(method("POST"))
+        .and(path("/v1/live"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("Location", "/v1/live/rtc_created")
+                .set_body_string("v=answer\r\n"),
+        )
+        .expect(if transport == "webrtc" { 1 } else { 0 })
+        .mount(&server)
+        .await;
+    let expected_handshakes = if sideband { 2 } else { 1 };
+    let realtime = start_websocket_server_with_headers(
+        (0..expected_handshakes)
+            .map(|index| WebSocketConnectionConfig {
+                requests: if sideband {
+                    vec![]
+                } else {
+                    vec![vec![json!({
+                        "type": "session.updated", "session": {"id": "session-test"},
+                    })]]
+                },
+                response_headers: Vec::new(),
+                accept_delay: None,
+                close_after_requests: sideband && index == 0,
+            })
+            .collect(),
+    )
+    .await;
+    let target =
+        url::Url::parse(realtime.uri())?.socket_addrs(/*default_port_number*/ || None)?[0];
+    let case = match transport {
+        "webrtc" => "webrtc_reconnect",
+        "existing_call" => "existing_call_reconnect",
+        other => other,
+    };
+    let test_name = format!(
+        "suite::v2::realtime_conversation::realtime_requests_use_runtime_auth::{case}_{mode}"
+    );
+    let (result, ()) = tokio::join!(
+        run_harness_through_proxy(&server, &test_name, Some(target)),
+        async {
+            assert!(
+                realtime
+                    .wait_for_handshakes(expected_handshakes, Duration::from_secs(30))
+                    .await,
+                "missing authenticated Realtime handshake"
+            );
+            Mock::given(path("/realtime-ready"))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+        }
+    );
+    result?;
+    let mut proofs = BTreeSet::new();
+    let expected_runtime = if transport == "voice_key" {
+        "runtime-voice"
+    } else {
+        "runtime-actor"
+    };
+    for handshake in realtime.handshakes() {
+        let authorization = handshake
+            .header("authorization")
+            .context("handshake auth")?;
+        let proof = if mode == "dual_header" {
+            let credential = if transport == "voice_key" {
+                "voice-key"
+            } else {
+                "actor-key"
+            };
+            assert_eq!(authorization, format!("Bearer {credential}"));
+            handshake
+                .header("x-openai-agent-assertion")
+                .context("runtime proof")?
+        } else {
+            assert!(handshake.header("x-openai-agent-assertion").is_none());
+            authorization
+                .strip_prefix("AgentAssertion ")
+                .context("assertion-only auth")?
+                .to_string()
+        };
+        assert!(
+            proofs.insert(proof.clone()),
+            "a reconnect must sign a fresh assertion"
+        );
+        let payload: Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(proof.split('.').nth(2).context("assertion payload")?)?,
+        )?;
+        assert_eq!(payload["runtime_agent_instance"], expected_runtime);
+    }
+    let requests = server
+        .received_requests()
+        .await
+        .context("captured requests")?;
+    let registrations = requests
+        .iter()
+        .filter(|request| request.url.path() == "/agent/register")
+        .count();
+    assert_eq!(
+        registrations,
+        if transport == "voice_key" { 2 } else { 1 },
+        "reconnects reuse the runtime"
+    );
+    for request in requests
+        .iter()
+        .filter(|request| request.url.path() == "/v1/live")
+    {
+        let authorization = request.headers["authorization"].to_str()?;
+        let proof = if mode == "dual_header" {
+            assert_eq!(authorization, "Bearer actor-key");
+            request.headers["x-openai-agent-assertion"].to_str()?
+        } else {
+            assert!(!request.headers.contains_key("x-openai-agent-assertion"));
+            authorization
+                .strip_prefix("AgentAssertion ")
+                .context("call-create auth")?
+        };
+        assert!(
+            proofs.insert(proof.to_string()),
+            "call creation and sideband cannot share an assertion"
+        );
+        let payload: Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(proof.split('.').nth(2).context("assertion payload")?)?,
+        )?;
+        assert_eq!(payload["runtime_agent_instance"], "runtime-actor");
+    }
+    server.verify().await;
+    realtime.shutdown().await;
+    Ok(())
 }

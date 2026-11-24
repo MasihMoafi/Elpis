@@ -6,12 +6,15 @@ use super::WorldStateUpdate;
 use crate::context::ContextualUserFragment;
 use crate::context::MultiAgentRoleInstructions;
 use crate::context::MultiAgentUsageHint;
+use codex_protocol::models::ContentItemMetadata;
+use codex_protocol::models::ContentItemNamespace;
 
 /// Configured or model-owned multi-agent instructions currently visible to the model.
 #[derive(Clone, Debug)]
 pub(crate) struct MultiAgentUsageHintState {
     instructions: MultiAgentRoleInstructions,
     pub(super) fingerprint: WorldStateHash,
+    namespace: Option<ContentItemNamespace>,
 }
 
 impl MultiAgentUsageHintState {
@@ -20,7 +23,13 @@ impl MultiAgentUsageHintState {
         Self {
             instructions,
             fingerprint,
+            namespace: None,
         }
+    }
+
+    pub(crate) fn with_namespace(mut self, namespace: ContentItemNamespace) -> Self {
+        self.namespace = Some(namespace);
+        self
     }
 }
 
@@ -29,25 +38,31 @@ impl WorldStateSection for MultiAgentUsageHintState {
     type Snapshot = WorldStateHash;
 
     fn matches_current_legacy_fragment(&self, role: &str, text: &str) -> bool {
-        role == self.instructions.role() && text == self.instructions.render()
+        role == self.instructions.role()
+            && text == self.instructions.render().into_text().unwrap_or_default()
     }
 
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Self::Snapshot>,
     ) -> SectionTransition<Self::Snapshot> {
-        let fragment: Option<Box<dyn ContextualUserFragment>> = match previous {
+        let fragment: Option<super::WorldStateFragment> = match previous {
             PreviousSectionState::Known(previous) if previous == &self.fingerprint => {
                 return (None, Vec::new());
             }
             PreviousSectionState::Unknown => None,
             PreviousSectionState::Known(_) | PreviousSectionState::Absent => {
                 if self.instructions.markers().0.is_empty() {
-                    Some(Box::new(MultiAgentUsageHint::new(
-                        &self.instructions.body(),
-                    )))
+                    Some(Box::new(
+                        MultiAgentUsageHint::new(
+                            &self.instructions.body().into_text().unwrap_or_default(),
+                        )
+                        .with_metadata(ContentItemMetadata::tool(self.namespace.clone())),
+                    ))
                 } else {
-                    Some(Box::new(self.instructions.clone()))
+                    Some(Box::new(self.instructions.clone().with_metadata(
+                        ContentItemMetadata::tool(self.namespace.clone()),
+                    )))
                 }
             }
         };

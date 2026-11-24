@@ -41,12 +41,7 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
                 } else {
                     TurnStatus::Completed
                 },
-                error: event.error.as_ref().map(|error| TurnError {
-                    misalignment: error.misalignment.clone().map(Into::into),
-                    message: error.message.clone(),
-                    codex_error_info: error.codex_error_info.clone().map(Into::into),
-                    additional_details: None,
-                }),
+                error: event.error.clone().map(TurnError::from),
                 started_at: event.started_at,
                 completed_at: event.completed_at,
                 duration_ms: event.duration_ms,
@@ -62,12 +57,7 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
                     turn_id: turn_id.clone(),
                     root_turn_id: event.root_turn_id.clone(),
                     status: TurnStatus::Interrupted,
-                    error: event.error.as_ref().map(|error| TurnError {
-                        message: error.message.clone(),
-                        codex_error_info: error.codex_error_info.clone().map(Into::into),
-                        misalignment: error.misalignment.clone().map(Into::into),
-                        additional_details: None,
-                    }),
+                    error: event.error.clone().map(TurnError::from),
                     started_at: event.started_at,
                     completed_at: event.completed_at,
                     duration_ms: event.duration_ms,
@@ -78,13 +68,12 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
         RolloutItem::EventMsg(EventMsg::ItemCompleted(event)) => ThreadHistoryChangeSet {
             changed_items: vec![ThreadHistoryItemChange {
                 turn_id: event.turn_id.clone(),
-                item: ThreadItem::from(event.item.clone()),
-                started_at_ms: event.started_at_ms,
-                completed_at_ms: (event.completed_at_ms != 0).then_some(event.completed_at_ms),
+                item: ThreadItem::from(event),
             }],
             ..Default::default()
         },
-        RolloutItem::SessionMeta(_)
+        RolloutItem::DynamicToolsUpdated { .. }
+        | RolloutItem::SessionMeta(_)
         | RolloutItem::ResponseItem(_)
         | RolloutItem::InterAgentCommunication(_)
         | RolloutItem::InterAgentCommunicationMetadata { .. }

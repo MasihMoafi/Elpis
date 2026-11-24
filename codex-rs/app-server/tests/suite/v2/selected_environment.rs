@@ -1,10 +1,10 @@
+use codex_utils_path_uri::LegacyAppPathString;
 use std::path::Path;
 use std::time::Duration;
 
 use anyhow::Context;
 use anyhow::Result;
 use app_test_support::MockResponsesConfig;
-use app_test_support::PathBufExt;
 use app_test_support::TestAppServer;
 use app_test_support::create_final_assistant_message_sse_response;
 use app_test_support::create_mock_responses_server_sequence;
@@ -67,14 +67,14 @@ async fn thread_start_reports_selected_environment_metadata() -> Result<()> {
     } = app_server
         .start_thread(ThreadStartParams::default())
         .await?;
-    let host_cwd = codex_home.path().to_path_buf().abs().canonicalize()?;
-    let cwd = cwd.canonicalize()?;
+    let host_cwd = codex_home.path().canonicalize()?;
+    let cwd = cwd.as_path().canonicalize()?;
     assert_eq!(
         (cwd, runtime_workspace_roots, active_permission_profile),
         (
             // TODO(anp): Return the selected environment's native cwd from thread/start.
             host_cwd,
-            selected_workspace_roots,
+            LegacyAppPathString::from_abs_paths(&selected_workspace_roots),
             // TODO(anp): Report the implicit built-in permission profile instead of None.
             None,
         )

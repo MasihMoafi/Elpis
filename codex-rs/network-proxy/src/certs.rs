@@ -3,6 +3,7 @@ use anyhow::Context as _;
 use anyhow::Result;
 use anyhow::anyhow;
 use base64::Engine as _;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_home_dir::find_codex_home;
 use rama_net::tls::ApplicationProtocol;
 use rama_tls_rustls::dep::pki_types::CertificateDer;
@@ -51,8 +52,17 @@ static MANAGED_MITM_CAS: LazyLock<Mutex<HashMap<PathBuf, Arc<ManagedMitmCa>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 const MAX_EXTERNAL_CA_FILE_BYTES: u64 = 1024 * 1024;
 
+#[cfg(test)]
+tokio::task_local! {
+    pub(super) static TEST_MITM_CA: Arc<ManagedMitmCa>;
+}
+
 impl ManagedMitmCa {
     pub(super) fn load_or_create() -> Result<Arc<Self>> {
+        #[cfg(test)]
+        if let Ok(ca) = TEST_MITM_CA.try_with(Arc::clone) {
+            return Ok(ca);
+        }
         let proxy_dir = managed_ca_dir()?;
         let mut managed_cas = MANAGED_MITM_CAS
             .lock()
@@ -64,6 +74,11 @@ impl ManagedMitmCa {
         let ca = Arc::new(Self::create(&proxy_dir)?);
         managed_cas.insert(proxy_dir, ca.clone());
         Ok(ca)
+    }
+
+    #[cfg(test)]
+    pub(super) fn for_test(proxy_dir: &Path) -> Result<Arc<Self>> {
+        Ok(Arc::new(Self::create(proxy_dir)?))
     }
 
     fn create(proxy_dir: &Path) -> Result<Self> {
@@ -255,8 +270,7 @@ const MANAGED_MITM_CA_TRUST_BUNDLE_PREFIX: &str = "ca-bundle";
 const MANAGED_MITM_EXTERNAL_CA_DIR: &str = "external";
 pub(crate) const SSL_CERT_DIR_ENV_KEY: &str = "SSL_CERT_DIR";
 
-// Best-effort compatibility set for common child toolchains that accept a CA bundle path.
-// This is intentionally curated rather than pretending to cover every TLS client.
+/// Child CA variables whose startup values contribute roots to the proxy's trust bundle.
 pub const CUSTOM_CA_ENV_KEYS: [&str; 11] = [
     "CODEX_CA_CERTIFICATE",
     "SSL_CERT_FILE",
@@ -270,6 +284,10 @@ pub const CUSTOM_CA_ENV_KEYS: [&str; 11] = [
     "npm_config_cafile",
     "NPM_CONFIG_CAFILE",
 ];
+
+/// Preserve explicit client settings and never import them as proxy roots.
+/// Nix already falls back to SSL_CERT_FILE when NIX_SSL_CERT_FILE is unset.
+pub const CHILD_ONLY_CA_ENV_KEYS: [&str; 2] = ["CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE", "DENO_CERT"];
 
 pub(crate) fn ca_env_from_process() -> HashMap<&'static str, String> {
     CUSTOM_CA_ENV_KEYS
@@ -585,6 +603,20 @@ fn is_generated_managed_ca_artifact_path(path: &Path, proxy_dir: &Path, prefix: 
         return false;
     };
     format!("{:x}", Sha256::digest(trust_bundle)) == expected_hash
+}
+
+/// Find a generated CA in the environment prepared for a managed route on this host.
+pub fn managed_mitm_ca_from_env(env: &HashMap<String, String>) -> Option<AbsolutePathBuf> {
+    CUSTOM_CA_ENV_KEYS
+        .into_iter()
+        .chain(CHILD_ONLY_CA_ENV_KEYS)
+        .filter_map(|key| env.get(key))
+        .find_map(|path| {
+            if !is_managed_mitm_ca_trust_bundle_path(path) {
+                return None;
+            }
+            AbsolutePathBuf::from_absolute_path(path).ok()
+        })
 }
 
 /// Returns whether `path` points at a current Codex-generated MITM CA bundle.
@@ -1201,9 +1233,16 @@ mod tests {
         fs::create_dir(&startup_ca_dir).unwrap();
         fs::write(startup_ca_dir.join("directory-ca.pem"), &directory_ca_cert).unwrap();
         let startup_ca_bundle_path = startup_ca_bundle_path.display().to_string();
+        let missing_client_bundle = dir.path().join("missing.pem").display().to_string();
         let env = HashMap::from([
             ("SSL_CERT_FILE", startup_ca_bundle_path.clone()),
             (SSL_CERT_DIR_ENV_KEY, startup_ca_dir.display().to_string()),
+            ("DENO_CERT", missing_client_bundle.clone()),
+            (
+                "CLOUDSDK_CORE_CUSTOM_CA_CERTS_FILE",
+                missing_client_bundle.clone(),
+            ),
+            ("NIX_SSL_CERT_FILE", missing_client_bundle),
         ]);
 
         let trust_bundle =

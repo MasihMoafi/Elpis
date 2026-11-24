@@ -1,20 +1,20 @@
 ---
 source: core/tests/suite/scenarios.rs
-expression: "context_snapshot::format_request_history_snapshot(\"Astra receives host and handler timings on completed and failed code-mode calls.\",\n&mock.requests(), &ContextSnapshotOptions::default(),)"
+expression: "context_snapshot::format_request_history_snapshot(\"Astra reads code-mode timings and the collector notice even at zero tokens, then a failed wait and a truncated script error.\",\n&mock.requests(), &ContextSnapshotOptions::default(),)"
 ---
-Scenario: Astra receives host and handler timings on completed and failed code-mode calls.
+Scenario: Astra reads code-mode timings and the collector notice even at zero tokens, then a failed wait and a truncated script error.
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=bf2e30605ff5dc17):
-        - namespace/functions; hash=fada4a476a3754dd
+00:additional_tools/developer (3; hash=a7c46a0959d54866):
+        - namespace/functions; hash=81846de5bc4e7474
           - custom/exec
           - function/wait
           - function/request_user_input
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=a097b9364047b8bb
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -30,14 +30,14 @@ Scenario: Astra receives host and handler timings on completed and failed code-m
 
     User authorization and preferences persist across turns. Do not request permission again when the user h... any guidelines provided in skills or external files. [hash=911f91c92c72882c]
 
-    <OMITTED 155 LINES; ~4935 TOKENS; hash=5573869716192298>
+    <OMITTED 151 LINES; ~4851 TOKENS; hash=959762226fedfd0c>
+    ## Decision Boundary
 
-    - Skill naming: If a plugin contributes skills, those skill entries are prefixed with plugin_name: in the Skills list.
-    - MCP naming: Plugin-provided MCP tools keep standard MCP identifiers such as mcp__server__tool; use tool provenance to tell which plugin they come from.
-    - Trigger rules: If the user explicitly names a plugin, prefer capabilities associated with that plugin for that turn.
-    - Relationship to capabilities: Plugins are not invoked directly. Use their underlying skills, MCP tools, and app tools to help solve the task.
-    - Relevance: Determine what a plugin can help with from explicit user mention or from the plugin-associa..., MCP tools, and apps exposed elsewhere in this turn. [hash=620459a4e7b590f0]
-    - Missing/blocked: If the user requests a plugin that does not have relevant callable capabilities for t..., say so briefly and continue with the best fallback. [hash=746b0469a8f6cb3e]
+    Discover and use relevant tools proactively when they may help carry out the requested task. For example...ng the user for information they may already contain. [hash=3af5c93cbc00b4c7]
+
+    When a plugin is available for a service and its tools are sufficient for completing the task, prefer th...er has an explicit preference, defer to that instead. [hash=936dbd7fe76c210f]
+
+    A user can also tag a plugin using `[@plugin-name](plugin://{{plugin_id}})` or an app using `[$app-name]... app, prefer its relevant capabilities for that turn. [hash=8730f69f41534f8f]
 
 02:message/developer[2]:
     [01] <permissions instructions>
@@ -89,17 +89,38 @@ Scenario: Astra receives host and handler timings on completed and failed code-m
       <filesystem><workspace_roots><root><CWD></root></workspace_roots><permission_profile type="disabled"><...e="unrestricted" /></permission_profile></filesystem> [hash=d40b2f45cb028888]
     </environment_context>
 06:message/user:
-    Run a code cell, then inspect its timing and a failed wait.
+    Run a code cell, inspect its timing and a failed wait, then check the diagnostic script.
+07:configuration_update:reasoning={"effort":"low"}
 -- request 2 (turn) --
-07:custom_tool_call/exec:text('ready');
-08:custom_tool_call_output:Script completed
+08:custom_tool_call/exec:// @exec: {"max_output_tokens": 0}
+    text('ready');
+    text('x'.repeat(2 * 1024 * 1024));
+09:custom_tool_call_output:Script completed
     Wall time <DURATION> seconds (code-mode <DURATION> seconds; overhead <DURATION> seconds)
     Output:
-     | ready
+     | Warning: truncated output (original token count: 262145)
+    Total output lines: 2
+
+    …262145 tokens truncated… | [Code Mode session output limit reached: omitted 1048581 text bytes; discarded 0 text segments, 0 images, 0 audio items]
 -- request 3 (turn) --
-09:function_call/functions.wait:{"cell_id":"missing"}
-10:function_call_output:Script failed
+10:function_call/functions.wait:{"cell_id":"missing"}
+11:function_call_output:Script failed
     Wall time <DURATION> seconds (code-mode <DURATION> seconds; overhead <DURATION> seconds)
     Output:
      | Script error:
     exec cell missing not found
+-- request 4 (turn) --
+12:custom_tool_call/exec:// @exec: {"max_output_tokens": 32}
+    text('before');
+    text('x'.repeat(2 * 1024 * 1024));
+    throw 'boom';
+13:custom_tool_call_output:Script failed
+    Wall time <DURATION> seconds (code-mode <DURATION> seconds; overhead <DURATION> seconds)
+    Output:
+     | Warning: truncated output (original token count: 262145)
+    Total output lines: 4
+
+    before
+    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…262113 tokens truncated… | [Code Mode session output limit reached: omitted 1048600 text bytes; discarded 0 text segments, 0 images, 0 audio items] | xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+    Script error:
+    boom

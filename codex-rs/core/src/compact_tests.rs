@@ -11,6 +11,7 @@ use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::ResponseItemId;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::ContentItemMetadata;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::ExecutedToolCall;
 use codex_protocol::models::FunctionCallOutputPayload;
@@ -26,7 +27,7 @@ use test_case::test_case;
 #[test_case(true; "metadata enabled")]
 #[test_case(false; "metadata disabled after capture")]
 #[tokio::test]
-async fn local_compaction_respects_tool_metadata_state(
+async fn local_compaction_retries_preserve_instructions_and_tool_metadata(
     metadata_enabled: bool,
 ) -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
@@ -47,12 +48,20 @@ async fn local_compaction_respects_tool_metadata_state(
     )
     .await;
 
-    let mut items = vec![user_message("Update the plan")];
+    // Retries trim the original prefix and early user messages.
+    let mut items = vec![
+        ContextualUserFragment::into(BaseInstructionsFragment("Window A".to_string())),
+        user_message("First turn"),
+        user_message("Rebuilt context"),
+        user_message("Update the plan"),
+    ];
     for index in 0..300 {
         let call_id = format!("direct-{index}");
         let arguments = json!({"plan": [{"step": "x".repeat(7 * 1024), "status": "completed"}]});
         assert!(serde_json::to_vec(&arguments)?.len() < 8 * 1024);
         items.push(ResponseItem::FunctionCall {
+            status: None,
+            encrypted_content: None,
             id: None,
             name: "update_plan".to_string(),
             namespace: None,
@@ -94,6 +103,7 @@ async fn local_compaction_respects_tool_metadata_state(
                 arguments: "{}".to_string(),
             },
             encrypted_function_args: None,
+            native_call: None,
         },
         &ToolCallSource::CodeMode {
             cell_id: cell.as_str().to_string(),
@@ -149,12 +159,17 @@ async fn local_compaction_respects_tool_metadata_state(
         let _ = session.refresh_runtime_config(current_config, config).await;
     }
 
-    let mock = responses::mount_sse_once(
+    let failed = responses::sse_failed("failed", "context_length_exceeded", "Context too long");
+    let mock = responses::mount_sse_sequence(
         &server,
-        responses::sse(vec![
-            responses::ev_assistant_message("summary", "The prior calls finished."),
-            responses::ev_completed("compact-response"),
-        ]),
+        vec![
+            failed.clone(),
+            failed,
+            responses::sse(vec![
+                responses::ev_assistant_message("summary", "The prior calls finished."),
+                responses::ev_completed("compact-response"),
+            ]),
+        ],
     )
     .await;
     let step = session
@@ -170,24 +185,33 @@ async fn local_compaction_respects_tool_metadata_state(
         Arc::clone(&session),
         step,
         world_state,
-        vec![UserInput::Text {
-            text: "Summarize the conversation.".to_string(),
-            text_elements: Vec::new(),
-        }],
+        vec![ResolvedUserInput::text(
+            "Summarize the conversation.".to_string(),
+        )],
         /*additional_instructions*/ None, // Elpis
     )
     .await?;
 
-    let request = mock.single_request();
-    assert!(request.inputs_of_type("compaction_trigger").is_empty());
+    let requests = mock.requests();
     assert_eq!(
-        request.custom_tool_call_output("exec"),
-        serde_json::to_value(expected_code_mode_output)?,
+        requests
+            .iter()
+            .map(|request| request.message_input_texts("developer").into_iter().next())
+            .collect::<Vec<_>>(),
+        [
+            Some("Window A".to_string()),
+            Some("Window A".to_string()),
+            Some("Window A".to_string())
+        ],
     );
+    for request in &requests {
+        assert!(request.inputs_of_type("compaction_trigger").is_empty());
+        assert_eq!(
+            request.custom_tool_call_output("exec"),
+            serde_json::to_value(&expected_code_mode_output)?,
+        );
+    }
     for mut output in outputs {
-        let call_id = output["call_id"].as_str().expect("source call id");
-        let compact_output = request.function_call_output(call_id);
-        assert_eq!(compact_output["output"], json!("Plan updated"));
         if !metadata_enabled {
             let metadata = output["internal_chat_message_metadata_passthrough"]
                 .as_object_mut()
@@ -195,10 +219,15 @@ async fn local_compaction_respects_tool_metadata_state(
             metadata.remove("executed_tool_calls");
             metadata.remove("tool_calls_complete");
         }
-        assert_eq!(
-            compact_output["internal_chat_message_metadata_passthrough"],
-            output["internal_chat_message_metadata_passthrough"]
-        );
+        let call_id = output["call_id"].as_str().expect("source call id");
+        for request in &requests {
+            let compact_output = request.function_call_output(call_id);
+            assert_eq!(compact_output["output"], json!("Plan updated"));
+            assert_eq!(
+                compact_output["internal_chat_message_metadata_passthrough"],
+                output["internal_chat_message_metadata_passthrough"]
+            );
+        }
     }
     let compacted_history = session.clone_history().await;
     let expected_summary = format!("{SUMMARY_PREFIX}\nThe prior calls finished.");
@@ -223,6 +252,8 @@ fn raw(items: Vec<ResponseItemEnvelope>) -> Vec<ResponseItem> {
 
 fn user_message(text: &str) -> ResponseItem {
     ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "user".to_string(),
         content: vec![ContentItem::InputText {
@@ -241,6 +272,64 @@ fn compacted_user_message<'a>(text: &str, original: &'a ResponseItem) -> Compact
     }
 }
 
+fn compact_items(items: &[ResponseItemEnvelope], summary: &str) -> Vec<ResponseItemEnvelope> {
+    build_compacted_history_with_limit(
+        items,
+        summary,
+        COMPACT_USER_MESSAGE_MAX_TOKENS,
+        &FileAudioDurations::default(),
+    )
+}
+
+#[tokio::test]
+async fn extension_window_prefix_precedes_retained_turns_and_is_not_repeated() {
+    use codex_extension_api::PreviousWorldStateSection;
+    use codex_extension_api::RenderedWorldStateFragment;
+    use codex_extension_api::WorldStateSectionContribution;
+
+    let (session, turn) = crate::session::tests::make_session_and_context().await;
+    let step = StepContext::for_test(Arc::new(turn));
+    let mut world = WorldState::default();
+    world.add_extension_section(
+        WorldStateSectionContribution::new("example", |previous| {
+            let fragment = (!matches!(previous, PreviousWorldStateSection::Known(_))).then(|| {
+                RenderedWorldStateFragment::new(
+                    "developer",
+                    ("<example>", "</example>"),
+                    codex_protocol::models::input_text("active policy"),
+                )
+            });
+            (Some(json!("active policy")), fragment)
+        })
+        .with_window_prefix()
+        .with_retained_fragment_matcher(|role, text| {
+            role == "developer" && text == "<example>active policy</example>"
+        }),
+    );
+    let retained = vec![user_message("earlier turn"), user_message("latest turn")];
+    let (replacement, snapshot) =
+        build_compaction_replacement_history(&session, &step, &world, annotated(retained.clone()))
+            .await;
+    let items = raw(replacement);
+    let ResponseItem::Message { role, content, .. } = &items[0] else {
+        panic!("expected a separate developer prefix");
+    };
+    assert_eq!(role, "developer");
+    assert_eq!(
+        content,
+        &[codex_protocol::models::input_text(
+            "<example>active policy</example>"
+        )]
+    );
+    assert_eq!(items[1], retained[0]);
+    assert!(
+        world
+            .render_history_diff(Some(&snapshot), &items)
+            .1
+            .is_empty()
+    );
+}
+
 #[test]
 fn content_items_to_text_joins_non_empty_segments() {
     let items = vec![
@@ -248,9 +337,13 @@ fn content_items_to_text_joins_non_empty_segments() {
             text: "hello".to_string(),
         },
         ContentItem::OutputText {
+            annotations: None,
+            logprobs: None,
             text: String::new(),
         },
         ContentItem::OutputText {
+            annotations: None,
+            logprobs: None,
             text: "world".to_string(),
         },
     ];
@@ -278,15 +371,21 @@ fn content_items_to_text_ignores_image_only_content() {
 fn collect_user_messages_extracts_user_text_only() {
     let items = vec![
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: Some(ResponseItemId::with_suffix("msg", "assistant")),
             role: "assistant".to_string(),
             content: vec![ContentItem::OutputText {
+                annotations: None,
+                logprobs: None,
                 text: "ignored".to_string(),
             }],
             phase: None,
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: Some(ResponseItemId::with_suffix("msg", "user")),
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -339,10 +438,23 @@ fn collect_annotated_user_messages_extracts_user_text_only(
         ResponseItemEnvelope::new(ResponseItem::Other),
     ];
 
-    let collected = collect_annotated_user_messages(&items);
+    let collected: Vec<_> = annotated_user_messages(&items)
+        .map(|(_, message)| message)
+        .collect();
 
     if !preserve_content {
         item = user_message(expected_text);
+        if let ResponseItem::Message {
+            internal_chat_message_metadata_passthrough,
+            ..
+        } = &mut item
+        {
+            *internal_chat_message_metadata_passthrough =
+                Some(InternalChatMessageMetadataPassthrough {
+                    content_item_kinds: Some(vec![ContentItemKind("unknown".to_string())]),
+                    ..Default::default()
+                });
+        }
     }
     let expected = ResponseItemEnvelope {
         item,
@@ -357,7 +469,7 @@ fn collect_annotated_user_messages_extracts_user_text_only(
         }]
     );
     assert_eq!(
-        build_compacted_history(Vec::new(), &collected, "summary"),
+        compact_items(&items, "summary"),
         vec![
             expected,
             ResponseItemEnvelope::new(ContextualUserFragment::into(CompactionSummary::new(
@@ -371,6 +483,8 @@ fn collect_annotated_user_messages_extracts_user_text_only(
 fn collect_user_messages_filters_session_prefix_entries() {
     let items = vec![
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -385,6 +499,8 @@ do things
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -394,6 +510,8 @@ do things
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -435,22 +553,44 @@ fn collect_user_messages_filters_legacy_warnings() {
     );
 }
 
-#[test]
-fn build_token_limited_compacted_history_truncates_overlong_user_messages() {
+#[test_case(1, None; "legacy")]
+#[test_case(1, Some(vec![ContentItemMetadata::user()]); "user")]
+#[test_case(2, Some(vec![ContentItemMetadata::user(); 2]); "multiple user parts")]
+#[test_case(2, Some(vec![ContentItemMetadata::user(), ContentItemMetadata::harness()]); "mixed sources")]
+#[test_case(1, Some(vec![ContentItemMetadata::default()]); "unknown")]
+#[test_case(1, Some(vec![]); "missing entry")]
+#[test_case(1, Some(vec![ContentItemMetadata::user(); 2]); "extra entry")]
+fn build_token_limited_compacted_history_truncates_overlong_user_messages(
+    content_parts: usize,
+    attribution: Option<Vec<ContentItemMetadata>>,
+) {
     // Use a small truncation limit so the test remains fast while still validating
     // that oversized user content is truncated.
     let max_tokens = 16;
     let big = "word ".repeat(200);
     let mut original = ResponseItemEnvelope::new(user_message(&big));
+    if let ResponseItem::Message {
+        content,
+        internal_chat_message_metadata_passthrough,
+        ..
+    } = &mut original.item
+    {
+        *content = vec![ContentItem::InputText { text: big.clone() }; content_parts];
+        *internal_chat_message_metadata_passthrough =
+            Some(InternalChatMessageMetadataPassthrough {
+                content_item_metadata: attribution.clone(),
+                ..Default::default()
+            });
+    }
     original
         .item
         .set_id(Some(ResponseItemId::with_suffix("msg", "long-user")));
     original.metadata = Some(CodexHarnessMetadata::default());
     let history = super::build_compacted_history_with_limit(
-        Vec::new(),
-        &collect_annotated_user_messages(std::slice::from_ref(&original)),
+        std::slice::from_ref(&original),
         "SUMMARY",
         max_tokens,
+        &FileAudioDurations::default(),
     );
     assert_eq!(history.len(), 2);
 
@@ -458,7 +598,44 @@ fn build_token_limited_compacted_history_truncates_overlong_user_messages() {
     let summary_message = &history[1].item;
 
     let truncated_text = match truncated_message {
-        ResponseItem::Message { role, content, .. } if role == "user" => {
+        ResponseItem::Message {
+            role,
+            content,
+            internal_chat_message_metadata_passthrough,
+            ..
+        } if role == "user" => {
+            let source_at = |index| {
+                attribution
+                    .as_ref()
+                    .and_then(|sources| sources.get(index))
+                    .cloned()
+                    .unwrap_or_default()
+            };
+            assert_eq!(
+                content,
+                &vec![
+                    ContentItem::InputText {
+                        text: big[..32].to_string()
+                    },
+                    ContentItem::InputText {
+                        text: format!("…{} tokens truncated…", 250 * content_parts - max_tokens)
+                    },
+                    ContentItem::InputText {
+                        text: big[big.len() - 32..].to_string()
+                    },
+                ]
+            );
+            assert_eq!(
+                internal_chat_message_metadata_passthrough
+                    .as_ref()
+                    .unwrap()
+                    .content_item_metadata,
+                Some(vec![
+                    source_at(0),
+                    ContentItemMetadata::harness(),
+                    source_at(content_parts - 1)
+                ])
+            );
             content_items_to_text(content).unwrap_or_default()
         }
         other => panic!("unexpected item in history: {other:?}"),
@@ -487,12 +664,10 @@ fn build_token_limited_compacted_history_truncates_overlong_user_messages() {
 
 #[test]
 fn build_token_limited_compacted_history_appends_summary_message() {
-    let initial_context: Vec<ResponseItemEnvelope> = Vec::new();
-    let original = user_message("first user message");
-    let user_messages = collect_user_messages(std::slice::from_ref(&original));
+    let items = annotated(vec![user_message("first user message")]);
     let summary_text = "summary text";
 
-    let history = build_compacted_history(initial_context, &user_messages, summary_text);
+    let history = compact_items(&items, summary_text);
     assert!(
         !history.is_empty(),
         "expected compacted history to include summary"
@@ -508,19 +683,29 @@ fn build_token_limited_compacted_history_appends_summary_message() {
     assert_eq!(summary, summary_text);
 }
 
-#[test]
-fn build_compacted_history_preserves_user_message_passthrough_metadata() {
+#[test_case(false; "legacy")]
+#[test_case(true; "attributed text with discarded media")]
+fn build_compacted_history_preserves_user_message_passthrough_metadata(attributed: bool) {
     let original = serde_json::from_value(json!({
         "type": "message", "role": "user",
         "id": ResponseItemId::with_suffix("msg", "user"),
         "content": [
+            {"type": "input_text", "text": "<image>"},
             {"type": "input_image", "image_url": "file://image.png"},
+            {"type": "input_text", "text": "</image>"},
             {"type": "input_text", "text": "first user message"},
-            {"type": "input_audio", "audio_url": "file://audio.wav"}
+            {"type": "input_text", "text": "<audio>"},
+            {"type": "input_audio", "audio_url": "file://audio.wav"},
+            {"type": "input_text", "text": "</audio>"}
         ],
         "internal_chat_message_metadata_passthrough": {
             "turn_id": "turn-1",
-            "content_item_kinds": ["user.image", "user.text", "user.audio"]
+            "content_item_kinds": ["unknown", "user.image", "unknown", "user.text", "unknown", "user.audio", "unknown"],
+            "content_item_metadata": attributed.then(|| {
+                let mut sources = vec![ContentItemMetadata::harness(); 7];
+                sources[3] = ContentItemMetadata::user();
+                sources
+            })
         }
     }))
     .unwrap();
@@ -528,17 +713,15 @@ fn build_compacted_history_preserves_user_message_passthrough_metadata() {
         item: original,
         metadata: Some(CodexHarnessMetadata::default()),
     };
-    let history = build_compacted_history(
-        Vec::new(),
-        &collect_annotated_user_messages(std::slice::from_ref(&original)),
-        "summary text",
-    );
+    let history = compact_items(std::slice::from_ref(&original), "summary text");
 
     assert_eq!(
         history,
         vec![
             ResponseItemEnvelope {
                 item: ResponseItem::Message {
+                    encrypted_content: None,
+                    status: None,
                     id: Some(ResponseItemId::with_suffix("msg", "user")),
                     role: "user".to_string(),
                     content: vec![ContentItem::InputText {
@@ -551,6 +734,8 @@ fn build_compacted_history_preserves_user_message_passthrough_metadata() {
                             content_item_kinds: Some(vec![ContentItemKind(
                                 "user.text".to_string()
                             )]),
+                            content_item_metadata: attributed
+                                .then(|| vec![ContentItemMetadata::user()]),
                             ..Default::default()
                         },
                     ),
@@ -580,6 +765,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
     };
     let compacted_history = vec![
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -589,6 +776,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -599,6 +788,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
         },
         agent_completion.clone(),
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -609,6 +800,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
         },
     ];
     let initial_context = vec![ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "developer".to_string(),
         content: vec![ContentItem::InputText {
@@ -626,6 +819,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
     let expected = vec![
         prefix,
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -635,6 +830,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "developer".to_string(),
             content: vec![ContentItem::InputText {
@@ -644,6 +841,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
             internal_chat_message_metadata_passthrough: None,
         },
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -654,6 +853,8 @@ fn assemble_compaction_history_keeps_prefix_first_and_summary_last() {
         },
         agent_completion,
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
@@ -684,6 +885,8 @@ fn assemble_compaction_history_keeps_compaction_last() {
         },
     ];
     let initial_context = vec![ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "developer".to_string(),
         content: vec![ContentItem::InputText {
@@ -700,6 +903,8 @@ fn assemble_compaction_history_keeps_compaction_last() {
     ));
     let expected = vec![
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "developer".to_string(),
             content: vec![ContentItem::InputText {

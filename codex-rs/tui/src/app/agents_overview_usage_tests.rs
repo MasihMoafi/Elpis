@@ -12,8 +12,9 @@ use pretty_assertions::assert_eq;
 
 #[tokio::test]
 async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> Result<()> {
-    let mut app = make_test_app().await;
+    let mut app = make_test_app_with_chat().await;
     let app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    app.app_server_backend_id = Some(app_server.backend_id());
     app.chat_widget.update_account_state(
         /*status_account_display*/ None,
         Some(PlanType::Business),
@@ -22,6 +23,7 @@ async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> R
     );
     let selected = ThreadId::from_u128(/*value*/ 1);
     let other = ThreadId::new();
+    app.backend_registry.observe(app_server.backend_id(), other);
     let threads = [(selected, "Review parser"), (other, "Other task")].map(|(id, name)| {
         overview_thread(id, /*parent_thread_id*/ None, name, ThreadStatus::Idle)
     });
@@ -83,7 +85,7 @@ async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> R
         reasoning_output_tokens: 0,
     };
     app.agents_overview.threads.remove(&selected);
-    app.agents_overview.request_id = Some(request_id);
+    app.agents_overview.active_refresh = Some((request_id, app_server.backend_id()));
     app.track_agents_overview_notification(&ServerNotification::ThreadTokenUsageUpdated(
         ThreadTokenUsageUpdatedNotification {
             thread_id: selected.to_string(),
@@ -101,7 +103,8 @@ async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> R
         request_id,
         Ok(AgentsOverviewThreadRefresh {
             unmaterialized_threads: HashSet::new(),
-            threads: HashMap::from([(selected, Some(threads[0].clone()))]),
+            cleared_unread: Vec::new(),
+            threads: HashMap::from([(selected, Some((threads[0].clone(), false, None)))]),
             last_messages: HashMap::new(),
             recent_seed_complete: true,
             discovery: None,
@@ -160,13 +163,37 @@ async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> R
     let other_usage = app.agents_overview.usage.entry(other).or_default();
     other_usage.estimate = Some(expected.clone());
     other_usage.tokens = Some(tokens.clone());
+    let foreign = ThreadId::new();
+    app.backend_registry
+        .observe(crate::backend_id::BackendId::new(), foreign);
+    let foreign_thread = overview_thread(
+        foreign,
+        /*parent_thread_id*/ None,
+        "Foreign task",
+        ThreadStatus::Idle,
+    );
+    app.agents_overview
+        .threads
+        .insert(foreign, Some(foreign_thread.clone()));
+    let foreign_usage = app.agents_overview.usage.entry(foreign).or_default();
+    foreign_usage.estimate = Some(expected.clone());
+    let row = app.agents_overview.threads.remove(&selected).unwrap();
+    app.agents_overview
+        .search_matches
+        .insert(selected, row.clone().unwrap());
     app.agents_overview.pending_usage = Some((thread_id, request_id));
     app.finish_agents_overview_usage(thread_id, request_id, Ok(ThreadUsageOutcome::Disabled));
+    app.agents_overview.threads.insert(selected, row);
     assert!(
         app.agents_overview
             .usage
-            .values()
-            .all(|usage| usage.estimate.is_none())
+            .iter()
+            .filter(|(id, _)| **id != foreign)
+            .all(|(_, usage)| usage.estimate.is_none())
+    );
+    assert_eq!(
+        app.agents_overview.usage[&foreign].estimate,
+        Some(expected.clone())
     );
     assert_eq!(
         app.agents_overview.usage[&other].tokens,
@@ -179,10 +206,22 @@ async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> R
     app.refresh_agents_overview_usage(&app_server, tui.frame_requester());
     assert!(app.agents_overview.usage_disabled);
     assert_eq!(app.agents_overview.pending_usage, None);
+    let view = app.agents_overview_view(vec![foreign_thread], Some(foreign));
+    assert!(view.rows[0].details.usage_lines.is_empty());
+    app.agents_overview.usage.get_mut(&other).unwrap().estimate = Some(expected.clone());
+    app.reset_agents_overview_usage_for_backend_switch();
+    assert_eq!(
+        app.agents_overview.usage[&other].tokens,
+        Some(tokens.clone())
+    );
+    assert_eq!(app.agents_overview.usage[&other].estimate, None);
+    assert!(!app.agents_overview.usage.contains_key(&foreign));
+    app.agents_overview.threads.remove(&foreign);
     for event in [
         AppServerEvent::Lagged { skipped: 1 },
         AppServerEvent::ServerNotification(Box::new(ServerNotification::AccountUpdated(
             AccountUpdatedNotification {
+                reason: None,
                 auth_mode: None,
                 plan_type: None,
             },
@@ -201,6 +240,47 @@ async fn selected_usage_is_cached_and_account_changes_discard_old_results() -> R
         assert_eq!(app.agents_overview.pending_usage, None);
         assert!(!app.agents_overview.usage_disabled);
     }
+    app.chat_widget.update_account_state(
+        /*status_account_display*/ None,
+        Some(PlanType::Ent26),
+        /*has_chatgpt_account*/ false,
+        /*has_codex_backend_auth*/ true,
+    );
+    let view = app.agents_overview_view(threads.to_vec(), Some(selected));
+    app.agents_overview.visible_thread_ids = view.thread_ids();
+    app.chat_widget.show_bottom_pane_view(Box::new(view));
+    app.refresh_agents_overview_usage(&app_server, tui.frame_requester());
+    let (thread_id, request_id) = app
+        .agents_overview
+        .pending_usage
+        .expect("request ENT26 usage");
+    assert_eq!(thread_id, selected);
+    let mut native_usage = expected.clone();
+    native_usage.estimated_usage_credits_micros = 0;
+    native_usage.estimated_usage_usd_micros = Some(0);
+    native_usage.native_usage_usd_micros = Some(750_000);
+    app.finish_agents_overview_usage(
+        thread_id,
+        request_id,
+        Ok(ThreadUsageOutcome::Available(native_usage)),
+    );
+    let view = app.agents_overview_view(threads.to_vec(), Some(selected));
+    let rendered = view
+        .rows
+        .iter()
+        .find(|row| row.thread_id == selected)
+        .unwrap()
+        .details
+        .usage_lines
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(rendered, @"
+    Tokens: 12K in · 3K out
+    Est. usage: ~$0.75
+    ");
+
     app.agents_overview.usage_disabled = true;
     app.agents_overview.pending_usage = Some((thread_id, request_id));
     app.app_server_target = AppServerTarget::LocalDaemon {
@@ -233,7 +313,7 @@ fn incomplete_billing_groups_do_not_display_partial_token_totals() {
     .unwrap();
     let mut usage = AgentsOverviewUsage::default();
     usage.estimate = Some(estimate);
-    let text = usage_lines(&usage)
+    let text = usage_lines(&usage, Some(PlanType::Business))
         .into_iter()
         .map(|line| line.to_string())
         .collect::<Vec<_>>();

@@ -9,30 +9,35 @@ use crate::protocol::Failure;
 use crate::protocol::MAX_BODY;
 use crate::protocol::MAX_RESPONSE;
 use crate::protocol::Operation;
+use crate::protocol::PermissionDeniedDetails;
 use crate::protocol::Registration;
 use crate::protocol::Watch;
 use anyhow::Context;
 use chrono::DateTime;
 use chrono::Utc;
-use codex_agent_message_board_extension::AgentMessageBoard;
-use codex_agent_message_board_extension::ChannelQuery;
-use codex_agent_message_board_extension::ChannelSummary;
-use codex_agent_message_board_extension::CreateChannelRequest;
-use codex_agent_message_board_extension::Page;
-use codex_agent_message_board_extension::PostContent;
-use codex_agent_message_board_extension::PostMetadata;
-use codex_agent_message_board_extension::PostPreview;
-use codex_agent_message_board_extension::PostQuery;
-use codex_agent_message_board_extension::PostRequest;
-use codex_agent_message_board_extension::ReadPostRequest;
-use codex_agent_message_board_extension::ReadThreadRequest;
-use codex_agent_message_board_extension::SubscriptionRequest;
-use codex_agent_message_board_extension::SubscriptionState;
-use codex_agent_message_board_extension::ThreadPage;
-use codex_agent_message_board_extension::ThreadQuery;
-use codex_agent_message_board_extension::ThreadSummary;
 use codex_http_client::HttpClient;
 use codex_http_client::HttpResponse;
+use codex_message_board::AgentMessageBoard;
+use codex_message_board::AppendRequest;
+use codex_message_board::ChannelPage;
+use codex_message_board::ChannelQuery;
+use codex_message_board::ChannelSummary;
+use codex_message_board::CreateChannelRequest;
+use codex_message_board::Page;
+use codex_message_board::PermissionDenied;
+use codex_message_board::PostContent;
+use codex_message_board::PostMetadata;
+use codex_message_board::PostPreview;
+use codex_message_board::PostQuery;
+use codex_message_board::PostRequest;
+use codex_message_board::ReadPostRequest;
+use codex_message_board::ReadThreadRequest;
+use codex_message_board::SubscriptionRequest;
+use codex_message_board::SubscriptionState;
+use codex_message_board::ThreadPage;
+use codex_message_board::ThreadQuery;
+use codex_message_board::ThreadSummary;
+use codex_message_board::UpsertChannelRequest;
 use codex_protocol::AgentPath;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
@@ -91,7 +96,7 @@ impl RemoteAgentMessageBoard {
         })
     }
 
-    /// Supply the runtime's configured clock for research's simulated time.
+    /// Use the calling thread's clock to timestamp new channels and posts.
     pub fn with_clock(
         mut self,
         clock: impl Fn(ThreadId) -> BoxFuture<'static, Result<DateTime<Utc>>> + Send + Sync + 'static,
@@ -320,13 +325,32 @@ impl AgentMessageBoard for RemoteAgentMessageBoard {
         CreateChannelRequest,
         ChannelSummary
     );
-    operation!(
-        list_channels,
-        ListChannels,
-        ChannelQuery,
-        Page<ChannelSummary>
-    );
+    operation!(list_channels, ListChannels, ChannelQuery, ChannelPage);
+    fn upsert_channel(
+        &self,
+        _caller: ThreadId,
+        _request: UpsertChannelRequest,
+    ) -> BoxFuture<'_, Result<()>> {
+        // The service has no description-update operation; creation has different semantics.
+        Box::pin(async {
+            Err(CodexErr::InvalidRequest(
+                "remote message boards do not support channel upsert".into(),
+            ))
+        })
+    }
     operation!(post, Post, PostRequest, PostMetadata);
+    fn append(
+        &self,
+        _caller: ThreadId,
+        _request: AppendRequest,
+    ) -> BoxFuture<'_, Result<PostMetadata>> {
+        // The remote protocol has no silent write operation. Posting is not equivalent.
+        Box::pin(async {
+            Err(CodexErr::InvalidRequest(
+                "remote message boards do not support silent append".into(),
+            ))
+        })
+    }
     operation!(list_threads, ListThreads, ThreadQuery, Page<ThreadSummary>);
     operation!(search_posts, SearchPosts, PostQuery, Page<PostPreview>);
     operation!(read_thread, ReadThread, ReadThreadRequest, ThreadPage);
@@ -339,8 +363,8 @@ impl AgentMessageBoard for RemoteAgentMessageBoard {
     );
 }
 
-/// One active turn's live receiver. The host must also check the turn atomically
-/// when injecting a returned notification, since the turn can end after `next`.
+/// One active turn's live receiver. Frames are checked against this receiver's
+/// identity before accepted notices enter the host's ordinary message delivery.
 pub struct BoardNotifications {
     caller: ThreadId,
     turn_id: String,
@@ -389,6 +413,15 @@ async fn decode<T: DeserializeOwned>(mut response: HttpResponse) -> Result<T> {
         let failure: Failure = serde_json::from_slice(&body)
             .with_context(|| format!("invalid board error response (HTTP {status})"))
             .map_err(transport_error)?;
+        if status == http::StatusCode::FORBIDDEN && failure.code == "permission_denied" {
+            let details: PermissionDeniedDetails = serde_json::from_slice(&body)?;
+            return Err(PermissionDenied {
+                message: failure.message,
+                action: details.action,
+                resource: details.resource,
+            }
+            .into());
+        }
         let message = format!("{}: {}", failure.code, failure.message);
         return Err(if status.is_server_error() {
             transport_error(message)

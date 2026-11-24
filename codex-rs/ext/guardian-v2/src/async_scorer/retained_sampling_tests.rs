@@ -1,5 +1,6 @@
 use super::*;
 use crate::async_scorer::request::PreparedRequest;
+use crate::async_scorer::sampler::ConversationSample;
 use codex_guardian_context::TranscriptCursor;
 use codex_history::ResponseItemEnvelope;
 use pretty_assertions::assert_eq;
@@ -33,7 +34,6 @@ async fn retained_websocket_requests_preserve_model_output_and_ids() -> Result<(
             .map(codex_guardian_context::estimate_input_tokens)
             .fold(0usize, usize::saturating_add);
         let prepared = PreparedRequest {
-            sampling: &request,
             input: request
                 .input
                 .iter()
@@ -49,8 +49,12 @@ async fn retained_websocket_requests_preserve_model_output_and_ids() -> Result<(
             truncations: Vec::new(),
             section_costs: Vec::new(),
         };
-        let (completed, score) = tokio::join!(sampler.sample_retained(prepared, ready), score);
-        assert_eq!(score??, "low");
+        let request = ConversationSample {
+            input: prepared,
+            sampling: request,
+        };
+        let (completed, score) = tokio::join!(sampler.sample_retained(request, ready), score);
+        assert_eq!(score??.accept(), "low");
         let completed = completed
             .expect("completed model history")
             .into_iter()
@@ -80,7 +84,7 @@ async fn retained_websocket_requests_preserve_model_output_and_ids() -> Result<(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn retention_overflow_or_incomplete_stream_keeps_early_score() -> Result<()> {
     skip_if_no_network!(Ok(()));
-    for (limit, output, completed) in [
+    for (limit, output, completed, receive_score, early_delta) in [
         (
             512,
             vec![ev_assistant_message(
@@ -110,8 +114,16 @@ async fn retention_overflow_or_incomplete_stream_keeps_early_score() -> Result<(
             true,
         ),
         (512, vec![], false),
-    ] {
-        let mut events = vec![ev_output_text_delta("low")];
+    ].into_iter().flat_map(|(limit, output, completed)| {
+        [(true, true), (false, true), (false, false)].map(|(receive_score, early_delta)| {
+            (limit, output.clone(), completed, receive_score, early_delta)
+        })
+    }) {
+        let mut events = if early_delta {
+            vec![ev_output_text_delta("low")]
+        } else {
+            Vec::new()
+        };
         events.extend(output);
         if completed {
             events.push(ev_completed("score"));
@@ -120,6 +132,8 @@ async fn retention_overflow_or_incomplete_stream_keeps_early_score() -> Result<(
         responses::mount_sse_once(&server, responses::sse(events)).await;
         let mut config = sampler_config(server.uri());
         config.max_input_tokens = limit;
+        let metrics = Arc::new(RecordingMetrics::default());
+        config.metrics = Some(metrics.clone());
         let sampler = LunaSampler::new(config);
         let (ready, score) = tokio::sync::oneshot::channel();
         let request = sample_request("parent");
@@ -129,7 +143,6 @@ async fn retention_overflow_or_incomplete_stream_keeps_early_score() -> Result<(
             .map(codex_guardian_context::estimate_input_tokens)
             .fold(0usize, usize::saturating_add);
         let prepared = PreparedRequest {
-            sampling: &request,
             input: request
                 .input
                 .iter()
@@ -145,9 +158,30 @@ async fn retention_overflow_or_incomplete_stream_keeps_early_score() -> Result<(
             truncations: Vec::new(),
             section_costs: Vec::new(),
         };
-        let (history, score) = tokio::join!(sampler.sample_retained(prepared, ready), score);
-        assert_eq!(score??, "low");
+        let request = ConversationSample {
+            input: prepared,
+            sampling: request,
+        };
+        let history = if receive_score {
+            let (history, score) = tokio::join!(sampler.sample_retained(request, ready), score);
+            assert_eq!(score??.accept(), "low");
+            history
+        } else {
+            let score = early_delta.then_some(score);
+            let history = sampler.sample_retained(request, ready).await;
+            // A queued score discarded without expiry remains a genuine cancellation.
+            drop(score);
+            history
+        };
+        let (outcome, failure_reason) = if receive_score {
+            ("success", "none")
+        } else {
+            ("cancelled", "cancelled")
+        };
         assert_eq!(history, None);
+        // Before the first score, an incomplete stream retries against the exhausted mock.
+        let attempts = if completed || early_delta { 1 } else { 2 };
+        metrics.assert_outcome(outcome, attempts, failure_reason);
     }
     Ok(())
 }

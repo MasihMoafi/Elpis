@@ -5,6 +5,9 @@
 //! history-facing `/status` surface.
 
 use super::*;
+use crate::bottom_pane::StatusLine;
+use crate::bottom_pane::terminal_title_setup;
+use crate::status::thread_cost_micros;
 
 impl ChatWidget {
     /// Update the status indicator header and details.
@@ -81,14 +84,13 @@ impl ChatWidget {
         )
     }
 
-    /// Sets the currently rendered footer status-line value.
-    pub(crate) fn set_status_line(&mut self, status_line: Option<Line<'static>>) {
-        self.bottom_pane.set_status_line(status_line);
+    pub(crate) fn status_line_area(&self) -> ratatui::layout::Rect {
+        self.bottom_pane.status_line_area()
     }
 
-    /// Sets the terminal hyperlink target for the currently rendered footer status line.
-    pub(crate) fn set_status_line_hyperlink(&mut self, url: Option<String>) {
-        self.bottom_pane.set_status_line_hyperlink(url);
+    /// Sets the currently rendered footer status-line value.
+    pub(crate) fn set_status_line(&mut self, status_line: Option<StatusLine>) {
+        self.bottom_pane.set_status_line(status_line);
     }
 
     /// Forwards the contextual active-agent label into the bottom-pane footer pipeline.
@@ -129,8 +131,12 @@ impl ChatWidget {
             "status line setup confirmed with items: {items:#?}, use_theme_colors: {use_theme_colors}"
         );
         let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
+        self.config_panel_tui.status_line = Some(ids.clone());
+        self.config_panel_tui.status_line_use_colors = use_theme_colors;
         self.local_settings.tui.status_line = Some(ids);
         self.local_settings.tui.status_line_use_colors = use_theme_colors;
+        self.status_surface_overrides.status_line = None;
+        self.status_surface_overrides.status_line_use_colors = None;
         self.refresh_status_line();
     }
 
@@ -171,7 +177,9 @@ impl ChatWidget {
         tracing::info!("terminal title setup confirmed with items: {items:#?}");
         let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
         self.terminal_title_setup_original_items = None;
+        self.config_panel_tui.terminal_title = Some(ids.clone());
         self.local_settings.tui.terminal_title = Some(ids);
+        self.status_surface_overrides.terminal_title = None;
         self.refresh_terminal_title();
     }
 
@@ -302,7 +310,7 @@ impl ChatWidget {
             .map(|ti| &ti.total_token_usage)
             .unwrap_or(&default_usage);
         let collaboration_mode = self.collaboration_mode_label();
-        let model = self.current_model().to_string();
+        let model = self.selected_model().to_string();
         let model_default_reasoning_effort =
             self.model_catalog
                 .try_list_models()
@@ -313,9 +321,14 @@ impl ChatWidget {
                         .find(|preset| preset.model == model)
                         .map(|preset| preset.default_reasoning_effort)
                 });
+        let configured_reasoning_effort = if self.cloud_picker_selection.is_none() {
+            self.config.model_reasoning_effort.clone()
+        } else {
+            None
+        };
         let reasoning_effort_override = Some(
-            self.effective_reasoning_effort()
-                .or_else(|| self.config.model_reasoning_effort.clone())
+            self.status_reasoning_effort()
+                .or(configured_reasoning_effort)
                 .or(model_default_reasoning_effort),
         );
         let rate_limit_snapshots = self.status_rate_limit_snapshots();
@@ -342,7 +355,7 @@ impl ChatWidget {
             rate_limit_snapshots.as_slice(),
             self.plan_type,
             Local::now(),
-            self.model_display_name(),
+            self.status_model_display_name(),
             collaboration_mode,
             reasoning_effort_override,
             agents_summary,
@@ -354,7 +367,7 @@ impl ChatWidget {
         }
         if self.thread_usage_is_available() {
             handle.reserve_thread_usage_label_width();
-            handle.set_thread_usage(self.estimated_thread_usage().cloned());
+            handle.set_thread_usage(self.estimated_thread_usage().cloned(), self.plan_type);
             self.request_thread_usage_for_status(handle.clone());
         }
         // Capture the displayed status inputs before later configuration or thread changes.
@@ -383,41 +396,41 @@ impl ChatWidget {
         request_id: u64,
         snapshots: Vec<RateLimitSnapshot>,
     ) {
-        if !self
+        let Some(index) = self
             .refreshing_status_outputs
             .iter()
-            .any(|(pending_request_id, _)| *pending_request_id == request_id)
-        {
+            .position(|(pending_request_id, _)| *pending_request_id == request_id)
+        else {
             return;
-        }
-
+        };
         for snapshot in snapshots {
             self.on_rate_limit_snapshot(Some(snapshot));
         }
+        let (_, handle) = self.refreshing_status_outputs.swap_remove(index);
 
         let rate_limit_snapshots = self.status_rate_limit_snapshots();
-        let now = Local::now();
-        let mut remaining = Vec::with_capacity(self.refreshing_status_outputs.len());
-        let mut updated_any = false;
-        for (pending_request_id, handle) in self.refreshing_status_outputs.drain(..) {
-            if pending_request_id == request_id {
-                updated_any = true;
-                handle.finish_rate_limit_refresh(rate_limit_snapshots.as_slice(), now);
-            } else {
-                remaining.push((pending_request_id, handle));
-            }
-        }
-        self.refreshing_status_outputs = remaining;
-        if updated_any {
-            self.request_redraw();
-        }
+        handle.finish_rate_limit_refresh(&rate_limit_snapshots, Local::now());
+        self.request_redraw();
     }
 
     pub(super) fn open_status_line_setup(&mut self) {
+        use crate::bottom_pane::StatuslineProviderActions;
+
         let configured_status_line_items = self.configured_status_line_items();
+        let providers = if !self.custom_statusline_enabled() {
+            StatuslineProviderActions::Hidden
+        } else if self.thread_params_mode == crate::ThreadParamsMode::Cloud {
+            StatuslineProviderActions::Choose
+        } else {
+            StatuslineProviderActions::CreateAndChoose {
+                backend: self.model_catalog.backend,
+                thread_id: self.thread_id(),
+            }
+        };
         let view = StatusLineSetupView::new(
             Some(configured_status_line_items.as_slice()),
             self.local_settings.tui.status_line_use_colors,
+            providers,
             self.status_surface_preview_data(),
             self.app_event_tx.clone(),
             self.bottom_pane.list_keymap(),
@@ -429,7 +442,7 @@ impl ChatWidget {
         let configured_terminal_title_items = self.configured_terminal_title_items();
         self.terminal_title_setup_original_items =
             Some(self.local_settings.tui.terminal_title.clone());
-        let view = TerminalTitleSetupView::new(
+        let view = terminal_title_setup(
             Some(configured_terminal_title_items.as_slice()),
             self.terminal_title_preview_data(),
             self.app_event_tx.clone(),
@@ -446,6 +459,7 @@ impl ChatWidget {
             }),
         );
         preview_data.thread_id = self.thread_id;
+        preview_data.pull_request_url = self.status_line_pull_request_url().map(str::to_owned);
 
         if self.rate_limit_snapshots_by_limit_id.contains_key("codex") {
             for item in [
@@ -460,7 +474,7 @@ impl ChatWidget {
 
         if self
             .estimated_thread_usage()
-            .is_some_and(|usage| usage.estimated_usage_usd_micros.is_none())
+            .is_some_and(|usage| thread_cost_micros(usage, self.plan_type).is_none())
         {
             preview_data.suppress_placeholder(StatusSurfacePreviewItem::EstimatedThreadCost);
         }

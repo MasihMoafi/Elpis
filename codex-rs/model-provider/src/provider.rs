@@ -4,27 +4,32 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use crate::GatewayAuthManager;
 use codex_api::ApiError;
 use codex_api::Provider;
 use codex_api::SharedAuthProvider;
 use codex_api::TransportError;
+use codex_features::RuntimeAuthMode;
 use codex_login::AuthManager;
+use codex_login::AuthManagerConfig;
+use codex_login::AuthManagerInitializationError;
 use codex_login::CodexAuth;
-use codex_login::GatewayAuthManager;
 use codex_login::WorkspaceRoutingRequest;
 use codex_login::default_client::ClientRedirectPolicy;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_models_manager::cache::ModelsCache;
+use codex_models_manager::manager::ModelCatalogSettings;
 use codex_models_manager::manager::OpenAiModelsManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_models_manager::manager::StaticModelsManager;
 use codex_protocol::account::ProviderAccount;
+use codex_protocol::auth::RefreshTokenFailedError;
 use codex_protocol::error::CodexErr;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_runtime_agent_instance::RuntimeAuthManager;
 
 use crate::ProviderCapabilities;
-#[cfg(test)]
-use crate::RemoteCompactionSupport;
 use crate::ResolvedResponsesProvider;
 use crate::amazon_bedrock::AmazonBedrockModelProvider;
 use crate::auth::ProviderAuthScope;
@@ -32,8 +37,11 @@ use crate::auth::ResolvedProviderAuth;
 use crate::auth::auth_manager_for_provider;
 use crate::auth::resolve_provider_auth;
 use crate::auth::resolve_provider_auth_for_scope;
+use crate::auth::uses_fedramp_api_key;
 use crate::combined_auth::compose_auth;
+use crate::gcp::GcpModelProvider;
 use crate::models_endpoint::OpenAiModelsEndpoint;
+use crate::request_setup::resolve_request_auth;
 use crate::workspace_routing::WorkspaceRoutingContext;
 
 /// Current app-visible account state for a model provider.
@@ -92,19 +100,29 @@ pub const DEFAULT_APPROVAL_REVIEW_PREFERRED_MODEL: &str = "codex-auto-review";
 
 const API_KEY_APPROVAL_REVIEW_PREFERRED_MODEL: &str = "gpt-5.6-luna";
 
+const FEDRAMP_API_BASE_URL: &str = "https://gov.api.openai.com/v1";
+
 /// Default model used for memory extraction when a provider does not require a
 /// backend-specific model ID.
-pub const DEFAULT_MEMORY_EXTRACTION_PREFERRED_MODEL: &str = "gpt-5.6-luna";
+pub const DEFAULT_MEMORY_EXTRACTION_PREFERRED_MODEL: &str = "gpt-6-luna";
 
 /// Default model used for memory consolidation when a provider does not require
 /// a backend-specific model ID.
-pub const DEFAULT_MEMORY_CONSOLIDATION_PREFERRED_MODEL: &str = "gpt-5.6-terra";
+pub const DEFAULT_MEMORY_CONSOLIDATION_PREFERRED_MODEL: &str = "gpt-6.1-terra";
 
 /// Runtime provider abstraction used by model execution.
 ///
 /// Implementations own provider-specific behavior for a model backend. The
 /// `ModelProviderInfo` returned by `info` is the serialized/configured provider
 /// metadata used by the default OpenAI-compatible implementation.
+///
+/// OpenAI-compatible catalog caches use header auth's account ID instead of auth
+/// headers when available. Missing IDs and explicit provider API key, bearer, or
+/// command auth retain credential-sensitive keys. Provider settings remain in the key.
+/// Hosts using header auth must isolate model managers and cache storage by user and
+/// catalog-varying request context, such as country: an account ID may identify a
+/// workspace shared by multiple users. Request authentication, credential refresh,
+/// and permission checks are unchanged.
 pub trait ModelProvider: fmt::Debug + Send + Sync {
     /// Returns the configured provider metadata.
     fn info(&self) -> &ModelProviderInfo;
@@ -159,6 +177,11 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
     /// manager throughout the codebase; that is a larger refactor than this change.
     fn auth_manager(&self) -> Option<Arc<AuthManager>>;
 
+    /// Runtime authentication selected for this provider's inference destination.
+    fn runtime_auth(&self) -> Option<&(Arc<RuntimeAuthManager>, RuntimeAuthMode)> {
+        None
+    }
+
     /// Returns the gateway credential manager shared with inference and model discovery.
     /// Hosts use this handle for explicit login; configured setup failures remain errors.
     fn gateway_auth_manager(&self) -> std::io::Result<Option<Arc<GatewayAuthManager>>> {
@@ -199,36 +222,52 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
         codex_api::map_api_error(error)
     }
 
+    /// Normalizes a completed output item before it enters model history.
+    fn normalize_completed_output_item(&self, _item: &mut ResponseItem) {}
+
     /// Returns provider configuration adapted for the API client.
     fn api_provider(&self) -> ModelProviderFuture<'_, codex_protocol::error::Result<Provider>> {
         Box::pin(async move {
             let auth = self.auth().await;
-            self.info()
-                .to_api_provider(auth.as_ref().map(CodexAuth::auth_mode))
+            self.api_provider_for_auth(auth.as_ref())
         })
     }
 
     /// Resolves routing for Responses HTTP, compaction, and WebSocket handshakes.
-    #[expect(
-        clippy::await_holding_invalid_type,
-        reason = "serialize discovery and the session's first successful routing transition"
-    )]
     fn responses_api_provider<'a>(
         &'a self,
         routing_context: &'a WorkspaceRoutingContext,
     ) -> ModelProviderFuture<'a, codex_protocol::error::Result<ResolvedResponsesProvider>> {
         Box::pin(async move {
-            let mut provider = self.api_provider().await?;
+            let provider = self.api_provider().await?;
+            let auth = self.auth().await;
+            self.route_responses_api_provider(provider, auth.as_ref(), routing_context)
+                .await
+        })
+    }
+
+    /// Applies workspace routing using the credentials already selected for this request.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "serialize discovery and the session's first successful routing transition"
+    )]
+    fn route_responses_api_provider<'a>(
+        &'a self,
+        mut provider: Provider,
+        auth: Option<&'a CodexAuth>,
+        routing_context: &'a WorkspaceRoutingContext,
+    ) -> ModelProviderFuture<'a, codex_protocol::error::Result<ResolvedResponsesProvider>> {
+        Box::pin(async move {
             let mut redirect_policy = ClientRedirectPolicy::Default;
             if provider_uses_first_party_auth_path(self.info())
                 && self.info().supports_codex_backend_routes()
-                && let Some(auth) = self.auth().await.filter(CodexAuth::is_chatgpt_auth)
+                && let Some(auth) = auth.filter(|auth| auth.is_chatgpt_auth())
                 && let Some(auth_manager) = self.auth_manager()
             {
                 let mut previously_routed = routing_context.previously_routed.lock().await;
                 if let Some(routing) = auth_manager
                     .workspace_routing(
-                        &auth,
+                        auth,
                         WorkspaceRoutingRequest {
                             provider_base_url: provider.base_url.clone(),
                             chatgpt_base_url: routing_context.chatgpt_base_url.clone(),
@@ -236,7 +275,11 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
                             session: routing_context.session.clone(),
                         },
                     )
-                    .await?
+                    .await
+                    .map_err(|error| match error.downcast::<RefreshTokenFailedError>() {
+                        Ok(rejection) => CodexErr::RefreshTokenFailed(rejection),
+                        Err(error) => error.into(),
+                    })?
                 {
                     crate::workspace_routing::apply_workspace_routing(&mut provider, routing)?;
                     redirect_policy = ClientRedirectPolicy::Reject;
@@ -248,6 +291,14 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
                 redirect_policy,
             })
         })
+    }
+
+    /// Adapt routing from the same frozen credential selected for the request.
+    fn api_provider_for_auth(
+        &self,
+        auth: Option<&CodexAuth>,
+    ) -> codex_protocol::error::Result<Provider> {
+        resolve_api_provider(self.info(), auth)
     }
 
     /// Returns the provider base URL that will be used at request time.
@@ -267,6 +318,14 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
         })
     }
 
+    /// Adds provider-owned credentials, such as gateway OAuth, to already selected primary auth.
+    fn compose_auth(
+        &self,
+        resolved: ResolvedProviderAuth,
+    ) -> ModelProviderFuture<'_, codex_protocol::error::Result<ResolvedProviderAuth>> {
+        Box::pin(async move { Ok(resolved) })
+    }
+
     /// Returns request credentials, optionally scoped to a Codex session task.
     fn api_auth_for_scope(
         &self,
@@ -282,12 +341,41 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
         })
     }
 
+    /// Resolve auth together with metadata needed to route and admit this request.
+    fn request_auth(
+        &self,
+        scope: Option<ProviderAuthScope>,
+    ) -> ModelProviderFuture<'_, codex_protocol::error::Result<ResolvedProviderAuth>> {
+        match scope {
+            Some(scope) => self.api_auth_for_scope(scope),
+            None => Box::pin(async { self.api_auth().await.map(ResolvedProviderAuth::new) }),
+        }
+    }
+
+    /// Resolve the endpoint before headers for providers whose setup may refresh credentials.
+    fn request_provider_and_auth(
+        &self,
+        scope: Option<ProviderAuthScope>,
+    ) -> ModelProviderFuture<'_, codex_protocol::error::Result<(Provider, ResolvedProviderAuth)>>
+    {
+        Box::pin(async move { Ok((self.api_provider().await?, self.request_auth(scope).await?)) })
+    }
+
     /// Creates the model manager implementation appropriate for this provider.
     fn models_manager(
         &self,
         codex_home: PathBuf,
         config_model_catalog: Option<ModelsResponse>,
     ) -> SharedModelsManager;
+
+    /// Build a thread catalog with the same cache and live discovery policy as its harness.
+    fn models_manager_with_settings(
+        &self,
+        config_model_catalog: Option<ModelsResponse>,
+        _settings: ModelCatalogSettings,
+    ) -> SharedModelsManager {
+        self.models_manager_without_cache(config_model_catalog)
+    }
 
     /// Creates a model manager with caching disabled.
     ///
@@ -297,10 +385,19 @@ pub trait ModelProvider: fmt::Debug + Send + Sync {
         &self,
         config_model_catalog: Option<ModelsResponse>,
     ) -> SharedModelsManager {
+        let origin = if config_model_catalog.is_some() {
+            codex_models_manager::ModelOrigin::ExplicitConfig
+        } else {
+            codex_models_manager::ModelOrigin::Bundled
+        };
         let model_catalog = config_model_catalog
             .or_else(|| codex_models_manager::bundled_models_response().ok())
             .unwrap_or_default();
-        Arc::new(StaticModelsManager::new(self.auth_manager(), model_catalog))
+        Arc::new(StaticModelsManager::new(
+            self.auth_manager(),
+            model_catalog,
+            origin,
+        ))
     }
 
     /// Creates a model manager that can use a caller-provided cache for remote catalogs.
@@ -324,7 +421,19 @@ pub type ModelProviderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a
 /// Shared runtime model provider handle.
 pub type SharedModelProvider = Arc<dyn ModelProvider>;
 
-fn provider_uses_first_party_auth_path(provider: &ModelProviderInfo) -> bool {
+/// Resolve credential-dependent defaults without changing configured endpoints.
+pub fn resolve_api_provider(
+    info: &ModelProviderInfo,
+    auth: Option<&CodexAuth>,
+) -> codex_protocol::error::Result<Provider> {
+    let mut provider = info.to_api_provider(auth.map(CodexAuth::auth_mode))?;
+    if info.base_url.is_none() && uses_fedramp_api_key(auth, info)? {
+        provider.base_url = FEDRAMP_API_BASE_URL.to_string();
+    }
+    Ok(provider)
+}
+
+pub fn provider_uses_first_party_auth_path(provider: &ModelProviderInfo) -> bool {
     provider.requires_openai_auth
         && provider.env_key.is_none()
         && provider.experimental_bearer_token.is_none()
@@ -332,28 +441,40 @@ fn provider_uses_first_party_auth_path(provider: &ModelProviderInfo) -> bool {
         && provider.aws.is_none()
 }
 
-/// Creates the default runtime model provider for configured provider metadata.
+/// Creates the default model provider for configured provider metadata.
+/// Harnesses with runtime identity use [`crate::ProviderAuthContext::model_provider`].
 pub fn create_model_provider(
     provider_info: ModelProviderInfo,
     auth_manager: Option<Arc<AuthManager>>,
 ) -> SharedModelProvider {
+    create_model_provider_with_runtime(provider_info, auth_manager, /*runtime_auth*/ None)
+}
+
+/// Creates a model provider using the local login settings.
+pub async fn create_model_provider_from_local_config(
+    provider_info: ModelProviderInfo,
+    config: &impl AuthManagerConfig,
+) -> Result<SharedModelProvider, AuthManagerInitializationError> {
+    let credentials =
+        AuthManager::shared_from_config(config, /*enable_codex_api_key_env*/ false).await?;
+    Ok(create_model_provider(provider_info, Some(credentials)))
+}
+
+pub(crate) fn create_model_provider_with_runtime(
+    provider_info: ModelProviderInfo,
+    auth_manager: Option<Arc<AuthManager>>,
+    runtime_auth: Option<(Arc<RuntimeAuthManager>, RuntimeAuthMode)>,
+) -> SharedModelProvider {
     if provider_info.is_amazon_bedrock() {
         return Arc::new(AmazonBedrockModelProvider::new(provider_info, auth_manager));
     }
-    let gateway_auth_manager = provider_info.gateway_oauth.as_ref().map(|config| {
-        provider_info.validate()?;
-        let manager = auth_manager
-            .as_ref()
-            .ok_or_else(|| "gateway_oauth requires auth runtime configuration".to_string())?;
-        crate::shared_state::process_shared_state()
-            .gateway_auth(config, &manager.runtime_config())
-            .map_err(|_| "failed to create provider OAuth HTTP client".to_string())
-    });
-    let auth_manager = auth_manager_for_provider(auth_manager, &provider_info);
+    if provider_info.is_gcp() {
+        return Arc::new(GcpModelProvider::new(provider_info, auth_manager));
+    }
     Arc::new(ConfiguredModelProvider::new(
         provider_info,
         auth_manager,
-        gateway_auth_manager,
+        runtime_auth,
     ))
 }
 
@@ -364,63 +485,81 @@ struct ConfiguredModelProvider {
     auth_manager: Option<Arc<AuthManager>>,
     // Construct eagerly; report setup failures when auth is requested because the factory is infallible.
     gateway_auth_manager: Option<Result<Arc<GatewayAuthManager>, String>>,
-}
-
-enum ModelsCacheConfig {
-    Disk { codex_home: PathBuf },
-    Disabled,
-    Custom(Arc<dyn ModelsCache>),
+    runtime_auth: Option<(Arc<RuntimeAuthManager>, RuntimeAuthMode)>,
+    catalog_runtime_auth: Option<(Arc<RuntimeAuthManager>, RuntimeAuthMode)>,
 }
 
 impl ConfiguredModelProvider {
     fn new(
         info: ModelProviderInfo,
         auth_manager: Option<Arc<AuthManager>>,
-        gateway_auth_manager: Option<Result<Arc<GatewayAuthManager>, String>>,
+        runtime_auth: Option<(Arc<RuntimeAuthManager>, RuntimeAuthMode)>,
     ) -> Self {
+        let gateway_auth_manager = info.gateway_oauth.as_ref().map(|config| {
+            info.validate()?;
+            let manager = auth_manager
+                .as_ref()
+                .ok_or_else(|| "gateway_oauth requires auth runtime configuration".to_string())?;
+            GatewayAuthManager::new(&info, config, manager).map(Arc::new)
+        });
+        let auth_manager = auth_manager_for_provider(auth_manager, &info);
+        let runtime_for_destination = |destination: Option<&str>| {
+            runtime_auth.clone().filter(|_| {
+                destination.is_none_or(|url| {
+                    codex_http_client::classify_openai_api_url(url)
+                        != codex_http_client::OpenAiDestination::Other
+                })
+            })
+        };
+        let inference_runtime_auth = runtime_for_destination(info.base_url.as_deref());
+        // Catalog overrides are absolute URLs and can have a different origin from inference.
+        let catalog_runtime_auth = runtime_for_destination(
+            info.model_catalog_url
+                .as_deref()
+                .map(String::as_str)
+                .or(info.base_url.as_deref()),
+        );
         Self {
             info,
             auth_manager,
             gateway_auth_manager,
+            runtime_auth: inference_runtime_auth,
+            catalog_runtime_auth,
         }
     }
 
-    fn create_models_manager(
+    async fn resolve_auth(
         &self,
-        config_model_catalog: Option<ModelsResponse>,
-        cache: ModelsCacheConfig,
-    ) -> SharedModelsManager {
-        if let Some(model_catalog) = config_model_catalog {
-            return Arc::new(StaticModelsManager::new(
-                self.auth_manager.clone(),
-                model_catalog,
-            ));
-        }
-        let endpoint = Arc::new(OpenAiModelsEndpoint::new(
+        scope: Option<ProviderAuthScope>,
+    ) -> codex_protocol::error::Result<ResolvedProviderAuth> {
+        let resolved = resolve_request_auth(
             self.info.clone(),
             self.auth_manager.clone(),
-            self.gateway_auth_manager.clone(),
-        ));
-        let auth_manager = self.auth_manager.clone();
-        let manager = match cache {
-            ModelsCacheConfig::Disk { codex_home } => {
-                OpenAiModelsManager::new(codex_home, endpoint, auth_manager)
-            }
-            ModelsCacheConfig::Disabled => {
-                OpenAiModelsManager::new_without_cache(endpoint, auth_manager)
-            }
-            ModelsCacheConfig::Custom(cache) => {
-                OpenAiModelsManager::new_with_cache(cache, endpoint, auth_manager)
-            }
-        };
-        match &self.info.model_catalog_url {
-            Some(_) => Arc::new(manager.with_provider_catalog()),
-            None => Arc::new(manager),
-        }
+            self.runtime_auth.clone(),
+            scope,
+            self.info.base_url.clone(),
+        )
+        .await?;
+        self.compose_auth(resolved).await
     }
 }
 
 impl ModelProvider for ConfiguredModelProvider {
+    fn is_recoverable_auth_error(&self, error: &TransportError) -> bool {
+        let TransportError::Http { status, body, .. } = error else {
+            return false;
+        };
+        *status == http::StatusCode::UNAUTHORIZED
+            && (self.runtime_auth.is_none()
+                || !codex_protocol::error::is_runtime_auth_denial(
+                    *status,
+                    body.as_deref().unwrap_or_default(),
+                    codex_response_debug_context::extract_response_debug_context(error)
+                        .auth_error_code
+                        .as_deref(),
+                ))
+    }
+
     fn info(&self) -> &ModelProviderInfo {
         &self.info
     }
@@ -453,6 +592,17 @@ impl ModelProvider for ConfiguredModelProvider {
             .map_err(std::io::Error::other)
     }
 
+    fn recover_from_unauthorized(
+        &self,
+    ) -> ModelProviderFuture<'_, codex_protocol::error::Result<ProviderUnauthorizedRecovery>> {
+        Box::pin(async {
+            let Some(gateway) = self.gateway_auth_manager()? else {
+                return Ok(ProviderUnauthorizedRecovery::NotConfigured);
+            };
+            Ok(gateway.prepare_retry().await)
+        })
+    }
+
     fn supports_attestation(&self) -> bool {
         self.auth_manager
             .as_ref()
@@ -469,42 +619,53 @@ impl ModelProvider for ConfiguredModelProvider {
         })
     }
 
+    fn runtime_auth(&self) -> Option<&(Arc<RuntimeAuthManager>, RuntimeAuthMode)> {
+        self.runtime_auth.as_ref()
+    }
+
+    fn request_auth(
+        &self,
+        scope: Option<ProviderAuthScope>,
+    ) -> ModelProviderFuture<'_, codex_protocol::error::Result<ResolvedProviderAuth>> {
+        Box::pin(self.resolve_auth(scope))
+    }
+
+    fn request_provider_and_auth(
+        &self,
+        scope: Option<ProviderAuthScope>,
+    ) -> ModelProviderFuture<'_, codex_protocol::error::Result<(Provider, ResolvedProviderAuth)>>
+    {
+        Box::pin(async move {
+            let resolved = self.resolve_auth(scope).await?;
+            let provider = self.api_provider_for_auth(resolved.credential.as_ref())?;
+            Ok((provider, resolved))
+        })
+    }
+
     fn api_auth(
         &self,
     ) -> ModelProviderFuture<'_, codex_protocol::error::Result<SharedAuthProvider>> {
         Box::pin(async move {
-            let auth = self.auth().await;
-            let primary = resolve_provider_auth(auth.as_ref(), &self.info)?;
-            Ok(compose_auth(
-                &self.info,
-                self.gateway_auth_manager.as_ref(),
-                ResolvedProviderAuth::new(primary),
-            )
-            .await?
-            .auth)
+            Ok(self.resolve_auth(/*scope*/ None).await?.auth)
         })
+    }
+
+    fn compose_auth(
+        &self,
+        resolved: ResolvedProviderAuth,
+    ) -> ModelProviderFuture<'_, codex_protocol::error::Result<ResolvedProviderAuth>> {
+        Box::pin(compose_auth(
+            &self.info,
+            self.gateway_auth_manager.as_ref(),
+            resolved,
+        ))
     }
 
     fn api_auth_for_scope(
         &self,
         scope: ProviderAuthScope,
     ) -> ModelProviderFuture<'_, codex_protocol::error::Result<ResolvedProviderAuth>> {
-        Box::pin(async move {
-            let resolved = if provider_uses_first_party_auth_path(&self.info) {
-                let auth = self.auth().await;
-                resolve_provider_auth_for_scope(
-                    self.auth_manager.clone(),
-                    auth.as_ref(),
-                    &self.info,
-                    scope,
-                )
-                .await?
-            } else {
-                let auth = self.auth().await;
-                ResolvedProviderAuth::new(resolve_provider_auth(auth.as_ref(), &self.info)?)
-            };
-            compose_auth(&self.info, self.gateway_auth_manager.as_ref(), resolved).await
-        })
+        Box::pin(self.resolve_auth(Some(scope)))
     }
 
     fn account_state(&self) -> ProviderAccountResult {
@@ -555,14 +716,45 @@ impl ModelProvider for ConfiguredModelProvider {
         codex_home: PathBuf,
         config_model_catalog: Option<ModelsResponse>,
     ) -> SharedModelsManager {
-        self.create_models_manager(config_model_catalog, ModelsCacheConfig::Disk { codex_home })
+        self.models_manager_with_settings(
+            config_model_catalog,
+            ModelCatalogSettings::disk(codex_home),
+        )
+    }
+
+    fn models_manager_with_settings(
+        &self,
+        config_model_catalog: Option<ModelsResponse>,
+        settings: ModelCatalogSettings,
+    ) -> SharedModelsManager {
+        if let Some(model_catalog) = config_model_catalog {
+            return Arc::new(StaticModelsManager::new(
+                self.auth_manager.clone(),
+                model_catalog,
+                codex_models_manager::ModelOrigin::ExplicitConfig,
+            ));
+        }
+        let endpoint = Arc::new(
+            OpenAiModelsEndpoint::new(
+                self.info.clone(),
+                self.auth_manager.clone(),
+                self.gateway_auth_manager.clone(),
+            )
+            .with_runtime_auth(self.catalog_runtime_auth.clone()),
+        );
+        let auth_manager = self.auth_manager.clone();
+        let manager = OpenAiModelsManager::with_settings(settings, endpoint, auth_manager);
+        match &self.info.model_catalog_url {
+            Some(_) => Arc::new(manager.with_provider_catalog()),
+            None => Arc::new(manager),
+        }
     }
 
     fn models_manager_without_cache(
         &self,
         config_model_catalog: Option<ModelsResponse>,
     ) -> SharedModelsManager {
-        self.create_models_manager(config_model_catalog, ModelsCacheConfig::Disabled)
+        self.models_manager_with_settings(config_model_catalog, ModelCatalogSettings::default())
     }
 
     fn models_manager_with_cache(
@@ -570,837 +762,30 @@ impl ModelProvider for ConfiguredModelProvider {
         config_model_catalog: Option<ModelsResponse>,
         cache: Arc<dyn ModelsCache>,
     ) -> SharedModelsManager {
-        self.create_models_manager(config_model_catalog, ModelsCacheConfig::Custom(cache))
+        self.models_manager_with_settings(
+            config_model_catalog,
+            ModelCatalogSettings::with_cache(cache),
+        )
+    }
+}
+
+pub(crate) mod test_support {
+    use super::*;
+
+    /// Use an injected runtime with a local transport fixture. Production callers use the
+    /// destination-aware `ProviderAuthContext::model_provider` factory.
+    pub fn runtime_model_provider(
+        info: ModelProviderInfo,
+        credentials: Arc<AuthManager>,
+        runtime: (Arc<RuntimeAuthManager>, RuntimeAuthMode),
+    ) -> SharedModelProvider {
+        let mut provider =
+            ConfiguredModelProvider::new(info, Some(credentials), Some(runtime.clone()));
+        provider.runtime_auth = Some(runtime);
+        Arc::new(provider)
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use std::future::Future;
-    use std::num::NonZeroU64;
-    use std::task::Context;
-    use std::task::Waker;
-
-    use codex_http_client::HttpClientFactory;
-    use codex_http_client::OutboundProxyPolicy;
-    use codex_login::auth::AgentIdentityAuthPolicy;
-    use codex_login::auth::BedrockApiKeyAuth;
-    use codex_model_provider_info::AwsAuthRefreshConfig;
-    use codex_model_provider_info::AwsCredentialExportConfig;
-    use codex_model_provider_info::ModelProviderAwsAuthInfo;
-    use codex_model_provider_info::WireApi;
-    use codex_model_provider_info::create_oss_provider_with_base_url;
-    use codex_models_manager::ModelsManagerConfig;
-    use codex_models_manager::manager::RefreshStrategy;
-    use codex_protocol::account::PlanType;
-    use codex_protocol::config_types::ModelProviderAuthInfo;
-    use codex_protocol::openai_models::ModelInfo;
-    use codex_protocol::openai_models::ModelsResponse;
-    use codex_protocol::protocol::SessionSource;
-    use codex_utils_redacted_string::RedactedString;
-    use pretty_assertions::assert_eq;
-    use serde_json::json;
-    use wiremock::Mock;
-    use wiremock::MockServer;
-    use wiremock::ResponseTemplate;
-    use wiremock::matchers::header_regex;
-    use wiremock::matchers::method;
-    use wiremock::matchers::path;
-
-    use super::*;
-    use crate::auth::AgentIdentitySessionFallback;
-    use crate::shared_state::process_shared_state;
-
-    fn provider_info_with_command_auth() -> ModelProviderInfo {
-        ModelProviderInfo {
-            auth: Some(ModelProviderAuthInfo {
-                command: "print-token".to_string(),
-                args: Vec::new(),
-                timeout_ms: NonZeroU64::new(5_000).expect("timeout should be non-zero"),
-                refresh_interval_ms: 300_000,
-                cwd: std::env::current_dir()
-                    .expect("current dir should be available")
-                    .try_into()
-                    .expect("current dir should be absolute"),
-            }),
-            requires_openai_auth: false,
-            ..ModelProviderInfo::create_openai_provider(/*base_url*/ None)
-        }
-    }
-
-    fn test_codex_home() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("codex-model-provider-test-{}", std::process::id()))
-    }
-
-    fn provider_for(base_url: String) -> ModelProviderInfo {
-        ModelProviderInfo {
-            name: "mock".into(),
-            base_url: Some(base_url),
-            model_catalog_url: None,
-            env_key: None,
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            auth: None,
-            gateway_oauth: None,
-            aws: None,
-            wire_api: WireApi::Responses,
-            query_params: None,
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: Some(0),
-            stream_max_retries: Some(0),
-            stream_idle_timeout_ms: Some(5_000),
-            websocket_connect_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: false,
-            supports_standalone_web_search: false,
-            capabilities: None,
-            include_internal_metadata: false,
-        }
-    }
-
-    fn remote_model(slug: &str) -> ModelInfo {
-        serde_json::from_value(json!({
-            "slug": slug,
-            "display_name": slug,
-            "description": null,
-            "default_reasoning_level": "medium",
-            "supported_reasoning_levels": [],
-            "shell_type": "shell_command",
-            "visibility": "list",
-            "supported_in_api": true,
-            "priority": 0,
-            "upgrade": null,
-            "support_verbosity": false,
-            "default_verbosity": null,
-            "apply_patch_tool_type": null,
-            "truncation_policy": {"mode": "bytes", "limit": 10_000},
-            "supports_image_detail_original": false,
-            "context_window": 272_000,
-            "max_context_window": 272_000,
-            "experimental_supported_tools": [],
-        }))
-        .expect("valid model")
-    }
-
-    fn bedrock_api_key_auth() -> CodexAuth {
-        CodexAuth::BedrockApiKey(BedrockApiKeyAuth {
-            api_key: "bedrock-api-key-test".to_string(),
-            region: "us-east-1".to_string(),
-        })
-    }
-
-    #[tokio::test]
-    async fn scoped_auth_ignores_scope_for_non_openai_provider() {
-        let provider = create_model_provider(
-            create_oss_provider_with_base_url("http://localhost:11434/v1", WireApi::Responses),
-            /*auth_manager*/ None,
-        );
-
-        let auth = provider
-            .api_auth_for_scope(ProviderAuthScope {
-                agent_identity_policy: AgentIdentityAuthPolicy::JwtOnly,
-                session_source: SessionSource::Cli,
-                agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
-            })
-            .await
-            .expect("auth should resolve");
-
-        assert!(auth.auth.to_auth_headers().is_empty());
-    }
-
-    #[test]
-    fn openai_provider_enables_remote_compaction() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            /*auth_manager*/ None,
-        );
-
-        assert_eq!(
-            provider.capabilities(),
-            ProviderCapabilities {
-                remote_compaction: RemoteCompactionSupport::V2,
-                ..ProviderCapabilities::default()
-            }
-        );
-    }
-
-    #[test]
-    fn configured_provider_remote_compaction_matches_provider_support() {
-        let cases = [
-            (
-                ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-                RemoteCompactionSupport::V2,
-            ),
-            (
-                ModelProviderInfo {
-                    name: "Azure".to_string(),
-                    base_url: Some("https://example.com/openai".to_string()),
-                    ..ModelProviderInfo::default()
-                },
-                RemoteCompactionSupport::V2,
-            ),
-            (
-                ModelProviderInfo {
-                    name: "Custom".to_string(),
-                    base_url: Some("https://example.openai.azure.com/openai/v1".to_string()),
-                    ..ModelProviderInfo::default()
-                },
-                RemoteCompactionSupport::V2,
-            ),
-            (
-                provider_for("https://example.test/v1".to_string()),
-                RemoteCompactionSupport::Unsupported,
-            ),
-        ];
-
-        for (provider_info, expected) in cases {
-            let provider = create_model_provider(provider_info, /*auth_manager*/ None);
-            assert_eq!(provider.capabilities().remote_compaction, expected);
-        }
-    }
-
-    #[test]
-    fn configured_provider_uses_default_approval_review_preferred_model() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            /*auth_manager*/ None,
-        );
-
-        assert_eq!(
-            provider.approval_review_preferred_model(),
-            DEFAULT_APPROVAL_REVIEW_PREFERRED_MODEL
-        );
-    }
-
-    #[test]
-    fn configured_provider_uses_luna_for_approval_review_with_api_key_auth() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-                "openai-api-key",
-            ))),
-        );
-
-        assert_eq!(provider.approval_review_preferred_model(), "gpt-5.6-luna");
-    }
-
-    #[test]
-    fn configured_provider_uses_default_approval_review_model_with_chatgpt_auth() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            Some(AuthManager::from_auth_for_testing(
-                CodexAuth::create_dummy_chatgpt_auth_for_testing(),
-            )),
-        );
-
-        assert_eq!(
-            provider.approval_review_preferred_model(),
-            DEFAULT_APPROVAL_REVIEW_PREFERRED_MODEL
-        );
-    }
-
-    #[tokio::test]
-    async fn configured_provider_runtime_base_url_uses_configured_base_url() {
-        let provider = create_model_provider(
-            provider_for("https://example.test/v1".to_string()),
-            /*auth_manager*/ None,
-        );
-
-        assert_eq!(
-            provider
-                .runtime_base_url()
-                .await
-                .expect("runtime base URL should resolve"),
-            Some("https://example.test/v1".to_string())
-        );
-    }
-
-    #[test]
-    fn create_model_provider_builds_command_auth_manager_without_base_manager() {
-        let provider = create_model_provider(
-            provider_info_with_command_auth(),
-            /*auth_manager*/ None,
-        );
-
-        let auth_manager = provider
-            .auth_manager()
-            .expect("command auth provider should have an auth manager");
-
-        assert!(auth_manager.has_external_auth());
-    }
-
-    #[test]
-    fn create_model_provider_does_not_use_openai_auth_manager_for_amazon_bedrock_provider() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_amazon_bedrock_provider(Some(ModelProviderAwsAuthInfo {
-                profile: Some("codex-bedrock".to_string()),
-                region: None,
-                credential_export: None,
-                auth_refresh: None,
-            })),
-            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-                "openai-api-key",
-            ))),
-        );
-
-        assert!(provider.auth_manager().is_none());
-    }
-
-    #[tokio::test]
-    async fn shared_bedrock_auth_refresh_is_reused_only_for_matching_configuration() {
-        const TEST_NAME: &str = "provider::tests::shared_bedrock_auth_refresh_is_reused_only_for_matching_configuration";
-        const HELPER_ARG: &str = "CODEX_BEDROCK_SHARED_AUTH_REFRESH_COMMAND";
-        const SUBPROCESS_ARG: &str = "CODEX_BEDROCK_SHARED_AUTH_REFRESH_SUBPROCESS";
-        let arguments = std::env::args().collect::<Vec<_>>();
-        if let Some(index) = arguments.iter().position(|argument| argument == HELPER_ARG) {
-            let counter = &arguments[index + 2];
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            let mut counter = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(counter)
-                .expect("refresh invocation counter should open");
-            std::io::Write::write_all(&mut counter, b"1").expect("write invocation counter");
-            return;
-        }
-
-        let counter = std::env::temp_dir().join(format!("bedrock-refresh-{}", std::process::id()));
-        if !arguments.iter().any(|argument| argument == SUBPROCESS_ARG) {
-            std::fs::create_dir(&counter).expect("AWS command directory should be created");
-            let executable = std::env::current_exe().expect("test executable should be available");
-            let aws = counter.join(format!("aws{}", std::env::consts::EXE_SUFFIX));
-            std::fs::hard_link(&executable, &aws)
-                .or_else(|_| codex_utils_cargo_bin::copy_executable(&executable, &aws))
-                .expect("test executable should be installed as aws");
-            let existing_path = std::env::var_os("PATH").unwrap_or_default();
-            let path = std::env::join_paths(
-                std::iter::once(counter.clone()).chain(std::env::split_paths(&existing_path)),
-            )
-            .expect("test executable PATH should be valid");
-            let output = tokio::process::Command::new(executable)
-                .args(["--exact", TEST_NAME, "--skip", SUBPROCESS_ARG])
-                .env("PATH", path)
-                .env_remove("AWS_ACCESS_KEY_ID")
-                .env_remove("AWS_SECRET_ACCESS_KEY")
-                .output()
-                .await
-                .expect("isolated AWS refresh test should run");
-            std::fs::remove_dir_all(&counter).expect("AWS command directory should be removed");
-            assert!(output.status.success(), "{output:?}");
-            return;
-        }
-        let _ = std::fs::remove_file(&counter);
-        let aws = ModelProviderAwsAuthInfo {
-            profile: Some("codex-bedrock".to_string()),
-            region: Some("us-west-2".to_string()),
-            credential_export: None,
-            auth_refresh: Some(AwsAuthRefreshConfig {
-                command: "aws".to_string(),
-                args: Vec::from(
-                    [
-                        "--exact",
-                        TEST_NAME,
-                        "--skip",
-                        HELPER_ARG,
-                        "--skip",
-                        counter.to_str().expect("counter path should be UTF-8"),
-                    ]
-                    .map(RedactedString::from),
-                ),
-                timeout_ms: NonZeroU64::new(10_000).expect("timeout should be non-zero"),
-            }),
-        };
-        let provider_info = ModelProviderInfo::create_amazon_bedrock_provider(Some(aws.clone()));
-
-        let first = create_model_provider(
-            provider_info.clone(),
-            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-                "openai-api-key",
-            ))),
-        );
-        let second = create_model_provider(provider_info.clone(), /*auth_manager*/ None);
-        let shared_state = process_shared_state();
-        let shared_recovery = shared_state
-            .aws_auth_recovery(&aws)
-            .expect("test provider should have refresh configured");
-        assert_eq!(Arc::strong_count(&shared_recovery), 3);
-        assert!(first.auth_manager().is_none() && second.auth_manager().is_none());
-
-        for provider in [&first, &second] {
-            for (status, body, recoverable) in [
-                (http::StatusCode::UNAUTHORIZED, "ExpiredToken", true),
-                (http::StatusCode::FORBIDDEN, "InvalidClientTokenId", true),
-                (http::StatusCode::FORBIDDEN, "AccessDeniedException", false),
-            ] {
-                let error = TransportError::Http {
-                    retry_after: None,
-                    status,
-                    url: None,
-                    headers: None,
-                    body: Some(body.to_string()),
-                };
-                assert_eq!(provider.is_recoverable_auth_error(&error), recoverable);
-            }
-        }
-
-        let mut invalid_aws = aws.clone();
-        invalid_aws.auth_refresh.as_mut().expect("refresh").command = "not-aws".into();
-        let invalid_provider = create_model_provider(
-            ModelProviderInfo::create_amazon_bedrock_provider(Some(invalid_aws)),
-            /*auth_manager*/ None,
-        );
-        let error = invalid_provider
-            .recover_from_unauthorized()
-            .await
-            .expect_err("non-aws command should be rejected");
-        assert_eq!(error.retry_delay(/*retry_count*/ 1), None);
-        assert_eq!(error.to_string(), "AWS auth refresh command must be `aws`");
-
-        let (first_result, second_result) = tokio::join!(
-            first.recover_from_unauthorized(),
-            second.recover_from_unauthorized()
-        );
-        assert_eq!(
-            [first_result, second_result].map(|result| result.expect("provider should recover")),
-            [ProviderUnauthorizedRecovery::Recovered; 2]
-        );
-        let read_counter = || std::fs::read_to_string(&counter).expect("read counter");
-        assert_eq!(read_counter(), "1");
-
-        assert_eq!(
-            first
-                .recover_from_unauthorized()
-                .await
-                .expect("later generation should recover"),
-            ProviderUnauthorizedRecovery::Recovered
-        );
-        assert_eq!(read_counter(), "11");
-
-        let fixture = tempfile::tempdir().expect("export fixture should be created");
-        let export_counter = fixture.path().join("exports");
-        let export_gate = fixture.path().join("release");
-        #[cfg(unix)]
-        let (command, mut args) = (
-            "sh".to_string(),
-            vec![
-                "-c".to_string(),
-                r#"printf '1\n' >> "$1"
-while [ ! -e "$2" ]; do :; done
-printf '%s\n' '{"AccessKeyId":"exported","SecretAccessKey":"secret"}'
-"#
-                .to_string(),
-                "export-credentials".to_string(),
-            ],
-        );
-        #[cfg(windows)]
-        let (command, mut args) = {
-            let script = fixture.path().join("export.cmd");
-            std::fs::write(
-                &script,
-                concat!(
-                    "@echo off\r\n>> \"%~1\" echo 1\r\n",
-                    ":wait\r\nif not exist \"%~2\" goto wait\r\n",
-                    "echo {\"AccessKeyId\":\"exported\",\"SecretAccessKey\":\"secret\"}\r\n",
-                ),
-            )
-            .expect("export script should be written");
-            (
-                "cmd.exe".to_string(),
-                vec![
-                    "/D".to_string(),
-                    "/Q".to_string(),
-                    "/C".to_string(),
-                    script.to_string_lossy().into_owned(),
-                ],
-            )
-        };
-        args.extend(
-            [&export_counter, &export_gate].map(|path| path.to_string_lossy().into_owned()),
-        );
-        let provider_info =
-            ModelProviderInfo::create_amazon_bedrock_provider(Some(ModelProviderAwsAuthInfo {
-                profile: None,
-                credential_export: Some(AwsCredentialExportConfig {
-                    command,
-                    args: args.into_iter().map(RedactedString::from).collect(),
-                    timeout_ms: NonZeroU64::new(5_000).expect("timeout should be non-zero"),
-                }),
-                ..aws.clone()
-            }));
-        let first_export = create_model_provider(provider_info.clone(), /*auth_manager*/ None);
-        let second_export = create_model_provider(provider_info, /*auth_manager*/ None);
-        let first_refresh = first_export.recover_from_unauthorized();
-        let second_refresh = second_export.recover_from_unauthorized();
-        tokio::pin!(first_refresh, second_refresh);
-        tokio::time::timeout(std::time::Duration::from_secs(10), async {
-            tokio::select! {
-                result = &mut first_refresh => panic!("export should wait for its gate: {result:?}"),
-                () = async {
-                    while !export_counter.exists() {
-                        tokio::task::yield_now().await;
-                    }
-                } => {}
-            }
-        }).await.expect("export should start after login");
-        assert_eq!(read_counter(), "111");
-        {
-            // Queue another recovery after login finishes, while export still holds the lock.
-            let mut context = Context::from_waker(Waker::noop());
-            assert!(second_refresh.as_mut().poll(&mut context).is_pending());
-        }
-        std::fs::write(&export_gate, []).expect("export gate should open");
-        let (first_result, second_result) = tokio::join!(first_refresh, second_refresh);
-        assert_eq!(
-            [first_result, second_result].map(|result| result.expect("provider should recover")),
-            [ProviderUnauthorizedRecovery::Recovered; 2]
-        );
-        assert_eq!(read_counter(), "111");
-        assert_eq!(
-            std::fs::read_to_string(export_counter)
-                .expect("read export counter")
-                .lines()
-                .collect::<Vec<_>>(),
-            vec!["1"]
-        );
-        std::fs::remove_file(&counter).expect("refresh invocation counter should be removed");
-
-        let different_profile = ModelProviderAwsAuthInfo {
-            profile: Some("another-bedrock-profile".to_string()),
-            ..aws.clone()
-        };
-        let other_recovery = shared_state
-            .aws_auth_recovery(&different_profile)
-            .expect("test provider should have refresh configured");
-        assert!(!Arc::ptr_eq(&shared_recovery, &other_recovery));
-
-        let released_recovery = Arc::downgrade(&shared_recovery);
-        drop((first, second, shared_recovery));
-        assert!(released_recovery.upgrade().is_none());
-        assert!(shared_state.aws_auth_recovery(&aws).is_some());
-    }
-
-    #[tokio::test]
-    async fn create_model_provider_uses_managed_auth_for_amazon_bedrock_provider() {
-        let auth = bedrock_api_key_auth();
-        let provider = create_model_provider(
-            ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
-            Some(AuthManager::from_auth_for_testing(auth.clone())),
-        );
-
-        assert_eq!(provider.auth().await, Some(auth));
-    }
-
-    #[test]
-    fn openai_provider_returns_unauthenticated_openai_account_state() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            /*auth_manager*/ None,
-        );
-
-        assert_eq!(
-            provider.account_state(),
-            Ok(ProviderAccountState {
-                account: None,
-                requires_openai_auth: true,
-            })
-        );
-    }
-
-    #[test]
-    fn openai_provider_returns_api_key_account_state() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-                "openai-api-key",
-            ))),
-        );
-
-        assert_eq!(
-            provider.account_state(),
-            Ok(ProviderAccountState {
-                account: Some(ProviderAccount::ApiKey),
-                requires_openai_auth: true,
-            })
-        );
-    }
-
-    #[test]
-    fn openai_provider_returns_chatgpt_account_state_without_email() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            Some(AuthManager::from_auth_for_testing(
-                CodexAuth::create_dummy_chatgpt_auth_for_testing(),
-            )),
-        );
-
-        assert_eq!(
-            provider.account_state(),
-            Ok(ProviderAccountState {
-                account: Some(ProviderAccount::Chatgpt {
-                    email: None,
-                    plan_type: PlanType::Unknown,
-                }),
-                requires_openai_auth: true,
-            })
-        );
-    }
-
-    #[test]
-    fn openai_provider_rejects_bedrock_api_key_account_state() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_openai_provider(/*base_url*/ None),
-            Some(AuthManager::from_auth_for_testing(bedrock_api_key_auth())),
-        );
-
-        assert_eq!(
-            provider.account_state(),
-            Err(ProviderAccountError::UnsupportedBedrockApiKeyAuth)
-        );
-    }
-
-    #[test]
-    fn custom_non_openai_provider_returns_no_account_state() {
-        let provider = create_model_provider(
-            ModelProviderInfo {
-                name: "Custom".to_string(),
-                base_url: Some("http://localhost:1234/v1".to_string()),
-                wire_api: WireApi::Responses,
-                requires_openai_auth: false,
-                ..Default::default()
-            },
-            /*auth_manager*/ None,
-        );
-
-        assert_eq!(
-            provider.account_state(),
-            Ok(ProviderAccountState {
-                account: None,
-                requires_openai_auth: false,
-            })
-        );
-    }
-
-    #[test]
-    fn amazon_bedrock_provider_returns_bedrock_account_state() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
-            /*auth_manager*/ None,
-        );
-
-        assert_eq!(
-            provider.account_state(),
-            Ok(ProviderAccountState {
-                account: Some(ProviderAccount::AmazonBedrock {
-                    uses_codex_managed_credentials: false,
-                }),
-                requires_openai_auth: false,
-            })
-        );
-    }
-
-    #[tokio::test]
-    async fn amazon_bedrock_provider_creates_static_models_manager() {
-        let provider = create_model_provider(
-            ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
-            /*auth_manager*/ None,
-        );
-        let manager =
-            provider.models_manager(test_codex_home(), /*config_model_catalog*/ None);
-        let uncached_manager =
-            provider.models_manager_without_cache(/*config_model_catalog*/ None);
-
-        let catalog = manager
-            .raw_model_catalog(
-                RefreshStrategy::Online,
-                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-            )
-            .await;
-        let uncached_catalog = uncached_manager
-            .raw_model_catalog(
-                RefreshStrategy::Online,
-                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-            )
-            .await;
-        assert_eq!(uncached_catalog, catalog);
-        for slug in [
-            "openai.gpt-6.1-sol",
-            "openai.gpt-6-sol",
-            "openai.gpt-6-luna",
-            "openai.gpt-5.6-sol",
-            "openai.gpt-6-astra",
-        ] {
-            let model_info = manager
-                .get_model_info(
-                    slug,
-                    &ModelsManagerConfig {
-                        model_context_window: Some(1_000_000),
-                        ..Default::default()
-                    },
-                )
-                .await;
-            let mut expected_model_info = manager
-                .get_model_info(slug, &ModelsManagerConfig::default())
-                .await;
-            expected_model_info.context_window = Some(872_000);
-            assert_eq!(model_info, expected_model_info);
-        }
-
-        let models = catalog
-            .models
-            .iter()
-            .map(|model| (model.slug.as_str(), model.display_name.as_str()))
-            .collect::<Vec<_>>();
-
-        assert_eq!(
-            models,
-            vec![
-                ("openai.gpt-6.1-sol", "GPT-6.1 Sol"),
-                ("openai.gpt-6-astra", "GPT-6-Astra"),
-                ("openai.gpt-6-sol", "GPT-6 Sol"),
-                ("openai.gpt-6-luna", "GPT-6 Luna"),
-                ("openai.gpt-5.6-sol", "GPT-5.6 Sol"),
-                ("openai.gpt-5.6-terra", "GPT-5.6 Terra"),
-                ("openai.gpt-5.6-luna", "GPT-5.6 Luna"),
-                ("openai.gpt-5.5", "GPT-5.5"),
-            ]
-        );
-
-        let available_models = manager
-            .list_models(
-                RefreshStrategy::Online,
-                HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-            )
-            .await;
-        assert_eq!(
-            available_models
-                .iter()
-                .map(|preset| preset.model.as_str())
-                .collect::<Vec<_>>(),
-            vec![
-                "openai.gpt-6.1-sol",
-                "openai.gpt-6-astra",
-                "openai.gpt-6-sol",
-                "openai.gpt-6-luna",
-                "openai.gpt-5.6-sol",
-                "openai.gpt-5.6-terra",
-                "openai.gpt-5.6-luna",
-                "openai.gpt-5.5",
-            ]
-        );
-
-        let default_model = available_models
-            .iter()
-            .find(|preset| preset.is_default)
-            .expect("Bedrock catalog should have a default model");
-
-        assert_eq!(default_model.model, "openai.gpt-6.1-sol");
-    }
-
-    #[tokio::test]
-    async fn configured_bedrock_catalog_preserves_service_tiers() {
-        let mut configured_model = codex_models_manager::bundled_models_response()
-            .expect("bundled models should parse")
-            .models
-            .into_iter()
-            .find(|model| model.slug == "gpt-5.5")
-            .expect("bundled models should include GPT-5.5");
-        configured_model.service_tiers = vec![codex_protocol::openai_models::ModelServiceTier {
-            id: "custom-tier".to_string(),
-            name: "Custom tier".to_string(),
-            description: "User-defined tier description.".to_string(),
-        }];
-        configured_model.default_service_tier = Some("custom-tier".to_string());
-        let configured_catalog = ModelsResponse {
-            models: vec![configured_model],
-        };
-        let mut expected = configured_catalog.clone();
-        expected.models[0].web_search_tool_type =
-            codex_protocol::openai_models::WebSearchToolType::Text;
-
-        let mut gov_provider = ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None);
-        gov_provider.base_url =
-            Some("https://bedrock-mantle.us-gov-west-1.api.aws/openai/v1".to_string());
-        for provider_info in [
-            ModelProviderInfo::create_amazon_bedrock_provider(/*aws*/ None),
-            ModelProviderInfo::create_amazon_bedrock_runtime_provider(/*aws*/ None),
-            gov_provider,
-        ] {
-            let provider = create_model_provider(provider_info, /*auth_manager*/ None);
-            for manager in [
-                provider.models_manager(test_codex_home(), Some(configured_catalog.clone())),
-                provider.models_manager_without_cache(Some(configured_catalog.clone())),
-            ] {
-                let catalog = manager
-                    .raw_model_catalog(
-                        RefreshStrategy::Online,
-                        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-                    )
-                    .await;
-                assert_eq!(catalog, expected);
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn configured_provider_models_manager_uses_provider_bearer_token() {
-        let server = MockServer::start().await;
-        let remote_models = vec![remote_model("provider-model")];
-
-        Mock::given(method("GET"))
-            .and(path("/models"))
-            .and(header_regex("Authorization", "Bearer provider-token"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("content-type", "application/json")
-                    .set_body_json(ModelsResponse {
-                        models: remote_models.clone(),
-                    }),
-            )
-            .expect(2)
-            .mount(&server)
-            .await;
-
-        let mut provider_info = provider_for(server.uri());
-        provider_info.experimental_bearer_token = Some("provider-token".into());
-        provider_info.model_catalog_url = Some(format!("{}/models", server.uri()).into());
-        provider_info.http_headers = Some(std::collections::HashMap::from([(
-            codex_login::default_client::RESIDENCY_HEADER_NAME.to_string(),
-            "us".into(),
-        )]));
-        for auth in [
-            None,
-            Some(CodexAuth::create_dummy_chatgpt_auth_for_testing()),
-        ] {
-            // Disabled discovery must ignore the catalog cached by the enabled run.
-            for enabled in [true, false] {
-                let provider = create_model_provider(
-                    provider_info.clone(),
-                    auth.clone().map(AuthManager::from_auth_for_testing),
-                );
-                let manager =
-                    provider.models_manager(test_codex_home(), /*config_model_catalog*/ None);
-                manager.set_api_key_model_discovery_enabled(enabled);
-                let refresh_strategy = if enabled {
-                    RefreshStrategy::Online
-                } else {
-                    RefreshStrategy::Offline
-                };
-                let catalog = manager
-                    .raw_model_catalog(
-                        refresh_strategy,
-                        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-                    )
-                    .await;
-
-                assert_eq!(
-                    catalog
-                        .models
-                        .iter()
-                        .any(|model| model.slug == "provider-model"),
-                    enabled
-                );
-            }
-        }
-    }
-}
+#[path = "provider_tests.rs"]
+mod tests;

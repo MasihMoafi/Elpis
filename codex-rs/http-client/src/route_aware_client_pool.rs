@@ -18,6 +18,7 @@ use crate::ClientRouteClass;
 use crate::HttpClient;
 use crate::HttpClientBuilder;
 use crate::HttpClientFactory;
+use crate::NetworkPolicy;
 use crate::NetworkPolicyDenied;
 use crate::OutboundProxyPolicy;
 use crate::OutboundProxyRoute;
@@ -56,6 +57,7 @@ pub struct RouteAwareClientPool {
     pub(crate) client_builder: HttpClientBuilder,
     default_headers: HeaderMap,
     custom_ca_fallback: CustomCaFallback,
+    direct_proxy: bool,
     clients: Arc<Mutex<HashMap<OutboundProxyRoute, TransportClient>>>,
     client_build: Arc<tokio::sync::Mutex<()>>,
     rustls_clients: Option<RustlsClientCache>,
@@ -110,13 +112,6 @@ impl RouteAwareRequestError {
         if self.status() == Some(StatusCode::PROXY_AUTHENTICATION_REQUIRED) {
             return Some(RouteFailureClass::ProxyAuthenticationRequired);
         }
-        if let Self::Route(RouteAwareClientPoolError::Resolve(error)) = self
-            && let Some(source) = error.get_ref()
-            && source.is::<rustls::Error>()
-        {
-            return Some(RouteFailureClass::TlsError);
-        }
-
         let mut source: Option<&(dyn std::error::Error + 'static)> = Some(self);
         while let Some(error) = source {
             if error.downcast_ref::<rustls::Error>().is_some()
@@ -127,7 +122,14 @@ impl RouteAwareRequestError {
             if error.to_string() == "tunnel error: proxy authorization required" {
                 return Some(RouteFailureClass::ProxyAuthenticationRequired);
             }
-            source = error.source();
+            // io::Error::source skips its inner error, which may itself be the TLS error.
+            source = match error
+                .downcast_ref::<io::Error>()
+                .and_then(io::Error::get_ref)
+            {
+                Some(inner) => Some(inner),
+                None => error.source(),
+            };
         }
 
         match self {
@@ -289,10 +291,29 @@ impl RouteAwareClientPool {
             client_builder,
             default_headers,
             custom_ca_fallback: CustomCaFallback::Disabled,
+            direct_proxy: false,
             clients: Arc::new(Mutex::new(HashMap::new())),
             client_build: Arc::default(),
             rustls_clients: None,
         }
+    }
+
+    /// Builds the first transport now so fixed-destination callers still receive setup errors.
+    #[cfg(windows)]
+    pub(crate) fn with_builder_and_initial_route(
+        http_client_factory: HttpClientFactory,
+        route_class: ClientRouteClass,
+        client_builder: HttpClientBuilder,
+        route: OutboundProxyRoute,
+    ) -> Result<Self, BuildRouteAwareHttpClientError> {
+        let mut pool = Self::with_builder(http_client_factory, route_class, client_builder);
+        let client = pool.client_builder_for_route().build_for_resolved_route(
+            &pool.http_client_factory,
+            pool.route_class,
+            &route,
+        )?;
+        pool.clients = Arc::new(Mutex::new(HashMap::from([(route, client)])));
+        Ok(pool)
     }
 
     /// Starts a new account-scoped operation while sharing the existing connection cache.
@@ -306,6 +327,19 @@ impl RouteAwareClientPool {
                 .for_current_account(),
         );
         pool
+    }
+
+    /// Bind an operation to the account that supplied its credentials while retaining the
+    /// caller's restrictions and the existing transport cache.
+    pub fn with_account_binding(&self, binding: &NetworkPolicy) -> Option<Self> {
+        let policy = self
+            .http_client_factory
+            .network_policy()
+            .clone()
+            .with_account_binding(binding)?;
+        let mut pool = self.clone();
+        pool.http_client_factory = pool.http_client_factory.with_network_policy(policy);
+        Some(pool)
     }
 
     /// Retries recognized TLS protocol-negotiation failures once using rustls.
@@ -336,6 +370,12 @@ impl RouteAwareClientPool {
     /// custom-CA construction failure. System-proxy routes still propagate construction errors.
     pub fn with_legacy_custom_ca_fallback(mut self) -> Self {
         self.custom_ca_fallback = CustomCaFallback::LegacyTransportDefault;
+        self
+    }
+
+    /// Uses direct routing without changing destination policy or TLS configuration.
+    pub fn with_direct_proxy(mut self) -> Self {
+        self.direct_proxy = true;
         self
     }
 
@@ -460,13 +500,14 @@ impl RouteAwareClientPool {
         F: FnOnce(String) -> Fut,
         Fut: Future<Output = io::Result<OutboundProxyRoute>>,
     {
-        let route = if self.custom_ca_fallback == CustomCaFallback::LegacyDirect {
-            OutboundProxyRoute::Direct
-        } else {
-            resolve_route(request_url.to_string())
-                .await
-                .map_err(RouteAwareClientPoolError::Resolve)?
-        };
+        let route =
+            if self.direct_proxy || self.custom_ca_fallback == CustomCaFallback::LegacyDirect {
+                OutboundProxyRoute::Direct
+            } else {
+                resolve_route(request_url.to_string())
+                    .await
+                    .map_err(RouteAwareClientPoolError::Resolve)?
+            };
         if let Some(rustls_clients) = self.rustls_clients.as_ref()
             && let Ok(url) = reqwest::Url::parse(request_url)
             && rustls_clients.requires_rustls(&url, &route)
@@ -495,11 +536,7 @@ impl RouteAwareClientPool {
                 return Ok((route, client.clone(), SelectedTlsBackend::TransportDefault));
             }
         }
-        let client_builder = if self.follows_redirects_manually() {
-            self.client_builder.clone().without_redirects()
-        } else {
-            self.client_builder.clone()
-        };
+        let client_builder = self.client_builder_for_route();
         let pool = self.clone();
         let build_route = route.clone();
         let client = tokio::task::spawn_blocking(move || {
@@ -550,7 +587,16 @@ impl RouteAwareClientPool {
             && (self.http_client_factory.outbound_proxy_policy()
                 == OutboundProxyPolicy::RespectSystemProxy
                 || self.http_client_factory.network_policy().is_managed()
+                || self.http_client_factory.protects_sensitive_headers()
                 || self.rustls_clients.is_some())
+    }
+
+    fn client_builder_for_route(&self) -> HttpClientBuilder {
+        if self.follows_redirects_manually() {
+            self.client_builder.clone().without_redirects()
+        } else {
+            self.client_builder.clone()
+        }
     }
 
     fn rustls_client_for_route(

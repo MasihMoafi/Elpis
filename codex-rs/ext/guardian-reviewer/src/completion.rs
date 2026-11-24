@@ -22,13 +22,20 @@ const REVIEW_FAILURE_INSTRUCTIONS: &str = concat!(
     "This is a review failure, not a determination that the action is unsafe. ",
     "Do not bypass the approval check; resolve the error or ask the user for guidance.",
 );
+const STALE_AUTHORIZATION_INSTRUCTIONS: &str = concat!(
+    "The action did not run. Guardian could not complete its review because authorization ",
+    "changed; this is not a policy denial. If current instructions authorize the action, ",
+    "retry once through Guardian. If authorization is unclear, resolve that uncertainty before ",
+    "proceeding. Do not bypass approval or repeatedly retry a failed review.",
+);
 const INPUT_BUDGET_MESSAGE: &str =
     "the complete action and minimum review context exceed the reviewer input budget";
 
 pub struct ReviewCompletion {
     /// `None` requests user approval after optional review exhausts its input budget.
     pub decision: Option<ReviewDecision>,
-    pub event: GuardianAssessmentEvent,
+    /// Absent for actions reviewed without an action-specific client report.
+    pub event: Option<GuardianAssessmentEvent>,
     pub warning: Option<String>,
     pub analytics: GuardianReviewAnalyticsResult,
     /// Only completed assessments may enter the evidence cache or count as policy denials.
@@ -39,7 +46,7 @@ pub fn complete_review(
     outcome: GuardianReviewOutcome,
     model: &ModelInfo,
     require_guardian: bool,
-    mut event: GuardianAssessmentEvent,
+    mut event: Option<GuardianAssessmentEvent>,
     mut analytics: GuardianReviewAnalyticsResult,
 ) -> ReviewCompletion {
     let completed_assessment = match &outcome {
@@ -48,9 +55,11 @@ pub fn complete_review(
     };
     let assessment = match outcome {
         GuardianReviewOutcome::CachedApproval => {
-            event.status = GuardianAssessmentStatus::Approved;
-            event.decision_source = None;
-            event.rationale = Some("Approved using a current low-risk async score.".to_owned());
+            if let Some(event) = event.as_mut() {
+                event.status = GuardianAssessmentStatus::Approved;
+                event.decision_source = None;
+                event.rationale = Some("Approved using a current low-risk async score.".to_owned());
+            }
             analytics.decision = GuardianReviewDecision::Approved;
             analytics.terminal_status = GuardianReviewTerminalStatus::Approved;
             analytics.failure_reason = None;
@@ -82,27 +91,32 @@ pub fn complete_review(
         }
         GuardianReviewOutcome::Error(error) => {
             analytics.failure_reason = Some(error.failure_reason());
-            if matches!(error, GuardianReviewError::InputBudgetExceeded) && !require_guardian {
-                let rationale = format!("Automatic approval review failed: {INPUT_BUDGET_MESSAGE}");
-                analytics.decision = GuardianReviewDecision::Aborted;
-                analytics.terminal_status = GuardianReviewTerminalStatus::Aborted;
-                event.status = GuardianAssessmentStatus::Aborted;
-                event.rationale = Some(rationale.clone());
-                return ReviewCompletion {
-                    decision: None,
-                    event,
-                    warning: Some(rationale),
-                    analytics,
-                    assessment_outcome: None,
-                };
-            }
             match error {
+                GuardianReviewError::InputBudgetExceeded if !require_guardian => {
+                    let rationale =
+                        format!("Automatic approval review failed: {INPUT_BUDGET_MESSAGE}");
+                    analytics.decision = GuardianReviewDecision::Aborted;
+                    analytics.terminal_status = GuardianReviewTerminalStatus::Aborted;
+                    if let Some(event) = event.as_mut() {
+                        event.status = GuardianAssessmentStatus::Aborted;
+                        event.rationale = Some(rationale.clone());
+                    }
+                    return ReviewCompletion {
+                        decision: None,
+                        event,
+                        warning: Some(rationale),
+                        analytics,
+                        assessment_outcome: None,
+                    };
+                }
                 GuardianReviewError::Timeout => {
                     let rationale = "Automatic approval review timed out while evaluating the requested approval.".to_string();
                     analytics.decision = GuardianReviewDecision::Denied;
                     analytics.terminal_status = GuardianReviewTerminalStatus::TimedOut;
-                    event.status = GuardianAssessmentStatus::TimedOut;
-                    event.rationale = Some(rationale.clone());
+                    if let Some(event) = event.as_mut() {
+                        event.status = GuardianAssessmentStatus::TimedOut;
+                        event.rationale = Some(rationale.clone());
+                    }
                     return ReviewCompletion {
                         decision: Some(ReviewDecision::TimedOut),
                         event,
@@ -114,7 +128,9 @@ pub fn complete_review(
                 GuardianReviewError::Cancelled => {
                     analytics.decision = GuardianReviewDecision::Aborted;
                     analytics.terminal_status = GuardianReviewTerminalStatus::Aborted;
-                    event.status = GuardianAssessmentStatus::Aborted;
+                    if let Some(event) = event.as_mut() {
+                        event.status = GuardianAssessmentStatus::Aborted;
+                    }
                     return ReviewCompletion {
                         decision: Some(ReviewDecision::Abort),
                         event,
@@ -143,12 +159,19 @@ pub fn complete_review(
                     analytics.decision = GuardianReviewDecision::Denied;
                     analytics.terminal_status = GuardianReviewTerminalStatus::FailedClosed;
                     let rationale = format!("Automatic approval review failed: {message}");
+                    let instructions = if matches!(error, GuardianReviewError::StaleAuthorization) {
+                        STALE_AUTHORIZATION_INSTRUCTIONS
+                    } else {
+                        REVIEW_FAILURE_INSTRUCTIONS
+                    };
                     // Keep the existing blocked status for client compatibility.
-                    event.status = GuardianAssessmentStatus::Denied;
-                    event.rationale = Some(rationale.clone());
+                    if let Some(event) = event.as_mut() {
+                        event.status = GuardianAssessmentStatus::Denied;
+                        event.rationale = Some(rationale.clone());
+                    }
                     return ReviewCompletion {
                         decision: Some(ReviewDecision::denied(format!(
-                            "{rationale}\n{REVIEW_FAILURE_INSTRUCTIONS}"
+                            "{rationale}\n{instructions}"
                         ))),
                         event,
                         warning: Some(rationale),
@@ -177,14 +200,16 @@ pub fn complete_review(
         "Automatic approval review {verdict} (risk: {risk}, authorization: {authorization}): {}",
         assessment.rationale
     );
-    event.status = if approved {
-        GuardianAssessmentStatus::Approved
-    } else {
-        GuardianAssessmentStatus::Denied
-    };
-    event.risk_level = Some(assessment.risk_level);
-    event.user_authorization = Some(assessment.user_authorization);
-    event.rationale = Some(assessment.rationale.clone());
+    if let Some(event) = event.as_mut() {
+        event.status = if approved {
+            GuardianAssessmentStatus::Approved
+        } else {
+            GuardianAssessmentStatus::Denied
+        };
+        event.risk_level = Some(assessment.risk_level);
+        event.user_authorization = Some(assessment.user_authorization);
+        event.rationale = Some(assessment.rationale.clone());
+    }
     let decision = if approved {
         ReviewDecision::Approved
     } else {

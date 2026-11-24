@@ -4,6 +4,7 @@ use super::AskForApproval;
 use super::SandboxMode;
 use super::SandboxPolicy;
 use super::Thread;
+use super::ThreadEnvironment;
 use super::ThreadHistoryMode;
 use super::ThreadItem;
 use super::ThreadRealtimeItem;
@@ -18,6 +19,7 @@ use super::TurnStatus;
 use super::UserInput;
 use super::shared::v2_enum_from_core;
 use crate::JsonSchema;
+use crate::RequestId;
 use crate::TS;
 use codex_experimental_api_macros::ExperimentalApi;
 pub use codex_protocol::capabilities::CapabilityRootLocation;
@@ -35,13 +37,13 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::ThreadGoalStatus as CoreThreadGoalStatus;
 use codex_protocol::protocol::TokenUsage as CoreTokenUsage;
 use codex_protocol::protocol::TokenUsageInfo as CoreTokenUsageInfo;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
+use std::fmt;
 use std::path::PathBuf;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
@@ -82,7 +84,9 @@ pub struct ThreadStartParams {
     /// Replace the thread's runtime workspace roots. Paths must be absolute.
     #[experimental("thread/start.runtimeWorkspaceRoots")]
     #[ts(optional = nullable)]
-    pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
+    #[schemars(with = "Option<Vec<codex_utils_absolute_path::AbsolutePathBuf>>")]
+    #[ts(as = "Option<Vec<codex_utils_absolute_path::AbsolutePathBuf>>")]
+    pub runtime_workspace_roots: Option<Vec<LegacyAppPathString>>,
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
@@ -138,6 +142,11 @@ pub struct ThreadStartParams {
     #[experimental("thread/start.parentThreadId")]
     #[ts(optional = nullable)]
     pub parent_thread_id: Option<String>,
+    /// False opts this new root out of Daybreak propagation unless managed policy
+    /// requires it. Omitted, null, or true uses the configured enrollment rule.
+    #[experimental("thread/start.daybreakProgramPropagationEnrolled")]
+    #[ts(optional = nullable)]
+    pub daybreak_program_propagation_enrolled: Option<bool>,
     /// Optional sticky environments for this thread.
     ///
     /// Omitted selects the default environment when environment access is
@@ -198,12 +207,16 @@ pub struct ThreadStartResponse {
     /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
     #[serde(default)]
     pub disabled_plugin_ids: Vec<String>,
-    pub cwd: AbsolutePathBuf,
+    #[schemars(with = "codex_utils_absolute_path::AbsolutePathBuf")]
+    #[ts(as = "codex_utils_absolute_path::AbsolutePathBuf")]
+    pub cwd: LegacyAppPathString,
     /// Thread-scoped runtime workspace roots used to materialize
     /// `:workspace_roots`.
     #[experimental("thread/start.runtimeWorkspaceRoots")]
     #[serde(default)]
-    pub runtime_workspace_roots: Vec<AbsolutePathBuf>,
+    #[schemars(with = "Vec<codex_utils_absolute_path::AbsolutePathBuf>")]
+    #[ts(as = "Vec<codex_utils_absolute_path::AbsolutePathBuf>")]
+    pub runtime_workspace_roots: Vec<LegacyAppPathString>,
     /// Environment-native paths to instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<LegacyAppPathString>,
@@ -247,6 +260,12 @@ pub struct ThreadSettingsUpdateParams {
     /// Override the working directory for subsequent turns.
     #[ts(optional = nullable)]
     pub cwd: Option<PathBuf>,
+    /// Replace the environments for future turns without changing the running turn.
+    /// Omitted/null preserves the selection unless `cwd` is also provided, which selects
+    /// the default environments for that directory. [] clears the selection.
+    #[experimental("thread/settings/update.environments")]
+    #[ts(optional = nullable)]
+    pub environments: Option<Vec<TurnEnvironmentParams>>,
     /// Override the approval policy for subsequent turns.
     #[experimental(nested)]
     #[ts(optional = nullable)]
@@ -310,7 +329,14 @@ pub struct ThreadSettings {
     /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
     #[serde(default)]
     pub disabled_plugin_ids: Vec<String>,
-    pub cwd: AbsolutePathBuf,
+    #[schemars(with = "codex_utils_absolute_path::AbsolutePathBuf")]
+    #[ts(as = "codex_utils_absolute_path::AbsolutePathBuf")]
+    pub cwd: LegacyAppPathString,
+    /// Environments configured for future turns, in priority order, primary first.
+    /// `null` means the server does not expose the selection; [] means none are selected.
+    #[experimental("thread/settings.environments")]
+    #[serde(default)]
+    pub environments: Option<Vec<ThreadEnvironment>>,
     pub approval_policy: AskForApproval,
     pub approvals_reviewer: ApprovalsReviewer,
     pub sandbox_policy: SandboxPolicy,
@@ -396,7 +422,9 @@ pub struct ThreadResumeParams {
     /// Replace the thread's runtime workspace roots. Paths must be absolute.
     #[experimental("thread/resume.runtimeWorkspaceRoots")]
     #[ts(optional = nullable)]
-    pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
+    #[schemars(with = "Option<Vec<codex_utils_absolute_path::AbsolutePathBuf>>")]
+    #[ts(as = "Option<Vec<codex_utils_absolute_path::AbsolutePathBuf>>")]
+    pub runtime_workspace_roots: Option<Vec<LegacyAppPathString>>,
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
@@ -446,12 +474,16 @@ pub struct ThreadResumeResponse {
     /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
     #[serde(default)]
     pub disabled_plugin_ids: Vec<String>,
-    pub cwd: AbsolutePathBuf,
+    #[schemars(with = "codex_utils_absolute_path::AbsolutePathBuf")]
+    #[ts(as = "codex_utils_absolute_path::AbsolutePathBuf")]
+    pub cwd: LegacyAppPathString,
     /// Thread-scoped runtime workspace roots used to materialize
     /// `:workspace_roots`.
     #[experimental("thread/resume.runtimeWorkspaceRoots")]
     #[serde(default)]
-    pub runtime_workspace_roots: Vec<AbsolutePathBuf>,
+    #[schemars(with = "Vec<codex_utils_absolute_path::AbsolutePathBuf>")]
+    #[ts(as = "Vec<codex_utils_absolute_path::AbsolutePathBuf>")]
+    pub runtime_workspace_roots: Vec<LegacyAppPathString>,
     /// Environment-native paths to instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<LegacyAppPathString>,
@@ -549,6 +581,21 @@ impl From<ThreadTurnsListResponse> for TurnsPage {
 pub struct ThreadForkParams {
     pub thread_id: String,
 
+    /// Start from the loaded parent's effective config, tools, environments, and
+    /// persisted history to maximize prompt-cache reuse. Requires a loaded,
+    /// persisted parent and `ephemeral: true`. Enables `features.reasoning_effort_override`
+    /// on the fork. Only `config.thread_unload_delay_secs` may override the inherited
+    /// config. Cannot be combined with `path`, `lastTurnId`, or `beforeTurnId`.
+    #[experimental("thread/fork.experimentalPredictionMode")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub experimental_prediction_mode: bool,
+
+    /// Disable MCP servers in prediction mode when the inherited window uses incremental tools on Responses Lite.
+    /// Requires `experimentalPredictionMode: true`.
+    #[experimental("thread/fork.experimentalDisablePredictionMcp")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub experimental_disable_prediction_mcp: bool,
+
     /// Optional last turn id to fork through, inclusive.
     ///
     /// When specified, turns after `last_turn_id` are omitted from the fork.
@@ -590,7 +637,9 @@ pub struct ThreadForkParams {
     /// Replace the thread's runtime workspace roots. Paths must be absolute.
     #[experimental("thread/fork.runtimeWorkspaceRoots")]
     #[ts(optional = nullable)]
-    pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
+    #[schemars(with = "Option<Vec<codex_utils_absolute_path::AbsolutePathBuf>>")]
+    #[ts(as = "Option<Vec<codex_utils_absolute_path::AbsolutePathBuf>>")]
+    pub runtime_workspace_roots: Option<Vec<LegacyAppPathString>>,
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
@@ -613,6 +662,12 @@ pub struct ThreadForkParams {
     pub developer_instructions: Option<String>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub ephemeral: bool,
+    /// Persist the fork as an attached thread of its resolved source, hidden from ordinary
+    /// lists. The source cannot be deleted while attached threads exist. Requires a paginated source and local storage;
+    /// incompatible with ephemeral and deferGoalContinuation. Omitted or false creates an ordinary fork.
+    #[experimental("thread/fork.attachToSource")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub attach_to_source: bool,
     /// Optional client-supplied analytics source classification for this forked thread.
     #[ts(optional = nullable)]
     pub thread_source: Option<ThreadSource>,
@@ -642,12 +697,16 @@ pub struct ThreadForkResponse {
     /// Saved list of disabled plugin IDs. Does not yet filter plugin capabilities.
     #[serde(default)]
     pub disabled_plugin_ids: Vec<String>,
-    pub cwd: AbsolutePathBuf,
+    #[schemars(with = "codex_utils_absolute_path::AbsolutePathBuf")]
+    #[ts(as = "codex_utils_absolute_path::AbsolutePathBuf")]
+    pub cwd: LegacyAppPathString,
     /// Thread-scoped runtime workspace roots used to materialize
     /// `:workspace_roots`.
     #[experimental("thread/fork.runtimeWorkspaceRoots")]
     #[serde(default)]
-    pub runtime_workspace_roots: Vec<AbsolutePathBuf>,
+    #[schemars(with = "Vec<codex_utils_absolute_path::AbsolutePathBuf>")]
+    #[ts(as = "Vec<codex_utils_absolute_path::AbsolutePathBuf>")]
+    pub runtime_workspace_roots: Vec<LegacyAppPathString>,
     /// Environment-native paths to instruction source files currently loaded for this thread.
     #[serde(default)]
     pub instruction_sources: Vec<LegacyAppPathString>,
@@ -923,6 +982,8 @@ pub struct QueuedSubmission {
     pub id: String,
     pub input: Vec<UserInput>,
     pub client_user_message_id: String,
+    /// Metadata retained with this input, including across reconnect and restoration.
+    pub responsesapi_client_metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -932,6 +993,9 @@ pub struct ThreadQueueAddParams {
     pub thread_id: String,
     pub input: Vec<UserInput>,
     pub client_user_message_id: String,
+    /// ResponsesAPI metadata captured from the client submitting this input.
+    #[ts(optional = nullable)]
+    pub responsesapi_client_metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -970,6 +1034,9 @@ pub struct ThreadQueueUpdateParams {
     pub thread_id: String,
     pub queued_submission_id: String,
     pub input: Vec<UserInput>,
+    /// Non-empty metadata replaces the input's metadata; omission or an empty map preserves it.
+    #[ts(optional = nullable)]
+    pub responsesapi_client_metadata: Option<HashMap<String, String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1113,6 +1180,20 @@ pub struct ThreadSectionMoveParams {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadSectionMoveResponse {}
+
+/// Broadcast after a successful move into, within, or out of a section.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSectionChangedNotification {
+    pub thread_id: String,
+    /// Destination section, or `null` when the thread was removed from its section.
+    #[schemars(
+        required,
+        schema_with = "crate::protocol::serde_helpers::nullable_string_schema"
+    )]
+    pub section_id: Option<String>,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "lowercase")]
@@ -1401,12 +1482,29 @@ pub struct ThreadSectionDeleteResponse {}
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadListParams {
+    /// Include persistent threads attached to a parent when searching by title.
+    #[experimental("thread/list.includeAttachedThreads")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub include_attached_threads: bool,
+    /// Show local history visible to the current ChatGPT account. Defaults to false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub current_account_only: bool,
     /// Opaque pagination cursor returned by a previous call.
     #[ts(optional = nullable)]
     pub cursor: Option<String>,
     /// Optional page size; defaults to a reasonable server-side value.
     #[ts(optional = nullable)]
     pub limit: Option<u32>,
+    /// Restrict results to up to 100 thread IDs before pagination. Omit or send null
+    /// for unrestricted results. An empty list matches nothing. Exclusions still apply.
+    /// Repeat the same IDs on each page. The local store uses indexed metadata for this filter.
+    #[ts(optional = nullable)]
+    pub included_thread_ids: Option<Vec<String>>,
+    /// Thread IDs to exclude before applying the result limit. Up to 100
+    /// entries; invalid IDs or a larger list are rejected, never truncated.
+    /// Send the same exclusions on each page. Omitted, null, or empty means no exclusions.
+    #[ts(optional = nullable)]
+    pub excluded_thread_ids: Option<Vec<String>>,
     /// Optional sort key; defaults to created_at.
     #[ts(optional = nullable)]
     pub sort_key: Option<ThreadSortKey>,
@@ -1455,9 +1553,8 @@ pub struct ThreadListParams {
     /// exactly matches one of these paths are returned.
     #[ts(optional = nullable, type = "string | Array<string> | null")]
     pub cwd: Option<ThreadListCwdFilter>,
-    /// If true, return from the state DB without scanning JSONL rollouts to
-    /// repair thread metadata. Omitted or false preserves scan-and-repair
-    /// behavior.
+    /// If true, the local store returns indexed metadata without scanning JSONL rollouts
+    /// for repairs. Requests with `includedThreadIds` always use indexed metadata.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub use_state_db_only: bool,
     /// Optional substring filter for the extracted thread title.
@@ -1472,12 +1569,24 @@ pub struct ThreadListParams {
     #[experimental("thread/list.ancestorThreadId")]
     #[ts(optional = nullable)]
     pub ancestor_thread_id: Option<String>,
+    /// Return only persistent threads attached to this thread, including empty threads.
+    /// Mutually exclusive with parentThreadId and ancestorThreadId.
+    /// Omitting this filter keeps attached threads hidden from ordinary listings.
+    #[experimental("thread/list.attachedToThreadId")]
+    #[ts(optional = nullable)]
+    pub attached_to_thread_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadSearchParams {
+    /// Include persistent threads attached to a parent in search results.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub include_attached_threads: bool,
+    /// Show local history visible to the current ChatGPT account. Defaults to false.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub current_account_only: bool,
     /// Opaque pagination cursor returned by a previous call.
     #[ts(optional = nullable)]
     pub cursor: Option<String>,
@@ -1498,7 +1607,8 @@ pub struct ThreadSearchParams {
     /// If false or null, only non-archived threads are returned.
     #[ts(optional = nullable)]
     pub archived: Option<bool>,
-    /// Required substring/full-text query for thread search.
+    /// Required substring/full-text query. `thread/search/stream` limits this to 65,536
+    /// UTF-8 bytes after trimming surrounding whitespace.
     pub search_term: String,
 }
 
@@ -1554,11 +1664,15 @@ pub enum SortDirection {
     Desc,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadListResponse {
     pub data: Vec<Thread>,
+    /// Local receipts for eligible threads on this page, keyed by thread ID.
+    /// Null means durable read state is unavailable; an absent key means that row is ineligible.
+    #[experimental("thread/list.readStates")]
+    pub read_states: Option<HashMap<String, ThreadReadState>>,
     /// Opaque cursor to pass to the next call to continue after the last item.
     /// if None, there are no more items to return.
     pub next_cursor: Option<String>,
@@ -1591,6 +1705,37 @@ pub struct ThreadSearchResponse {
     /// at the start of the page timestamp so same-second updates are not skipped.
     pub backwards_cursor: Option<String>,
 }
+
+/// A best-effort incremental batch for `thread/search/stream`. Match `requestId` to the request
+/// on this connection. Only a small subset of verified matches may be emitted; rows are unique
+/// and arrive in discovery order, but may be dropped under load or fall outside the final sorted
+/// page. Thread fields use stored metadata
+/// and the current watched status; live thread settings are enriched in the final response.
+/// Replace provisional rows with the authoritative final response. No partials follow it or an error.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSearchPartialNotification {
+    pub request_id: RequestId,
+    pub data: Vec<ThreadSearchResult>,
+}
+
+/// Request cancellation on the same connection. `thread/search/cancel` targets only
+/// `thread/search`; `thread/search/stream/cancel` targets only `thread/search/stream`.
+/// Cancellation is idempotent: the cancel response acknowledges the request, and an interrupted
+/// search completes with an error after its subprocess is stopped and reaped. If completion races
+/// cancellation, the original search may still succeed. An already-completed search is unaffected.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSearchCancelParams {
+    pub request_id: RequestId,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadSearchCancelResponse {}
 
 /// Parameters for searching visible message occurrences within one paginated thread.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
@@ -1718,11 +1863,47 @@ pub struct ThreadReadParams {
     pub include_turns: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadReadResponse {
     pub thread: Thread,
+    /// Local receipt. Null means this thread's durable read state is unavailable.
+    #[experimental("thread/read.readState")]
+    pub read_state: Option<ThreadReadState>,
+}
+
+/// Calling `thread/guardianReview` subscribes the connection to the thread.
+/// The subscription remains after the review completes, keeping the thread loaded
+/// until the client calls `thread/unsubscribe` or disconnects.
+/// Sequential calls on the same loaded thread can reuse Guardian history across
+/// direct reviews and live approvals. The reviewer keeps a separate conversation
+/// from the actor and follows the parent thread's normal persistence settings.
+/// A retry evaluates the final call again under the current policy.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadGuardianReviewParams {
+    pub thread_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadGuardianReviewResponse {
+    pub call_id: String,
+    /// Null when current policy or a remembered approval skips review.
+    pub assessment: Option<ThreadGuardianAssessment>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadGuardianAssessment {
+    pub outcome: codex_protocol::protocol::GuardianAssessmentOutcome,
+    pub risk_level: super::GuardianRiskLevel,
+    pub user_authorization: super::GuardianUserAuthorization,
+    pub rationale: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1738,6 +1919,34 @@ pub struct ThreadInjectItemsParams {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadInjectItemsResponse {}
+
+/// Prepare an approved plan for the first turn of a fresh thread.
+#[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadPrepareApprovedPlanParams {
+    pub thread_id: String,
+    pub markdown: String,
+    /// Absolute path to the optional app-server copy of the plan.
+    #[ts(optional = nullable)]
+    pub attachment_path: Option<String>,
+}
+
+impl fmt::Debug for ThreadPrepareApprovedPlanParams {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ThreadPrepareApprovedPlanParams")
+            .field("thread_id", &self.thread_id)
+            .finish_non_exhaustive()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadPrepareApprovedPlanResponse {
+    /// Initial user prompt. If no attachment is readable, the plan is already in the thread's context.
+    pub prompt: String,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
@@ -1773,7 +1982,7 @@ pub struct ThreadTurnsListResponse {
     pub backwards_cursor: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadItemsListParams {
@@ -1792,6 +2001,25 @@ pub struct ThreadItemsListParams {
     /// Optional item pagination direction; defaults to ascending.
     #[ts(optional = nullable)]
     pub sort_direction: Option<SortDirection>,
+    /// For a single turn, choose which saved outputs to fetch separately by item ID.
+    #[experimental(nested)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional = nullable)]
+    pub defer_output: Option<ThreadItemOutputDeferral>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadItemOutputDeferral {
+    /// Defer nonempty output from successful commands.
+    #[experimental("thread/items/list.deferOutput.commandExecution")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub command_execution: bool,
+    /// Defer nonempty plain-text results from successful MCP tool calls.
+    #[experimental("thread/items/list.deferOutput.mcpToolCall")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mcp_tool_call: bool,
 }
 
 /// Starting position for an item-history page.
@@ -1815,19 +2043,50 @@ pub enum ThreadItemsListAnchor {
     },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadItemEntry {
     /// Turn containing this item.
     pub turn_id: String,
     pub item: ThreadItem,
+    /// The saved output was omitted. Fetch the complete item with `thread/items/read`.
+    #[experimental("thread/items/list.outputDeferred")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub output_deferred: bool,
     /// Unix timestamp (milliseconds) when the item started, if recorded by the producer.
     #[ts(type = "number | null")]
     pub started_at_ms: Option<i64>,
     /// Unix timestamp (milliseconds) when the item completed, if recorded by the producer.
     #[ts(type = "number | null")]
     pub completed_at_ms: Option<i64>,
+}
+
+/// Identifies the item to fetch with `thread/items/read` to obtain its full output.
+#[derive(Debug, thiserror::Error)]
+#[error("output for item {item_id} in turn {turn_id} is deferred")]
+pub struct DeferredItemOutput {
+    pub turn_id: String,
+    pub item_id: String,
+}
+
+impl TryFrom<ThreadItemEntry> for ThreadItem {
+    type Error = DeferredItemOutput;
+
+    fn try_from(entry: ThreadItemEntry) -> Result<Self, Self::Error> {
+        if entry.output_deferred {
+            return Err(DeferredItemOutput {
+                item_id: entry.item.id().to_owned(),
+                turn_id: entry.turn_id,
+            });
+        }
+
+        Ok(Self {
+            started_at_ms: entry.item.started_at_ms.or(entry.started_at_ms),
+            completed_at_ms: entry.item.completed_at_ms.or(entry.completed_at_ms),
+            ..entry.item
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
@@ -1845,6 +2104,25 @@ pub struct ThreadItemsListResponse {
     /// continues was deleted), so these items are the history that remains.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub earliest_history_missing: bool,
+}
+
+/// EXPERIMENTAL - retrieve a bounded set of persisted items from one turn.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadItemsReadParams {
+    pub thread_id: String,
+    pub turn_id: String,
+    /// Item IDs to retrieve. Supply 1 to 100 IDs.
+    pub item_ids: Vec<String>,
+}
+
+/// EXPERIMENTAL - persisted items returned in canonical stored order.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadItemsReadResponse {
+    pub data: Vec<ThreadItemEntry>,
 }
 
 /// EXPERIMENTAL - list ordinary and realtime thread history in rollout order.
@@ -2028,6 +2306,67 @@ pub struct ThreadStartedNotification {
 pub struct ThreadStatusChangedNotification {
     pub thread_id: String,
     pub status: ThreadStatus,
+}
+
+/// The first unread position in a durable local thread. A null position means read.
+/// The opaque revision guards edits against activity or marks the caller has not seen.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadReadState {
+    pub first_unread: Option<ThreadUnreadPosition>,
+    pub revision: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(tag = "type", rename_all = "camelCase", export_to = "v2/")]
+pub enum ThreadUnreadPosition {
+    /// Explicitly marked unread, including when the thread has no turns.
+    ThreadStart,
+    /// The earliest completed result needing attention.
+    Turn {
+        #[serde(rename = "turnId")]
+        #[ts(rename = "turnId")]
+        turn_id: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(tag = "type", rename_all = "camelCase", export_to = "v2/")]
+pub enum ThreadReadStateOperation {
+    Read,
+    Unread,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadReadStateUpdateParams {
+    pub thread_id: String,
+    pub operation: ThreadReadStateOperation,
+    /// Revision of the row or transcript actually seen. Conflicts require a fresh user action.
+    pub expected_revision: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadReadStateUpdateResponse {
+    pub read_state: ThreadReadState,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadReadStateChangedNotification {
+    pub thread_id: String,
+    pub read_state: ThreadReadState,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

@@ -9,6 +9,7 @@ use super::RetainedSource;
 use super::RetainedSourceRole;
 use super::RetainedUserMessage;
 use super::bound_family;
+use codex_protocol::ItemIdGenerator;
 
 impl RetainedContext {
     /// Reports observed storage loss or a retained message that cannot be delivered whole.
@@ -36,8 +37,20 @@ impl RetainedContext {
     /// Returns the captured source for the original envelope, independently of buffer eviction.
     pub fn record_assistant_message(
         &mut self,
+        message: RetainedUserMessage,
+        source: RetainedInputSource,
+        item_id_generator: &ItemIdGenerator,
+    ) -> Option<RetainedSource> {
+        self.record_assistant_message_with_revision(message, source, || {
+            item_id_generator("retained")
+        })
+    }
+
+    pub(super) fn record_assistant_message_with_revision(
+        &mut self,
         mut message: RetainedUserMessage,
         source: RetainedInputSource,
+        revision: impl FnOnce() -> codex_protocol::ResponseItemId,
     ) -> Option<RetainedSource> {
         if source == RetainedInputSource::Local(None) {
             // Leave unsequenced sources to legacy transcript selection. Missing
@@ -70,10 +83,7 @@ impl RetainedContext {
         if empty {
             return None;
         }
-        let revision = message
-            .message_id
-            .as_ref()
-            .map(|_| codex_protocol::ResponseItemId::new("retained"));
+        let revision = message.message_id.as_ref().map(|_| revision());
         let entry = Ordered {
             revision,
             inherited,

@@ -31,6 +31,8 @@ fn request<'a>(resource: &'a str, issuer: Option<&'a str>) -> EmaAuthTokenExchan
         OutboundProxyPolicy::ReqwestDefault,
     )));
     EmaAuthTokenExchangeRequest {
+        mcp_client_secret: None,
+        token_endpoint_auth_method: None,
         server_url: resource,
         resource: Some(resource),
         scopes: &[],
@@ -133,7 +135,7 @@ async fn discovery_pins_resource_issuer_and_public_jwt_bearer_before_identity() 
             polled.store(true, Ordering::SeqCst);
             bail!("identity resolver reached")
         });
-        exchange_ema_auth_token(exchange)
+        exchange_ema_auth_token(exchange, std::convert::identity)
             .await
             .expect_err("stop before token exchange");
         assert_eq!(polled.load(Ordering::SeqCst), valid, "{additions}");
@@ -208,8 +210,12 @@ async fn modern_challenge_confines_metadata_redirects() -> Result<()> {
         .mount(&authorization)
         .await;
     let exchange = request(&resource, Some(&issuer));
-    let (metadata, actual_resource) =
-        discover_ema_authorization_metadata(EmaDiscoveryRequest::from(&exchange)).await?;
+    let (metadata, actual_resource, _) = discover_ema_authorization_metadata(
+        EmaDiscoveryRequest::from(&exchange),
+        /*client_secret*/ None,
+        /*token_endpoint_auth_method*/ None,
+    )
+    .await?;
     assert_eq!(
         (metadata.issuer, metadata.token_endpoint, actual_resource),
         (
@@ -227,11 +233,15 @@ async fn modern_challenge_confines_metadata_redirects() -> Result<()> {
         .with_priority(1)
         .mount(&authorization)
         .await;
-    let error = discover_ema_authorization_metadata(EmaDiscoveryRequest::from(&exchange))
+    let error = exchange_ema_auth_token(exchange, std::convert::identity)
         .await
         .err()
         .context("cross-origin redirect must fail")?;
-    assert!(error.to_string().contains("cross-origin redirect"));
+    assert!(format!("{error:#}").contains("cross-origin redirect"));
+    assert_eq!(
+        EmaErrorDetail::from_error(&error).to_string(),
+        "enterprise MCP authorization server discovery failed"
+    );
     assert!(
         attacker
             .received_requests()
@@ -447,12 +457,15 @@ async fn rejected_grants_preserve_their_source_and_release_the_credential_lease(
         exchange.idp_issuer = &idp;
         exchange.idp_identity = Box::pin(async {
             Ok(EmaIdpIdentity {
+                client_authentication: EmaClientAuthentication::None,
                 token_endpoint: format!("{idp}/token"),
-                refresh_token: "old-grant".to_string(),
+                subject_token: crate::ema_exchange::EmaSubjectToken::RefreshToken(
+                    oauth2::RefreshToken::new("old-grant".to_string()),
+                ),
                 credentials: crate::EmaCredentialLease { credentials },
             })
         });
-        let error = exchange_ema_auth_token(exchange)
+        let error = exchange_ema_auth_token(exchange, std::convert::identity)
             .await
             .expect_err("invalid grant");
         assert_eq!(

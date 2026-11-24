@@ -40,6 +40,7 @@ use super::session_registry::SessionRegistry;
 use crate::ExecServerRuntimeOptions;
 use crate::ExecServerTelemetry;
 use crate::connection::JsonRpcConnectionEvent;
+use crate::discover_v2::capability_manager::CapabilityManager;
 use crate::protocol::EXEC_METHOD;
 use crate::protocol::EXEC_READ_METHOD;
 use crate::protocol::EXEC_TERMINATE_METHOD;
@@ -406,9 +407,10 @@ fn exported_sandbox_denial_keeps_launch_identity_and_separate_exit_outcome() {
             let private_file = directory.path().join(PRIVATE_PAYLOAD);
             std::fs::write(&private_file, PRIVATE_PAYLOAD).expect("write test file");
             let cwd = PathUri::from_host_native_path(directory.path()).expect("cwd URI");
-            let sandbox = crate::FileSystemSandboxContext::from_legacy_sandbox_policy(
-                codex_protocol::protocol::SandboxPolicy::new_read_only_policy(), cwd.clone(),
-            ).expect("read-only sandbox");
+            let sandbox = crate::FileSystemSandboxContext::from_permission_profile(
+                codex_protocol::models::PermissionProfile::read_only(),
+                cwd.clone(),
+            );
             for (index, span) in LAUNCH_SPANS.into_iter().enumerate() {
                 let process_id = format!("{PRIVATE_PAYLOAD}-{index}");
                 let launch = format!("00-{TRACE_ID}-{span}-00");
@@ -622,6 +624,7 @@ fn exported_logs(
         tls: None,
     };
     let otel = OtelProvider::try_new(&OtelSettings {
+        headers_helper: None,
         http_client_factory: codex_http_client::HttpClientFactory::new(
             codex_http_client::OutboundProxyPolicy::ReqwestDefault,
         ),
@@ -642,7 +645,7 @@ fn exported_logs(
         },
         metrics_exporter: OtelExporter::None,
         runtime_metrics: false,
-        span_attributes: BTreeMap::new(),
+        span_attributes: HashMap::new(),
         tracestate: BTreeMap::new(),
     })
     .expect("OTEL settings")
@@ -738,6 +741,7 @@ fn new_handler(
 ) -> Arc<ExecServerHandler> {
     let mut handler = ExecServerHandler::new(
         Arc::clone(sessions),
+        CapabilityManager::new(crate::LocalFileSystem::default()),
         RpcNotificationSender::new(outgoing),
         ExecServerRuntimeOptions::new(
             std::env::current_exe().expect("test executable"),

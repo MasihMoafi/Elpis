@@ -190,6 +190,8 @@ pub fn has_full_access<'a>(
 /// Resolved configuration for a thread/environment attachment.
 #[derive(Clone, PartialEq)]
 pub struct EnvironmentConfig {
+    /// Hooks from this environment's effective managed requirements.
+    pub environment_hooks: crate::hooks::HookEventsToml,
     /// Whether shell tools may start login shells in this environment.
     pub allow_login_shell: bool,
     /// Effective workspace roots resolved for this environment attachment.
@@ -202,7 +204,7 @@ pub struct EnvironmentConfig {
     pub windows_sandbox_level: WindowsSandboxLevel,
     /// Concrete Windows sandbox backend selected for this environment attachment.
     pub windows_sandbox_type: SandboxType,
-    /// Whether Linux sandbox processes use the legacy Landlock backend.
+    /// Whether this environment requests legacy Landlock mode.
     pub use_legacy_landlock: bool,
     /// Additional managed command restrictions for this environment attachment.
     pub exec_policy: Option<RequirementsExecPolicy>,
@@ -218,6 +220,7 @@ impl std::fmt::Debug for EnvironmentConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("EnvironmentConfig")
+            .field("environment_hooks", &self.environment_hooks.handler_count())
             .field("allow_login_shell", &self.allow_login_shell)
             .field("workspace_roots", &self.workspace_roots)
             .field("permission_profile", &self.permission_profile)

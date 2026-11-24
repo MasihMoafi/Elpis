@@ -78,10 +78,19 @@ pub enum CodexErrorInfo {
     ContextWindowExceeded,
     SessionBudgetExceeded,
     UsageLimitExceeded,
+    ApiKeySpendLimitExceeded,
+    ProjectSpendLimitExceeded,
+    OrganizationSpendLimitExceeded,
     RateLimitExceeded,
     FlexUnavailable,
     ServerOverloaded,
+    ModelNotFound,
+    // Capacity is unavailable on a route restricted by server policy.
+    PolicyCapacityUnavailable,
+    /// The workspace's inference hook explicitly denied this request.
+    InferenceHookDenied,
     CyberPolicy,
+    BioPolicy,
     MisalignmentPolicyViolation,
     TooManyDenials,
     HttpConnectionFailed {
@@ -152,12 +161,26 @@ impl From<CoreCodexErrorInfo> for CodexErrorInfo {
         match value {
             CoreCodexErrorInfo::ContextWindowExceeded => CodexErrorInfo::ContextWindowExceeded,
             CoreCodexErrorInfo::SessionBudgetExceeded => CodexErrorInfo::SessionBudgetExceeded,
+            CoreCodexErrorInfo::ApiKeySpendLimitExceeded => {
+                CodexErrorInfo::ApiKeySpendLimitExceeded
+            }
+            CoreCodexErrorInfo::ProjectSpendLimitExceeded => {
+                CodexErrorInfo::ProjectSpendLimitExceeded
+            }
+            CoreCodexErrorInfo::OrganizationSpendLimitExceeded => {
+                CodexErrorInfo::OrganizationSpendLimitExceeded
+            }
             CoreCodexErrorInfo::UsageLimitExceeded => CodexErrorInfo::UsageLimitExceeded,
             CoreCodexErrorInfo::RateLimitExceeded => CodexErrorInfo::RateLimitExceeded,
             CoreCodexErrorInfo::FlexUnavailable => CodexErrorInfo::FlexUnavailable,
             CoreCodexErrorInfo::ServerOverloaded => CodexErrorInfo::ServerOverloaded,
+            CoreCodexErrorInfo::ModelNotFound => CodexErrorInfo::ModelNotFound,
+            CoreCodexErrorInfo::PolicyCapacityUnavailable => {
+                CodexErrorInfo::PolicyCapacityUnavailable
+            }
             CoreCodexErrorInfo::CyberPolicy => CodexErrorInfo::CyberPolicy,
-            CoreCodexErrorInfo::BioPolicy => CodexErrorInfo::Other,
+            CoreCodexErrorInfo::InferenceHookDenied => CodexErrorInfo::InferenceHookDenied,
+            CoreCodexErrorInfo::BioPolicy => CodexErrorInfo::BioPolicy,
             CoreCodexErrorInfo::MisalignmentPolicyViolation => {
                 CodexErrorInfo::MisalignmentPolicyViolation
             }

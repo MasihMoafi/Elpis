@@ -104,6 +104,14 @@ impl BottomPane {
         self.composer.sync_popups();
     }
 
+    pub(crate) fn startup_undo_draft(&mut self) -> Option<super::chat_composer::ComposerDraft> {
+        self.composer.capture_startup_undo()
+    }
+
+    pub(crate) fn record_startup_undo(&mut self, destination: super::chat_composer::ComposerDraft) {
+        self.composer.record_startup_undo(destination);
+    }
+
     /// Preserve startup-local history and the newest protected-prompt activity timestamp.
     pub(crate) fn restore_startup_composer_state(
         &mut self,
@@ -125,6 +133,19 @@ impl BottomPane {
     /// Return whether an approval is waiting to become visible after typing stops.
     pub(crate) fn has_pending_approval(&self) -> bool {
         !self.delayed_approval_requests.is_empty()
+    }
+
+    pub(crate) fn composer_paste_deadline(&self) -> Option<Instant> {
+        self.composer.paste_handoff_deadline()
+    }
+
+    pub(crate) fn has_startup_paste_window(&self, now: Instant) -> bool {
+        self.composer.has_paste_window(now)
+    }
+
+    pub(crate) fn flush_handoff_paste_if_due(&mut self) -> bool {
+        self.composer
+            .flush_handoff_paste(tokio::time::Instant::now().into_std())
     }
 
     /// Preserve buffered composer input before its owner or input mode changes.

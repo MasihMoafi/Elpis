@@ -39,6 +39,13 @@ Options:
 
           [default: isolate]
 
+      --linux-sandbox-transparent-tcp
+          Route managed Linux sandbox TCP through the SOCKS proxy
+
+      --tcp-upstream-proxy <HOST:PORT>
+          Require this HTTP CONNECT proxy for raw TCP from the managed SOCKS
+          listener
+
       --proxy-private-ips-via-upstream
           Allow permitted private IP destinations to use the configured upstream
           proxy. If no valid upstream proxy applies to the request protocol,
@@ -98,6 +105,19 @@ Options:
       --use-agent-identity-auth
           Use Agent Identity auth from CODEX_ACCESS_TOKEN for remote
           registration
+
+      --registration-bearer-stdin
+          Read one registration bearer from stdin
+
+      --executor-credential-stdin
+          Read rotating executor credentials from stdin; exit when the pipe
+          closes
+
+      --chatgpt-token-stdin
+          Read a ChatGPT access token from stdin for HTTPS registration
+
+      --chatgpt-account-id <ID>
+          ChatGPT account ID. Must match the token's account claim when present
 
       --aws-sigv4
           Sign Direct registration and WebSocket handshake requests with AWS

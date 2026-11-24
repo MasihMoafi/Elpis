@@ -6,7 +6,6 @@ use std::time::Instant;
 
 use codex_features::Feature;
 use codex_otel::SessionTelemetry;
-use codex_tools::UnifiedExecShellMode;
 
 use super::UnifiedExecRequest;
 use crate::config::Config;
@@ -17,11 +16,8 @@ pub(super) struct SnapshotMetrics {
 }
 
 impl SnapshotMetrics {
-    pub(super) fn start(
-        req: &UnifiedExecRequest,
-        config: &Config,
-        shell_mode: &UnifiedExecShellMode,
-    ) -> Option<Self> {
+    pub(super) fn start(req: &UnifiedExecRequest<'_>, config: &Config) -> Option<Self> {
+        let prepared = req.prepared;
         let brokered = config
             .permissions
             .network
@@ -31,11 +27,10 @@ impl SnapshotMetrics {
         // remote legacy, and non-login invocations are outside this denominator.
         if !cfg!(unix)
             || req.shell_snapshot.is_some()
-            || req.turn_environment.environment.is_remote()
+            || prepared.turn_environment.environment().is_remote()
             || !config.features.enabled(Feature::ShellSnapshot)
-            || !matches!(shell_mode, UnifiedExecShellMode::Direct)
-            || !req.shell.is_posix_login()
-            || (req.cwd != req.turn_environment.selection.cwd && !brokered)
+            || !prepared.resolved.shell.is_posix_login()
+            || (prepared.cwd != prepared.turn_environment.selection.cwd && !brokered)
         {
             return None;
         }
@@ -43,11 +38,11 @@ impl SnapshotMetrics {
             // Protected snapshots use a separate lazy cache, not the prewarm task.
             "protected"
         } else {
-            match req.turn_environment.shell_snapshot.peek() {
+            match prepared.turn_environment.shell_snapshot.peek() {
                 None => "prewarm_pending",
                 Some(Some(snapshot))
                     if &snapshot.shell_environment_policy
-                        == req.turn_environment.shell_environment_policy() =>
+                        == prepared.turn_environment.shell_environment_policy() =>
                 {
                     "prewarm_ready"
                 }

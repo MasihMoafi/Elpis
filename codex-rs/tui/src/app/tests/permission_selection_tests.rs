@@ -70,6 +70,19 @@ proxy_url = "http://127.0.0.1:43128"
             .contains_key(&thread_id)
     );
     insta::assert_snapshot!(next_history_message(&mut events).replace(profile_id, "<PROFILE>"), @"• Permission selection requested: <PROFILE>");
+    // Another permissions menu and prompt are queued as this selection closes.
+    app.chat_widget
+        .set_queue_autosend_suppressed(/*suppressed*/ true);
+    for text in ["/permissions", "after permissions"] {
+        app.chat_widget
+            .restore_user_message_to_composer(text.into());
+        app.chat_widget.handle_key_event(KeyCode::Tab.into());
+    }
+    app.chat_widget.handle_server_notification(
+        turn_completed_notification(thread_id, "turn-1", TurnStatus::Completed),
+        /*replay_kind*/ None,
+    );
+    app.app_event_tx.send(AppEvent::SettingsSelectionClosed);
     let settings = next_thread_settings_updated(&mut server, thread_id).await;
     app.enqueue_thread_notification(
         thread_id,
@@ -96,6 +109,16 @@ proxy_url = "http://127.0.0.1:43128"
         app.runtime_permission_profile_override,
         Some(RuntimePermissionProfileOverride::from_config(&app.config))
     );
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    loop {
+        let event = events.try_recv().expect("queued permissions menu");
+        if matches!(event, AppEvent::OpenPermissionsPopup) {
+            // Neither the old picker's close nor its confirmation may release this prompt.
+            assert!(app.chat_widget.has_queued_follow_up_messages());
+            break;
+        }
+        app.handle_event(&mut tui, &mut server, event).await?;
+    }
     server.shutdown().await?;
     Ok(())
 }
@@ -135,8 +158,96 @@ async fn matching_builtin_permission_selection_submits_pending_prompt() -> Resul
 }
 
 #[tokio::test]
+async fn inline_server_permission_selection_holds_queued_prompt_until_confirmation() -> Result<()> {
+    let (mut app, mut events, mut ops) = make_test_app_with_channels().await;
+    let home = tempdir()?;
+    std::fs::write(
+        home.path().join("config.toml"),
+        "default_permissions = \":workspace\"\n[permissions.server-only]\nextends = \":read-only\"\n",
+    )?;
+    let server_config = ConfigBuilder::default()
+        .codex_home(home.path().into())
+        .build()
+        .await?;
+    let mut server = crate::start_embedded_app_server_for_picker(&server_config).await?;
+    let started = server.start_thread(&app.config).await?;
+    let thread_id = started.session.thread_id;
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    while events.try_recv().is_ok() {}
+    while ops.try_recv().is_ok() {}
+
+    app.chat_widget.select_permission_profile("server-only");
+    assert!(app.chat_widget.queue_user_message_with_options(
+        crate::chatwidget::UserMessage::from("use the selected profile"),
+        crate::bottom_pane::QueuedInputAction::Plain,
+        Vec::new(),
+    ));
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let mut settings_settled = false;
+    for _ in 0..20 {
+        if app
+            .agents_overview
+            .requested_permission_profiles
+            .contains_key(&thread_id)
+        {
+            break;
+        }
+        let event = tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 2), events.recv())
+            .await?
+            .expect("app event channel should remain open");
+        app.handle_event(&mut tui, &mut server, event).await?;
+    }
+    assert!(
+        app.agents_overview
+            .requested_permission_profiles
+            .contains_key(&thread_id)
+    );
+    while let Ok(event) = events.try_recv() {
+        app.handle_event(&mut tui, &mut server, event).await?;
+    }
+    assert!(ops.try_recv().is_err());
+
+    let settings = next_thread_settings_updated(&mut server, thread_id).await;
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::ThreadSettingsUpdated(settings),
+    )
+    .await?;
+    for _ in 0..20 {
+        let event = tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 2), events.recv())
+            .await?
+            .expect("app event channel should remain open");
+        let settled = matches!(event, AppEvent::SettingsSelectionSettled);
+        app.handle_event(&mut tui, &mut server, event).await?;
+        if settled {
+            settings_settled = true;
+            break;
+        }
+    }
+    assert!(settings_settled);
+
+    let Op::UserTurn { items, .. } = next_user_turn_op(&mut ops) else {
+        panic!("expected queued user turn");
+    };
+    assert_eq!(
+        items,
+        vec![AppServerUserInput::Text {
+            text: "use the selected profile".to_string(),
+            text_elements: Vec::new(),
+        }]
+    );
+    server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn custom_permission_selection_uses_server_definition_and_preserves_state_on_rejection()
 -> Result<()> {
+    boxed_future!(custom_permission_selection_scenario()).await
+}
+
+async fn custom_permission_selection_scenario() -> Result<()> {
     let (mut app, mut events, _ops) = make_test_app_with_channels().await;
     app.config.ephemeral = false;
     let home = tempdir()?;
@@ -183,10 +294,10 @@ async fn custom_permission_selection_uses_server_definition_and_preserves_state_
         before
     );
     let settings = next_thread_settings_updated(&mut server, thread_id).await;
-    let expected = PermissionProfile::from_legacy_sandbox_policy_for_cwd(
-        &settings.thread_settings.sandbox_policy.to_core(),
-        settings.thread_settings.cwd.as_path(),
-    );
+    let expected = settings
+        .thread_settings
+        .sandbox_policy
+        .permission_profile_for_cwd(&settings.thread_settings.cwd.clone().try_into()?)?;
     assert!(matches!(
         settings.thread_settings.sandbox_policy,
         codex_app_server_protocol::SandboxPolicy::WorkspaceWrite { .. }
@@ -212,7 +323,7 @@ async fn custom_permission_selection_uses_server_definition_and_preserves_state_
     );
     std::fs::write(
         home.path().join("config.toml"),
-        "default_permissions = \":workspace\"\n[permissions.shared]\nextends = \":read-only\"\n",
+        "default_permissions = \":workspace\"\n[permissions.shared]\nextends = \":read-only\"\n[permissions.other]\nextends = \":read-only\"\n",
     )?;
     app.select_permission_profile(
         &mut server,
@@ -240,6 +351,42 @@ async fn custom_permission_selection_uses_server_definition_and_preserves_state_
     app.select_permission_profile(&mut server, selection.clone())
         .await;
     assert!(!app.reject_pending_permission_change());
+    assert!(app.agents_overview.requested_permission_profiles.is_empty());
+    // Another client's policy change must not leave a no-op request's old policy behind.
+    server
+        .thread_settings_update(ThreadSettingsUpdateParams {
+            thread_id: thread_id.to_string(),
+            approval_policy: Some(AskForApproval::OnRequest),
+            ..Default::default()
+        })
+        .await?;
+    let settings = next_thread_settings_updated(&mut server, thread_id).await;
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::ThreadSettingsUpdated(settings),
+    )
+    .await?;
+    app.select_permission_profile(
+        &mut server,
+        PermissionProfileSelection {
+            profile_id: "other".into(),
+            approval_policy: None,
+            approvals_reviewer: None,
+            display_label: "other".into(),
+        },
+    )
+    .await;
+    assert_eq!(
+        app.agents_overview.requested_permission_profiles[&thread_id].approval_policy,
+        Some(AskForApproval::OnRequest)
+    );
+    let settings = next_thread_settings_updated(&mut server, thread_id).await;
+    app.enqueue_thread_notification(
+        thread_id,
+        ServerNotification::ThreadSettingsUpdated(settings),
+    )
+    .await?;
+    assert!(app.agents_overview.requested_permission_profiles.is_empty());
     let confirmed = RuntimePermissionProfileOverride::from_config(app.chat_widget.config_ref());
     let confirmed_config = app.config.clone();
     app.select_permission_profile(
@@ -261,7 +408,7 @@ async fn custom_permission_selection_uses_server_definition_and_preserves_state_
             .selected_permission_profiles
             .get(&thread_id)
             .map(String::as_str),
-        Some("shared")
+        Some("other")
     );
     // Materialize the task so /fork exercises persisted history with the confirmed profile.
     server.thread_inject_items(thread_id, vec![serde_json::from_value(serde_json::json!({
@@ -269,39 +416,38 @@ async fn custom_permission_selection_uses_server_definition_and_preserves_state_
     }))?]).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
     while events.try_recv().is_ok() {}
-    app.change_working_directory(&mut tui, &mut server, client_home.path().abs())
-        .await;
-    assert_eq!(app.chat_widget.thread_id(), Some(thread_id));
-    insta::assert_snapshot!(next_history_message(&mut events), @"■ Changing directories with an unconfirmed named profile is not supported.");
-    let side = server
-        .fork_side_thread(
+    let side = Box::pin(
+        server.fork_side_thread(
             &app.local_settings,
             app.config.clone(),
+            /*workspace_roots*/ None,
             thread_id,
             app.agents_overview
                 .requested_permission_profiles
                 .get(&thread_id),
-        )
-        .await?;
+            crate::app_server_session::SideChatStorage::Temporary,
+        ),
+    )
+    .await?;
     assert_eq!(
         (
             side.session.permission_profile,
             side.session.approval_policy
         ),
-        (PermissionProfile::read_only(), AskForApproval::Never)
+        (PermissionProfile::read_only(), AskForApproval::OnRequest)
     );
     app.cli_kv_overrides.push((
-        "permissions.shared.extends".into(),
+        "permissions.other.extends".into(),
         TomlValue::String(":danger-full-access".into()),
     ));
     // Both the accepted request and its confirmed descendant remain server-owned.
     for _ in 0..2 {
         let previous_thread_id = app.chat_widget.thread_id();
-        app.handle_event(
+        Box::pin(app.handle_event(
             &mut tui,
             &mut server,
             AppEvent::ForkCurrentSession { name: None },
-        )
+        ))
         .await?;
         assert_ne!(app.chat_widget.thread_id(), previous_thread_id);
         assert_eq!(

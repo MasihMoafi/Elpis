@@ -7,6 +7,48 @@
 use super::*;
 
 impl ChatWidget {
+    /// Record replies newest-to-oldest before the loaded response window, without replay effects.
+    pub(crate) fn remember_older_cloud_reply(
+        &mut self,
+        turn_id: &str,
+        entry: &codex_app_server_protocol::ThreadItem,
+        status: &TurnStatus,
+    ) -> Option<(String, String)> {
+        let key = (turn_id.to_owned(), entry.id().to_owned());
+        if self.transcript.has_replayed_cloud_text(turn_id, entry.id()) {
+            return None;
+        }
+        let seen = self.transcript.replayed_cloud_text.as_mut()?;
+        self.transcript.older_response_order -= 1;
+        let position = self.transcript.older_response_order;
+        let finished = entry.completed_at_ms.is_some()
+            || (entry.started_at_ms.is_none() && *status != TurnStatus::InProgress);
+        if finished {
+            if self.transcript.last_agent_source.is_none()
+                && let ThreadItemPayload::AgentMessage { text, .. } = &entry.payload
+            {
+                let parsed = parse_assistant_markdown(text, self.config.cwd.as_path());
+                if !parsed.visible_markdown.trim().is_empty() {
+                    let committed = self.transcript.committed_turn_response.take();
+                    self.transcript
+                        .record_agent_markdown(parsed.visible_markdown, text.clone());
+                    self.transcript.historical_copy_order = Some(position);
+                    self.transcript.last_agent_copy_item = Some(key);
+                    if self.last_turn_id() != Some(turn_id) {
+                        self.transcript.committed_turn_response = committed;
+                    } else if let Some((order, _)) = &mut self.transcript.committed_turn_response {
+                        *order = position;
+                    }
+                }
+            }
+            return None;
+        }
+        seen.entry(turn_id.to_owned())
+            .or_default()
+            .insert(entry.id().to_owned(), (false, position));
+        Some(key)
+    }
+
     /// Restores the active typed reasoning item after a thread switch or session refresh.
     /// Its completion carries the full summary if the bounded event buffer lost earlier deltas.
     pub(crate) fn restore_active_reasoning_item(
@@ -15,27 +57,19 @@ impl ChatWidget {
         parts: Option<(Vec<String>, Vec<String>)>,
     ) {
         let turn_id = started.turn_id;
-        let id = started.item.id().to_string();
-        self.realtime_conversation
-            .agent_items
-            .entry((turn_id, id.clone()))
-            .or_insert(realtime::RealtimeAgentItemOrigin::Typed);
+        let ThreadItemPayload::Reasoning {
+            id,
+            summary,
+            content,
+        } = started.item.payload
+        else {
+            return;
+        };
+        self.remember_typed_reasoning_item(turn_id, &id);
         self.on_reasoning_item_started(id);
-        self.status_state.reasoning_recovered_after_refresh = true;
+        self.replace_reasoning_parts(summary, content);
         if let Some((summary, content)) = parts {
-            let reasoning_parts = summary.into_iter().chain(
-                self.config
-                    .show_raw_agent_reasoning
-                    .then_some(content)
-                    .into_iter()
-                    .flatten(),
-            );
-            for (index, delta) in reasoning_parts.enumerate() {
-                if index > 0 {
-                    self.on_reasoning_section_break();
-                }
-                self.on_agent_reasoning_delta(delta);
-            }
+            self.replace_reasoning_parts(summary, content);
         }
     }
 
@@ -54,13 +88,17 @@ impl ChatWidget {
             ServerNotification::ItemCompleted(
                 codex_app_server_protocol::ItemCompletedNotification {
                     turn_id,
-                    item: ThreadItem::Reasoning { id, .. },
+                    item:
+                        codex_app_server_protocol::ThreadItem {
+                            payload: ThreadItemPayload::Reasoning { id, .. },
+                            ..
+                        },
                     ..
                 },
             ) => (turn_id, id),
             ServerNotification::ItemStarted(item)
                 if resumed_turn_id == item.turn_id
-                    && !matches!(item.item, ThreadItem::UserMessage { .. })
+                    && !matches!(item.item.payload, ThreadItemPayload::UserMessage { .. })
                     && self.status_state.reasoning_item_id.as_deref() != Some(item.item.id()) =>
             {
                 // A new item closes a trailing snapshot that was already complete at resume.
@@ -75,16 +113,16 @@ impl ChatWidget {
             return false;
         }
         self.restore_active_reasoning_item(
-            codex_app_server_protocol::ItemStartedNotification {
-                thread_id: self.thread_id.map(|id| id.to_string()).unwrap_or_default(),
-                turn_id: turn_id.clone(),
-                item: ThreadItem::Reasoning {
+            codex_app_server_protocol::ItemStartedNotification::new(
+                self.thread_id.map(|id| id.to_string()).unwrap_or_default(),
+                turn_id.clone(),
+                ThreadItemPayload::Reasoning {
                     id: item_id.clone(),
                     summary: Vec::new(),
                     content: Vec::new(),
                 },
-                started_at_ms: 0,
-            },
+                /*started_at_ms*/ 0,
+            ),
             /*parts*/ None,
         );
         true
@@ -96,12 +134,24 @@ impl ChatWidget {
         self.flush_active_cell();
     }
 
+    pub(crate) fn replay_backend_thread_turns(
+        &mut self,
+        turns: Vec<Turn>,
+        replay_kind: ReplayKind,
+        target: &crate::AppServerTarget,
+    ) {
+        self.transcript.replayed_cloud_text =
+            matches!(target, crate::AppServerTarget::Cloud).then(std::collections::HashMap::new);
+        self.replay_thread_turns(turns, replay_kind);
+    }
+
     /// Replay a subset of initial events into the UI to seed the transcript when
     /// resuming an existing session. This approximates the live event flow and
     /// is intentionally conservative: only safe-to-replay items are rendered to
     /// avoid triggering side effects. Event ids are passed as `None` to
     /// distinguish replayed events from live ones.
     pub(crate) fn replay_thread_turns(&mut self, turns: Vec<Turn>, replay_kind: ReplayKind) {
+        self.turn_lifecycle.has_turn_history |= !turns.is_empty();
         if !turns.is_empty() || matches!(replay_kind, ReplayKind::ThreadSnapshot) {
             self.bottom_pane.dismiss_composer_sparkle();
         }
@@ -116,9 +166,9 @@ impl ChatWidget {
             .collect::<Vec<_>>();
         for (turn, hidden_nested_review_turn) in turns.into_iter().zip(hidden_nested_review_turns) {
             self.restore_realtime_transcripts_before_turn(&turn.id);
-            // Defer completed metadata-only turns until their page loads. Active
+            // Defer terminal transcript rows until their page loads. Active
             // turns must restore their lifecycle even before any items are available.
-            if turn.status == TurnStatus::Completed
+            if matches!(turn.status, TurnStatus::Completed | TurnStatus::Interrupted)
                 && turn.items_view == codex_app_server_protocol::TurnItemsView::NotLoaded
                 && turn.items.is_empty()
             {
@@ -127,16 +177,16 @@ impl ChatWidget {
             let Turn {
                 id: turn_id,
                 root_turn_id,
-                items_view: _,
                 items,
                 status,
                 mut error,
                 started_at,
                 completed_at,
                 duration_ms,
+                ..
             } = turn;
             let delegated = items.iter().any(|item| {
-                matches!(item, ThreadItem::UserMessage { content, .. }
+                matches!(&item.payload, ThreadItemPayload::UserMessage { content, .. }
                     if realtime::realtime_delegation_input(content).is_some())
             });
             if matches!(status, TurnStatus::InProgress) {
@@ -146,18 +196,19 @@ impl ChatWidget {
                 self.warning_display_state.startup_complete = true;
                 self.turn_lifecycle.last_turn_id = Some(turn_id.clone());
                 self.last_non_retry_error = None;
-                self.on_task_started();
+                self.on_replayed_task_started(started_at);
             }
             let trailing_reasoning_id = (status == TurnStatus::InProgress)
                 .then(|| items.last())
                 .flatten()
-                .and_then(|item| match item {
-                    ThreadItem::Reasoning { id, .. } => Some(id.clone()),
+                .and_then(|item| match &item.payload {
+                    ThreadItemPayload::Reasoning { id, .. } => Some(id.clone()),
                     _ => None,
                 });
             let mut replaying_delegation = false;
-            for item in items {
-                if matches!(&item, ThreadItem::UserMessage { content, .. }
+            for entry in items {
+                let item = entry.payload;
+                if matches!(&item, ThreadItemPayload::UserMessage { content, .. }
                     if realtime::realtime_delegation_input(content).is_some())
                 {
                     replaying_delegation = true;
@@ -167,31 +218,37 @@ impl ChatWidget {
                 if replaying_delegation && realtime::is_private_realtime_agent_item(&item) {
                     continue;
                 }
-                if hidden_nested_review_turn && matches!(item, ThreadItem::UserMessage { .. }) {
+                if hidden_nested_review_turn
+                    && matches!(item, ThreadItemPayload::UserMessage { .. })
+                {
                     continue;
                 }
                 if trailing_reasoning_id.as_deref() == Some(item.id())
-                    && let ThreadItem::Reasoning {
+                    && let ThreadItemPayload::Reasoning {
                         id,
                         summary,
                         content,
                     } = item
                 {
                     self.restore_active_reasoning_item(
-                        codex_app_server_protocol::ItemStartedNotification {
-                            thread_id: self.thread_id.map(|id| id.to_string()).unwrap_or_default(),
-                            turn_id: turn_id.clone(),
-                            item: ThreadItem::Reasoning {
+                        codex_app_server_protocol::ItemStartedNotification::new(
+                            self.thread_id.map(|id| id.to_string()).unwrap_or_default(),
+                            turn_id.clone(),
+                            ThreadItemPayload::Reasoning {
                                 id,
                                 summary: Vec::new(),
                                 content: Vec::new(),
                             },
-                            started_at_ms: 0,
-                        },
+                            /*started_at_ms*/ 0,
+                        ),
                         Some((summary, content)),
                     );
                 } else {
+                    // Item and turn pages can reflect different points in time.
+                    self.transcript.recording_finished_cloud_text = entry.completed_at_ms.is_some()
+                        || (entry.started_at_ms.is_none() && status != TurnStatus::InProgress);
                     self.replay_thread_item(item, turn_id.clone(), replay_kind);
+                    self.transcript.recording_finished_cloud_text = false;
                 }
             }
             let status = if hidden_nested_review_turn {
@@ -214,7 +271,7 @@ impl ChatWidget {
             if hidden_nested_review_turn {
                 self.turn_lifecycle
                     .rendered_completion_turn_ids
-                    .insert(turn_id.clone());
+                    .insert(turn_id.clone(), /*v*/ true);
             }
             if matches!(
                 status,
@@ -243,13 +300,13 @@ impl ChatWidget {
 
     pub(crate) fn replay_thread_item(
         &mut self,
-        item: ThreadItem,
+        item: ThreadItemPayload,
         turn_id: String,
         replay_kind: ReplayKind,
     ) {
         match item {
             // Snapshots contain the completed item, without the live start that renders its diff.
-            ThreadItem::FileChange {
+            ThreadItemPayload::FileChange {
                 changes,
                 status: codex_app_server_protocol::PatchApplyStatus::Completed,
                 ..
@@ -266,14 +323,14 @@ impl ChatWidget {
 
     pub(super) fn handle_thread_item(
         &mut self,
-        item: ThreadItem,
+        item: ThreadItemPayload,
         turn_id: String,
         render_source: ThreadItemRenderSource,
     ) {
         let from_replay = render_source.is_replay();
         let replay_kind = render_source.replay_kind();
         match item {
-            ThreadItem::UserMessage {
+            ThreadItemPayload::UserMessage {
                 content, client_id, ..
             } => {
                 if let Some(replies) = crate::async_question_reply::parse_input(&content) {
@@ -281,7 +338,11 @@ impl ChatWidget {
                         .into_iter()
                         .map(|reply| reply.question_item_id)
                         .collect::<Vec<_>>();
-                    self.bottom_pane.question_editor().resolve_answers(&ids);
+                    let displayed_answer_changed =
+                        self.bottom_pane.question_editor().resolve_answers(&ids);
+                    if displayed_answer_changed && !self.bottom_pane.has_active_view() {
+                        self.bottom_pane.key_chord_reset_requested = true;
+                    }
                     self.refresh_pending_input_preview();
                     self.request_redraw();
                 }
@@ -292,7 +353,7 @@ impl ChatWidget {
                     &turn_id,
                 );
             }
-            ThreadItem::AgentMessage {
+            ThreadItemPayload::AgentMessage {
                 id,
                 text,
                 phase,
@@ -303,7 +364,8 @@ impl ChatWidget {
             } => {
                 if self.complete_realtime_delegated_agent_item(
                     &turn_id,
-                    &ThreadItem::AgentMessage {
+                    &ThreadItemPayload::AgentMessage {
+                        moderation: None,
                         id: id.clone(),
                         text: text.clone(),
                         phase: phase.clone(),
@@ -317,6 +379,7 @@ impl ChatWidget {
                 }
                 self.on_agent_message_item_completed(
                     AgentMessageItem {
+                        moderation: None,
                         id,
                         content: vec![AgentMessageContent::Text { text }],
                         phase,
@@ -344,63 +407,43 @@ impl ChatWidget {
                     from_replay,
                 );
             }
-            ThreadItem::Plan { text, .. } => self.on_plan_item_completed(text),
-            ThreadItem::Reasoning {
+            ThreadItemPayload::Plan { text, .. } => self.on_plan_item_completed(text),
+            ThreadItemPayload::Reasoning {
                 id,
                 summary,
                 content,
             } => {
-                let recover_completion = self.status_state.reasoning_recovered_after_refresh
-                    && (!summary.is_empty()
-                        || (self.config.show_raw_agent_reasoning && !content.is_empty()));
-                if from_replay || recover_completion {
-                    if from_replay {
-                        self.on_reasoning_item_started(id);
-                    } else {
-                        // A refreshed snapshot can omit the active item and its earlier deltas.
-                        // Reconcile with the complete item before committing the transcript.
-                        self.reasoning_buffer.clear();
-                        self.reasoning_summary_parts.clear();
-                    }
-                    let reasoning_parts = summary.into_iter().chain(
-                        self.config
-                            .show_raw_agent_reasoning
-                            .then_some(content)
-                            .into_iter()
-                            .flatten(),
-                    );
-                    for (index, delta) in reasoning_parts.enumerate() {
-                        if index > 0 {
-                            self.on_reasoning_section_break();
-                        }
-                        self.on_agent_reasoning_delta(delta);
-                    }
+                if from_replay {
+                    self.on_reasoning_item_started(id);
                 }
+                self.replace_reasoning_parts(summary, content);
                 self.on_agent_reasoning_final();
             }
-            item @ ThreadItem::CommandExecution {
+            item @ ThreadItemPayload::CommandExecution {
                 status: codex_app_server_protocol::CommandExecutionStatus::InProgress,
                 ..
-            } => self.on_command_execution_started(item),
-            item @ ThreadItem::CommandExecution {
+            } => self.on_command_execution_started(item, render_source),
+            item @ ThreadItemPayload::CommandExecution {
                 source: ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup,
                 status:
                     codex_app_server_protocol::CommandExecutionStatus::Completed
                     | codex_app_server_protocol::CommandExecutionStatus::Failed,
                 ..
             } if from_replay => self.handle_command_execution_completed_now(item),
-            item @ ThreadItem::CommandExecution { .. } => self.on_command_execution_completed(item),
-            ThreadItem::FileChange {
+            item @ ThreadItemPayload::CommandExecution { .. } => {
+                self.on_command_execution_completed(item)
+            }
+            ThreadItemPayload::FileChange {
                 status: codex_app_server_protocol::PatchApplyStatus::InProgress,
                 ..
             } => {}
-            item @ ThreadItem::FileChange { .. } => self.on_file_change_completed(item),
-            item @ ThreadItem::McpToolCall {
+            item @ ThreadItemPayload::FileChange { .. } => self.on_file_change_completed(item),
+            item @ ThreadItemPayload::McpToolCall {
                 status: codex_app_server_protocol::McpToolCallStatus::InProgress,
                 ..
             } => self.on_mcp_tool_call_started(item),
-            item @ ThreadItem::McpToolCall { .. } => self.on_mcp_tool_call_completed(item),
-            ThreadItem::WebSearch(item) => {
+            item @ ThreadItemPayload::McpToolCall { .. } => self.on_mcp_tool_call_completed(item),
+            ThreadItemPayload::WebSearch(item) => {
                 self.on_web_search_begin(item.id.clone());
                 self.on_web_search_end(
                     item.id,
@@ -409,29 +452,24 @@ impl ChatWidget {
                         .unwrap_or(codex_app_server_protocol::WebSearchAction::Other),
                 );
             }
-            ThreadItem::ImageView { id: _, path } => {
-                self.on_view_image_tool_call(path);
+            ThreadItemPayload::ImageView { id, path } => {
+                self.on_view_image_tool_call(id, path);
             }
-            ThreadItem::ImageGeneration(item) => {
-                self.on_image_generation_end(
-                    item.id,
-                    item.status,
-                    item.revised_prompt,
-                    item.saved_path,
-                );
+            ThreadItemPayload::ImageGeneration(item) => {
+                self.on_image_generation_end(&turn_id, item);
             }
-            ThreadItem::EnteredReviewMode { review, .. } => {
+            ThreadItemPayload::EnteredReviewMode { review, .. } => {
                 if from_replay {
                     self.enter_review_mode_with_hint(review, /*from_replay*/ true);
                 }
             }
-            ThreadItem::ExitedReviewMode { .. } => {
+            ThreadItemPayload::ExitedReviewMode { .. } => {
                 self.exit_review_mode_after_item();
             }
-            ThreadItem::ContextCompaction { id } => {
+            ThreadItemPayload::ContextCompaction { id } => {
                 self.on_context_compaction_completed(&id, from_replay);
             }
-            ThreadItem::FunctionCallOutput {
+            ThreadItemPayload::FunctionCallOutput {
                 name,
                 namespace,
                 output,
@@ -444,16 +482,15 @@ impl ChatWidget {
                         &output,
                     )
                 {
-                    self.add_to_history(history_cell::PrefixedWrappedHistoryCell::new(
-                        format!("Sent by Elpis from task {source_thread_id}\n{prompt}"),
-                        "• ".dim(),
-                        "  ",
+                    self.add_to_history(history_cell::DelegatedMessageCell::new(
+                        &source_thread_id,
+                        prompt,
                     ));
                 }
             }
-            ThreadItem::SmartPrune { prune, .. } => self.on_smart_prune(prune),
-            ThreadItem::HookPrompt { .. } => {}
-            ThreadItem::CollabAgentToolCall {
+            ThreadItemPayload::SmartPrune { prune, .. } => self.on_smart_prune(prune),
+            ThreadItemPayload::HookPrompt { .. } => {}
+            ThreadItemPayload::CollabAgentToolCall {
                 id,
                 tool,
                 status,
@@ -463,7 +500,7 @@ impl ChatWidget {
                 model,
                 reasoning_effort,
                 agents_states,
-            } => self.on_collab_agent_tool_call(ThreadItem::CollabAgentToolCall {
+            } => self.on_collab_agent_tool_call(ThreadItemPayload::CollabAgentToolCall {
                 id,
                 tool,
                 status,
@@ -474,9 +511,9 @@ impl ChatWidget {
                 reasoning_effort,
                 agents_states,
             }),
-            item @ ThreadItem::SubAgentActivity { .. } => self.on_sub_agent_activity(item),
-            item @ ThreadItem::DynamicToolCall { .. } => self.on_dynamic_tool_item(item),
-            ThreadItem::Sleep(_) => {}
+            item @ ThreadItemPayload::SubAgentActivity { .. } => self.on_sub_agent_activity(item),
+            item @ ThreadItemPayload::DynamicToolCall { .. } => self.on_dynamic_tool_item(item),
+            ThreadItemPayload::Sleep(_) => {}
         }
 
         if matches!(replay_kind, Some(ReplayKind::ThreadSnapshot)) && turn_id.is_empty() {

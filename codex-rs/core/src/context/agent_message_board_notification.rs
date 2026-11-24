@@ -1,10 +1,11 @@
-//! Attributed discussion notices with bounded previews.
+//! Recognizes legacy board notices in saved user-role messages. New notices use agent mail.
 
 use super::ContextualUserFragment;
-use codex_agent_message_board_extension::PostPreview;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::input_text;
 
-pub(crate) struct AgentMessageBoardNotification(pub(crate) PostPreview);
+pub(crate) struct AgentMessageBoardNotification;
 
 impl ContextualUserFragment for AgentMessageBoardNotification {
     fn role(&self) -> &'static str {
@@ -23,20 +24,7 @@ impl ContextualUserFragment for AgentMessageBoardNotification {
             "</agent_message_board_notification>",
         )
     }
-    fn body(&self) -> String {
-        let post = &self.0;
-        let suffix = if post.truncated {
-            "\n[Use read_post for the rest.]"
-        } else {
-            ""
-        };
-        format!(
-            "Message Type: CHANNEL_POST\nSender: {}\nChannel: {}\nMessage ID: {}\nThread ID: {}\nPayload:\n{}{suffix}",
-            post.metadata.author,
-            post.metadata.channel_name,
-            post.metadata.message_id,
-            post.metadata.thread_id,
-            post.text_preview,
-        )
+    fn body(&self) -> ContentItem {
+        input_text(String::new())
     }
 }

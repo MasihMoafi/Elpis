@@ -38,11 +38,12 @@ pub(crate) const REGISTRY_TOKEN: &str = "registry-token";
 struct StaticRegistryAuthProvider;
 
 impl AuthProvider for StaticRegistryAuthProvider {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
         let _ = headers.insert(
             http::header::AUTHORIZATION,
             HeaderValue::from_static("Bearer registry-token"),
         );
+        Ok(())
     }
 }
 
@@ -51,8 +52,8 @@ pub(crate) fn static_registry_auth_provider() -> codex_api::SharedAuthProvider {
 }
 
 pub(crate) struct RelayTest {
-    registry: MockServer,
-    listener: TcpListener,
+    pub(crate) registry: MockServer,
+    pub(crate) listener: TcpListener,
 }
 
 pub(crate) struct RelayConnection {
@@ -108,6 +109,7 @@ impl RelayTest {
         let harness_identity = NoiseChannelIdentity::generate()?;
         let client_args = NoiseRendezvousConnectArgs {
             bundle: NoiseRendezvousConnectBundle {
+                http_headers: Default::default(),
                 websocket_url: format!("{rendezvous_url}/relay?role=harness"),
                 environment_id: ENVIRONMENT_ID.to_string(),
                 executor_registration_id: EXECUTOR_REGISTRATION_ID.to_string(),

@@ -1,9 +1,12 @@
 use crate::config::OtelExporter;
 use crate::config::OtelHttpProtocol;
+use crate::headers_helper::HeadersHelper;
 use crate::metrics::MetricsError;
 use crate::metrics::Result;
 use crate::metrics::config::MetricsConfig;
 use crate::metrics::config::MetricsExporter;
+use crate::metrics::names::TURN_CRITICAL_PATH_COMPONENT_METRIC;
+use crate::metrics::names::TURN_CRITICAL_PATH_DURATION_METRIC;
 use crate::metrics::timer::Timer;
 use crate::metrics::validation::validate_metric_name;
 use crate::metrics::validation::validate_tag_key;
@@ -16,6 +19,11 @@ use opentelemetry::metrics::Gauge;
 use opentelemetry::metrics::Histogram;
 use opentelemetry::metrics::Meter;
 use opentelemetry::metrics::MeterProvider as _;
+use opentelemetry_otlp::Compression;
+use opentelemetry_otlp::OTEL_EXPORTER_OTLP_COMPRESSION;
+use opentelemetry_otlp::OTEL_EXPORTER_OTLP_HEADERS;
+use opentelemetry_otlp::OTEL_EXPORTER_OTLP_METRICS_COMPRESSION;
+use opentelemetry_otlp::OTEL_EXPORTER_OTLP_METRICS_HEADERS;
 use opentelemetry_otlp::OTEL_EXPORTER_OTLP_METRICS_TIMEOUT;
 use opentelemetry_otlp::Protocol;
 use opentelemetry_otlp::WithExportConfig;
@@ -43,6 +51,10 @@ use std::sync::Weak;
 use std::time::Duration;
 use tracing::debug;
 
+#[cfg(test)]
+#[path = "client_tests.rs"]
+mod tests;
+
 const ENV_ATTRIBUTE: &str = "env";
 const METER_NAME: &str = "codex";
 const MILLISECOND_DURATION_UNIT: &str = "ms";
@@ -53,6 +65,20 @@ const MILLISECOND_DURATION_BOUNDARIES: &[f64] = &[
     7_000.0, 7_500.0, 8_000.0, 9_000.0, 10_000.0, 12_000.0, 15_000.0, 20_000.0, 30_000.0, 60_000.0,
     120_000.0,
 ];
+// Whole-turn profiles can accumulate minutes of inference, tool execution, or user wait.
+static TURN_CRITICAL_PATH_DURATION_BOUNDARIES: LazyLock<Vec<f64>> = LazyLock::new(|| {
+    let mut bounds = MILLISECOND_DURATION_BOUNDARIES.to_vec();
+    bounds.extend([
+        180_000.0,
+        300_000.0,
+        600_000.0,
+        900_000.0,
+        1_800_000.0,
+        3_600_000.0,
+        7_200_000.0,
+    ]);
+    bounds
+});
 const SECOND_DURATION_UNIT: &str = "s";
 const SECOND_DURATION_BOUNDARIES: &[f64] = &[
     0.0, 0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1.0, 2.5, 5.0, 7.5, 10.0, 12.0,
@@ -109,6 +135,7 @@ pub(super) struct MetricsClientInner {
     histograms: Mutex<HashMap<String, Histogram<f64>>>,
     duration_histograms: Mutex<HashMap<InstrumentKey, Histogram<f64>>>,
     runtime_reader: Option<Arc<ManualReader>>,
+    requires_analytics_consent: bool,
     statsig_disabled_metrics: &'static [&'static str],
     default_tags: BTreeMap<String, String>,
 }
@@ -324,6 +351,7 @@ impl MetricsClient {
     /// Build a metrics client from configuration and validate defaults.
     pub fn new(config: MetricsConfig) -> Result<Self> {
         let MetricsConfig {
+            headers_helper,
             http_client_factory,
             environment,
             service_name,
@@ -358,6 +386,8 @@ impl MetricsClient {
             )
         });
 
+        let requires_analytics_consent =
+            matches!(exporter, MetricsExporter::Otlp(OtelExporter::Statsig));
         let (meter_provider, meter) = match exporter {
             MetricsExporter::InMemory(exporter) => {
                 build_provider(resource, exporter, export_interval, runtime_reader.clone())
@@ -374,6 +404,8 @@ impl MetricsClient {
                         exporter,
                         temporality,
                         &http_client_factory,
+                        headers_helper,
+                        /*compression*/ None,
                     )?,
                     policy: http_client_factory.network_policy().clone(),
                 };
@@ -391,6 +423,7 @@ impl MetricsClient {
                 histograms: Mutex::new(HashMap::new()),
                 duration_histograms: Mutex::new(HashMap::new()),
                 runtime_reader,
+                requires_analytics_consent,
                 statsig_disabled_metrics,
                 default_tags,
             }),
@@ -412,6 +445,22 @@ impl MetricsClient {
     pub fn counter(&self, name: &str, inc: i64, tags: &[(&str, &str)]) -> Result<()> {
         self.active_inner()
             .counter(name, /*description*/ None, inc, tags)
+    }
+
+    /// Record a counter while applying analytics consent only to the built-in exporter.
+    /// The consent check and recording use the same exporter even during provider replacement.
+    pub fn counter_with_analytics_consent(
+        &self,
+        name: &str,
+        inc: i64,
+        tags: &[(&str, &str)],
+        analytics_enabled: bool,
+    ) -> Result<()> {
+        let inner = self.active_inner();
+        if inner.requires_analytics_consent && !analytics_enabled {
+            return Ok(());
+        }
+        inner.counter(name, /*description*/ None, inc, tags)
     }
 
     /// Send a single counter increment with an instrument description.
@@ -486,7 +535,12 @@ impl MetricsClient {
             duration.as_millis().min(i64::MAX as u128) as f64,
             MILLISECOND_DURATION_UNIT,
             MILLISECOND_DURATION_DESCRIPTION,
-            MILLISECOND_DURATION_BOUNDARIES,
+            match name {
+                TURN_CRITICAL_PATH_DURATION_METRIC | TURN_CRITICAL_PATH_COMPONENT_METRIC => {
+                    &TURN_CRITICAL_PATH_DURATION_BOUNDARIES
+                }
+                _ => MILLISECOND_DURATION_BOUNDARIES,
+            },
             tags,
         )
     }
@@ -612,14 +666,30 @@ fn build_otlp_metric_exporter(
     exporter: OtelExporter,
     temporality: Temporality,
     factory: &codex_http_client::HttpClientFactory,
+    headers_helper: Option<Arc<HeadersHelper>>,
+    compression: Option<Compression>,
 ) -> Result<opentelemetry_otlp::MetricExporter> {
     match exporter {
         OtelExporter::None => Err(MetricsError::ExporterDisabled),
-        OtelExporter::Statsig => build_otlp_metric_exporter(
-            crate::config::resolve_exporter(&OtelExporter::Statsig),
-            temporality,
-            factory,
-        ),
+        OtelExporter::Statsig => {
+            // Leave explicit OTLP overrides to the SDK.
+            let compression = [
+                OTEL_EXPORTER_OTLP_METRICS_COMPRESSION,
+                OTEL_EXPORTER_OTLP_COMPRESSION,
+                OTEL_EXPORTER_OTLP_METRICS_HEADERS,
+                OTEL_EXPORTER_OTLP_HEADERS,
+            ]
+            .into_iter()
+            .all(|key| std::env::var_os(key).is_none())
+            .then_some(Compression::Zstd);
+            build_otlp_metric_exporter(
+                crate::config::resolve_exporter(&OtelExporter::Statsig),
+                temporality,
+                factory,
+                /*headers_helper*/ None,
+                compression,
+            )
+        }
         OtelExporter::OtlpGrpc {
             endpoint,
             headers,
@@ -670,11 +740,16 @@ fn build_otlp_metric_exporter(
                 .with_protocol(protocol)
                 .with_headers(headers);
 
-            if factory.network_policy().is_managed() {
+            if let Some(compression) = compression {
+                exporter_builder = exporter_builder.with_compression(compression);
+            }
+
+            if headers_helper.is_some() || factory.network_policy().is_managed() {
                 let client = crate::otlp::build_async_http_client(
                     factory,
                     tls.as_ref(),
                     OTEL_EXPORTER_OTLP_METRICS_TIMEOUT,
+                    headers_helper,
                 )
                 .map_err(|err| MetricsError::InvalidConfig {
                     message: err.to_string(),

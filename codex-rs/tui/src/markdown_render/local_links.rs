@@ -5,6 +5,7 @@
 //! relative to the session working directory when possible. This module only formats destinations;
 //! it does not resolve files or infer execution-host paths from the frontend filesystem.
 
+use codex_utils_path_uri::PathConvention;
 use codex_utils_path_uri::PathUri;
 use codex_utils_string::normalize_markdown_hash_location_suffix;
 use regex_lite::Regex;
@@ -20,12 +21,66 @@ static COLON_LOCATION_SUFFIX_RE: LazyLock<Regex> =
         },
     );
 
-// Covered by load_location_suffix_regexes.
 static HASH_LOCATION_SUFFIX_RE: LazyLock<Regex> =
     LazyLock::new(|| match Regex::new(r"^L\d+(?:C\d+)?(?:-L\d+(?:C\d+)?)?$") {
         Ok(regex) => regex,
         Err(error) => panic!("invalid hash location regex: {error}"),
     });
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct SourceLocation {
+    pub(crate) line: usize,
+    pub(crate) column: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct FileLink {
+    pub(crate) path: String,
+    pub(crate) location: Option<SourceLocation>,
+}
+
+impl FileLink {
+    pub(crate) fn is_image(&self) -> bool {
+        self.location.is_none() && crate::sidebar_image::supports_path(&self.path)
+    }
+}
+
+pub(crate) fn is_markdown_file(path: &str) -> bool {
+    path.rsplit_once('.').is_some_and(|(_, ext)| {
+        ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown")
+    })
+}
+
+pub(crate) fn sidebar_file_link(destination: &str) -> Option<FileLink> {
+    if destination.len() > 8192 || destination.contains('?') {
+        return None;
+    }
+    if destination.starts_with("file://") && Url::parse(destination).ok()?.has_host() {
+        return None;
+    }
+    let (path, location) = parse_local_link_target(destination)?;
+    if destination.contains('#') && location.is_none() {
+        return None;
+    }
+    let location = if let Some(suffix) = location {
+        let start = suffix.strip_prefix(':')?.split(['-', '–']).next()?;
+        let (line, column) = start.split_once(':').unwrap_or((start, "1"));
+        Some(SourceLocation {
+            line: line.parse::<usize>().ok()?.max(1),
+            column: column.parse::<usize>().ok()?.max(1),
+        })
+    } else {
+        None
+    };
+    (!path.is_empty()
+        && !path.ends_with('/')
+        && path.len() <= 4096
+        && !path.starts_with('~')
+        && !path.starts_with("//")
+        && !path.chars().any(char::is_control)
+        && (is_absolute_local_link_path(&path) || Url::parse(&path).is_err()))
+    .then_some(FileLink { path, location })
+}
 
 pub(super) fn is_local_path_like_link(dest_url: &str) -> bool {
     dest_url.starts_with("file://")
@@ -57,8 +112,8 @@ pub(super) fn render_local_link_target(dest_url: &str, cwd: Option<&Path>) -> Op
 /// Split a local-link destination into `(normalized_path_text, location_suffix)`.
 ///
 /// The returned path text never includes a trailing `#L..` or `:line[:col]` suffix. Path
-/// normalization preserves `~/...` and rewrites path separators into display-stable forward
-/// slashes. The suffix, when present, is returned separately in normalized markdown form.
+/// normalization preserves home-relative paths and uses forward slashes as separators.
+/// A backslash in a POSIX file URI is part of the filename and is preserved.
 ///
 /// Returns `None` only when the destination looks like a `file://` URL but cannot be parsed into a
 /// local path. Plain path-like inputs always return `Some(...)` even if they are relative.
@@ -67,7 +122,12 @@ fn parse_local_link_target(dest_url: &str) -> Option<(String, Option<String>)> {
         let url = Url::parse(dest_url).ok()?;
         // Infer the path's OS from the URI, not the host running the TUI.
         let path = PathUri::parse(&url[..url::Position::AfterPath]).ok()?;
-        let path_text = normalize_local_link_path_text(&path.inferred_native_path_string());
+        let native_path = path.inferred_native_path_string();
+        let path_text = if path.infer_path_convention() == Some(PathConvention::Posix) {
+            native_path
+        } else {
+            normalize_local_link_path_text(&native_path)
+        };
         let location_suffix = url
             .fragment()
             .and_then(normalize_hash_location_suffix_fragment);

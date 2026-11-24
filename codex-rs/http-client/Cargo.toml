@@ -13,7 +13,7 @@ http-body = "1.0.1"
 httpdate = { workspace = true }
 native-tls = "0.2"
 opentelemetry = { workspace = true }
-reqwest = { workspace = true, features = ["json", "rustls-tls", "rustls-tls-native-roots", "stream"] }
+reqwest = { workspace = true, features = ["gzip", "json", "rustls-tls", "rustls-tls-native-roots", "stream", "zstd"] }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }
 rustls-pki-types = { workspace = true }
@@ -25,13 +25,19 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt", "time", "sync"] }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
+url = { workspace = true }
 zstd = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 system-configuration = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+curl = { version = "0.4.50", features = ["static-curl", "ntlm"] }
 rustls-platform-verifier = "0.7.0"
+socket2 = "0.6"
+tokio = { workspace = true, features = ["io-util", "net"] }
+tokio-rustls = { workspace = true }
+url = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Networking_WinHttp",

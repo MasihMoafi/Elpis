@@ -13,14 +13,14 @@ use crate::mention_codec::is_mention_name_char;
 use crate::mention_codec::parse_linked_tool_mention;
 use crate::skills_helpers::skill_description;
 use crate::skills_helpers::skill_display_name;
+use codex_app_server_protocol::SkillErrorInfo;
 use codex_app_server_protocol::SkillMetadata;
-use codex_app_server_protocol::SkillsListEntry;
 use codex_app_server_protocol::SkillsListResponse;
 use codex_connectors::AppInfo;
 use codex_protocol::parse_command::ParsedCommand;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
+use codex_utils_plugins::mention_syntax::PLUGIN_TEXT_MENTION_SIGIL;
 use codex_utils_plugins::mention_syntax::TOOL_MENTION_SIGIL;
 
 impl ChatWidget {
@@ -101,6 +101,7 @@ impl ChatWidget {
     }
 
     pub(crate) fn handle_manage_skills_closed(&mut self) {
+        self.refresh_skills_for_current_cwd(/*force_reload*/ true);
         let Some(initial_state) = self.skills_initial_state.take() else {
             return;
         };
@@ -129,16 +130,38 @@ impl ChatWidget {
         if enabled_count == 0 && disabled_count == 0 {
             return;
         }
-        self.add_info_message(
-            format!("{enabled_count} skills enabled, {disabled_count} skills disabled"),
-            /*hint*/ None,
-        );
+        let enabled_suffix = if enabled_count == 1 { "" } else { "s" };
+        let disabled_suffix = if disabled_count == 1 { "" } else { "s" };
+        let summary = match (enabled_count, disabled_count) {
+            (0, _) => format!("Disabled {disabled_count} skill{disabled_suffix}"),
+            (_, 0) => format!("Enabled {enabled_count} skill{enabled_suffix}"),
+            _ => format!(
+                "Enabled {enabled_count} skill{enabled_suffix}, disabled {disabled_count} skill{disabled_suffix}"
+            ),
+        };
+        self.add_info_message(summary, /*hint*/ None);
     }
 
-    pub(crate) fn set_skills_from_response(&mut self, response: &SkillsListResponse) {
-        let skills = skills_for_cwd(&self.config.cwd, &response.data);
+    /// Updates skills for the displayed session and returns its load errors.
+    pub(crate) fn set_skills_from_response(
+        &mut self,
+        response: SkillsListResponse,
+    ) -> Vec<SkillErrorInfo> {
+        let (skills, errors) = response
+            .data
+            .into_iter()
+            .find(|entry| {
+                crate::app_server_session::decode_thread_cwd(
+                    &LegacyAppPathString::from_path(&entry.cwd),
+                    self.app_server_path_convention,
+                )
+                .is_ok_and(|cwd| cwd == self.current_cwd)
+            })
+            .map(|entry| (entry.skills, entry.errors))
+            .unwrap_or_default();
         self.skills_all = skills;
         self.set_skills(Some(enabled_skills_for_mentions(&self.skills_all)));
+        errors
     }
 
     pub(crate) fn annotate_skill_reads_in_parsed_cmd(
@@ -172,14 +195,6 @@ impl ChatWidget {
     }
 }
 
-fn skills_for_cwd(cwd: &AbsolutePathBuf, skills_entries: &[SkillsListEntry]) -> Vec<SkillMetadata> {
-    skills_entries
-        .iter()
-        .find(|entry| entry.cwd.as_path() == cwd.as_path())
-        .map(|entry| entry.skills.clone())
-        .unwrap_or_default()
-}
-
 fn enabled_skills_for_mentions(skills: &[SkillMetadata]) -> Vec<SkillMetadata> {
     skills
         .iter()
@@ -199,6 +214,15 @@ pub(crate) fn collect_tool_mentions(
         }
     }
     mentions
+}
+
+/// Generated follow-ups must not activate a skill, app, or plugin through their text.
+pub(super) fn contains_tool_mention(text: &str) -> bool {
+    let mentions = extract_tool_mentions_from_text(text);
+    let plugins = extract_tool_mentions_from_text_with_sigil(text, PLUGIN_TEXT_MENTION_SIGIL);
+    !mentions.names.is_empty()
+        || !mentions.linked_paths.is_empty()
+        || !plugins.linked_paths.is_empty()
 }
 
 pub(crate) fn find_skill_mentions_with_tool_mentions(

@@ -22,12 +22,12 @@ fn discarded_tool_response_is_collectible_before_cell_ends() {
     let (event_tx, _event_rx) = mpsc::unbounded_channel();
     let (runtime_command_tx, _runtime_command_rx) = std_mpsc::channel();
     scope.set_slot(RuntimeState {
-        event_tx,
+        event_tx: event_tx.into(),
         pending_tool_calls: HashMap::new(),
         pending_timeouts: HashMap::new(),
         stored_values: HashMap::new(),
         stored_value_writes: HashMap::new(),
-        enabled_tools: Vec::new(),
+        enabled_tools: Default::default(),
         next_tool_call_id: 1,
         next_timeout_id: 1,
         tool_call_id: "cell".to_string(),

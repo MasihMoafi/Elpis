@@ -1,5 +1,8 @@
 use super::*;
+use crate::app_server_session::SideChatStorage;
 use crate::legacy_core::config::ConfigOverrides;
+use crate::local_settings::LocalSettings;
+use crate::test_support::boxed_future;
 use codex_config::LoaderOverrides;
 use pretty_assertions::assert_eq;
 use std::fs;
@@ -49,45 +52,17 @@ async fn start_server(
             status,
         )
         .await?;
-    let mut overrides = None;
-    server.thread_tool_transport().configure_mcp(&mut overrides);
-    let overrides = overrides.unwrap();
-    assert!(!overrides.contains_key("mcp_servers.codex_tui"));
-    let mcp = &overrides["mcp_servers.codex_worktrees"];
-    let response = codex_http_client::HttpClientBuilder::new().build_direct()?
-        .post(mcp["url"].as_str().unwrap())
-        .header("Authorization", mcp["http_headers"]["Authorization"].as_str().unwrap())
-        .header("Accept", "application/json, text/event-stream")
-        .header("MCP-Protocol-Version", "2026-07-28")
-        .header("MCP-Method", "tools/list")
-        .json(&json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{
-            "io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}}}))
-        .send().await?.text().await?;
-    let result: Value = serde_json::from_str(
-        response
-            .lines()
-            .find_map(|line| line.strip_prefix("data: "))
-            .unwrap_or(&response),
-    )?;
-    assert_eq!(
-        result["result"]["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|tool| tool["name"].as_str().unwrap())
-            .collect::<Vec<_>>(),
-        vec![
-            "create_worktree",
-            "get_worktree_creation_status",
-            "list_worktrees"
-        ]
-    );
     Ok(server)
 }
 
 #[tokio::test]
 async fn creation_attaches_to_original_task_and_survives_service_restart() -> color_eyre::Result<()>
 {
+    boxed_future!(creation_attaches_to_original_task_and_survives_service_restart_scenario()).await
+}
+
+async fn creation_attaches_to_original_task_and_survives_service_restart_scenario()
+-> color_eyre::Result<()> {
     let home = tempfile::tempdir()?;
     let responses =
         app_test_support::create_mock_responses_server_repeating_assistant("Ready").await;
@@ -100,7 +75,7 @@ async fn creation_attaches_to_original_task_and_survives_service_restart() -> co
     git(&repository, &["add", "."]);
     git(&repository, &["commit", "-m", "base"]);
     fs::write(repository.join("tracked.txt"), "source edits\n")?;
-    let mut config = ConfigBuilder::default()
+    let config = ConfigBuilder::default()
         .codex_home(home.path().to_path_buf())
         .harness_overrides(ConfigOverrides {
             cwd: Some(home.path().to_path_buf()),
@@ -109,23 +84,18 @@ async fn creation_attaches_to_original_task_and_survives_service_restart() -> co
         .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
         .build()
         .await?;
-    config.features.enable(codex_features::Feature::Worktrees)?;
     let mut server = Box::pin(start_server(&config)).await?;
-    let mut conflicting = config.clone();
-    let raw: codex_config::RawMcpServerConfig =
-        serde_json::from_value(json!({"url":"http://127.0.0.1:1/mcp"}))?;
-    let mut servers = conflicting.mcp_servers.get().clone();
-    servers.insert(
-        "codex_worktrees".to_owned(),
-        codex_config::McpServerConfig::try_from(raw).map_err(color_eyre::eyre::Report::msg)?,
-    );
-    conflicting.mcp_servers.set(servers)?;
-    let error = Box::pin(server.start_thread(&conflicting))
-        .await
-        .unwrap_err();
-    assert!(error.to_string().contains("MCP server owns"));
+    let config_path = home.path().join("config.toml");
+    let original = fs::read_to_string(&config_path)?;
+    fs::write(
+        &config_path,
+        format!("{original}\n[mcp_servers.codex_tui]\nurl = 'http://127.0.0.1:1/mcp'\n"),
+    )?;
+    let error = Box::pin(server.start_thread(&config)).await.unwrap_err();
+    assert!(error.to_string().contains("owns the TUI tools namespace"));
+    fs::write(config_path, original)?;
     let started = Box::pin(server.start_thread(&config)).await?;
-    assert!(!started.task_tools_available);
+    assert!(started.task_tools_available);
     let thread_id = started.session.thread_id.to_string();
     let _: codex_app_server_protocol::TurnStartResponse = server
         .request_handle()
@@ -147,7 +117,7 @@ async fn creation_attaches_to_original_task_and_survives_service_restart() -> co
         .await?;
     tokio::time::timeout(Duration::from_secs(20), async {
         loop {
-            if matches!(server.next_event().await, Some(codex_app_server_client::AppServerEvent::ServerNotification(notification)) if matches!(notification.as_ref(), codex_app_server_protocol::ServerNotification::TurnCompleted(_))) { break; }
+            if matches!(server.next_event().await, Some(event) if matches!(&event.event, codex_app_server_client::AppServerEvent::ServerNotification(notification) if matches!(notification.as_ref(), codex_app_server_protocol::ServerNotification::TurnCompleted(_)))) { break; }
         }
     }).await?;
     let tools = ManagedWorktreeTools::new(&config)
@@ -168,16 +138,30 @@ async fn creation_attaches_to_original_task_and_survives_service_restart() -> co
     let mut ephemeral_config = config.clone();
     ephemeral_config.ephemeral = true;
     let ephemeral = Box::pin(server.start_thread(&ephemeral_config)).await?;
-    let refused = tools
-        .execute(
-            server.request_handle(),
-            ephemeral.session.thread_id.to_string(),
-            "create_worktree",
-            json!({"allowAsync":true}),
-        )
-        .await;
-    assert!(!refused.success, "{refused:?}");
-    assert!(format!("{refused:?}").contains("Ephemeral side conversations"));
+    let saved_side = Box::pin(server.fork_side_thread(
+        &LocalSettings::from(&config),
+        config.clone(),
+        /*workspace_roots*/ None,
+        started.session.thread_id,
+        /*selected_profile*/ None,
+        SideChatStorage::Attached,
+    ))
+    .await?;
+    for blocked in [ephemeral, saved_side] {
+        let refused = tools
+            .execute(
+                server.request_handle(),
+                blocked.session.thread_id.to_string(),
+                "create_worktree",
+                json!({"allowAsync":true}),
+            )
+            .await;
+        assert!(!refused.success, "{refused:?}");
+        assert!(
+            format!("{refused:?}")
+                .contains("Side conversations cannot retain worktree attachments")
+        );
+    }
     assert!(!tools.manager.settings().root.exists());
     assert!(tools.operations.lock().await.is_empty());
     let call = |tool: &'static str, arguments| {
@@ -338,13 +322,13 @@ async fn creation_attaches_to_original_task_and_survives_service_restart() -> co
         crate::app_server_session::ResumeModelSettings::RestoreFromThread,
     ))
     .await?;
-    assert!(!resumed.task_tools_available);
+    assert!(resumed.task_tools_available);
     assert_eq!(
         value(
             fresh
                 .execute(
                     resumed_server.request_handle(),
-                    thread_id,
+                    thread_id.clone(),
                     "list_worktrees",
                     json!({})
                 )
@@ -357,6 +341,7 @@ async fn creation_attaches_to_original_task_and_survives_service_restart() -> co
         &responses,
         &config,
         &repository,
+        &thread_id,
     ))
     .await?;
     resumed_server.shutdown().await?;

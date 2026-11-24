@@ -6,16 +6,19 @@ use std::sync::Arc;
 
 use codex_file_system::ExecutorFileSystem;
 use codex_skills::parse_skill_frontmatter_metadata;
+use codex_skills::parse_skill_metadata;
 use futures::StreamExt;
 use serde::Deserialize;
 use serde::Serialize;
 
 use crate::CapabilityRootDiscoverRequest;
 use crate::CapabilityRootDiscovery;
+use crate::CapabilityTextFile;
 use crate::DiscoverV2CapabilitiesResponse;
 use crate::ExecutorPlugin;
 use crate::ExecutorSkill;
 use crate::LocalFileSystem;
+use crate::SkillDiscoveryRoot;
 use crate::capability_discovery::MAX_CONCURRENT_ROOTS;
 use crate::capability_discovery::discover_root;
 use crate::discover_v2::capability_locations::CapabilityLocation;
@@ -37,6 +40,23 @@ enum DiscoveredSource {
 struct CapabilityDiscovery {
     content: DiscoveredSource,
     warnings: Vec<String>,
+}
+
+// Only the metadata V2 returns or needs to materialize discovered configuration.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginManifestMetadata {
+    #[serde(default)]
+    name: String,
+    interface: Option<PluginManifestInterface>,
+    mcp_servers: Option<serde_json::Value>,
+    apps: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginManifestInterface {
+    display_name: Option<String>,
 }
 
 impl Default for CapabilityDiscovery {
@@ -87,8 +107,9 @@ pub(crate) async fn load_capability_discovery_batch(
     };
     let mut budget = ResponseBudget::default();
     // Use V1 concurrency; admit results in location order.
-    let mut discoveries = futures::stream::iter(locations)
-        .map(|location| load_capability_discovery(file_system, location.clone()))
+    // Yield owned locations to satisfy the RPC router's Send future bound.
+    let mut discoveries = futures::stream::iter(locations.iter().cloned())
+        .map(|location| load_capability_discovery(file_system, location))
         .buffered(MAX_CONCURRENT_ROOTS)
         .enumerate();
     while let Some((index, discovery)) = discoveries.next().await {
@@ -208,12 +229,15 @@ fn parse_root(
                 .filter(|name| !name.is_empty())
                 .unwrap_or_else(|| "skill".to_string())
         });
-        let Ok(parsed) = parsed else {
-            warnings.push(format!(
-                "invalid skill metadata at {}",
-                skill.instructions.path
-            ));
-            continue;
+        let parsed = match parsed {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                warnings.push(format!(
+                    "invalid skill metadata at {}: {error}",
+                    skill.instructions.path
+                ));
+                continue;
+            }
         };
         let path = skill.instructions.path;
         let mut ancestor = path.parent();
@@ -236,18 +260,87 @@ fn parse_root(
             }
             ancestor = root.parent();
         }
+        let metadata = skill.metadata.as_ref().and_then(|metadata| {
+            parse_skill_metadata(&metadata.contents).map_err(|error| {
+                tracing::warn!(path = %metadata.path, %error, "ignoring invalid discovered skill metadata");
+            }).ok()
+        }).unwrap_or_default();
         skills.push(ExecutorSkill {
-            name: parsed.name,
-            namespace,
+            name: namespace
+                .map(|namespace| format!("{namespace}:{}", parsed.name))
+                .unwrap_or(parsed.name),
             description: parsed.description,
             short_description: parsed.short_description,
             path,
-            metadata: skill.metadata,
+            discovery_root: location
+                .standalone_root_id
+                .as_ref()
+                .map(|id| SkillDiscoveryRoot {
+                    id: id.clone(),
+                    path: location.root.clone(),
+                }),
+            dependencies: metadata.dependencies,
+            policy: metadata.policy,
         });
     }
-    let content = if let (Some(plugin), Some(files)) = (location.plugin, discovery.plugin) {
+    let content = if let (Some(plugin), Some(mut files)) = (location.plugin, discovery.plugin) {
+        let manifest =
+            match serde_json::from_str::<PluginManifestMetadata>(&files.manifest.contents) {
+                Ok(manifest) => manifest,
+                Err(_) => {
+                    warnings.push(format!(
+                        "invalid plugin manifest at {}",
+                        files.manifest.path
+                    ));
+                    return CapabilityDiscovery {
+                        warnings,
+                        ..Default::default()
+                    };
+                }
+            };
+        let name = if manifest.name.trim().is_empty() {
+            location.root.basename().unwrap_or(manifest.name)
+        } else {
+            manifest.name
+        };
+        let display_name = manifest
+            .interface
+            .and_then(|interface| interface.display_name)
+            .map(|display_name| display_name.trim().to_string())
+            .filter(|display_name| !display_name.is_empty())
+            .unwrap_or(name);
+        // V2 materializes inline declarations; the path identifies their source manifest.
+        if files.mcp_config.is_none() {
+            if let Some(contents) = manifest
+                .mcp_servers
+                .as_ref()
+                .filter(|value| value.is_object())
+            {
+                files.mcp_config = Some(CapabilityTextFile {
+                    path: files.manifest.path.clone(),
+                    contents: contents.to_string(),
+                });
+            } else if manifest
+                .mcp_servers
+                .as_ref()
+                .is_some_and(serde_json::Value::is_string)
+            {
+                warnings.push(format!(
+                    "plugin `{}` at {} declares an MCP configuration file, but discovery returned no contents",
+                    plugin.id, location.root
+                ));
+            }
+        }
+
+        if files.apps_config.is_none() && manifest.apps.is_some() {
+            warnings.push(format!(
+                "plugin `{}` at {} declares an Apps configuration file, but discovery returned no contents",
+                plugin.id, location.root
+            ));
+        }
         DiscoveredSource::Plugin(Box::new(ExecutorPlugin {
             id: plugin.id,
+            display_name,
             remote_plugin_id: plugin.remote_plugin_id,
             version: plugin.version,
             root: location.root,

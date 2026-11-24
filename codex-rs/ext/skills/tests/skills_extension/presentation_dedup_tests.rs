@@ -53,6 +53,7 @@ async fn cloud_preference_preserves_aliases_reads_and_executor_fallback() -> Tes
         let provider = |entries| {
             Arc::new(StaticSkillProvider {
                 catalog: SkillCatalog {
+                    is_partial: false,
                     entries,
                     warnings: Vec::new(),
                 },
@@ -108,24 +109,27 @@ async fn cloud_preference_preserves_aliases_reads_and_executor_fallback() -> Tes
             ("connected", true),
             ("disconnected", false),
         ] {
-            start_registered_turn(&registry, &session_store, &thread_store, stage).await;
+            refresh_registered_catalogs_for_step(&registry, &session_store, &thread_store, stage)
+                .await;
             let turn_store = ExtensionData::new(stage);
-            let sections = registry.context_contributors()[0]
-                .contribute_world_state(WorldStateContributionInput {
+            let sections = prepared_world_state(
+                &registry,
+                if ready { &roots } else { &[] },
+                WorldStateContributionInput {
                     previous_world_state: Some(&previous),
                     model_info: &model_info,
                     thread_id: codex_protocol::ThreadId::new(),
                     turn_id: stage,
                     environments: &[],
-                    ready_selected_capability_roots: if ready { &roots } else { &[] },
-                    executor_capability_discovery: None,
+
                     extension_metrics: None,
                     session_store: &session_store,
                     thread_store: &thread_store,
                     turn_store: &turn_store,
                     step_store: &turn_store,
-                })
-                .await;
+                },
+            )
+            .await;
             let snapshots: serde_json::Map<String, serde_json::Value> = sections
                 .iter()
                 .map(|section| {
@@ -172,7 +176,10 @@ async fn cloud_preference_preserves_aliases_reads_and_executor_fallback() -> Tes
             } else {
                 assert!(executor_body.contains("(executor package: e1/s0)"));
                 for (index, root) in executor_roots.iter().enumerate() {
-                    assert!(executor_body.contains(&format!("- `e{index}` = `{root}`")));
+                    assert_eq!(
+                        executor_body.contains(&format!("- `e{index}` = `{root}`")),
+                        index == 1 || !cloud_enabled,
+                    );
                 }
             }
             previous = snapshots;
@@ -225,6 +232,8 @@ async fn cloud_preference_preserves_aliases_reads_and_executor_fallback() -> Tes
                         source: ToolCallSource::Direct,
                         conversation_history: ConversationHistory::default(),
                         turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+                        attachment_store: Arc::new(InlineAttachmentStore),
+                        ephemeral: false,
                         environments: vec![ToolEnvironment::new(
                             "local".to_string(),
                             PathUri::parse("file:///skills")?,

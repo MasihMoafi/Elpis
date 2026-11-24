@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde::Serializer;
 use std::fmt;
 use std::path::Path;
+use std::path::PathBuf;
 use thiserror::Error;
 use ts_rs::TS;
 
@@ -57,6 +58,11 @@ impl LegacyAppPathString {
     /// Renders an absolute path using the current host's path convention.
     pub fn from_abs_path(path: &AbsolutePathBuf) -> Self {
         Self::from_path(path.as_path())
+    }
+
+    /// Renders host-native absolute paths for a legacy API path list.
+    pub fn from_abs_paths(paths: &[AbsolutePathBuf]) -> Vec<Self> {
+        paths.iter().map(Self::from_abs_path).collect()
     }
 
     /// Renders a path URI using the requested native path convention.
@@ -188,6 +194,16 @@ impl LegacyAppPathString {
         }
     }
 
+    /// Borrows the API string as a path without validating it for this host.
+    pub fn as_path(&self) -> &Path {
+        Path::new(&self.0)
+    }
+
+    /// Copies the API path text into a path buffer without normalization.
+    pub fn to_path_buf(&self) -> PathBuf {
+        self.as_path().to_owned()
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -262,10 +278,8 @@ fn render_windows_opaque_fallback(path_bytes: &[u8]) -> Option<String> {
     if !path_bytes.len().is_multiple_of(2) {
         return None;
     }
-    let path_wide = path_bytes
-        .chunks_exact(2)
-        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-        .collect::<Vec<_>>();
+    let (units, _) = path_bytes.as_chunks();
+    let path_wide: Vec<_> = units.iter().copied().map(u16::from_le_bytes).collect();
 
     // Windows absolute paths either have a rooted drive prefix (`C:\\`) or a
     // rooted namespace/UNC prefix (`\\server`, `\\.\\`, or `\\?\\`).

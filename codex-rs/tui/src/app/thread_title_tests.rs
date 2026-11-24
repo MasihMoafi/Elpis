@@ -20,16 +20,19 @@ use codex_app_server_client::AppServerEvent;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
 use codex_model_provider_info::ModelProviderInfo;
+use codex_protocol::ThreadId;
 use codex_protocol::models::MessagePhase;
 use core_test_support::responses;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
+use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 use tokio::sync::mpsc::unbounded_channel;
@@ -90,12 +93,100 @@ fn bounds_the_entire_title_prompt_for_dense_unicode() {
 }
 
 #[tokio::test]
+async fn cloud_conversations_save_the_first_message_if_generation_is_unavailable()
+-> color_eyre::Result<()> {
+    use codex_app_server_client::CloudOperation;
+    use codex_app_server_protocol::ClientRequest;
+
+    let mut app = make_test_app().await;
+    let thread_id = ThreadId::new();
+    let (client, mut commands, _server_events) =
+        codex_app_server_client::CloudClient::channel(/*capacity*/ 1);
+    let mut app_server = crate::app_server_session::AppServerSession::new(
+        crate::backend_id::BackendId::new(),
+        codex_app_server_client::AppServerClient::Cloud(client),
+        crate::app_server_session::ThreadParamsMode::Cloud,
+    );
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let (tx, mut events) = unbounded_channel();
+    app.app_event_tx = AppEventSender::new(tx);
+    app.active_thread_id = Some(thread_id);
+    app.chat_widget
+        .handle_thread_session(crate::app::tests::test_thread_session(
+            thread_id,
+            app.config.cwd.to_path_buf(),
+        ));
+    app.chat_widget
+        .setup_terminal_title(vec![crate::bottom_pane::TerminalTitleItem::ThreadName]);
+
+    app.handle_active_thread_event(
+        &mut tui,
+        &mut app_server,
+        ThreadBufferedEvent::Notification(Box::new(ServerNotification::ItemCompleted(
+            ItemCompletedNotification::new(
+                thread_id.to_string(),
+                "first-turn".to_string(),
+                title_user_message("first-message", "Fix the **login** timeout"),
+                /*started_at_ms*/ None,
+                /*completed_at_ms*/ 0,
+            ),
+        ))),
+    )
+    .await?;
+    insta::assert_snapshot!(
+        app.chat_widget.last_terminal_title.as_deref().unwrap_or_default(),
+        @"Fix the login timeout"
+    );
+    let read = commands.recv().await.expect("read the saved Cloud title");
+    assert!(matches!(
+        read.operation,
+        CloudOperation::Request(request)
+            if matches!(request.as_ref(), ClientRequest::ThreadRead { params, .. }
+                if params.thread_id == thread_id.to_string() && !params.include_turns)
+    ));
+    let mut thread = crate::app::agents_overview::tests::overview_thread(
+        thread_id,
+        /*parent_thread_id*/ None,
+        "",
+        codex_app_server_protocol::ThreadStatus::Idle,
+    );
+    thread.name = None;
+    read.response
+        .send(Ok(Ok(serde_json::json!({"thread": thread}))))
+        .unwrap();
+    let rename = commands.recv().await.expect("save the Cloud title");
+    assert!(matches!(
+        rename.operation,
+        CloudOperation::Request(request)
+            if matches!(request.as_ref(), ClientRequest::ThreadSetName { params, .. }
+                if params.thread_id == thread_id.to_string() && params.name == "Fix the login timeout")
+    ));
+    app.cloud_title_shutdown.send(()).unwrap();
+    assert!(app.cloud_title_shutdown.closed().now_or_never().is_none());
+    rename.response.send(Ok(Ok(serde_json::json!({})))).unwrap();
+    app.cloud_title_shutdown.closed().await;
+    loop {
+        let event = events.recv().await.expect("title generation completes");
+        if matches!(&event, AppEvent::GeneratedThreadTitle { .. }) {
+            app.handle_event(&mut tui, &mut app_server, event).await?;
+            break;
+        }
+    }
+
+    assert!(app.pending_thread_titles.is_empty());
+    assert!(commands.try_recv().is_err());
+    Ok(())
+}
+
+#[tokio::test]
 async fn automatic_thread_title_respects_origin_metadata_after_switching() -> color_eyre::Result<()>
 {
-    for (switch_threads, manual_name) in [
-        (true, None),
-        (true, Some("Manual title")),
-        (false, Some("Manual title")),
+    for (switch_threads, fork_name, manual_name) in [
+        (true, None, None),
+        (true, Some("Release plan"), None),
+        (true, Some("Release plan"), Some("Manual title")),
+        (true, None, Some("Manual title")),
+        (false, None, Some("Manual title")),
     ] {
         let mut app = make_test_app().await;
         let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
@@ -115,6 +206,13 @@ async fn automatic_thread_title_respects_origin_metadata_after_switching() -> co
         );
 
         let mut tui = crate::tui::test_support::make_test_tui()?;
+        if let Some(name) = fork_name {
+            app_server
+                .thread_set_name(thread_id, name.to_owned())
+                .await?;
+        }
+        let automatic =
+            app_server.automatic_thread_name_writer(thread_id, fork_name.map(str::to_owned));
         if switch_threads {
             let second = app_server.start_thread(&app.config).await?;
             let second_id = second.session.thread_id;
@@ -133,18 +231,22 @@ async fn automatic_thread_title_respects_origin_metadata_after_switching() -> co
                 .await?;
         }
         let displayed_thread = (app.chat_widget.thread_id(), app.chat_widget.thread_name());
+        automatic
+            .save("Generated title".into(), &CancellationToken::new())
+            .await;
         app.handle_event(
             &mut tui,
             &mut app_server,
             AppEvent::GeneratedThreadTitle {
                 cancellation: CancellationToken::new(),
                 thread_id,
-                temporary_thread_id: codex_protocol::ThreadId::new(),
+                temporary_thread_id: Some(ThreadId::new()),
                 destination: ThreadTitleDestination::Automatic,
                 result: Ok(r#"{"title":"Generated title"}"#.to_string()),
             },
         )
-        .await?;
+        .now_or_never()
+        .expect("title dispatch must return to keyboard polling")?;
         let expected_name = Some(manual_name.unwrap_or("Generated title").to_string());
         assert_eq!(
             app_server
@@ -179,8 +281,14 @@ async fn slash_rename_generates_editable_title_through_embedded_app_server()
 }
 
 #[tokio::test]
-async fn automatic_thread_title_generates_without_a_provisional_name() -> color_eyre::Result<()> {
+async fn automatic_thread_title_replaces_the_provisional_name() -> color_eyre::Result<()> {
     check_thread_title_generation(TitleScenario::Automatic).await
+}
+
+#[tokio::test]
+async fn automatic_thread_title_saves_the_first_message_if_generation_fails()
+-> color_eyre::Result<()> {
+    check_thread_title_generation(TitleScenario::Fallback).await
 }
 
 #[tokio::test]
@@ -196,6 +304,7 @@ async fn overview_rename_cancels_running_thread_title() -> color_eyre::Result<()
 #[derive(Clone, Copy)]
 enum TitleScenario {
     Automatic,
+    Fallback,
     Suggestion,
     ManualRename,
     OverviewRename,
@@ -208,9 +317,19 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
         TitleScenario::ManualRename | TitleScenario::OverviewRename
     );
     let server = wiremock::MockServer::start().await;
+    let user_message = if matches!(scenario, TitleScenario::Fallback) {
+        "Fix the **login**\n[timeout](https://example.test/issue)"
+    } else {
+        "Fix the login timeout"
+    };
+    let title_message = if matches!(scenario, TitleScenario::Fallback) {
+        "{}"
+    } else {
+        r#"{"title":"Fix login timeout"}"#
+    };
     let mut template = responses::sse_response(responses::sse(vec![
         responses::ev_response_created("title-response"),
-        responses::ev_assistant_message("title-message", r#"{"title":"Fix login timeout"}"#),
+        responses::ev_assistant_message("title-message", title_message),
         responses::ev_completed("title-response"),
     ]));
     if cancel {
@@ -271,7 +390,10 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
         .push(Turn {
             id: "existing-turn".to_string(),
             root_turn_id: None,
-            items: vec![title_user_message("user-message", "Fix the login timeout")],
+            items: vec![ThreadItem::untimed(title_user_message(
+                "user-message",
+                user_message,
+            ))],
             items_view: Default::default(),
             status: TurnStatus::Completed,
             error: None,
@@ -287,18 +409,35 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
                 &mut tui,
                 &mut app_server,
                 ThreadBufferedEvent::Notification(Box::new(ServerNotification::ItemCompleted(
-                    ItemCompletedNotification {
-                        thread_id: thread_id.to_string(),
-                        turn_id: "existing-turn".to_string(),
-                        item: title_user_message("user-message", "Fix the login timeout"),
-                        completed_at_ms: 0,
-                    },
+                    ItemCompletedNotification::new(
+                        thread_id.to_string(),
+                        "existing-turn".to_string(),
+                        title_user_message("user-message", user_message),
+                        /*started_at_ms*/ None,
+                        /*completed_at_ms*/ 0,
+                    ),
                 ))),
             )
             .await?;
         }
-        assert_eq!(app.chat_widget.thread_name(), None);
-        assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
+        assert_eq!(
+            app.chat_widget.thread_name().as_deref(),
+            Some("Fix the login timeout")
+        );
+        if matches!(scenario, TitleScenario::Automatic) {
+            app.chat_widget.refresh_status_surfaces();
+            insta::assert_snapshot!(
+                "automatic_thread_title_pending",
+                normalize_snapshot_paths(format!(
+                    "terminal title: {}\nfooter:\n{}",
+                    app.chat_widget
+                        .last_terminal_title
+                        .as_deref()
+                        .unwrap_or_default(),
+                    render_bottom_popup(&app.chat_widget, /*width*/ 120)
+                ))
+            );
+        }
         assert_eq!(
             app_server
                 .thread_read(thread_id, /*include_turns*/ false)
@@ -315,7 +454,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
 
     enum TitleDriveEvent {
         Ui(Box<AppEvent>),
-        Server(AppServerEvent),
+        Server(crate::app_server_session::AppServerSessionEvent),
         RequestStarted,
     }
 
@@ -348,7 +487,7 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
                 app.handle_event(&mut tui, &mut app_server, *event).await?;
             }
             TitleDriveEvent::Server(event) => {
-                if let AppServerEvent::ServerNotification(notification) = &event
+                if let AppServerEvent::ServerNotification(notification) = &event.event
                     && let ServerNotification::ThreadStarted(started) = notification.as_ref()
                     && started.thread.ephemeral
                 {
@@ -357,13 +496,13 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
                         Some(ThreadSource::Feature("thread_title".to_string())),
                     );
                 }
-                if let AppServerEvent::ServerNotification(notification) = &event
+                if let AppServerEvent::ServerNotification(notification) = &event.event
                     && let ServerNotification::TurnCompleted(completed) = notification.as_ref()
                     && Some(&completed.thread_id) == temporary_thread_id.as_ref()
                 {
                     interrupted = completed.turn.status == TurnStatus::Interrupted;
                 }
-                app.handle_app_server_event(&app_server, event).await;
+                app.handle_backend_event(&app_server, event).await;
             }
             TitleDriveEvent::RequestStarted => {
                 let name = "Keep this title".to_string();
@@ -374,13 +513,14 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
                     TitleScenario::OverviewRename => {
                         AppEvent::RenameAgentsOverviewThread { thread_id, name }
                     }
-                    TitleScenario::Automatic | TitleScenario::Suggestion => unreachable!(),
+                    TitleScenario::Automatic
+                    | TitleScenario::Fallback
+                    | TitleScenario::Suggestion => unreachable!(),
                 };
                 app.handle_event(&mut tui, &mut app_server, event).await?;
                 assert!(app.pending_thread_titles.is_empty());
                 let popup = render_bottom_popup(&app.chat_widget, /*width*/ 120);
                 assert!(popup.contains("Keep this title"));
-                assert!(!popup.contains('⠋'));
                 if matches!(scenario, TitleScenario::ManualRename) {
                     insta::assert_snapshot!(
                         "manual_rename_cancels_thread_title",
@@ -390,7 +530,14 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
                 renamed = true;
             }
         }
-        if generated && (!cancel || interrupted) {
+        if generated && automatic && !cancel {
+            app.drain_active_thread_events(&mut tui).await?;
+        }
+        if generated
+            && (!cancel || interrupted)
+            && (!matches!(scenario, TitleScenario::Automatic)
+                || app.chat_widget.thread_name().as_deref() == Some("Fix login timeout"))
+        {
             break;
         }
     }
@@ -398,6 +545,8 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
     if automatic {
         let expected_name = if cancel {
             "Keep this title"
+        } else if matches!(scenario, TitleScenario::Fallback) {
+            "Fix the login timeout"
         } else {
             "Fix login timeout"
         };
@@ -427,14 +576,13 @@ async fn check_thread_title_generation(scenario: TitleScenario) -> color_eyre::R
     }
     assert!(app.temporary_structured_requests.is_empty());
     assert!(app.pending_thread_titles.is_empty());
-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
 
     let request = response.single_request();
     assert!(
         request
-            .body_json()
-            .to_string()
-            .contains("Fix the login timeout")
+            .message_input_texts("user")
+            .iter()
+            .any(|prompt| prompt.contains(user_message))
     );
 
     app_server.shutdown().await?;
@@ -455,7 +603,11 @@ async fn canceled_thread_title_ignores_late_start_and_completion() -> color_eyre
     let destination = ThreadTitleDestination::Automatic;
     app.pending_thread_titles
         .insert((thread_id, destination), cancellation.clone());
-    app.sync_thread_title_progress();
+
+    let writer = app_server.automatic_thread_name_writer(thread_id, /*expected_name*/ None);
+    let token = cancellation.clone();
+    let mut automatic = std::pin::pin!(writer.save("Stale title".into(), &token));
+    assert!(automatic.as_mut().now_or_never().is_none());
 
     app.try_submit_active_thread_op_via_app_server(
         &mut app_server,
@@ -463,6 +615,9 @@ async fn canceled_thread_title_ignores_late_start_and_completion() -> color_eyre
         &AppCommand::set_thread_name("Keep this title".to_string()),
     )
     .await?;
+    automatic
+        .now_or_never()
+        .expect("canceled metadata read must finish");
     assert!(cancellation.is_cancelled());
     assert!(app.pending_thread_titles.is_empty());
 
@@ -471,10 +626,12 @@ async fn canceled_thread_title_ignores_late_start_and_completion() -> color_eyre
     app.pending_thread_titles
         .insert((thread_id, destination), replacement.clone());
     app.on_thread_title_started(
-        &app_server,
+        &mut app_server,
         thread_id,
         destination,
         "prompt".to_string(),
+        /*expected_name*/ None,
+        /*fallback_title*/ None,
         /*effort*/ None,
         Ok(temporary_thread_id.to_string()),
         cancellation.clone(),
@@ -487,7 +644,7 @@ async fn canceled_thread_title_ignores_late_start_and_completion() -> color_eyre
         AppEvent::GeneratedThreadTitle {
             cancellation,
             thread_id,
-            temporary_thread_id,
+            temporary_thread_id: Some(temporary_thread_id),
             destination,
             result: Ok(r#"{"title":"Late automatic title"}"#.to_string()),
         },
@@ -506,6 +663,67 @@ async fn canceled_thread_title_ignores_late_start_and_completion() -> color_eyre
         Some("Keep this title".to_string()),
     );
     app_server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cloud_manual_rename_can_retry_after_an_in_flight_automatic_write() -> color_eyre::Result<()>
+{
+    let thread_id = ThreadId::new();
+    let (client, mut requests, _events) =
+        codex_app_server_client::CloudClient::channel(/*capacity*/ 1);
+    let mut session = crate::app_server_session::AppServerSession::new(
+        crate::backend_id::BackendId::new(),
+        codex_app_server_client::AppServerClient::Cloud(client),
+        crate::app_server_session::ThreadParamsMode::Remote,
+    );
+    let writer = session.automatic_thread_name_writer(thread_id, /*expected_name*/ None);
+    let token = CancellationToken::new();
+    let mut automatic = std::pin::pin!(writer.save("Generated".into(), &token));
+    assert!(automatic.as_mut().now_or_never().is_none());
+    let mut thread = crate::app::agents_overview::tests::overview_thread(
+        thread_id,
+        /*parent_thread_id*/ None,
+        "",
+        codex_app_server_protocol::ThreadStatus::Idle,
+    );
+    thread.name = None;
+    requests
+        .try_recv()?
+        .response
+        .send(Ok(Ok(serde_json::json!({"thread": thread}))))
+        .unwrap();
+    assert!(automatic.as_mut().now_or_never().is_none());
+    let write = requests.try_recv()?;
+
+    let error = session
+        .thread_set_name(thread_id, "Manual".into())
+        .now_or_never()
+        .expect("a pending automatic Cloud write must not block the UI")
+        .expect_err("manual rename must report that the write is still in flight");
+    assert_eq!(
+        error.to_string(),
+        "An automatic title is still being saved. Try renaming the thread again."
+    );
+    assert!(
+        requests.try_recv().is_err(),
+        "manual rename raced the automatic write"
+    );
+    let acknowledge = |request: codex_app_server_client::CloudCommand| {
+        request
+            .response
+            .send(Ok(Ok(serde_json::json!({}))))
+            .unwrap();
+    };
+    acknowledge(write);
+    automatic
+        .now_or_never()
+        .expect("automatic write acknowledged");
+
+    let mut manual = std::pin::pin!(session.thread_set_name(thread_id, "Manual".into()));
+    assert!(manual.as_mut().now_or_never().is_none());
+    acknowledge(requests.try_recv()?);
+    manual.await?;
     Ok(())
 }
 
@@ -733,8 +951,8 @@ fn truncates_generated_titles_without_splitting_unicode() {
     assert_eq!(parse_thread_title(&response), Some(expected));
 }
 
-fn title_user_message(id: &str, text: &str) -> ThreadItem {
-    ThreadItem::UserMessage {
+fn title_user_message(id: &str, text: &str) -> ThreadItemPayload {
+    ThreadItemPayload::UserMessage {
         id: id.to_string(),
         client_id: None,
         content: vec![UserInput::Text {
@@ -744,8 +962,9 @@ fn title_user_message(id: &str, text: &str) -> ThreadItem {
     }
 }
 
-fn title_agent_message(id: &str, text: &str, phase: Option<MessagePhase>) -> ThreadItem {
-    ThreadItem::AgentMessage {
+fn title_agent_message(id: &str, text: &str, phase: Option<MessagePhase>) -> ThreadItemPayload {
+    ThreadItemPayload::AgentMessage {
+        moderation: None,
         id: id.to_string(),
         text: text.to_string(),
         phase,
@@ -756,11 +975,8 @@ fn title_agent_message(id: &str, text: &str, phase: Option<MessagePhase>) -> Thr
 }
 
 #[tokio::test]
-async fn thread_title_progress_clears_failed_requests_and_follows_thread_switches()
--> color_eyre::Result<()> {
+async fn failed_thread_title_requests_are_removed() -> color_eyre::Result<()> {
     let mut app = make_test_app().await;
-    app.local_settings.tui.animations = false;
-    app.chat_widget.local_settings.tui.animations = false;
     let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
     let started = app_server.start_thread(&app.config).await?;
     let thread_id = started.session.thread_id;
@@ -776,71 +992,49 @@ async fn thread_title_progress_clears_failed_requests_and_follows_thread_switche
         ),
         ((thread_id, suggestion), CancellationToken::new()),
     ]);
-    app.sync_thread_title_progress();
-    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
 
     app.on_thread_title_started(
-        &app_server,
+        &mut app_server,
         thread_id,
         ThreadTitleDestination::Automatic,
         "prompt".to_string(),
+        /*expected_name*/ None,
+        /*fallback_title*/ None,
         /*effort*/ None,
         Err("startup failed".to_string()),
         CancellationToken::new(),
     );
-    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
     app.on_thread_title_started(
-        &app_server,
+        &mut app_server,
         thread_id,
         suggestion,
         "prompt".to_string(),
+        /*expected_name*/ None,
+        /*fallback_title*/ None,
         /*effort*/ None,
         Ok("invalid-thread-id".to_string()),
         CancellationToken::new(),
     );
     assert!(app.pending_thread_titles.is_empty());
-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
 
     let mut tui = crate::tui::test_support::make_test_tui()?;
     app.pending_thread_titles.insert(
         (thread_id, ThreadTitleDestination::Automatic),
         CancellationToken::new(),
     );
-    let second = app_server.start_thread(&app.config).await?;
-    let second_id = second.session.thread_id;
-    app.ensure_thread_channel(second_id)
-        .store
-        .lock()
-        .await
-        .set_session(second.session, second.turns);
-    app.select_agent_thread(&mut tui, &mut app_server, second_id)
-        .await?;
-    app.render_chat_widget_frame(
-        &mut tui,
-        ratatui::layout::Size::new(/*width*/ 120, /*height*/ 30),
-    )?;
-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
-    app.select_agent_thread(&mut tui, &mut app_server, thread_id)
-        .await?;
-    app.render_chat_widget_frame(
-        &mut tui,
-        ratatui::layout::Size::new(/*width*/ 120, /*height*/ 30),
-    )?;
-    assert!(render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
     app.handle_event(
         &mut tui,
         &mut app_server,
         AppEvent::GeneratedThreadTitle {
             cancellation: CancellationToken::new(),
             thread_id,
-            temporary_thread_id: codex_protocol::ThreadId::new(),
+            temporary_thread_id: Some(ThreadId::new()),
             destination: ThreadTitleDestination::Automatic,
             result: Err("generation failed".to_string()),
         },
     )
     .await?;
     assert!(app.pending_thread_titles.is_empty());
-    assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 120).contains('⠋'));
     app_server.shutdown().await?;
     Ok(())
 }

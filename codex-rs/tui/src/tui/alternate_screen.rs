@@ -24,7 +24,7 @@ use super::DisableAlternateScroll;
 use super::EnableAlternateScroll;
 use super::KeyboardRestore;
 use super::keyboard_modes;
-use super::tmux::MouseCapture;
+use super::tmux;
 
 // Panic and exit cleanup cannot borrow Tui. Track the actual screen independently of its owner.
 pub(super) static ALTERNATE_SCREEN: AlternateScreen = AlternateScreen {
@@ -32,7 +32,10 @@ pub(super) static ALTERNATE_SCREEN: AlternateScreen = AlternateScreen {
     mouse_active: AtomicBool::new(/*v*/ false),
     mouse_capture_disabled: AtomicBool::new(/*v*/ false),
     input_configured: AtomicBool::new(/*v*/ false),
+    initial_scroll_enabled: AtomicBool::new(/*v*/ false),
+    scroll_dirty: AtomicBool::new(/*v*/ false),
     keyboard_active: AtomicBool::new(/*v*/ false),
+    parent_reports_key_releases: AtomicBool::new(/*v*/ false),
     link_pointer: super::link_pointer::LinkPointer::new(),
 };
 
@@ -45,8 +48,12 @@ pub(super) struct AlternateScreen {
     mouse_capture_disabled: AtomicBool,
     // A cleanup/setup error must not make the next identical request look already applied.
     input_configured: AtomicBool,
+    pub(super) initial_scroll_enabled: AtomicBool,
+    scroll_dirty: AtomicBool,
     // An editor can take over the screen after Codex has popped its keyboard mode.
     keyboard_active: AtomicBool,
+    // Restore the main screen's input classification when this screen's keyboard frame is popped.
+    parent_reports_key_releases: AtomicBool,
 }
 
 /// Report pointer motion so the owned transcript can update its return-to-bottom hover state.
@@ -69,9 +76,13 @@ impl Command for EnablePointerCapture {
 }
 
 impl AlternateScreen {
-    pub(super) fn set_link_pointer(&self, writer: &mut impl Write, over_link: bool) -> Result<()> {
+    pub(super) fn set_pointer_shape(
+        &self,
+        writer: &mut impl Write,
+        shape: super::PointerShape,
+    ) -> Result<()> {
         if self.mouse_active.load(Ordering::Relaxed) {
-            self.link_pointer.update(writer, over_link)
+            self.link_pointer.update(writer, shape)
         } else {
             self.link_pointer
                 .restore(writer, codex_terminal_detection::terminal_info().name)
@@ -87,13 +98,15 @@ impl AlternateScreen {
         // Stdout retains queued bytes on a flush error; cleanup must follow that pending entry.
         self.active.store(/*val*/ true, Ordering::Relaxed);
         writer.flush()?;
-        let mouse_capture = keyboard_modes::enable_keyboard_enhancement(writer);
+        self.parent_reports_key_releases
+            .store(keyboard_modes::reports_key_releases(), Ordering::Relaxed);
+        let mouse_capture = keyboard_modes::enable_keyboard_enhancement(writer).mouse_capture;
         self.keyboard_active.store(
             !cfg!(windows) && !keyboard_modes::keyboard_enhancement_disabled(),
             Ordering::Relaxed,
         );
         self.mouse_capture_disabled.store(
-            mouse_capture == MouseCapture::DisabledByTmux,
+            mouse_capture == tmux::MouseCapture::DisabledByTmux,
             Ordering::Relaxed,
         );
         self.configure_input(writer, capture_mouse)
@@ -106,6 +119,7 @@ impl AlternateScreen {
     ) -> Result<()> {
         self.input_configured
             .store(/*val*/ false, Ordering::Relaxed);
+        self.scroll_dirty.store(/*val*/ true, Ordering::Relaxed);
         let result = if capture_mouse && !self.mouse_capture_disabled.load(Ordering::Relaxed) {
             // A partial write can already enable reporting; cleanup must still attempt to stop it.
             self.mouse_active.store(/*val*/ true, Ordering::Relaxed);
@@ -174,13 +188,28 @@ impl AlternateScreen {
             let result = execute!(writer, PopKeyboardEnhancementFlags);
             if result.is_ok() {
                 self.keyboard_active.store(/*val*/ false, Ordering::Relaxed);
+                keyboard_modes::set_reports_key_releases(
+                    self.parent_reports_key_releases.load(Ordering::Relaxed),
+                );
             }
             result
         } else {
             Ok(())
         };
-        let scroll_result = execute!(writer, DisableAlternateScroll);
+        let scroll_result = self.restore_scroll(writer);
         mouse_result.and(keyboard_result).and(scroll_result)
+    }
+
+    fn restore_scroll(&self, writer: &mut impl Write) -> Result<()> {
+        if self.scroll_dirty.load(Ordering::Relaxed) {
+            if self.initial_scroll_enabled.load(Ordering::Relaxed) {
+                execute!(writer, EnableAlternateScroll)?;
+            } else {
+                execute!(writer, DisableAlternateScroll)?;
+            }
+            self.scroll_dirty.store(/*val*/ false, Ordering::Relaxed);
+        }
+        Ok(())
     }
 
     pub(super) fn leave(&self, writer: &mut impl Write) -> Result<()> {
@@ -202,7 +231,9 @@ impl AlternateScreen {
             self.leave(writer)
         } else {
             // A failed mouse cleanup can outlive a successful return to the main screen.
-            self.disable_mouse(writer)
+            let mouse_result = self.disable_mouse(writer);
+            let scroll_result = self.restore_scroll(writer);
+            mouse_result.and(scroll_result)
         };
         if self.active.load(Ordering::Relaxed) {
             // Leave failed: another pop here would still target the alternate stack.
@@ -219,7 +250,7 @@ impl AlternateScreen {
     }
 }
 
-impl super::OverlayInput {
+impl super::MouseCapture {
     /// Roll back a partial overlay setup immediately; callers still receive the original error.
     /// The fallback keeps capture when the session owns the screen, otherwise restores the picker.
     pub(super) fn apply(
@@ -234,7 +265,7 @@ impl super::OverlayInput {
         }
         *self = next;
         if let Err(error) = screen.configure_input(writer, next.captures_mouse(owned)) {
-            *self = Self::Default;
+            *self = Self::Inherit;
             let _ = screen.configure_input(writer, owned);
             return Err(error);
         }

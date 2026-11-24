@@ -69,7 +69,7 @@ fn assert_checkpoints(test: &TestCodex, expected: &[ThreadSettingsSnapshot]) -> 
 #[test_case(ThreadHistoryMode::Legacy; "legacy")]
 #[test_case(ThreadHistoryMode::Paginated; "paginated")]
 #[tokio::test]
-async fn initial_plugin_ids_use_turn_context_without_extra_settings_checkpoints(
+async fn initial_settings_include_plugin_ids_without_duplicate_checkpoints(
     history_mode: ThreadHistoryMode,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -102,7 +102,8 @@ async fn initial_plugin_ids_use_turn_context_without_extra_settings_checkpoints(
     )
     .await;
     test.codex.flush_rollout().await?;
-    assert_checkpoints(&test, &[])?;
+    let mut expected = vec![test.codex.thread_settings_snapshot().await];
+    assert_checkpoints(&test, &expected)?;
     let rollout_path = test.codex.rollout_path().expect("rollout path");
     let (items, _, parse_errors) =
         codex_rollout::RolloutRecorder::load_rollout_items(&rollout_path).await?;
@@ -131,8 +132,9 @@ async fn initial_plugin_ids_use_turn_context_without_extra_settings_checkpoints(
         },
     )
     .await?;
-    let expected = vec![test.codex.thread_settings_snapshot().await];
-    assert!(expected[0].disabled_plugin_ids.is_empty());
+    let cleared = test.codex.thread_settings_snapshot().await;
+    assert!(cleared.disabled_plugin_ids.is_empty());
+    expected.push(cleared);
     test.codex.flush_rollout().await?;
     assert_checkpoints(&test, &expected)?;
     let response =
@@ -210,6 +212,7 @@ async fn settings_notifications_keep_their_commit_across_postcommit_work(
     initial.disabled_plugin_ids = None;
     let thread_settings = ThreadSettingsOverrides {
         model: Some(COMMITTED_MODEL.to_string()),
+        approval_policy: Some(AskForApproval::Never),
         disabled_plugin_ids: Some(vec!["slack@openai".to_string()]),
         ..Default::default()
     };
@@ -296,6 +299,25 @@ async fn settings_notifications_keep_their_commit_across_postcommit_work(
         expected_request_model
     );
     assert_eq!(test.codex.thread_settings_snapshot().await, restored);
+    test.codex.flush_rollout().await?;
+    let rollout_path = test.codex.rollout_path().expect("rollout path");
+    let (items, _, parse_errors) =
+        codex_rollout::RolloutRecorder::load_rollout_items(&rollout_path).await?;
+    assert_eq!(parse_errors, 0);
+    let latest_settings = items.iter().rev().find_map(|item| match item {
+        RolloutItem::TurnContext(context) => {
+            Some((context.model.as_str(), context.approval_policy))
+        }
+        RolloutItem::EventMsg(EventMsg::ThreadSettingsApplied(applied)) => Some((
+            applied.thread_settings.model.as_str(),
+            applied.thread_settings.approval_policy,
+        )),
+        _ => None,
+    });
+    assert_eq!(
+        latest_settings,
+        Some((restored.model.as_str(), restored.approval_policy))
+    );
     Ok(())
 }
 

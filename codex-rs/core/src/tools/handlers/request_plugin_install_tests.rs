@@ -16,9 +16,6 @@ use codex_config::types::ToolSuggestDiscoverableType;
 use codex_core_plugins::PluginInstallRequest;
 use codex_core_plugins::startup_sync::curated_plugins_repo_path;
 use codex_login::test_support::auth_manager_from_optional_auth;
-use codex_protocol::ThreadId;
-use codex_protocol::protocol::SessionSource;
-use codex_protocol::protocol::SubAgentSource;
 use codex_rmcp_client::ElicitationResponse;
 use codex_tools::DiscoverablePluginInfo;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -33,15 +30,9 @@ use tokio::sync::Mutex;
 #[test_case(ToolSuggestPresentation::ListTool; "legacy install")]
 #[test_case(ToolSuggestPresentation::RecommendationContext; "recommended plugin")]
 #[tokio::test]
-async fn request_plugin_install_rejects_subagent_threads(presentation: ToolSuggestPresentation) {
+async fn request_plugin_install_rejects_restricted_threads(presentation: ToolSuggestPresentation) {
     let (session, mut turn) = make_session_and_context().await;
-    turn.session_source = SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-        parent_thread_id: ThreadId::new(),
-        depth: 1,
-        agent_path: None,
-        agent_nickname: None,
-        agent_role: None,
-    });
+    turn.root_capabilities_restricted = true;
     let turn = Arc::new(turn);
     let arguments = match presentation {
         ToolSuggestPresentation::ListTool => json!({
@@ -66,6 +57,8 @@ async fn request_plugin_install_rejects_subagent_threads(presentation: ToolSugge
             call_id: "call-1".to_string(),
             tool_name: codex_tools::ToolName::plain(REQUEST_PLUGIN_INSTALL_TOOL_NAME),
             source: crate::tools::context::ToolCallSource::Direct,
+            native_call: None,
+            environments: Default::default(),
             payload: ToolPayload::Function {
                 arguments: arguments.to_string(),
             },
@@ -73,7 +66,7 @@ async fn request_plugin_install_rejects_subagent_threads(presentation: ToolSugge
         .await;
 
     let Err(err) = result else {
-        panic!("subagent request_plugin_install should fail");
+        panic!("restricted request_plugin_install should fail");
     };
     assert_eq!(
         err,

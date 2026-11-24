@@ -40,6 +40,10 @@ pub enum PlanType {
     #[serde(rename = "edu_pro")]
     #[ts(rename = "edu_pro")]
     EduPro,
+    Sci,
+    #[serde(rename = "sci_plus")]
+    #[ts(rename = "sci_plus")]
+    SciPlus,
     #[serde(other)]
     Unknown,
 }
@@ -55,6 +59,7 @@ pub enum ProviderAccount {
     AmazonBedrock {
         uses_codex_managed_credentials: bool,
     },
+    Gcp,
 }
 
 impl PlanType {
@@ -84,7 +89,7 @@ impl PlanType {
         self.is_team_like()
             || self.is_business_like()
             || self.is_education_like()
-            || self == Self::Enterprise
+            || matches!(self, Self::Enterprise | Self::Sci | Self::SciPlus)
     }
 }
 
@@ -117,6 +122,8 @@ impl From<KnownPlan> for PlanType {
             KnownPlan::Edu => Self::Edu,
             KnownPlan::EduPlus => Self::EduPlus,
             KnownPlan::EduPro => Self::EduPro,
+            KnownPlan::Sci => Self::Sci,
+            KnownPlan::SciPlus => Self::SciPlus,
         }
     }
 }
@@ -228,6 +235,10 @@ mod tests {
         assert_eq!(PlanType::Edu.is_workspace_account(), true);
         assert_eq!(PlanType::EduPlus.is_workspace_account(), true);
         assert_eq!(PlanType::EduPro.is_workspace_account(), true);
+        for plan in [KnownPlan::Sci, KnownPlan::SciPlus] {
+            assert!(plan.is_workspace_account());
+            assert!(PlanType::from(plan).is_workspace_account());
+        }
         assert_eq!(PlanType::Pro.is_workspace_account(), false);
     }
 

@@ -77,11 +77,12 @@ const SESSION_ALREADY_ATTACHED_ERROR_CODE: i64 = -32010;
 struct DirectExecutorAuth;
 
 impl AuthProvider for DirectExecutorAuth {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
         headers.insert(
             http::header::AUTHORIZATION,
             HeaderValue::from_static("AWS4-HMAC-SHA256 test-signature"),
         );
+        Ok(())
     }
 }
 
@@ -319,7 +320,7 @@ async fn accepted_websocket_interoperates_and_recovers_with_real_direct_executor
         }
         timeout(
             TEST_TIMEOUT,
-            connection_state.wait_for(|state| *state == EnvironmentConnectionState::Disconnected),
+            connection_state.wait_for(|state| *state == EnvironmentConnectionState::Recovering),
         )
         .await??;
         tokio::fs::write(&gate_path, b"").await?;

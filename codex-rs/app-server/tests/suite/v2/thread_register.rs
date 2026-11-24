@@ -9,7 +9,7 @@ use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadForkParams;
 use codex_app_server_protocol::ThreadForkResponse;
 use codex_app_server_protocol::ThreadHistoryMode;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadItemsListResponse;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadReadResponse;
@@ -114,7 +114,7 @@ fn assert_imported_history(thread: &Thread) {
             .iter()
             .flat_map(|turn| &turn.items)
             .any(|item| {
-                matches!(item, ThreadItem::UserMessage { content, .. }
+                matches!(&item.payload, ThreadItemPayload::UserMessage { content, .. }
                 if content.contains(&UserInput::Text {
                     text: USER_MESSAGE.to_string(),
                     text_elements: Vec::new(),
@@ -127,7 +127,7 @@ fn assert_imported_history(thread: &Thread) {
             .iter()
             .flat_map(|turn| &turn.items)
             .any(|item| {
-                matches!(item, ThreadItem::AgentMessage { text, .. } if text == ASSISTANT_MESSAGE)
+                matches!(&item.payload, ThreadItemPayload::AgentMessage { text, .. } if text == ASSISTANT_MESSAGE)
             })
     );
 }

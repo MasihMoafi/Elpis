@@ -74,6 +74,8 @@ fn model_with_collaboration_messages(
 ) -> codex_protocol::openai_models::ModelInfo {
     let mut model = model_info_from_slug(slug);
     let model_messages = model.model_messages.get_or_insert(ModelMessages {
+        apps: None,
+        plugins: None,
         content_filter_guidance: None,
         persistent_instructions: None,
         tools: None,
@@ -544,7 +546,7 @@ async fn collaboration_instructions_added_on_user_turn() -> Result<()> {
             .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_requests(test.config.cwd.clone())),
                 approval_policy: Some(test.config.permissions.approval_policy.value()),
-                sandbox_policy: Some(test.config.legacy_sandbox_policy()),
+                permission_profile: Some(test.config.permissions.effective_permission_profile()),
                 summary: Some(
                     test.config
                         .model_reasoning_summary
@@ -591,7 +593,7 @@ async fn collaboration_instructions_omitted_when_disabled() -> Result<()> {
             .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_requests(test.config.cwd.clone())),
                 approval_policy: Some(test.config.permissions.approval_policy.value()),
-                sandbox_policy: Some(test.config.legacy_sandbox_policy()),
+                permission_profile: Some(test.config.permissions.effective_permission_profile()),
                 summary: Some(
                     test.config
                         .model_reasoning_summary
@@ -649,7 +651,7 @@ async fn user_turn_overrides_collaboration_instructions_after_override() -> Resu
             .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_requests(test.config.cwd.clone())),
                 approval_policy: Some(test.config.permissions.approval_policy.value()),
-                sandbox_policy: Some(test.config.legacy_sandbox_policy()),
+                permission_profile: Some(test.config.permissions.effective_permission_profile()),
                 summary: Some(
                     test.config
                         .model_reasoning_summary

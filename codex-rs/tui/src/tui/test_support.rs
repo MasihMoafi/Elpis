@@ -9,18 +9,23 @@ use super::Tui;
 use super::terminal_stderr::TerminalStderrGuard;
 use crate::custom_terminal::Terminal;
 
-pub(crate) fn make_test_tui() -> io::Result<Tui> {
-    make_test_tui_with_size(Size {
-        width: 80,
-        height: 24,
-    })
+pub(crate) fn record_frame_requests(
+    tui: &mut Tui,
+) -> tokio::sync::mpsc::UnboundedReceiver<std::time::Instant> {
+    let (requester, requests) = super::FrameRequester::test_channel();
+    tui.frame_requester = requester;
+    requests
 }
 
-pub(crate) fn make_test_tui_with_size(screen_size: Size) -> io::Result<Tui> {
+pub(crate) fn make_test_tui() -> io::Result<Tui> {
+    make_test_tui_with_size(Size::new(/*width*/ 80, /*height*/ 24))
+}
+
+pub(crate) fn make_test_tui_with_size(size: Size) -> io::Result<Tui> {
     let backend = CrosstermBackend::new(stdout());
     let terminal = Terminal::with_screen_size_and_cursor_position_for_test(
         backend,
-        screen_size,
+        size,
         Position { x: 0, y: 0 },
     );
     let stderr_guard = TerminalStderrGuard::install()?;

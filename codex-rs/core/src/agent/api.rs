@@ -24,8 +24,8 @@ use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::turn_input::TurnStartOptions;
-use codex_protocol::user_input::UserInput;
 use codex_rollout_trace::ThreadTraceContext;
+use codex_user_input::ResolvedUserInput;
 use futures::future::BoxFuture;
 
 // Keep dynamic dispatch a compile-time property of the contract.
@@ -39,6 +39,12 @@ const _: Option<&dyn AgentControl> = None;
 /// remote ownership, retries and recovery are separate backend work.
 /// Boxed Send futures allow callers to use `Arc<dyn AgentControl>`.
 pub trait AgentControl: Send + Sync {
+    /// Expose the account only when this controller actually owns native billing.
+    /// External controllers keep their own ledger and need not provide a numeric read.
+    fn native_rollout_budget(&self) -> Option<std::sync::Arc<crate::RolloutBudget>> {
+        None
+    }
+
     fn identity(&self) -> SessionId;
 
     /// Resolve an ID or a name relative to the caller's captured source, without loading.
@@ -53,6 +59,9 @@ pub trait AgentControl: Send + Sync {
     ) -> BoxFuture<'a, Result<ThreadId>>;
 
     /// Start a child and accept its initial input, returning its effective settings.
+    /// Retain provisional-child ownership until this future returns its acceptance receipt.
+    /// Once returned, caller cancellation does not retract the accepted child. Subsequent
+    /// tool-result or transport publication belongs to the caller, outside this boundary.
     /// V2 snapshots resolve effort against captured startup metadata without changing the
     /// child's configured effort (for example, Ultra still enables proactive behavior).
     fn spawn(
@@ -67,10 +76,7 @@ pub trait AgentControl: Send + Sync {
 
     /// Take queued, non-turn-starting mail in order, without loading the recipient.
     /// This in-memory operation performs no I/O; returning transfers ownership to the caller.
-    fn take_mailbox(
-        &self,
-        agent: ThreadId,
-    ) -> Vec<codex_protocol::protocol::InterAgentCommunication>;
+    fn take_mailbox(&self, agent: ThreadId) -> Vec<crate::PendingAgentMessage>;
 
     /// Observe whether unread mail is available. Subscribe before the first read so
     /// arrivals cannot be missed; notifications do not consume mail or start a turn.
@@ -124,7 +130,11 @@ pub trait AgentControl: Send + Sync {
     /// Account for one inference response, including compaction. Each call records usage;
     /// callers report it once. `SessionBudgetExceeded` means the usage was recorded and
     /// the shared budget is now exhausted.
-    fn record_usage(&self, usage: TokenUsage) -> BoxFuture<'_, Result<()>>;
+    fn record_usage(
+        &self,
+        usage: Option<TokenUsage>,
+        hook_charge: codex_hooks::HookCharge,
+    ) -> BoxFuture<'_, Result<()>>;
 
     /// Report the terminal result to the parent and completion activity to the task
     /// initiator. Local delivery remains best effort and uses the reporting runtime's
@@ -199,7 +209,7 @@ impl AgentInfo {
 
 /// User input starts or steers a turn; agent messages retain their sender and wake mode.
 pub enum AgentInput {
-    UserInput(Vec<UserInput>),
+    UserInput(Vec<ResolvedUserInput>),
     Message {
         message: AgentMessage,
         mode: MessageDeliveryMode,
@@ -232,6 +242,7 @@ pub struct DeliveryReceipt {
     pub submission_id: String,
 }
 
+#[derive(Clone)]
 pub struct AgentTurnOutcome {
     pub thread_id: ThreadId,
     pub turn_id: String,

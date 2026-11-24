@@ -4,6 +4,8 @@
 //! [`BottomPaneView`]s (popups/modals) that temporarily replace the composer for focused
 //! interactions like selection lists. Centered views retain earlier views as a backdrop,
 //! while input remains routed exclusively to the top of the stack.
+//! Modal insertion, replacement, and dismissal invalidate pending key chords, including when a
+//! deferred prompt appears or an approval queue advances without changing keymap contexts.
 //!
 //! Input routing is layered: `BottomPane` decides which local surface receives a key (view vs
 //! composer), while higher-level intent such as "interrupt" or "quit" is decided by the parent
@@ -17,16 +19,22 @@
 //! Inline banners sit above the composer. Number shortcuts apply only to an empty, idle composer;
 //! drafts, paste bursts, and active dialogs keep their normal input routing.
 //! Owned transcripts separate activity from the transcript and reserve their shared hint row
-//! below activity and previews, above the composer.
+//! below activity and previews, above the composer. Disabling composer input dismisses transient
+//! searches and restores the draft they temporarily replaced.
 pub(crate) use chat_composer::CommandPopupPlacement;
 pub(crate) use chat_composer::ComposerRenderOptions;
 pub(crate) use chat_composer::TranscriptFooter;
+pub(crate) use chat_composer::composer_layout::FooterLayout;
 pub(crate) use composer_gap::ComposerGap;
 pub(crate) use footer::footer_hint_items_line;
 pub(crate) use footer::inset_footer_hint_area;
+pub(crate) use status_line::StatusLine;
+pub(crate) use status_line::StatusLineFocus;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
+use crate::activation_key_guard::ActivationKeyGuard;
+use crate::activation_key_guard::ActivationKeySuppression;
 use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
@@ -45,6 +53,7 @@ use crate::render::renderable::FlexRenderable;
 use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
 use crate::terminal_palette::effective_stdout_color_level;
+use crate::terminal_program_status::ProgramStatusKind;
 use crate::tui::FrameRequester;
 pub(crate) use bottom_pane_view::BottomPaneView;
 pub(crate) use bottom_pane_view::ViewCompletion;
@@ -75,6 +84,7 @@ mod app_link_view;
 mod apply_patch_header;
 mod approval_overlay;
 mod async_questions;
+mod config_panel;
 mod hook_status;
 mod mcp_server_elicitation;
 mod multi_select_picker;
@@ -85,6 +95,7 @@ pub(crate) use multi_select_picker::MultiSelectPicker;
 mod question_tests;
 mod questions;
 mod request_user_input;
+mod status_line;
 mod status_line_setup;
 mod status_line_style;
 mod status_surface_preview;
@@ -114,6 +125,7 @@ pub(crate) use async_questions::QuestionSubmission;
 pub(crate) use mcp_server_elicitation::McpServerElicitationFormRequest;
 pub(crate) use mcp_server_elicitation::McpServerElicitationOverlay;
 pub(crate) use request_user_input::RequestUserInputOverlay;
+pub(crate) use status_line_style::StatusLineAccent;
 pub(crate) use status_line_style::status_line_from_segments;
 pub(crate) use voice_strip::VoiceStripPhase;
 pub(crate) use voice_strip::VoiceStripState;
@@ -142,21 +154,25 @@ pub(crate) struct MentionBinding {
 mod chat_composer;
 mod chat_composer_history;
 mod command_popup;
-mod config_panel;
 pub(crate) mod custom_prompt_view;
 mod effort_status_line;
+mod elpis_config_panel;
 mod experimental_features_view;
 mod file_search_popup;
 mod footer;
 mod list_selection_view;
 mod memories_settings_view;
+mod mention_usage;
+pub(crate) use mention_usage::MentionUsage;
 mod mentions_v2;
 mod picker_presets;
 mod picker_rows;
 mod picker_style;
+mod shortcut_hud;
 mod shortcut_overlay;
 pub(crate) use picker_style::active_tab_style;
 pub(crate) use picker_style::selection_style;
+pub(crate) use shortcut_hud::ShortcutHud;
 pub(crate) mod prompt_args;
 mod selection_picker_layout;
 mod skill_popup;
@@ -170,9 +186,11 @@ pub(crate) use list_selection_view::ColumnWidthMode;
 pub(crate) use list_selection_view::ListSelectionView;
 pub(crate) use list_selection_view::OnSelectionChangedCallback;
 pub(crate) use list_selection_view::PickerSurface;
+pub(crate) use list_selection_view::SearchMode;
 pub(crate) use list_selection_view::SelectionDescriptionLayout;
 pub(crate) use list_selection_view::SelectionRowDisplay;
 pub(crate) use list_selection_view::SelectionToggle;
+pub(crate) use list_selection_view::SelectionToggleState;
 pub(crate) use list_selection_view::SelectionViewParams;
 pub(crate) use list_selection_view::SideContentWidth;
 pub(crate) use list_selection_view::popup_content_width;
@@ -184,20 +202,20 @@ mod feedback_view;
 mod hooks_browser_view;
 pub(crate) use feedback_view::FeedbackAudience;
 pub(crate) use feedback_view::feedback_classification;
-pub(crate) use feedback_view::feedback_disabled_params;
+pub(crate) use feedback_view::feedback_consent_params;
 pub(crate) use feedback_view::feedback_selection_params;
 pub(crate) use feedback_view::feedback_success_cell;
-pub(crate) use feedback_view::feedback_upload_consent_params;
 pub(crate) use skills_toggle_view::SkillsToggleItem;
 pub(crate) use skills_toggle_view::SkillsToggleView;
 pub(crate) use status_line_setup::StatusLineItem;
 pub(crate) use status_line_setup::StatusLineSetupView;
+pub(crate) use status_line_setup::StatuslineProviderActions;
 pub(crate) use status_surface_preview::StatusSurfacePreviewData;
 pub(crate) use status_surface_preview::StatusSurfacePreviewItem;
 pub(crate) use title_setup::TerminalTitleItem;
-pub(crate) use title_setup::TerminalTitleSetupView;
 #[cfg(test)]
 pub(crate) use title_setup::preview_line_for_title_items;
+pub(crate) use title_setup::terminal_title_setup;
 mod paste_burst;
 mod pending_input_preview;
 mod pending_thread_approvals;
@@ -253,13 +271,15 @@ pub(crate) enum CancellationEvent {
 use crate::bottom_pane::prompt_args::parse_slash_name;
 pub(crate) use chat_composer::ChatComposer;
 pub(crate) use chat_composer::ChatComposerConfig;
+pub(crate) use chat_composer::ClipboardPasteTarget;
 pub(crate) use chat_composer::ComposerDraftSnapshot;
 pub(crate) use chat_composer::InputResult;
+pub(crate) use chat_composer::KillBufferSnapshot;
 pub(crate) use chat_composer::QueuedInputAction;
 pub(crate) use chat_composer::RestrictedInputMode;
+pub(crate) use chat_composer::ShellPrefixHandling;
 pub(crate) use chat_composer_history::HistoryEntry;
-pub(crate) use config_panel::ConfigPanelView;
-pub(crate) use textarea::KillBufferSnapshot;
+pub(crate) use elpis_config_panel::ConfigPanelView;
 
 use crate::status_indicator_widget::StatusDetailsCapitalization;
 use crate::status_indicator_widget::StatusIndicatorWidget;
@@ -270,6 +290,7 @@ pub(crate) use list_selection_view::SELECTION_TOGGLE_BLOCKED_PREFIX;
 pub(crate) use list_selection_view::SELECTION_TOGGLE_UNAVAILABLE_PREFIX;
 pub(crate) use list_selection_view::SelectionAction;
 pub(crate) use list_selection_view::SelectionItem;
+pub(crate) use list_selection_view::SelectionKeyAction;
 pub(crate) use list_selection_view::SelectionSecondaryAction;
 
 struct DelayedApprovalRequest {
@@ -289,9 +310,11 @@ pub(crate) struct BottomPane {
 
     /// Stack of views displayed instead of the composer (e.g. popups/modals).
     view_stack: Vec<Box<dyn BottomPaneView>>,
+    pub(crate) key_chord_reset_requested: bool,
     warnings_view: Option<warnings_view::WarningsView>,
     /// A keep press can close the viewer; its remaining repeats must not edit the draft.
     pub(crate) suppress_warning_keep_repeat: bool,
+    pub(crate) view_transition_key_guard: Option<crate::activation_key_guard::ActivationKeyGuard>,
     pub(crate) questions: Option<Box<AsyncQuestions>>,
     delayed_approval_requests: VecDeque<DelayedApprovalRequest>,
     last_composer_activity_at: Option<Instant>,
@@ -342,6 +365,18 @@ pub(crate) struct BottomPaneParams {
 }
 
 impl BottomPane {
+    pub(crate) fn set_mention_usage_home(
+        &mut self,
+        codex_home: &std::path::Path,
+        persistence: codex_config::types::HistoryPersistence,
+    ) {
+        self.composer.mention_usage = MentionUsage::load(codex_home, persistence);
+    }
+
+    pub(crate) fn mention_usage_mut(&mut self) -> &mut MentionUsage {
+        &mut self.composer.mention_usage
+    }
+
     pub fn new(params: BottomPaneParams) -> Self {
         Self::new_with_composer_config(params, ChatComposerConfig::default())
     }
@@ -377,8 +412,10 @@ impl BottomPane {
         Self {
             composer,
             view_stack: Vec::new(),
+            key_chord_reset_requested: false,
             warnings_view: None,
             suppress_warning_keep_repeat: false,
+            view_transition_key_guard: None,
             questions: None,
             delayed_approval_requests: VecDeque::new(),
             last_composer_activity_at: None,
@@ -418,6 +455,15 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub(crate) fn set_motion_preferences(&mut self, tui: &codex_config::types::Tui) {
+        self.animations_enabled = tui.animations;
+        self.effects = tui.effects;
+        if let Some(status) = self.status.as_mut() {
+            status.set_motion_preferences(tui);
+        }
+        self.request_redraw();
+    }
+
     /// Mirrors the effective reasoning effort into the composer so its next
     /// visible frame can play a one-shot Max/Ultra effect.
     pub(crate) fn set_active_reasoning_effort(&mut self, effort: Option<&ReasoningEffort>) {
@@ -451,9 +497,8 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    pub(crate) fn set_agents_navigation_enabled(&mut self, enabled: bool) {
-        self.composer.set_agents_navigation_enabled(enabled);
-        self.request_redraw();
+    pub(crate) fn enable_agents_navigation(&mut self) {
+        self.composer.command_center_enabled = true;
     }
 
     pub(crate) fn agents_navigation_key_available(&self) -> bool {
@@ -524,6 +569,10 @@ impl BottomPane {
     /// Slash recall records the submitted command text regardless of whether the command succeeds.
     pub(crate) fn record_pending_slash_command_history(&mut self) {
         self.composer.record_pending_slash_command_history();
+    }
+
+    pub(super) fn keymap(&self) -> &RuntimeKeymap {
+        &self.keymap
     }
 
     /// Replace all bottom-pane keymap caches from one resolved runtime keymap.
@@ -712,7 +761,15 @@ impl BottomPane {
         self.view_stack.last().map(std::convert::AsRef::as_ref)
     }
 
+    pub(crate) fn current_patch_approval(&self) -> Option<&ApplyPatchApprovalRequest> {
+        self.view_stack
+            .iter()
+            .rev()
+            .find_map(|view| view.current_patch_approval())
+    }
+
     fn push_view(&mut self, view: Box<dyn BottomPaneView>) {
+        self.key_chord_reset_requested = true;
         self.view_stack.push(view);
         self.schedule_active_view_frame();
         self.request_redraw();
@@ -742,6 +799,7 @@ impl BottomPane {
     }
 
     fn on_view_stack_depth_decreased(&mut self) {
+        self.key_chord_reset_requested = true;
         if self.view_stack.is_empty() {
             self.on_active_view_complete();
         }
@@ -794,12 +852,39 @@ impl BottomPane {
         self.push_view(Box::new(modal));
     }
 
+    fn is_composer_activity_key(&self, key: KeyEvent) -> bool {
+        if matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+            && (self.keymap.composer.undo.is_pressed(key)
+                || self.keymap.composer.redo.is_pressed(key))
+        {
+            return true;
+        }
+        matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+            && !key_hint::has_ctrl_or_alt(key.modifiers)
+            && matches!(
+                key.code,
+                KeyCode::Char(_)
+                    | KeyCode::Backspace
+                    | KeyCode::Delete
+                    | KeyCode::Enter
+                    | KeyCode::Tab
+            )
+    }
+
     /// Preserve restricted drafts, allowing recovery commands only for connected unavailable threads.
     pub(crate) fn handle_restricted_key(
         &mut self,
         key: KeyEvent,
         mode: RestrictedInputMode,
     ) -> InputResult {
+        if mode == RestrictedInputMode::DraftHandoff {
+            let result = self.composer.handle_restricted_key(key, mode);
+            if self.is_composer_activity_key(key) {
+                self.record_composer_activity_at(Instant::now());
+            }
+            self.request_redraw();
+            return result;
+        }
         self.view_stack.clear();
         self.warnings_view = None;
         self.delayed_approval_requests.clear();
@@ -812,17 +897,33 @@ impl BottomPane {
 
     /// Forward a key event to the active view or the composer.
     pub fn handle_key_event(&mut self, key_event: KeyEvent) -> InputResult {
-        let records_composer_activity =
-            matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-                && !key_hint::has_ctrl_or_alt(key_event.modifiers)
-                && matches!(
-                    key_event.code,
-                    KeyCode::Char(_)
-                        | KeyCode::Backspace
-                        | KeyCode::Delete
-                        | KeyCode::Enter
-                        | KeyCode::Tab
-                );
+        self.handle_key_event_with_activation_key(key_event, /*activation_key*/ None)
+    }
+
+    pub(crate) fn handle_key_event_with_activation_key(
+        &mut self,
+        key_event: KeyEvent,
+        activation_key: Option<KeyBinding>,
+    ) -> InputResult {
+        let routed_key = activation_key.unwrap_or_else(|| KeyBinding::from_event(key_event));
+        if self.consume_view_transition_key(routed_key, key_event.kind) {
+            return InputResult::None;
+        }
+        if key_event.kind == KeyEventKind::Release {
+            // A modal may cover the config panel while its child editor is queued.
+            // Let the panel see the release so the next fresh press is not swallowed.
+            for view in &mut self.view_stack {
+                view.handle_key_release(key_event);
+            }
+        } else if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+            && self.view_stack.len() > 1
+        {
+            let covered_view_count = self.view_stack.len() - 1;
+            for view in &mut self.view_stack[..covered_view_count] {
+                view.observe_key_event_while_covered(key_event, routed_key);
+            }
+        }
+        let records_composer_activity = self.is_composer_activity_key(key_event);
         if self.warnings_active() {
             if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
                 self.record_composer_activity_at(Instant::now());
@@ -869,21 +970,19 @@ impl BottomPane {
                 let view = &mut self.view_stack[last_index];
                 let prefer_esc =
                     key_event.code == KeyCode::Esc && view.prefer_esc_to_handle_key_event();
-                let ctrl_c_completed = key_event.code == KeyCode::Esc
+                let cancel_handled = key_event.code == KeyCode::Esc
                     && !prefer_esc
-                    && matches!(view.on_ctrl_c(), CancellationEvent::Handled)
-                    && view.is_complete();
-                if ctrl_c_completed {
-                    (true, true, view.completion(), false)
-                } else {
-                    view.handle_key_event(key_event);
-                    (
-                        false,
-                        view.is_complete(),
-                        view.completion(),
-                        view.is_in_paste_burst(),
-                    )
+                    && matches!(view.on_ctrl_c(), CancellationEvent::Handled);
+                if !cancel_handled {
+                    view.handle_key_event_with_activation_key(key_event, activation_key);
                 }
+                let complete = view.is_complete();
+                (
+                    cancel_handled && complete,
+                    complete,
+                    view.completion(),
+                    view.is_in_paste_burst(),
+                )
             };
 
             if ctrl_c_completed {
@@ -995,6 +1094,7 @@ impl BottomPane {
     }
 
     pub fn handle_paste(&mut self, pasted: String) {
+        self.interrupt_config_editor_transition();
         if self.warnings_active() {
             if !pasted.is_empty() {
                 self.record_composer_activity_at(Instant::now());
@@ -1037,6 +1137,10 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    pub(crate) fn set_composer_restricted_input_mode(&mut self, mode: Option<RestrictedInputMode>) {
+        self.composer.set_restricted_input_mode(mode);
+    }
+
     pub(crate) fn pre_draw_tick(&mut self) {
         self.pre_draw_tick_at(Instant::now());
     }
@@ -1059,6 +1163,7 @@ impl BottomPane {
             self.on_active_view_complete();
         }
         if needs_redraw || view_complete {
+            self.key_chord_reset_requested = true;
             self.request_redraw();
         }
     }
@@ -1108,13 +1213,15 @@ impl BottomPane {
         text_elements: Vec<TextElement>,
         local_image_paths: Vec<PathBuf>,
         mention_bindings: Vec<MentionBinding>,
+        shell_prefix: ShellPrefixHandling,
     ) {
         self.composer.edit_stored_draft(|composer| {
-            composer.set_text_content_with_mention_bindings(
+            composer.set_text_content_with_shell_prefix(
                 text,
                 text_elements,
                 local_image_paths,
                 mention_bindings,
+                shell_prefix,
             );
             composer.move_cursor_to_end();
         });
@@ -1127,6 +1234,10 @@ impl BottomPane {
         enabled: bool,
         placeholder: Option<String>,
     ) {
+        if !enabled {
+            self.composer.cancel_vim_search();
+            self.composer.cancel_history_search();
+        }
         self.composer.set_input_enabled(enabled, placeholder);
         self.request_redraw();
     }
@@ -1157,6 +1268,7 @@ impl BottomPane {
         self.composer.current_text()
     }
 
+    #[cfg(test)]
     pub(crate) fn composer_cursor(&self) -> usize {
         self.composer.current_cursor()
     }
@@ -1166,7 +1278,7 @@ impl BottomPane {
         self.composer.text_elements()
     }
 
-    pub(crate) fn composer_local_images(&self) -> Vec<LocalImageAttachment> {
+    pub(crate) fn composer_local_images(&self) -> &[LocalImageAttachment] {
         self.composer.local_images()
     }
 
@@ -1177,6 +1289,11 @@ impl BottomPane {
 
     pub(crate) fn composer_text_with_pending(&self) -> String {
         self.composer.current_text_with_pending()
+    }
+
+    /// Include buffered typing before a shortcut takes ownership of composer input.
+    pub(crate) fn flush_pending_composer_input(&mut self) {
+        self.composer.flush_pending_input();
     }
 
     /// Returns whether the composer currently accepts interactive draft edits.
@@ -1295,9 +1412,12 @@ impl BottomPane {
         self.status_widget().is_some()
     }
 
-    #[cfg(test)]
-    pub(crate) fn status_line_text(&self) -> Option<String> {
-        self.composer.status_line_text()
+    pub(crate) fn status_line_area(&self) -> ratatui::layout::Rect {
+        self.composer.status_line_area()
+    }
+
+    pub(crate) fn status_line_content(&self) -> Option<&StatusLine> {
+        self.composer.status_line_content()
     }
 
     pub(crate) fn show_esc_backtrack_hint(&mut self) {
@@ -1361,23 +1481,24 @@ impl BottomPane {
 
     pub(crate) fn ensure_status_indicator(&mut self) {
         if self.status.is_none() {
-            self.status.get_or_insert_with(|| {
-                StatusIndicatorWidget::new(
-                    self.app_event_tx.clone(),
-                    self.frame_requester.clone(),
-                    self.animations_enabled,
-                    self.effects,
-                )
-            });
-            if let Some(status) = self.status.as_mut() {
-                status.set_interrupt_binding(
-                    self.keymap
-                        .primary_hint(KeymapContext::Chat, "interrupt_turn"),
-                );
-            }
+            self.status = Some(self.new_status_indicator());
             self.sync_status_inline_message();
             self.request_redraw();
         }
+    }
+
+    pub(crate) fn new_status_indicator(&self) -> StatusIndicatorWidget {
+        let mut status = StatusIndicatorWidget::new(
+            self.app_event_tx.clone(),
+            self.frame_requester.clone(),
+            self.animations_enabled,
+            self.effects,
+        );
+        status.set_interrupt_binding(
+            self.keymap
+                .primary_hint(KeymapContext::Chat, "interrupt_turn"),
+        );
+        status
     }
 
     pub(crate) fn set_interrupt_hint_visible(&mut self, visible: bool) {
@@ -1400,8 +1521,8 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    pub(crate) fn set_context_window_pending(&mut self, pending: bool) {
-        self.composer.set_context_window_pending(pending);
+    pub(crate) fn set_context_window_hidden(&mut self, hidden: bool) {
+        self.composer.set_context_window_hidden(hidden);
         self.request_redraw();
     }
 
@@ -1461,13 +1582,24 @@ impl BottomPane {
             return false;
         }
 
+        let search_query = if params.is_searchable {
+            self.view_stack
+                .last()
+                .and_then(|view| view.search_query())
+                .map(str::to_string)
+        } else {
+            None
+        };
         self.view_stack.pop();
         self.apply_standard_popup_hint(&mut params);
-        let view = list_selection_view::ListSelectionView::new(
+        let mut view = list_selection_view::ListSelectionView::new(
             params,
             self.app_event_tx.clone(),
             self.keymap.list.clone(),
         );
+        if let Some(search_query) = search_query {
+            view.set_search_query(search_query);
+        }
         self.push_view(Box::new(view));
         true
     }
@@ -1501,6 +1633,7 @@ impl BottomPane {
         }
         self.view_stack[index] = Box::new(view);
         if replaces_active_view {
+            self.key_chord_reset_requested = true;
             self.schedule_active_view_frame();
         }
         self.request_redraw();
@@ -1567,6 +1700,30 @@ impl BottomPane {
             .and_then(|view| view.selected_index())
     }
 
+    pub(crate) fn selection_toggle_states_for_active_view(
+        &self,
+        view_id: &'static str,
+    ) -> Option<Vec<Option<SelectionToggleState>>> {
+        self.view_stack
+            .last()
+            .filter(|view| view.view_id() == Some(view_id))
+            .map(|view| view.selection_toggle_states())
+    }
+
+    pub(crate) fn complete_selection_toggle_for_active_view(
+        &mut self,
+        view_id: &'static str,
+        index: usize,
+    ) {
+        if let Some(view) = self
+            .view_stack
+            .last_mut()
+            .filter(|view| view.view_id() == Some(view_id))
+        {
+            view.complete_selection_toggle(index);
+        }
+    }
+
     pub(crate) fn selected_index_for_present_view(&self, view_id: &'static str) -> Option<usize> {
         self.view_stack
             .iter()
@@ -1615,6 +1772,7 @@ impl BottomPane {
             return false;
         }
 
+        self.key_chord_reset_requested = true;
         self.view_stack.pop();
         self.request_redraw();
         true
@@ -1633,6 +1791,7 @@ impl BottomPane {
         let removed_active_view = index + 1 == self.view_stack.len();
         self.view_stack.remove(index);
         if removed_active_view {
+            self.key_chord_reset_requested = true;
             self.schedule_active_view_frame();
         }
         self.request_redraw();
@@ -1758,6 +1917,29 @@ impl BottomPane {
                 .is_some_and(bottom_pane_view::BottomPaneView::terminal_title_requires_action)
     }
 
+    /// Include requests behind a picker or delayed while the user is typing.
+    /// Async questions only block once the agent is no longer running.
+    pub(crate) fn program_status_blocked_kind(&self) -> Option<ProgramStatusKind> {
+        self.view_stack
+            .iter()
+            .rev()
+            .filter(|view| !view.is_complete())
+            .find_map(|view| view.program_status_blocked_kind())
+            .or_else(|| {
+                self.delayed_approval_requests
+                    .front()
+                    .map(|delayed| delayed.request.program_status_blocked_kind())
+            })
+            .or_else(|| {
+                (!self.is_task_running()
+                    && self
+                        .questions
+                        .as_ref()
+                        .is_some_and(|questions| questions.unanswered_count() > 0))
+                .then_some(ProgramStatusKind::Question)
+            })
+    }
+
     pub(crate) fn has_centered_view(&self) -> bool {
         self.active_view()
             .is_some_and(|view| view.presentation() == ViewPresentation::Centered)
@@ -1770,6 +1952,11 @@ impl BottomPane {
     /// Warnings own input without replacing the composer with an interactive modal.
     pub(crate) fn has_active_modal(&self) -> bool {
         !self.view_stack.is_empty()
+    }
+
+    pub(crate) fn active_view_accepts_input_when_disconnected(&self) -> bool {
+        self.active_view()
+            .is_some_and(BottomPaneView::accepts_input_when_disconnected)
     }
 
     pub(crate) fn active_view_will_interrupt_turn_on_key_event(&self, key_event: KeyEvent) -> bool {
@@ -1797,10 +1984,23 @@ impl BottomPane {
         self.no_modal_or_popup_active() && self.composer.shortcut_overlay_visible()
     }
 
+    pub(crate) fn handle_shortcut_view_key(&mut self, key: KeyEvent) -> bool {
+        let handled = self.composer.handle_shortcut_view_key(key);
+        if handled {
+            self.request_redraw();
+        }
+        handled
+    }
+
     /// Return true when no popups or modal views are active, regardless of task state.
     pub(crate) fn can_launch_external_editor(&self) -> bool {
+        self.completion_can_yield_focus() && !self.composer.popup_active()
+    }
+
+    /// A hidden completion popup can yield to another pane. Prompts and queries keep input.
+    pub(crate) fn completion_can_yield_focus(&self) -> bool {
         !self.has_active_view()
-            && !self.composer.popup_active()
+            && !self.composer.query_active()
             && !self.questions.as_ref().is_some_and(|q| q.expanded)
     }
 
@@ -1833,8 +2033,16 @@ impl BottomPane {
         handled || complete
     }
 
+    pub(crate) fn clear_composer_selection(&mut self) {
+        self.composer.clear_mouse_selection();
+    }
+
     pub(crate) fn end_composer_drag(&mut self) {
         self.composer.end_mouse_drag();
+    }
+
+    pub(crate) fn cancel_composer_primary(&mut self) {
+        self.composer.cancel_primary();
     }
 
     pub(crate) fn finish_composer_copy(
@@ -1857,11 +2065,39 @@ impl BottomPane {
         self.composer.copy_selection(event, copy)
     }
 
-    pub(crate) fn can_paste_on_right_click(&self) -> bool {
-        self.no_modal_or_popup_active() && self.composer.can_paste_on_right_click()
+    pub(crate) fn copy_composer_selection_on_release(
+        &mut self,
+        event: crossterm::event::MouseEvent,
+        selection_copy: crate::tui::SelectionCopy,
+        copy: impl FnOnce(
+            &str,
+            crate::tui::SelectionCopy,
+        ) -> (
+            crate::clipboard_copy::worker::CopyResult,
+            Option<std::sync::Arc<()>>,
+        ),
+    ) -> Option<(usize, Option<crate::clipboard_copy::worker::CopyResult>)> {
+        if self.has_active_view() || self.questions.as_ref().is_some_and(|q| q.expanded) {
+            return None;
+        }
+        self.composer
+            .copy_selection_on_release(event, selection_copy, copy)
+    }
+
+    pub(crate) fn clipboard_paste_target(
+        &self,
+        shortcut: Option<KeyCode>,
+    ) -> Option<ClipboardPasteTarget> {
+        if self.has_active_view() || (shortcut.is_none() && !self.no_modal_or_popup_active()) {
+            return None;
+        }
+        self.composer.clipboard_paste_target(shortcut)
     }
 
     pub(crate) fn prepare_composer_mouse(&mut self, event: crossterm::event::MouseEvent) -> bool {
+        if event.kind != crossterm::event::MouseEventKind::Moved {
+            self.view_transition_key_guard = None;
+        }
         if self.has_active_view() || self.questions.as_ref().is_some_and(|q| q.expanded) {
             self.composer.end_mouse_drag();
             return false;
@@ -1875,6 +2111,41 @@ impl BottomPane {
 
     pub(crate) fn show_view(&mut self, view: Box<dyn BottomPaneView>) {
         self.push_view(view);
+    }
+
+    pub(crate) fn suppress_current_view_key_until_release(
+        &mut self,
+        key: KeyBinding,
+        activated_at: Instant,
+        suppression: ActivationKeySuppression,
+    ) {
+        let reported_repeats_only = match suppression {
+            ActivationKeySuppression::ViewTransition => self.enhanced_keys_supported,
+            ActivationKeySuppression::ReportedRepeats => true,
+            ActivationKeySuppression::PressOnlyFallback => {
+                self.enhanced_keys_supported && crate::tui::reports_key_releases()
+            }
+        };
+        self.view_transition_key_guard = Some(ActivationKeyGuard::new_at(
+            key,
+            activated_at,
+            reported_repeats_only,
+        ));
+    }
+
+    pub(crate) fn consume_view_transition_key_event(&mut self, key_event: KeyEvent) -> bool {
+        self.consume_view_transition_key(KeyBinding::from_event(key_event), key_event.kind)
+    }
+
+    fn consume_view_transition_key(&mut self, key: KeyBinding, kind: KeyEventKind) -> bool {
+        let Some(guard) = self.view_transition_key_guard.as_mut() else {
+            return false;
+        };
+        let consumed = guard.consume(key, kind);
+        if !guard.is_active() {
+            self.view_transition_key_guard = None;
+        }
+        consumed
     }
 
     /// Show a text prompt with the composer's current editing preferences.
@@ -2143,6 +2414,14 @@ impl BottomPane {
         flushed
     }
 
+    /// Commit accepted typing before snapshotting the target of an asynchronous paste.
+    pub(crate) fn prepare_composer_clipboard_paste(&mut self) {
+        self.composer.flush_pending_paste_burst();
+        if !self.composer.is_vim_enabled() {
+            self.composer.finish_edit();
+        }
+    }
+
     pub(crate) fn is_in_paste_burst(&self) -> bool {
         self.view_stack
             .last()
@@ -2181,6 +2460,10 @@ impl BottomPane {
         }
     }
 
+    pub(crate) fn record_local_user_message_history(&mut self, entry: HistoryEntry) {
+        self.composer.record_local_user_message_history(entry);
+    }
+
     pub(crate) fn record_replayed_user_message_history(&mut self, entry: HistoryEntry) {
         self.composer.record_replayed_user_message_history(entry);
     }
@@ -2188,6 +2471,12 @@ impl BottomPane {
     pub(crate) fn on_file_search_result(&mut self, query: String, matches: Vec<FileMatch>) {
         self.composer.on_file_search_result(query, matches);
         self.request_redraw();
+    }
+
+    /// Settle typing before an accepted handoff image without starting shell mode.
+    pub(crate) fn settle_before_handoff_image(&mut self) {
+        self.composer
+            .flush_pending_input_with_shell_prefix(ShellPrefixHandling::Literal);
     }
 
     pub(crate) fn attach_image(&mut self, path: PathBuf) {
@@ -2241,9 +2530,10 @@ impl BottomPane {
 
     pub(crate) fn backdrop_with_options<'a>(
         &'a self,
-        options: ComposerRenderOptions<'a>,
+        mut options: ComposerRenderOptions<'a>,
     ) -> RenderableItem<'a> {
         let views = if self.centered_dialog().is_some() {
+            options.is_dialog_backdrop = true;
             &self.view_stack[..self.view_stack.len() - 1]
         } else {
             &self.view_stack
@@ -2389,10 +2679,12 @@ impl BottomPane {
             let composer: RenderableItem<'_> = if let Some(questions) = question_editor {
                 RenderableItem::Borrowed(questions.as_ref())
             } else if options.max_height.is_none()
+                && options.image_previews.is_none()
                 && options.textarea_right_reserve == 0
                 && options.warning_count == 0
                 && options.footer.is_none()
                 && !options.separate_status_line
+                && !options.is_dialog_backdrop
                 && options.command_popup_placement == CommandPopupPlacement::AboveComposer
             {
                 RenderableItem::Borrowed(&self.composer)
@@ -2428,7 +2720,7 @@ impl BottomPane {
         self.request_redraw();
     }
 
-    pub(crate) fn set_status_line(&mut self, status_line: Option<Line<'static>>) {
+    pub(crate) fn set_status_line(&mut self, status_line: Option<StatusLine>) {
         if self.composer.set_status_line(status_line) {
             self.request_redraw();
         }
@@ -2436,12 +2728,6 @@ impl BottomPane {
 
     pub(crate) fn set_luna_reserve_active(&mut self, active: bool) {
         if self.composer.set_luna_reserve_active(active) {
-            self.request_redraw();
-        }
-    }
-
-    pub(crate) fn set_status_line_hyperlink(&mut self, url: Option<String>) {
-        if self.composer.set_status_line_hyperlink(url) {
             self.request_redraw();
         }
     }
@@ -2483,7 +2769,7 @@ impl Renderable for ChatComposerPresentation<'_> {
     fn desired_height(&self, width: u16) -> u16 {
         self.composer
             .desired_height_with_options(width, self.options)
-            .min(self.options.max_height.unwrap_or(u16::MAX))
+            .min(self.composer.height_budget(width, self.options))
     }
 
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
@@ -2568,6 +2854,18 @@ mod tests {
 
     pub(super) fn test_pane(app_event_tx: AppEventSender) -> BottomPane {
         test_pane_with_disable_paste_burst(app_event_tx, /*disable_paste_burst*/ false)
+    }
+
+    #[test]
+    fn clipboard_image_undo_preserves_buffered_typing() {
+        let (tx, _) = unbounded_channel();
+        let mut pane = test_pane(AppEventSender::new(tx));
+        pane.composer.handle_key_event(KeyCode::Char('a').into());
+        pane.prepare_composer_clipboard_paste();
+        pane.attach_image(std::path::PathBuf::from("example.png"));
+        pane.composer.handle_key_event(KeyCode::F(7).into());
+        assert_eq!(pane.composer.current_text(), "a");
+        assert!(pane.composer.local_image_paths().is_empty());
     }
 
     fn test_pane_with_disable_paste_burst(
@@ -2803,6 +3101,90 @@ mod tests {
         }
     }
 
+    #[test]
+    fn view_transition_key_guard_survives_an_intervening_modal() {
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let mut pane = test_pane(AppEventSender::new(tx_raw));
+        let activation_key = crate::key_hint::plain(KeyCode::F(11));
+        pane.suppress_current_view_key_until_release(
+            activation_key,
+            Instant::now(),
+            ActivationKeySuppression::ViewTransition,
+        );
+        pane.push_view(Box::new(DismissibleView::default()));
+
+        // Press-only terminals report repeats as presses.
+        assert!(pane.consume_view_transition_key(activation_key, KeyEventKind::Press));
+        assert!(pane.consume_view_transition_key(activation_key, KeyEventKind::Repeat));
+        assert!(pane.consume_view_transition_key(activation_key, KeyEventKind::Release));
+        assert!(!pane.consume_view_transition_key(activation_key, KeyEventKind::Press));
+
+        // Enhanced picker transitions allow another intentional press without a release.
+        pane.enhanced_keys_supported = true;
+        pane.suppress_current_view_key_until_release(
+            activation_key,
+            Instant::now(),
+            ActivationKeySuppression::ViewTransition,
+        );
+        assert!(!pane.consume_view_transition_key(activation_key, KeyEventKind::Press));
+    }
+
+    #[test]
+    fn transition_events_reach_a_view_covered_by_a_modal() {
+        #[derive(Default)]
+        struct CoveredEvents {
+            press_seen: Cell<bool>,
+            release_seen: Cell<bool>,
+            interrupted: Cell<bool>,
+        }
+
+        struct TrackingView(Rc<CoveredEvents>);
+
+        impl Renderable for TrackingView {
+            fn render(&self, _area: Rect, _buf: &mut Buffer) {}
+
+            fn desired_height(&self, _width: u16) -> u16 {
+                0
+            }
+        }
+
+        impl BottomPaneView for TrackingView {
+            fn observe_key_event_while_covered(
+                &mut self,
+                _key_event: KeyEvent,
+                _activation_key: KeyBinding,
+            ) {
+                self.0.press_seen.set(true);
+            }
+
+            fn handle_key_release(&mut self, _key_event: KeyEvent) {
+                self.0.release_seen.set(true);
+            }
+
+            fn interrupt_config_editor_transition(&mut self) {
+                self.0.interrupted.set(true);
+            }
+        }
+
+        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
+        let mut pane = test_pane(AppEventSender::new(tx_raw));
+        let events = Rc::new(CoveredEvents::default());
+        pane.push_view(Box::new(TrackingView(events.clone())));
+        pane.push_view(Box::new(DismissibleView::default()));
+
+        pane.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        pane.handle_key_event(KeyEvent::new_with_kind(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        ));
+        pane.handle_paste("pasted".to_string());
+
+        assert!(events.press_seen.get());
+        assert!(events.release_seen.get());
+        assert!(events.interrupted.get());
+    }
+
     #[derive(Default)]
     struct CompletingView {
         id: Option<&'static str>,
@@ -2850,7 +3232,12 @@ mod tests {
             skills: Some(Vec::new()),
         });
         pane.push_approval_request(exec_request(), &features);
+        assert_eq!(
+            pane.program_status_blocked_kind(),
+            Some(ProgramStatusKind::Permission)
+        );
         assert_eq!(CancellationEvent::Handled, pane.on_ctrl_c());
+        assert_eq!(pane.program_status_blocked_kind(), None);
         assert!(!pane.quit_shortcut_hint_visible());
         assert_eq!(CancellationEvent::NotHandled, pane.on_ctrl_c());
     }
@@ -2949,14 +3336,26 @@ mod tests {
         ] {
             let mut pane = test_pane(tx.clone());
             match source {
-                "warning open" => pane.show_warnings(Vec::new(), Default::default()),
+                "warning open" => pane.show_warnings(
+                    Vec::new(),
+                    Default::default(),
+                    /*daemon_restart_hint_at*/ None,
+                ),
                 "warning navigation" => {
-                    pane.show_warnings(Vec::new(), Default::default());
+                    pane.show_warnings(
+                        Vec::new(),
+                        Default::default(),
+                        /*daemon_restart_hint_at*/ None,
+                    );
                     pane.last_composer_activity_at = None;
                     pane.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
                 }
                 "warning paste" => {
-                    pane.show_warnings(Vec::new(), Default::default());
+                    pane.show_warnings(
+                        Vec::new(),
+                        Default::default(),
+                        /*daemon_restart_hint_at*/ None,
+                    );
                     pane.last_composer_activity_at = None;
                     pane.handle_paste("query".into());
                 }
@@ -3081,6 +3480,10 @@ mod tests {
         let request = exec_request();
         let thread_id = request.thread_id();
         pane.push_approval_request(request, &features);
+        assert_eq!(
+            pane.program_status_blocked_kind(),
+            Some(ProgramStatusKind::Permission)
+        );
 
         assert!(
             pane.dismiss_app_server_request(&ResolvedAppServerRequest::ExecApproval {
@@ -3089,6 +3492,7 @@ mod tests {
             })
         );
         assert!(pane.delayed_approval_requests.is_empty());
+        assert_eq!(pane.program_status_blocked_kind(), None);
 
         pane.pre_draw_tick_at(now + APPROVAL_PROMPT_TYPING_IDLE_DELAY);
         assert!(pane.view_stack.is_empty());

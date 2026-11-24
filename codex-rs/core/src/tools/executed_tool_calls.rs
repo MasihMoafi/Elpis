@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::MutexGuard;
 use std::sync::Weak;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
@@ -20,39 +21,45 @@ use codex_code_mode::CellId;
 use codex_features::Feature;
 use codex_features::Features;
 use codex_history::InitialHistory;
+use codex_login::AuthOwner;
+use codex_model_provider::provider_uses_first_party_auth_path;
 use codex_protocol::ResponseItemId;
+use codex_protocol::auth::AuthMode;
+use codex_protocol::mcp::CallToolResult;
 use codex_protocol::mcp::McpAttribution;
 use codex_protocol::mcp::McpAttributionSource;
 use codex_protocol::models::ExecutedToolCall;
 use codex_protocol::models::ExecutedToolCallArguments;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::models::ToolResultBody;
 use codex_protocol::models::ToolResultMetadata;
 use codex_protocol::models::executed_tool_call_metadata_bytes;
-use codex_protocol::models::normalize_executed_tool_call_arguments;
+use codex_protocol::models::normalize_executed_tool_call_completeness;
 use codex_protocol::openai_models::ToolMode;
 use indexmap::IndexMap;
 use serde_json::Value as JsonValue;
+use uuid::Uuid;
 
-use crate::session::session::Session;
 use crate::session::step_context::StepContext;
+use crate::session::turn_context::TurnContext;
 use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolOutput;
 use crate::tools::context::ToolPayload;
 use crate::tools::metadata_metrics;
 use crate::tools::router::ToolCall;
-use crate::utils::json::serialized_json_bytes;
+use crate::turn_metadata::TurnMetadataState;
+use codex_utils_string::serialized_json_bytes;
 
 mod seen_ids;
 
 use seen_ids::SeenIds;
 
-const MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES: usize = 8 * 1024;
-const MAX_EXECUTED_TOOL_CALL_FULL_ARGUMENT_BYTES_PER_OUTPUT: usize = 32 * 1024;
 const MAX_PENDING_EXECUTED_TOOL_CALLS: usize = 256;
 // Limits new Direct metadata retained in history and the append-only rollout
 // during one recorder lifetime. A new process cannot recover the exact prior
 // budget because raw result metadata is intentionally not deserialized.
 const MAX_RETAINED_DIRECT_METADATA_BYTES: usize = 1024 * 1024;
+const MAX_TURN_RESULT_BODY_BYTES: usize = 1024 * 1024;
 
 type ExecutedToolCallCache =
     HashMap<(std::mem::Discriminant<ResponseItem>, String), Vec<ExecutedToolCall>>;
@@ -62,9 +69,162 @@ type ExecutedToolCallCache =
 #[derive(Clone, Default)]
 pub(crate) struct ExecutedToolCalls {
     state: Arc<Mutex<Option<ExecutedToolCallRecorderState>>>,
+    captures_result_bodies: bool,
     retained_direct_metadata_bytes: Arc<AtomicUsize>,
     pending_direct_calls: Arc<AtomicUsize>,
     mcp_attribution: mcp_attribution::McpAttributionRecorder,
+}
+
+/// Private bytes belong to one regular task. History keeps only the host-issued IDs.
+pub(crate) struct ResultBodyTurn {
+    turn_id: String,
+    origin: Weak<TurnMetadataState>,
+    owner: AuthOwner,
+    auth_mode: AuthMode,
+    retained: Mutex<RetainedResultBodies>,
+}
+
+#[derive(Default)]
+struct RetainedResultBodies {
+    by_id: HashMap<Uuid, Arc<ToolResultBody>>,
+    bytes: usize,
+}
+
+/// Permission at dispatch for this call. Holding it must not extend the originating turn.
+pub(super) struct ResultBodyCapture<'a> {
+    turn: Weak<ResultBodyTurn>,
+    nested_call_id: Option<&'a str>,
+}
+
+impl ResultBodyCapture<'_> {
+    fn is_current(&self, turn: &ResultBodyTurn, _retained: &RetainedResultBodies) -> bool {
+        turn.owner.is_current()
+    }
+
+    pub(super) fn record(
+        self,
+        result: &CallToolResult,
+        permits_source: impl FnOnce(AuthMode) -> bool,
+    ) -> Option<Arc<PendingResultBody>> {
+        let turn = self.turn.upgrade()?;
+        if !permits_source(turn.auth_mode) || !self.is_current(&turn, &turn.lock_bodies()) {
+            return None;
+        }
+        let mut body = ToolResultBody::from_mcp_result(result)?;
+        if let Some(call_id) = self.nested_call_id {
+            body.set_nested_call_id(call_id);
+        }
+        let mut retained = turn.lock_bodies();
+        if !self.is_current(&turn, &retained)
+            || retained.by_id.len() >= MAX_PENDING_EXECUTED_TOOL_CALLS
+            || body.compact_bytes() > MAX_TURN_RESULT_BODY_BYTES - retained.bytes
+        {
+            return None;
+        }
+        let id = Uuid::new_v4();
+        retained.bytes += body.compact_bytes();
+        retained.by_id.insert(id, Arc::new(body));
+        Some(Arc::new(PendingResultBody {
+            turn: self.turn,
+            id,
+            accepted: AtomicBool::new(false),
+        }))
+    }
+}
+
+/// Refund the provisional slot when a callback blocks or the call is cancelled.
+#[derive(Debug)]
+pub(crate) struct PendingResultBody {
+    turn: Weak<ResultBodyTurn>,
+    id: Uuid,
+    accepted: AtomicBool,
+}
+
+impl PendingResultBody {
+    pub(super) fn accept(&self) -> Option<Uuid> {
+        self.turn.upgrade().filter(|turn| turn.is_current())?;
+        self.accepted.store(true, Ordering::Relaxed);
+        Some(self.id)
+    }
+}
+
+impl Drop for PendingResultBody {
+    fn drop(&mut self) {
+        if !*self.accepted.get_mut() {
+            ResultBodyTurn::discard(&self.turn, Some(self.id));
+        }
+    }
+}
+
+impl ResultBodyTurn {
+    fn discard_call(turn: &Weak<Self>, call: &mut ExecutedToolCall) {
+        Self::discard(turn, call.tool_result_id());
+        call.clear_tool_result_id();
+    }
+
+    fn discard(turn: &Weak<Self>, id: Option<Uuid>) {
+        if let Some(id) = id
+            && let Some(turn) = turn.upgrade()
+        {
+            let mut retained = turn.lock_bodies();
+            if let Some(body) = retained.by_id.remove(&id) {
+                retained.bytes -= body.compact_bytes();
+            }
+        }
+    }
+
+    fn is_current(&self) -> bool {
+        self.owner.is_current()
+    }
+
+    fn lock_bodies(&self) -> MutexGuard<'_, RetainedResultBodies> {
+        self.retained
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn start_capture<'a>(
+        self: &Arc<Self>,
+        nested_call_id: Option<&'a str>,
+    ) -> Option<ResultBodyCapture<'a>> {
+        if !self.owner.is_current() {
+            return None;
+        }
+        Some(ResultBodyCapture {
+            turn: Arc::downgrade(self),
+            nested_call_id,
+        })
+    }
+
+    /// Select the existing call records on this authorized sampling request.
+    pub(crate) fn for_input(
+        &self,
+        input: &[ResponseItem],
+        selected_owner: &AuthOwner,
+    ) -> Vec<(usize, usize, Arc<ToolResultBody>)> {
+        let mut results = Vec::new();
+        if self.owner != *selected_owner || !self.is_current() {
+            return results;
+        }
+        let retained = self.lock_bodies();
+        if retained.by_id.is_empty() {
+            return results;
+        }
+        for (index, item) in input.iter().enumerate() {
+            let Some(calls) = item
+                .executed_tool_call_metadata()
+                .and_then(|metadata| metadata.executed_tool_calls.as_deref())
+            else {
+                continue;
+            };
+            for (row, call) in calls.iter().enumerate() {
+                if let Some(body) = call.tool_result_id().and_then(|id| retained.by_id.get(&id)) {
+                    results.push((index, row, Arc::clone(body)));
+                }
+            }
+        }
+        results
+    }
 }
 
 // Avoid exposing recorded call arguments or result metadata through client Debug output.
@@ -96,10 +256,12 @@ impl Drop for DirectCallPermit {
 
 #[derive(Default)]
 struct ExecutedToolCallRecorderState {
+    include_general_metadata: bool,
     // Disabling drops this lifetime, permanently invalidating prepared Direct records.
     recording: Arc<()>,
     // Full live Direct observations; persisted outputs keep their bounded projection.
     direct_calls: HashMap<ResponseItemId, ExecutedToolCall>,
+    body_turn: Weak<ResultBodyTurn>,
     cells: HashMap<CellId, RecordedCell>,
     output_cells: HashMap<String, CellId>,
     retained_calls: HashMap<(std::mem::Discriminant<ResponseItem>, String), RetainedToolCalls>,
@@ -114,6 +276,7 @@ struct ExecutedToolCallRecorderState {
 /// Keep each output's calls and completion marker together through replay and pruning.
 #[derive(Default)]
 struct RetainedToolCalls {
+    output_item_id: Option<ResponseItemId>,
     calls: Vec<ExecutedToolCall>,
     complete: bool,
     cell_id: Option<String>,
@@ -127,9 +290,19 @@ struct RetainedToolCalls {
 }
 
 impl RetainedToolCalls {
-    fn clear_late_truncated_metadata(&mut self) {
+    fn invalidate_output(&mut self, turn: &Weak<ResultBodyTurn>) {
+        if self.output_item_id.take().is_some() {
+            for call in &mut self.calls {
+                ResultBodyTurn::discard_call(turn, call);
+            }
+        }
+        self.clear_late_truncated_metadata(turn);
+    }
+
+    fn clear_late_truncated_metadata(&mut self, turn: &Weak<ResultBodyTurn>) {
         for index in self.late_truncated_indices.drain() {
             if let Some(call) = self.calls.get_mut(index) {
+                ResultBodyTurn::discard(turn, call.tool_result_id());
                 call.set_tool_result_metadata(ToolResultMetadata::default());
                 self.result_metadata_updated = true;
             }
@@ -149,13 +322,24 @@ enum CellCompletion {
 
 #[derive(Default)]
 struct RecordedCell {
+    output_item_id: Option<ResponseItemId>,
     pending_calls: IndexMap<String, ExecutedToolCall>,
-    pending_full_argument_bytes: usize,
     completion: CellCompletion,
     originating_call_id: Option<String>,
     truncated_metadata_binding_valid: bool,
     observed_truncated_call: bool,
     dispatch_closed: bool,
+}
+
+impl RecordedCell {
+    fn invalidate_binding(&mut self, turn: &Weak<ResultBodyTurn>) {
+        // Unbound rows lose their IDs at attachment. Only a live turn has bytes to release here.
+        if std::mem::take(&mut self.truncated_metadata_binding_valid) && turn.strong_count() != 0 {
+            for call in self.pending_calls.values_mut() {
+                ResultBodyTurn::discard_call(turn, call);
+            }
+        }
+    }
 }
 
 impl ExecutedToolCallRecorderState {
@@ -164,13 +348,13 @@ impl ExecutedToolCallRecorderState {
         for cell in self.cells.values_mut() {
             if cell.originating_call_id.as_deref() == Some(origin) {
                 cell.completion = CellCompletion::Incomplete;
-                cell.truncated_metadata_binding_valid = false;
+                cell.invalidate_binding(&self.body_turn);
             }
         }
         for ((_, output_id), retained) in &mut self.retained_calls {
             if output_id == origin || retained.cell_id.as_deref() == Some(origin) {
                 retained.complete = false;
-                retained.clear_late_truncated_metadata();
+                retained.invalidate_output(&self.body_turn);
             }
         }
     }
@@ -188,12 +372,12 @@ impl ExecutedToolCallRecorderState {
     fn invalidate_cell(&mut self, cell_id: &CellId) {
         if let Some(cell) = self.cells.get_mut(cell_id) {
             cell.completion = CellCompletion::Incomplete;
-            cell.truncated_metadata_binding_valid = false;
+            cell.invalidate_binding(&self.body_turn);
         }
         for retained in self.retained_calls.values_mut() {
             if retained.runtime_cell_id.as_ref() == Some(cell_id) {
                 retained.complete = false;
-                retained.clear_late_truncated_metadata();
+                retained.invalidate_output(&self.body_turn);
             }
         }
     }
@@ -253,8 +437,10 @@ impl ExecutedToolCallRecorderState {
 impl ExecutedToolCalls {
     pub(crate) fn new(features: &Features, history: &InitialHistory) -> Self {
         Self {
+            captures_result_bodies: features.enabled(Feature::ConnectorToolResultPassthrough),
             state: Arc::new(Mutex::new(Self::is_enabled(features).then(|| {
                 ExecutedToolCallRecorderState {
+                    include_general_metadata: features.enabled(Feature::ExecutedToolCallMetadata),
                     seen_ids: SeenIds::from_history(history),
                     // Runtime cell IDs can restart after resume/fork; inherited wait
                     // handles cannot be distinguished from newly allocated handles.
@@ -269,6 +455,111 @@ impl ExecutedToolCalls {
             pending_direct_calls: Arc::new(AtomicUsize::new(0)),
             mcp_attribution: mcp_attribution::McpAttributionRecorder::new(history),
         }
+    }
+
+    pub(crate) fn is_result_body_provider_header(name: &str) -> bool {
+        name.eq_ignore_ascii_case("version") || name.eq_ignore_ascii_case("x-openai-originator")
+    }
+
+    pub(crate) fn captures_result_bodies(&self) -> bool {
+        self.captures_result_bodies
+    }
+
+    pub(crate) fn begin_turn(&self, turn: &TurnContext) -> Option<Arc<ResultBodyTurn>> {
+        if !self.captures_result_bodies
+            || !turn
+                .config
+                .features
+                .enabled(Feature::ConnectorToolResultPassthrough)
+        {
+            return None;
+        }
+        let manager = turn.auth_manager.as_ref()?;
+        let info = turn.provider.info();
+        // The built-in provider declares optional organization/project selectors. The
+        // transport checks the resolved headers again and declines either active selector.
+        if !info.include_internal_metadata
+            || info.is_amazon_bedrock()
+            || info.is_gcp()
+            || !provider_uses_first_party_auth_path(info)
+            || info.gateway_oauth.is_some()
+            || !turn
+                .provider
+                .auth_manager()
+                .is_some_and(|provider| Arc::ptr_eq(manager, &provider))
+            || info
+                .query_params
+                .as_ref()
+                .is_some_and(|params| !params.is_empty())
+            || info
+                .http_headers
+                .iter()
+                .flatten()
+                .map(|(name, value)| (name, Some(value.as_str())))
+                .chain(
+                    info.env_http_headers
+                        .iter()
+                        .flatten()
+                        .map(|(name, _)| (name, None)),
+                )
+                .any(|(name, _static_value)| {
+                    !Self::is_result_body_provider_header(name)
+                        && !name.eq_ignore_ascii_case(codex_client::OPENAI_ORGANIZATION_HEADER)
+                        && !name.eq_ignore_ascii_case(codex_client::OPENAI_PROJECT_HEADER)
+                })
+        {
+            return None;
+        }
+        let owner = manager.auth_owner();
+        let auth_mode = manager.auth_mode().filter(|_| owner.is_current())?;
+        match auth_mode {
+            AuthMode::Chatgpt | AuthMode::ChatgptAuthTokens
+                if info
+                    .base_url
+                    .as_deref()
+                    .is_none_or(crate::client::is_local_connector_result_gateway) => {}
+            _ => return None,
+        }
+        let capture = Arc::new(ResultBodyTurn {
+            owner,
+            auth_mode,
+            turn_id: turn.sub_id.clone(),
+            origin: Arc::downgrade(&turn.turn_metadata_state),
+            retained: Mutex::default(),
+        });
+        self.lock_state().as_mut()?.body_turn = Arc::downgrade(&capture);
+        Some(capture)
+    }
+
+    pub(crate) fn result_body_turn(&self, turn_id: &str) -> Option<Arc<ResultBodyTurn>> {
+        if !self.captures_result_bodies {
+            return None;
+        }
+        self.lock_state()
+            .as_ref()?
+            .body_turn
+            .upgrade()
+            .filter(|capture| capture.turn_id == turn_id)
+    }
+
+    fn current_result_turn(&self, turn: &TurnContext) -> Option<Arc<ResultBodyTurn>> {
+        self.result_body_turn(&turn.sub_id).filter(|capture| {
+            capture.is_current()
+                && capture
+                    .origin
+                    .ptr_eq(&Arc::downgrade(&turn.turn_metadata_state))
+        })
+    }
+
+    pub(super) fn start_mcp_result_capture<'a>(
+        &self,
+        turn: &TurnContext,
+        call: &codex_mcp::PreparedMcpCall,
+        nested_call_id: Option<&'a str>,
+    ) -> Option<ResultBodyCapture<'a>> {
+        self.current_result_turn(turn)
+            .filter(|capture| call.permits_result_body(capture.auth_mode))?
+            .start_capture(nested_call_id)
     }
 
     pub(crate) fn record_mcp_source(&self, source: McpAttributionSource) {
@@ -287,6 +578,36 @@ impl ExecutedToolCalls {
         self.mcp_attribution.mark_persisted(revision);
     }
 
+    /// Consult the inventory attached to this exact exec output during actor sampling.
+    /// Pending cells can still produce other outputs and have no per-output inventory yet.
+    pub(crate) fn exec_output_matches(
+        &self,
+        output: &ResponseItem,
+        nested_tool_names: &[String],
+    ) -> bool {
+        let ResponseItem::CustomToolCallOutput { call_id, .. } = output else {
+            return false;
+        };
+        let state = self.lock_state();
+        state
+            .as_ref()
+            .and_then(|state| {
+                state
+                    .retained_calls
+                    .get(&(std::mem::discriminant(output), call_id.clone()))
+            })
+            .is_some_and(|record| {
+                record.complete
+                    && record.cell_id.as_deref() == Some(call_id.as_str())
+                    && record.calls.iter().any(|call| {
+                        nested_tool_names.contains(&call.name)
+                            || nested_tool_names.contains(
+                                &codex_code_mode::normalize_code_mode_identifier(&call.name),
+                            )
+                    })
+            })
+    }
+
     fn lock_state(&self) -> MutexGuard<'_, Option<ExecutedToolCallRecorderState>> {
         self.state
             .lock()
@@ -294,7 +615,7 @@ impl ExecutedToolCalls {
     }
 
     /// A later wait cannot claim a complete inventory if an earlier wire copy
-    /// lost recorded calls or arguments from the same Code Mode cell.
+    /// lost recorded calls or tool names from the same Code Mode cell.
     pub(crate) fn invalidate_wire_inventory_loss(
         &self,
         original: &[ResponseItem],
@@ -321,7 +642,7 @@ impl ExecutedToolCalls {
             };
             if bounded
                 .executed_tool_call_metadata()
-                .is_none_or(|bounded| !bounded.has_same_tool_calls(calls))
+                .is_none_or(|bounded| !bounded.has_same_tool_call_inventory(calls))
             {
                 state.invalidate_origin(origin);
             }
@@ -330,7 +651,8 @@ impl ExecutedToolCalls {
 
     /// Called under the session config lock; this never changes execution features.
     pub(crate) fn refresh(&self, features: &Features) {
-        let enabled = Self::is_enabled(features);
+        let include_general_metadata = features.enabled(Feature::ExecutedToolCallMetadata);
+        let enabled = self.captures_result_bodies || include_general_metadata;
         let mut state = self.lock_state();
         if enabled != state.is_some() {
             *state = enabled.then(|| ExecutedToolCallRecorderState {
@@ -338,11 +660,15 @@ impl ExecutedToolCalls {
                 ..Default::default()
             });
         }
+        if let Some(state) = state.as_mut() {
+            state.include_general_metadata = include_general_metadata;
+        }
     }
 
     /// The turn's feature policy is independent of whether this session has a recorder.
     pub(crate) fn is_enabled(features: &Features) -> bool {
         features.enabled(Feature::ExecutedToolCallMetadata)
+            || features.enabled(Feature::ConnectorToolResultPassthrough)
     }
 
     pub(crate) fn record_tool_call(
@@ -365,24 +691,14 @@ impl ExecutedToolCalls {
             return None;
         }
         let permit = self.reserve_direct_call()?;
-        let (mut recorded, _) = recorded_call(call);
-        let argument_bytes = serialized_json_bytes(recorded.arguments()).unwrap_or(usize::MAX);
-        if matches!(recorded.arguments(), ExecutedToolCallArguments::Raw(_))
-            && argument_bytes > MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES
-        {
-            recorded = ExecutedToolCall::truncated(
-                recorded.name,
-                argument_bytes,
-                MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES,
-            );
-        }
+        let (recorded, _) = recorded_call(call);
         Some((recorded, permit))
     }
 
     fn reserve_direct_call(&self) -> Option<DirectCallPermit> {
         let recording = Arc::downgrade(&self.lock_state().as_ref()?.recording);
         self.pending_direct_calls
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |pending| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |pending| {
                 (pending < MAX_PENDING_EXECUTED_TOOL_CALLS).then_some(pending + 1)
             })
             .ok()?;
@@ -398,25 +714,43 @@ impl ExecutedToolCalls {
         &self,
         item: &mut ResponseItem,
         prepared: Option<(ExecutedToolCall, DirectCallPermit)>,
+        item_id_generator: &codex_protocol::ItemIdGenerator,
     ) {
-        let Some((call, permit)) = prepared else {
+        let Some((mut call, permit)) = prepared else {
+            if self.captures_result_bodies
+                && let Some(state) = self.lock_state().as_mut()
+                && state.body_turn.strong_count() != 0
+                && let Some(id) = output_call_id(item).and_then(|id| state.output_cells.get(id))
+                && let Some(cell) = state.cells.get_mut(id)
+                && cell.truncated_metadata_binding_valid
+            {
+                // Bind nested results to the actual exec/wait output before history projection.
+                crate::session::assign_missing_item_id(item, item_id_generator);
+                cell.output_item_id = item.id().cloned();
+            }
             return;
         };
         let mut state = self.lock_state();
         let Some(state) = state.as_mut() else {
             return;
         };
-        if !permit.recording.ptr_eq(&Arc::downgrade(&state.recording)) {
+        if !permit.recording.ptr_eq(&Arc::downgrade(&state.recording))
+            || (!state.include_general_metadata && call.tool_result_id().is_none())
+        {
             return;
         }
-        // Assign the output's ordinary history ID here so reused model call IDs
-        // cannot associate this observation with a different output.
-        Session::assign_missing_response_item_id(item);
-        if let Some(id) = item.id() {
-            state.direct_calls.insert(id.clone(), call.clone());
+        crate::session::assign_missing_item_id(item, item_id_generator);
+        let keep_live_call = !self.captures_result_bodies
+            || state.direct_calls.len() < MAX_PENDING_EXECUTED_TOOL_CALLS
+            || item
+                .id()
+                .is_some_and(|id| state.direct_calls.contains_key(id));
+        if !keep_live_call {
+            // The ordinary bounded observation can still travel on the output itself.
+            ResultBodyTurn::discard_call(&state.body_turn, &mut call);
         }
-        let complete = matches!(call.arguments(), ExecutedToolCallArguments::Raw(_));
-        item.append_executed_tool_calls(vec![call]);
+        let complete = call.has_complete_inventory();
+        item.append_executed_tool_calls(vec![call.clone()]);
         if complete {
             item.mark_tool_calls_complete();
         }
@@ -438,13 +772,11 @@ impl ExecutedToolCalls {
         }
         if bytes > available {
             item.clear_executed_tool_calls();
-            metadata_metrics::record_shedding(
-                "direct_retained",
-                original_bytes,
-                executed_tool_call_metadata_bytes(item),
-                codex_otel::global().as_ref(),
-            );
-            return;
+            ResultBodyTurn::discard_call(&state.body_turn, &mut call);
+            bytes = executed_tool_call_metadata_bytes(item);
+        }
+        if keep_live_call && let Some(id) = item.id() {
+            state.direct_calls.insert(id.clone(), call);
         }
         // All Direct attachments share the recorder lock, including cloned handles.
         self.retained_direct_metadata_bytes
@@ -480,10 +812,18 @@ impl ExecutedToolCalls {
         if !matches!(source, ToolCallSource::CodeMode { .. }) {
             return;
         }
-        // Release the lock before calling the output's trait method.
-        let recording = self.lock_state().is_some();
-        if recording && let Some(metadata) = result.tool_result_metadata() {
-            self.record_tool_result_metadata(source, call_id, metadata);
+        // Release the recorder lock before reading the output. Only refund this turn on failure.
+        let Some(turn) = self
+            .lock_state()
+            .as_ref()
+            .map(|state| state.body_turn.clone())
+        else {
+            return;
+        };
+        let metadata = result.tool_result_metadata();
+        let id = metadata.result_id();
+        if !self.record_result_metadata(source, call_id, metadata) {
+            ResultBodyTurn::discard(&turn, id);
         }
     }
 
@@ -535,7 +875,7 @@ impl ExecutedToolCalls {
         if !unique_nested_id {
             for retained in state.retained_calls.values_mut() {
                 if retained.truncated_call_index_by_id.contains_key(&call_id) {
-                    retained.clear_late_truncated_metadata();
+                    retained.clear_late_truncated_metadata(&state.body_turn);
                 }
             }
         }
@@ -559,61 +899,63 @@ impl ExecutedToolCalls {
         let cell = state.cells.entry(cell_id).or_default();
         let duplicate_call_id = cell.pending_calls.contains_key(&call_id);
         if !unique_nested_id || duplicate_call_id {
-            cell.truncated_metadata_binding_valid = false;
+            cell.invalidate_binding(&state.body_turn);
         }
-        let max_bytes = MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES.min(
-            MAX_EXECUTED_TOOL_CALL_FULL_ARGUMENT_BYTES_PER_OUTPUT
-                .saturating_sub(cell.pending_full_argument_bytes),
-        );
         let call = if at_pending_call_limit {
             ExecutedToolCall::truncated(call.name, original_bytes, /*max_bytes*/ 0)
-        } else if original_bytes <= max_bytes {
-            cell.pending_full_argument_bytes = cell
-                .pending_full_argument_bytes
-                .saturating_add(original_bytes);
-            call
         } else {
-            ExecutedToolCall::truncated(call.name, original_bytes, max_bytes)
+            call
         };
         let truncated = matches!(
             call.arguments(),
             ExecutedToolCallArguments::Truncated { .. }
         );
         cell.observed_truncated_call |= truncated;
-        cell.completion =
-            if cell.completion == CellCompletion::Recording && !duplicate_call_id && !truncated {
-                CellCompletion::Recording
-            } else {
-                CellCompletion::Incomplete
-            };
+        cell.completion = if cell.completion == CellCompletion::Recording
+            && !duplicate_call_id
+            && call.has_complete_inventory()
+        {
+            CellCompletion::Recording
+        } else {
+            CellCompletion::Incomplete
+        };
         cell.pending_calls.insert(call_id, call);
         if !duplicate_call_id {
             state.pending_nested_calls += 1;
         }
     }
 
-    fn record_tool_result_metadata(
+    fn record_result_metadata(
         &self,
         source: &ToolCallSource,
         call_id: &str,
-        metadata: &JsonValue,
+        metadata: ToolResultMetadata,
     ) -> bool {
         let ToolCallSource::CodeMode { cell_id, .. } = source else {
             return false;
         };
-        let metadata = ToolResultMetadata::new(metadata);
-        let has_metadata = metadata.is_some();
+        if !metadata.has_observation() {
+            return false;
+        }
         let mut state = self.lock_state();
         let Some(state) = state.as_mut() else {
             return false;
         };
-        let call = state
-            .cells
-            .get_mut(&CellId::new(cell_id.clone()))
-            .and_then(|cell| cell.pending_calls.get_mut(call_id));
-        if let Some(call) = call {
+        let turn = &state.body_turn;
+        let update = |call: &mut ExecutedToolCall, can_bind_body: bool| {
+            if call.tool_result_id() != metadata.result_id() {
+                ResultBodyTurn::discard(turn, call.tool_result_id());
+            }
             call.set_tool_result_metadata(metadata);
-            return has_metadata;
+            if !can_bind_body {
+                ResultBodyTurn::discard_call(turn, call);
+            }
+        };
+        if let Some(cell) = state.cells.get_mut(&CellId::new(cell_id.clone()))
+            && let Some(call) = cell.pending_calls.get_mut(call_id)
+        {
+            update(call, cell.truncated_metadata_binding_valid);
+            return true;
         }
         let retained_call = state.retained_calls.values_mut().find_map(|retained| {
             if retained.runtime_cell_id.as_ref()?.as_str() != cell_id.as_str() {
@@ -625,8 +967,11 @@ impl ExecutedToolCalls {
         if let Some((retained, index)) = retained_call {
             // Older retry copies must not overwrite this output's accepted result metadata.
             retained.result_metadata_updated = true;
-            retained.calls[index].set_tool_result_metadata(metadata);
-            return has_metadata;
+            update(
+                &mut retained.calls[index],
+                retained.output_item_id.is_some(),
+            );
+            return true;
         }
         let mut candidates = state.retained_calls.values_mut().filter_map(|retained| {
             if retained.runtime_cell_id.as_ref()?.as_str() != cell_id.as_str() {
@@ -643,8 +988,11 @@ impl ExecutedToolCalls {
         }
         retained.late_truncated_indices.insert(index);
         retained.result_metadata_updated = true;
-        retained.calls[index].set_tool_result_metadata(metadata);
-        has_metadata
+        update(
+            &mut retained.calls[index],
+            retained.output_item_id.is_some(),
+        );
+        true
     }
 
     pub(crate) fn register_cell(&self, cell_id: &CellId, output_call_id: &str) {
@@ -746,23 +1094,19 @@ fn recorded_call(call: &ToolCall) -> (ExecutedToolCall, usize) {
         }
     };
     let name = codex_tools::code_mode_name_for_tool_name(&call.tool_name);
-    let recorded_call = if original_bytes > MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES {
-        ExecutedToolCall::truncated(name, original_bytes, MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES)
-    } else {
-        let arguments = match &call.payload {
-            ToolPayload::Function { arguments } => serde_json::from_str(arguments)
-                .unwrap_or_else(|_| JsonValue::String(arguments.clone())),
-            ToolPayload::Custom { input } => JsonValue::String(input.clone()),
-            ToolPayload::ToolSearch { arguments } => {
-                serde_json::to_value(arguments).unwrap_or_default()
-            }
-        };
-        ExecutedToolCall::new(name, arguments)
+    let arguments = match &call.payload {
+        ToolPayload::Function { arguments } => {
+            serde_json::from_str(arguments).unwrap_or_else(|_| JsonValue::String(arguments.clone()))
+        }
+        ToolPayload::Custom { input } => JsonValue::String(input.clone()),
+        ToolPayload::ToolSearch { arguments } => {
+            serde_json::to_value(arguments).unwrap_or_default()
+        }
     };
-    (recorded_call, original_bytes)
+    (ExecutedToolCall::new(name, arguments), original_bytes)
 }
 
-fn input_call_id(item: &ResponseItem) -> Option<&str> {
+pub(crate) fn input_call_id(item: &ResponseItem) -> Option<&str> {
     match item {
         ResponseItem::FunctionCall { call_id, .. }
         | ResponseItem::CustomToolCall { call_id, .. } => Some(call_id),
@@ -772,11 +1116,31 @@ fn input_call_id(item: &ResponseItem) -> Option<&str> {
     }
 }
 
-fn output_call_id(item: &ResponseItem) -> Option<&str> {
+pub(crate) fn output_call_id(item: &ResponseItem) -> Option<&str> {
     match item {
         ResponseItem::FunctionCallOutput { call_id, .. }
         | ResponseItem::ToolSearchOutput { call_id, .. } => call_id.as_deref(),
         ResponseItem::CustomToolCallOutput { call_id, .. } => Some(call_id),
         _ => None,
     }
+}
+
+pub(crate) fn is_matching_tool_output(call: &ResponseItem, output: &ResponseItem) -> bool {
+    let Some(call_id) = input_call_id(call) else {
+        return false;
+    };
+    output_call_id(output) == Some(call_id)
+        && matches!(
+            (call, output),
+            (
+                ResponseItem::FunctionCall { .. } | ResponseItem::LocalShellCall { .. },
+                ResponseItem::FunctionCallOutput { .. }
+            ) | (
+                ResponseItem::CustomToolCall { .. },
+                ResponseItem::CustomToolCallOutput { .. }
+            ) | (
+                ResponseItem::ToolSearchCall { .. },
+                ResponseItem::ToolSearchOutput { .. }
+            )
+        )
 }

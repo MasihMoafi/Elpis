@@ -73,9 +73,7 @@ impl Renderable for OwnedStartupLayout<'_> {
         };
         paragraph.render(header, buf);
         let message = match self.pump.session_action {
-            StartupDraftSessionAction::New | StartupDraftSessionAction::NewFromCommandCenter => {
-                None
-            }
+            StartupDraftSessionAction::New | StartupDraftSessionAction::NewWhileRunning => None,
             StartupDraftSessionAction::Resume => Some("  Resuming session…"),
             StartupDraftSessionAction::Fork => Some("  Forking session…"),
         };

@@ -58,6 +58,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 
+use super::StatusLine;
+use super::StatusLineFocus;
 use super::picker_rows;
 use super::picker_style;
 use super::selection_popup_common::ColumnWidthConfig;
@@ -70,12 +72,12 @@ use crate::bottom_pane::popup_consts::MAX_POPUP_ROWS;
 use crate::bottom_pane::scroll_state::ScrollState;
 use crate::bottom_pane::selection_popup_common::render_rows_single_line_with_col_width_mode;
 use crate::key_hint;
+use crate::key_hint::KeyBinding;
 use crate::key_hint::KeyBindingListExt;
 use crate::key_hint::is_plain_text_key_event;
 use crate::keymap::ListAction;
 use crate::keymap::ListKeymap;
 use crate::keymap::RuntimeKeymap;
-use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::render::Insets;
 use crate::render::RectExt;
 use crate::render::renderable::ColumnRenderable;
@@ -108,9 +110,12 @@ pub type ConfirmCallback = Box<dyn Fn(&[String], &AppEventSender) + Send + Sync>
 /// Callback invoked when the user cancels the picker (presses Escape).
 pub type CancelCallback = Box<dyn Fn(&AppEventSender) + Send + Sync>;
 
+/// Action dispatched from a picker row with the key that activated it.
+type ActionCallback = Box<dyn Fn(&AppEventSender, KeyBinding) + Send + Sync>;
+
 /// Callback to generate an optional preview line based on current item states.
 /// Returns `None` to hide the preview area.
-pub type PreviewCallback = Box<dyn Fn(&[MultiSelectItem]) -> Option<Line<'static>> + Send + Sync>;
+type PreviewCallback = Box<dyn Fn(&[MultiSelectItem]) -> Option<StatusLine> + Send + Sync>;
 
 /// A single selectable item in the multi-select picker.
 ///
@@ -134,6 +139,8 @@ pub(crate) struct MultiSelectItem {
 
     /// Whether to draw a divider after this item when another visible item follows.
     pub section_break_after: bool,
+    /// An action row opens its child on Enter and has no checkbox.
+    pub on_activate: Option<ActionCallback>,
 }
 
 impl Default for MultiSelectItem {
@@ -145,6 +152,7 @@ impl Default for MultiSelectItem {
             enabled: false,
             orderable: true,
             section_break_after: false,
+            on_activate: None,
         }
     }
 }
@@ -183,6 +191,7 @@ pub(crate) struct MultiSelectPicker {
 
     /// Footer line showing keyboard hints.
     footer_hint: Line<'static>,
+    action_footer_hint: Line<'static>,
 
     /// Current search/filter query entered by the user.
     search_query: String,
@@ -193,6 +202,7 @@ pub(crate) struct MultiSelectPicker {
     /// Whether left/right arrow reordering is enabled.
     ordering_enabled: bool,
     require_selection: bool,
+    accepts_input_when_disconnected: bool,
 
     /// Shared list keybindings for navigation and completion.
     keymap: ListKeymap,
@@ -201,7 +211,7 @@ pub(crate) struct MultiSelectPicker {
     preview_builder: Option<PreviewCallback>,
 
     /// Cached preview line (updated on item changes).
-    preview_line: Option<Line<'static>>,
+    preview_line: Option<StatusLine>,
 
     /// Callback invoked when items change (toggle or reorder).
     on_change: Option<ChangeCallBack>,
@@ -289,7 +299,17 @@ impl MultiSelectPicker {
     }
 
     fn footer_lines(&self, width: u16) -> Vec<Line<'_>> {
-        wrap_styled_line(&self.footer_hint, width.saturating_sub(/*rhs*/ 2))
+        let action = self
+            .state
+            .selected_idx
+            .and_then(|index| self.filtered_indices.get(index))
+            .is_some_and(|index| self.items[*index].on_activate.is_some());
+        let hint = if action {
+            &self.action_footer_hint
+        } else {
+            &self.footer_hint
+        };
+        wrap_styled_line(hint, width.saturating_sub(/*rhs*/ 2))
     }
 
     /// Calculates the height needed for the row list area.
@@ -317,9 +337,13 @@ impl MultiSelectPicker {
             visible_to_row.push(rows.len());
             let is_selected = self.state.selected_idx == Some(visible_idx);
             let prefix = if is_selected { '›' } else { ' ' };
-            let marker = if item.enabled { 'x' } else { ' ' };
-            let item_name = truncate_text(&item.name, ITEM_NAME_TRUNCATE_LEN);
-            let name = format!("{prefix} [{marker}] {item_name}");
+            let name = if item.on_activate.is_some() {
+                format!("{prefix} {}", item.name)
+            } else {
+                let marker = if item.enabled { 'x' } else { ' ' };
+                let item_name = truncate_text(&item.name, ITEM_NAME_TRUNCATE_LEN);
+                format!("{prefix} [{marker}] {item_name}")
+            };
             rows.push(GenericDisplayRow {
                 name,
                 description: item.description.clone(),
@@ -353,46 +377,6 @@ impl MultiSelectPicker {
         }
     }
 
-    /// Moves the selection cursor up, wrapping to the bottom if at the top.
-    fn move_up(&mut self) {
-        let len = self.visible_len();
-        self.state.move_up_wrap(len);
-        let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
-    }
-
-    /// Moves the selection cursor down, wrapping to the top if at the bottom.
-    fn move_down(&mut self) {
-        let len = self.visible_len();
-        self.state.move_down_wrap(len);
-        let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
-    }
-
-    fn page_up(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.page_up_clamped(len, visible);
-    }
-
-    fn page_down(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.page_down_clamped(len, visible);
-    }
-
-    fn jump_top(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.jump_top(len, visible);
-    }
-
-    fn jump_bottom(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.jump_bottom(len, visible);
-    }
-
     /// Toggles the enabled state of the currently selected item.
     ///
     /// Updates the preview line and invokes the `on_change` callback if set.
@@ -407,6 +391,9 @@ impl MultiSelectPicker {
             return;
         };
 
+        if item.on_activate.is_some() {
+            return;
+        }
         item.enabled = !item.enabled;
         self.update_preview_line();
         if let Some(on_change) = &self.on_change {
@@ -418,7 +405,17 @@ impl MultiSelectPicker {
     ///
     /// Collects the IDs of all enabled items and passes them to the
     /// `on_confirm` callback. Does nothing if already complete.
-    fn confirm_selection(&mut self) {
+    fn confirm_selection(&mut self, activation_key: KeyBinding) {
+        if let Some(action) = self
+            .state
+            .selected_idx
+            .and_then(|index| self.filtered_indices.get(index))
+            .and_then(|index| self.items[*index].on_activate.as_deref())
+        {
+            action(&self.app_event_tx, activation_key);
+            return;
+        }
+
         if self.complete || (self.require_selection && !self.items.iter().any(|item| item.enabled))
         {
             return;
@@ -533,47 +530,52 @@ impl BottomPaneView for MultiSelectPicker {
         self.complete
     }
 
+    fn accepts_input_when_disconnected(&self) -> bool {
+        self.accepts_input_when_disconnected
+    }
+
     fn on_ctrl_c(&mut self) -> CancellationEvent {
         self.close();
         CancellationEvent::Handled
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        self.handle_key_event_with_activation_key(key_event, /*activation_key*/ None);
+    }
+
+    fn handle_key_event_with_activation_key(
+        &mut self,
+        key_event: KeyEvent,
+        activation_key: Option<KeyBinding>,
+    ) {
         // Printable characters always feed search. Movement aliases such as
         // plain j/k only apply through non-text events or modified bindings.
         let allow_plain_char_navigation = !is_plain_text_key_event(key_event);
 
+        if allow_plain_char_navigation
+            && self.ordering_enabled
+            && self.keymap.move_left.is_pressed(key_event)
+        {
+            self.move_selected_item(Direction::Up);
+            return;
+        }
+        if allow_plain_char_navigation
+            && self.ordering_enabled
+            && self.keymap.move_right.is_pressed(key_event)
+        {
+            self.move_selected_item(Direction::Down);
+            return;
+        }
+        if allow_plain_char_navigation
+            && let Some(action) = self.keymap.vertical_action_for(key_event)
+        {
+            let len = self.visible_len();
+            self.state
+                .apply_vertical_action(action, len, Self::max_visible_rows(len));
+            return;
+        }
+
         match key_event {
-            _ if allow_plain_char_navigation
-                && self.ordering_enabled
-                && self.keymap.move_left.is_pressed(key_event) =>
-            {
-                self.move_selected_item(Direction::Up);
-            }
-            _ if allow_plain_char_navigation
-                && self.ordering_enabled
-                && self.keymap.move_right.is_pressed(key_event) =>
-            {
-                self.move_selected_item(Direction::Down);
-            }
-            _ if allow_plain_char_navigation && self.keymap.move_up.is_pressed(key_event) => {
-                self.move_up()
-            }
-            _ if allow_plain_char_navigation && self.keymap.move_down.is_pressed(key_event) => {
-                self.move_down()
-            }
-            _ if allow_plain_char_navigation && self.keymap.page_up.is_pressed(key_event) => {
-                self.page_up()
-            }
-            _ if allow_plain_char_navigation && self.keymap.page_down.is_pressed(key_event) => {
-                self.page_down()
-            }
-            _ if allow_plain_char_navigation && self.keymap.jump_top.is_pressed(key_event) => {
-                self.jump_top()
-            }
-            _ if allow_plain_char_navigation && self.keymap.jump_bottom.is_pressed(key_event) => {
-                self.jump_bottom()
-            }
             KeyEvent {
                 code: KeyCode::Backspace,
                 ..
@@ -586,7 +588,9 @@ impl BottomPaneView for MultiSelectPicker {
                 modifiers: KeyModifiers::NONE,
                 ..
             } => self.toggle_selected(),
-            _ if self.keymap.accept.is_pressed(key_event) => self.confirm_selection(),
+            _ if self.keymap.accept.is_pressed(key_event) => self.confirm_selection(
+                activation_key.unwrap_or_else(|| KeyBinding::from_event(key_event)),
+            ),
             _ if self.keymap.cancel.is_pressed(key_event) => self.close(),
             KeyEvent {
                 code: KeyCode::Char(c),
@@ -667,16 +671,8 @@ impl Renderable for MultiSelectPicker {
             let [preview_area, hint_area] =
                 Layout::vertical([Constraint::Length(1), Constraint::Length(hint_height)])
                     .areas(footer_area);
-            let preview_area = Rect {
-                x: preview_area.x + 2,
-                y: preview_area.y,
-                width: preview_area.width.saturating_sub(2),
-                height: preview_area.height,
-            };
-            let max_preview_width = preview_area.width.saturating_sub(2) as usize;
-            let preview_line =
-                truncate_line_with_ellipsis_if_overflow(preview_line.clone(), max_preview_width);
-            preview_line.render(preview_area, buf);
+            let preview_area = preview_area.inset(Insets::vh(/*v*/ 0, /*h*/ 2));
+            preview_line.render(preview_area, buf, StatusLineFocus::Focused);
             hint_area
         } else {
             footer_area
@@ -711,6 +707,7 @@ pub(crate) struct MultiSelectPickerBuilder {
     items: Vec<MultiSelectItem>,
     ordering_enabled: bool,
     require_selection: bool,
+    accepts_input_when_disconnected: bool,
     app_event_tx: AppEventSender,
     keymap: ListKeymap,
     preview_builder: Option<PreviewCallback>,
@@ -729,6 +726,7 @@ impl MultiSelectPickerBuilder {
             items: Vec::new(),
             ordering_enabled: false,
             require_selection: false,
+            accepts_input_when_disconnected: false,
             app_event_tx,
             keymap: RuntimeKeymap::defaults().list,
             preview_builder: None,
@@ -752,6 +750,11 @@ impl MultiSelectPickerBuilder {
         self
     }
 
+    pub fn allow_input_when_disconnected(mut self) -> Self {
+        self.accepts_input_when_disconnected = true;
+        self
+    }
+
     /// Sets the shared list keymap used for navigation and completion.
     pub fn list_keymap(mut self, keymap: ListKeymap) -> Self {
         self.keymap = keymap;
@@ -762,10 +765,17 @@ impl MultiSelectPickerBuilder {
     ///
     /// The callback receives all items and should return a [`Line`] to display,
     /// or `None` to hide the preview area.
-    pub fn on_preview<F>(mut self, callback: F) -> Self
+    pub fn on_preview<F>(self, callback: F) -> Self
     where
         F: Fn(&[MultiSelectItem]) -> Option<Line<'static>> + Send + Sync + 'static,
     {
+        self.on_preview_content(move |items| callback(items).map(StatusLine::from))
+    }
+
+    pub(crate) fn on_preview_content(
+        mut self,
+        callback: impl Fn(&[MultiSelectItem]) -> Option<StatusLine> + Send + Sync + 'static,
+    ) -> Self {
         self.preview_builder = Some(Box::new(callback));
         self
     }
@@ -854,8 +864,10 @@ impl MultiSelectPickerBuilder {
             app_event_tx: self.app_event_tx,
             header: Box::new(header),
             footer_hint: Line::from(instructions),
+            action_footer_hint: super::popup_consts::picker_hint_line_for_keymap(&self.keymap),
             ordering_enabled: self.ordering_enabled,
             require_selection: self.require_selection,
+            accepts_input_when_disconnected: self.accepts_input_when_disconnected,
             keymap: self.keymap,
             search_query: String::new(),
             filtered_indices: Vec::new(),
@@ -904,11 +916,32 @@ pub(crate) fn match_item(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use crate::app_event::AppEvent;
     use pretty_assertions::assert_eq;
     use tokio::sync::mpsc::unbounded_channel;
+
+    pub(in crate::bottom_pane) fn render_lines(view: &impl Renderable, width: u16) -> String {
+        let area = Rect::new(0, 0, width, view.desired_height(width));
+        let mut buf = Buffer::empty(area);
+        view.render(area, &mut buf);
+        (0..area.height)
+            .map(|row| {
+                let mut line = String::new();
+                for col in 0..area.width {
+                    let symbol = buf[(area.x + col, area.y + row)].symbol();
+                    if symbol.is_empty() {
+                        line.push(' ');
+                    } else {
+                        line.push_str(symbol);
+                    }
+                }
+                line
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 
     fn test_picker(items: Vec<MultiSelectItem>) -> MultiSelectPicker {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
@@ -947,6 +980,7 @@ mod tests {
                 "branch", /*orderable*/ true, /*section_break_after*/ false,
             ),
         ]);
+        assert!(!picker.accepts_input_when_disconnected());
 
         picker.move_selected_item(Direction::Down);
         assert_eq!(
@@ -958,7 +992,7 @@ mod tests {
             vec!["theme-colors", "model", "branch"]
         );
 
-        picker.move_down();
+        picker.handle_key_event(KeyEvent::from(KeyCode::Down));
         picker.move_selected_item(Direction::Up);
         assert_eq!(
             picker
@@ -1050,6 +1084,7 @@ mod tests {
         let (tx, _rx) = unbounded_channel::<AppEvent>();
         let mut keymap = RuntimeKeymap::defaults().list;
         keymap.page_down = vec![key_hint::ctrl(KeyCode::Char('d'))];
+        keymap.move_left = keymap.page_down.clone();
         keymap.page_up = vec![key_hint::ctrl(KeyCode::Char('u'))];
         keymap.jump_bottom = vec![key_hint::ctrl(KeyCode::Char('e'))];
         keymap.jump_top = vec![key_hint::ctrl(KeyCode::Char('a'))];
@@ -1063,7 +1098,7 @@ mod tests {
                 .map(|idx| {
                     item(
                         &format!("item-{idx}"),
-                        /*orderable*/ true,
+                        /*orderable*/ false,
                         /*section_break_after*/ false,
                     )
                 })
@@ -1102,7 +1137,7 @@ mod tests {
                 .collect(),
         );
         picker.header = Box::new(());
-        picker.jump_bottom();
+        picker.handle_key_event(KeyEvent::from(KeyCode::End));
         let mut snapshots = Vec::new();
         for height in 1..=7 {
             let area = Rect::new(/*x*/ 0, /*y*/ 0, /*width*/ 80, height);
@@ -1183,7 +1218,7 @@ mod tests {
             buf
         };
         let first = render(&picker);
-        picker.jump_bottom();
+        picker.handle_key_event(KeyEvent::from(KeyCode::End));
         picker.toggle_selected();
         picker.move_selected_item(Direction::Up);
         let last = render(&picker);

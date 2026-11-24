@@ -3,33 +3,69 @@
 //! This module keeps heavyweight `App` construction and config-inspection helpers available to
 //! focused sibling test modules without making `app/tests.rs` the only practical place to test
 //! app-owned behavior.
+//! Return the large fixture on the heap so async scenarios do not embed it in their stack frames.
 
+use super::owned_transcript::tests::buffer_text;
 use super::*;
 use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
+use crate::test_support::boxed_future;
 use codex_models_manager::test_support::construct_model_info_offline_for_tests;
 use codex_models_manager::test_support::get_model_offline_for_tests;
 
-pub(crate) async fn make_test_app_with_thread() -> App {
+pub(crate) async fn make_test_app_with_thread() -> Box<App> {
     let mut app = make_test_app().await;
     super::owned_transcript::tests::attach_thread(&mut app, ThreadId::new());
     app
 }
 
-pub(crate) async fn make_test_app() -> App {
-    let (mut chat_widget, app_event_tx, _rx, _op_rx) = make_chatwidget_manual_with_sender().await;
+pub(crate) use super::cloud_switch_wait::ClipboardHandoff;
+pub(crate) use super::cloud_switch_wait::wait_for_cloud_switch;
+
+pub(super) fn enable_side_retention(app: &mut App) -> Result<()> {
+    app.config.features.enable(Feature::TuiWorkspace)?;
+    app.local_settings.transcript_mode = crate::transcript_mode::TranscriptMode::Owned;
+    app.keymap = crate::keymap::RuntimeKeymap::for_session(
+        &app.local_settings.tui.keymap,
+        app.local_settings.workspace_enabled(&app.config),
+    )
+    .map_err(color_eyre::eyre::Report::msg)?;
+    Ok(())
+}
+
+pub(super) fn side_frame(app: &mut App, tui: &mut tui::Tui, size: Size) -> Result<String> {
+    let size = tui.screen_size_for_event(&TuiEvent::Resize(size))?;
+    app.handle_draw_pre_render(tui, size)?;
+    app.render_chat_widget_frame(tui, size)?;
+    Ok(buffer_text(tui.terminal.previous_buffer()))
+}
+
+pub(crate) async fn make_test_app() -> Box<App> {
+    let (mut chat_widget, app_event_tx, _rx, _op_rx) =
+        boxed_future!(make_chatwidget_manual_with_sender()).await;
     let test_codex_home = chat_widget.test_codex_home.take();
     let config = chat_widget.config_ref().clone();
     let file_search = FileSearchManager::new(config.cwd.to_path_buf(), app_event_tx.clone());
     let model = get_model_offline_for_tests(config.model.as_deref());
     let session_telemetry = test_session_telemetry(&config, model.as_str());
 
-    App {
+    Box::new(App {
+        statusline_picker: None,
+        statusline_metrics: Default::default(),
+        provider_writes: HashMap::new(),
         feature_write_lock: Arc::default(),
+        config_notification_test_generation: 0,
+        config_notification_test_pending: None,
         model_catalog: chat_widget.model_catalog(),
         session_telemetry,
+        terminal_size_tags: Vec::new(),
         app_event_tx,
+        backend_registry: Default::default(),
         chat_widget,
         workspace_command_runner: None,
+        backend_preference_context: backend_selection::BackendPreferenceContext::new(
+            &config,
+            Some(config.cwd.to_path_buf()),
+        ),
         launch_cwd: config.cwd.to_path_buf(),
         runtime_working_directory_override: None,
         local_settings: crate::local_settings::LocalSettings::from(&config),
@@ -48,6 +84,7 @@ pub(crate) async fn make_test_app() -> App {
         native_history: Default::default(),
         turn_tips: Default::default(),
         transcript_view: Default::default(),
+        conversation_frame: Default::default(),
         last_rendered_history_tail: None,
         last_thread_usage_status_cell: None,
         pending_thread_usage_history_refresh: false,
@@ -62,6 +99,7 @@ pub(crate) async fn make_test_app() -> App {
         enhanced_keys_supported: false,
         keymap: crate::keymap::RuntimeKeymap::defaults(),
         key_chord_matcher: crate::keymap::KeyChordMatcher::default(),
+        routed_key_activation: None,
         commit_animation: None,
         status_line_invalid_items_warned: Arc::new(AtomicBool::new(false)),
         terminal_title_invalid_items_warned: Arc::new(AtomicBool::new(false)),
@@ -72,6 +110,7 @@ pub(crate) async fn make_test_app() -> App {
         feedback_audience: FeedbackAudience::External,
         environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
         app_server_target: crate::AppServerTarget::Embedded,
+        app_server_backend_id: None,
         pending_right_click_paste: None,
         right_click_paste_environment: super::right_click_paste::PasteEnvironment {
             primary: false,
@@ -83,6 +122,8 @@ pub(crate) async fn make_test_app() -> App {
         reconnect: Default::default(),
         daemon_cli_executable: None,
         pending_update_action: None,
+        daemon_restart: None,
+        remote_control_pending: false,
         pending_shutdown_exit_thread_id: None,
         windows_sandbox: WindowsSandboxState::default(),
         thread_event_channels: HashMap::new(),
@@ -92,6 +133,7 @@ pub(crate) async fn make_test_app() -> App {
         background_voice: None,
         background_voice_error: None,
         temporary_structured_requests: HashMap::new(),
+        cloud_title_shutdown: Default::default(),
         pending_thread_titles: HashMap::new(),
         thread_event_listener_tasks: HashMap::new(),
         agent_navigation: AgentNavigationState::default(),
@@ -99,6 +141,15 @@ pub(crate) async fn make_test_app() -> App {
         manual_memory_status: Default::default(), // Elpis
         elpis_turn_items: Default::default(),     // Elpis
         side_threads: HashMap::new(),
+        saved_openings: Default::default(),
+        sidebars: HashMap::new(),
+        side_companions: HashMap::new(),
+        zoomed_thread: None,
+        exact_sidebar_width: None,
+        divider_drag: None,
+        pane_resize: None,
+        passive_link_drag: None,
+        sidebar_press: None,
         abandoned_side_threads: HashSet::new(),
         active_thread_id: None,
         active_thread_rx: None,
@@ -129,7 +180,7 @@ pub(crate) async fn make_test_app() -> App {
         pending_hook_enabled_writes: HashMap::new(),
         recap: recap::RecapState::default(),
         _test_codex_home: test_codex_home,
-    }
+    })
 }
 
 fn test_session_telemetry(config: &Config, model: &str) -> SessionTelemetry {

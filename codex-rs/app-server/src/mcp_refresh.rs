@@ -46,6 +46,7 @@ async fn reload_mcp_config_with_policy(
     config_manager: &ConfigManager,
     policy: ReloadPolicy,
 ) -> io::Result<()> {
+    config_manager.revoke_mcp_ema_startups();
     let mut rejected = false;
     let mut load_error = None;
     let mut completed: Vec<Arc<CodexThread>> = Vec::new();
@@ -177,14 +178,15 @@ mod tests {
     use codex_config::ThreadConfigSource;
     use codex_config::types::AuthKeyringBackendKind;
     use codex_config::types::McpServerConfig;
+    use codex_core::ThreadStoreBuilder;
     use codex_core::config::ConfigOverrides;
     use codex_core::init_state_db;
-    use codex_core::thread_store_from_config;
     use codex_exec_server::EnvironmentManager;
     use codex_extension_api::NoopExtensionEventSink;
     use codex_home::CodexHomeUserInstructionsProvider;
     use codex_login::AuthManager;
     use codex_login::CodexAuth;
+    use codex_models_manager::manager::ModelCatalogSettings;
     use codex_protocol::protocol::SessionSource;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use pretty_assertions::assert_eq;
@@ -401,6 +403,28 @@ enabled = false
             }
         }
         let thread = good_thread.expect("good test thread should exist");
+        // Config loading can finish before a startup is visible to ThreadManager.
+        let pending_startup = config_manager
+            .load_for_cwd(
+                /*request_overrides*/ None,
+                ConfigOverrides::default(),
+                Some(temp_dir.path().join("good")),
+            )
+            .await?;
+        assert!(
+            !pending_startup
+                .config_layer_stack
+                .mcp_ema_cancellation()
+                .is_cancelled()
+        );
+        // Prediction forks inherit a published config and may outlive their parent.
+        let parent = thread_manager
+            .start_thread(codex_core::StartThreadOptions::new(pending_startup.clone()))
+            .await?;
+        let (inherited_fork, _) = thread_manager
+            .fork_options_from_parent(parent.thread_id)
+            .await?;
+        thread_manager.remove_thread(&parent.thread_id).await;
         std::fs::write(
             temp_dir.path().join(codex_config::CONFIG_TOML_FILE),
             r#"
@@ -411,6 +435,45 @@ enabled = false
         )?;
 
         reload_mcp_config(&thread_manager, &config_manager).await?;
+
+        let fork = thread_manager.start_thread(inherited_fork).await?;
+        assert!(
+            fork.thread
+                .config()
+                .await
+                .config_layer_stack
+                .mcp_ema_cancellation()
+                .is_cancelled()
+        );
+        fork.thread.shutdown_and_wait().await?;
+        parent.thread.shutdown_and_wait().await?;
+        assert!(
+            pending_startup
+                .config_layer_stack
+                .mcp_ema_cancellation()
+                .is_cancelled()
+        );
+        assert!(
+            thread
+                .config()
+                .await
+                .config_layer_stack
+                .mcp_ema_cancellation()
+                .is_cancelled()
+        );
+        let fresh_startup = config_manager
+            .load_for_cwd(
+                /*request_overrides*/ None,
+                ConfigOverrides::default(),
+                Some(temp_dir.path().join("good")),
+            )
+            .await?;
+        assert!(
+            !fresh_startup
+                .config_layer_stack
+                .mcp_ema_cancellation()
+                .is_cancelled()
+        );
 
         assert!(
             thread
@@ -460,36 +523,49 @@ enabled = false
         let state_db = init_state_db(&good_config)
             .await
             .expect("refresh tests require state db");
-        let thread_store = thread_store_from_config(&good_config, Some(state_db.clone()));
+        let thread_store =
+            ThreadStoreBuilder::from_config(&good_config, Some(state_db.clone())).build();
         let environment_manager = Arc::new(EnvironmentManager::default_for_tests());
         let executor_skill_provider: Arc<dyn codex_skills_extension::SkillProvider> = Arc::new(
             codex_skills_extension::ExecutorSkillProvider::new_with_restriction_product(
-                Arc::clone(&environment_manager),
                 SessionSource::Exec.restriction_product(),
             ),
         );
         let thread_manager = Arc::new_cyclic(|thread_manager| {
             ThreadManager::new(
                 &good_config,
-                auth_manager.clone(),
-                codex_core::build_models_manager(&good_config, auth_manager.clone()),
+                codex_core::build_startup_models(
+                    &good_config,
+                    auth_manager.clone(),
+                    "11111111-1111-4111-8111-111111111111".to_string(),
+                    Arc::new(ModelCatalogSettings::disk(
+                        good_config.codex_home.to_path_buf(),
+                    )),
+                ),
                 codex_core::CodexAppsToolsCache::default(),
                 SessionSource::Exec,
                 Arc::clone(&environment_manager),
-                thread_extensions(ThreadExtensionDependencies {
-                    event_sink: Arc::new(NoopExtensionEventSink),
-                    auth_manager: auth_manager.clone(),
-                    state_db: Some(state_db.clone()),
-                    analytics_events_client: codex_analytics::AnalyticsEventsClient::disabled(),
-                    thread_manager: thread_manager.clone(),
-                    goal_service: Arc::new(codex_goal_extension::GoalService::new()),
-                    environment_manager: Arc::clone(&environment_manager),
-                    executor_skill_provider: Arc::clone(&executor_skill_provider),
-                    git_attribution_base_url: good_config.chatgpt_base_url.clone(),
-                    http_client_factory: good_config.http_client_factory(),
-                    queue_service: None,
-                    turn_start_admission: None,
-                }),
+                thread_extensions(
+                    &good_config,
+                    ThreadExtensionDependencies {
+                        sample_responses: Arc::new(
+                            crate::thread_sample::SampleResponseRegistry::default(),
+                        ),
+                        cloud_skill_provider: None,
+                        event_sink: Arc::new(NoopExtensionEventSink),
+                        auth_manager: auth_manager.clone(),
+                        state_db: Some(state_db.clone()),
+                        analytics_events_client: codex_analytics::AnalyticsEventsClient::disabled(),
+                        thread_manager: thread_manager.clone(),
+                        goal_service: Arc::new(codex_goal_extension::GoalService::new()),
+                        environment_manager: Arc::clone(&environment_manager),
+                        executor_skill_provider: Arc::clone(&executor_skill_provider),
+                        git_attribution_base_url: good_config.chatgpt_base_url.clone(),
+                        http_client_factory: good_config.http_client_factory(),
+                        queue_service: None,
+                        turn_start_admission: None,
+                    },
+                ),
                 Arc::new(CodexHomeUserInstructionsProvider::new(
                     good_config.codex_home.clone(),
                 )),
@@ -497,7 +573,6 @@ enabled = false
                 codex_core::passthrough_image_store(),
                 Arc::clone(&thread_store),
                 codex_core::local_agent_graph_store_from_state_db(Some(&state_db)),
-                "11111111-1111-4111-8111-111111111111".to_string(),
                 /*attestation_provider*/ None,
                 /*external_time_provider*/ None,
             )

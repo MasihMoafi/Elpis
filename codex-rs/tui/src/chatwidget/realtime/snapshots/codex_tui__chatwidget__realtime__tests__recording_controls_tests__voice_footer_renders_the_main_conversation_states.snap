@@ -8,43 +8,49 @@ connecting:
 › Ask Elpis to do anything
 
   status line stays visible
+  ? for shortcuts
 
 listening:
- voice ● listening                                      ⌃x mute     /voice stop
+ voice ● listening                                      f9 mute     /voice stop
    mic ▁▁▁▁▁▁  codex ▁▁▁▁▁▁
 
 › Ask Elpis to do anything
 
   status line stays visible
+  ? for shortcuts
 
 speaking:
- voice ● speaking                                       ⌃x mute     /voice stop
+ voice ● speaking                                       f9 mute     /voice stop
    mic ▁▁▇▇▇▇  codex ▁▁████
 
 › Ask Elpis to do anything
 
   status line stays visible
+  ? for shortcuts
 
 muted:
- voice ◌ muted                                          ⌃x unmute   /voice stop
+ voice ◌ muted                                          f9 unmute   /voice stop
    mic ▁▁▁▁▁▁  codex ▁▁▇▇▇▇
 
 › Ask Elpis to do anything
 
   status line stays visible
+  ? for shortcuts
 
 transcript:
- voice ● speaking                                       ⌃x mute     /voice stop
+ voice ● speaking                                       f9 mute     /voice stop
    mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
 
 › Ask Elpis to do anything
 
   status line stays visible
+  ? for shortcuts
 
 interrupted:
- voice ● heard                                          ⌃x mute     /voice stop
+ voice ● heard                                          f9 mute     /voice stop
    mic ▁▁▄▄▄▄  codex ▁▁▄▄▄▄
 
 › Ask Elpis to do anything
 
   status line stays visible
+  ? for shortcuts

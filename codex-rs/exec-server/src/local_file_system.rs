@@ -1,3 +1,5 @@
+use bytes::Bytes;
+use codex_file_system::FILE_WRITE_CHUNK_SIZE;
 use codex_file_system::MAX_WALK_DEPTH;
 use codex_file_system::MAX_WALK_DIRECTORIES;
 use codex_file_system::MAX_WALK_ENTRIES;
@@ -5,6 +7,8 @@ use codex_file_system::MAX_WALK_RESPONSE_BYTES;
 use codex_file_system::WALK_RESPONSE_ITEM_OVERHEAD_BYTES;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use futures::StreamExt;
+use futures::stream::BoxStream;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::path::Path;
@@ -14,6 +18,7 @@ use std::sync::LazyLock;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use tokio::io;
+use tokio::io::AsyncWriteExt;
 use tokio_util::io::ReaderStream;
 use tokio_util::sync::CancellationToken;
 
@@ -253,6 +258,35 @@ impl LocalFileSystem {
 }
 
 impl ExecutorFileSystem for LocalFileSystem {
+    fn write_file_stream<'a>(
+        &'a self,
+        path: &'a PathUri,
+        mut contents: BoxStream<'a, FileSystemResult<Bytes>>,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, u64> {
+        Box::pin(async move {
+            let mut file = self.open_file(path, FsOpenMode::Replace, sandbox).await?;
+            let mut written = 0_u64;
+            while let Some(chunk) = contents.next().await {
+                let chunk = chunk?;
+                if !(1..=FILE_WRITE_CHUNK_SIZE).contains(&chunk.len()) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "invalid file stream block length",
+                    ));
+                }
+                let next_offset = written.checked_add(chunk.len() as u64).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "file stream offset overflow")
+                })?;
+                file.write_all(&chunk).await?;
+                // Tokio can return before its blocking write finishes; finish this block before reading another.
+                file.flush().await?;
+                written = next_offset;
+            }
+            Ok(written)
+        })
+    }
+
     fn canonicalize<'a>(
         &'a self,
         path: &'a PathUri,
@@ -308,6 +342,18 @@ impl ExecutorFileSystem for LocalFileSystem {
         sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, FileMetadata> {
         Box::pin(LocalFileSystem::get_metadata(self, path, options, sandbox))
+    }
+
+    fn get_metadata_batch<'a>(
+        &'a self,
+        paths: &'a [PathUri],
+        options: GetMetadataOptions,
+        sandbox: Option<&'a FileSystemSandboxContext>,
+    ) -> ExecutorFileSystemFuture<'a, Vec<io::Result<FileMetadata>>> {
+        Box::pin(async move {
+            let (fs, sandbox) = self.file_system_for_reads(sandbox)?;
+            fs.get_metadata_batch(paths, options, sandbox).await
+        })
     }
 
     fn read_directory<'a>(

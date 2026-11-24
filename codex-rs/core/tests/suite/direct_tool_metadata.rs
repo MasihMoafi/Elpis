@@ -14,6 +14,8 @@ use core_test_support::apps_test_server::SEARCH_CALENDAR_NAMESPACE;
 use core_test_support::apps_test_server::recorded_apps_tool_calls;
 use core_test_support::apps_test_server::search_capable_apps_builder;
 use core_test_support::responses::ev_function_call_with_namespace;
+use core_test_support::runtime_auth::PROBE_SERVER;
+use core_test_support::runtime_auth::run_harness_through_proxy;
 use core_test_support::wait_for_mcp_server;
 use wiremock::Mock;
 use wiremock::Request;
@@ -54,17 +56,201 @@ pub(super) fn tool_call_metadata(mut item: Value) -> Value {
     metadata
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn local_direct_connector_result_is_sent_only_on_its_originating_turn() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    if std::env::var_os(PROBE_SERVER).is_some() {
+        let mut builder =
+            search_capable_apps_builder(codex_model_provider::DEFAULT_CHATGPT_BASE_URL)
+                .with_config(|config| {
+                    config.model_provider.base_url =
+                        Some(codex_model_provider_info::CHATGPT_CODEX_BASE_URL.to_owned());
+                    config.model_provider.include_internal_metadata = true;
+                    config.analytics_enabled = Some(true);
+                    config
+                        .features
+                        .enable(Feature::ConnectorToolResultPassthrough)
+                        .unwrap();
+                    for feature in [
+                        Feature::ExecutedToolCallMetadata,
+                        Feature::CodeMode,
+                        Feature::CodeModeOnly,
+                    ] {
+                        config.features.disable(feature).unwrap();
+                    }
+                });
+        let fixture = start_mock_server().await;
+        let test = builder.build(&fixture).await?;
+        assert!(test.codex.analytics_enabled());
+        wait_for_mcp_server(&test.codex, CODEX_APPS_MCP_SERVER_NAME).await?;
+        test.submit_turn("List events in [$calendar](app://calendar)")
+            .await?;
+        test.submit_turn("Continue").await?;
+        test.codex.shutdown_and_wait().await?;
+        return Ok(());
+    }
+
+    let server = start_mock_server().await;
+    AppsTestServer::mount(&server).await?;
+    let call = ev_function_call_with_namespace(
+        "list-events",
+        SEARCH_CALENDAR_NAMESPACE,
+        SEARCH_CALENDAR_LIST_TOOL,
+        r#"{"query":"today"}"#,
+    );
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![call, ev_completed("first")]),
+            sse(vec![ev_completed("followup")]),
+            sse(vec![ev_completed("next")]),
+        ],
+    )
+    .await;
+    const TEST_NAME: &str = "suite::direct_tool_metadata::local_direct_connector_result_is_sent_only_on_its_originating_turn";
+    run_harness_through_proxy(&server, TEST_NAME, /*realtime_target*/ None).await?;
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 3);
+    let rpcs = recorded_apps_tool_calls(&server).await;
+    assert_eq!(rpcs.len(), 1);
+    let output = requests[1].function_call_output("list-events");
+    let row = "/internal_chat_message_metadata_passthrough/executed_tool_calls/0/tool_result";
+    assert_eq!(
+        output.pointer(row),
+        Some(&json!({
+            "content": [{"type": "text", "text": "called calendar_list_events for  at  with "}],
+            "structuredContent": {"_codex_apps": rpcs[0]["params"]["_meta"]["_codex_apps"]},
+        }))
+    );
+    let replay = requests[2].function_call_output("list-events");
+    assert_eq!(replay["output"], output["output"]);
+    assert!(replay.pointer(row).is_none());
+    Ok(())
+}
+
+#[cfg_attr(windows, ignore = "no exec_command on Windows")]
 #[test_case(false; "http")]
 #[test_case(true; "websocket")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn message_budget_sheds_inventory_without_changing_tool_results_or_history(
+async fn connector_capture_does_not_publish_shell_metadata(websocket: bool) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .disable(Feature::CodeMode)
+            .expect("disable code mode");
+        config
+            .features
+            .disable(Feature::CodeModeOnly)
+            .expect("disable code-mode-only tools");
+        config
+            .features
+            .enable(Feature::UnifiedExec)
+            .expect("enable unified exec");
+        config
+            .features
+            .disable(Feature::ExecutedToolCallMetadata)
+            .expect("disable tool-call metadata");
+        config
+            .features
+            .enable(Feature::ConnectorToolResultPassthrough)
+            .expect("enable connector result passthrough");
+    });
+    let call = |id| {
+        let mut call = ev_function_call(
+            id,
+            "exec_command",
+            r#"{"cmd":"echo connector-capture-shell-marker"}"#,
+        );
+        call["item"]["id"] = json!(format!("fc_{id}"));
+        call
+    };
+    let events = vec![
+        vec![
+            ev_response_created("shell"),
+            call("shell-only"),
+            ev_completed("shell"),
+        ],
+        vec![
+            ev_response_created("second-shell"),
+            call("second-shell"),
+            ev_completed("second-shell"),
+        ],
+        vec![ev_response_created("done"), ev_completed("done")],
+    ];
+    let http_server = if websocket {
+        None
+    } else {
+        Some(start_mock_server().await)
+    };
+    let http_mock = if let Some(server) = &http_server {
+        Some(mount_sse_sequence(server, events.iter().cloned().map(sse).collect()).await)
+    } else {
+        None
+    };
+    let websocket_server = if websocket {
+        let mut responses = vec![vec![ev_response_created("warmup"), ev_completed("warmup")]];
+        responses.extend(events);
+        Some(start_websocket_server(vec![responses]).await)
+    } else {
+        None
+    };
+    let test = if let Some(server) = &websocket_server {
+        builder.build_with_websocket_server(server).await?
+    } else {
+        builder
+            .build_with_auto_env(http_server.as_ref().expect("HTTP test server"))
+            .await?
+    };
+    test.submit_turn("Run the shell command").await?;
+    let request = if let Some(server) = &websocket_server {
+        let connection = server.single_connection();
+        assert_eq!(connection.len(), 4);
+        assert_eq!(connection[2].body_json()["previous_response_id"], "shell");
+        let request = connection[3].body_json();
+        assert_eq!(request["previous_response_id"], "second-shell");
+        request
+    } else {
+        let requests = http_mock
+            .as_ref()
+            .expect("HTTP response sequence")
+            .requests();
+        assert_eq!(requests.len(), 3);
+        requests[2].body_json()
+    };
+    let outputs = request["input"]
+        .as_array()
+        .expect("follow-up input")
+        .iter()
+        .filter(|item| item["type"] == "function_call_output")
+        .collect::<Vec<_>>();
+    assert_eq!(outputs.len(), if websocket { 1 } else { 2 });
+    for output in outputs {
+        assert!(
+            output["output"]
+                .to_string()
+                .contains("connector-capture-shell-marker")
+        );
+        assert_eq!(tool_call_metadata(output.clone()), json!({}));
+    }
+    test.codex.shutdown_and_wait().await?;
+    if let Some(server) = websocket_server {
+        server.shutdown().await;
+    }
+    Ok(())
+}
+
+#[test_case(false; "http")]
+#[test_case(true; "websocket")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn message_budget_sheds_arguments_without_losing_inventory_completeness(
     websocket: bool,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let message_limit = 15 * 1024 * 1024;
     let call_count = 16;
     // Each argument fits 8 KiB and all observations fit Direct's 1 MiB budget.
-    // Only the final message budget should shed this inventory. HTTP includes
+    // Only the final message budget should shed recorded arguments. HTTP includes
     // the original call arguments; a WebSocket delta already has those upstream.
     let arguments = json!({"plan": [{"step": "x".repeat(7 * 1024), "status": "in_progress"}]});
     assert!(arguments.to_string().len() < 8 * 1024);
@@ -284,6 +470,7 @@ async fn message_budget_sheds_inventory_without_changing_tool_results_or_history
                             "max_bytes": max_bytes,
                         }},
                     }],
+                    "tool_calls_complete": true,
                 })
             );
             truncated_arguments += 1;
@@ -537,6 +724,8 @@ async fn direct_function_and_tool_search_mark_complete_attempts(
     // These calls exceed the old request budget but stay below Direct's retained-history limit.
     let budget_arguments =
         json!({"plan": [{"step": "x".repeat(7 * 1024), "status": "in_progress"}]});
+    let oversized_arguments =
+        json!({"plan": [{"step": "x".repeat(9 * 1024), "status": "in_progress"}]});
     let budget_arguments_json = budget_arguments.to_string();
     assert!(budget_arguments_json.len() < 8 * 1024);
     if budget_calls > 0 {
@@ -548,7 +737,7 @@ async fn direct_function_and_tool_search_mark_complete_attempts(
         events.push(ev_function_call(
             "plan-oversized",
             "update_plan",
-            &json!({"plan": [{"step": "x".repeat(9 * 1024), "status": "in_progress"}]}).to_string(),
+            &oversized_arguments.to_string(),
         ));
     }
     for index in 0..budget_calls {
@@ -624,12 +813,13 @@ async fn direct_function_and_tool_search_mark_complete_attempts(
         assert_eq!(output["output"], json!("Plan updated"));
         let metadata = tool_call_metadata(output);
         metadata_bytes += serde_json::to_vec(&metadata)?.len();
-        assert!(
-            metadata["executed_tool_calls"][0]["arguments"]
-                .get("_codex_executed_tool_call_truncated")
-                .is_some()
+        assert_eq!(
+            metadata,
+            json!({
+                "executed_tool_calls": [{"name": "update_plan", "arguments": oversized_arguments}],
+                "tool_calls_complete": true,
+            }),
         );
-        assert!(metadata.get("tool_calls_complete").is_none());
     }
     for index in 0..budget_calls {
         let output = request.function_call_output(&format!("plan-budget-{index}"));
@@ -650,11 +840,13 @@ async fn direct_function_and_tool_search_mark_complete_attempts(
     Ok(())
 }
 
-#[test_case(false; "ungranted_provider")]
-#[test_case(true; "granted_provider")]
+#[test_case(false, false; "ungranted_provider")]
+#[test_case(true, false; "granted_provider_cold_fork")]
+#[test_case(true, true; "granted_provider_warm_fork")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn direct_metadata_limit_respects_provider_support(
     include_internal_metadata: bool,
+    fork_from_running_thread: bool,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let server = start_mock_server().await;
@@ -840,7 +1032,14 @@ async fn direct_metadata_limit_respects_provider_support(
     }
 
     let rollout_path = test.codex.rollout_path().expect("rollout path");
-    test.codex.shutdown_and_wait().await?;
+    if fork_from_running_thread {
+        test.codex.flush_rollout().await?;
+    } else {
+        test.codex.shutdown_and_wait().await?;
+        test.thread_manager
+            .remove_thread(&test.session_configured.thread_id)
+            .await;
+    }
     let rollout = tokio::fs::read_to_string(&rollout_path).await?;
     let rollout = rollout
         .lines()
@@ -883,6 +1082,10 @@ async fn direct_metadata_limit_respects_provider_support(
         .await
         .expect("shutdown fork");
 
+    if fork_from_running_thread {
+        test.codex.shutdown_and_wait().await?;
+    }
+
     let resumed = search_capable_apps_builder(apps.chatgpt_base_url)
         .with_config(configure_metadata)
         .resume(&server, test.home.clone(), rollout_path)
@@ -903,6 +1106,36 @@ async fn direct_metadata_limit_respects_provider_support(
 
     let requests = responses.requests();
     assert_eq!(requests.len(), 7);
+    let expected_fork = if fork_from_running_thread {
+        "warm_fork"
+    } else {
+        "cold_fork"
+    };
+    let initialization = requests
+        .iter()
+        .map(|request| {
+            let body = request.body_json();
+            let metadata: Value = serde_json::from_str(
+                body["client_metadata"]["x-codex-turn-metadata"]
+                    .as_str()
+                    .expect("turn metadata"),
+            )
+            .expect("valid turn metadata");
+            metadata["history_initialization"].clone()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        Value::Array(initialization),
+        json!([
+            "new",
+            "new",
+            "new",
+            expected_fork,
+            expected_fork,
+            "cold_resume",
+            "cold_resume"
+        ])
+    );
     for request in &requests[3..] {
         for original in [&first_output, &second_output] {
             let call_id = original["call_id"].as_str().expect("call ID");

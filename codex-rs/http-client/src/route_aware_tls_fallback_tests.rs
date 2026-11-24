@@ -23,16 +23,26 @@ use super::OutboundProxyRoute;
 use super::RouteAwareClientPool;
 use super::RouteAwareRequestError;
 use super::SelectedTlsBackend;
+use crate::HttpClientBuilder;
+use crate::HttpClientTlsConfig;
 use crate::client::RequestLogging;
 use crate::client::TransportClient;
 use crate::tls_backend_fallback::should_retry_with_rustls;
 
 const PROTOCOL_VERSION_TLS_ALERT: &[u8] = &[21, 3, 3, 0, 2, 2, 70];
 
+// Schannel ARM needs TLS 1.1 to expose the protocol-version alert; the x64 CI image
+// disables TLS 1.1, so x64 and other platforms retain TLS 1.2.
+#[cfg(all(windows, target_arch = "aarch64"))]
+const NATIVE_TLS_TEST_VERSION: reqwest::tls::Version = reqwest::tls::Version::TLS_1_1;
+#[cfg(not(all(windows, target_arch = "aarch64")))]
+const NATIVE_TLS_TEST_VERSION: reqwest::tls::Version = reqwest::tls::Version::TLS_1_2;
+
 type SuccessfulTlsFallbackServer = (
     String,
     TransportClient,
     mpsc::Receiver<io::Result<Vec<String>>>,
+    String,
 );
 
 #[tokio::test]
@@ -44,6 +54,7 @@ async fn default_pool_does_not_retry_a_native_tls_protocol_failure() {
         HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
         ClientRouteClass::Other,
     );
+    use_native_tls_for_direct_route(&pool);
     let request = reqwest::Request::new(
         Method::POST,
         reqwest::Url::parse(&url).expect("valid HTTPS URL"),
@@ -75,6 +86,7 @@ async fn retries_a_native_tls_protocol_failure_once_with_rustls() {
         ClientRouteClass::Other,
     )
     .with_tls_backend_fallback();
+    use_native_tls_for_direct_route(&pool);
     let destination = reqwest::Url::parse(&url).expect("valid HTTPS URL");
     let mut request = reqwest::Request::new(Method::POST, destination.clone());
     *request.body_mut() = Some(Bytes::from_static(b"mcp-initialize").into());
@@ -116,6 +128,7 @@ async fn retries_a_native_tls_failure_after_another_request_caches_rustls() {
         ClientRouteClass::Other,
     )
     .with_tls_backend_fallback();
+    use_native_tls_for_direct_route(&pool);
     let destination = reqwest::Url::parse(&url).expect("valid HTTPS URL");
     let (route, native_client, selected_tls_backend) = pool
         .client_for_url_with_resolver(destination.as_str(), |_| async {
@@ -141,10 +154,12 @@ async fn retries_a_native_tls_failure_after_another_request_caches_rustls() {
 
     let error = pool
         .retry_with_rustls(
-            &destination,
             &route,
             selected_tls_backend,
             Some(&replay),
+            #[cfg(windows)]
+            /*proxy_pipe*/
+            None,
             error,
             /*timeout_deadline*/ None,
         )
@@ -202,13 +217,28 @@ async fn does_not_retry_a_cached_rustls_tls_protocol_failure() {
 
 #[tokio::test]
 async fn successful_rustls_fallback_replays_the_request_and_reuses_the_destination() {
-    let (url, trusted_rustls_client, observed_requests) =
+    assert_tls_fallback_replay(/*private_body*/ false).await;
+}
+
+#[tokio::test]
+async fn private_body_recovers_with_rustls_without_following_the_redirect() {
+    assert_tls_fallback_replay(/*private_body*/ true).await;
+}
+
+async fn assert_tls_fallback_replay(private_body: bool) {
+    let (url, trusted_rustls_client, observed_requests, certificate_pem) =
         spawn_successful_tls_fallback_server().expect("TLS fallback server should start");
-    let pool = RouteAwareClientPool::new(
+    let mut client_builder = HttpClientBuilder::new();
+    client_builder.tls = HttpClientTlsConfig::default()
+        .with_root_certificate_pem(certificate_pem.as_bytes())
+        .expect("fixture root should parse");
+    let pool = RouteAwareClientPool::with_builder(
         HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
         ClientRouteClass::Other,
+        client_builder,
     )
     .with_tls_backend_fallback();
+    use_native_tls_for_direct_route(&pool);
     let destination = reqwest::Url::parse(&url).expect("valid HTTPS URL");
     let existing_destination =
         reqwest::Url::parse("https://another-mcp.example.com/mcp").expect("valid HTTPS URL");
@@ -223,8 +253,15 @@ async fn successful_rustls_fallback_replays_the_request_and_reuses_the_destinati
     );
     assert!(!rustls_clients.requires_rustls(&destination, &OutboundProxyRoute::Direct));
 
-    let mut initialize_request = reqwest::Request::new(Method::POST, destination.clone());
-    *initialize_request.body_mut() = Some(Bytes::from_static(b"mcp-initialize").into());
+    let (body, status) = if private_body {
+        ("private-initialize", http::StatusCode::TEMPORARY_REDIRECT)
+    } else {
+        ("mcp-initialize", http::StatusCode::OK)
+    };
+    let mut initialize_request =
+        crate::request_draft::RequestDraft::new(Method::POST, &url).expect("valid request URL");
+    *initialize_request.request.body_mut() = Some(body.into());
+    initialize_request.private_body = private_body;
     let initialize_response = pool
         .send_with_resolver(initialize_request, |_| async {
             Ok(OutboundProxyRoute::Direct)
@@ -232,6 +269,7 @@ async fn successful_rustls_fallback_replays_the_request_and_reuses_the_destinati
         .await
         .expect("native TLS protocol failure should recover with rustls");
 
+    assert_eq!(initialize_response.status(), status);
     assert_eq!(
         initialize_response
             .text()
@@ -260,7 +298,7 @@ async fn successful_rustls_fallback_replays_the_request_and_reuses_the_destinati
             .recv_timeout(Duration::from_secs(5))
             .expect("TLS fallback server should finish")
             .expect("TLS fallback server should capture both requests"),
-        vec!["mcp-initialize".to_string(), "mcp-tool-call".to_string()]
+        vec![body.to_string(), "mcp-tool-call".to_string()]
     );
 }
 
@@ -274,6 +312,7 @@ async fn retries_a_tls_protocol_failure_when_request_url_contains_certificate_ma
         ClientRouteClass::Other,
     )
     .with_tls_backend_fallback();
+    use_native_tls_for_direct_route(&pool);
     let mut destination = reqwest::Url::parse(&url).expect("valid HTTPS URL");
     destination.set_path("/certificate/hostname/expired/revoked/mcp");
     let request = reqwest::Request::new(Method::POST, destination);
@@ -305,6 +344,7 @@ async fn does_not_retry_a_non_replayable_streaming_request() {
         ClientRouteClass::Other,
     )
     .with_tls_backend_fallback();
+    use_native_tls_for_direct_route(&pool);
     let mut request = reqwest::Request::new(
         Method::POST,
         reqwest::Url::parse(&url).expect("valid HTTPS URL"),
@@ -339,10 +379,25 @@ async fn does_not_retry_a_non_replayable_streaming_request() {
     );
 }
 
+fn use_native_tls_for_direct_route(pool: &RouteAwareClientPool) {
+    // Start with reqwest's default native backend even when the environment supplies a CA bundle.
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .min_tls_version(NATIVE_TLS_TEST_VERSION)
+        .max_tls_version(NATIVE_TLS_TEST_VERSION)
+        .build()
+        .expect("native TLS client should build");
+    pool.clients.lock().expect("client cache lock").insert(
+        OutboundProxyRoute::Direct,
+        TransportClient::new(client, RequestLogging::Enabled, http::HeaderMap::new()),
+    );
+}
+
 fn spawn_successful_tls_fallback_server() -> io::Result<SuccessfulTlsFallbackServer> {
     codex_utils_rustls_provider::ensure_rustls_crypto_provider();
     let CertifiedKey { cert, signing_key } =
         generate_simple_self_signed(vec!["127.0.0.1".to_string()]).map_err(io::Error::other)?;
+    let certificate_pem = cert.pem();
     let certificate = cert.der().clone();
     let private_key = PrivateKeyDer::from(signing_key);
     let tls_config = Arc::new(
@@ -454,9 +509,12 @@ fn spawn_successful_tls_fallback_server() -> io::Result<SuccessfulTlsFallbackSer
                 let body = std::str::from_utf8(&request[header_end..header_end + content_length])
                     .map_err(io::Error::other)?;
                 observed_requests.push(body.to_string());
-                tls.write_all(
-                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
-                )?;
+                if body == "private-initialize" {
+                    tls.write_all(b"HTTP/1.1 307 Temporary Redirect\r\nLocation: /redirected\r\n")?;
+                } else {
+                    tls.write_all(b"HTTP/1.1 200 OK\r\n")?;
+                }
+                tls.write_all(b"Content-Length: 2\r\nConnection: close\r\n\r\nok")?;
                 tls.flush()?;
             }
             Ok(observed_requests)
@@ -468,6 +526,7 @@ fn spawn_successful_tls_fallback_server() -> io::Result<SuccessfulTlsFallbackSer
         format!("https://{address}/mcp"),
         trusted_rustls_client,
         requests_rx,
+        certificate_pem,
     ))
 }
 

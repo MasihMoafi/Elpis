@@ -12,13 +12,12 @@ use codex_model_provider::AgentIdentitySessionFallback;
 use codex_model_provider::ProviderAuthScope;
 use codex_model_provider::create_model_provider;
 use codex_model_provider::test_support::seed_gateway_auth;
-use codex_model_provider_info::GatewayOAuthConfig;
-use codex_model_provider_info::GatewayOAuthDelivery;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
 use core_test_support::responses;
+use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
@@ -30,21 +29,164 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
+fn gateway_export_settings(token_path: &std::path::Path) -> Result<String> {
+    let path_arg = serde_json::to_string(token_path)?;
+    let command = if cfg!(windows) {
+        format!("command = 'cmd.exe'\nargs = ['/D', '/C', 'type', {path_arg}]")
+    } else {
+        format!("command = 'cat'\nargs = [{path_arg}]")
+    };
+    Ok(format!(
+        "delivery = {{ kind = 'cookie', name = 'gateway' }}\n[gateway_oauth.credential_export]\n{command}"
+    ))
+}
+
+pub(super) async fn command_gateway(
+    server: &MockServer,
+    token_path: &std::path::Path,
+) -> Result<TestCodex> {
+    let provider: ModelProviderInfo = toml::from_str(&format!(
+        r#"
+name = "gateway"
+base_url = "{base}/v1"
+requires_openai_auth = true
+[gateway_oauth]
+{gateway_settings}
+"#,
+        base = server.uri(),
+        gateway_settings = gateway_export_settings(token_path)?
+    ))?;
+    test_codex()
+        .with_auth(CodexAuth::from_api_key("primary"))
+        .with_config(move |config| config.model_provider = provider)
+        .build_with_auto_env(server)
+        .await
+}
+
+#[test_case::test_case("second", None; "uses_new_export")]
+#[test_case::test_case("", Some("Gateway credential export must print one access token"); "reports_invalid_export")]
 #[tokio::test]
-async fn sampling_uses_gateway_and_primary_auth() -> Result<()> {
-    sampling_requires_gateway_and_primary_auth(/*expected_error*/ None).await
+async fn command_gateway_reexports_after_401(
+    next_export: &'static str,
+    expected_error: Option<&'static str>,
+) -> Result<()> {
+    let server = MockServer::start().await;
+    let source = TempDir::new()?;
+    let token_path = source.path().join("access-token");
+    std::fs::write(&token_path, "first")?;
+    let test = command_gateway(&server, &token_path).await?;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(wiremock::matchers::header("cookie", "gateway=first"))
+        .respond_with(move |_: &wiremock::Request| {
+            std::fs::write(&token_path, next_export).expect("change the export for the retry");
+            ResponseTemplate::new(401)
+        })
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(wiremock::matchers::header("cookie", "gateway=second"))
+        .respond_with(responses::sse_response(responses::sse(vec![
+            responses::ev_completed("response"),
+        ])))
+        .expect(u64::from(expected_error.is_none()))
+        .mount(&server)
+        .await;
+    assert_eq!(run_gateway_turn(&test).await?.as_deref(), expected_error);
+    server.verify().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn command_gateway_authenticates_without_an_oauth_grant_and_caches_the_token() -> Result<()> {
+    let server = MockServer::start().await;
+    let source = TempDir::new()?;
+    let token_path = source.path().join("access-token");
+    std::fs::write(&token_path, "")?;
+    let test = command_gateway(&server, &token_path).await?;
+    let completed =
+        responses::sse_response(responses::sse(vec![responses::ev_completed("response")]));
+    let requests =
+        responses::mount_response_sequence(&server, vec![completed.clone(), completed]).await;
+    assert_eq!(
+        run_gateway_turn(&test).await?.as_deref(),
+        Some("Gateway credential export must print one access token"),
+    );
+    std::fs::write(&token_path, "opaque,token\n")?;
+    assert_eq!(run_gateway_turn(&test).await?, None);
+    std::fs::remove_file(token_path)?;
+    assert_eq!(run_gateway_turn(&test).await?, None);
+    let headers: Vec<_> = requests
+        .requests()
+        .iter()
+        .map(|r| (r.header("authorization"), r.header("cookie")))
+        .collect();
+    assert_eq!(
+        headers,
+        vec![
+            (
+                Some("Bearer primary".to_string()),
+                Some("gateway=opaque,token".to_string())
+            );
+            2
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn inference_sends_chatgpt_and_gateway_credentials_to_the_configured_headers() -> Result<()> {
+    sample_with_gateway(
+        "requires_openai_auth = true",
+        "delivery = { kind = 'header', name = 'x-gateway-auth' }",
+        CodexAuth::from_external_chatgpt_tokens(
+            "header.e30.sig",
+            "test-account",
+            /*chatgpt_plan_type*/ None,
+        )?,
+        &[
+            ("authorization", "Bearer header.e30.sig"),
+            ("x-gateway-auth", "Bearer gateway-token"),
+            ("chatgpt-account-id", "test-account"),
+        ],
+        /*expected_error*/ None,
+    )
+    .await
 }
 
 #[tokio::test]
 async fn gateway_token_failure_blocks_sampling() -> Result<()> {
-    sampling_requires_gateway_and_primary_auth(Some(
-        "Gateway OAuth authentication failed; check the gateway configuration and credential store.",
-    )).await
+    sample_with_gateway(
+        "requires_openai_auth = true",
+        "delivery = { kind = 'header', name = 'x-gateway-auth' }",
+        CodexAuth::from_api_key("provider-token"),
+        &[],
+        Some("Gateway OAuth authentication failed; check the gateway configuration and credential store."),
+    ).await
 }
 
-async fn sampling_requires_gateway_and_primary_auth(expected_error: Option<&str>) -> Result<()> {
+#[tokio::test]
+async fn omitted_delivery_sends_only_gateway_auth_even_when_signed_in() -> Result<()> {
+    sample_with_gateway(
+        "requires_openai_auth = false",
+        "",
+        CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+        &[("authorization", "Bearer gateway-token")],
+        /*expected_error*/ None,
+    )
+    .await
+}
+
+async fn sample_with_gateway(
+    provider_settings: &str,
+    gateway_settings: &str,
+    primary_auth: CodexAuth,
+    expected_headers: &[(&str, &str)],
+    expected_error: Option<&str>,
+) -> Result<()> {
     let server = MockServer::start().await;
-    let home = Arc::new(TempDir::new()?);
     let response = if expected_error.is_none() {
         Some(
             responses::mount_sse_once(
@@ -66,38 +208,94 @@ async fn sampling_requires_gateway_and_primary_auth(expected_error: Option<&str>
             .await;
         None
     };
-    let mut provider =
-        ModelProviderInfo::create_openai_provider(Some(format!("{}/v1", server.uri())));
-    provider.supports_websockets = false;
-    provider.gateway_oauth = Some(GatewayOAuthConfig {
-        authorization_url: format!("{}/authorize", server.uri()),
-        token_url: format!("{}/token", server.uri()),
-        client_id: "client".into(),
-        resource: None,
-        scopes: vec![],
-        redirect_port: None,
-        delivery: GatewayOAuthDelivery::Header {
-            name: "x-gateway-auth".into(),
-            scheme: "Bearer".into(),
-        },
-    });
+    let expires_at = if expected_error.is_some() {
+        0
+    } else {
+        i64::MAX
+    };
+    let test = gateway_codex(
+        &server,
+        provider_settings,
+        gateway_settings,
+        primary_auth,
+        expires_at,
+    )
+    .await?;
+    assert_eq!(run_gateway_turn(&test).await?.as_deref(), expected_error);
+    if let Some(response) = response {
+        let request = response.single_request();
+        for name in [
+            "authorization",
+            "x-gateway-auth",
+            "cookie",
+            "chatgpt-account-id",
+        ] {
+            let expected = expected_headers
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| *value);
+            assert_eq!(
+                request.header(name).as_deref(),
+                expected,
+                "{gateway_settings}: {name}"
+            );
+        }
+    } else {
+        let requests = server
+            .received_requests()
+            .await
+            .expect("recorded gateway requests");
+        assert!(!requests.is_empty());
+        assert!(
+            requests
+                .iter()
+                .all(|request| request.url.path() == "/token")
+        );
+    }
+    Ok(())
+}
+
+async fn gateway_codex(
+    server: &MockServer,
+    provider_settings: &str,
+    gateway_settings: &str,
+    primary_auth: CodexAuth,
+    expires_at: i64,
+) -> Result<TestCodex> {
+    let home = Arc::new(TempDir::new()?);
+    let provider: ModelProviderInfo = toml::from_str(&format!(
+        r#"
+name = "gateway"
+base_url = "{base}/v1"
+{provider_settings}
+[gateway_oauth]
+authorization_url = "{base}/authorize"
+token_url = "{base}/token"
+client_id = "client"
+{gateway_settings}
+"#,
+        base = server.uri()
+    ))?;
     let primary = AuthManager::from_auth_for_testing_with_home(
-        CodexAuth::from_api_key("primary-token"),
+        primary_auth.clone(),
         home.path().to_path_buf(),
     );
     let _gateway = seed_gateway_auth(
         &provider,
         &primary,
-        json!({"access_token": "gateway-token", "refresh_token": "refresh-token", "expires_at": if expected_error.is_some() { 0 } else { i64::MAX }}),
+        json!({"access_token": "gateway-token", "refresh_token": "refresh-token", "expires_at": expires_at}),
     );
-    let test = test_codex()
+    test_codex()
         .with_home(home)
-        .with_auth(CodexAuth::from_api_key("primary-token"))
+        .with_auth(primary_auth)
         .with_config(move |config| {
             config.model_provider = provider;
         })
-        .build_with_auto_env(&server)
-        .await?;
+        .build_with_auto_env(server)
+        .await
+}
+
+async fn run_gateway_turn(test: &TestCodex) -> Result<Option<String>> {
     test.codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
             text: "hello".into(),
@@ -112,32 +310,7 @@ async fn sampling_requires_gateway_and_primary_auth(expected_error: Option<&str>
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
-    assert_eq!(error_message.as_deref(), expected_error);
-    if let Some(response) = response {
-        let request = response.single_request();
-        assert_eq!(
-            (
-                request.header("authorization"),
-                request.header("x-gateway-auth")
-            ),
-            (
-                Some("Bearer primary-token".to_string()),
-                Some("Bearer gateway-token".to_string())
-            ),
-        );
-    } else {
-        let requests = server
-            .received_requests()
-            .await
-            .expect("recorded gateway requests");
-        assert!(!requests.is_empty());
-        assert!(
-            requests
-                .iter()
-                .all(|request| request.url.path() == "/token")
-        );
-    }
-    Ok(())
+    Ok(error_message)
 }
 
 #[tokio::test]

@@ -2,15 +2,16 @@
 # Reviewed 2026-07-02. Keep this list in sync with ../deny.toml.
 ignore = [
     "RUSTSEC-2024-0388", # derivative 2.2.0 via starlark/starlark_syntax; upstream crate is unmaintained
+    "RUSTSEC-2024-0449", # unsafe-libyaml via serde_yaml in skills, ext/skills, core-plugins, external-agent-migration; remove when migrated off serde_yaml/unsafe-libyaml
     "RUSTSEC-2025-0057", # fxhash 0.2.1 via starlark_map/bm25; upstream crate is unmaintained
     "RUSTSEC-2024-0436", # paste 1.0.15 via starlark/v8; upstream crate is unmaintained
     "RUSTSEC-2023-0089", # atomic-polyfill via postcard/heapless/pagable; upstream crate is unmaintained
-    "RUSTSEC-2024-0320", # yaml-rust via syntect; remove when syntect drops or updates it
     "RUSTSEC-2025-0141", # bincode via syntect; remove when syntect drops or updates it
-    "RUSTSEC-2026-0194", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
-    "RUSTSEC-2026-0195", # quick-xml via plist/syntect and wayland-scanner; trusted inputs only; remove when rust-plist#191 and wayland-rs#938 are released
-    # Reviewed 2026-11-10: sqlx-sqlite 0.9 requires libsqlite3-sys 0.37; remove when sqlx permits >=0.39.
-    "RUSTSEC-2026-0459", # bundled SQLite may expose memory when opening an untrusted database and WAL
-    # Reviewed 2026-11-03, as upstream Codex (2026-10-20).
-    "RUSTSEC-2026-0387", # crypto-bigint 0.5.5 via elliptic-curve 0.13.8 under age 0.12.1 (codex-secrets); no patched path yet; remove when age uses crypto-bigint >=0.7.6
+    "RUSTSEC-2026-0370", # zvariant 4.2.0 via zbus 4.4.0 in Linux TUI and keyring/secret-service; remove when those paths migrate off the retired standalone crates
+    "RUSTSEC-2026-0371", # zbus_names 3.0.0 via zbus 4.4.0 in Linux TUI and keyring/secret-service; remove when those paths migrate off the retired standalone crates
+    "RUSTSEC-2026-0372", # zvariant_derive 4.2.0 via zbus 4.4.0 in Linux TUI and keyring/secret-service; remove when those paths migrate off the retired standalone crates
+    "RUSTSEC-2026-0374", # basic-toml 0.1.10 via i18n-config/i18n-embed-fl under age 0.12.1 in codex-secrets; no patched release; remove when age's localization dependencies migrate off basic-toml
+    "RUSTSEC-2026-0387", # crypto-bigint 0.5.5 via elliptic-curve 0.13.8 is used by age, AWS login, user verification, and WebRTC; timing leakage can affect private-key or session-secret operations; remove when these dependency paths use crypto-bigint >=0.7.6
+    "RUSTSEC-2026-0441", # pin-utils 0.1.0 via AWS Smithy and loom under tokio-graceful; unmaintained with no patched release; remove when these paths drop pin-utils
+    "RUSTSEC-2026-0543", # chrono 0.4.43 is unmaintained; used directly across the workspace and through sqlx; no patched release; remove when these paths migrate to jiff/time or drop chrono
 ]

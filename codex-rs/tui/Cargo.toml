@@ -31,6 +31,8 @@ base64 = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive"] }
 codex-ansi-escape = { workspace = true }
+codex-api = { workspace = true }
+codex-prompts = { workspace = true }
 codex-app-server-client = { workspace = true }
 codex-app-server-daemon = { workspace = true }
 codex-app-server-protocol = { workspace = true }
@@ -72,6 +74,7 @@ codex-terminal-detection = { workspace = true }
 codex-worktree = { workspace = true }
 codex-utils-approval-presets = { workspace = true }
 codex-uds = { workspace = true }
+codex-user-input = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-cli = { workspace = true }
 codex-utils-elapsed = { workspace = true }
@@ -86,10 +89,11 @@ codex-utils-sleep-inhibitor = { workspace = true }
 codex-utils-string = { workspace = true }
 color-eyre = { workspace = true }
 crossterm = { workspace = true, features = ["bracketed-paste", "event-stream"] }
-derive_more = { workspace = true, features = ["is_variant"] }
+derive_more = { workspace = true, features = ["debug", "is_variant"] }
 diffy = { workspace = true }
 dirs = { workspace = true }
 dunce = { workspace = true }
+http = { workspace = true }
 image = { workspace = true, features = ["jpeg", "png", "gif", "webp"] }
 itertools = { workspace = true }
 lazy_static = { workspace = true }
@@ -133,8 +137,11 @@ tracing-appender = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 syntect = { version = "5", default-features = false, features = ["parsing", "plist-load", "regex-onig"] }
 two-face = { version = "0.5", default-features = false, features = ["syntect-onig"] }
+unicode-bidi = { workspace = true }
+unicode-linebreak = { workspace = true }
 unicode-segmentation = { workspace = true }
 unicode-width = { workspace = true }
+vtparse = { workspace = true }
 url = { workspace = true }
 urlencoding = { workspace = true }
 webbrowser = { workspace = true }
@@ -147,8 +154,10 @@ tokio-util = { workspace = true, features = ["time"] }
 libc = { workspace = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSWorkspace"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSDateFormatter", "NSFormatter", "NSLocale", "NSString"] }
+core-foundation = "0.10"
+objc2 = "0.6.3"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSAccessibility", "NSPasteboard", "NSPasteboardItem", "NSWorkspace"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSData", "NSDateFormatter", "NSEnumerator", "NSFormatter", "NSLocale", "NSString"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Keep the same executor features as the credential store, which also uses zbus.
@@ -167,6 +176,7 @@ windows-sys = { workspace = true, features = [
     "Win32_System_IO",
     "Win32_System_Pipes",
     "Win32_System_Threading",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
 winsplit = "0.1"
@@ -180,17 +190,20 @@ arboard = { workspace = true }
 [dev-dependencies]
 app_test_support = { workspace = true }
 codex-mcp = { workspace = true }
+codex-protocol-test-support = { workspace = true }
+codex-skills = { workspace = true }
 core_test_support = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 assert_matches = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 futures = { workspace = true }
-http = { workspace = true }
 insta = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 pretty_assertions = { workspace = true }
 rand = { workspace = true }
 serial_test = { workspace = true }
 tokio-tungstenite = { workspace = true }
+ts-rs = { workspace = true }
 vt100 = { workspace = true }
 uuid = { workspace = true }
 wiremock = { workspace = true }

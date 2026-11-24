@@ -150,6 +150,7 @@ async fn webrtc_sideband_honors_configured_system_proxy() -> Result<()> {
             realtime_end_instructions: None,
             prompt: None,
             realtime_session_id: None,
+            voice_session_id: None,
             transport: Some(ConversationStartTransport::Webrtc {
                 sdp: "v=offer\r\n".to_string(),
             }),

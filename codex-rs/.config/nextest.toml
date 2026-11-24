@@ -12,13 +12,15 @@ slow-timeout = { period = "1m", terminate-after = 2 }
 
 [[profile.default.overrides]]
 # This case validates and copies both the initial and replacement debug package.
-filter = 'package(codex-cli) & binary(app_server_daemon) & test(=packaged_daemon_start_and_explicit_replacement)'
+filter = 'package(codex-cli) & binary(=app_server_daemon_package) & test(=packaged_daemon_start_and_explicit_replacement)'
 slow-timeout = { period = "1m", terminate-after = 3 }
+threads-required = "num-test-threads"
 
 [[profile.default.overrides]]
-# These cases copy a full debug CLI package and launch its new executable.
-filter = 'package(codex-cli) & binary(app_server_daemon) & test(packaged_daemon_)'
+# These copies must not compete with other tests on the same runner.
+filter = 'package(codex-cli) & binary(=app_server_daemon_package)'
 slow-timeout = { period = "1m", terminate-after = 2 }
+threads-required = "num-test-threads"
 
 [profile.default.junit]
 path = "junit.xml"
@@ -90,13 +92,7 @@ test-group = 'core_apply_patch_cli_integration'
 # starting their timeout; their file lock still coordinates other test processes.
 platform = 'cfg(windows)'
 filter = '''
-    (package(codex-core) & (
-        test(windows_sandbox_cli_preserves_managed_deny_reads_across_launches) |
-        test(windows_elevated_does_not_create_missing_workspace_metadata) |
-        test(windows_elevated_enforces_deny_read_and_protects_setup_marker) |
-        test(windows_elevated_unified_exec_enforces_large_recursive_deny_reads) |
-        test(windows_elevated_approved_git_pull_preserves_deny_read)
-    )) |
+    (package(codex-core) & binary(windows_sandbox)) |
     (package(codex-exec-server) & test(file_system_elevated_relative_read_denial_uses_policy_cwd)) |
     (package(codex-windows-sandbox) & test(elevated_non_tty_cmd_forwards_env_output_and_exit))
 '''

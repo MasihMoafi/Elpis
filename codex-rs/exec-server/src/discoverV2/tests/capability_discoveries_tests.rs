@@ -9,6 +9,7 @@ use crate::CapabilityRootDiscoverRequest;
 use crate::DiscoverV2CapabilitiesRequest;
 use crate::ExecutorSkill;
 use crate::LocalFileSystem;
+use crate::SkillDiscoveryRoot;
 use crate::capability_discovery::discover_root;
 use crate::discover_v2::capability_locations::tests::MANIFEST;
 use crate::discover_v2::capability_locations::tests::request;
@@ -36,6 +37,24 @@ async fn discovery_preserves_inventory_and_v1_metadata() -> anyhow::Result<()> {
             MANIFEST,
         )?;
     }
+    let inline_root = "codex/plugins/cache/test/unconfigured/local";
+    write(
+        temp.path(),
+        "codex/plugins/cache/test/disabled/local/.codex-plugin/plugin.json",
+        r#"{"name":" ","interface":{"displayName":" "},"mcpServers":"./missing-mcp.json","apps":"./missing-apps.json"}"#,
+    )?;
+    let inline_manifest = r#"{"name":"inline","interface":{"displayName":" Inline Plugin "},"mcpServers":{"inline":{"command":"node"}}}"#;
+    write(
+        temp.path(),
+        &format!("{inline_root}/.codex-plugin/plugin.json"),
+        inline_manifest,
+    )?;
+    // Inline declarations take precedence over a conventional MCP file.
+    write(
+        temp.path(),
+        &format!("{inline_root}/.mcp.json"),
+        r#"{"wrong":{"command":"wrong"}}"#,
+    )?;
     let root = "codex/plugins/cache/test/demo/local";
     write(
         temp.path(),
@@ -86,16 +105,24 @@ async fn discovery_preserves_inventory_and_v1_metadata() -> anyhow::Result<()> {
     .await;
     // V1 keeps undeclared/migrated skills and excludes the skill beyond its depth limit.
     assert_eq!(v1.skills.len(), 4);
+    let inline_v1 = discover_root(
+        &file_system,
+        CapabilityRootDiscoverRequest {
+            id: "unconfigured@test".to_string(),
+            path: PathUri::from_host_native_path(temp.path().join(inline_root))?,
+            sandbox: None,
+        },
+    )
+    .await;
+    let inline_v1_files = inline_v1.plugin.expect("inline plugin");
+    assert_eq!(inline_v1_files.mcp_config, None);
     let manager = CapabilityManager::new(file_system);
-    manager.prewarm_locations(request.clone()).await?;
+    manager.seed_prewarmed_locations(request.clone()).await?;
     let response = manager
-        .get_or_refresh_discovery(
-            request.clone(),
-            DiscoverV2CapabilitiesRequest {
-                cwd: PathUri::from_host_native_path(temp.path().join("project"))?,
-                sandbox: None,
-            },
-        )
+        .get_or_refresh_discovery(DiscoverV2CapabilitiesRequest {
+            cwd: PathUri::from_host_native_path(temp.path().join("project"))?,
+            sandbox: None,
+        })
         .await?;
     assert_eq!(
         response
@@ -104,6 +131,14 @@ async fn discovery_preserves_inventory_and_v1_metadata() -> anyhow::Result<()> {
             .map(|plugin| plugin.id.as_str())
             .collect::<Vec<_>>(),
         vec!["demo@test", "disabled@test", "unconfigured@test"],
+    );
+    assert_eq!(
+        response
+            .plugins
+            .iter()
+            .map(|plugin| plugin.display_name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["demo", "local", "Inline Plugin"],
     );
     let plugin = response
         .plugins
@@ -125,38 +160,60 @@ async fn discovery_preserves_inventory_and_v1_metadata() -> anyhow::Result<()> {
         v1.skills
             .into_iter()
             .map(|skill| {
-                let namespace = if skill
+                let name = if skill
                     .instructions
                     .path
                     .starts_with(&plugin.root.join("nested")?)
                 {
-                    "team"
+                    "team:deploy"
                 } else {
-                    "demo"
+                    "demo:deploy"
                 };
-                Ok(expected_skill(skill.instructions.path, Some(namespace)))
+                Ok(expected_skill(skill.instructions.path, name))
             })
             .collect::<anyhow::Result<Vec<_>>>()?
     );
     assert_eq!(
         response.skills,
         vec![
-            ExecutorSkill {
-                name: "deploy skill".to_string(),
-                ..expected_skill(
-                    request.codex_home.join("skills/deploy  skill/SKILL.md")?,
-                    /*namespace*/ None,
-                )
-            },
+            expected_skill(
+                request.codex_home.join("skills/deploy  skill/SKILL.md")?,
+                "deploy skill",
+            ),
             expected_skill(
                 request
                     .codex_home
                     .join("skills/nested/skills/deploy/SKILL.md")?,
-                Some("team")
+                "team:deploy"
             ),
-        ],
+        ]
+        .into_iter()
+        .map(|mut skill| {
+            skill.discovery_root = Some(SkillDiscoveryRoot {
+                id: "codex-home-skills".to_string(),
+                path: request.codex_home.join("skills").expect("skills root"),
+            });
+            skill
+        })
+        .collect::<Vec<_>>(),
     );
-    assert_eq!(response.warnings, v1.warnings);
+    let inline_plugin = response
+        .plugins
+        .iter()
+        .find(|plugin| plugin.id == "unconfigured@test")
+        .expect("inline plugin");
+    assert_eq!(inline_plugin.files.manifest, inline_v1_files.manifest);
+    assert_eq!(
+        inline_plugin.files.mcp_config,
+        Some(crate::CapabilityTextFile {
+            path: inline_v1_files.manifest.path,
+            contents: serde_json::json!({"inline": {"command": "node"}}).to_string(),
+        })
+    );
+    assert_eq!(
+        response.warnings,
+        vec!["some capability metadata could not be loaded; discovery may be incomplete"],
+    );
     let json = serde_json::to_string(&response)?;
     assert!(
         response.plugins.len() + plugin.skills.len() + response.skills.len() <= MAX_CAPABILITIES
@@ -167,14 +224,15 @@ async fn discovery_preserves_inventory_and_v1_metadata() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn expected_skill(path: PathUri, namespace: Option<&str>) -> ExecutorSkill {
+fn expected_skill(path: PathUri, name: &str) -> ExecutorSkill {
     ExecutorSkill {
-        name: "deploy".to_string(),
-        namespace: namespace.map(str::to_string),
+        name: name.to_string(),
         description: "Deploy the service.".to_string(),
         short_description: None,
         path,
-        metadata: None,
+        discovery_root: None,
+        dependencies: None,
+        policy: None,
     }
 }
 
@@ -215,5 +273,135 @@ async fn discovery_reports_location_failures_without_paths() -> anyhow::Result<(
             }
         );
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn discovery_resolves_optional_skill_metadata() -> anyhow::Result<()> {
+    use codex_protocol::protocol::Product;
+    use codex_skills::SkillDependencies;
+    use codex_skills::SkillPolicy;
+    use codex_skills::SkillToolDependency;
+
+    let dependencies = Some(SkillDependencies {
+        tools: vec![SkillToolDependency {
+            r#type: "mcp".into(),
+            value: "deploy".into(),
+            description: None,
+            transport: Some("stdio".into()),
+            command: Some("deploy-mcp".into()),
+            url: None,
+            oauth_callback_port: Some(3118),
+        }],
+    });
+    let policy = Some(SkillPolicy {
+        allow_implicit_invocation: Some(false),
+        products: vec![Product::Codex, Product::Chatgpt],
+    });
+    for (yaml, dependencies, policy) in [
+        (None, None, None),
+        (Some("interface: [invalid]"), None, None),
+        (Some("dependencies:\n  tools: [{type: mcp}]"), None, None),
+        (Some("dependencies: {tools: []}"), None, None),
+        (
+            Some(
+                r#"dependencies:
+  tools:
+    - type: " mcp "
+      value: " deploy "
+      transport: stdio
+      command: deploy-mcp
+      oauth: {callback_port: 3118}
+    - type: mcp
+      value: " "
+policy:
+  allow_implicit_invocation: false
+  products: [codex, CHATGPT]
+"#,
+            ),
+            dependencies,
+            policy,
+        ),
+    ] {
+        let temp = tempfile::tempdir()?;
+        let request = request(temp.path())?;
+        let plugin_root = "codex/plugins/cache/test/demo/local";
+        write(
+            temp.path(),
+            &format!("{plugin_root}/.codex-plugin/plugin.json"),
+            MANIFEST,
+        )?;
+        for root in [
+            "codex/skills/deploy".to_string(),
+            format!("{plugin_root}/skills/deploy"),
+        ] {
+            write(temp.path(), &format!("{root}/SKILL.md"), SKILL)?;
+            if let Some(yaml) = yaml {
+                write(temp.path(), &format!("{root}/agents/openai.yaml"), yaml)?;
+            }
+        }
+        let manager = CapabilityManager::new(LocalFileSystem::unsandboxed());
+        manager.seed_prewarmed_locations(request.clone()).await?;
+        let response = manager
+            .get_or_refresh_discovery(DiscoverV2CapabilitiesRequest {
+                cwd: PathUri::from_host_native_path(temp.path().join("project"))?,
+                sandbox: None,
+            })
+            .await?;
+        let mut expected =
+            expected_skill(request.codex_home.join("skills/deploy/SKILL.md")?, "deploy");
+        expected.dependencies = dependencies;
+        expected.policy = policy;
+        expected.discovery_root = Some(SkillDiscoveryRoot {
+            id: "codex-home-skills".to_string(),
+            path: request.codex_home.join("skills")?,
+        });
+        assert_eq!(response.skills, vec![expected.clone()]);
+        expected.path = request
+            .codex_home
+            .join("plugins/cache/test/demo/local/skills/deploy/SKILL.md")?;
+        expected.name = "demo:deploy".into();
+        expected.discovery_root = None;
+        assert_eq!(response.plugins[0].skills, vec![expected]);
+        assert_eq!(response.warnings, Vec::<String>::new());
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn standalone_skills_retain_their_search_roots() -> anyhow::Result<()> {
+    let temp = tempfile::tempdir()?;
+    let request = request(temp.path())?;
+    let roots = [
+        ("codex-home-skills", "codex/skills"),
+        ("user-agent-skills", "home/.agents/skills"),
+        ("system-skills", "etc/codex/skills"),
+    ];
+    let mut expected = Vec::new();
+    for (id, root) in roots {
+        for relative in ["deploy/SKILL.md", "nested/deploy/SKILL.md"] {
+            let path = format!("{root}/{relative}");
+            write(temp.path(), &path, SKILL)?;
+            let mut skill = expected_skill(
+                PathUri::from_host_native_path(temp.path().join(path))?,
+                "deploy",
+            );
+            skill.discovery_root = Some(SkillDiscoveryRoot {
+                id: id.to_string(),
+                path: PathUri::from_host_native_path(temp.path().join(root))?,
+            });
+            expected.push(skill);
+        }
+    }
+    let manager = CapabilityManager::new(LocalFileSystem::unsandboxed());
+    manager.seed_prewarmed_locations(request.clone()).await?;
+    let query = DiscoverV2CapabilitiesRequest {
+        cwd: PathUri::from_host_native_path(temp.path().join("project"))?,
+        sandbox: None,
+    };
+    let response = manager.get_or_refresh_discovery(query.clone()).await?;
+    assert_eq!(response.skills, expected);
+    // Cached discovery must retain the same root metadata.
+    assert_eq!(manager.get_or_refresh_discovery(query).await?, response);
     Ok(())
 }

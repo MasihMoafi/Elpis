@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use codex_exec_server_protocol::ExecutorCapabilityDiscoverySnapshot;
 use codex_protocol::ThreadId;
-use codex_protocol::capabilities::SelectedCapabilityRoot;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ContentItemMetadata;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use serde_json::Value;
@@ -17,10 +17,6 @@ pub struct WorldStateContributionInput<'a> {
     /// Resolved model metadata captured for this sampling step, retained across discovery.
     pub model_info: &'a ModelInfo,
     pub environments: &'a [TurnEnvironmentSelection],
-    /// Selected roots whose stable environments are ready in this sampling step.
-    pub ready_selected_capability_roots: &'a [SelectedCapabilityRoot],
-    /// Executor-materialized capability files shared by all consumers in this exact step.
-    pub executor_capability_discovery: Option<&'a ExecutorCapabilityDiscoverySnapshot>,
     /// Metrics bound to the captured model for this sampling step.
     pub extension_metrics: Option<Arc<dyn ExtensionMetrics>>,
     pub session_store: &'a ExtensionData,
@@ -41,25 +37,40 @@ pub enum PreviousWorldStateSection<'a> {
     Known(&'a Value),
 }
 
-/// Plain model-visible data rendered by an extension-owned World State section.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Model-visible content rendered by an extension-owned World State section.
+/// Markers apply only to `InputText` bodies.
+/// The producer owns size bounds for the content; rendering does not truncate it.
+/// Non-text user-role bodies are currently classified as ordinary user media.
+#[derive(Clone, Debug, PartialEq)]
 pub struct RenderedWorldStateFragment {
     role: &'static str,
     markers: (&'static str, &'static str),
-    body: String,
+    body: ContentItem,
+    metadata: ContentItemMetadata,
 }
 
 impl RenderedWorldStateFragment {
     pub fn new(
         role: &'static str,
         markers: (&'static str, &'static str),
-        body: impl Into<String>,
+        body: ContentItem,
     ) -> Self {
         Self {
             role,
             markers,
-            body: body.into(),
+            body,
+            metadata: ContentItemMetadata::harness(),
         }
+    }
+
+    /// Attach the producer's source before the harness assembles the context message.
+    pub fn with_metadata(mut self, metadata: ContentItemMetadata) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    pub fn metadata(&self) -> &ContentItemMetadata {
+        &self.metadata
     }
 
     pub fn role(&self) -> &'static str {
@@ -70,7 +81,7 @@ impl RenderedWorldStateFragment {
         self.markers
     }
 
-    pub fn body(&self) -> &str {
+    pub fn body(&self) -> &ContentItem {
         &self.body
     }
 }
@@ -87,6 +98,8 @@ type LegacyFragmentMatcher = dyn Fn(&str, &str) -> bool + Send + Sync;
 #[derive(Clone)]
 pub struct WorldStateSectionContribution {
     id: &'static str,
+    include_in_full_context: bool,
+    window_prefix: bool,
     render_diff: Arc<RenderDiff>,
     matches_legacy_fragment: Arc<LegacyFragmentMatcher>,
     matches_retained_fragment: Option<Arc<LegacyFragmentMatcher>>,
@@ -110,6 +123,8 @@ impl WorldStateSectionContribution {
     ) -> Self {
         Self {
             id,
+            include_in_full_context: true,
+            window_prefix: false,
             render_diff: Arc::new(render_diff),
             matches_legacy_fragment: Arc::new(|_, _| false),
             matches_retained_fragment: None,
@@ -118,12 +133,40 @@ impl WorldStateSectionContribution {
         }
     }
 
+    /// Recompute this section during ordinary step context updates instead of replaying
+    /// its captured value when initial or compacted context is rebuilt. Full rendering
+    /// omits both its fragment and comparison snapshot so a fresh contribution can emit.
+    /// After prefix compaction, the next diff receives [`PreviousWorldStateSection::Unknown`]
+    /// if the section's legacy matcher recognizes text in the retained suffix.
+    pub fn without_full_context(mut self) -> Self {
+        self.include_in_full_context = false;
+        self
+    }
+
+    pub fn include_in_full_context(&self) -> bool {
+        self.include_in_full_context
+    }
+
     pub fn with_legacy_matcher(
         mut self,
         matcher: impl Fn(&str, &str) -> bool + Send + Sync + 'static,
     ) -> Self {
         self.matches_legacy_fragment = Arc::new(matcher);
         self
+    }
+
+    /// Render this section's developer fragments as separate messages before retained
+    /// history when the harness builds a window (including after compaction). Changes
+    /// within an existing window are still appended as ordinary history updates.
+    /// Fragments with any other role are not rendered, including in history updates.
+    /// The producer still owns content size bounds; prefix placement does not truncate.
+    pub fn with_window_prefix(mut self) -> Self {
+        self.window_prefix = true;
+        self
+    }
+
+    pub fn is_window_prefix(&self) -> bool {
+        self.window_prefix
     }
 
     /// Requires a matching model-visible fragment whenever a persisted snapshot is reused.

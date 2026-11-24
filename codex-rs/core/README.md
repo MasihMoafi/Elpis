@@ -38,16 +38,12 @@ Seatbelt also keeps the legacy default preferences read access
 
 Expects the binary containing `codex-core` to run the equivalent of `codex sandbox` when `arg0` is `codex-linux-sandbox`. See the `codex-arg0` crate for details.
 
-Legacy `SandboxPolicy` / `sandbox_mode` configs are still supported on Linux.
-They can continue to use the legacy Landlock path when the split filesystem
-policy is sandbox-equivalent to the legacy model after `cwd` resolution.
-Split filesystem policies that need direct `FileSystemSandboxPolicy`
-enforcement, such as read-only or denied carveouts under a broader writable
-root, automatically route through bubblewrap. The legacy Landlock path is used
-only when the split filesystem policy round-trips through the legacy
-`SandboxPolicy` model without changing semantics. That includes overlapping
-cases like `/repo = write`, `/repo/a = none`, `/repo/a/b = write`, where the
-more specific writable child must reopen under a denied parent.
+The Linux sandbox accepts both legacy `sandbox_mode` configs and permission
+profiles. Bubblewrap enforces filesystem restrictions and provides the network
+namespace for managed proxy routes. A managed route selects bubblewrap even
+when `features.use_legacy_landlock` is set. Without a managed route, the helper
+rejects legacy Landlock if the policy restricts filesystem writes. With full
+disk write access it can apply network restrictions in process.
 
 The Linux sandbox helper prefers the first `bwrap` found on `PATH` outside the
 current working directory whenever it is available. If `bwrap` is present but
@@ -96,3 +92,33 @@ instead of running with weaker enforcement.
 Expects the binary containing `codex-core` to simulate the virtual
 `apply_patch` CLI when `arg1` is `--codex-run-as-apply-patch`. See the
 `codex-arg0` crate for details.
+
+## Runtime authentication (experimental)
+
+Runtime authentication is off by default. To enable it in `config.toml`:
+
+```toml
+[features.runtime_agent_instances]
+enabled = true
+mode = "dual_header"
+```
+
+`dual_header` sends the existing actor credential and a fresh agent assertion.
+`assertion_only` sends only the assertion. The latter requires backend support;
+registration failures do not fall back to credential-only requests. Non-OpenAI
+providers and third-party MCP authentication keep their existing behavior.
+
+The same table in `requirements.toml` pins enablement and mode. A conflicting
+explicit mode is rejected. The older boolean `runtime_agent_instances = true`
+still works and uses the default mode (`dual_header`) unless requirements pin it.
+Deliver typed requirements only to client versions that understand them.
+
+The harness owns the runtime and its memory-only signing key. Ordinary token
+refreshes reuse it; a different credential source or actor context requires a new
+runtime. When runtime authentication is selected, legacy `AgentIdentity`
+credentials migrate to saved OAuth credentials for the same actor and remove the
+persisted signing key. If no matching actor credential exists, a supported
+sign-in is required. Ordinary credential loading does not perform this migration.
+
+Cloud-config bundle and requirements fetches retain their endpoint-restricted
+bootstrap authentication, including refreshes after runtime initialization.

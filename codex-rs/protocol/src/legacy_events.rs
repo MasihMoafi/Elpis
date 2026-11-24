@@ -65,6 +65,7 @@ use crate::protocol::ViewImageToolCallEvent;
 use crate::protocol::WebSearchBeginEvent;
 use crate::protocol::WebSearchEndEvent;
 use crate::user_input::UserInput;
+use codex_extension_items::image_generation::GeneratedImageRef;
 
 /// Converts canonical item lifecycle events back into the legacy raw event stream used by
 /// compatibility consumers that have not migrated to `TurnItem`.
@@ -111,6 +112,8 @@ impl UserMessageItem {
             local_images: self.local_image_paths(),
             local_image_details: self.local_image_details(),
             audio: Some(self.audio_urls()),
+            audio_references: self.audio_references(),
+            audio_order: self.audio_order(),
             local_audio: self.local_audio_paths(),
             text_elements: self.text_elements(),
         }
@@ -123,18 +126,31 @@ impl UserMessageItem {
 
 impl AgentMessageItem {
     pub fn as_legacy_events(&self) -> Vec<EventMsg> {
-        self.content
-            .iter()
-            .map(|c| match c {
-                AgentMessageContent::Text { text } => EventMsg::AgentMessage(AgentMessageEvent {
-                    message: text.clone(),
-                    phase: self.phase.clone(),
-                    memory_citation: self.memory_citation.clone(),
-                    delivery: self.delivery,
-                    questions: self.questions.clone(),
-                }),
+        let texts = self.content.iter().map(|part| match part {
+            AgentMessageContent::Text { text } => text.as_str(),
+        });
+        let event = |message, moderation| {
+            EventMsg::AgentMessage(AgentMessageEvent {
+                message,
+                moderation,
+                phase: self.phase.clone(),
+                memory_citation: self.memory_citation.clone(),
+                delivery: self.delivery,
+                questions: self.questions.clone(),
             })
-            .collect()
+        };
+        if let Some(decision) = &self.moderation {
+            // The canonical answer has one ID even when the model supplied multiple text parts.
+            return vec![event(
+                texts.collect(),
+                Some(crate::protocol::TargetedAnswerModeration {
+                    item_id: self.id.clone(),
+                    moderated: decision.moderated,
+                    display: decision.display.clone(),
+                }),
+            )];
+        }
+        texts.map(|text| event(text.to_owned(), None)).collect()
     }
 }
 
@@ -463,10 +479,14 @@ impl ImageGenerationItem {
             call_id: self.id.clone(),
             status: self.status.clone(),
             revised_prompt: self.revised_prompt.clone(),
-            result: self.result.clone(),
+            image: GeneratedImageRef::Inline {
+                result: self.result.clone(),
+            },
             transparent_background: None,
             failure: None,
             saved_path: self.saved_path.clone(),
+            input_images: Vec::new(),
+            generation_id: None,
         })
     }
 }
@@ -502,6 +522,7 @@ impl McpToolCallItem {
             turn_id,
             invocation: McpInvocation {
                 server: self.server.clone(),
+                environment_id: self.environment_id.clone(),
                 tool: self.tool.clone(),
                 arguments: (!self.arguments.is_null()).then(|| self.arguments.clone()),
             },
@@ -528,6 +549,7 @@ impl McpToolCallItem {
             turn_id,
             invocation: McpInvocation {
                 server: self.server.clone(),
+                environment_id: self.environment_id.clone(),
                 tool: self.tool.clone(),
                 arguments: (!self.arguments.is_null()).then(|| self.arguments.clone()),
             },

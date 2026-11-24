@@ -1,6 +1,7 @@
 //! Status indicator and terminal-title state for `ChatWidget`.
 
 use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
+use crate::terminal_program_status::ProgramStatus;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct StatusIndicatorState {
@@ -114,15 +115,15 @@ pub(super) struct StatusState {
     pub(super) reasoning_item_id: Option<String>,
     /// An in-progress snapshot can omit the start of its next live reasoning update.
     pub(super) reasoning_resume_turn_id: Option<String>,
-    /// A restored stream may have missed earlier deltas; use its complete item at finalization.
-    pub(super) reasoning_recovered_after_refresh: bool,
     pub(super) compaction: Option<super::compaction::ActiveCompaction>,
     pub(super) current_status: StatusIndicatorState,
     pub(super) pending_guardian_review_status: PendingGuardianReviewStatus,
     pub(super) terminal_title_status_kind: TerminalTitleStatusKind,
+    /// Result of the latest live turn until the user interacts again. Active
+    /// work and blocking prompts take precedence over this value.
+    pub(super) program_status_after_turn: ProgramStatus,
     pub(super) retry_status_header: Option<String>,
     pub(super) pending_status_indicator_restore: bool,
-    pub(super) thread_title_generation_pending: bool,
 }
 
 impl Default for StatusState {
@@ -130,14 +131,13 @@ impl Default for StatusState {
         Self {
             reasoning_item_id: None,
             reasoning_resume_turn_id: None,
-            reasoning_recovered_after_refresh: false,
             compaction: None,
             current_status: StatusIndicatorState::working(),
             pending_guardian_review_status: PendingGuardianReviewStatus::default(),
             terminal_title_status_kind: TerminalTitleStatusKind::Working,
+            program_status_after_turn: ProgramStatus::Idle,
             retry_status_header: None,
             pending_status_indicator_restore: false,
-            thread_title_generation_pending: false,
         }
     }
 }

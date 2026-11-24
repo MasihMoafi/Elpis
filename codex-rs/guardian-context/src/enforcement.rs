@@ -3,24 +3,32 @@
 //! hosts may shorten historical instructions after compaction cannot make room.
 //! Every reduction reserves an omission notice and preserves source order.
 //! JSON recovery shortens only the body; line mode shortens the whole rendered entry.
+//! Native deduplication prefers required and protected copies before optional eviction.
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ImageDetail;
 use codex_protocol::models::ImageReference;
-use codex_protocol::protocol::TruncationPolicy;
+use codex_protocol::models::ResponseItem;
 
 use crate::ComposedContext;
+use crate::ElasticSectionLimits;
 use crate::RequestBudget;
 use crate::SectionError;
 use crate::TruncationObservation;
 use crate::budget::content_framing_tokens;
 use crate::budget::section_content_tokens;
 use crate::budget::section_tokens;
+use crate::composition::PendingEnclosingCall;
 use crate::composition::SectionContent;
 use crate::composition::SectionDelivery;
 use crate::composition::SectionOutput;
+use crate::truncation::truncate_content_to_fit;
+
+const MIN_HISTORICAL_TEXT_TOKENS: usize = 32;
 
 /// Eviction priority within a profile; older items at the same priority go first.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -28,14 +36,20 @@ pub(crate) enum BudgetPriority {
     ToolDescription,
     Commentary,
     Tool,
+    SelectedExecResult,
     Image,
 }
 
 /// Content and its selection policy move together through rendering and admission.
-/// Consumers may add required content; optional priorities stay crate-owned.
+/// Required support has priority within Elastic section allocations. Protected host framing
+/// and exact actions stay complete; Fixed retention remains unchanged.
 #[derive(Clone, PartialEq)]
 pub struct Budgeted<T> {
     pub content: T,
+    /// Host framing and exact actions use global space, outside section quotas.
+    pub(crate) protected: bool,
+    /// Host-verified question/answer records must be kept or omitted whole.
+    pub(crate) verified_answer: bool,
     pub(crate) source: Option<codex_history::RetainedSource>,
     pub(crate) retention: Retention,
 }
@@ -44,14 +58,42 @@ impl<T> Budgeted<T> {
     pub fn required(content: T) -> Self {
         Self {
             content,
+            protected: false,
+            verified_answer: false,
             source: None,
             retention: Retention::Required,
+        }
+    }
+
+    pub(crate) fn protected(content: T) -> Self {
+        Self {
+            protected: true,
+            ..Self::required(content)
+        }
+    }
+
+    pub(crate) fn verified_answer(content: T) -> Self {
+        Self {
+            verified_answer: true,
+            ..Self::required(content)
+        }
+    }
+
+    pub(crate) fn map<U>(self, transform: impl FnOnce(T) -> U) -> Budgeted<U> {
+        Budgeted {
+            content: transform(self.content),
+            protected: self.protected,
+            verified_answer: self.verified_answer,
+            source: self.source,
+            retention: self.retention,
         }
     }
 
     pub(crate) fn historical(content: T) -> Self {
         Self {
             content,
+            protected: false,
+            verified_answer: false,
             source: None,
             retention: Retention::Historical,
         }
@@ -60,6 +102,8 @@ impl<T> Budgeted<T> {
     pub(crate) fn optional(content: T, priority: BudgetPriority) -> Self {
         Self {
             content,
+            protected: false,
+            verified_answer: false,
             source: None,
             retention: Retention::Optional(priority),
         }
@@ -71,6 +115,7 @@ impl<T> std::fmt::Debug for Budgeted<T> {
         formatter
             .debug_struct("Budgeted")
             .field("retention", &self.retention)
+            .field("protected", &self.protected)
             .finish_non_exhaustive()
     }
 }
@@ -92,6 +137,190 @@ pub enum HistoryTruncation {
 }
 
 impl ComposedContext {
+    fn planned_action_content(&mut self) -> Option<&mut Vec<Budgeted<SectionContent>>> {
+        self.sections.iter_mut().find_map(|section| {
+            if section.id == "planned_action"
+                && let SectionDelivery::UserContent(items) = &mut section.delivery
+            {
+                Some(items)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// The optional parent can use spare space without displacing ordinary
+    /// transcript evidence or changing whether the approval fits.
+    pub(crate) fn admit_enclosing_call(
+        &mut self,
+        remaining: usize,
+        limits: Option<ElasticSectionLimits>,
+    ) {
+        let Some(PendingEnclosingCall {
+            call:
+                crate::EnclosingCall {
+                    arguments,
+                    tool,
+                    max_bytes,
+                },
+            fixed_image_budget,
+        }) = self.enclosing_call.take()
+        else {
+            return;
+        };
+        let call = serde_json::json!({ "arguments": arguments, "tool": tool });
+        let text = format!("Enclosing call for this review: {call}\n");
+        if text.len() > max_bytes {
+            return;
+        }
+        let item = Budgeted::optional(SectionContent::from(text), BudgetPriority::ToolDescription);
+        let available = remaining.saturating_sub(self.estimated_tokens());
+        let Some(items) = self.planned_action_content() else {
+            return;
+        };
+        let tokens = section_content_tokens(&item.content);
+        let framing = |count| content_framing_tokens(count + 1) - content_framing_tokens(count);
+        if tokens.saturating_add(framing(items.len())) <= available
+            && limits.is_none_or(|limits| {
+                let supporting = items.iter().filter(|item| !item.protected);
+                let supporting_tokens = supporting
+                    .clone()
+                    .map(|item| section_content_tokens(&item.content))
+                    .sum::<usize>();
+                let supporting_count = supporting.count();
+                // Elastic allocation charges supporting rows from a shared wrapper.
+                let combined = supporting_tokens
+                    .saturating_add(tokens)
+                    .saturating_add(content_framing_tokens(supporting_count + 2))
+                    .saturating_sub(content_framing_tokens(/*item_count*/ 1));
+                tokens.saturating_add(content_framing_tokens(/*item_count*/ 1))
+                    <= limits.max_section_entry_tokens()
+                    && limits
+                        .max_total_section_tokens()
+                        .is_none_or(|maximum| combined <= maximum)
+            }) && let Some(index) = items.iter().position(|item| {
+            item.protected
+                && matches!(&item.content, SectionContent::Other(ContentItem::InputText { text })
+                        if text == crate::action::APPROVAL_REQUEST_START)
+        }) {
+            items.insert(index + 1, item);
+            // Fixed image admission uses the host estimator, independently of the
+            // aggregate budget. Check the delivered prompt after ordinary selection.
+            if let Some(budget) = fixed_image_budget
+                && self.section_costs().any(|(_, cost)| cost.image_count > 0)
+                && self
+                    .clone()
+                    .into_messages()
+                    .iter()
+                    .map(budget.estimate_tokens)
+                    .fold(0i64, i64::saturating_add)
+                    > budget.max_prompt_tokens
+                && let Some(items) = self.planned_action_content()
+            {
+                items.remove(index + 1);
+            }
+        }
+    }
+
+    /// Omits native messages and tool calls already present in the effective reviewer history
+    /// or another pending copy, preferring required and protected copies.
+    /// Hosts repeat this check after compaction; missing evidence may be delivered again.
+    /// Identity excludes host annotations.
+    /// Conflicting payloads under one ID reject the input without changing it.
+    pub fn retain_new_native_messages(
+        &mut self,
+        reviewer_history: &[ResponseItemEnvelope],
+    ) -> Result<(), SectionError> {
+        if !self.sections.iter().any(|section| {
+            matches!(
+                &section.delivery,
+                SectionDelivery::Message(message)
+                    if matches!(message.content.item,
+                        ResponseItem::AgentMessage { .. } | ResponseItem::FunctionCall { .. })
+            )
+        }) {
+            return Ok(());
+        }
+        let mut seen_messages = HashMap::new();
+        let mut seen_calls = HashMap::new();
+        let mut duplicates = HashSet::new();
+        let mut pending = self
+            .sections
+            .iter()
+            .enumerate()
+            .filter_map(|(index, section)| match &section.delivery {
+                SectionDelivery::Message(message) => Some((index, message)),
+                SectionDelivery::UserContent(_) => None,
+            })
+            .collect::<Vec<_>>();
+        pending.sort_by_key(|(_, message)| {
+            (
+                matches!(message.retention, Retention::Optional(_)),
+                !message.protected,
+            )
+        });
+        let pending = pending
+            .into_iter()
+            .map(|(index, message)| (Some(index), &message.content.item));
+        for (index, item) in reviewer_history
+            .iter()
+            .map(|item| (None, &item.item))
+            .chain(pending)
+        {
+            let duplicate = match item {
+                ResponseItem::AgentMessage {
+                    id: Some(id),
+                    author,
+                    recipient,
+                    content,
+                    ..
+                } if !id.is_empty() => {
+                    let payload = (author, recipient, content);
+                    seen_messages
+                        .insert(id, payload)
+                        .map(|previous| previous == payload)
+                }
+                ResponseItem::FunctionCall {
+                    call_id,
+                    name,
+                    namespace,
+                    arguments,
+                    encrypted_content,
+                    encrypted_function_args,
+                    ..
+                } => {
+                    let payload = (
+                        name,
+                        namespace,
+                        arguments,
+                        encrypted_content,
+                        encrypted_function_args,
+                    );
+                    seen_calls
+                        .insert(call_id, payload)
+                        .map(|previous| previous == payload)
+                }
+                _ => None,
+            };
+            match duplicate {
+                Some(false) => return Err(SectionError::ConflictingNativeMessage),
+                Some(true) => {
+                    if let Some(index) = index {
+                        duplicates.insert(index);
+                    }
+                }
+                None => {}
+            }
+        }
+        let mut index = 0;
+        self.sections.retain(|_| {
+            let retain = !duplicates.contains(&index);
+            index += 1;
+            retain
+        });
+        Ok(())
+    }
+
     /// Applies host image admission before aggregate selection, preserving section
     /// identity and each retained item's selection policy.
     pub fn retain_images(
@@ -124,6 +353,7 @@ impl ComposedContext {
             })?;
         let current = self.estimated_tokens();
         if current <= remaining {
+            self.admit_enclosing_call(remaining, /*limits*/ None);
             return Ok(self);
         }
         let notice = SectionOutput {
@@ -184,47 +414,19 @@ impl ComposedContext {
                         continue;
                     }
                     let original_tokens = section_content_tokens(&item.content);
-                    let original_bytes = match &item.content {
-                        SectionContent::Transcript(record) => record.rendered().text_bytes,
-                        SectionContent::Other(ContentItem::InputText { text }) => text.len(),
-                        _ => continue,
-                    };
-                    let Some(original_body) = item.content.replace_text(String::new()) else {
-                        continue;
-                    };
+                    let original_bytes = item.content.evidence_bytes();
                     let target = original_tokens.saturating_sub(required_tokens - remaining);
-                    let mut upper = TruncationPolicy::Bytes(original_body.len()).token_budget();
-                    let mut lower = 32.min(upper);
-                    let mut selected = lower;
-                    while lower < upper {
-                        let mid = lower + (upper - lower).div_ceil(2);
-                        let _ = item
-                            .content
-                            .replace_text(crate::truncate_text(&original_body, mid));
-                        if section_content_tokens(&item.content) <= target {
-                            lower = mid;
-                            selected = mid;
-                        } else {
-                            upper = mid - 1;
-                        }
-                    }
-                    let _ = item
-                        .content
-                        .replace_text(crate::truncate_text(&original_body, selected));
+                    truncate_content_to_fit(&mut item.content, target, MIN_HISTORICAL_TEXT_TOKENS);
                     let saved =
                         original_tokens.saturating_sub(section_content_tokens(&item.content));
                     if saved == 0 {
-                        let _ = item.content.replace_text(original_body);
                         continue;
                     }
                     self.truncations.push(TruncationObservation {
+                        source: None,
                         component: section.id,
                         original_bytes,
-                        retained_bytes: match &item.content {
-                            SectionContent::Transcript(record) => record.rendered().text_bytes,
-                            SectionContent::Other(ContentItem::InputText { text }) => text.len(),
-                            _ => 0,
-                        },
+                        retained_bytes: item.content.evidence_bytes(),
                     });
                     history_truncated = true;
                     required_tokens = required_tokens.saturating_sub(saved);
@@ -283,6 +485,7 @@ impl ComposedContext {
                 && removed.contains(&(section_index, 0))
             {
                 self.truncations.push(TruncationObservation {
+                    source: None,
                     component: section.id,
                     original_bytes: serde_json::to_vec(&message.content.item)
                         .map_or(usize::MAX, |bytes| bytes.len()),
@@ -300,11 +503,12 @@ impl ComposedContext {
                 section: "request_budget",
             });
         }
+        self.admit_enclosing_call(remaining, /*limits*/ None);
         Ok(self)
     }
 }
 
-fn retain_content(
+pub(crate) fn retain_content(
     section: &mut SectionOutput,
     truncations: &mut Vec<TruncationObservation>,
     mut retain: impl FnMut(usize, &mut SectionContent) -> bool,
@@ -317,22 +521,9 @@ fn retain_content(
         let keep = retain(index, &mut item.content);
         index += 1;
         if !keep {
-            let original_bytes = match &item.content {
-                SectionContent::Transcript(record) => record.rendered().text_bytes,
-                SectionContent::Other(
-                    ContentItem::InputText { text } | ContentItem::OutputText { text },
-                ) => text.len(),
-                SectionContent::Other(ContentItem::InputImage {
-                    image: ImageReference::Inline { image_url },
-                    ..
-                }) => image_url.len(),
-                SectionContent::Other(ContentItem::InputImage {
-                    image: ImageReference::File { .. },
-                    ..
-                }) => 0,
-                SectionContent::Other(ContentItem::InputAudio { audio_url }) => audio_url.len(),
-            };
+            let original_bytes = item.content.evidence_bytes();
             truncations.push(TruncationObservation {
+                source: None,
                 component: section.id,
                 original_bytes,
                 retained_bytes: 0,

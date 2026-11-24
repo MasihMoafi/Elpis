@@ -2,6 +2,7 @@
 //! Wrapped prefixes remain display-only while annotated rows retain their logical source.
 
 use super::*;
+use itertools::Itertools;
 
 #[derive(Debug)]
 pub(crate) struct PlainHistoryCell {
@@ -12,6 +13,16 @@ impl PlainHistoryCell {
     pub(crate) fn new(lines: Vec<Line<'static>>) -> Self {
         Self { lines }
     }
+
+    /// Only invocation lines belong in a tool summary.
+    pub(crate) fn with_tool_header(self, count: usize) -> LabeledToolCell {
+        let label = self.lines.iter().take(count).join(" · ");
+        self.with_tool_label(label)
+    }
+
+    pub(crate) fn with_tool_label(self, label: String) -> LabeledToolCell {
+        LabeledToolCell { cell: self, label }
+    }
 }
 
 impl HistoryCell for PlainHistoryCell {
@@ -21,6 +32,34 @@ impl HistoryCell for PlainHistoryCell {
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
         plain_lines(self.lines.clone())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct LabeledToolCell<C = PlainHistoryCell> {
+    cell: C,
+    label: String,
+}
+
+impl<C: HistoryCell> HistoryCell for LabeledToolCell<C> {
+    fn tool_call_labels(&self) -> Vec<String> {
+        vec![self.label.clone()]
+    }
+
+    fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
+        self.cell.display_lines(width)
+    }
+
+    fn display_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        self.cell.display_hyperlink_lines(width)
+    }
+
+    fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+        self.cell.transcript_hyperlink_lines(width)
+    }
+
+    fn raw_lines(&self) -> Vec<Line<'static>> {
+        self.cell.raw_lines()
     }
 }
 
@@ -38,6 +77,20 @@ impl WebHyperlinkHistoryCell {
 
     pub(crate) fn new_hyperlink_lines(lines: Vec<HyperlinkLine>) -> Self {
         Self { lines }
+    }
+
+    pub(crate) fn with_tool_header(self, count: usize) -> LabeledToolCell<Self> {
+        let label = self
+            .lines
+            .iter()
+            .take(count)
+            .map(|line| &line.line)
+            .join(" · ");
+        self.with_tool_label(label)
+    }
+
+    pub(crate) fn with_tool_label(self, label: String) -> LabeledToolCell<Self> {
+        LabeledToolCell { cell: self, label }
     }
 }
 

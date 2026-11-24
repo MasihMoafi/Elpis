@@ -17,6 +17,7 @@ async fn yielded_skill_read_keeps_originating_turn_metadata() -> Result<()> {
         &mut extensions,
         SkillProviders::new().with_cloud_provider(Arc::new(FakeCloudSkillProvider {
             catalog: SkillCatalog {
+                is_partial: false,
                 entries: vec![SkillCatalogEntry::new(
                     SkillPackageId(PACKAGE.to_string()),
                     SkillAuthority::new(SkillSourceKind::Cloud, CODEX_APPS_MCP_SERVER_NAME),
@@ -31,9 +32,12 @@ async fn yielded_skill_read_keeps_originating_turn_metadata() -> Result<()> {
                 "Yielded skill instructions.".to_string(),
             )]),
             reads: Mutex::default(),
+            read_barrier: None,
         })),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: true,

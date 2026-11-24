@@ -15,7 +15,8 @@ use codex_tools::ToolSpec;
 use futures::future::BoxFuture;
 use std::sync::Arc;
 
-pub(crate) const MULTI_AGENT_V2_NAMESPACE_DESCRIPTION: &str =
+/// Shared namespace description for native tools and host extensions.
+pub const MULTI_AGENT_V2_NAMESPACE_DESCRIPTION: &str =
     "Tools for spawning and managing sub-agents.";
 
 pub(super) fn multi_agent_v2_handler(
@@ -25,12 +26,12 @@ pub(super) fn multi_agent_v2_handler(
     parameters_override: Option<&str>,
 ) -> Arc<dyn CoreToolRuntime> {
     let parameters_override = parameters_override.map(|parameters| -> Result<JsonSchema, &str> {
-        let mut parameters = super::catalog_parameters::parse(parameters)?;
+        let mut parameters = codex_tools::parse_catalog_tool_parameters(parameters)?;
         if let ToolSpec::Function(tool) = handler.spec()
             && let Some(properties) = tool.parameters.properties
         {
             // Argument transport requires these markers even without server encryption config.
-            for (name, schema) in properties {
+            for (name, schema) in *properties {
                 if schema.encrypted == Some(true) {
                     let property = parameters
                         .properties

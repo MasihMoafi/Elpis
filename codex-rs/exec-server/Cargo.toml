@@ -50,6 +50,7 @@ codex-websocket-client = { workspace = true }
 dirs = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+notify = { workspace = true }
 opentelemetry = { workspace = true }
 prost = "0.14.3"
 serde = { workspace = true, features = ["derive"] }
@@ -73,13 +74,17 @@ tracing = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+codex-linux-sandbox = { workspace = true }
+
 [target.'cfg(unix)'.dependencies]
 codex-uds = { workspace = true }
 libc = { workspace = true }
-rustix = { workspace = true, features = ["fs"] }
+rustix = { workspace = true, features = ["fs", "process"] }
 tempfile = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
+codex-mxc-sandbox = { workspace = true }
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Security",

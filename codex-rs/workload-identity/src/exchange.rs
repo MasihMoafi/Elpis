@@ -15,7 +15,6 @@ use url::Url;
 
 use crate::WorkloadIdentityConfig;
 use crate::WorkloadIdentityError;
-use crate::assertion::read_assertion;
 
 const ACCESS_TOKEN_TYPE: &str = "urn:ietf:params:oauth:token-type:access_token";
 const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
@@ -175,7 +174,7 @@ impl WorkloadIdentityExchange {
         let permit = self.network_policy.acquire(&self.token_url)?;
         permit
             .run(async {
-                let assertion = read_assertion(&self.config.assertion_file).await?;
+                let assertion = self.config.assertion_source.acquire().await?;
                 let body = {
                     let mut serializer = url::form_urlencoded::Serializer::new(String::new());
                     serializer
@@ -306,13 +305,32 @@ impl CachedToken {
 #[derive(Clone, PartialEq, Eq)]
 pub struct WorkloadIdentityToken {
     pub access_token: String,
+    pub expires_in: u64,
+    pub metadata: WorkloadIdentityMetadata,
+    version: u64,
+}
+
+/// Product and identity resolved by the federation rule's token exchange.
+#[derive(Clone, PartialEq, Eq)]
+pub enum WorkloadIdentityMetadata {
+    Chatgpt(ChatgptTokenMetadata),
+    Api(ApiTokenMetadata),
+}
+
+#[derive(Clone, Deserialize, PartialEq, Eq)]
+pub struct ApiTokenMetadata {
+    pub api_organization_id: String,
+    pub api_project_id: String,
+    pub user_id: String,
+}
+
+#[derive(Clone, Deserialize, PartialEq, Eq)]
+pub struct ChatgptTokenMetadata {
     pub chatgpt_account_id: String,
     pub chatgpt_account_user_id: String,
     pub chatgpt_plan_type: Option<String>,
-    pub expires_in: u64,
     pub scope: String,
     pub user_id: String,
-    version: u64,
 }
 
 impl WorkloadIdentityToken {
@@ -332,17 +350,25 @@ impl fmt::Debug for WorkloadIdentityToken {
     }
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum WorkloadIdentityProduct {
+    #[default]
+    Chatgpt,
+    Api,
+}
+
 #[derive(Deserialize)]
 struct TokenExchangeResponse {
     access_token: String,
-    chatgpt_account_id: String,
-    chatgpt_account_user_id: String,
-    chatgpt_plan_type: Option<String>,
     expires_in: u64,
     issued_token_type: String,
-    scope: String,
     token_type: String,
-    user_id: String,
+    // Older ChatGPT token endpoints omit the product marker.
+    #[serde(default)]
+    wif_product: WorkloadIdentityProduct,
+    #[serde(flatten)]
+    metadata: serde_json::Value,
 }
 
 impl TokenExchangeResponse {
@@ -353,25 +379,42 @@ impl TokenExchangeResponse {
             || !self.token_type.eq_ignore_ascii_case("bearer")
             || lifetime.is_zero()
             || lifetime > MAX_ACCESS_TOKEN_LIFETIME
-            || self.scope.trim().is_empty()
-            || self.chatgpt_account_id.trim().is_empty()
-            || self.chatgpt_account_user_id.trim().is_empty()
-            || self.user_id.trim().is_empty()
-            || self
-                .chatgpt_plan_type
-                .as_deref()
-                .is_some_and(|plan_type| plan_type.trim().is_empty())
         {
             return Err(WorkloadIdentityError::InvalidExchangeResponse);
         }
+        let metadata = match self.wif_product {
+            WorkloadIdentityProduct::Chatgpt => {
+                let metadata: ChatgptTokenMetadata = serde_json::from_value(self.metadata)
+                    .map_err(|_| WorkloadIdentityError::InvalidExchangeResponse)?;
+                if metadata.scope.trim().is_empty()
+                    || metadata.chatgpt_account_id.trim().is_empty()
+                    || metadata.chatgpt_account_user_id.trim().is_empty()
+                    || metadata.user_id.trim().is_empty()
+                    || metadata
+                        .chatgpt_plan_type
+                        .as_deref()
+                        .is_some_and(|plan_type| plan_type.trim().is_empty())
+                {
+                    return Err(WorkloadIdentityError::InvalidExchangeResponse);
+                }
+                WorkloadIdentityMetadata::Chatgpt(metadata)
+            }
+            WorkloadIdentityProduct::Api => {
+                let metadata: ApiTokenMetadata = serde_json::from_value(self.metadata)
+                    .map_err(|_| WorkloadIdentityError::InvalidExchangeResponse)?;
+                if metadata.api_organization_id.trim().is_empty()
+                    || metadata.api_project_id.trim().is_empty()
+                    || metadata.user_id.trim().is_empty()
+                {
+                    return Err(WorkloadIdentityError::InvalidExchangeResponse);
+                }
+                WorkloadIdentityMetadata::Api(metadata)
+            }
+        };
         Ok(WorkloadIdentityToken {
             access_token: self.access_token,
-            chatgpt_account_id: self.chatgpt_account_id,
-            chatgpt_account_user_id: self.chatgpt_account_user_id,
-            chatgpt_plan_type: self.chatgpt_plan_type,
             expires_in: self.expires_in,
-            scope: self.scope,
-            user_id: self.user_id,
+            metadata,
             version: 0,
         })
     }

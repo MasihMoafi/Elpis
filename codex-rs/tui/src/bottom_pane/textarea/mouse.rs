@@ -6,10 +6,12 @@ use crossterm::event::MouseButton;
 use crossterm::event::MouseEvent;
 use crossterm::event::MouseEventKind;
 use ratatui::layout::Position;
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub(super) struct MouseSelection {
     pending_copy: Option<(u64, Range<usize>)>,
+    primary_owner: Option<Arc<()>>,
     origin: Range<usize>,
     unit: SelectionUnit,
     dragging: bool,
@@ -23,6 +25,16 @@ impl TextArea {
         {
             selection.pending_copy = Some((id, range));
         }
+    }
+
+    pub(in crate::bottom_pane) fn retain_primary(&mut self, owner: Option<Arc<()>>) {
+        if let Some(selection) = &mut self.mouse_selection {
+            selection.primary_owner = owner;
+        }
+    }
+
+    pub(in crate::bottom_pane) fn cancel_primary(&mut self) {
+        self.retain_primary(/*owner*/ None);
     }
 
     pub(in crate::bottom_pane) fn finish_copy(
@@ -65,26 +77,21 @@ impl TextArea {
 
     /// Consume events at the edges too, but only detach from the caret if the viewport moves.
     pub(crate) fn scroll_mouse(&self, event: MouseEvent, state: &mut TextAreaState) -> bool {
-        let rows = match event.kind {
-            MouseEventKind::ScrollUp => -3,
-            MouseEventKind::ScrollDown => 3,
-            _ => return false,
-        };
-        if !event.modifiers.is_empty() || !self.contains_mouse(event) {
-            return false;
-        }
         let area = self.rendered_area.get();
+        let Some(rows) = crate::bottom_pane::scroll_state::wheel_rows_in(event, area) else {
+            return false;
+        };
         let lines = self.wrapped_lines(area.width);
-        let total = u16::try_from(lines.len()).unwrap_or(u16::MAX);
-        if total <= area.height {
+        let height = usize::from(area.height);
+        if lines.len() <= height {
             return false;
         }
-        let scroll = state
-            .scroll
-            .saturating_add_signed(rows)
-            .min(total - area.height);
-        if scroll != state.scroll {
-            state.scroll = scroll;
+        let baseline = self.effective_scroll(area, &lines, *state);
+        let scroll = baseline
+            .saturating_add_signed(isize::from(rows))
+            .min(lines.len() - height);
+        state.scroll = scroll;
+        if scroll != baseline {
             state.manual_cursor = Some(self.cursor_pos);
         }
         true
@@ -113,8 +120,8 @@ impl TextArea {
         }
         let line = {
             let lines = self.wrapped_lines(area.width);
-            let row = usize::from(state.scroll)
-                + usize::from(event.row.saturating_sub(area.y).min(area.height - 1));
+            let row =
+                state.scroll + usize::from(event.row.saturating_sub(area.y).min(area.height - 1));
             // Dragging beyond the viewport advances one wrapped row per event.
             let row = if event.row < area.y {
                 row.saturating_sub(1)
@@ -136,6 +143,7 @@ impl TextArea {
                 crate::text_selection::click_count(&mut self.last_click, event.column, event.row);
             MouseSelection {
                 pending_copy: None,
+                primary_owner: None,
                 origin: pos..pos,
                 // Padding remains an insertion target on repeated clicks.
                 unit: SelectionUnit::from_clicks(if pos == line.end - 1 { 1 } else { clicks }),

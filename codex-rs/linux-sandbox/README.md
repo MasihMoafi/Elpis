@@ -7,7 +7,50 @@ This crate is responsible for producing:
   - the `codex-exec` CLI can check if its arg0 is `codex-linux-sandbox` and, if so, execute as if it were `codex-linux-sandbox`
   - this should also be true of the `codex` multitool CLI
 
-On Linux, Codex prefers the first `bwrap` found on `PATH`
+The helper uses bubblewrap for filesystem and namespace isolation, and seccomp
+for syscall filtering. `src/seccomp.rs` installs `PR_SET_NO_NEW_PRIVS` and the
+seccomp filters; it also retains the legacy Landlock filesystem implementation.
+`src/linux_run_main.rs` coordinates these stages through `LinuxSandboxCommand`.
+End-to-end coverage lives in `tests/suite/sandbox.rs` and the other suite modules.
+
+### Transparent TCP
+
+```sh
+codex sandbox --transparent-tcp --permission-profile db -- psql -h pg.example
+```
+
+The Rust sandbox helper includes the TCP stack. Codex starts it automatically.
+The Linux host needs distro `bwrap` on `PATH`, user and network namespaces, IPv6,
+and read/write access to `/dev/net/tun`.
+Use full managed SOCKS5 mode for native database ports. Transparent TCP uses
+PID isolation by default and also supports exec-server's
+`--linux-sandbox-pid-namespace=inherit` in dedicated environments.
+For proxy configuration, executor-wide capture and HTTP CONNECT routing, see the [exec-server setup](../exec-server/README.md#transparent-tcp).
+
+The private DNS stub maps up to 8,192 names to stable addresses in `198.18.0.0/15`
+and `fdc0:de00::/96`. The relay sends the original name and port to the attributed proxy;
+literal addresses, including entries from a hosts file, are checked as IPs. Unknown
+synthetic addresses are rejected. Loopback stays local. Each bridge permits 128 concurrent
+connections. When the TCP stack is full, clients retry their opening SYN. The relay identifies each
+native socket by both endpoints and its inode in the private namespace TCP tables. Closing that
+socket cancels its pending approval connection, including when other clients use the same
+destination. A client that shuts down only its write side can still receive a reply. General UDP,
+QUIC, ICMP, legacy Landlock, and procfs fallback are outside this mode.
+
+With PID isolation, the relay runs in the namespace's PID 1 process. When it
+exits, the kernel kills the remaining processes in the PID namespace.
+With PID inheritance, a supervisor runs the relay and the command as separate
+children. Cleanup depends on which process exits first.
+
+- If the relay dies first, the supervisor sends `SIGKILL` to the command's
+  process group and the command itself. Descendants that left the group can
+  survive.
+- If the supervisor dies first, the relay and the command receive the
+  parent-death `SIGKILL`. Background descendants can survive even if they
+  stayed in the command's process group. This is an existing limitation of
+  inherited-PID mode when the launcher dies.
+
+With transparent TCP off, Codex prefers the first `bwrap` found on `PATH`
 outside the current working directory whenever it is available. If `bwrap` is
 present but too old to support
 `--argv0`, the helper keeps using system bubblewrap and switches to a
@@ -22,7 +65,9 @@ it cannot create the required user namespaces, so Codex rejects sandboxed shell
 commands that would enter the bubblewrap path.
 
 **Current Behavior**
-- Legacy `SandboxPolicy` / `sandbox_mode` configs remain supported.
+
+- Legacy `sandbox_mode` configs remain supported and are converted to
+  `PermissionProfile` before sandbox execution.
 - Bubblewrap is the default filesystem sandbox.
 - If `bwrap` is present on `PATH` outside the current working directory, the
   helper uses it.
@@ -40,11 +85,15 @@ commands that would enter the bubblewrap path.
 - Filesystem-restricted execution requires bubblewrap. The legacy Landlock
   option is rejected for these policies because it cannot isolate app-server
   Unix sockets. Disable `features.use_legacy_landlock` when upgrading.
-- Split-only filesystem policies that do not round-trip through the legacy
-  `SandboxPolicy` model stay on bubblewrap so nested read-only or denied
-  carveouts are preserved.
+- Bubblewrap preserves nested read-only and denied filesystem rules from
+  `PermissionProfile`.
+- Managed proxy routes require bubblewrap's network namespace, including when
+  `features.use_legacy_landlock` is set.
 - When bubblewrap is active, the helper applies `PR_SET_NO_NEW_PRIVS` and a
-  seccomp network filter in-process.
+  seccomp filter in-process after establishing the filesystem view. Restricted
+  network policies block network syscalls; filesystem-restricted policies with
+  otherwise unrestricted networking still block `AF_VSOCK` sockets. All filter
+  modes block `io_uring` to prevent bypassing socket-family restrictions.
 - When bubblewrap is active, the filesystem is read-only by default via `--ro-bind / /`.
 - When bubblewrap is active, writable roots are layered with `--bind <root> <root>`.
 - When bubblewrap is active, protected subpaths under writable roots (for
@@ -85,10 +134,15 @@ commands that would enter the bubblewrap path.
 - In managed proxy mode, the helper uses `--unshare-net` plus an internal
   TCP->UDS->TCP routing bridge so tool traffic reaches only configured proxy
   endpoints.
-- In managed proxy mode, after the bridge is live, seccomp blocks new
-  AF_UNIX/socketpair creation for the user command.
+- In managed proxy mode, after the bridge is live, seccomp allows IP sockets
+  inside the isolated network namespace and blocks new standalone `AF_UNIX`
+  sockets unless `dangerously_allow_all_unix_sockets` is granted. Unix socket
+  pairs remain allowed for communication between related processes.
 - When bubblewrap is active, it mounts a fresh `/proc` via `--proc /proc` by default.
-  If that mount is denied, it retains the inherited `/proc` and still creates a
+  Transparent TCP with PID isolation requires this mount and aborts the launch
+  if it fails. With PID inheritance it uses the existing `/proc` view and checks
+  that the relay can see socket identities before starting the command.
+  In other modes, if that mount is denied, it retains the inherited `/proc` and still creates a
   PID namespace, preserving the existing fallback. `--no-proc` also retains the
   inherited `/proc` without disabling PID isolation. In these cases, process IDs
   inside the sandbox can differ from those exposed by `/proc`. Default invocations
@@ -108,4 +162,5 @@ commands that would enter the bubblewrap path.
   remain in force. The default `isolate` mode retains PID isolation.
 
 **Notes**
+
 - The CLI surface is `codex sandbox`; the host OS selects the sandbox backend.

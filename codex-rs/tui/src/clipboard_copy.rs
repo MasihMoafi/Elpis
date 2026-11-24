@@ -1,12 +1,13 @@
 //! Clipboard copy backend for the TUI's `/copy` command and `Ctrl+O` hotkey.
 //!
-//! Local copying uses the native clipboard, with WSL PowerShell as a fallback.
-//! In tmux, also forward to the attached terminal so clients attached after Codex
-//! started receive the copy. Over SSH without tmux, send OSC 52 directly.
+//! Local copying uses the native clipboard, or the Windows clipboard directly on WSL.
+//! WSL sessions over SSH with a forwarded X11 display use the native clipboard instead.
+//! In tmux and Herdr, also forward to the attached terminal so clients attached after Codex
+//! started receive the copy. Over SSH, wrap OSC 52 for GNU screen when detected.
 //!
 //! Terminal writes have no delivery acknowledgement: a successful send must not
 //! suppress native copying. Both the host and attached client's clipboards may
-//! change. Outside tmux and SSH, use OSC 52 only if native copying fails.
+//! change. Outside tmux, Herdr, and SSH, use OSC 52 only if native copying fails.
 //!
 //! On Linux, X11 and some Wayland compositors require the process that wrote the
 //! clipboard to keep its handle open. `ClipboardLease` wraps the `arboard::Clipboard`
@@ -22,6 +23,7 @@
 pub(crate) mod primary;
 mod tmux;
 pub(crate) mod worker;
+mod wsl;
 
 use base64::Engine;
 use std::io::Write;
@@ -83,8 +85,8 @@ impl CopyStatus {
 
 /// Copy text to the system clipboard.
 ///
-/// Try native copying, then independently attempt terminal forwarding in tmux or
-/// SSH. A terminal send is best effort and does not confirm clipboard delivery.
+/// Try native copying, then independently attempt terminal forwarding in tmux,
+/// Herdr, or SSH. A terminal send is best effort and does not confirm clipboard delivery.
 /// Terminal forwarding may replace native HTML with plain text.
 ///
 /// Native or WSL success returns `Copied`, even if terminal forwarding fails.
@@ -98,10 +100,27 @@ fn copy_to_clipboard(
     begin_delivery: impl Fn() -> Result<(), String>,
     osc52: impl Fn(&str) -> Result<(), String>,
 ) -> Result<CopyOutcome, String> {
+    let wsl_deadline = std::time::Instant::now() + std::time::Duration::from_secs(/*secs*/ 5);
+    let ssh_session = is_ssh_session();
+    let environment = CopyEnvironment {
+        herdr_session: std::env::var("HERDR_ENV").is_ok_and(|value| value == "1"),
+        ssh_session,
+        forwarded_x11: ssh_session
+            && std::env::var("DISPLAY").is_ok_and(|display| !display.is_empty()),
+        wsl_session: is_wsl_session(),
+        tmux_session: is_tmux_session(),
+    };
     #[cfg(not(target_os = "android"))]
     let native_copy = {
-        let clipboard = arboard::Clipboard::new();
-        move |text: &str, html: Option<&str>| arboard_copy(clipboard, text, html)
+        // Bound WSL native setup: even initialization can block forever.
+        let clipboard = (!environment.wsl_session).then(arboard::Clipboard::new);
+        move |text: &str, html: Option<&str>| {
+            let clipboard = match clipboard {
+                Some(clipboard) => clipboard.map_err(|e| format!("clipboard unavailable: {e}"))?,
+                None => wsl::native_clipboard()?,
+            };
+            arboard_copy(clipboard, text, html)
+        }
     };
     #[cfg(target_os = "android")]
     let native_copy = |_text: &str, _html: Option<&str>| {
@@ -113,15 +132,11 @@ fn copy_to_clipboard(
     copy_to_clipboard_with(
         text,
         format,
-        CopyEnvironment {
-            ssh_session: is_ssh_session(),
-            wsl_session: is_wsl_session(),
-            tmux_session: is_tmux_session(),
-        },
+        environment,
         tmux_clipboard_copy,
         osc52,
         native_copy,
-        wsl_clipboard_copy,
+        |text| wsl::copy(text, wsl_deadline),
     )
 }
 
@@ -159,7 +174,9 @@ impl ClipboardLease {
 /// without touching real clipboards or terminal I/O.
 #[derive(Clone, Copy)]
 struct CopyEnvironment {
+    herdr_session: bool,
     ssh_session: bool,
+    forwarded_x11: bool,
     wsl_session: bool,
     tmux_session: bool,
 }
@@ -196,27 +213,32 @@ fn copy_to_clipboard_with(
             osc52_copy_fn(text)
         }
     };
-    let html = match format {
-        CopyFormat::PlainText => None,
-        CopyFormat::Markdown => Some(crate::clipboard_html::render_markdown(text)),
-        CopyFormat::MarkdownSelection(source) => {
-            Some(crate::clipboard_html::render_markdown(&source))
-        }
+    let native_copy = || {
+        let html = match format {
+            CopyFormat::PlainText => None,
+            CopyFormat::Markdown => Some(crate::clipboard_html::render_markdown(text)),
+            CopyFormat::MarkdownSelection(source) => {
+                Some(crate::clipboard_html::render_markdown(&source))
+            }
+        };
+        arboard_copy_fn(text, html.as_deref()).map_err(|error| format!("native clipboard: {error}"))
     };
-    let native_result = arboard_copy_fn(text, html.as_deref()).or_else(|native_error| {
-        if environment.wsl_session {
-            wsl_copy_fn(text).map(|()| None).map_err(|wsl_error| {
-                format!("native clipboard: {native_error}; WSL fallback: {wsl_error}")
+    let native_result = if environment.wsl_session && !environment.forwarded_x11 {
+        wsl_copy_fn(text).map(|()| None).or_else(|windows_error| {
+            native_copy().map_err(|native_error| {
+                format!("Windows clipboard: {windows_error}; {native_error}")
             })
-        } else {
-            Err(format!("native clipboard: {native_error}"))
-        }
-    });
+        })
+    } else {
+        native_copy()
+    };
     // Copy natively first: an X11 SelectionClear from a terminal write can otherwise
     // race with arboard reusing its ownership window and clear the new native data.
-    // Persistent tmux sessions may gain remote clients after Codex starts, so still
+    // Persistent multiplexer sessions may gain remote clients after Codex starts, so still
     // forward even when no SSH variables were inherited or native copying succeeded.
-    let terminal_result = (environment.tmux_session || environment.ssh_session).then(terminal_copy);
+    let terminal_result =
+        (environment.tmux_session || environment.herdr_session || environment.ssh_session)
+            .then(terminal_copy);
     match native_result {
         Ok(lease) => Ok(CopyOutcome::Copied(lease)),
         Err(native_error) => terminal_result
@@ -251,11 +273,10 @@ pub(crate) fn is_wsl_session() -> bool {
 /// Write to the native clipboard. The TUI owns any process-wide stderr redirection.
 #[cfg(not(target_os = "android"))]
 fn arboard_copy(
-    clipboard: Result<arboard::Clipboard, arboard::Error>,
+    mut clipboard: arboard::Clipboard,
     text: &str,
     html: Option<&str>,
 ) -> Result<Option<ClipboardLease>, String> {
-    let mut clipboard = clipboard.map_err(|e| format!("clipboard unavailable: {e}"))?;
     match html {
         Some(html) => clipboard
             .set_html(html, Some(text))
@@ -274,69 +295,12 @@ fn arboard_copy(
     }
 }
 
-/// Copy text into the Windows clipboard from a WSL process.
-#[cfg(target_os = "linux")]
-fn wsl_clipboard_copy(text: &str) -> Result<(), String> {
-    let executable = codex_utils_path::system_executable("powershell.exe")
-        .ok_or_else(|| "PowerShell is unavailable in the system PATH".to_string())?;
-    let path = codex_utils_path::system_path()
-        .map_err(|error| format!("failed to resolve system PATH: {error}"))?;
-    let mut child = std::process::Command::new(executable)
-        .env("PATH", path)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .args([
-            "-NoProfile",
-            "-Command",
-            "[Console]::InputEncoding = [System.Text.Encoding]::UTF8; $ErrorActionPreference = 'Stop'; $text = [Console]::In.ReadToEnd(); Set-Clipboard -Value $text",
-        ])
-        .spawn()
-        .map_err(|e| format!("failed to spawn powershell.exe: {e}"))?;
-
-    let Some(mut stdin) = child.stdin.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err("failed to open powershell.exe stdin".to_string());
-    };
-
-    if let Err(err) = stdin.write_all(text.as_bytes()) {
-        let _ = child.kill();
-        let _ = child.wait();
-        return Err(format!("failed to write to powershell.exe: {err}"));
-    }
-
-    drop(stdin);
-
-    let output = child
-        .wait_with_output()
-        .map_err(|e| format!("failed to wait for powershell.exe: {e}"))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if stderr.is_empty() {
-            let status = output.status;
-            Err(format!("powershell.exe exited with status {status}"))
-        } else {
-            Err(format!("powershell.exe failed: {stderr}"))
-        }
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn wsl_clipboard_copy(_text: &str) -> Result<(), String> {
-    Err("WSL clipboard fallback unavailable on this platform".to_string())
-}
-
 /// Write text to the clipboard via the OSC 52 terminal escape sequence.
-fn osc52_copy(text: &str) -> Result<(), String> {
-    let sequence = osc52_sequence(text, std::env::var_os("TMUX").is_some())?;
+fn write_osc52(sequence: &str) -> Result<(), String> {
     #[cfg(unix)]
     {
         match std::fs::OpenOptions::new().write(true).open("/dev/tty") {
-            Ok(tty) => match write_osc52_to_writer(tty, &sequence) {
+            Ok(tty) => match write_osc52_to_writer(tty, sequence) {
                 Ok(()) => return Ok(()),
                 Err(err) => tracing::debug!(
                     "failed to write OSC 52 to /dev/tty: {err}; falling back to stdout"
@@ -348,7 +312,7 @@ fn osc52_copy(text: &str) -> Result<(), String> {
         }
     }
 
-    write_osc52_to_writer(std::io::stdout().lock(), &sequence)
+    write_osc52_to_writer(std::io::stdout().lock(), sequence)
 }
 
 fn write_osc52_to_writer(mut writer: impl Write, sequence: &str) -> Result<(), String> {
@@ -360,7 +324,13 @@ fn write_osc52_to_writer(mut writer: impl Write, sequence: &str) -> Result<(), S
         .map_err(|e| format!("failed to flush OSC 52: {e}"))
 }
 
-fn osc52_sequence(text: &str, tmux: bool) -> Result<String, String> {
+enum Osc52Target {
+    Direct,
+    Tmux,
+    Screen,
+}
+
+fn osc52_sequence(text: &str, target: Osc52Target) -> Result<String, String> {
     let raw_bytes = text.len();
     if raw_bytes > OSC52_MAX_RAW_BYTES {
         return Err(format!(
@@ -369,11 +339,25 @@ fn osc52_sequence(text: &str, tmux: bool) -> Result<String, String> {
     }
 
     let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
-    if tmux {
-        Ok(format!("\x1bPtmux;\x1b\x1b]52;c;{encoded}\x07\x1b\\"))
-    } else {
-        Ok(format!("\x1b]52;c;{encoded}\x07"))
-    }
+    let osc = format!("\x1b]52;c;{encoded}\x07");
+    Ok(match target {
+        Osc52Target::Direct => osc,
+        Osc52Target::Tmux => format!("\x1bPtmux;\x1b{osc}\x1b\\"),
+        Osc52Target::Screen => {
+            // Screen buffers each DCS separately. Stay below even its older 256-byte
+            // string limit while forwarding one continuous OSC 52 to the outer terminal.
+            const CHUNK_SIZE: usize = 252;
+            let mut wrapped = String::new();
+            for start in (0..osc.len()).step_by(CHUNK_SIZE) {
+                let end = (start + CHUNK_SIZE).min(osc.len());
+                // OSC 52 contains only ASCII, so every byte offset is a character boundary.
+                wrapped.push_str("\x1bP");
+                wrapped.push_str(&osc[start..end]);
+                wrapped.push_str("\x1b\\");
+            }
+            wrapped
+        }
+    })
 }
 
 #[cfg(test)]
@@ -385,13 +369,16 @@ mod tests {
     use super::CopyFormat;
     use super::CopyOutcome;
     use super::OSC52_MAX_RAW_BYTES;
+    use super::Osc52Target;
     use super::copy_to_clipboard_with;
     use super::osc52_sequence;
     use super::write_osc52_to_writer;
 
     fn remote_environment() -> CopyEnvironment {
         CopyEnvironment {
+            herdr_session: false,
             ssh_session: true,
+            forwarded_x11: false,
             wsl_session: true,
             tmux_session: false,
         }
@@ -406,7 +393,9 @@ mod tests {
 
     fn local_environment() -> CopyEnvironment {
         CopyEnvironment {
+            herdr_session: false,
             ssh_session: false,
+            forwarded_x11: false,
             wsl_session: false,
             tmux_session: false,
         }
@@ -423,7 +412,7 @@ mod tests {
     fn osc52_encoding_roundtrips() {
         use base64::Engine;
         let text = "# Hello\n\n```rust\nfn main() {}\n```\n";
-        let sequence = osc52_sequence(text, /*tmux*/ false).expect("OSC 52 sequence");
+        let sequence = osc52_sequence(text, Osc52Target::Direct).expect("OSC 52 sequence");
         let encoded = sequence
             .trim_start_matches("\u{1b}]52;c;")
             .trim_end_matches('\u{7}');
@@ -437,7 +426,7 @@ mod tests {
     fn osc52_rejects_payload_larger_than_limit() {
         let text = "x".repeat(OSC52_MAX_RAW_BYTES + 1);
         assert_eq!(
-            osc52_sequence(&text, /*tmux*/ false),
+            osc52_sequence(&text, Osc52Target::Direct),
             Err(format!(
                 "OSC 52 payload too large ({} bytes; max {OSC52_MAX_RAW_BYTES})",
                 OSC52_MAX_RAW_BYTES + 1
@@ -448,7 +437,7 @@ mod tests {
     #[test]
     fn osc52_wraps_tmux_passthrough() {
         assert_eq!(
-            osc52_sequence("hello", /*tmux*/ true),
+            osc52_sequence("hello", Osc52Target::Tmux),
             Ok("\u{1b}Ptmux;\u{1b}\u{1b}]52;c;aGVsbG8=\u{7}\u{1b}\\".to_string())
         );
     }
@@ -462,7 +451,25 @@ mod tests {
     }
 
     #[test]
-    fn ssh_attempts_both_native_and_osc52() {
+    fn ssh_on_wsl_with_forwarded_x11_uses_native_clipboard() {
+        let result = copy_to_clipboard_with(
+            "hello",
+            CopyFormat::PlainText,
+            CopyEnvironment {
+                forwarded_x11: true,
+                ..remote_tmux_environment()
+            },
+            |_| Ok(()),
+            |_| Ok(()),
+            |_, _| Ok(Some(super::ClipboardLease::test())),
+            |_| panic!("forwarded X11 must not write to the Windows host clipboard"),
+        );
+
+        assert!(matches!(result, Ok(CopyOutcome::Copied(Some(_)))));
+    }
+
+    #[test]
+    fn ssh_on_wsl_attempts_windows_and_osc52() {
         let tmux_calls = Cell::new(/*value*/ 0_u8);
         let osc_calls = Cell::new(/*value*/ 0_u8);
         let native_calls = Cell::new(/*value*/ 0_u8);
@@ -493,8 +500,8 @@ mod tests {
         assert!(matches!(result, Ok(CopyOutcome::Copied(None))));
         assert_eq!(tmux_calls.get(), 0);
         assert_eq!(osc_calls.get(), 1);
-        assert_eq!(native_calls.get(), 1);
-        assert_eq!(wsl_calls.get(), 0);
+        assert_eq!(native_calls.get(), 0);
+        assert_eq!(wsl_calls.get(), 1);
     }
 
     #[test]
@@ -530,7 +537,7 @@ mod tests {
         };
         assert_eq!(
             error,
-            "native clipboard: native unavailable; WSL fallback: powershell unavailable; terminal clipboard: blocked"
+            "Windows clipboard: powershell unavailable; native clipboard: native unavailable; terminal clipboard: blocked"
         );
         assert_eq!(tmux_calls.get(), 0);
         assert_eq!(osc_calls.get(), 1);
@@ -539,7 +546,7 @@ mod tests {
     }
 
     #[test]
-    fn ssh_inside_tmux_attempts_both_native_and_tmux() {
+    fn ssh_on_wsl_inside_tmux_attempts_windows_and_tmux() {
         let tmux_calls = Cell::new(/*value*/ 0_u8);
         let osc_calls = Cell::new(/*value*/ 0_u8);
         let native_calls = Cell::new(/*value*/ 0_u8);
@@ -569,8 +576,8 @@ mod tests {
         assert!(matches!(result, Ok(CopyOutcome::Copied(None))));
         assert_eq!(tmux_calls.get(), 1);
         assert_eq!(osc_calls.get(), 0);
-        assert_eq!(native_calls.get(), 1);
-        assert_eq!(wsl_calls.get(), 0);
+        assert_eq!(native_calls.get(), 0);
+        assert_eq!(wsl_calls.get(), 1);
     }
 
     #[test]
@@ -604,8 +611,8 @@ mod tests {
         assert!(matches!(result, Ok(CopyOutcome::Copied(None))));
         assert_eq!(tmux_calls.get(), 1);
         assert_eq!(osc_calls.get(), 1);
-        assert_eq!(native_calls.get(), 1);
-        assert_eq!(wsl_calls.get(), 0);
+        assert_eq!(native_calls.get(), 0);
+        assert_eq!(wsl_calls.get(), 1);
     }
 
     #[test]
@@ -623,10 +630,6 @@ mod tests {
         let Err(error) = result else {
             panic!("expected tmux and OSC 52 errors");
         };
-        assert_eq!(
-            error,
-            "native clipboard: native unavailable; WSL fallback: powershell unavailable; terminal clipboard: tmux clipboard: tmux unavailable; OSC 52 fallback: osc blocked"
-        );
         insta::assert_snapshot!("all_copy_backends_fail", error);
     }
 
@@ -638,7 +641,7 @@ mod tests {
         let result = copy_to_clipboard_with(
             "hello",
             CopyFormat::PlainText,
-            local_wsl_environment(),
+            local_environment(),
             |_| Ok(()),
             |_| {
                 osc_calls.set(osc_calls.get() + 1);
@@ -675,19 +678,21 @@ mod tests {
                 Some("<p><strong>hello</strong> /repo/my_notes!.txt</p>\n"),
             ),
         ] {
-            let result = copy_to_clipboard_with(
-                text,
-                format,
-                local_environment(),
-                |_| panic!("native copy should succeed"),
-                |_| panic!("native copy should succeed"),
-                |actual_text, actual_html| {
-                    assert_eq!((actual_text, actual_html), (text, html));
-                    Ok(None)
-                },
-                |_| panic!("native copy should succeed"),
-            );
-            assert!(matches!(result, Ok(CopyOutcome::Copied(None))));
+            for environment in [local_environment(), local_wsl_environment()] {
+                let result = copy_to_clipboard_with(
+                    text,
+                    format.clone(),
+                    environment,
+                    |_| panic!("native copy should succeed"),
+                    |_| panic!("native copy should succeed"),
+                    |actual_text, actual_html| {
+                        assert_eq!((actual_text, actual_html), (text, html));
+                        Ok(Some(super::ClipboardLease::test()))
+                    },
+                    |_| Err("Windows clipboard unavailable".into()),
+                );
+                assert!(matches!(result, Ok(CopyOutcome::Copied(Some(_)))));
+            }
         }
     }
 
@@ -761,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn local_wsl_native_failure_uses_powershell_and_skips_osc52_on_success() {
+    fn local_wsl_uses_windows_and_skips_osc52_on_success() {
         let osc_calls = Cell::new(/*value*/ 0_u8);
         let native_calls = Cell::new(/*value*/ 0_u8);
         let wsl_calls = Cell::new(/*value*/ 0_u8);
@@ -786,12 +791,12 @@ mod tests {
 
         assert!(matches!(result, Ok(CopyOutcome::Copied(None))));
         assert_eq!(osc_calls.get(), 0);
-        assert_eq!(native_calls.get(), 1);
+        assert_eq!(native_calls.get(), 0);
         assert_eq!(wsl_calls.get(), 1);
     }
 
     #[test]
-    fn local_wsl_falls_back_to_osc52_when_native_and_powershell_fail() {
+    fn local_wsl_falls_back_to_osc52_when_powershell_fails() {
         let osc_calls = Cell::new(/*value*/ 0_u8);
         let native_calls = Cell::new(/*value*/ 0_u8);
         let wsl_calls = Cell::new(/*value*/ 0_u8);
@@ -857,7 +862,7 @@ mod tests {
     }
 
     #[test]
-    fn local_wsl_reports_native_powershell_and_osc52_errors_when_all_fail() {
+    fn local_wsl_reports_windows_and_osc52_errors_when_all_fail() {
         let osc_calls = Cell::new(/*value*/ 0_u8);
         let native_calls = Cell::new(/*value*/ 0_u8);
         let wsl_calls = Cell::new(/*value*/ 0_u8);
@@ -881,11 +886,11 @@ mod tests {
         );
 
         let Err(error) = result else {
-            panic!("expected native, WSL, and OSC 52 errors");
+            panic!("expected Windows and OSC 52 errors");
         };
         assert_eq!(
             error,
-            "native clipboard: native unavailable; WSL fallback: powershell unavailable; terminal clipboard: osc blocked"
+            "Windows clipboard: powershell unavailable; native clipboard: native unavailable; terminal clipboard: osc blocked"
         );
         assert_eq!(osc_calls.get(), 1);
         assert_eq!(native_calls.get(), 1);

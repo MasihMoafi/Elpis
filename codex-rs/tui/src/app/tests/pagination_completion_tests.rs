@@ -75,6 +75,7 @@ pub(super) async fn completed_history_app(
                 }],
             }),
             TurnItem::AgentMessage(AgentMessageItem {
+                moderation: None,
                 id: format!("answer-{index}"),
                 content: vec![AgentMessageContent::Text {
                     text: format!("{name} answer"),
@@ -87,6 +88,7 @@ pub(super) async fn completed_history_app(
         ];
         events.extend(items.into_iter().map(|item| {
             EventMsg::ItemCompleted(ItemCompletedEvent {
+                content_token_count: None,
                 thread_id,
                 turn_id: turn_id.clone(),
                 item,
@@ -123,10 +125,94 @@ pub(super) async fn completed_history_app(
 }
 
 #[tokio::test]
+async fn older_page_updates_the_parked_parent_without_moving_focus() -> Result<()> {
+    let (mut app, _codex_home, thread_id) = completed_history_app(&["Oldest", "Newest"]).await?;
+    let mut app_server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let started = app_server
+        .resume_thread(
+            &app.local_settings,
+            app.config.clone(),
+            thread_id,
+            crate::app_server_session::ResumeModelSettings::RestoreFromThread,
+        )
+        .await?;
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    let (event_tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    app.app_event_tx = crate::app_event_sender::AppEventSender::new(event_tx);
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    enable_side_retention(&mut app)?;
+    tui.set_owned_screen(/*owned*/ true)?;
+
+    app.scrollback_has_older_history = app_server.has_older_history(thread_id);
+    app.transcript_cells = vec![plain_line_cell("Newest answer")];
+    app.transcript_view.history = TranscriptHistoryState::Partial;
+    let child = ThreadId::new();
+    app.side_threads
+        .insert(child, SideThreadState::new(thread_id));
+    let (stream, display) = app.chat_widget.take_side_display(/*width*/ 100);
+    boxed_future!(app.handle_event(
+        &mut tui,
+        &mut app_server,
+        AppEvent::ParkSideCompanion {
+            pair: child,
+            thread_id,
+            stream,
+            display
+        },
+    ))
+    .await?;
+    app.chat_widget
+        .handle_side_thread_session(test_thread_session(child, app.config.cwd.to_path_buf()));
+    app.active_thread_id = Some(child);
+    app.sidebar_mut().show(
+        sidebar::SidebarContent::Chat(child),
+        sidebar::PaneFocus::Sidebar,
+    );
+    let size = Size::new(/*width*/ 120, /*height*/ 18);
+    tui.terminal = crate::tui::Terminal::with_screen_size_and_cursor_position_for_test(
+        ratatui::backend::CrosstermBackend::new(std::io::stdout()),
+        size,
+        Default::default(),
+    );
+    side_frame(&mut app, &mut tui, size)?;
+    let wheel = mouse(MouseEventKind::ScrollUp, /*column*/ 4, /*row*/ 3);
+    assert!(app.handle_owned_transcript_event(&mut tui, &mut app_server, &wheel)?);
+    let page = tokio::time::timeout(Duration::from_secs(/*secs*/ 5), events.recv())
+        .await?
+        .expect("wheel on the parent requests its older page");
+    boxed_future!(app.handle_event(&mut tui, &mut app_server, page)).await?;
+
+    assert_eq!(app.chat_widget.thread_id(), Some(child));
+    let pane = &app.side_companions[&thread_id];
+    let text = pane
+        .cells
+        .iter()
+        .flat_map(|cell| cell.display_lines(/*width*/ 100))
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(text.contains("Oldest answer"), "{text}");
+    assert_eq!(pane.view.history, TranscriptHistoryState::Complete);
+    app_server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn older_pagination_completion_footers_follow_answers_without_overlap_duplicates()
 -> Result<()> {
-    let (mut app, _codex_home, thread_id) =
+    let (mut app, codex_home, thread_id) =
         completed_history_app(&["Oldest", "Middle", "Newest"]).await?;
+    // Reuse an item ID across turns without changing the expected transcript.
+    let path = rollout_path(
+        codex_home.path(),
+        "2000-09-06T14-32-00",
+        &thread_id.to_string(),
+    );
+    std::fs::write(
+        &path,
+        std::fs::read_to_string(&path)?.replace("answer-0", "prompt-1"),
+    )?;
     let (mut app_server, _requests, proxy) = start_recording_app_server(
         &app.config,
         /*blocked_thread_list*/ None,
@@ -211,7 +297,7 @@ async fn beginning_navigation_holds_the_view_until_the_last_page_arrives() -> Re
         app.transcript_cells = crate::thread_transcript::thread_items_to_transcript_cells(
             Some(thread_id),
             &app.config.cwd,
-            started.turns.iter().flat_map(|turn| turn.items.clone()),
+            started.turns.iter().flat_map(Turn::item_payloads).cloned(),
             crate::thread_transcript::RawReasoningVisibility::Hidden,
             Some(&app.config),
         );
@@ -333,7 +419,7 @@ async fn returning_to_latest_retains_pending_pages_without_continuing_to_the_beg
     app.transcript_cells = crate::thread_transcript::thread_items_to_transcript_cells(
         Some(thread_id),
         &app.config.cwd,
-        started.turns.iter().flat_map(|turn| turn.items.clone()),
+        started.turns.iter().flat_map(Turn::item_payloads).cloned(),
         crate::thread_transcript::RawReasoningVisibility::Hidden,
         Some(&app.config),
     );
@@ -539,5 +625,159 @@ async fn stale_history_completions_preserve_the_current_request_and_failure_can_
     tui.set_owned_screen(/*owned*/ false)?;
     app_server.shutdown().await?;
     proxy.await??;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn closing_the_first_preview_populates_the_files_chooser() -> Result<()> {
+    let (mut app, _codex_home, thread_id) =
+        completed_history_app(&["[Guide](./guide.md)", "[Notes](./notes.md)"]).await?;
+    let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let started = server
+        .resume_thread(
+            &app.local_settings,
+            app.config.clone(),
+            thread_id,
+            crate::app_server_session::ResumeModelSettings::RestoreFromThread,
+        )
+        .await?;
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    enable_side_retention(&mut app)?;
+    tui.set_owned_screen(/*owned*/ true)?;
+
+    let original_path = codex_app_server_client::AppServerPath::from_app_server("notes.md");
+    let path = server
+        .resolve_thread_file(thread_id, &original_path)
+        .await?;
+    Box::pin(app.open_resolved_document(
+        &mut tui,
+        &mut server,
+        thread_id,
+        original_path,
+        path,
+        /*location*/ None,
+        /*focus*/ true,
+    ))
+    .await?;
+    assert!(app.sidebar().and_then(|pane| pane.files.as_ref()).is_none());
+    Box::pin(app.handle_tui_event(&mut tui, &mut server, TuiEvent::Key(KeyCode::Esc.into())))
+        .await?;
+    assert_eq!(app.chooser_focus(), Some(sidebar::PaneFocus::Sidebar));
+    let files = app
+        .sidebar()
+        .and_then(|pane| pane.files.as_ref())
+        .expect("file inventory");
+    let entries = files
+        .entries
+        .iter()
+        .map(|file| {
+            std::path::Path::new(&file.path)
+                .file_name()
+                .and_then(|name| name.to_str())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(entries, vec![Some("notes.md")]);
+    Ok(())
+}
+
+#[cfg(not(windows))]
+#[tokio::test]
+async fn sidebar_files_load_older_items_without_advancing_transcript_history() -> Result<()> {
+    let (mut app, _codex_home, thread_id) =
+        completed_history_app(&["[Earlier file](./earlier.md)", "[Latest file](./latest.md)"])
+            .await?;
+    let mut server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+    let started = server
+        .resume_thread(
+            &app.local_settings,
+            app.config.clone(),
+            thread_id,
+            crate::app_server_session::ResumeModelSettings::RestoreFromThread,
+        )
+        .await?;
+    let cursor = server
+        .older_item_cursor(thread_id)
+        .expect("resume leaves an older page")
+        .to_owned();
+    app.enqueue_primary_thread_session(started.session, started.turns)
+        .await?;
+    let (event_tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    app.app_event_tx = crate::app_event_sender::AppEventSender::new(event_tx);
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    enable_side_retention(&mut app)?;
+    tui.set_owned_screen(/*owned*/ true)?;
+    app.sidebar_mut().show(
+        sidebar::SidebarContent::Chooser,
+        sidebar::PaneFocus::Sidebar,
+    );
+
+    // During a switch, the displayed identity is already the parent but the
+    // committed cells can still be from the previously focused side chat.
+    app.transcript_cells
+        .push(Arc::new(crate::history_cell::AgentMarkdownCell::new(
+            "[Child only](./child-only.md)".into(),
+            app.config.cwd.as_path(),
+        )));
+    app.pending_thread_switch_resets = 1;
+    app.refresh_sidebar_files(&server, thread_id).await;
+    assert!(app.sidebar().and_then(|pane| pane.files.as_ref()).is_none());
+    app.transcript_cells.clear();
+    Box::pin(app.handle_event(
+        &mut tui,
+        &mut server,
+        AppEvent::SideReplayFinished(thread_id),
+    ))
+    .await?;
+    let has_earlier_file = |app: &App| {
+        app.sidebar()
+            .and_then(|pane| pane.files.as_ref())
+            .is_some_and(|files| {
+                files
+                    .entries
+                    .iter()
+                    .any(|entry| entry.path.ends_with("earlier.md"))
+            })
+    };
+    assert!(!has_earlier_file(&app));
+    let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+        .await?
+        .expect("older files completion");
+    assert!(matches!(event, AppEvent::SidebarFilesLoaded { .. }));
+    // A completion that arrives after hiding the chooser must not advance its cursor.
+    app.sidebar_mut().hide();
+    Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
+    assert!(!has_earlier_file(&app));
+    assert_eq!(
+        app.sidebar_mut()
+            .files
+            .as_ref()
+            .and_then(|files| files.next.as_deref()),
+        Some(cursor.as_str())
+    );
+    app.sidebar_mut().show(
+        sidebar::SidebarContent::Chooser,
+        sidebar::PaneFocus::Sidebar,
+    );
+    app.refresh_sidebar_files(&server, thread_id).await;
+    let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+        .await?
+        .expect("older files completion after reopening");
+    // Model an exhausted inventory before reconnect. The old completion must
+    // be discarded, then the fresh resume cursor must discover the missing file.
+    let files = app.sidebar_mut().files.as_mut().expect("file inventory");
+    files.next = None;
+    files.connection_replaced();
+    Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
+    assert!(!has_earlier_file(&app));
+    app.refresh_sidebar_files(&server, thread_id).await;
+    let event = tokio::time::timeout(Duration::from_secs(5), events.recv())
+        .await?
+        .expect("older files completion after reconnect");
+    Box::pin(app.handle_event(&mut tui, &mut server, event)).await?;
+    assert!(has_earlier_file(&app));
+    assert_eq!(server.older_item_cursor(thread_id), Some(cursor.as_str()));
     Ok(())
 }

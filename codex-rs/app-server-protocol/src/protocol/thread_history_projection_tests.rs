@@ -19,7 +19,7 @@ use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 
 use super::*;
-use crate::protocol::v2::ThreadItem;
+use crate::protocol::v2::ThreadItemPayload;
 use crate::protocol::v2::TurnError;
 
 #[test]
@@ -79,6 +79,7 @@ fn projects_failed_turn_completion_as_snapshot() {
         misalignment: None,
         message: "request failed".to_string(),
         codex_error_info: None,
+        rejected_audio_file_ids: Vec::new(),
     };
 
     let changes = project(RolloutItem::EventMsg(EventMsg::TurnComplete(
@@ -128,6 +129,7 @@ fn projects_completed_canonical_turn_items() {
         }],
     });
     let agent_item = TurnItem::AgentMessage(AgentMessageItem {
+        moderation: None,
         id: "agent-1".to_string(),
         content: vec![AgentMessageContent::Text {
             text: "done".to_string(),
@@ -145,18 +147,22 @@ fn projects_completed_canonical_turn_items() {
         user_changes.changed_items,
         vec![ThreadHistoryItemChange {
             turn_id: "turn-1".to_string(),
-            item: ThreadItem::from(user_item),
-            started_at_ms: Some(100),
-            completed_at_ms: Some(123),
+            item: ThreadItem {
+                payload: ThreadItemPayload::from(user_item),
+                started_at_ms: Some(100),
+                completed_at_ms: Some(123)
+            }
         }]
     );
     assert_eq!(
         agent_changes.changed_items,
         vec![ThreadHistoryItemChange {
             turn_id: "turn-1".to_string(),
-            item: ThreadItem::from(agent_item),
-            started_at_ms: Some(100),
-            completed_at_ms: Some(123),
+            item: ThreadItem {
+                payload: ThreadItemPayload::from(agent_item),
+                started_at_ms: Some(100),
+                completed_at_ms: Some(123)
+            }
         }]
     );
 }
@@ -174,6 +180,7 @@ fn projects_optional_completed_item_lifecycle_timestamps() {
     {
         let changes = project(RolloutItem::EventMsg(EventMsg::ItemCompleted(
             ItemCompletedEvent {
+                content_token_count: None,
                 thread_id: ThreadId::default(),
                 turn_id: "turn-1".to_string(),
                 item: item.clone(),
@@ -187,9 +194,11 @@ fn projects_optional_completed_item_lifecycle_timestamps() {
             ThreadHistoryChangeSet {
                 changed_items: vec![ThreadHistoryItemChange {
                     turn_id: "turn-1".to_string(),
-                    item: ThreadItem::from(item.clone()),
-                    started_at_ms,
-                    completed_at_ms: expected_completed_at_ms,
+                    item: ThreadItem {
+                        payload: ThreadItemPayload::from(item.clone()),
+                        started_at_ms,
+                        completed_at_ms: expected_completed_at_ms
+                    }
                 }],
                 ..Default::default()
             }
@@ -210,7 +219,7 @@ fn ignores_legacy_abort_without_turn_id_and_context_only_records() {
             duration_ms: None,
         },
     )));
-    let compacted = project(RolloutItem::Compacted(CompactedItem {
+    let compacted = project(RolloutItem::Compacted(Box::new(CompactedItem {
         message: String::new(),
         replacement_history: None,
         retained_context: None,
@@ -223,7 +232,7 @@ fn ignores_legacy_abort_without_turn_id_and_context_only_records() {
         compaction_response_id: None,
         latest_token_usage_record: None,
         resume_metadata: None,
-    }));
+    })));
     let security_risk = project(RolloutItem::SecurityRiskScore(SecurityRiskScore {
         scores: BTreeMap::from([("action_risk".to_string(), 0.92)]),
         call_id: None,
@@ -277,6 +286,7 @@ fn project(item: RolloutItem) -> ThreadHistoryChangeSet {
 
 fn item_completed(thread_id: ThreadId, turn_id: &str, item: TurnItem) -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
+        content_token_count: None,
         thread_id,
         turn_id: turn_id.to_string(),
         item,

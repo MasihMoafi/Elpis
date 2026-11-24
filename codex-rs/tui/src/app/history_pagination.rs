@@ -6,11 +6,11 @@ use std::ops::Range;
 use super::*;
 use crate::app_server_session::HISTORY_ITEM_PAGE_LIMIT;
 use crate::app_server_session::thread_items_page_params;
-use crate::history_cell::SessionHeaderHistoryCell;
-use crate::history_cell::SessionInfoCell;
 use crate::history_cell::UserHistoryCell;
+use crate::history_cell::is_session_history_prefix_cell;
 use crate::pager_overlay::TranscriptHistoryState;
 use crate::thread_transcript::RawReasoningVisibility;
+use crate::thread_transcript::TranscriptCells;
 use crate::thread_transcript::thread_items_to_transcript_cells;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ThreadItemsListResponse;
@@ -70,8 +70,11 @@ impl App {
         if !app_server.is_older_history_page_pending(thread_id, cursor) {
             return Ok(());
         }
-        if self.chat_widget.thread_id() != Some(thread_id)
-            || (tui.is_owned_screen() && !self.scrollback_has_older_history)
+        // The widget can already belong to the destination while the transcript still replays.
+        let parked = self.chat_widget.thread_id() != Some(thread_id);
+        if self.awaiting_side_replay(tui)
+            || (parked && !self.side_companions.contains_key(&thread_id))
+            || (!parked && tui.is_owned_screen() && !self.scrollback_has_older_history)
         {
             app_server.cancel_older_history_page(thread_id, cursor);
             return Ok(());
@@ -91,7 +94,8 @@ impl App {
                 store
                     .session
                     .as_ref()
-                    .map_or_else(|| self.config.cwd.clone(), |session| session.cwd.clone()),
+                    .map(|session| session.cwd.to_path_buf())
+                    .unwrap_or_else(|| self.config.cwd.to_path_buf()),
                 store.turns.clone(),
             )
         };
@@ -106,17 +110,69 @@ impl App {
         };
         let width = tui.terminal.last_known_screen_size.width;
         self.remove_hidden_review_cells(tui, &turns, &hidden_item_ids, thread_id, &cwd, visibility);
-        let cells = self.project_older_history_cells(
+        let split_turn = items
+            .last()
+            .and_then(|(turn_id, last)| {
+                turns.iter().find(|turn| {
+                    turn.id == *turn_id
+                        && matches!(turn.status, TurnStatus::Completed | TurnStatus::Interrupted)
+                        && turn.items.last().is_some_and(|item| item.id() != last.id())
+                })
+            })
+            .filter(|_| self.local_settings.transcript_mode.is_owned());
+        let existing = self
+            .side_companions
+            .get(&thread_id)
+            .filter(|_| parked)
+            .map_or(self.transcript_cells.as_slice(), |pane| {
+                pane.cells.as_slice()
+            });
+        let split_insertion = split_image_insertion(existing, split_turn);
+        let (cells, split_images) = self.project_older_history_cells(
             items,
             &turns,
             &hidden_item_ids,
             thread_id,
             &cwd,
             visibility,
+            split_insertion.is_some(),
         );
+        if let Some(pane) = self.side_companions.get_mut(&thread_id).filter(|_| parked) {
+            let images = split_insertion.and_then(|index| {
+                if split_images.is_empty() {
+                    return None;
+                }
+                let inserted = index..index + split_images.len();
+                pane.splice_older_cells(index..index, split_images);
+                Some(inserted)
+            });
+            let index = history_prefix_len(&pane.cells);
+            let inserted = index..index + cells.len();
+            pane.splice_older_cells(index..index, cells);
+            pane.view.history_page_loaded(&pane.cells, inserted, images);
+            pane.view.history = if app_server.has_older_history(thread_id) {
+                TranscriptHistoryState::Partial
+            } else {
+                TranscriptHistoryState::Complete
+            };
+            merge_older_turns(&mut store.lock().await.turns, turns);
+            tui.frame_requester().schedule_frame();
+            return Ok(());
+        }
+        let images = split_insertion.and_then(|index| {
+            if split_images.is_empty() {
+                return None;
+            }
+            let inserted = index..index + split_images.len();
+            if let Some(Overlay::Transcript(overlay)) = &mut self.overlay {
+                overlay.insert_history_page(index, split_images.clone());
+            }
+            self.transcript_cells.splice(index..index, split_images);
+            Some(inserted)
+        });
         let inserted = self.prepend_older_transcript_cells(cells);
         self.transcript_view
-            .history_loaded(&self.transcript_cells, inserted.clone());
+            .history_page_loaded(&self.transcript_cells, inserted.clone(), images);
         if !inserted.is_empty() {
             self.join_older_activity_group(inserted.end, &turns);
         }
@@ -146,9 +202,9 @@ impl App {
         &mut self,
         tui: &mut tui::Tui,
         turns: &[Turn],
-        hidden_item_ids: &HashSet<&str>,
+        hidden_item_ids: &HashSet<(&str, &str)>,
         thread_id: ThreadId,
-        cwd: &AbsolutePathBuf,
+        cwd: &std::path::Path,
         visibility: RawReasoningVisibility,
     ) {
         if hidden_item_ids.is_empty() {
@@ -156,27 +212,35 @@ impl App {
         }
         let user_items = turns
             .iter()
-            .flat_map(|turn| turn.items.iter())
-            .filter(|item| matches!(item, ThreadItem::UserMessage { .. }))
-            .map(|item| (item.id().to_string(), item.clone()))
+            .flat_map(|turn| {
+                turn.item_payloads()
+                    .map(move |item| (turn.id.as_str(), item))
+            })
+            .filter(|(_, item)| matches!(item, ThreadItemPayload::UserMessage { .. }))
+            .map(|(turn_id, item)| (hidden_item_ids.contains(&(turn_id, item.id())), item))
             .collect::<Vec<_>>();
         let projected_user_cells = thread_items_to_transcript_cells(
             Some(thread_id),
             cwd,
-            user_items.iter().map(|(_, item)| item.clone()),
+            user_items.iter().map(|(_, item)| (*item).clone()),
             visibility,
             Some(&self.config),
         );
         let persisted_user_cells = user_items
             .into_iter()
             .zip(projected_user_cells)
-            .map(|((item_id, _), cell)| (item_id, cell))
+            .map(|((hidden, _), cell)| (hidden, cell))
             .collect();
-        let indices = hidden_transcript_indices(
-            &self.transcript_cells,
-            persisted_user_cells,
-            hidden_item_ids,
-        );
+        if self.chat_widget.thread_id() != Some(thread_id)
+            && let Some(pane) = self.side_companions.get_mut(&thread_id)
+        {
+            for index in hidden_transcript_indices(&pane.cells, persisted_user_cells) {
+                pane.splice_older_cells(index..index + 1, Vec::new());
+                pane.view.restart_search();
+            }
+            return;
+        }
+        let indices = hidden_transcript_indices(&self.transcript_cells, persisted_user_cells);
         if indices.is_empty() {
             return;
         }
@@ -215,37 +279,129 @@ impl App {
         }
     }
 
-    /// Project successful turn completion metadata after the corresponding page's final item.
+    /// Project each terminal row on the page containing the end of its turn.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Projection needs the thread context and whether its split turn has a rendered end."
+    )]
     fn project_older_history_cells(
         &mut self,
-        items: Vec<ThreadItem>,
+        items: Vec<(String, ThreadItemPayload)>,
         turns: &[Turn],
-        hidden_item_ids: &HashSet<&str>,
+        hidden_item_ids: &HashSet<(&str, &str)>,
         thread_id: ThreadId,
-        cwd: &AbsolutePathBuf,
+        cwd: &std::path::Path,
         visibility: RawReasoningVisibility,
-    ) -> Vec<Arc<dyn HistoryCell>> {
-        let mut cells = Vec::new();
-        for (items, completed_turn) in completion::group_completed_turn_items(items, turns) {
-            // Internal prompts stay invisible, but still separate adjacent tool groups.
-            for visible in items.split(|item| hidden_item_ids.contains(item.id())) {
-                cells.extend(thread_items_to_transcript_cells(
-                    Some(thread_id),
-                    cwd,
-                    visible.iter().cloned(),
-                    visibility,
-                    Some(&self.config),
-                ));
+        relocate_split_images: bool,
+    ) -> (TranscriptCells, TranscriptCells) {
+        let cloud = matches!(self.app_server_target, AppServerTarget::Cloud)
+            && self.chat_widget.thread_id() == Some(thread_id);
+        let mut unfinished = HashSet::new();
+        if cloud {
+            for (turn_id, item) in items.iter().rev().filter(|(turn, item)| {
+                matches!(item, ThreadItemPayload::AgentMessage { .. })
+                    && !hidden_item_ids.contains(&(turn.as_str(), item.id()))
+            }) {
+                if let Some(turn) = turns.iter().find(|turn| turn.id == *turn_id)
+                    && let Some(entry) = turn.items.iter().find(|entry| entry.id() == item.id())
+                    && let Some(key) =
+                        self.chat_widget
+                            .remember_older_cloud_reply(turn_id, entry, &turn.status)
+                {
+                    unfinished.insert(key);
+                }
             }
-            if let Some(turn) = completed_turn
-                && let Some(completion) = self
-                    .chat_widget
-                    .completion_cell(turn, Some(ReplayKind::ResumeInitialMessages))
+        }
+        let mut cells = Vec::new();
+        let mut split_images = Vec::new();
+        let project = |items: &[(String, ThreadItemPayload)]| {
+            thread_items_to_transcript_cells(
+                Some(thread_id),
+                cwd,
+                items.iter().map(|(_, item)| item.clone()),
+                visibility,
+                Some(&self.config),
+            )
+        };
+        for (range, turn_end) in completion::group_turn_items(&items, turns) {
+            let start = cells.len();
+            // Internal prompts stay invisible, but still separate adjacent tool groups.
+            for visible in items[range]
+                .split(|(turn_id, item)| hidden_item_ids.contains(&(turn_id.as_str(), item.id())))
+            {
+                for chunk in visible.split_inclusive(|(turn, item)| {
+                    unfinished.contains(&(turn.clone(), item.id().to_owned()))
+                }) {
+                    let anchor = chunk.last().and_then(|(turn, item)| {
+                        let key = (turn.clone(), item.id().to_owned());
+                        unfinished.get(&key).cloned()
+                    });
+                    let split = chunk.len() - usize::from(anchor.is_some());
+                    cells.extend(project(&chunk[..split]));
+                    if let Some(key) = anchor {
+                        let mut cell =
+                            project(&chunk[split..])
+                                .into_iter()
+                                .next()
+                                .unwrap_or_else(|| {
+                                    Arc::new(history_cell::PendingAgentMessageCell(key.clone()))
+                                });
+                        if let Some(markdown) = Arc::get_mut(&mut cell).and_then(|cell| {
+                            cell.as_any_mut()
+                                .downcast_mut::<history_cell::AgentMarkdownCell>()
+                        }) {
+                            markdown.interrupted_item = Some(key);
+                        }
+                        cells.push(cell);
+                    }
+                }
+            }
+            let Some(turn) = turn_end else {
+                if relocate_split_images {
+                    split_images.extend(
+                        cells.extract_if(start.., |cell| generated_image(cell.as_ref()).is_some()),
+                    );
+                }
+                continue;
+            };
+            if self.local_settings.transcript_mode.is_owned()
+                && turn.status != TurnStatus::InProgress
+            {
+                cells[start..].sort_by_key(|cell| generated_image(cell.as_ref()).is_some());
+            }
+            if turn.status == TurnStatus::Interrupted && !self.side_threads.contains_key(&thread_id)
+            {
+                cells.push(Arc::new(history_cell::InterruptionNotice(Some(
+                    turn.id.clone(),
+                ))));
+            }
+            if turn.status == TurnStatus::Completed
+                && let Some(completion) = if let Some(pane) =
+                    self.side_companions.get_mut(&thread_id)
+                    && self.chat_widget.thread_id() != Some(thread_id)
+                {
+                    history_cell::FinalMessageSeparator::from_turn_once(
+                        turn,
+                        &mut pane.display.rendered_completion_turn_ids,
+                        /*fallback_elapsed*/ None,
+                        /*fallback_completed_at*/ None,
+                    )
+                } else {
+                    self.chat_widget
+                        .completion_cell(turn, Some(ReplayKind::ResumeInitialMessages))
+                }
             {
                 cells.push(Arc::new(completion));
             }
         }
-        cells
+        for cell in cells
+            .iter_mut()
+            .chain(&mut split_images)
+            .filter_map(Arc::get_mut)
+        {
+            self.link_viewed_image(cell);
+        }
+        (cells, split_images)
     }
 
     /// Insert each page once, keeping session headers and any backtrack selection in place.
@@ -263,13 +419,7 @@ impl App {
         let index = if let Some(Overlay::Transcript(overlay)) = self.overlay.as_mut() {
             overlay.prepend(cells.clone())
         } else {
-            self.transcript_cells
-                .iter()
-                .rposition(|cell| {
-                    cell.as_any().is::<SessionInfoCell>()
-                        || cell.as_any().is::<SessionHeaderHistoryCell>()
-                })
-                .map_or(/*default*/ 0, |index| index.saturating_add(/*rhs*/ 1))
+            history_prefix_len(&self.transcript_cells)
         };
         let inserted = index..index + cells.len();
         self.transcript_cells.splice(index..index, cells);
@@ -291,8 +441,13 @@ impl App {
         };
         let continue_to_start = previous == TranscriptHistoryState::LoadingBeginning;
         if continue_to_start && !self.scrollback_has_older_history {
-            self.transcript_view
-                .jump_to_entry(&self.transcript_cells, /*index*/ 0);
+            if self.transcript_view.is_select_mode() {
+                self.transcript_view
+                    .complete_select_beginning(&self.transcript_cells);
+            } else {
+                self.transcript_view
+                    .jump_to_beginning(&self.transcript_cells);
+            }
         }
         if self.scrollback_has_older_history
             && (continue_to_start
@@ -355,8 +510,36 @@ impl App {
     }
 }
 
+fn generated_image(cell: &dyn HistoryCell) -> Option<&history_cell::ImageGenerationHistoryCell> {
+    cell.as_any()
+        .downcast_ref::<history_cell::ImageGenerationHistoryCell>()
+        .filter(|image| image.is_turn_output())
+}
+
+/// The first page can contain the answer while an older page contains its image.
+fn split_image_insertion(
+    existing: &[Arc<dyn HistoryCell>],
+    split_turn: Option<&Turn>,
+) -> Option<usize> {
+    let turn = split_turn?;
+    let end = existing.iter().position(|cell| {
+        let cell = cell.as_any();
+        cell.downcast_ref::<history_cell::FinalMessageSeparator>()
+            .is_some_and(|cell| cell.turn_id.as_deref() == Some(turn.id.as_str()))
+            || cell
+                .downcast_ref::<history_cell::InterruptionNotice>()
+                .is_some_and(|cell| cell.0.as_deref() == Some(turn.id.as_str()))
+    })?;
+    Some(
+        existing[..end]
+            .iter()
+            .rposition(|cell| generated_image(cell.as_ref()).is_none())
+            .map_or(0, |index| index + 1),
+    )
+}
+
 /// Classify internal review prompts across page boundaries before rendering any older items.
-fn hidden_review_item_ids(turns: &[Turn]) -> HashSet<&str> {
+pub(super) fn hidden_review_item_ids(turns: &[Turn]) -> HashSet<(&str, &str)> {
     let mut hidden = HashSet::new();
     let mut review_mode = false;
     for (index, turn) in turns.iter().enumerate() {
@@ -367,11 +550,13 @@ fn hidden_review_item_ids(turns: &[Turn]) -> HashSet<&str> {
                 crate::app_backtrack::is_hidden_nested_review_turn(previous, turn)
             });
         for item in &turn.items {
-            match item {
-                ThreadItem::EnteredReviewMode { .. } => review_mode = true,
-                ThreadItem::ExitedReviewMode { .. } => review_mode = false,
-                ThreadItem::UserMessage { .. } if review_mode || hidden_nested_review_turn => {
-                    hidden.insert(item.id());
+            match &item.payload {
+                ThreadItemPayload::EnteredReviewMode { .. } => review_mode = true,
+                ThreadItemPayload::ExitedReviewMode { .. } => review_mode = false,
+                ThreadItemPayload::UserMessage { .. }
+                    if review_mode || hidden_nested_review_turn =>
+                {
+                    hidden.insert((turn.id.as_str(), item.id()));
                 }
                 _ => {}
             }
@@ -380,11 +565,17 @@ fn hidden_review_item_ids(turns: &[Turn]) -> HashSet<&str> {
     hidden
 }
 
+fn history_prefix_len(cells: &[Arc<dyn HistoryCell>]) -> usize {
+    cells
+        .iter()
+        .rposition(|cell| is_session_history_prefix_cell(cell.as_ref()))
+        .map_or(/*default*/ 0, |index| index + 1)
+}
+
 /// Match repeated user messages from newest to oldest so identical visible prompts stay distinct.
 fn hidden_transcript_indices(
     cells: &[Arc<dyn HistoryCell>],
-    mut persisted_user_cells: Vec<(String, Arc<dyn HistoryCell>)>,
-    hidden_item_ids: &HashSet<&str>,
+    mut persisted_user_cells: Vec<(bool, Arc<dyn HistoryCell>)>,
 ) -> Vec<usize> {
     let mut indices = Vec::new();
     for (index, cell) in cells.iter().enumerate().rev() {
@@ -404,7 +595,7 @@ fn hidden_transcript_indices(
         }) else {
             continue;
         };
-        if hidden_item_ids.contains(persisted_user_cells[position].0.as_str()) {
+        if persisted_user_cells[position].0 {
             indices.push(index);
         }
         persisted_user_cells.truncate(position);
@@ -425,6 +616,9 @@ fn merge_older_turns(current_turns: &mut Vec<Turn>, mut older_turns: Vec<Turn>) 
             .into_iter()
             .filter(|item| !current.items.iter().any(|known| known.id() == item.id()))
             .collect::<Vec<_>>();
+        if current.items_view == codex_app_server_protocol::TurnItemsView::NotLoaded {
+            current.items_view = turn.items_view;
+        }
         current.items.splice(0..0, items);
         false
     });

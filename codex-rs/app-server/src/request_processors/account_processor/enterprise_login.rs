@@ -3,9 +3,11 @@
 //! The credential store separately fences logins invalidated by another process.
 
 use super::*;
+use anyhow::Context;
 use codex_config::McpEmaRegistration;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_mcp::ema_auth_scope;
+use codex_rmcp_client::EmaErrorDetail;
 use codex_rmcp_client::EnterpriseOAuthLoginRequest;
 use codex_rmcp_client::perform_enterprise_oauth_login_return_url;
 use futures::FutureExt;
@@ -13,7 +15,7 @@ use tokio::sync::watch;
 
 pub(crate) struct EnterpriseLoginTarget {
     pub(crate) thread_id: String,
-    pub(crate) server_name: String,
+    pub(crate) server_key: codex_mcp::McpServerKey,
     pub(crate) registration: McpEmaRegistration,
 }
 
@@ -21,12 +23,12 @@ pub(crate) struct EnterpriseLoginTarget {
 pub(crate) enum EnterpriseLoginCompletion {
     Pending,
     Succeeded,
-    Failed,
+    Failed(EmaErrorDetail),
 }
 
 impl EnterpriseLoginCompletion {
     pub(crate) fn is_complete(self) -> bool {
-        matches!(self, Self::Succeeded | Self::Failed)
+        matches!(self, Self::Succeeded | Self::Failed(_))
     }
 }
 
@@ -146,7 +148,7 @@ impl EnterpriseLoginState {
         let servers = codex_mcp::effective_mcp_servers(&config, auth.as_ref());
         config.xaa_enabled
             && config.auth_keyring_backend_kind == keyring_backend
-            && servers.get(&target.server_name).is_some_and(|server| {
+            && servers.get(&target.server_key).is_some_and(|server| {
                 server.config().enabled
                     && server.config().ema_registration() == Some(&target.registration)
             })
@@ -191,6 +193,26 @@ impl EnterpriseLoginState {
             };
             self.clear(&login_id).await;
         }
+        let login_generation = self
+            .auth_manager
+            .auth_change_state_receiver()
+            .borrow()
+            .login_generation;
+        let account = self
+            .auth_manager
+            .auth_cached()
+            .filter(|auth| ema_auth_scope(Some(auth)).as_ref() == Some(&scope))
+            .ok_or_else(|| internal_error("Codex account changed during enterprise sign-in"))?;
+        if !self
+            .auth_manager
+            .account_login_is_current(&account)
+            .await
+            .unwrap_or(false)
+        {
+            return Err(internal_error(
+                "Codex account changed during enterprise sign-in",
+            ));
+        }
         let keyring_backend = request.keyring_backend_kind;
         // Keep commit cancellation under `active`; cancelling the setup epoch must
         // not race an already-admitted synchronous credential write.
@@ -207,13 +229,19 @@ impl EnterpriseLoginState {
             _ = setup_cancel.cancelled() => Err(internal_error("enterprise sign-in was cancelled")),
             _ = cancel.cancelled() => Err(internal_error("enterprise sign-in was cancelled")),
             result = perform_enterprise_oauth_login_return_url(request) =>
-                result.map_err(|_| internal_error("failed to start enterprise sign-in")),
+                result.map_err(|error| internal_error(
+                    EmaErrorDetail::from_error(
+                        &error.context(EmaErrorDetail::new("failed to start enterprise sign-in")),
+                    ).to_string(),
+                )),
         };
         let handle = match handle {
             Ok(handle) => handle,
             Err(error) => {
                 self.clear(&login_id).await;
-                completed.send_replace(EnterpriseLoginCompletion::Failed);
+                completed.send_replace(EnterpriseLoginCompletion::Failed(EmaErrorDetail::new(
+                    "failed to start enterprise sign-in",
+                )));
                 return Err(error);
             }
         };
@@ -224,28 +252,41 @@ impl EnterpriseLoginState {
         tokio::spawn(async move {
             let result = tokio::select! {
                 biased;
-                _ = cancel.cancelled() => Err(anyhow::anyhow!("Enterprise sign-in was cancelled.")),
+                _ = cancel.cancelled() =>
+                    Err(EmaErrorDetail::new("Enterprise sign-in was cancelled.").into()),
                 result = async {
-                    let credentials = handle.wait().await?;
+                    let credentials = handle.wait().await.context(EmaErrorDetail::new(
+                        "Enterprise sign-in authorization failed.",
+                    ))?;
                     callback_closed.clone().await;
                     let mut active = credentials.commit_if(|| async {
                         lifecycle.auth_manager.reload().await;
-                        let eligible = lifecycle.configuration_is_current(&target, keyring_backend).await;
+                        let eligible = lifecycle.auth_manager.account_login_is_current(&account).await.unwrap_or(false)
+                            && lifecycle.configuration_is_current(&target, keyring_backend).await;
                         // Reread persisted account authority after acquiring the credential
                         // lock, including changes made by another app-server process.
                         lifecycle.auth_manager.reload().await;
-                        if !eligible {
+                        if !eligible || !lifecycle.auth_manager.account_login_is_current(&account).await.unwrap_or(false) {
                             return None;
                         }
                         // Keep cancellation responsive during the async checks above.
                         // Once admitted, retain this guard through the synchronous write.
                         let active = lifecycle.active.lock().await;
-                        (active.as_ref().is_some_and(|attempt| {
+                        let current = active.as_ref().is_some_and(|attempt| {
                             attempt.login_id == completion_id && !attempt.cancel.is_cancelled()
                         })
-                            && ema_auth_scope(lifecycle.auth_manager.auth_cached().as_ref()).as_ref() == Some(&scope))
-                            .then_some(active)
-                    }).await?;
+                            && lifecycle.auth_manager.auth_change_state_receiver().borrow().login_generation == login_generation
+                            && ema_auth_scope(lifecycle.auth_manager.auth_cached().as_ref()).as_ref() == Some(&scope);
+                        if !current {
+                            return None;
+                        }
+                        // The credential lock is held: revoke cached bearers before replacing
+                        // the grant, and let new threads pin only the committed credential.
+                        lifecycle.config_manager.revoke_mcp_ema();
+                        Some(active)
+                    }).await.context(EmaErrorDetail::new(
+                        "Enterprise sign-in credential commit failed.",
+                    ))?;
                     // A successful commit is no longer cancelable. Clear it while
                     // still holding the commit gate.
                     *active = None;
@@ -258,11 +299,9 @@ impl EnterpriseLoginState {
             if result.is_err() {
                 lifecycle.clear(&completion_id).await;
             }
-            let success = result.is_ok();
-            completed.send_replace(if success {
-                EnterpriseLoginCompletion::Succeeded
-            } else {
-                EnterpriseLoginCompletion::Failed
+            completed.send_replace(match result {
+                Ok(()) => EnterpriseLoginCompletion::Succeeded,
+                Err(error) => EnterpriseLoginCompletion::Failed(EmaErrorDetail::from_error(&error)),
             });
         });
         Ok(EnterpriseLogin {

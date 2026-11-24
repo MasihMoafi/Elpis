@@ -19,6 +19,7 @@ fn configured_shortcut_tips_render_at_narrow_width() {
             "queue": "ctrl-x q"
         },
         "chat": {
+            "open_presets": "ctrl-x p",
             "increase_reasoning_effort": "ctrl-x +",
             "decrease_reasoning_effort": "ctrl-x minus"
         }
@@ -38,6 +39,14 @@ fn configured_shortcut_tips_render_at_narrow_width() {
             );
             lines.push("".into());
         }
+    }
+    // This snapshot owns the preset hint's content and layout; Markdown tests own the
+    // terminal-default foreground applied to the shared "Tip:" prefix.
+    for line in lines
+        .iter_mut()
+        .filter(|line| line.to_string().contains("then 0–9"))
+    {
+        line.spans[0].style.fg = None;
     }
     insta::assert_snapshot!(
         lines

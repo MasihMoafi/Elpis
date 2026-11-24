@@ -13,6 +13,7 @@ use anyhow::Result;
 use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use std::path::Path;
@@ -173,15 +174,21 @@ pub(crate) async fn write_session_checkpoint(
     else {
         return Ok(None);
     };
-    let latest_result = turn.items.iter().rev().find_map(|item| match item {
-        ThreadItem::AgentMessage { text, .. } if !text.trim().is_empty() => Some(text.trim()),
-        _ => None,
-    });
+    let latest_result = turn
+        .items
+        .iter()
+        .rev()
+        .find_map(|item| match &item.payload {
+            ThreadItemPayload::AgentMessage { text, .. } if !text.trim().is_empty() => {
+                Some(text.trim())
+            }
+            _ => None,
+        });
     let mut changed_files = Vec::new();
     let mut commands = Vec::new();
     for item in &turn.items {
-        match item {
-            ThreadItem::FileChange {
+        match &item.payload {
+            ThreadItemPayload::FileChange {
                 changes, status, ..
             } => {
                 for change in changes {
@@ -191,7 +198,7 @@ pub(crate) async fn write_session_checkpoint(
                     }
                 }
             }
-            ThreadItem::CommandExecution {
+            ThreadItemPayload::CommandExecution {
                 command,
                 status,
                 exit_code,
@@ -568,14 +575,15 @@ mod tests {
         let turn = Turn {
             root_turn_id: None,
             id: "current-turn".into(),
-            items: vec![ThreadItem::AgentMessage {
+            items: vec![ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                moderation: None,
                 id: "result".into(),
                 text: "Response finished while the responding agent saves memory.".into(),
                 phase: None,
                 memory_citation: None,
                 delivery: None,
                 questions: None,
-            }],
+            })],
             items_view: TurnItemsView::Full,
             status: TurnStatus::Completed,
             error: None,
@@ -810,7 +818,7 @@ mod tests {
             root_turn_id: None,
             id: "turn-one".to_string(),
             items: vec![
-                ThreadItem::FileChange {
+                ThreadItem::untimed(ThreadItemPayload::FileChange {
                     id: "change-one".to_string(),
                     changes: vec![FileUpdateChange {
                         path: "src/main.rs".to_string(),
@@ -818,15 +826,16 @@ mod tests {
                         diff: "large exact diff stays in transcript".to_string(),
                     }],
                     status: PatchApplyStatus::Completed,
-                },
-                ThreadItem::AgentMessage {
+                }),
+                ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                    moderation: None,
                     id: "message-one".to_string(),
                     text: "Implemented the checkpoint.".to_string(),
                     phase: None,
                     memory_citation: None,
                     delivery: None,
                     questions: None,
-                },
+                }),
             ],
             items_view: TurnItemsView::Full,
             status: TurnStatus::Completed,
@@ -869,7 +878,8 @@ mod tests {
             root_turn_id: None,
             id: "long-turn".into(),
             items: vec![
-                ThreadItem::AgentMessage {
+                ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                    moderation: None,
                     id: "result".into(),
                     text: format!(
                         "Verified: earlier history returns. {} Next: verify IDE; preserve user changes.",
@@ -879,8 +889,8 @@ mod tests {
                     memory_citation: None,
                     delivery: None,
                     questions: None,
-                },
-                ThreadItem::FileChange {
+                }),
+                ThreadItem::untimed(ThreadItemPayload::FileChange {
                     id: "changes".into(),
                     changes: (0..100)
                         .map(|i| FileUpdateChange {
@@ -890,7 +900,7 @@ mod tests {
                         })
                         .collect(),
                     status: PatchApplyStatus::Completed,
-                },
+                }),
             ],
             items_view: TurnItemsView::Full,
             status: TurnStatus::Completed,
@@ -922,14 +932,15 @@ mod tests {
         let mut turn = Turn {
             root_turn_id: None,
             id: "completed-turn".into(),
-            items: vec![ThreadItem::AgentMessage {
+            items: vec![ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                moderation: None,
                 id: "result".into(),
                 text: "Tests passed; next verify the IDE.".into(),
                 phase: None,
                 memory_citation: None,
                 delivery: None,
                 questions: None,
-            }],
+            })],
             items_view: TurnItemsView::Full,
             status: TurnStatus::Completed,
             error: None,
@@ -947,14 +958,16 @@ mod tests {
         write_session_checkpoint(Some(&memories_root), cwd, THREAD, &turn).await?;
         assert_eq!(tokio::fs::read(&path).await?, previous);
 
-        turn.items.push(ThreadItem::AgentMessage {
-            id: "progress".into(),
-            text: "IDE verification found a startup error.".into(),
-            phase: None,
-            memory_citation: None,
-            delivery: None,
-            questions: None,
-        });
+        turn.items
+            .push(ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                moderation: None,
+                id: "progress".into(),
+                text: "IDE verification found a startup error.".into(),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+                questions: None,
+            }));
         write_session_checkpoint(Some(&memories_root), cwd, THREAD, &turn).await?;
         let content = tokio::fs::read_to_string(&path).await?;
         assert!(content.contains("IDE verification found a startup error."));
@@ -990,13 +1003,16 @@ mod tests {
             completed_at: Some(42),
             duration_ms: Some(2_000),
         };
-        let message = |id: &str, text: &str| ThreadItem::AgentMessage {
-            id: id.to_string(),
-            text: text.to_string(),
-            phase: None,
-            memory_citation: None,
-            delivery: None,
-            questions: None,
+        let message = |id: &str, text: &str| {
+            ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                moderation: None,
+                id: id.to_string(),
+                text: text.to_string(),
+                phase: None,
+                memory_citation: None,
+                delivery: None,
+                questions: None,
+            })
         };
         let buffered = vec![
             ("turn-one".to_string(), message("stale", "Old turn result.")),
@@ -1007,8 +1023,8 @@ mod tests {
 
         assert_eq!(turn.items.len(), 1);
         assert!(matches!(
-            &turn.items[0],
-            ThreadItem::AgentMessage { text, .. } if text == "New turn result."
+            &turn.items[0].payload,
+            ThreadItemPayload::AgentMessage { text, .. } if text == "New turn result."
         ));
     }
 

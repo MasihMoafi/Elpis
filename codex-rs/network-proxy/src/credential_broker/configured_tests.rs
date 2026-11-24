@@ -239,7 +239,7 @@ fn adjacent_dummy_restoration_keeps_original_boundaries() {
 #[test]
 fn local_proxy_bypass_preserves_credentials_and_aliases_across_reload() {
     let token = "vendor_abcdefghijklmnopqrstuvwx";
-    let github = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    let github = "ghp_syntheticfixture7syntheticfixture7sy"; // secret-guard: allow (synthetic test credential)
     for (destination, bypassed) in [
         ("http://localhost:1234/v1", true),
         ("http://127.0.0.1:1234/v1", true),
@@ -320,7 +320,7 @@ fn local_proxy_bypass_preserves_credentials_and_aliases_across_reload() {
 #[test]
 fn child_alias_identity_survives_scoped_dummies_and_partial_direct_restoration() {
     let local = "local_abcdefghijklmnopqrstuvwx";
-    let remote = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+    let remote = "ghp_syntheticfixture7syntheticfixture7sy"; // secret-guard: allow (synthetic test credential)
     for allow_local_binding in [false, true] {
         let broker = CredentialBroker::new(/*enabled*/ true);
         broker.configure(&NetworkProxyConfig {
@@ -1054,7 +1054,7 @@ fn known_credential_spans_preserve_overlaps_and_uncovered_adjacent_credentials()
 
 #[test]
 fn configured_provider_does_not_claim_embedded_builtin_credentials() {
-    let github_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    let github_token = "ghp_syntheticfixture5syntheticfixture5sy"; // secret-guard: allow (synthetic test credential)
     let openai_token = "sk-proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let broker = broker_for(CredentialProviderConfig {
         env: vec!["COMBINED_TOKEN".to_string()],
@@ -1201,7 +1201,7 @@ fn configured_dummy_does_not_embed_another_provider_credential() {
 fn discovered_credential_aliases_rebind_when_the_destination_changes() {
     for (token, host_key) in [
         ("stripe_live_abcdefghijklmnopqrstuvwx", "STRIPE_HOST"),
-        ("ghp_abcdefghijklmnopqrstuvwxyz1234567890", "GH_HOST"),
+        ("ghp_syntheticfixture5syntheticfixture5sy", "GH_HOST"), // secret-guard: allow (synthetic test credential)
         (
             "sk-proj-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
             "OPENAI_BASE_URL",
@@ -1718,7 +1718,7 @@ fn configured_provider_discovers_complete_unregistered_values() {
 
 #[test]
 fn mixed_provider_aliases_keep_credentials_on_separate_destinations() {
-    let github = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    let github = "ghp_syntheticfixture5syntheticfixture5sy"; // secret-guard: allow (synthetic test credential)
     for (pattern, vendor, separator) in [
         ("^vendor_[a-z]{24}$", "vendor_abcdefghijklmnopqrstuvwx"),
         (
@@ -2110,6 +2110,101 @@ fn configured_provider_does_not_register_a_credential_inside_an_existing_dummy()
 }
 
 #[test]
+fn builtin_dummy_rejects_known_and_late_credential_collisions() {
+    for (custom_real, known_before_builtin) in [("mask", true), ("mask", false), ("pass", false)] {
+        let broker = broker_for(CredentialProviderConfig {
+            env: vec!["CUSTOM_TOKEN".to_string()],
+            patterns: if known_before_builtin {
+                vec!["^[a-z]{4}$".to_string(), "^ghp_[A-Za-z0-9]+$".to_string()]
+            } else {
+                vec!["^(?:pass|mask)$".to_string()]
+            },
+            url_prefix_from_env: Some("CUSTOM_HOST".to_string()),
+            ..CredentialProviderConfig::default()
+        });
+        if known_before_builtin {
+            let mut unbound =
+                HashMap::from([("CUSTOM_TOKEN".to_string(), custom_real.to_string())]);
+            broker.virtualize_child_env(&mut unbound);
+            assert!(broker.read_state().credentials.is_empty());
+        }
+        let github_real = "ghp_syntheticfixture5syntheticfixture5sy"; // secret-guard: allow (synthetic test credential)
+        let mut builtin_env = HashMap::from([("GH_TOKEN".to_string(), github_real.to_string())]);
+        broker.virtualize_child_env(&mut builtin_env);
+        let github_dummy = &builtin_env["GH_TOKEN"];
+        if known_before_builtin {
+            assert_eq!(github_dummy, github_real);
+            assert!(broker.read_state().credentials.is_empty());
+            continue;
+        }
+        assert!(github_dummy.starts_with("ghp_masked"));
+
+        // The earlier dummy is not carried, so environment containment cannot reject the overlap.
+        let mut late_env = HashMap::from([
+            ("CUSTOM_TOKEN".to_string(), custom_real.to_string()),
+            (
+                "CUSTOM_HOST".to_string(),
+                "api.provider.example".to_string(),
+            ),
+        ]);
+        broker.virtualize_child_env(&mut late_env);
+        assert_eq!(late_env["CUSTOM_TOKEN"], custom_real);
+        assert_eq!(broker.read_state().credentials.len(), 1);
+
+        let mut headers = HeaderMap::from_iter([(
+            AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {github_dummy}")).unwrap(),
+        )]);
+        broker.inject_request_headers("api.github.com", &mut headers);
+        assert_eq!(headers[AUTHORIZATION], format!("Bearer {github_real}"));
+        let mut restored = github_dummy.clone();
+        assert!(broker.restore_text(&mut restored));
+        assert_eq!(restored, github_real);
+
+        let mut headers =
+            HeaderMap::from_iter([(AUTHORIZATION, HeaderValue::from_static("Bearer mask"))]);
+        broker.inject_request_headers("https://api.provider.example/", &mut headers);
+        assert_eq!(headers[AUTHORIZATION], "Bearer mask");
+    }
+
+    let broker = broker_for(CredentialProviderConfig {
+        env: vec!["CUSTOM_TOKEN".to_string()],
+        patterns: vec!["mask[a-z]{2}".to_string()],
+        url_prefixes: vec!["https://custom.example".to_string()],
+        ..CredentialProviderConfig::default()
+    });
+    let github_real = "ghp_syntheticfixture5syntheticfixture5sy"; // secret-guard: allow (synthetic test credential)
+    let mut env = HashMap::from([
+        ("GH_TOKEN".to_string(), github_real.to_string()),
+        ("CUSTOM_ALIAS".to_string(), "masked".to_string()),
+    ]);
+    broker.virtualize_child_env(&mut env);
+    assert_eq!(env["GH_TOKEN"], github_real);
+    assert!(!env.contains_key("CUSTOM_TOKEN"));
+    assert!(
+        broker
+            .read_state()
+            .credentials
+            .iter()
+            .all(|credential| { credential.env_var == "CUSTOM_TOKEN" })
+    );
+    let alias_dummy = &env["CUSTOM_ALIAS"];
+    assert_ne!(alias_dummy, "masked");
+    let mut headers = HeaderMap::from_iter([(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {alias_dummy}")).unwrap(),
+    )]);
+    let original = headers.clone();
+    broker.inject_request_headers("https://unrelated.example/", &mut headers);
+    assert_eq!(headers, original);
+    broker.inject_request_headers("https://custom.example/", &mut headers);
+    assert_eq!(headers[AUTHORIZATION], "Bearer masked");
+    let mut restored = alias_dummy.clone();
+    assert!(broker.restore_text(&mut restored));
+    assert_eq!(restored, "masked");
+}
+
+#[test]
 fn configured_provider_reload_preserves_credentials_and_rejects_overlapping_sources() {
     let token = "provider_abcdefghijklmnopqrstuvwx";
     let provider = CredentialProviderConfig {
@@ -2169,7 +2264,7 @@ fn configured_provider_reload_preserves_credentials_and_rejects_overlapping_sour
 #[test]
 fn configured_provider_preserves_bearer_token_basic_and_custom_header_auth() {
     let token = "provider_abcdefghijklmnopqrstuvwx";
-    let github_token = "ghp_abcdefghijklmnopqrstuvwxyz1234567890";
+    let github_token = "ghp_syntheticfixture5syntheticfixture5sy"; // secret-guard: allow (synthetic test credential)
     for (method, header_name, header_value) in [
         (
             CredentialAuthMethod::Bearer,
@@ -2452,7 +2547,7 @@ fn configured_provider_does_not_break_usable_auth_methods_when_generating_dummie
 fn configured_basic_dummies_preserve_username_password_and_whole_value_auth() {
     let token = "provider_abcdefghijklmnopqrstuvwx";
     let second = "provider_zyxwvutsrqponmlkjihgfedcb";
-    let github = "ghp_abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH";
+    let github = "ghp_syntheticfixture7syntheticfixture7syABCDEFGH"; // secret-guard: allow (synthetic test credential)
     let broker = broker_for(CredentialProviderConfig {
         env: vec![
             "PROVIDER_TOKEN".to_string(),
@@ -2735,13 +2830,13 @@ fn explicit_invalid_destinations_clear_previous_dynamic_bindings() {
         (
             "GH_ENTERPRISE_TOKEN",
             "GH_HOST",
-            "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            "ghp_syntheticfixture7syntheticfixture7sy", // secret-guard: allow (synthetic test credential)
             None,
         ),
         (
             "GITHUB_ENTERPRISE_TOKEN",
             "GH_HOST",
-            "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+            "ghp_syntheticfixture7syntheticfixture7sy", // secret-guard: allow (synthetic test credential)
             None,
         ),
         (

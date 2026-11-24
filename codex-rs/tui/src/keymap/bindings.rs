@@ -103,15 +103,65 @@ pub(crate) struct KeymapActionId {
 }
 
 impl KeymapActionId {
-    /// Activity focus and Find remain active while transcript groups use list navigation.
+    pub(crate) fn is_side_pane(self) -> bool {
+        self.context == KeymapContext::Global
+            && matches!(
+                self.action,
+                "focus_main_composer"
+                    | "focus_sidebar_content"
+                    | "focus_sidebar_tabs"
+                    | "hide_pane"
+                    | "close_sidebar_tab"
+                    | "sidebar_up"
+                    | "sidebar_down"
+                    | "focus_pane_left"
+                    | "focus_pane_right"
+                    | "minimize_pane_width"
+                    | "maximize_pane_width"
+                    | "equalize_pane_widths"
+                    | "resize_panes"
+                    | "move_divider_left"
+                    | "move_divider_right"
+                    | "toggle_pane_zoom"
+            )
+    }
+
+    /// Whether two actions can be active together, including list-specific exceptions.
     pub(super) fn overlaps(self, other: Self) -> bool {
-        self.context.overlaps(other.context)
-            || (self.context == KeymapContext::Global
-                && matches!(self.action, "focus_activity" | "find_transcript")
-                && other.context == KeymapContext::List)
-            || (other.context == KeymapContext::Global
-                && matches!(other.action, "focus_activity" | "find_transcript")
-                && self.context == KeymapContext::List)
+        use KeymapContext::Chat;
+        use KeymapContext::Global;
+        use KeymapContext::List;
+
+        if self.is_side_pane() && matches!(other.context, List | KeymapContext::Pager)
+            || other.is_side_pane() && matches!(self.context, List | KeymapContext::Pager)
+        {
+            return true;
+        }
+        let edit = |id: Self| {
+            id.context == KeymapContext::Composer && matches!(id.action, "undo" | "redo")
+        };
+        if edit(self) && other.context.allows_plain_chord_prefix()
+            || edit(other) && self.context.allows_plain_chord_prefix()
+        {
+            return false;
+        }
+        match (self.context, other.context) {
+            // Presets cannot open while a list owns input.
+            (Chat, List) => self.action != "open_presets",
+            (List, Chat) => other.action != "open_presets",
+
+            // Activity focus, Find, and selection remain available during list navigation.
+            (Global, List) => matches!(
+                self.action,
+                "focus_activity" | "find_transcript" | "select_transcript"
+            ),
+            (List, Global) => matches!(
+                other.action,
+                "focus_activity" | "find_transcript" | "select_transcript"
+            ),
+
+            _ => self.context.overlaps(other.context),
+        }
     }
 
     pub(crate) fn config_path(self) -> String {
@@ -211,6 +261,7 @@ macro_rules! define_runtime_action_bindings {
             action: &str,
         ) -> Option<&'a [KeyBinding]> {
             match (context, action) {
+                ("global", "leader") => Some(runtime_keymap.chords.leader.as_slice()),
                 $(
                     $(
                         ($context, stringify!($action)) => {
@@ -269,10 +320,29 @@ macro_rules! define_runtime_action_bindings {
 
 define_runtime_action_bindings! {
     "global" => Global, app, global [
+        change_host,
+        choose_cloud_environment,
         open_agents,
         open_transcript,
         find_transcript,
+        select_transcript,
         focus_activity,
+        focus_main_composer,
+        focus_sidebar_content,
+        focus_sidebar_tabs,
+        hide_pane,
+        close_sidebar_tab,
+        sidebar_up,
+        sidebar_down,
+        focus_pane_left,
+        focus_pane_right,
+        minimize_pane_width,
+        maximize_pane_width,
+        equalize_pane_widths,
+        resize_panes,
+        move_divider_left,
+        move_divider_right,
+        toggle_pane_zoom,
         open_warnings => runtime_only,
         open_external_editor,
         copy,
@@ -283,6 +353,7 @@ define_runtime_action_bindings! {
         toggle_side_conversation,
     ],
     "chat" => Chat, chat, chat [
+        open_presets,
         toggle_voice,
         interrupt_turn,
         decrease_reasoning_effort,
@@ -300,6 +371,8 @@ define_runtime_action_bindings! {
         toggle_shortcuts,
         history_search_previous,
         history_search_next,
+        undo,
+        redo,
     ],
     "editor" => Editor, editor, editor [
         insert_newline,
@@ -404,6 +477,7 @@ define_runtime_action_bindings! {
         close,
         close_transcript,
         find,
+        mark_markdown,
     ],
     "list" => List, list, list [
         move_up,
@@ -418,6 +492,8 @@ define_runtime_action_bindings! {
         cancel,
     ],
     "agents" => Agents, agents, agents [
+        next_group,
+        previous_group,
         resume,
         search,
         new_task,

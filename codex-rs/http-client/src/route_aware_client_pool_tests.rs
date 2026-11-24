@@ -24,6 +24,57 @@ use crate::OutboundProxyPolicy;
 use crate::request_draft::RequestDraft;
 
 #[tokio::test]
+async fn redirects_honor_sensitive_header_protection_without_changing_default_behavior() {
+    for policy in [
+        OutboundProxyPolicy::ReqwestDefault,
+        OutboundProxyPolicy::RespectSystemProxy,
+    ] {
+        for protect_sensitive_headers in [false, true] {
+            let (target, target_server) = spawn_response_server(vec![
+                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok".into(),
+            ]);
+            let (source, source_server) = spawn_response_server(vec![
+            "HTTP/1.1 307 Temporary Redirect\r\nLocation: /same\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+            format!("HTTP/1.1 307 Temporary Redirect\r\nLocation: http://{target}/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"),
+        ]);
+            let url = format!("http://{source}/start");
+            let factory = HttpClientFactory::new(policy);
+            let factory = if protect_sensitive_headers {
+                factory.with_sensitive_header_protection()
+            } else {
+                factory
+            };
+            let client = factory.build_client(&url, ClientRouteClass::Api).unwrap();
+            let mut proof = HeaderValue::from_static("private-proof");
+            proof.set_sensitive(/*val*/ true);
+            let response = client
+                .get(&url)
+                .header("authorization", "Bearer private-token")
+                .header("x-custom-proof", proof)
+                .header("x-public", "retained")
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.text().await.unwrap(), "ok");
+            let source_requests = source_server.join().unwrap();
+            assert_eq!(source_requests.len(), 2);
+            for request in source_requests {
+                assert!(request.contains("authorization: Bearer private-token\r\n"));
+                assert!(request.contains("x-custom-proof: private-proof\r\n"));
+            }
+            let target_requests = target_server.join().unwrap();
+            assert_eq!(target_requests.len(), 1);
+            assert!(!target_requests[0].contains("private-token"));
+            assert_eq!(
+                target_requests[0].contains("private-proof"),
+                !protect_sensitive_headers
+            );
+            assert!(target_requests[0].contains("x-public: retained\r\n"));
+        }
+    }
+}
+
+#[tokio::test]
 async fn initial_url_auth_is_built_once_after_routing_and_retained_only_on_same_origin_redirects() {
     let (first_proxy, first_server) = spawn_response_server(vec![
         "HTTP/1.1 302 Found\r\nLocation: http://other:secret@origin.test/same?route=2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
@@ -176,6 +227,15 @@ async fn direct_and_routed_clients_build_equivalent_requests() {
 
 #[tokio::test]
 async fn request_failures_classify_real_untrusted_certificate_handshakes() {
+    assert_untrusted_certificate_classified(HttpClientBuilder::new()).await;
+}
+
+#[tokio::test]
+async fn request_failures_classify_real_untrusted_rustls_certificate_handshakes() {
+    assert_untrusted_certificate_classified(HttpClientBuilder::new().with_rustls_tls()).await;
+}
+
+async fn assert_untrusted_certificate_classified(client_builder: HttpClientBuilder) {
     codex_utils_rustls_provider::ensure_rustls_crypto_provider();
     let certificate = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
         .expect("self-signed certificate should generate");
@@ -201,9 +261,10 @@ async fn request_failures_classify_real_untrusted_certificate_handshakes() {
             .expect("TLS server connection should be created");
         let _ = connection.complete_io(&mut stream);
     });
-    let pool = RouteAwareClientPool::new_without_request_logging(
+    let pool = RouteAwareClientPool::with_builder(
         HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
         ClientRouteClass::Api,
+        client_builder.without_request_logging(),
     );
 
     let mut request = reqwest::Request::new(
@@ -316,7 +377,12 @@ async fn legacy_custom_ca_fallback_is_limited_to_reqwest_default() {
             .expect("invalid CA fixture should be written");
 
         for ca_env in ["CODEX_CA_CERTIFICATE", "SSL_CERT_FILE"] {
-            for policy_name in ["reqwest-default", "respect-system-proxy"] {
+            for policy_name in [
+                "reqwest-default",
+                "respect-system-proxy",
+                "strict-reqwest-default",
+                "strict-direct",
+            ] {
                 let output = std::process::Command::new(
                     std::env::current_exe().expect("test executable should be available"),
                 )
@@ -342,18 +408,24 @@ async fn legacy_custom_ca_fallback_is_limited_to_reqwest_default() {
     };
 
     let outbound_proxy_policy = match policy_name.as_str() {
-        "reqwest-default" => OutboundProxyPolicy::ReqwestDefault,
+        "reqwest-default" | "strict-reqwest-default" | "strict-direct" => {
+            OutboundProxyPolicy::ReqwestDefault
+        }
         "respect-system-proxy" => OutboundProxyPolicy::RespectSystemProxy,
         _ => panic!("unexpected test proxy policy: {policy_name}"),
     };
     let pool = RouteAwareClientPool::with_chatgpt_cloudflare_cookies(
         HttpClientFactory::new(outbound_proxy_policy),
         ClientRouteClass::Other,
-    )
-    .with_legacy_custom_ca_fallback();
+    );
+    let pool = match policy_name.as_str() {
+        "strict-reqwest-default" => pool,
+        "strict-direct" => pool.with_direct_proxy(),
+        _ => pool.with_legacy_custom_ca_fallback(),
+    };
 
-    match outbound_proxy_policy {
-        OutboundProxyPolicy::ReqwestDefault => {
+    match policy_name.as_str() {
+        "reqwest-default" => {
             let (address, server) = spawn_response_server(vec![
                 "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string(),
             ]);
@@ -367,13 +439,19 @@ async fn legacy_custom_ca_fallback_is_limited_to_reqwest_default() {
             let requests = server.join().expect("response server should finish");
             assert_eq!(requests.len(), 1);
         }
-        OutboundProxyPolicy::RespectSystemProxy => {
+        _ => {
             let error = pool
                 .client_for_url_with_resolver("http://127.0.0.1/update", |_| async {
-                    Ok(OutboundProxyRoute::Direct)
+                    if policy_name == "strict-direct" {
+                        Err(io::Error::other(
+                            "direct routing must not need proxy discovery",
+                        ))
+                    } else {
+                        Ok(OutboundProxyRoute::Direct)
+                    }
                 })
                 .await
-                .expect_err("system-proxy routes should reject invalid custom CAs");
+                .expect_err("strict routes should reject invalid custom CAs");
 
             assert!(matches!(error, RouteAwareClientPoolError::Build(_)));
         }

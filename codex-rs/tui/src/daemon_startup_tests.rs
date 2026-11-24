@@ -1,31 +1,20 @@
 //! Opportunistic attachment may fall back; automatic startup requires a shared server.
 
-use super::*;
 use crate::legacy_core::config::ConfigBuilder;
+use crate::*;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
 #[test]
-fn audited_overrides_allow_daemon_without_allowing_arbitrary_config() {
+fn feature_overrides_allow_daemon_without_allowing_arbitrary_config() {
     for (raw, eligible) in [
-        ("features.transcript_v2=true", true),
-        ("features.transcript_v2=false", true),
-        ("features={transcript_v2=true}", true),
-        ("features.transcript_v2='true'", false),
-        ("features.worktrees=true", true),
-        ("features.worktrees=false", true),
-        ("features={worktrees=true}", true),
-        (
-            "features={worktrees=true,api_key_model_discovery=false}",
-            true,
-        ),
-        ("features.auth_elicitation=false", true),
-        ("features.code_mode_host=false", true),
-        ("features.mcp_oauth_refresh_coordination=false", true),
+        ("features.app_server_websocket_compression=true", true),
+        ("features.app_server_websocket_compression=false", true),
+        ("features.worktrees='true'", false),
+        ("features={worktrees=true,shell_tool=false}", true),
         ("suppress_unstable_features_warning=true", true),
         ("suppress_unstable_features_warning='true'", false),
-        ("features={worktrees=true,shell_tool=false}", false),
-        ("features.shell_tool=false", false),
+        ("features.shell_tool=false", true),
         ("features.worktrees.enabled=true", false),
         ("tui.fullscreen_transcript=true", true),
         ("tui.fullscreen_transcript=false", true),
@@ -56,84 +45,21 @@ fn audited_overrides_allow_daemon_without_allowing_arbitrary_config() {
 }
 
 #[test]
-fn monorepo_wrapper_overrides_are_eligible_and_select_only_server_features() {
-    let overrides = codex_utils_cli::CliConfigOverrides {
-        raw_overrides: [
-            "features.realtime_conversation=true",
-            "features.worktrees=true",
-            "features.remote_models=true",
-            "features.api_key_model_discovery=true",
-            "features.request_rule=true",
-            "features.auth_elicitation=true",
-            "features.mcp_oauth_refresh_coordination=true",
-            "features.responses_websockets_v2=true",
-            "features.workspace_owner_usage_nudge=true",
-            "features.tool_search_always_defer_mcp_tools=true",
-            "features.remote_compaction_v2=true",
-            "features.standalone_web_search=true",
-            "features.multi_agent_mode=true",
-            "features.code_mode_host=true",
-            "suppress_unstable_features_warning=true",
-        ]
-        .map(str::to_string)
-        .to_vec(),
-    }
-    .parse_overrides()
-    .unwrap();
-    assert_eq!(
-        daemon_startup::config_exclusion(
-            &overrides,
-            &LoaderOverrides::default(),
-            /*strict_config*/ false,
-            /*bypass_hook_trust*/ false,
-        ),
-        None
-    );
-    assert_eq!(
-        daemon_startup::server_features(&overrides),
-        std::collections::BTreeMap::from([
-            ("api_key_model_discovery".to_string(), true),
-            ("auth_elicitation".to_string(), true),
-            ("code_mode_host".to_string(), true),
-            ("mcp_oauth_refresh_coordination".to_string(), true),
-        ])
-    );
-}
-
-#[test]
-fn daemon_features_follow_cli_table_replacement_and_last_value() {
-    let overrides = codex_utils_cli::CliConfigOverrides {
-        raw_overrides: [
-            "features.api_key_model_discovery=true",
-            "features={code_mode_host=false}",
-            "features.code_mode_host=true",
-        ]
-        .map(str::to_string)
-        .to_vec(),
-    }
-    .parse_overrides()
-    .unwrap();
-    assert_eq!(
-        daemon_startup::server_features(&overrides),
-        std::collections::BTreeMap::from([("code_mode_host".to_string(), true),])
-    );
-}
-
-#[test]
-fn daemon_launch_telemetry_records_once_on_connection_or_early_return() {
-    for connected in [false, true] {
+fn daemon_launch_telemetry_records_once_on_connection_update_or_early_return() {
+    for mode in [Some("in_process"), Some("update_requested"), None] {
         let observations = std::cell::RefCell::new(Vec::new());
-        let launch = daemon_telemetry::Launch(Some(|target: &AppServerTarget, actual: bool| {
-            observations.borrow_mut().push((target.clone(), actual));
+        let launch = daemon_telemetry::Launch(Some(|actual| {
+            observations.borrow_mut().push(actual);
+            Vec::new()
         }));
-        if connected {
-            launch.record(&AppServerTarget::Embedded, connected);
+        if let Some(mode) = mode {
+            launch.record(mode);
         } else {
             drop(launch);
         }
         assert_eq!(
             observations.into_inner(),
-            vec![(AppServerTarget::Embedded, connected)]
+            vec![mode.unwrap_or("unconfirmed")]
         );
     }
 }
@@ -150,34 +76,54 @@ async fn daemon_feature_compatibility_respects_required_and_optional_attachment(
     for allow_embedded_fallback in [false, true] {
         for scenario in [
             "matching",
-            "stale overrides",
+            "unreachable daemon",
             "conflicting client",
+            "explicit enable",
+            "mixed flags",
+            "missing enabled",
+            "managed",
+            "legacy managed",
+            "old requirements server",
             "unsupported RPC",
         ] {
+            let cli_overrides = codex_utils_cli::CliConfigOverrides {
+                raw_overrides: match scenario {
+                    "matching" => vec![
+                        "features.instant_interrupt=true",
+                        "features.remote_compaction_v2=true",
+                        "features.shell_tool=true",
+                        "features.zz_missing=false",
+                    ],
+                    "unreachable daemon" => Vec::new(),
+                    "explicit enable" => vec!["features.api_key_model_discovery=true"],
+                    "mixed flags" => vec![
+                        "features.zz_overridden=true",
+                        "features={api_key_model_discovery=false,code_mode_host=false,instant_interrupt=true}",
+                        "features.code_mode_host=true",
+                    ],
+                    "missing enabled" => vec!["features.zz_missing=true"],
+                    _ => vec!["features.api_key_model_discovery=false"],
+                }
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            }
+            .parse_overrides()
+            .unwrap();
             let home = TempDir::new()?;
-            let mut config = ConfigBuilder::default()
+            let config = ConfigBuilder::default()
                 .codex_home(home.path().to_path_buf())
                 .loader_overrides(LoaderOverrides::without_managed_config_for_tests())
                 .build()
                 .await?;
-            config.features.enable(Feature::ApiKeyModelDiscovery)?;
-            if scenario == "conflicting client" {
-                config.features.disable(Feature::ApiKeyModelDiscovery)?;
-            }
             let features = [
-                Feature::ApiKeyModelDiscovery,
-                Feature::CodeModeHost,
-                Feature::AuthElicitation,
-                Feature::McpOAuthRefreshCoordination,
-            ].map(|feature| {
-                let enabled = if feature == Feature::ApiKeyModelDiscovery && scenario == "stale overrides" {
-                    false
-                } else if feature == Feature::ApiKeyModelDiscovery && scenario == "conflicting client" {
-                    true
-                } else {
-                    config.features.enabled(feature)
-                };
-                json!({"name": feature.key(), "stage": "beta", "enabled": enabled, "defaultEnabled": false})
+                (Feature::ApiKeyModelDiscovery, scenario != "explicit enable", "beta"),
+                (Feature::CodeModeHost, false, "beta"),
+                (Feature::InstantInterrupt, true, "beta"),
+                (Feature::RemoteCompactionV2, false, "stable"),
+                (Feature::ShellTool, false, "removed"),
+            ].map(|(feature, enabled, stage)| {
+                json!({"name": feature.key(), "stage": stage, "enabled": enabled, "defaultEnabled": false})
             });
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
             let target = AppServerTarget::LocalDaemon {
@@ -187,6 +133,16 @@ async fn daemon_feature_compatibility_respects_required_and_optional_attachment(
                 },
                 allow_embedded_fallback,
             };
+            if cli_overrides.is_empty() {
+                drop(listener);
+                let result =
+                    daemon_startup::compatibility_warning(&target, &config, &cli_overrides).await;
+                assert!(matches!(
+                    (allow_embedded_fallback, result),
+                    (true, Ok(Some(_))) | (false, Err(_))
+                ));
+                continue;
+            }
             let server = tokio::spawn(async move {
                 let (stream, _) = listener.accept().await.unwrap();
                 let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
@@ -195,16 +151,34 @@ async fn daemon_feature_compatibility_respects_required_and_optional_attachment(
                     else {
                         continue;
                     };
-                    let response = if request.method == "initialize" {
-                        json!({"id": request.id, "result": {"userAgent": "daemon-test"}})
-                    } else {
-                        assert_eq!(request.method, "experimentalFeature/list");
-                        assert_eq!(request.params.unwrap()["threadId"], json!(null));
-                        if scenario == "unsupported RPC" {
+                    let response = match request.method.as_str() {
+                        "initialize" => {
+                            json!({"id": request.id, "result": {"userAgent": "daemon-test"}})
+                        }
+                        "config/read" => {
+                            json!({"id": request.id, "result": {"config": {}, "layers": [{
+                                "name": {"type": "legacyManagedConfigTomlFromFile"}, "config":
+                                if scenario == "legacy managed" {
+                                    json!({"features": {"api_key_model_discovery": true}})
+                                } else { json!({}) }
+                            }]}})
+                        }
+                        "configRequirements/read" if scenario == "old requirements server" => {
+                            json!({"id": request.id, "error": {"code": -32600, "message": "Invalid request: unknown variant `configRequirements/read`"}})
+                        }
+                        "configRequirements/read" => json!({"id": request.id, "result": {
+                            "requirements": if scenario == "managed" {
+                                json!({"featureRequirements": {"api_key_model_discovery": true}})
+                            } else { json!(null) }
+                        }}),
+                        "experimentalFeature/list" if scenario == "unsupported RPC" => {
                             json!({"id": request.id, "error": {"code": -32601, "message": "method not found"}})
-                        } else {
+                        }
+                        "experimentalFeature/list" => {
+                            assert_eq!(request.params.unwrap()["threadId"], json!(null));
                             json!({"id": request.id, "result": {"data": features, "nextCursor": null}})
                         }
+                        _ => panic!("unexpected request: {}", request.method),
                     };
                     socket
                         .send(Message::Text(response.to_string().into()))
@@ -212,29 +186,42 @@ async fn daemon_feature_compatibility_respects_required_and_optional_attachment(
                         .unwrap();
                 }
             });
-            let result = daemon_startup::compatibility_warning(&target, &config).await;
+            let result =
+                daemon_startup::compatibility_warning(&target, &config, &cli_overrides).await;
             server.await?;
-            if scenario == "matching" {
+            if matches!(scenario, "matching" | "managed" | "legacy managed") {
                 assert_eq!(result?, None);
                 continue;
             }
             let reason = match scenario {
-                "stale overrides" => "This session requires api_key_model_discovery to be enabled",
-                "conflicting client" => {
+                "explicit enable" => "This session requires api_key_model_discovery to be enabled",
+                "conflicting client" | "old requirements server" | "mixed flags" => {
                     "This session requires api_key_model_discovery to be disabled"
                 }
+                "missing enabled" => "This session requires zz_missing to be enabled",
                 "unsupported RPC" => "Experimental feature request failed",
                 _ => unreachable!(),
             };
-            if allow_embedded_fallback {
+            let restartable = scenario != "unsupported RPC";
+            if allow_embedded_fallback && !restartable {
+                let warning = result?.expect("optional attachment should fall back");
                 assert_eq!(
-                    result?,
-                    Some(format!(
-                        "Running without the shared background server: {reason}."
-                    ))
+                    warning,
+                    format!("Running without the shared background server: {reason}.")
                 );
             } else {
-                let error = result.unwrap_err().to_string();
+                let error = result.unwrap_err();
+                assert_eq!(error.restart_features.is_some(), restartable);
+                if scenario == "mixed flags" {
+                    assert_eq!(
+                        error.restart_features,
+                        Some(std::collections::BTreeMap::from([
+                            ("api_key_model_discovery".to_string(), false),
+                            ("code_mode_host".to_string(), true),
+                        ]))
+                    );
+                }
+                let error = error.to_string();
                 assert_eq!(
                     error,
                     format!(
@@ -242,7 +229,7 @@ async fn daemon_feature_compatibility_respects_required_and_optional_attachment(
                         daemon_startup::FAILURE_HINT
                     )
                 );
-                if scenario == "stale overrides" {
+                if scenario == "explicit enable" && !allow_embedded_fallback {
                     insta::assert_snapshot!("daemon_feature_mismatch_error", error);
                 }
             }
@@ -335,7 +322,11 @@ async fn daemon_startup_falls_back_only_for_implicit_endpoints() -> color_eyre::
             assert_eq!(target, original_target);
             assert!(state_db.is_none());
         } else {
-            let server = AppServerSession::new(result?, target.thread_params_mode());
+            let server = AppServerSession::new(
+                crate::backend_id::BackendId::new(),
+                result?,
+                target.thread_params_mode(),
+            );
             assert!(server.uses_embedded_app_server());
             assert_eq!(target, AppServerTarget::Embedded);
             assert!(state_db.is_some());
@@ -376,8 +367,8 @@ fn daemon_eligibility_preserves_launch_options_and_explains_exclusions() {
             expected
         );
     }
-    let mut cli = Cli::parse_from(["codex"]);
-    let overrides = vec![("web_search".into(), toml::Value::String("live".into()))];
+    let cli = Cli::parse_from(["codex"]);
+    let overrides = [("web_search".into(), toml::Value::String("live".into()))];
     let loader = LoaderOverrides {
         ignore_user_config: true,
         ..Default::default()
@@ -411,18 +402,6 @@ fn daemon_eligibility_preserves_launch_options_and_explains_exclusions() {
             Some(expected)
         );
     }
-    cli.agents_overview = true;
-    cli.strict_config = true;
-    assert_eq!(
-        daemon_startup::exclusion(
-            &cli,
-            &overrides,
-            &LoaderOverrides::default(),
-            /*workload_identity_selected*/ false,
-            /*exec_server_url*/ None
-        ),
-        None
-    );
 }
 
 #[test]
@@ -434,6 +413,10 @@ fn daemon_exclusion_warning_snapshot() {
         format!(
             "Running without the shared background server: {} requires embedded mode.",
             daemon_startup::WSL_DRVFS_EXCLUSION
+        ),
+        format!(
+            "Running without the shared background server: {} requires embedded mode.",
+            daemon_startup::GATEWAY_SIGN_IN_EXCLUSION
         ),
     ]);
     let text = cell

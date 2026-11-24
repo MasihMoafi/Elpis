@@ -7,6 +7,7 @@ pub(crate) mod trace_context;
 
 mod agent_response;
 mod guardian_assessment;
+mod headers_helper;
 mod network_policy;
 mod otlp;
 mod skill_invocation;
@@ -21,6 +22,7 @@ use strum_macros::Display;
 pub use crate::agent_response::AgentResponseContext;
 pub use crate::agent_response::AgentResponseLogger;
 pub use crate::config::OtelExporter;
+pub use crate::config::OtelHeadersHelper;
 pub use crate::config::OtelHttpProtocol;
 pub use crate::config::OtelSettings;
 pub use crate::config::OtelTlsConfig;
@@ -47,6 +49,7 @@ pub use crate::trace_context::span_w3c_trace_context;
 pub use crate::trace_context::traceparent_context_from_env;
 pub use crate::trace_context::validate_tracestate_entries;
 pub use crate::trace_context::validate_tracestate_member;
+pub use crate::trace_context::w3c_trace_context_from_context;
 pub use codex_utils_string::sanitize_metric_tag_value;
 
 #[derive(Debug, Clone, Serialize, Display)]

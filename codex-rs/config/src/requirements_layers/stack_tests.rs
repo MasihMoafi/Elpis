@@ -6,6 +6,7 @@ use super::compose_requirements_for_hostname_and_hook_directory;
 use super::compose_requirements_with_hostname_resolver;
 use crate::ConfigRequirementsToml;
 use crate::ConfigRequirementsWithSources;
+use crate::OtelHeadersHelperTargets;
 use crate::RequirementSource;
 use crate::Sourced;
 use codex_protocol::protocol::AskForApproval;
@@ -48,7 +49,16 @@ fn compose_with_hook_directory_field(
 }
 
 fn expected_requirements(contents: impl AsRef<str>) -> ConfigRequirementsToml {
-    toml::from_str(contents.as_ref()).expect("parse expected requirements TOML")
+    let mut expected: ConfigRequirementsToml =
+        toml::from_str(contents.as_ref()).expect("parse expected requirements TOML");
+    if let Some(shared) = expected
+        .permissions
+        .as_ref()
+        .and_then(|p| p.network.as_deref())
+    {
+        expected.network = Some(shared.clone());
+    }
+    expected
 }
 
 #[test]
@@ -102,6 +112,7 @@ allowed_approval_policies = ["on-request"]
 allowed_sandbox_modes = ["workspace-write"]
 default_permissions = ":workspace"
 allow_remote_control = true
+unsafe_enforce_sqlite_journal_mode = false
 additional_developer_instructions = "Lower-priority instructions."
 
 [allowed_permission_profiles]
@@ -117,6 +128,7 @@ allowed_approval_policies = ["never"]
 allowed_sandbox_modes = ["read-only"]
 default_permissions = ":read-only"
 allow_remote_control = false
+unsafe_enforce_sqlite_journal_mode = true
 additional_developer_instructions = ""
 
 [allowed_permission_profiles]
@@ -136,6 +148,7 @@ allowed_approval_policies = ["never"]
 allowed_sandbox_modes = ["read-only"]
 default_permissions = ":read-only"
 allow_remote_control = false
+unsafe_enforce_sqlite_journal_mode = true
 additional_developer_instructions = ""
 
 [allowed_permission_profiles]
@@ -333,6 +346,192 @@ timeout_ms = 10000
 refresh_interval_ms = 12345
 "#,
             ))
+        );
+    }
+}
+
+#[test]
+fn otel_requirements_compose_exact_values_atomic_exporters_and_metadata() {
+    let low_dir = tempdir().expect("low-priority requirements directory");
+    let high_dir = tempdir().expect("high-priority requirements directory");
+    let low_base = AbsolutePathBuf::from_absolute_path(low_dir.path()).expect("absolute low base");
+    let high_base =
+        AbsolutePathBuf::from_absolute_path(high_dir.path()).expect("absolute high base");
+
+    let low = layer(
+        "req_low",
+        "Low",
+        r#"
+[otel]
+tool_result = { max_bytes = 1024 }
+log_user_prompt = true
+environment = "low"
+exporter = { otlp-http = { endpoint = "https://low.example", protocol = "json", headers = { stale = "low" }, tls = { ca-certificate = "low-ca.pem" } } }
+trace_exporter = { otlp-grpc = { endpoint = "https://low.example", tls = { client-certificate = "low-client.pem" } } }
+metrics_exporter = "statsig"
+span_attributes = { shared = "low", lower = "preserved" }
+tracestate = { shared = { tenant = "low", region = "us" }, lower = { tenant = "preserved" }, empty = {} }
+"#,
+    )
+    .with_base_dir(low_base);
+    let high = layer(
+        "req_high",
+        "High",
+        r#"
+[otel]
+tool_result = { max_bytes = 4096 }
+log_user_prompt = false
+environment = "high"
+exporter = { otlp-http = { endpoint = "https://high.example", protocol = "binary", tls = { ca-certificate = "high-ca.pem" } } }
+metrics_exporter = "none"
+span_attributes = { shared = "high", higher = "added" }
+tracestate = { shared = { tenant = "replacement" }, lower = {}, higher = { tenant = "added" } }
+"#,
+    )
+    .with_base_dir(high_base);
+    let expected_source = RequirementSource::composite([high.source.clone(), low.source.clone()]);
+    let composed = compose_requirements_for_hostname(
+        vec![
+            low,
+            high,
+            layer(
+                "empty",
+                "Empty",
+                "[otel]\nspan_attributes = {}\ntracestate = { lower = {} }",
+            ),
+        ],
+        /*hostname*/ None,
+    )
+    .expect("compose OTEL requirements")
+    .expect("requirements present")
+    .otel
+    .expect("OTEL requirements present");
+    assert_eq!(composed.source, expected_source);
+
+    let expected = r#"
+[otel]
+tool_result = { max_bytes = 4096 }
+log_user_prompt = false
+environment = "high"
+exporter = { otlp-http = { endpoint = "https://high.example", protocol = "binary", tls = { ca-certificate = '$HIGH_CA' } } }
+trace_exporter = { otlp-grpc = { endpoint = "https://low.example", tls = { client-certificate = '$LOW_CLIENT' } } }
+metrics_exporter = "none"
+span_attributes = { shared = "high", lower = "preserved", higher = "added" }
+tracestate = { shared = { tenant = "replacement", region = "us" }, lower = { tenant = "preserved" }, higher = { tenant = "added" } }
+"#
+    .replace(
+        "$HIGH_CA",
+        &high_dir.path().join("high-ca.pem").display().to_string(),
+    )
+    .replace(
+        "$LOW_CLIENT",
+        &low_dir.path().join("low-client.pem").display().to_string(),
+    );
+    assert_eq!(
+        composed.value,
+        *expected_requirements(expected).otel.unwrap()
+    );
+    assert_eq!(
+        compose(vec![layer(
+            "mixed",
+            "Mixed",
+            "[otel]\nexporter = 'none'\nspan_attributes = {}\ntracestate = { empty = {} }",
+        )]),
+        Ok(Some(expected_requirements("[otel]\nexporter = 'none'"))),
+    );
+
+    for empty in [
+        "[otel]",
+        "[otel.span_attributes]",
+        "[otel.tracestate.empty]",
+    ] {
+        assert_eq!(
+            compose(vec![layer("empty", "Empty", empty)]),
+            Ok(None),
+            "{empty}",
+        );
+    }
+}
+
+#[test]
+fn otel_managed_headers_follow_each_exporters_owning_layer() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let system_command = if cfg!(windows) {
+        "C:/company/headers.exe"
+    } else {
+        "/opt/company/headers"
+    };
+    let mdm_command = if cfg!(windows) {
+        "C:/company/mdm-headers.exe"
+    } else {
+        "/opt/company/mdm-headers"
+    };
+    let system = RequirementsLayerEntry::from_toml(
+        RequirementSource::SystemRequirementsToml {
+            file: AbsolutePathBuf::try_from(dir.path().join("requirements.toml"))?,
+        },
+        r#"[otel]
+headers_helper = "$HELPER"
+exporter = { otlp-http = { endpoint = "https://collector.example/logs", protocol = "binary" } }
+trace_exporter = { otlp-http = { endpoint = "https://collector.example/traces", protocol = "binary" } }
+metrics_exporter = { otlp-http = { endpoint = "https://collector.example/metrics", protocol = "binary" } }
+"#.replace("$HELPER", system_command),
+    );
+    let cloud = layer(
+        "cloud",
+        "Cloud",
+        r#"[otel]
+trace_exporter = { otlp-http = { endpoint = "https://other.example/traces", protocol = "binary" } }
+"#,
+    );
+    let mdm = RequirementsLayerEntry::from_toml(
+        RequirementSource::MdmManagedPreferences {
+            domain: "com.openai.codex".into(),
+            key: "requirements".into(),
+        },
+        r#"[otel]
+headers_helper = "$HELPER"
+metrics_exporter = { otlp-http = { endpoint = "https://mdm.example/metrics", protocol = "binary" } }
+exporter = { otlp-http = { endpoint = "", protocol = "binary" } }
+"#
+        .replace("$HELPER", mdm_command),
+    );
+
+    for (layers, command, logs, traces, metrics) in [
+        (vec![system.clone()], system_command, true, true, true),
+        (
+            vec![system.clone(), cloud.clone()],
+            system_command,
+            true,
+            false,
+            true,
+        ),
+        (vec![system, cloud, mdm], mdm_command, false, false, true),
+    ] {
+        let otel = compose(layers)?.unwrap().otel.unwrap();
+        assert_eq!(otel.headers_helper.as_deref(), Some(command));
+        assert_eq!(
+            otel.headers_helper_targets(),
+            OtelHeadersHelperTargets {
+                logs,
+                traces,
+                metrics
+            }
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn otel_cloud_requirements_cannot_install_or_reschedule_a_helper() {
+    for setting in [
+        "headers_helper = 'headers'",
+        "headers_helper_refresh_interval_ms = 1",
+    ] {
+        let err =
+            compose(vec![layer("cloud", "Cloud", &format!("[otel]\n{setting}"))]).unwrap_err();
+        assert!(
+            matches!(err, RequirementsCompositionError::Parse { message, .. } if message.contains("local managed requirements"))
         );
     }
 }
@@ -619,6 +818,7 @@ alpha = true
         Sourced::new(
             crate::FeatureRequirementsToml {
                 entries: BTreeMap::from([("alpha".to_string(), true), ("beta".to_string(), true),]),
+                ..Default::default()
             },
             RequirementSource::composite([high_source, low_source]),
         )
@@ -706,13 +906,13 @@ fn network_maps_use_regular_toml_merge() {
         composed,
         expected_requirements(
             r#"
-[experimental_network.domains]
+[permissions.network.domains]
 "example.com" = "allow"
 "high.example.com" = "allow"
 "internal.example.com" = "deny"
 "low.example.com" = "deny"
 
-[experimental_network.unix_sockets]
+[permissions.network.unix_sockets]
 "/tmp/admin.sock" = "deny"
 "/tmp/high.sock" = "allow"
 "/tmp/low.sock" = "allow"
@@ -720,6 +920,228 @@ fn network_maps_use_regular_toml_merge() {
 "#
         )
     );
+}
+
+#[test]
+fn network_aliases_merge_with_layer_precedence_and_sources() {
+    for (low_key, high_key) in [
+        ("network_proxy", "experimental_network"),
+        ("experimental_network", "network_proxy"),
+    ] {
+        let low = layer(
+            "req_low",
+            "Low",
+            &format!(
+                "[{low_key}]\nenabled = true\nallow_local_binding = false\n\
+                 [{low_key}.domains]\n'low.example.com' = 'allow'\n'shared.example.com' = 'allow'"
+            ),
+        );
+        let high = layer(
+            "req_high",
+            "High",
+            &format!(
+                "[{high_key}]\nenabled = false\nallow_upstream_proxy = true\n\
+                 [{high_key}.domains]\n'high.example.com' = 'allow'\n'shared.example.com' = 'deny'"
+            ),
+        );
+        let expected_source =
+            RequirementSource::composite([high.source.clone(), low.source.clone()]);
+        let composed = compose_requirements_for_hostname(vec![low, high], /*hostname*/ None)
+            .expect("compose network aliases")
+            .expect("requirements present");
+        let expected: crate::NetworkRequirementsToml = toml::from_str(
+            "enabled = false\nallow_local_binding = false\nallow_upstream_proxy = true\n[domains]\n'low.example.com' = 'allow'\n'high.example.com' = 'allow'\n'shared.example.com' = 'deny'",
+        ).expect("expected network");
+        assert_eq!(
+            composed,
+            ConfigRequirementsWithSources {
+                permissions_network: Some(Box::new(Sourced::new(
+                    expected.clone(),
+                    expected_source
+                ))),
+                ..Default::default()
+            }
+        );
+        let public_view = composed.into_toml();
+        assert_eq!(public_view.network.as_ref(), Some(&expected));
+        assert_eq!(
+            public_view
+                .permissions
+                .and_then(|permissions| permissions.network),
+            Some(Box::new(expected))
+        );
+    }
+}
+
+#[test]
+fn permissions_network_conflicts_with_top_level_network_across_layers() {
+    for table in ["network_proxy", "experimental_network"] {
+        for (root_first, root_values) in [(true, "enabled = true"), (false, "")] {
+            let root = layer("root", "Root", &format!("[{table}]\n{root_values}"));
+            let permissions = layer(
+                "permissions",
+                "Permissions",
+                "[permissions.network]\nenabled = true",
+            );
+            let root_source = root.source.clone();
+            let permissions_source = permissions.source.clone();
+            let layers = if root_first {
+                vec![root, permissions]
+            } else {
+                vec![permissions, root]
+            };
+            let err = compose_requirements_for_hostname(layers, /*hostname*/ None)
+                .expect_err("network requirement surfaces must not coexist")
+                .to_string();
+            assert!(err.contains(&root_source.to_string()), "{err}");
+            assert!(err.contains(&permissions_source.to_string()), "{err}");
+        }
+    }
+}
+
+#[test]
+fn shadowed_allows_agree_across_network_spellings() {
+    let legacy = "[experimental_network]\nallowed_domains = ['a.test', 'b.test']\ndenied_domains = ['a.test', 'b.test']";
+    let expected = expected_requirements(
+        "[permissions.network.domains]\n'a.test' = 'deny'\n'b.test' = 'deny'",
+    );
+    for nested in [
+        "[permissions.network]\nallowed_domains = ['a.test']\ndenied_domains = ['a.test', 'b.test']",
+        "[permissions.network.domains]\n'a.test' = 'deny'\n'b.test' = 'deny'",
+    ] {
+        let dual = format!("{legacy}\n{nested}");
+        assert_eq!(
+            compose(vec![layer("same", "Same", &dual)]).expect("both hosts remain denied"),
+            Some(expected.clone()),
+        );
+    }
+}
+
+#[test]
+fn empty_network_allowlist_clears_inherited_allows() {
+    for table in ["experimental_network", "permissions.network"] {
+        let low = format!(
+            "[{table}]\nallowed_domains = ['inherited.test']\ndenied_domains = ['blocked.test']"
+        );
+        let clear = format!("[{table}]\nallowed_domains = []");
+        assert_eq!(
+            compose(vec![
+                layer("low", "Low", &low),
+                layer("high", "High", &clear)
+            ])
+            .expect("clear inherited allowlist"),
+            Some(expected_requirements(
+                "[permissions.network.domains]\n'blocked.test' = 'deny'"
+            ))
+        );
+    }
+}
+
+#[test]
+fn network_surfaces_in_one_layer_must_agree() {
+    for table in ["network_proxy", "experimental_network"] {
+        for fields in ["", "allowed_domains = []", "description = 'device policy'"] {
+            let entry = layer("device", "Device", &format!("[{table}]\n{fields}"));
+            let expected = Sourced::new(
+                crate::NetworkRequirementsToml::default(),
+                entry.source.clone(),
+            );
+            assert_eq!(
+                compose_requirements_for_hostname([entry], /*hostname*/ None)
+                    .expect("valid legacy input"),
+                Some(ConfigRequirementsWithSources {
+                    permissions_network: Some(Box::new(expected)),
+                    ..Default::default()
+                }),
+            );
+        }
+        let legacy_lists = "allowed_domains = ['MANAGED.TEST.']\ndenied_domains = ['2001:db8::1']";
+        let legacy_map = "domains = { 'MANAGED.TEST.' = 'allow', '2001:db8::1' = 'deny' }";
+        let nested_lists =
+            "allowed_domains = ['managed.test']\ndenied_domains = ['2001:0db8:0:0:0:0:0:1']";
+        let nested_map = "domains = { 'managed.test' = 'allow', '2001:0db8:0:0:0:0:0:1' = 'deny' }";
+        let expected = expected_requirements(format!(
+            "[permissions.network]\n{legacy_lists}\nreview_domains = ['*.First.Test.', 'second.test', '2001:db8::2']"
+        ));
+        for legacy in [legacy_lists, legacy_map] {
+            for nested in [nested_lists, nested_map] {
+                let dual = format!(
+                    "[{table}]\n{legacy}\nreview_domains = ['*.First.Test.', 'second.test', '2001:db8::2']\n\
+                     [permissions.network]\n{nested}\nreview_domains = ['SECOND.TEST.', '?*.first.test', '*.first.test', '2001:0db8:0:0:0:0:0:2']"
+                );
+                assert_eq!(
+                    compose(vec![layer("same", "Same", &dual)]).expect("equivalent copies"),
+                    Some(expected.clone())
+                );
+            }
+        }
+        // An exact allow/deny pair stays a single denial even when only the nested
+        // copy supplies the shadowed allow. The published denial keeps the legacy text.
+        for (left, right, published) in [
+            (
+                "allowed_domains = ['ONE.TEST.']\ndenied_domains = ['ONE.TEST.']",
+                "denied_domains = ['one.test']",
+                "ONE.TEST.",
+            ),
+            (
+                "denied_domains = ['one.test']",
+                "allowed_domains = ['ONE.TEST.']\ndenied_domains = ['ONE.TEST.']",
+                "one.test",
+            ),
+        ] {
+            let dual = format!("[{table}]\n{left}\n[permissions.network]\n{right}");
+            assert_eq!(
+                compose(vec![layer("same", "Same", &dual)]).expect("equivalent list operations"),
+                Some(expected_requirements(format!(
+                    "[permissions.network]\ndenied_domains = ['{published}']"
+                ))),
+            );
+        }
+        for (legacy, nested) in [
+            (
+                "allowed_domains = ['127.0.0.1:*']",
+                "allowed_domains = ['127.0.0.1']",
+            ),
+            (
+                "allowed_domains = ['one.test']",
+                "allowed_domains = ['one.test:443/path']",
+            ),
+            (
+                "review_domains = ['*.one.test']",
+                "review_domains = ['**.ONE.TEST.']",
+            ),
+            (
+                "allowed_domains = ['ONE.TEST.']\ndenied_domains = ['one.test']",
+                "denied_domains = ['one.test']",
+            ),
+        ] {
+            let conflicting = format!("[{table}]\n{legacy}\n[permissions.network]\n{nested}");
+            assert!(matches!(
+                compose(vec![layer("conflict", "Conflict", &conflicting)]),
+                Err(RequirementsCompositionError::Parse { .. })
+            ));
+        }
+        let shadowed = format!(
+            "[{table}]\nallowed_domains = ['host.test']\ndenied_domains = ['host.test']\n[permissions.network]\nallowed_domains = []\ndenied_domains = ['host.test']"
+        );
+        assert!(matches!(
+            compose(vec![layer("dual", "Dual", &shadowed)]),
+            Err(RequirementsCompositionError::Parse { message, .. }) if message.contains("different allowed_domains replacements")
+        ));
+        let entry = layer(
+            "invalid",
+            "Invalid",
+            &format!("[{table}]\n[permissions.network]\nenabled = false"),
+        );
+        let source = entry.source.clone();
+        let err = compose_requirements_for_hostname(vec![entry], /*hostname*/ None)
+            .expect_err("conflicting network requirement surfaces must fail within one layer");
+        assert!(
+            matches!(&err, RequirementsCompositionError::Parse { layer_source, .. } if *layer_source == source),
+            "{err}"
+        );
+        assert!(err.to_string().contains("same network policy"), "{err}");
+    }
 }
 
 #[test]
@@ -1395,6 +1817,77 @@ extends = ":workspace"
 }
 
 #[test]
+fn permissions_network_merges_with_higher_precedence_filesystem_requirements() {
+    let denied_path = if cfg!(windows) {
+        "C:\\secret"
+    } else {
+        "/secret"
+    };
+    let low = layer(
+        "req_low",
+        "Low",
+        "[permissions.network]\nenabled = true\n[permissions.managed]\nextends = ':workspace'",
+    );
+    let high = layer(
+        "req_high",
+        "High",
+        &format!(
+            r#"
+[permissions.filesystem]
+deny_read = [{denied_path:?}]
+
+[permissions.network.domains]
+'example.com' = 'allow'
+"#
+        ),
+    );
+    let network_source = RequirementSource::composite([high.source.clone(), low.source.clone()]);
+    let filesystem_source = high.source.clone();
+    let composed = compose_requirements_for_hostname(
+        [
+            low,
+            high,
+            layer(
+                "profile",
+                "Profile",
+                "[permissions.other]\nextends = ':workspace'\n[permissions.other.network]\nenabled = false",
+            ),
+        ],
+        /*hostname*/ None,
+    )
+    .expect("compose requirements")
+    .expect("requirements present");
+    let effective = crate::ConfigRequirements::try_from(composed.clone()).expect("requirements");
+    assert_eq!(effective.network.expect("network").source, network_source);
+    assert_eq!(
+        effective.filesystem.expect("filesystem").source,
+        filesystem_source
+    );
+    assert_eq!(
+        composed.into_toml(),
+        expected_requirements(format!(
+            r#"
+[permissions.filesystem]
+deny_read = [{denied_path:?}]
+
+[permissions.network]
+enabled = true
+[permissions.network.domains]
+'example.com' = 'allow'
+
+[permissions.other]
+extends = ":workspace"
+[permissions.other.network]
+enabled = false
+
+[permissions.managed]
+extends = ":workspace"
+"#
+        ))
+    );
+}
+
+#[test]
 fn deny_read_only_layers_do_not_leave_empty_permissions_tables() {
     let path = if cfg!(windows) {
         "C:\\secret"
@@ -1610,4 +2103,63 @@ request_headers = [{ name = "x-old", value = "old" }]"#,
         .expect("requirements present");
         assert_eq!(composed, expected_requirements(higher));
     }
+}
+
+#[test]
+fn higher_priority_config_server_replaces_previous_oauth_settings() {
+    let actual = crate::compose_requirements([
+        RequirementsLayerEntry::from_toml(
+            RequirementSource::SystemRequirementsToml {
+                file: AbsolutePathBuf::from_absolute_path(
+                    std::env::temp_dir().join("requirements.toml"),
+                )
+                .unwrap(),
+            },
+            r#"
+[config_server]
+base_url = "https://old.example/settings"
+[config_server.oauth]
+authorization_url = "https://login.old.example/authorize"
+token_url = "https://login.old.example/token"
+client_id = "old-client"
+scopes = ["policy.read"]
+"#,
+        ),
+        RequirementsLayerEntry::from_toml(
+            RequirementSource::LegacyManagedConfigTomlFromMdm,
+            "[config_server]\nbase_url = 'https://new.example/settings'",
+        ),
+    ])
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        actual,
+        ConfigRequirementsWithSources {
+            config_server: Some(Sourced::new(
+                crate::ConfigServer {
+                    base_url: "https://new.example/settings".into(),
+                    oauth: None,
+                },
+                RequirementSource::LegacyManagedConfigTomlFromMdm,
+            )),
+            ..Default::default()
+        }
+    );
+}
+
+#[test]
+fn fetched_policy_cannot_change_config_server() {
+    let result = crate::compose_requirements([RequirementsLayerEntry::from_toml(
+        RequirementSource::EnterpriseManaged {
+            id: "remote".into(),
+            name: "Remote policy".into(),
+        },
+        "[config_server]\nbase_url = 'https://replacement.example/settings'",
+    )]);
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("only be configured in local managed requirements")
+    );
 }

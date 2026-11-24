@@ -10,6 +10,7 @@ use super::PidFileState;
 use super::PidRecord;
 use super::read_process_start_time;
 use crate::managed_install::executable_identity;
+use crate::telemetry::StartFailure;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;
@@ -95,7 +96,7 @@ impl PidBackend {
             } else {
                 None
             };
-        let mut command = Command::new(&codex_bin);
+        let mut command = Command::from(codex_utils_process::background_command(&codex_bin));
         let stderr_log = match self.open_stderr_log().await {
             Ok(stderr_log) => stderr_log,
             Err(err) => {
@@ -172,6 +173,7 @@ impl PidBackend {
         #[cfg(windows)]
         {
             use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
+            use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
             use windows_sys::Win32::System::Threading::DETACHED_PROCESS;
             // A Windows process pins its working directory for its lifetime.
             // Keep both managed children out of the launching project's directory.
@@ -179,7 +181,7 @@ impl PidBackend {
             command.current_dir(&workdir);
             // Never retry inside the parent's Job Object: that would report a
             // successful launch that dies when the terminal/SSH session closes.
-            command.creation_flags(DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB);
+            command.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_BREAKAWAY_FROM_JOB);
             if matches!(self.command_kind, PidCommandKind::UpdateLoop { .. }) {
                 match fs::remove_file(self.pid_file.with_extension("ready")).await {
                     Ok(()) => {}
@@ -214,7 +216,7 @@ impl PidBackend {
         #[cfg(not(windows))]
         let child = command.spawn().map_err(anyhow::Error::from);
         let child = crate::diagnostics::result("process_spawn", started, child);
-        let child = match child {
+        let mut child = match child {
             Ok(child) => child,
             Err(err) => {
                 if replacement.is_none() {
@@ -226,10 +228,10 @@ impl PidBackend {
                     } else {
                         ""
                     };
-                    format!(
+                    StartFailure::Spawn(format!(
                         "failed to spawn detached app-server process using {}{job_hint}",
                         self.codex_bin.display()
-                    )
+                    ))
                 });
             }
         };
@@ -258,14 +260,21 @@ impl PidBackend {
         let record = match crate::diagnostics::result("process_identity", started, record) {
             Ok(record) => record,
             Err(err) => {
-                let _ = self.terminate_process(pid);
+                let exited = managed_app_server && matches!(child.try_wait(), Ok(Some(_)));
+                if !exited {
+                    let _ = self.terminate_process(pid);
+                }
                 let mut context =
                     format!("failed to record pid-managed app-server process {pid} startup");
                 super::super::append_stderr_log_tail_context(&self.pid_file, &mut context).await;
                 if replacement.is_none() {
                     let _ = fs::remove_file(&self.pid_file).await;
                 }
-                return Err(err).context(context);
+                return if exited {
+                    Err(err).context(StartFailure::EarlyChildExit(context))
+                } else {
+                    Err(err).context(context)
+                };
             }
         };
         let contents = serde_json::to_vec(&record).context("failed to serialize pid record")?;

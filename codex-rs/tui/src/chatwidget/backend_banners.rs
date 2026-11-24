@@ -298,10 +298,12 @@ impl ChatWidget {
         self.backend_banner_state = std::mem::take(&mut previous.backend_banner_state);
         self.luna_reserve_notice_account_id = previous.luna_reserve_notice_account_id.take();
         self.backend_banner_state.dismissed |= self.reserve_notice_already_shown();
-        // Usage belongs to the account, so switching tasks must not reset the polling cadence
-        // or discard the already-known limits shown by /status.
+        // The task list can use a different local provider from the chat whose quota it inherits.
+        self.inherited_quota_provider = Some(previous.quota_provider_id().to_owned());
         self.rate_limit_snapshots_by_limit_id =
             std::mem::take(&mut previous.rate_limit_snapshots_by_limit_id);
+        self.quota_plan = previous.quota_plan.take();
+        self.refresh_billing_plan();
         self.usage_notice_state = std::mem::take(&mut previous.usage_notice_state);
         self.codex_rate_limit_reached_type = previous.codex_rate_limit_reached_type;
         self.codex_spend_control_reached = previous.codex_spend_control_reached;
@@ -436,6 +438,10 @@ impl ChatWidget {
             if self
                 .bottom_pane
                 .dismiss_view_by_id(super::rate_limits::RATE_LIMIT_SWITCH_PROMPT_VIEW_ID)
+                && matches!(
+                    self.rate_limit_switch_prompt,
+                    super::RateLimitSwitchPromptState::Shown
+                )
             {
                 // Replacing the view is not the user's decision to dismiss the prompt.
                 self.rate_limit_switch_prompt = super::RateLimitSwitchPromptState::Pending;

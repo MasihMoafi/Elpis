@@ -94,10 +94,9 @@ Its Cargo rows still compile code and use CPU and disk.
 
 ## 7. Provider network environment
 
-Codex app-server children connect directly, with proxy variables cleared in both letter
-cases and Node's environment-proxy switch removed. The provider bridge retains its
-inherited settings for Mother. Case, 12 Nov: ordinary chats and private helper engines
-inherited the paid VPN. Check all launch paths with
+Codex app-server children inherit the launching terminal's environment, including
+proxy variables in both letter cases and Node's environment-proxy switch, matching
+the provider bridge. Check all launch paths with
 `node --test tools/elpis-claude/test/native-proxy.test.mts`.
 
 On a network with a broken IPv6 route, launch with `ELPIS_IPV4_ONLY=1` to keep

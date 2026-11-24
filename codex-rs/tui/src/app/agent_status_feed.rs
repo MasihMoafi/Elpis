@@ -12,7 +12,7 @@ use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::DynamicToolCallOutputContentItem;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::SubAgentActivityKind;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::collections::HashSet;
@@ -102,7 +102,7 @@ impl AgentStatusThreadPreview {
             if !seen_item_ids.insert(item.id().to_string()) {
                 continue;
             }
-            if let Some(summary) = activity_summary(item) {
+            if let Some(summary) = activity_summary(&item.payload) {
                 activity.push(summary);
                 if activity.len() == AGENT_STATUS_PREVIEW_ITEMS {
                     break;
@@ -144,11 +144,11 @@ impl AgentStatusThreadPreview {
     }
 }
 
-fn activity_summary(item: &ThreadItem) -> Option<String> {
+fn activity_summary(item: &ThreadItemPayload) -> Option<String> {
     let summary = match item {
-        ThreadItem::AgentMessage { text, .. } | ThreadItem::Plan { text, .. } => text,
-        ThreadItem::Reasoning { summary, .. } => summary.last()?,
-        ThreadItem::CommandExecution {
+        ThreadItemPayload::AgentMessage { text, .. } | ThreadItemPayload::Plan { text, .. } => text,
+        ThreadItemPayload::Reasoning { summary, .. } => summary.last()?,
+        ThreadItemPayload::CommandExecution {
             command,
             command_actions,
             exit_code,
@@ -179,13 +179,13 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
             );
             return bounded_summary(&format!("$ {command}"));
         }
-        ThreadItem::FileChange { changes, .. } => {
+        ThreadItemPayload::FileChange { changes, .. } => {
             return bounded_summary(&format!("Updated {} file(s)", changes.len()));
         }
-        ThreadItem::McpToolCall { server, tool, .. } => {
+        ThreadItemPayload::McpToolCall { server, tool, .. } => {
             return bounded_summary(&format!("MCP {server}/{tool}"));
         }
-        ThreadItem::DynamicToolCall {
+        ThreadItemPayload::DynamicToolCall {
             namespace,
             tool,
             arguments,
@@ -211,7 +211,7 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
             }
             return bounded_summary(&format!("Tool {tool}"));
         }
-        ThreadItem::CollabAgentToolCall { tool, .. } => {
+        ThreadItemPayload::CollabAgentToolCall { tool, .. } => {
             let action = match tool {
                 CollabAgentTool::SendMessage
                 | CollabAgentTool::FollowupTask
@@ -225,7 +225,7 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
             };
             return Some(action.to_string());
         }
-        ThreadItem::SubAgentActivity {
+        ThreadItemPayload::SubAgentActivity {
             kind, agent_path, ..
         } => {
             let action = match kind {
@@ -236,22 +236,28 @@ fn activity_summary(item: &ThreadItem) -> Option<String> {
             };
             return bounded_summary(&format!("{action} {agent_path}"));
         }
-        ThreadItem::WebSearch(item) => {
+        ThreadItemPayload::WebSearch(item) => {
             return bounded_summary(&format!("Web search: {}", item.query));
         }
-        ThreadItem::ImageView { path, .. } => {
+        ThreadItemPayload::ImageView { path, .. } => {
             let path = path.render_for_ui();
             return bounded_summary(&format!("Viewed {path}"));
         }
-        ThreadItem::ImageGeneration(_) => return Some("Generated an image".to_string()),
-        ThreadItem::EnteredReviewMode { .. } => return Some("Entered review mode".to_string()),
-        ThreadItem::ExitedReviewMode { .. } => return Some("Exited review mode".to_string()),
-        ThreadItem::ContextCompaction { .. } => return Some("Compacted context".to_string()),
-        ThreadItem::UserMessage { .. }
-        | ThreadItem::SmartPrune { .. }
-        | ThreadItem::HookPrompt { .. }
-        | ThreadItem::FunctionCallOutput { .. }
-        | ThreadItem::Sleep(_) => {
+        ThreadItemPayload::ImageGeneration(_) => return Some("Generated an image".to_string()),
+        ThreadItemPayload::EnteredReviewMode { .. } => {
+            return Some("Entered review mode".to_string());
+        }
+        ThreadItemPayload::ExitedReviewMode { .. } => {
+            return Some("Exited review mode".to_string());
+        }
+        ThreadItemPayload::ContextCompaction { .. } => {
+            return Some("Compacted context".to_string());
+        }
+        ThreadItemPayload::UserMessage { .. }
+        | ThreadItemPayload::SmartPrune { .. }
+        | ThreadItemPayload::HookPrompt { .. }
+        | ThreadItemPayload::FunctionCallOutput { .. }
+        | ThreadItemPayload::Sleep(_) => {
             return None;
         }
     };

@@ -39,7 +39,9 @@ pub fn apply_rollout_item(
         | RolloutItem::InterAgentCommunicationMetadata { .. } => {}
         RolloutItem::Compacted(_) => {}
         RolloutItem::WorldState(_) => {}
-        RolloutItem::RetainedContext(_) | RolloutItem::SecurityRiskScore(_) => {}
+        RolloutItem::DynamicToolsUpdated { .. }
+        | RolloutItem::RetainedContext(_)
+        | RolloutItem::SecurityRiskScore(_) => {}
         RolloutItem::RealtimeItem(_) => {}
         RolloutItem::TokenUsageRecord(_) => {}
     }
@@ -73,6 +75,7 @@ pub fn rollout_item_affects_thread_metadata(item: &RolloutItem) -> bool {
         | RolloutItem::Compacted(_)
         | RolloutItem::RealtimeItem(_)
         | RolloutItem::RetainedContext(_)
+        | RolloutItem::DynamicToolsUpdated { .. }
         | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::TokenUsageRecord(_)
         | RolloutItem::WorldState(_) => false,
@@ -94,6 +97,10 @@ fn apply_session_meta_from_item(metadata: &mut ThreadMetadata, meta_line: &Sessi
         .take()
         .or_else(|| meta_line.meta.creator_account_id.clone());
     metadata.id = meta_line.meta.id;
+    metadata.attached_thread_parent_id = meta_line
+        .meta
+        .forked_from_id
+        .filter(|_| meta_line.meta.attached_thread);
     metadata.source = enum_to_string(&meta_line.meta.source);
     if metadata.originator.is_none() && !meta_line.meta.originator.is_empty() {
         metadata.originator = Some(meta_line.meta.originator.clone());
@@ -126,7 +133,7 @@ fn apply_turn_context(metadata: &mut ThreadMetadata, turn_ctx: &TurnContextItem)
     metadata.model = Some(turn_ctx.model.clone());
     metadata.reasoning_effort = turn_ctx.effort.clone();
     metadata.sandbox_policy =
-        serde_json::to_string(&turn_ctx.permission_profile()).unwrap_or_default();
+        serde_json::to_string(&turn_ctx.permission_profile).unwrap_or_default();
     metadata.approval_mode = enum_to_string(&turn_ctx.approval_policy);
 }
 
@@ -233,7 +240,6 @@ mod tests {
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::EventMsg;
     use codex_protocol::protocol::ItemCompletedEvent;
-    use codex_protocol::protocol::SandboxPolicy;
     use codex_protocol::protocol::SessionMeta;
     use codex_protocol::protocol::SessionMetaLine;
     use codex_protocol::protocol::SessionSource;
@@ -258,6 +264,8 @@ mod tests {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::ResponseItem(
             ResponseItem::Message {
+                status: None,
+                encrypted_content: None,
                 id: None,
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
@@ -304,6 +312,7 @@ mod tests {
         let mut expected = metadata.clone();
         for text in ["  ", "delegated task", "later output"] {
             let item = RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
+                content_token_count: None,
                 thread_id: metadata.id,
                 turn_id: "turn-1".to_string(),
                 item: TurnItem::FunctionCallOutput(codex_protocol::items::FunctionCallOutputItem {
@@ -336,6 +345,7 @@ mod tests {
     fn completed_user_message_items_set_title_and_first_user_message() {
         let mut metadata = metadata_for_test();
         let item = RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::default(),
             turn_id: "turn-1".to_string(),
             item: TurnItem::UserMessage(UserMessageItem::new(&[UserInput::Text {
@@ -363,7 +373,7 @@ mod tests {
         let mut metadata =
             ThreadMetadataBuilder::new(thread_id, PathBuf::new(), Utc::now(), source.clone())
                 .build("test-provider");
-        let session_meta = RolloutItem::SessionMeta(SessionMetaLine {
+        let session_meta = RolloutItem::SessionMeta(Box::new(SessionMetaLine {
             meta: SessionMeta {
                 session_id: thread_id.into(),
                 id: thread_id,
@@ -371,7 +381,7 @@ mod tests {
                 ..Default::default()
             },
             git: None,
-        });
+        }));
         apply_rollout_item(&mut metadata, &session_meta, "test-provider");
         let mut expected = metadata.clone();
         expected.title = super::GUARDIAN_THREAD_TITLE.to_string();
@@ -386,6 +396,7 @@ mod tests {
         for event in [
             EventMsg::UserMessage(user.as_legacy_user_message_event()),
             EventMsg::ItemCompleted(ItemCompletedEvent {
+                content_token_count: None,
                 thread_id,
                 turn_id: "turn-1".to_string(),
                 item: TurnItem::UserMessage(user),
@@ -523,9 +534,11 @@ mod tests {
 
         apply_rollout_item(
             &mut metadata,
-            &RolloutItem::SessionMeta(SessionMetaLine {
+            &RolloutItem::SessionMeta(Box::new(SessionMetaLine {
                 meta: SessionMeta {
+                    account_scoped: false,
                     creator_user_id: None,
+                    attached_thread: false,
                     creator_account_id: None,
                     session_id: thread_id.into(),
                     id: thread_id,
@@ -556,7 +569,7 @@ mod tests {
                     context_window: None,
                 },
                 git: None,
-            }),
+            })),
             "test-provider",
         );
         apply_rollout_item(
@@ -564,6 +577,7 @@ mod tests {
             &RolloutItem::TurnContext(TurnContextItem {
                 turn_id: Some("turn-1".to_string()),
                 root_turn_id: None,
+                direct_only_tool_namespaces: None,
                 disabled_plugin_ids: None,
                 cwd: serde_json::from_value(serde_json::json!(
                     std::env::current_dir()
@@ -573,10 +587,8 @@ mod tests {
                 .expect("absolute parent cwd"),
                 approval_policy: AskForApproval::Never,
                 approvals_reviewer: None,
-                sandbox_policy: SandboxPolicy::DangerFullAccess,
-                permission_profile: None,
+                permission_profile: PermissionProfile::Disabled,
                 active_permission_profile: None,
-                file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 collaboration_mode: None,
@@ -608,6 +620,7 @@ mod tests {
             &RolloutItem::TurnContext(TurnContextItem {
                 turn_id: Some("turn-1".to_string()),
                 root_turn_id: None,
+                direct_only_tool_namespaces: None,
                 disabled_plugin_ids: None,
                 cwd: serde_json::from_value(serde_json::json!(
                     std::env::current_dir()
@@ -617,10 +630,8 @@ mod tests {
                 .expect("absolute workspace cwd"),
                 approval_policy: AskForApproval::OnRequest,
                 approvals_reviewer: None,
-                sandbox_policy: SandboxPolicy::DangerFullAccess,
-                permission_profile: Some(permission_profile.clone()),
+                permission_profile: permission_profile.clone(),
                 active_permission_profile: None,
-                file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 collaboration_mode: None,
@@ -652,15 +663,14 @@ mod tests {
             &RolloutItem::TurnContext(TurnContextItem {
                 turn_id: Some("turn-1".to_string()),
                 root_turn_id: None,
+                direct_only_tool_namespaces: None,
                 disabled_plugin_ids: None,
                 cwd: serde_json::from_value(serde_json::json!(&fallback_cwd))
                     .expect("absolute fallback cwd"),
                 approval_policy: AskForApproval::OnRequest,
                 approvals_reviewer: None,
-                sandbox_policy: SandboxPolicy::new_read_only_policy(),
-                permission_profile: None,
+                permission_profile: PermissionProfile::read_only(),
                 active_permission_profile: None,
-                file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 collaboration_mode: None,
@@ -685,6 +695,7 @@ mod tests {
             &RolloutItem::TurnContext(TurnContextItem {
                 turn_id: Some("turn-1".to_string()),
                 root_turn_id: None,
+                direct_only_tool_namespaces: None,
                 disabled_plugin_ids: None,
                 cwd: serde_json::from_value(serde_json::json!(
                     std::env::current_dir()
@@ -694,10 +705,8 @@ mod tests {
                 .expect("absolute fallback cwd"),
                 approval_policy: AskForApproval::OnRequest,
                 approvals_reviewer: None,
-                sandbox_policy: SandboxPolicy::new_read_only_policy(),
-                permission_profile: None,
+                permission_profile: PermissionProfile::read_only(),
                 active_permission_profile: None,
-                file_system_sandbox_policy: None,
                 model: "gpt-5".to_string(),
                 comp_hash: None,
                 collaboration_mode: None,
@@ -731,6 +740,7 @@ mod tests {
                     service_tier: None,
                     approval_policy: AskForApproval::Never,
                     approvals_reviewer: ApprovalsReviewer::User,
+                    requested_approvals_reviewer: None,
                     permission_profile: permission_profile.clone(),
                     active_permission_profile: None,
                     cwd: cwd.clone().try_into().expect("absolute settings cwd"),
@@ -773,9 +783,11 @@ mod tests {
 
         apply_rollout_item(
             &mut metadata,
-            &RolloutItem::SessionMeta(SessionMetaLine {
+            &RolloutItem::SessionMeta(Box::new(SessionMetaLine {
                 meta: SessionMeta {
+                    account_scoped: false,
                     creator_user_id: None,
+                    attached_thread: false,
                     creator_account_id: None,
                     session_id: thread_id.into(),
                     id: thread_id,
@@ -804,7 +816,7 @@ mod tests {
                     context_window: None,
                 },
                 git: None,
-            }),
+            })),
             "test-provider",
         );
 
@@ -818,6 +830,7 @@ mod tests {
         let created_at = DateTime::<Utc>::from_timestamp(1_735_689_600, 0).expect("timestamp");
         ThreadMetadata {
             creator_user_id: None,
+            attached_thread_parent_id: None,
             creator_account_id: None,
             originator: None,
             id,
@@ -839,7 +852,8 @@ mod tests {
             title: String::new(),
             name: None,
             preview: None,
-            sandbox_policy: "read-only".to_string(),
+            sandbox_policy: serde_json::to_string(&PermissionProfile::read_only())
+                .unwrap_or_default(),
             approval_mode: "on-request".to_string(),
             tokens_used: 1,
             first_user_message: None,

@@ -18,6 +18,7 @@ use codex_protocol::protocol::GitInfo;
 use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode as MemoryMode;
 use codex_protocol::protocol::ThreadSource;
@@ -86,6 +87,9 @@ pub struct CreateThreadParams {
     pub extra_config: Option<ExtraConfig>,
     /// Source thread id when this thread is created as a fork.
     pub forked_from_id: Option<ThreadId>,
+    /// Saved fork role, persisted independently of the thread index.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub attached_thread: bool,
     /// The ID of the parent thread. This will only be set if this thread is a subagent.
     pub parent_thread_id: Option<ThreadId>,
     /// Runtime source for the thread.
@@ -110,7 +114,7 @@ pub struct CreateThreadParams {
     /// First rollout ordinal that belongs to this subagent's projected history.
     pub subagent_history_start_ordinal: Option<u64>,
     /// Initial context-window identity captured when the thread was created.
-    pub initial_window_id: String,
+    pub initial_window_id: codex_protocol::ContextWindowId,
     /// Runtime workspace roots at creation, excluding permission-profile roots.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_workspace_roots: Option<Vec<AbsolutePathBuf>>,
@@ -241,13 +245,19 @@ pub struct PreparedFork {
     pub history_base: Option<HistoryPosition>,
     /// Bounded model context selected by the requested fork boundary.
     pub model_context: Arc<Vec<RolloutItem>>,
-    /// Blocks source deletion until the child's history reference is durable.
-    _source_reservation: Box<dyn std::fmt::Debug + Send>,
+    /// Opening preview from the frozen transcript when compaction omitted it from model context.
+    pub preview_before_compaction: Option<String>,
+    /// Prevents the source thread from being deleted until the child's history reference is
+    /// finalized.
+    ///
+    /// If absent, the backend must revalidate the prepared fork as part of finalizing that
+    /// reference.
+    _source_reservation: Option<Box<dyn std::fmt::Debug + Send>>,
 }
 
 impl PreparedFork {
     /// Creates a frozen fork snapshot while retaining a backend-owned source reservation.
-    pub fn new(
+    pub fn with_source_reservation(
         source_thread_id: ThreadId,
         history_base: Option<HistoryPosition>,
         model_context: Arc<Vec<RolloutItem>>,
@@ -257,7 +267,24 @@ impl PreparedFork {
             source_thread_id,
             history_base,
             model_context,
-            _source_reservation: Box::new(source_reservation),
+            preview_before_compaction: None,
+            _source_reservation: Some(Box::new(source_reservation)),
+        }
+    }
+
+    /// Creates a frozen fork snapshot for a backend that revalidates the source while making the
+    /// child's history reference durable.
+    pub fn with_source_revalidation(
+        source_thread_id: ThreadId,
+        history_base: Option<HistoryPosition>,
+        model_context: Arc<Vec<RolloutItem>>,
+    ) -> Self {
+        Self {
+            source_thread_id,
+            history_base,
+            model_context,
+            preview_before_compaction: None,
+            _source_reservation: None,
         }
     }
 }
@@ -308,18 +335,34 @@ pub enum SortDirection {
     Desc,
 }
 
-/// Spawn-graph relationship used to filter thread listings.
+/// Parent relationship used to filter thread listings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadRelationFilter {
+    /// Include attached threads alongside ordinary threads for search.
+    IncludeAttached,
     /// Return only threads whose immediate parent is the given thread.
     DirectChildrenOf(ThreadId),
     /// Return every thread transitively descended from the given thread.
     DescendantsOf(ThreadId),
+    /// Saved attached threads, independent of the spawned-agent graph.
+    AttachedThreadsOf(ThreadId),
+}
+
+impl ThreadRelationFilter {
+    /// Whether the caller requested relatives of one particular thread.
+    pub fn is_parent_scoped(self) -> bool {
+        match self {
+            Self::IncludeAttached => false,
+            Self::DirectChildrenOf(_) | Self::DescendantsOf(_) | Self::AttachedThreadsOf(_) => true,
+        }
+    }
 }
 
 /// Parameters for listing threads.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListThreadsParams {
+    /// Restrict the list to these IDs. An empty list matches nothing.
+    pub included_thread_ids: Option<Vec<ThreadId>>,
     /// Maximum number of threads to return.
     pub page_size: usize,
     /// Opaque cursor returned by a previous list call.
@@ -352,9 +395,57 @@ pub struct ListThreadsParams {
     pub use_state_db_only: bool,
 }
 
+/// Source categories accepted by thread content search.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ThreadSearchSourceKind {
+    Cli,
+    VsCode,
+    Exec,
+    AppServer,
+    SubAgent,
+    SubAgentReview,
+    SubAgentCompact,
+    SubAgentThreadSpawn,
+    SubAgentOther,
+    Unknown,
+}
+
+impl ThreadSearchSourceKind {
+    /// Determine whether a stored session source belongs to this category.
+    pub fn matches(self, source: &SessionSource) -> bool {
+        match self {
+            Self::Cli => matches!(source, SessionSource::Cli),
+            Self::VsCode => matches!(source, SessionSource::VSCode),
+            Self::Exec => matches!(source, SessionSource::Exec),
+            Self::AppServer => matches!(source, SessionSource::Mcp),
+            Self::SubAgent => matches!(source, SessionSource::SubAgent(_)),
+            Self::SubAgentReview => {
+                matches!(source, SessionSource::SubAgent(SubAgentSource::Review))
+            }
+            Self::SubAgentCompact => {
+                matches!(source, SessionSource::SubAgent(SubAgentSource::Compact))
+            }
+            Self::SubAgentThreadSpawn => matches!(
+                source,
+                SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
+            ),
+            Self::SubAgentOther => {
+                matches!(source, SessionSource::SubAgent(SubAgentSource::Other(_)))
+            }
+            Self::Unknown => matches!(source, SessionSource::Unknown),
+        }
+    }
+}
+
 /// Parameters for searching thread content.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SearchThreadsParams {
+    #[serde(default)]
+    pub include_attached_threads: bool,
+    /// The current login when searching account-scoped local history.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<crate::LocalHistoryAccount>,
     /// Maximum number of threads to return.
     pub page_size: usize,
     /// Opaque cursor returned by a previous search call.
@@ -365,6 +456,9 @@ pub struct SearchThreadsParams {
     pub sort_direction: SortDirection,
     /// Allowed session sources. Empty means implementation default.
     pub allowed_sources: Vec<SessionSource>,
+    /// Exact source categories to apply before pagination. None accepts any allowed source.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_kinds: Option<Vec<ThreadSearchSourceKind>>,
     /// Whether archived threads should be searched instead of active threads.
     pub archived: bool,
     /// Visible thread content to search for.
@@ -487,13 +581,15 @@ pub enum ListItemsPosition {
     /// Opaque cursor returned by a previous list call.
     Cursor(String),
     /// Exclusive item anchor within the visible non-empty turn.
-    /// Requires creation order without an update watermark.
+    /// Requires creation order without an update boundary.
     ItemAnchor { item_id: String },
 }
 
 /// Parameters for listing persisted items within a thread.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListItemsParams {
+    /// Exact item lookup scoped to `turn_id`; incompatible with cursors and update replay.
+    pub item_ids: Option<Vec<String>>,
     /// Thread id to read.
     pub thread_id: ThreadId,
     /// Optional turn id to filter by. When omitted, returns items across the thread.
@@ -506,10 +602,12 @@ pub struct ListItemsParams {
     pub page_size: usize,
     /// Direction to sort items by the selected ordinal.
     pub sort_direction: SortDirection,
-    /// Ordinal to sort items by. Update-ordinal sorting requires an update watermark.
+    /// Ordinal to sort items by. Update-ordinal sorting requires an update boundary.
     pub sort_key: ItemSortKey,
     /// Filters out items with an update ordinal less than or equal to the provided value.
     pub after_updated_at_ordinal: Option<u64>,
+    /// Filters out items with an update ordinal greater than or equal to the provided value.
+    pub before_updated_at_ordinal: Option<u64>,
 }
 
 /// The ordinal to use when listing persisted items.
@@ -536,7 +634,7 @@ pub struct StoredThreadItem {
     pub started_at_ms: Option<i64>,
     /// Exact lifecycle completion time in Unix milliseconds, when recorded by the producer.
     pub completed_at_ms: Option<i64>,
-    /// Serialized app-server ThreadItem snapshot.
+    /// Serialized app-server item payload. Its lifecycle times are stored in the columns above.
     pub item_json: Vec<u8>,
 }
 
@@ -611,6 +709,12 @@ pub struct ThreadOccurrenceSearchPage {
 /// Store-owned thread metadata used by list/read/resume responses.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StoredThread {
+    /// Recorded creator user, when available from the backing store.
+    #[serde(default)]
+    pub creator_user_id: Option<String>,
+    /// Recorded creator workspace, when available from the backing store.
+    #[serde(default)]
+    pub creator_account_id: Option<String>,
     /// Originator recorded at creation, if available from the backing store.
     #[serde(default)]
     pub originator: Option<String>,
@@ -622,6 +726,9 @@ pub struct StoredThread {
     pub rollout_path: Option<PathBuf>,
     /// Source thread id when this thread was forked from another thread.
     pub forked_from_id: Option<ThreadId>,
+    /// Parent that owns this persisted attached thread, independent of fork or spawn lineage.
+    #[serde(default)]
+    pub attached_to_thread_id: Option<ThreadId>,
     /// The ID of the parent thread. This will only be set if this thread is a subagent.
     pub parent_thread_id: Option<ThreadId>,
     /// Best available user-facing preview, usually the first user message.
@@ -929,10 +1036,12 @@ impl ThreadMetadataPatch {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.updated_at.is_none() && self.is_empty_except_updated_at()
+        self.updated_at.is_none()
+            && self.token_usage.is_none()
+            && self.is_empty_except_updated_at_and_token_usage()
     }
 
-    pub(crate) fn is_empty_except_updated_at(&self) -> bool {
+    pub(crate) fn is_empty_except_updated_at_and_token_usage(&self) -> bool {
         self.name.is_none()
             && self.rollout_path.is_none()
             && self.preview.is_none()
@@ -954,7 +1063,6 @@ impl ThreadMetadataPatch {
             && self.cli_version.is_none()
             && self.approval_mode.is_none()
             && self.permission_profile.is_none()
-            && self.token_usage.is_none()
             && self.first_user_message.is_none()
             && self.git_info.is_none()
             && self.memory_mode.is_none()
@@ -1144,12 +1252,12 @@ mod tests {
     }
 
     fn session_meta(history_mode: ThreadHistoryMode) -> RolloutItem {
-        RolloutItem::SessionMeta(codex_protocol::protocol::SessionMetaLine {
+        RolloutItem::SessionMeta(Box::new(codex_protocol::protocol::SessionMetaLine {
             meta: codex_protocol::protocol::SessionMeta {
                 history_mode,
                 ..Default::default()
             },
             git: None,
-        })
+        }))
     }
 }

@@ -1,8 +1,13 @@
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use codex_config::types::PluginsConfigToml;
 use codex_context_fragments::ContextualUserFragment;
+use codex_exec_server_protocol::ExecutorCapabilityDiscoverySnapshot;
+use codex_exec_server_protocol::ExecutorCapabilityDiscoveryV2Snapshot;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_tools::ToolCall;
@@ -44,6 +49,7 @@ pub use thread_lifecycle::ThreadReadyInput;
 pub use thread_lifecycle::ThreadResumeInput;
 pub use thread_lifecycle::ThreadStartInput;
 pub use thread_lifecycle::ThreadStopInput;
+pub use tool_lifecycle::CodeModeCellTiming;
 pub use tool_lifecycle::CommandStartInput;
 pub use tool_lifecycle::McpToolContext;
 pub use tool_lifecycle::McpToolResultInput;
@@ -56,6 +62,8 @@ pub use tool_lifecycle::ToolTimingBoundary;
 pub use tool_lifecycle::ToolTimingInput;
 pub use turn_input::TurnInputContext;
 pub use turn_input::TurnInputEnvironment;
+pub use turn_lifecycle::CatalogRefreshInput;
+pub use turn_lifecycle::CloudCatalogRefreshInput;
 pub use turn_lifecycle::TurnAbortInput;
 pub use turn_lifecycle::TurnErrorInput;
 pub use turn_lifecycle::TurnStartInput;
@@ -89,13 +97,20 @@ pub trait McpServerContributor<C: Sync>: Send + Sync {
         context: McpServerContributionContext<'a, C>,
     ) -> ExtensionFuture<'a, Vec<McpServerContribution>>;
 
+    /// Reads canonical hosted-plugin IDs from published state without discovery or MCP I/O.
+    fn hosted_plugin_ids(&self, _context: McpServerContributionContext<'_, C>) -> Vec<String> {
+        Vec::new()
+    }
+
     /// Declares executor plugins, including those without MCP servers or connectors. Each
     /// declaration identifies the plugin once; its deferred MCP data cannot change that identity.
     /// Return plugins in precedence order: across contributors in registration order, the first
-    /// plugin wins if several provide the same server.
+    /// plugin wins if several provide the same server. Use the supplied plugin policy for both
+    /// admission and deferred projection; a step's policy may be newer than its other config.
     fn selected_plugins<'a>(
         &'a self,
         _context: McpServerContributionContext<'a, C>,
+        _plugins_config: &'a PluginsConfigToml,
     ) -> ExtensionFuture<'a, Vec<SelectedPlugin<'a>>> {
         Box::pin(async { Vec::new() })
     }
@@ -201,17 +216,17 @@ pub trait ThreadLifecycleContributor<C: Sync>: Send + Sync {
 /// Implementations should use these callbacks to seed, observe, or clear
 /// extension-private turn state. The host exposes stable identifiers and
 /// extension stores instead of core runtime objects.
+///
+/// Core serializes explicit catalog refresh and step preparation per thread.
+/// Within a refresh, contributors run concurrently and must not depend on each
+/// other's publication order.
+/// Cloud discovery runs through those refresh callbacks; hosts requesting discovery
+/// should use Core's refresh API rather than invoke hooks directly.
 pub trait TurnLifecycleContributor: Send + Sync {
     /// Selects the start phase using the current thread policy. Disabled callbacks
     /// may retain the default phase and return without doing any work.
     fn turn_start_phase(&self, _thread_store: &ExtensionData) -> TurnStartPhase {
         TurnStartPhase::BeforeTaskRegistration
-    }
-
-    /// Whether regular-task startup must reconcile MCP before this callback runs.
-    /// Ignored before task registration; contributors unrelated to MCP keep the default.
-    fn requires_mcp_runtime(&self, _thread_store: &ExtensionData) -> bool {
-        false
     }
 
     /// Called once in the selected phase, before task-specific work begins.
@@ -224,6 +239,28 @@ pub trait TurnLifecycleContributor: Send + Sync {
         })
     }
 
+    /// Refreshes catalogs before a step; returns true when MCP needs rebuilding.
+    /// Called under the same per-thread catalog lock as explicit refresh and step preparation.
+    fn refresh_catalog_for_step<'a>(
+        &'a self,
+        _input: CatalogRefreshInput<'a>,
+    ) -> ExtensionFuture<'a, bool> {
+        Box::pin(async { false })
+    }
+
+    /// Publishes cloud catalogs after explicit invalidation, without requiring a turn.
+    /// Core marks MCP dirty after publication. Accepted complete or partial catalogs
+    /// replace the previous result; failed or superseded discovery returns an error.
+    /// Core invalidates resource keys before calling. MCP-backed catalogs record
+    /// the new key only on acceptance, keeping failed or cancelled refreshes stale.
+    /// Called under the same per-thread catalog lock as step preparation.
+    fn refresh_cloud_catalog<'a>(
+        &'a self,
+        _input: CloudCatalogRefreshInput<'a>,
+    ) -> ExtensionFuture<'a, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+
     /// Observes a completed item without changing it or delaying streamed deltas.
     fn on_item_completed<'a>(
         &'a self,
@@ -232,6 +269,18 @@ pub trait TurnLifecycleContributor: Send + Sync {
         _item: &'a TurnItem,
     ) -> ExtensionFuture<'a, ()> {
         Box::pin(std::future::ready(()))
+    }
+
+    /// Observes the same completion with host-supplied data for a recorded user input.
+    /// The default forwards to [`Self::on_item_completed`].
+    fn on_item_completed_with_metadata<'a>(
+        &'a self,
+        thread_store: &'a ExtensionData,
+        turn_store: &'a ExtensionData,
+        item: &'a TurnItem,
+        _user_input_extension_data: Option<&'a BTreeMap<String, serde_json::Value>>,
+    ) -> ExtensionFuture<'a, ()> {
+        self.on_item_completed(thread_store, turn_store, item)
     }
 
     /// Called before the host drops the completed turn runtime and turn store.
@@ -341,14 +390,46 @@ pub trait SkillInvocationContributor: Send + Sync {
     }
 }
 
+/// A selected capability root bound to filesystem access for the current callback.
+#[derive(Clone, Copy)]
+pub struct AccessedSelectedCapabilityRoot<'a> {
+    pub root: &'a SelectedCapabilityRoot,
+    pub fs: &'a dyn codex_file_system::EnvironmentAccess,
+}
+
+/// Runtime inputs shared by preparation, tool construction, and later context consumers.
+#[derive(Clone, Copy)]
+pub struct StepPreparationInput<'a> {
+    pub turn_id: &'a str,
+    pub ready_selected_capability_roots: &'a [AccessedSelectedCapabilityRoot<'a>],
+    pub executor_capability_discovery: Option<&'a ExecutorCapabilityDiscoverySnapshot>,
+    pub executor_capability_discovery_v2: Option<&'a [ExecutorCapabilityDiscoveryV2Snapshot]>,
+    /// Captured plugin policy; an empty snapshot represents no selected plugins.
+    pub selected_plugins: &'a SelectedPluginSnapshot,
+    pub session_store: &'a ExtensionData,
+    pub thread_store: &'a ExtensionData,
+    pub turn_store: &'a ExtensionData,
+    /// Contains captured environment handles and permissions.
+    pub step_store: &'a ExtensionData,
+}
+
 /// Extension contribution that exposes native tools owned by a feature.
 pub trait ToolContributor: Send + Sync {
+    /// Prepares step state once, before tools are built and without rendering.
+    /// Never publish partial state; discovery failures may report warnings.
+    fn prepare_for_step<'a>(&'a self, _input: StepPreparationInput<'a>) -> ExtensionFuture<'a, ()> {
+        Box::pin(async {})
+    }
+
     /// Returns native tools bound to the supplied extension state.
+    /// Step-only contributors can leave this empty default unchanged.
     fn tools(
         &self,
-        session_store: &ExtensionData,
-        thread_store: &ExtensionData,
-    ) -> Vec<Arc<dyn for<'call> ToolExecutor<ToolCall<'call>>>>;
+        _session_store: &ExtensionData,
+        _thread_store: &ExtensionData,
+    ) -> Vec<Arc<dyn for<'call> ToolExecutor<ToolCall<'call>>>> {
+        Vec::new()
+    }
 
     /// Returns native tools bound to one sampling step.
     fn tools_for_step(
@@ -387,6 +468,17 @@ pub trait ToolLifecycleContributor: Send + Sync {
         Box::pin(std::future::ready(()))
     }
 
+    /// Provides one private request metadata entry for an MCP call. Use the captured
+    /// registration to scope data to its intended recipient. Keys must be unique.
+    fn mcp_tool_request_meta(
+        &self,
+        _thread_store: &ExtensionData,
+        _turn_store: &ExtensionData,
+        _mcp_tool: &McpToolContext,
+    ) -> Option<(&'static str, serde_json::Value)> {
+        None
+    }
+
     /// Runs before the MCP result is sent to the client and model.
     fn on_mcp_tool_result<'a>(&'a self, _input: McpToolResultInput<'a>) -> ToolLifecycleFuture<'a> {
         Box::pin(std::future::ready(()))
@@ -403,6 +495,18 @@ pub trait ToolLifecycleContributor: Send + Sync {
     /// Observe handler or remote host duration as defined by `ToolTimingBoundary`.
     /// Handler timing includes cancellation. Observers must return promptly.
     fn on_tool_timing(&self, _input: ToolTimingInput<'_>) {}
+
+    /// Observe the exec that yielded a cell and the wait that collected its terminal result
+    /// or found the cell unavailable.
+    /// `call_id` identifies that dispatch. `cell_id` stays the same across waits.
+    fn on_code_mode_cell_timing(
+        &self,
+        _thread_id: &str,
+        _call_id: &str,
+        _cell_id: &str,
+        _timing: CodeModeCellTiming,
+    ) {
+    }
 }
 
 /// Owns the complete approval decision, including whether to consult a reviewer.

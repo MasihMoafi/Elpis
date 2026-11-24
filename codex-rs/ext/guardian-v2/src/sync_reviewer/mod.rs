@@ -5,7 +5,6 @@
 use std::sync::Arc;
 use std::sync::Weak;
 
-use codex_core::CodexResponsesHeaders;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_core::config::Constrained;
@@ -22,6 +21,8 @@ use codex_extension_api::TurnAbortInput;
 use codex_extension_api::TurnLifecycleContributor;
 use codex_extension_api::TurnStartInput;
 use codex_extension_api::TurnStopInput;
+use codex_guardian_reviewer::ReviewBlocking;
+use codex_guardian_reviewer::ReviewBlockingTurn;
 use codex_guardian_reviewer::ReviewDenials;
 use codex_guardian_reviewer::ReviewerPool;
 use codex_guardian_reviewer::ReviewerTasks;
@@ -58,6 +59,7 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
             let manager = self.thread_manager.clone();
             let parent_thread_id = input.thread_store.level_id().to_owned();
             let runtime = input.thread_store.get_or_init(ReviewerTasks::default);
+            input.thread_store.get_or_init(ReviewBlocking::default);
             input.thread_store.get_or_init(|| {
                 ReviewerPool::<GuardianReviewSession>::new(
                     Arc::clone(&runtime),
@@ -79,7 +81,7 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
                             let manager = manager.upgrade().ok_or_else(|| {
                                 anyhow::anyhow!("thread manager is no longer available")
                             })?;
-                            let (mut options, state) = context.thread_options(snapshot).await;
+                            let (mut options, state) = context.thread_options(kind, snapshot).await;
                             if matches!(
                                 kind,
                                 codex_analytics::GuardianReviewSessionKind::EphemeralForked
@@ -91,17 +93,9 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
                             options.thread_source = Some(ThreadSource::GuardianReview);
                             // This is the backend reviewer model, independent of current login.
                             // Core checks the selected model and auth on each request attempt.
-                            let provider = codex_model_provider::create_model_provider(
-                                options.config.model_provider.clone(),
-                                /*auth_manager*/ None,
+                            options.thread_extension_init.insert(
+                                codex_core::guardian_review::reviewer_headers(&options.config),
                             );
-                            options.thread_extension_init.insert(CodexResponsesHeaders {
-                                model: provider.approval_review_preferred_model().to_owned(),
-                                headers: http::HeaderMap::from_iter([(
-                                    http::HeaderName::from_static("x-codex-guardian"),
-                                    http::HeaderValue::from_static("reviewer"),
-                                )]),
-                            });
                             options
                                 .thread_extension_init
                                 .insert(SessionIsolation::Isolated);
@@ -163,6 +157,10 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
     ) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
             if input.session_source.is_internal()
+                || input
+                    .thread_store
+                    .get::<Arc<dyn codex_core::guardian_review::AttachedReviewer>>()
+                    .is_some()
                 || !matches!(
                     input.config.permissions.approval_policy.value(),
                     AskForApproval::OnRequest | AskForApproval::Granular(_)
@@ -197,8 +195,11 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
             tokio::spawn(async move {
                 let _task = task;
                 let prepare = async {
-                    let context =
-                        codex_core::guardian_review::prepare_review_prewarm(&parent).await?;
+                    let context = codex_core::guardian_review::prepare_review_prewarm(
+                        &parent,
+                        codex_core::guardian_review::ReviewRetrieval::ConversationHistory,
+                    )
+                    .await?;
                     let key = context.reuse_key(/*previous*/ None);
                     pool.prewarm(Arc::new(context), key).await
                 };
@@ -228,19 +229,39 @@ impl ThreadLifecycleContributor<Config> for GuardianExtension {
 
 impl TurnLifecycleContributor for GuardianExtension {
     fn on_turn_start<'a>(&'a self, input: TurnStartInput<'a>) -> ExtensionFuture<'a, ()> {
-        Box::pin(ReviewDenials::clear_turn(input.thread_store, input.turn_id))
+        Box::pin(async move {
+            if input.thread_store.get::<ReviewerTasks>().is_some()
+                && let Some(telemetry) = input.turn_store.get()
+            {
+                let tracker = input.thread_store.get_or_init(ReviewBlocking::default);
+                input
+                    .turn_store
+                    .get_or_init(|| tracker.start_turn(input.turn_id, telemetry));
+            }
+            ReviewDenials::clear_turn(input.thread_store, input.turn_id).await;
+        })
     }
     fn on_turn_stop<'a>(&'a self, input: TurnStopInput<'a>) -> ExtensionFuture<'a, ()> {
-        Box::pin(ReviewDenials::clear_turn(
-            input.thread_store,
-            input.turn_store.level_id(),
-        ))
+        Box::pin(async move {
+            if let (Some(tracker), Some(turn)) = (
+                input.thread_store.get::<ReviewBlocking>(),
+                input.turn_store.get::<ReviewBlockingTurn>(),
+            ) {
+                tracker.finish_turn(&turn, "completed");
+            }
+            ReviewDenials::clear_turn(input.thread_store, input.turn_store.level_id()).await;
+        })
     }
     fn on_turn_abort<'a>(&'a self, input: TurnAbortInput<'a>) -> ExtensionFuture<'a, ()> {
-        Box::pin(ReviewDenials::clear_turn(
-            input.thread_store,
-            input.turn_store.level_id(),
-        ))
+        Box::pin(async move {
+            if let (Some(tracker), Some(turn)) = (
+                input.thread_store.get::<ReviewBlocking>(),
+                input.turn_store.get::<ReviewBlockingTurn>(),
+            ) {
+                tracker.finish_turn(&turn, "aborted");
+            }
+            ReviewDenials::clear_turn(input.thread_store, input.turn_store.level_id()).await;
+        })
     }
 }
 
@@ -257,3 +278,7 @@ pub fn install(
 #[cfg(test)]
 #[path = "lifecycle_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "reviewer_config_tests.rs"]
+mod reviewer_config_tests;

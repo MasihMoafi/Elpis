@@ -5,7 +5,7 @@ use app_test_support::create_mock_responses_server_repeating_assistant;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::SortDirection;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadItemsListParams;
 use codex_app_server_protocol::ThreadItemsListResponse;
 use codex_app_server_protocol::ThreadReadParams;
@@ -205,7 +205,7 @@ async fn missing_source_is_read_only_and_only_retained_projection_is_available()
     let items: ThreadItemsListResponse = timeout(TIMEOUT, mcp.read_response(item_id)).await??;
     assert!(items.earliest_history_missing);
     assert!(items.data.iter().any(
-        |entry| matches!(&entry.item, ThreadItem::UserMessage { id, content, .. }
+        |entry| matches!(&entry.item.payload, ThreadItemPayload::UserMessage { id, content, .. }
             if id == "retained-user" && content.iter().any(|item| matches!(item,
                 codex_app_server_protocol::UserInput::Text { text, .. } if text == "A retained fixture message")))
     ));

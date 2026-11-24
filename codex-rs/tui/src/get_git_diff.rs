@@ -36,7 +36,7 @@ impl FsmonitorProbeRunner for WorkspaceFsmonitorProbeRunner<'_> {
         let argv = ["git", "-c", codex_git_utils::SAFE_BARE_REPOSITORY_CONFIG]
             .into_iter()
             .chain(args.iter().copied());
-        let command = WorkspaceCommand::new(argv).cwd(self.cwd.to_path_buf());
+        let command = WorkspaceCommand::new(argv, self.cwd.to_path_buf());
         match self.runner.run(command).await {
             Ok(output) if output.success() => Some(output.stdout.into_bytes()),
             _ => None,
@@ -242,8 +242,7 @@ async fn run_git_command(
     ]
     .into_iter()
     .chain(args.iter().copied());
-    let mut command = WorkspaceCommand::new(argv)
-        .cwd(cwd.to_path_buf())
+    let mut command = WorkspaceCommand::new(argv, cwd.to_path_buf())
         .timeout(DIFF_COMMAND_TIMEOUT)
         .disable_output_cap();
     if !config_overrides.is_empty() {
@@ -830,7 +829,7 @@ mod tests {
 
     fn assert_command_metadata(commands: &[WorkspaceCommand], cwd: &Path) {
         for command in commands {
-            assert_eq!(command.cwd.as_deref(), Some(cwd));
+            assert_eq!(command.cwd.as_path(), cwd);
             if matches!(
                 command.argv.get(3).map(String::as_str),
                 Some("config" | "version")
@@ -911,9 +910,7 @@ mod tests {
         > {
             Box::pin(async move {
                 let mut process = ProcessCommand::new(&command.argv[0]);
-                process
-                    .args(&command.argv[1..])
-                    .current_dir(command.cwd.expect("test command cwd"));
+                process.args(&command.argv[1..]).current_dir(command.cwd);
                 for (key, value) in command.env {
                     match value {
                         Some(value) => {

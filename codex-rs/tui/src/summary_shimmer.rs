@@ -21,6 +21,7 @@ use crate::terminal_palette::default_bg;
 use crate::terminal_palette::default_fg;
 use crate::terminal_palette::effective_stdout_color_level;
 use crate::terminal_palette::rgb_color;
+use crate::text_formatting::contains_rtl_or_arabic_number;
 
 // Match the desktop app's thinking and reasoning header timings.
 const START_DELAY: Duration = Duration::from_millis(/*millis*/ 600);
@@ -59,6 +60,11 @@ fn summary_shimmer_with_colors(
 ) -> Vec<Span<'static>> {
     if motion == MotionMode::Reduced {
         return vec![Span::styled(text.to_owned(), accent.unwrap_or_default())];
+    }
+    // Per-grapheme color updates redraw individual terminal cells and break native bidi
+    // rendering. Keep bidi-sensitive headers as one stable span in logical order.
+    if contains_rtl_or_arabic_number(text) {
+        return vec![Span::styled(text.to_owned(), Style::default().dim())];
     }
     let (StdoutColorLevel::TrueColor, Some(fg), Some(bg)) =
         (effective_stdout_color_level(), default_fg(), default_bg())

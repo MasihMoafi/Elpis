@@ -117,11 +117,24 @@ pub(crate) struct McpElicitationApprovalRequest {
     pub thread_id: ThreadId,
     pub thread_label: Option<String>,
     pub server_name: String,
+    pub environment_id: Option<String>,
     pub request_id: RequestId,
     pub message: String,
 }
 
 impl ApprovalRequest {
+    pub(super) fn program_status_blocked_kind(
+        &self,
+    ) -> crate::terminal_program_status::ProgramStatusKind {
+        use crate::terminal_program_status::ProgramStatusKind;
+        match self {
+            Self::Exec(_) | Self::Permissions(_) | Self::ApplyPatch(_) => {
+                ProgramStatusKind::Permission
+            }
+            Self::McpElicitation(_) => ProgramStatusKind::Question,
+        }
+    }
+
     pub(super) fn thread_id(&self) -> ThreadId {
         match self {
             ApprovalRequest::Exec(request) => request.thread_id,
@@ -291,7 +304,13 @@ impl ApprovalOverlay {
             ),
             ApprovalRequest::McpElicitation(request) => (
                 elicitation_options(approval_keymap),
-                format!("{} needs your approval.", request.server_name),
+                format!(
+                    "{} needs your approval.",
+                    crate::app_server_approval_conversions::mcp_server_label(
+                        &request.server_name,
+                        request.environment_id.as_deref()
+                    )
+                ),
             ),
         };
 
@@ -605,6 +624,13 @@ impl BottomPaneView for ApprovalOverlay {
         self.done
     }
 
+    fn current_patch_approval(&self) -> Option<&ApplyPatchApprovalRequest> {
+        let ApprovalRequest::ApplyPatch(patch) = self.current_request.as_ref()? else {
+            return None;
+        };
+        Some(patch)
+    }
+
     fn try_consume_approval_request(
         &mut self,
         request: ApprovalRequest,
@@ -619,6 +645,14 @@ impl BottomPaneView for ApprovalOverlay {
 
     fn terminal_title_requires_action(&self) -> bool {
         true
+    }
+
+    fn program_status_blocked_kind(
+        &self,
+    ) -> Option<crate::terminal_program_status::ProgramStatusKind> {
+        self.current_request
+            .as_ref()
+            .map(ApprovalRequest::program_status_blocked_kind)
     }
 }
 
@@ -776,7 +810,14 @@ fn build_header(request: &ApprovalRequest) -> Box<dyn Renderable> {
                 lines.push(Line::from(""));
             }
             lines.extend([
-                Line::from(vec!["Server: ".into(), request.server_name.clone().bold()]),
+                Line::from(vec![
+                    "Server: ".into(),
+                    crate::app_server_approval_conversions::mcp_server_label(
+                        &request.server_name,
+                        request.environment_id.as_deref(),
+                    )
+                    .bold(),
+                ]),
                 Line::from(""),
                 Line::from(request.message.clone()),
             ]);
@@ -1246,6 +1287,7 @@ mod tests {
 
     fn make_elicitation_request() -> ApprovalRequest {
         ApprovalRequest::McpElicitation(McpElicitationApprovalRequest {
+            environment_id: None,
             thread_id: ThreadId::new(),
             thread_label: None,
             server_name: "test-server".to_string(),

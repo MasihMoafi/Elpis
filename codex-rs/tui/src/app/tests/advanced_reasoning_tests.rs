@@ -1,5 +1,6 @@
 use super::*;
 use app_test_support::create_fake_rollout;
+use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_utils_absolute_path::test_support::PathExt;
 use pretty_assertions::assert_eq;
 
@@ -42,7 +43,7 @@ async fn fork_current_session_preserves_conversation_ultra() -> Result<()> {
     assert!(matches!(control, AppRunControl::Continue));
     assert_ne!(app.chat_widget.thread_id(), Some(source_thread_id));
     assert!(
-        !app.agents_overview
+        app.agents_overview
             .dispatched_requests
             .contains_key(&source_thread_id)
     );
@@ -112,4 +113,51 @@ async fn switching_from_ultra_thread_restores_configured_plan_effort() {
         app.chat_widget.current_reasoning_effort(),
         Some(ReasoningEffortConfig::High)
     );
+}
+
+#[tokio::test]
+async fn switching_threads_restores_session_speed_for_the_next_turn() {
+    let (mut app, _events, mut ops) = make_test_app_with_channels().await;
+    app.config.service_tier = Some("flex".into());
+    app.chat_widget.set_service_tier(Some("flex".into()));
+    let standard_thread = ThreadId::new();
+    let flex_thread = ThreadId::new();
+    let session = |thread_id, service_tier: &str| ThreadSessionState {
+        model: "gpt-5.5".into(),
+        service_tier: Some(service_tier.into()),
+        ..test_thread_session(thread_id, test_path_buf("/tmp/project"))
+    };
+    let snapshot = |session| ThreadEventSnapshot {
+        delegated_turns: Vec::new(),
+        session: Some(session),
+        turns: Vec::new(),
+        events: Vec::new(),
+        active_reasoning_item: None,
+        input_state: None,
+    };
+
+    app.replay_thread_snapshot(
+        snapshot(session(standard_thread, SERVICE_TIER_DEFAULT_REQUEST_VALUE)),
+        /*resume_restored_queue*/ false,
+    );
+    app.replay_thread_snapshot(
+        snapshot(session(flex_thread, "flex")),
+        /*resume_restored_queue*/ false,
+    );
+    assert_eq!(
+        app.chat_widget.configured_service_tier().as_deref(),
+        Some("flex")
+    );
+    app.replay_thread_snapshot(
+        snapshot(session(standard_thread, SERVICE_TIER_DEFAULT_REQUEST_VALUE)),
+        /*resume_restored_queue*/ false,
+    );
+    app.chat_widget
+        .apply_external_edit("Check this task".into());
+    app.chat_widget.handle_key_event(KeyCode::Esc.into());
+    app.chat_widget.handle_key_event(KeyCode::Enter.into());
+
+    assert_matches!(next_user_turn_op(&mut ops), Op::UserTurn { service_tier, .. }
+        if service_tier == Some(Some(SERVICE_TIER_DEFAULT_REQUEST_VALUE.into())));
+    assert_eq!(app.config.service_tier.as_deref(), Some("flex"));
 }

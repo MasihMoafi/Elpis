@@ -5,14 +5,16 @@ use chrono::Utc;
 use codex_agent_message_board_client::AccessToken;
 use codex_agent_message_board_client::BoardNotification;
 use codex_agent_message_board_client::RemoteAgentMessageBoard;
-use codex_agent_message_board_extension::AgentMessageBoard;
-use codex_agent_message_board_extension::PostContent;
-use codex_agent_message_board_extension::PostDestination;
-use codex_agent_message_board_extension::PostMetadata;
-use codex_agent_message_board_extension::PostPreview;
-use codex_agent_message_board_extension::PostRequest;
-use codex_agent_message_board_extension::ReadPostRequest;
 use codex_http_client::HttpClientBuilder;
+use codex_message_board::AgentMessageBoard;
+use codex_message_board::AppendRequest;
+use codex_message_board::PostContent;
+use codex_message_board::PostDestination;
+use codex_message_board::PostMetadata;
+use codex_message_board::PostPreview;
+use codex_message_board::PostRequest;
+use codex_message_board::ReadPostRequest;
+use codex_message_board::UpsertChannelRequest;
 use codex_protocol::AgentPath;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
@@ -129,6 +131,40 @@ async fn remote_board_preserves_the_host_contract() -> anyhow::Result<()> {
         .await;
     let board_handle: &dyn AgentMessageBoard = &client;
     assert_eq!(board_handle.identity(), board);
+    let requests_before = server.received_requests().await.unwrap().len();
+    let unsupported = board_handle
+        .append(
+            caller,
+            AppendRequest {
+                request_id: post.request_id.clone(),
+                destination: post.destination.clone(),
+                text: post.text.clone(),
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        unsupported.details(),
+        CodexErrorDetails::InvalidRequest(_)
+    ));
+    let unsupported = board_handle
+        .upsert_channel(
+            caller,
+            UpsertChannelRequest {
+                channel_name: "results".into(),
+                description: "Updated purpose".to_owned().try_into()?,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        unsupported.details(),
+        CodexErrorDetails::InvalidRequest(_)
+    ));
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        requests_before
+    );
     assert!(board_handle.post(caller, post.clone()).await.is_err());
     clock_available.store(false, Ordering::Relaxed);
     Mock::given(method("POST"))

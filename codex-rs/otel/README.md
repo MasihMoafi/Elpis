@@ -15,13 +15,16 @@ metrics (when enabled), then attach its layers to your `tracing_subscriber`
 registry:
 
 ```rust
-use codex_otel::config::OtelExporter;
-use codex_otel::config::OtelHttpProtocol;
-use codex_otel::config::OtelSettings;
+use codex_http_client::{HttpClientFactory, OutboundProxyPolicy};
+use codex_otel::OtelExporter;
+use codex_otel::OtelHttpProtocol;
+use codex_otel::OtelSettings;
 use codex_otel::OtelProvider;
 use tracing_subscriber::prelude::*;
 
 let settings = OtelSettings {
+    headers_helper: None,
+    http_client_factory: HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     environment: "dev".to_string(),
     service_name: "codex-cli".to_string(),
     service_version: env!("CARGO_PKG_VERSION").to_string(),
@@ -39,7 +42,8 @@ let settings = OtelSettings {
         tls: None,
     },
     metrics_exporter: OtelExporter::None,
-    span_attributes: std::collections::BTreeMap::new(),
+    runtime_metrics: false,
+    span_attributes: std::collections::HashMap::new(),
     tracestate: std::collections::BTreeMap::new(),
 };
 
@@ -233,13 +237,13 @@ metrics.shutdown()?; // flushes in-memory exporter
 failed sends. It carries existing session tags plus `mode` (`incremental`/`full`),
 `phase` (`warmup`/`generation`), and `reason`:
 
-| Reason | Meaning |
-| --- | --- |
-| `incremental` | Send the previous response ID and new input. |
-| `no_previous_request` | First request from a fresh client. |
-| `restored_history` | First request after loading resumed or forked history. |
-| `connection_closed` | Full input after observing the previous socket closed. |
-| `other` | Full input for another reason, such as changed input/settings or unavailable response state. |
+| Reason                | Meaning                                                                                      |
+| --------------------- | -------------------------------------------------------------------------------------------- |
+| `incremental`         | Send the previous response ID and new input.                                                 |
+| `no_previous_request` | First request from a fresh client.                                                           |
+| `restored_history`    | First request after loading resumed or forked history.                                       |
+| `connection_closed`   | Full input after observing the previous socket closed.                                       |
+| `other`               | Full input for another reason, such as changed input/settings or unavailable response state. |
 
 Per-socket backend metrics label a resend after reconnect as `initial`; this client
 metric retains the first reset reason through reconnect failures and turn boundaries.

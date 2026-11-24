@@ -1,6 +1,12 @@
+use crate::harness::attributes_to_map;
+use crate::harness::build_metrics_with_defaults;
+use crate::harness::find_metric;
+use crate::harness::latest_metrics;
 use codex_api::AgentIdentityTelemetry;
 use codex_otel::AuthEnvTelemetryMetadata;
 use codex_otel::OtelProvider;
+use codex_otel::SSE_EVENT_COUNT_METRIC;
+use codex_otel::SSE_EVENT_DURATION_METRIC;
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use opentelemetry::KeyValue;
@@ -9,12 +15,15 @@ use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_sdk::logs::InMemoryLogExporter;
 use opentelemetry_sdk::logs::SdkLogRecord;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
+use opentelemetry_sdk::metrics::data::AggregatedMetrics;
+use opentelemetry_sdk::metrics::data::MetricData;
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 use pretty_assertions::assert_eq;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::Duration;
 use tracing_subscriber::Layer;
 use tracing_subscriber::filter::filter_fn;
 use tracing_subscriber::layer::SubscriberExt;
@@ -25,14 +34,23 @@ use codex_protocol::ToolName;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::ToolResultLogConfig;
 use codex_protocol::models::ImageReference;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::permissions::FileSystemAccessMode;
+use codex_protocol::permissions::FileSystemPath;
+use codex_protocol::permissions::FileSystemSandboxEntry;
+use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::FileSystemSpecialPath;
+use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::GuardianAssessmentEvent;
 use codex_protocol::protocol::GuardianAssessmentOutcome;
 use codex_protocol::protocol::GuardianAssessmentStatus;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::TokenUsage;
 use codex_protocol::user_input::UserInput;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use eventsource_stream::Event as StreamEvent;
 
 fn log_attributes(record: &SdkLogRecord) -> BTreeMap<String, String> {
     record
@@ -98,6 +116,154 @@ fn auth_env_metadata() -> AuthEnvTelemetryMetadata {
         provider_env_key_present: Some(true),
         refresh_token_url_override_present: true,
     }
+}
+
+#[test]
+fn suppressing_sse_delta_logs_preserves_errors_completions_and_metrics() -> codex_otel::Result<()> {
+    for log_sse_deltas in [true, false] {
+        let log_exporter = InMemoryLogExporter::default();
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_simple_exporter(log_exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry().with(
+            opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
+                &logger_provider,
+            )
+            .with_filter(filter_fn(OtelProvider::log_export_filter)),
+        );
+        let (metrics, metric_exporter) = build_metrics_with_defaults(&[])?;
+        let mut manager = SessionTelemetry::new(
+            ThreadId::new(),
+            "gpt-5.1",
+            "gpt-5.1",
+            /*account_id*/ None,
+            /*account_email*/ None,
+            /*auth_mode*/ None,
+            "test_originator".to_string(),
+            /*log_user_prompts*/ false,
+            "tty".to_string(),
+            SessionSource::Cli,
+        )
+        .with_metrics_without_metadata_tags(metrics);
+        if !log_sse_deltas {
+            manager = manager.without_sse_delta_logs();
+        }
+        let events = [
+            ("response.output_text.delta", "{}", true),
+            ("response.reasoning_summary_text.delta", "{}", true),
+            ("response.custom_tool_call_input.delta", "{}", true),
+            ("response.output_text.done", "{}", true),
+            ("response.completed", "{}", true),
+            ("response.output_text.delta", "{", false),
+            ("response.failed", r#"{"error":"failed"}"#, false),
+        ];
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
+            for (kind, data, _) in events {
+                manager.log_sse_event::<&str>(
+                    &Ok(Some(Ok(StreamEvent {
+                        event: kind.to_string(),
+                        data: data.to_string(),
+                        id: String::new(),
+                        retry: None,
+                    }))),
+                    Duration::from_millis(10),
+                );
+            }
+            manager.sse_event_completed(
+                &TokenUsage {
+                    input_tokens: 7,
+                    ..Default::default()
+                },
+                /*ttft_ms*/ Some(10),
+            );
+        });
+        logger_provider.force_flush().expect("flush logs");
+        let logs = log_exporter.get_emitted_logs().expect("exported logs");
+        let exported_events = logs
+            .iter()
+            .map(|log| {
+                let attributes = log_attributes(&log.record);
+                (
+                    attributes["event.kind"].clone(),
+                    attributes.contains_key("error.message"),
+                    attributes.get("input_token_count").cloned(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut expected_events = Vec::new();
+        if log_sse_deltas {
+            expected_events.extend([
+                ("response.output_text.delta".to_string(), false, None),
+                (
+                    "response.reasoning_summary_text.delta".to_string(),
+                    false,
+                    None,
+                ),
+                (
+                    "response.custom_tool_call_input.delta".to_string(),
+                    false,
+                    None,
+                ),
+            ]);
+        }
+        expected_events.extend([
+            ("response.output_text.done".to_string(), false, None),
+            ("response.completed".to_string(), false, None),
+            ("response.output_text.delta".to_string(), true, None),
+            ("response.failed".to_string(), true, None),
+            (
+                "response.completed".to_string(),
+                false,
+                Some("7".to_string()),
+            ),
+        ]);
+        assert_eq!(exported_events, expected_events);
+
+        manager.shutdown_metrics()?;
+        let resource_metrics = latest_metrics(&metric_exporter);
+        let expected_counts = events
+            .iter()
+            .map(|(kind, _, success)| {
+                (
+                    BTreeMap::from([
+                        ("kind".to_string(), kind.to_string()),
+                        ("success".to_string(), success.to_string()),
+                    ]),
+                    1,
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        let counter = find_metric(&resource_metrics, SSE_EVENT_COUNT_METRIC).expect("SSE counter");
+        let AggregatedMetrics::U64(MetricData::Sum(sum)) = counter.data() else {
+            panic!("expected SSE counter");
+        };
+        assert_eq!(
+            sum.data_points()
+                .map(|point| (attributes_to_map(point.attributes()), point.value()))
+                .collect::<BTreeMap<_, _>>(),
+            expected_counts,
+        );
+        let duration =
+            find_metric(&resource_metrics, SSE_EVENT_DURATION_METRIC).expect("SSE duration");
+        let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = duration.data() else {
+            panic!("expected SSE duration histogram");
+        };
+        assert_eq!(
+            histogram
+                .data_points()
+                .map(|point| (
+                    attributes_to_map(point.attributes()),
+                    (point.count(), point.sum())
+                ))
+                .collect::<BTreeMap<_, _>>(),
+            expected_counts
+                .into_keys()
+                .map(|tags| (tags, (1, 10.0)))
+                .collect(),
+        );
+    }
+    Ok(())
 }
 
 #[test]
@@ -715,16 +881,91 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
         .with_auth_env(auth_env_metadata());
         let root_span = tracing::info_span!("root");
         let _root_guard = root_span.enter();
-        manager.conversation_starts(
-            "openai",
-            /*reasoning_effort*/ None,
-            ReasoningSummary::Auto,
-            /*context_window*/ None,
-            /*auto_compact_token_limit*/ None,
-            AskForApproval::Never,
-            SandboxPolicy::DangerFullAccess,
-            Vec::new(),
+        let cwd = tempfile::tempdir().expect("telemetry cwd");
+        let root_write = FileSystemSandboxEntry::new(
+            FileSystemPath::Special {
+                value: FileSystemSpecialPath::Root,
+            },
+            FileSystemAccessMode::Write,
         );
+        for permission_profile in [
+            PermissionProfile::Disabled,
+            PermissionProfile::read_only(),
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::unrestricted(),
+                NetworkSandboxPolicy::Restricted,
+            ),
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry::new(
+                    FileSystemPath::Special {
+                        value: FileSystemSpecialPath::Tmpdir,
+                    },
+                    FileSystemAccessMode::Write,
+                )]),
+                NetworkSandboxPolicy::Restricted,
+            ),
+            PermissionProfile::workspace_write(),
+            // Effective workspace roots are explicit paths without a full-root grant.
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry::new(
+                    AbsolutePathBuf::from_absolute_path(cwd.path())
+                        .expect("absolute writable workspace")
+                        .into(),
+                    FileSystemAccessMode::Write,
+                )]),
+                NetworkSandboxPolicy::Restricted,
+            ),
+            PermissionProfile::External {
+                network: NetworkSandboxPolicy::Enabled,
+            },
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(vec![root_write.clone()]),
+                NetworkSandboxPolicy::Enabled,
+            ),
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(vec![root_write.clone()]),
+                NetworkSandboxPolicy::Restricted,
+            ),
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(vec![
+                    root_write.clone(),
+                    FileSystemSandboxEntry::new(
+                        FileSystemPath::Path {
+                            path: "file:///%00/bad/path/YQ"
+                                .parse()
+                                .expect("opaque writable URI"),
+                        },
+                        FileSystemAccessMode::Write,
+                    ),
+                ]),
+                NetworkSandboxPolicy::Enabled,
+            ),
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(vec![
+                    root_write,
+                    FileSystemSandboxEntry::new(
+                        FileSystemPath::Special {
+                            value: FileSystemSpecialPath::Tmpdir,
+                        },
+                        FileSystemAccessMode::Read,
+                    ),
+                ]),
+                NetworkSandboxPolicy::Enabled,
+            ),
+        ] {
+            manager.conversation_starts(
+                "openai",
+                /*reasoning_effort*/ None,
+                ReasoningSummary::Auto,
+                /*context_window*/ None,
+                /*auto_compact_token_limit*/ None,
+                AskForApproval::Never,
+                &permission_profile,
+                cwd.path(),
+                Vec::new(),
+                /*legacy_multi_agent_disabled_sources*/ &[],
+            );
+        }
         let agent_identity_telemetry = AgentIdentityTelemetry {
             agent_id: "agent-runtime-otel".to_string(),
             task_id: "task-run-otel".to_string(),
@@ -753,6 +994,31 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
 
     let logs = log_exporter.get_emitted_logs().expect("log export");
     let conversation_log = find_log_by_event_name(&logs, "codex.conversation_starts");
+    let expected_policy_labels = vec![
+        "danger-full-access",
+        "read-only",
+        "external-sandbox",
+        "workspace-write",
+        "workspace-write",
+        "workspace-write",
+        "external-sandbox",
+        "danger-full-access",
+        "external-sandbox",
+        "workspace-write",
+        "workspace-write",
+    ];
+    assert_eq!(
+        logs.iter()
+            .map(|log| log_attributes(&log.record))
+            .filter(|attributes| {
+                attributes
+                    .get("event.name")
+                    .is_some_and(|name| name == "codex.conversation_starts")
+            })
+            .map(|attributes| attributes["sandbox_policy"].clone())
+            .collect::<Vec<_>>(),
+        expected_policy_labels,
+    );
     let conversation_log_attrs = log_attributes(&conversation_log.record);
     assert_eq!(
         conversation_log_attrs
@@ -832,6 +1098,21 @@ fn otel_export_routing_policy_routes_api_request_auth_observability() {
         find_span_event_by_name_attr(&spans[0].events.events, "codex.conversation_starts");
     let conversation_trace_attrs = span_event_attributes(conversation_trace_event);
     assert_eq!(
+        spans[0]
+            .events
+            .events
+            .iter()
+            .map(span_event_attributes)
+            .filter(|attributes| {
+                attributes
+                    .get("event.name")
+                    .is_some_and(|name| name == "codex.conversation_starts")
+            })
+            .map(|attributes| attributes["sandbox_policy"].clone())
+            .collect::<Vec<_>>(),
+        expected_policy_labels,
+    );
+    assert_eq!(
         conversation_trace_attrs
             .get("auth.env_provider_key_present")
             .map(String::as_str),
@@ -903,6 +1184,7 @@ fn otel_export_routing_policy_routes_websocket_connect_auth_observability() {
                 .with_filter(filter_fn(OtelProvider::trace_export_filter)),
         );
 
+    let (metrics, metric_exporter) = build_metrics_with_defaults(&[]).unwrap();
     tracing::subscriber::with_default(subscriber, || {
         tracing::callsite::rebuild_interest_cache();
         let manager = SessionTelemetry::new(
@@ -917,7 +1199,9 @@ fn otel_export_routing_policy_routes_websocket_connect_auth_observability() {
             "tty".to_string(),
             SessionSource::Cli,
         )
-        .with_auth_env(auth_env_metadata());
+        .with_auth_env(auth_env_metadata())
+        .with_product_sku(Some("codex"))
+        .with_metrics_without_metadata_tags(metrics);
         let root_span = tracing::info_span!("root");
         let _root_guard = root_span.enter();
         let agent_identity_telemetry = AgentIdentityTelemetry {
@@ -934,14 +1218,37 @@ fn otel_export_routing_policy_routes_websocket_connect_auth_observability() {
             Some("managed"),
             Some("reload"),
             "/responses",
-            /*connection_reused*/ false,
+            /*reauth*/ true,
             Some("req-ws-401"),
             Some("ray-ws-401"),
             Some("missing_authorization_header"),
             Some("token_expired"),
             Some(&agent_identity_telemetry),
         );
+        manager.shutdown_metrics().unwrap();
     });
+
+    let exported = latest_metrics(&metric_exporter);
+    let expected_labels = BTreeMap::from([
+        ("product_sku".to_string(), "codex".to_string()),
+        ("reauth".to_string(), "true".to_string()),
+        ("success".to_string(), "false".to_string()),
+    ]);
+    let counter = find_metric(&exported, codex_otel::WEBSOCKET_CONNECT_COUNT_METRIC).unwrap();
+    let AggregatedMetrics::U64(MetricData::Sum(sum)) = counter.data() else {
+        panic!("expected connect counter");
+    };
+    let point = sum.data_points().next().expect("failed handshake");
+    assert_eq!(point.value(), 1);
+    assert_eq!(attributes_to_map(point.attributes()), expected_labels);
+
+    let duration = find_metric(&exported, codex_otel::WEBSOCKET_CONNECT_DURATION_METRIC).unwrap();
+    let AggregatedMetrics::F64(MetricData::Histogram(histogram)) = duration.data() else {
+        panic!("expected connect duration histogram");
+    };
+    let point = histogram.data_points().next().expect("failed handshake");
+    assert_eq!((point.count(), point.sum()), (1, 17.0));
+    assert_eq!(attributes_to_map(point.attributes()), expected_labels);
 
     logger_provider.force_flush().expect("flush logs");
     tracer_provider.force_flush().expect("flush traces");

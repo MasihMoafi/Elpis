@@ -24,6 +24,8 @@ const FOCUS_PROBE_INPUT: &str = "focus-palette-24527";
 
 #[path = "external_editor_tests.rs"]
 mod external_editor;
+#[path = "gov_cloud_guidance_tests.rs"]
+mod gov_cloud_guidance;
 #[path = "tui_mode_picker_tests.rs"]
 mod tui_mode_picker;
 
@@ -225,8 +227,22 @@ fn default_owned_screen_entry_paints_before_sync_ends_and_exit_clears_inline_dra
         (1, (u16::try_from(composer_row)?, 2), false),
         "first owned-screen frame must contain one composer with its visible cursor"
     );
+    let exit_start = terminal.output.len();
     terminal.write_input(b"\x1b[99;5u")?;
     let deadline = Instant::now() + STARTUP_TIMEOUT;
+    while !contains_bytes(&terminal.output[exit_start..], b"\x1b[c") {
+        terminal.ensure_running()?;
+        ensure!(Instant::now() < deadline, "missing exit DA1 query");
+        terminal.read_output(Duration::from_millis(/*millis*/ 50))?;
+    }
+    assert_eq!(
+        terminal.parser.screen().mouse_protocol_mode(),
+        vt100::MouseProtocolMode::None
+    );
+    // The DA1 reply straddles the first 1 KiB of in-flight mouse reports.
+    let mut reports = b"\x1b[<51;23;56M".repeat(85);
+    reports.extend_from_slice(b"\x1b[?1;2c");
+    terminal.write_input(&reports)?;
     loop {
         terminal.read_output(Duration::from_millis(/*millis*/ 50))?;
         if let Some(status) = terminal.child.try_wait()? {
@@ -239,6 +255,10 @@ fn default_owned_screen_entry_paints_before_sync_ends_and_exit_clears_inline_dra
             terminal.screen_contents()
         );
     }
+    terminal.write_input(b"shell\n")?;
+    let mut shell_input = [0; 6];
+    terminal.slave.read_exact(&mut shell_input)?;
+    assert_eq!(&shell_input, b"shell\n");
     ensure!(
         !terminal.parser.screen().alternate_screen(),
         "alternate screen was not restored"
@@ -276,6 +296,7 @@ fn fullscreen_transcript_can_opt_out_to_terminal_scrollback() -> Result<()> {
 
 pub(super) struct PtyCodex {
     master: File,
+    slave: File,
     child: Child,
     parser: vt100::Parser,
     output: Vec<u8>,
@@ -364,16 +385,20 @@ impl PtyCodex {
             .env_remove("STY")
             .env("TERM_PROGRAM", "kitty")
             .env_remove("TERM_PROGRAM_VERSION")
+            // Exercise the fixture's login state even on hosts configured with workload identity.
+            .env_remove(codex_protocol::shell_environment::OPENAI_FEDERATION_RULE_ID_ENV_VAR)
+            .env_remove(codex_protocol::shell_environment::OPENAI_IDENTITY_TOKEN_FILE_ENV_VAR)
             .env("OPENAI_API_KEY", "focus-palette-test")
             .env("CODEX_HOME", codex_home.path())
             .stdin(stdin)
             .stdout(stdout)
-            .stderr(slave)
+            .stderr(slave.try_clone()?)
             .spawn()
             .context("start Elpis in focus-test pseudo-terminal")?;
 
         Ok(Self {
             master,
+            slave,
             child,
             parser: vt100::Parser::new(
                 /*rows*/ 32, /*cols*/ 120, /*scrollback_len*/ 0,
@@ -444,8 +469,10 @@ impl PtyCodex {
             self.cursor_answered = true;
         }
 
-        if !self.keyboard_answered && contains_bytes(&self.output, b"\x1b[?u") {
-            self.write_input(b"\x1b[?7u")?;
+        if !self.keyboard_answered && contains_bytes(&self.output, b"\x1b[c") {
+            if contains_bytes(&self.output, b"\x1b[?u") {
+                self.write_input(b"\x1b[?7u")?;
+            }
             self.write_input(b"\x1b[?1;2c")?;
             self.keyboard_answered = true;
         }
@@ -539,6 +566,24 @@ impl Drop for PtyCodex {
 
 fn contains_bytes(buffer: &[u8], needle: &[u8]) -> bool {
     buffer.windows(needle.len()).any(|window| window == needle)
+}
+
+pub(super) fn write_test_config_with_bundled_models(
+    codex_home: &Path,
+    repo_root: &Path,
+) -> Result<()> {
+    write_test_config(codex_home, repo_root)?;
+    // Model fetches must not delay the startup screens this PTY is waiting for.
+    let catalog = codex_home.join("models.json");
+    std::fs::write(
+        &catalog,
+        serde_json::to_vec(&codex_models_manager::bundled_models_response()?)?,
+    )?;
+    let catalog = serde_json::to_string(&catalog)?;
+    let path = codex_home.join("config.toml");
+    let config = std::fs::read_to_string(&path)?;
+    std::fs::write(path, format!("model_catalog_json = {catalog}\n{config}"))?;
+    Ok(())
 }
 
 pub(super) fn write_test_config(codex_home: &Path, repo_root: &Path) -> Result<()> {

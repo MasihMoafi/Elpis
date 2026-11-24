@@ -187,6 +187,54 @@ fn allows_shared_prefixes_with_distinct_completions() {
     config.global.copy = Some(binding("ctrl-x ctrl-o"));
 
     RuntimeKeymap::from_config(&config).expect("prefix trie can branch on the second stroke");
+
+    // Fill the budget immediately after the existing sidebar chooser shortcut.
+    let mut config = TuiKeymap::default();
+    config.global.leader = Some(KeybindingsSpec::Many(
+        (1..=16)
+            .map(|n| KeybindingSpec(format!("super-f{n}")))
+            .collect(),
+    ));
+    config.global.open_transcript = Some(KeybindingsSpec::Many(
+        ["", "shift-", "alt-"]
+            .into_iter()
+            .flat_map(|modifier| {
+                (1..=19).map(move |n| KeybindingSpec(format!("leader {modifier}f{n}")))
+            })
+            .take(45)
+            .collect(),
+    ));
+    let runtime = RuntimeKeymap::for_session(&config, /*workspace*/ true).unwrap();
+    assert_eq!(
+        runtime
+            .chords
+            .bindings
+            .iter()
+            .filter(|b| b.is_leader())
+            .count(),
+        super::MAX_LEADER_CHORD_BINDINGS
+    );
+    assert_eq!(
+        crate::keymap_setup::active_binding_specs(&runtime, "global", "focus_sidebar_tabs")
+            .unwrap(),
+        ["leader t"]
+    );
+    assert!(
+        runtime
+            .primary_hint(KeymapContext::Global, "sidebar_up")
+            .is_none()
+    );
+}
+
+#[test]
+fn allows_super_modified_character_prefixes_and_leaders() {
+    let mut config = TuiKeymap::default();
+    config.global.leader = Some(binding("super-k"));
+    config.global.open_transcript = Some(binding("leader super-t"));
+    config.global.copy = Some(binding("super-o super-c"));
+
+    RuntimeKeymap::from_config(&config)
+        .expect("Super-modified characters do not intercept ordinary text input");
 }
 
 #[test]
@@ -549,12 +597,10 @@ fn activity_context_preserves_list_chords_and_its_remapped_focus_toggle() {
         KeymapContextSet::activity(),
     );
     assert_eq!(
-        matcher.pending_hint_items(&runtime.chords, /*width*/ 80),
-        Some(vec![
-            ("⌃x".to_string(), "then".to_string()),
-            ("c".to_string(), "jump top".to_string()),
-            ("esc".to_string(), "cancel".to_string()),
-        ]),
+        matcher.pending.unwrap().actions(&runtime.chords)[0]
+            .0
+            .action,
+        "jump_top"
     );
     matcher.cancel();
     let combined = KeymapContextSet::new(KeymapContext::List).with(KeymapContext::Global);
@@ -564,36 +610,6 @@ fn activity_context_preserves_list_chords_and_its_remapped_focus_toggle() {
     ));
     assert!(matcher.expire(KeymapContextSet::activity()));
     assert!(!matcher.is_pending());
-}
-
-#[test]
-fn pending_hint_skips_whole_oversized_configured_completions() {
-    let config = serde_json::from_value(serde_json::json!({"global": {
-        "copy": "ctrl-x ctrl-alt-shift-f12", "focus_activity": "ctrl-x alt-shift-f11"
-    }}))
-    .unwrap();
-    let runtime = RuntimeKeymap::from_config(&config).unwrap();
-    let mut matcher = KeyChordMatcher::default();
-    matcher.advance(
-        KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
-        &runtime.chords,
-        KeymapContextSet::new(KeymapContext::Global),
-    );
-    let mut scenes = Vec::new();
-    for width in [80, 32, 10] {
-        let hints = matcher.pending_hint_items(&runtime.chords, width).unwrap();
-        let line = crate::bottom_pane::footer_hint_items_line(&hints);
-        assert!(line.width() <= usize::from(width));
-        scenes.push(format!("{width}: {line}"));
-    }
-    assert_eq!(
-        scenes,
-        [
-            "80: ⌃x then · ⇧⌥f11 activity · ⌃⇧⌥f12 copy · esc cancel",
-            "32: ⇧⌥f11 inspect · ⌃⇧⌥f12 copy",
-            "10: esc cancel",
-        ]
-    );
 }
 
 #[test]
@@ -608,14 +624,9 @@ fn warning_context_keeps_local_chords_ahead_of_copy_and_hides_unreachable_hints(
     let contexts = KeymapContextSet::warnings();
     let prefix = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL);
     matcher.advance(prefix, &runtime.chords, contexts);
-    assert_eq!(
-        matcher.pending_hint_items(&runtime.chords, /*width*/ 80),
-        Some(vec![
-            ("⌃x".into(), "then".into()),
-            ("c".into(), "jump bottom".into()),
-            ("esc".into(), "cancel".into()),
-        ])
-    );
+    let actions = matcher.pending.unwrap().actions(&runtime.chords);
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0].0.action, "jump_bottom");
     let KeyChordMatch::Completed(event) =
         matcher.advance(KeyCode::Char('c').into(), &runtime.chords, contexts)
     else {
@@ -623,4 +634,31 @@ fn warning_context_keeps_local_chords_ahead_of_copy_and_hides_unreachable_hints(
     };
     assert!(runtime.list.jump_bottom.is_pressed(event));
     assert!(!runtime.app.copy.is_pressed(event));
+}
+
+#[test]
+fn cloud_picker_preserves_composer_undo_and_stays_hidden_in_edit_only_popups() {
+    let picker = keymap_action_id("global", "choose_cloud_environment").unwrap();
+    let undo = keymap_action_id("composer", "undo").unwrap();
+    let editor = KeymapContextSet::new(KeymapContext::Editor).with(KeymapContext::Composer);
+
+    assert!(
+        editor
+            .with_cloud_environment_selection()
+            .contains_action(undo)
+    );
+    assert!(!KeymapContextSet::composer_edit_only().contains_action(picker));
+}
+
+#[test]
+fn composer_undo_defaults_yield_without_shadowing_vim_redo() {
+    let mut config = TuiKeymap::default();
+    config.global.leader = Some(binding("f7"));
+    config.composer.history_search_previous = Some(binding("alt-h"));
+    config.composer.redo = Some(binding("ctrl-r f6"));
+    let runtime = RuntimeKeymap::from_config(&config).unwrap();
+    let undo = KeyEvent::new(KeyCode::F(7), KeyModifiers::NONE);
+    let redo = KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL);
+    assert!(!runtime.composer.undo.is_pressed(undo));
+    assert!(runtime.vim_normal.redo.is_pressed(redo));
 }

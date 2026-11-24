@@ -1,6 +1,7 @@
 //! Viewport behavior and cache lifetime across scrolling, selection, and redraws.
 
 use super::*;
+use crate::history_cell::new_user_prompt;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
@@ -38,6 +39,15 @@ pub(super) fn cell(text: impl Into<String>) -> Arc<dyn HistoryCell> {
     })
 }
 
+fn prompt(text: impl Into<String>) -> Arc<dyn HistoryCell> {
+    Arc::new(new_user_prompt(
+        text.into(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    ))
+}
+
 pub(super) fn render(
     view: &mut TranscriptView,
     cells: &[Arc<dyn HistoryCell>],
@@ -61,6 +71,115 @@ pub(super) fn text(buffer: &Buffer) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+#[test]
+fn consecutive_user_prompts_share_one_background_block() {
+    use crate::history_cell::AgentMessageCell;
+    use crate::history_cell::new_spoken_user_prompt;
+    use codex_protocol::user_input::TextElement;
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![
+        prompt("First steering message"),
+        prompt("Second steering message"),
+        Arc::new(AgentMessageCell::new(
+            vec!["Assistant response".into()],
+            /*is_first_line*/ true,
+        )),
+        Arc::new(new_spoken_user_prompt(String::new())),
+        Arc::new(new_user_prompt(
+            "   ".into(),
+            vec![TextElement::new((0..3).into(), Some("   ".into()))],
+            Vec::new(),
+            Vec::new(),
+        )),
+        prompt("Later user message"),
+    ];
+    crate::terminal_palette::with_test_default_colors(
+        crate::terminal_probe::DefaultColors {
+            fg: (235, 235, 235),
+            bg: (18, 20, 30),
+        },
+        || {
+            let mut view = TranscriptView::default();
+            let buffer = render(&mut view, &cells, /*width*/ 32, /*height*/ 12);
+            insta::assert_snapshot!(
+                "consecutive_user_prompts_share_one_background_block",
+                format!("{buffer:?}")
+            );
+        },
+    );
+}
+
+#[test]
+fn prompt_adjacency_uses_cached_retained_presentations() {
+    let renders = Arc::new(AtomicUsize::new(0));
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![
+        Arc::new(TestCell {
+            text: "response".into(),
+            renders: Arc::clone(&renders),
+        }),
+        prompt("steering"),
+    ];
+    let mut view = TranscriptView::default();
+
+    view.current_layout(&cells, /*index*/ 1);
+    view.current_layout(&cells, /*index*/ 1);
+
+    assert_eq!(renders.load(Ordering::Relaxed), 1);
+}
+
+#[test]
+fn joined_prompt_preserves_source_offsets_across_rewrap() {
+    let cells = vec![prompt("older"), prompt("one\n\ntwo")];
+    let mut view = TranscriptView::default();
+    let unjoined = [Arc::clone(&cells[1])];
+    let source = view
+        .current_layout(&unjoined, /*index*/ 0)
+        .unwrap()
+        .text()
+        .to_owned();
+    let joined = view.current_layout(&cells, /*index*/ 1).unwrap();
+
+    assert_eq!(
+        (joined.text(), joined.rewrap(/*width*/ 8).text()),
+        (source.as_str(), source.as_str())
+    );
+}
+
+#[test]
+fn detailed_only_reasoning_separates_user_prompts() {
+    use crate::history_cell::ReasoningSummaryCell;
+    use std::path::Path;
+
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![
+        prompt("first"),
+        Arc::new(ReasoningSummaryCell::new(
+            "Reasoning".into(),
+            "visible detail".into(),
+            Path::new("."),
+            /*transcript_only*/ true,
+        )),
+        prompt("second"),
+    ];
+    let mut detailed = TranscriptView {
+        detailed: true,
+        ..TranscriptView::default()
+    };
+    assert!(
+        detailed
+            .current_layout(&cells, /*index*/ 2)
+            .unwrap()
+            .separated
+    );
+
+    let mut compact = TranscriptView::default();
+    assert!(
+        !compact
+            .entry_layout(&cells, /*index*/ 2, /*full_content*/ true)
+            .unwrap()
+            .separated
+    );
 }
 
 #[test]
@@ -865,6 +984,23 @@ impl HistoryCell for MutableHistoryCell {
 }
 
 #[test]
+fn cached_mutable_history_prevents_reusing_painted_geometry() {
+    let mutable: Arc<dyn HistoryCell> = Arc::new(MutableHistoryCell {
+        version: Arc::new(AtomicUsize::new(/*v*/ 1)),
+        renders: Arc::default(),
+    });
+    let cells = vec![mutable, cell("static tail")];
+    let mut view = TranscriptView::default();
+    render(&mut view, &cells, /*width*/ 24, /*height*/ 16);
+    assert!(!view.can_scroll_without_refresh(&cells, /*live_key*/ None));
+    drop(cells);
+
+    let cells = vec![cell("static tail")];
+    render(&mut view, &cells, /*width*/ 24, /*height*/ 16);
+    assert!(view.can_scroll_without_refresh(&cells, /*live_key*/ None));
+}
+
+#[test]
 fn mutable_history_formats_once_per_frame_and_refreshes_the_next_frame() {
     let version = Arc::new(AtomicUsize::new(/*v*/ 1));
     let renders = Arc::new(AtomicUsize::new(/*v*/ 0));
@@ -1164,4 +1300,442 @@ fn history_prefetch_counts_rows_in_preceding_entries() {
         view.jump_to_entry(&cells, /*index*/ 0);
         assert!(view.near_start(&cells));
     }
+}
+
+#[test]
+fn user_prompt_has_a_background_without_a_terminal_palette() {
+    use crate::history_cell::new_user_prompt;
+    use codex_protocol::user_input::TextElement;
+    use std::path::PathBuf;
+
+    let message = "First steering message";
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(new_user_prompt(
+        message.into(),
+        vec![TextElement::new((0..5).into(), Some("First".into()))],
+        vec![PathBuf::from("screenshot.png")],
+        Vec::new(),
+    ))];
+    crate::terminal_palette::with_test_default_colors(
+        /*colors*/ None::<crate::terminal_probe::DefaultColors>,
+        || {
+            let mut view = TranscriptView::default();
+            let buffer = render(&mut view, &cells, /*width*/ 32, /*height*/ 8);
+            insta::assert_snapshot!(
+                "user_prompt_has_a_background_without_a_terminal_palette",
+                format!("{buffer:?}")
+            );
+        },
+    );
+}
+
+#[test]
+fn spoken_prompt_selection_keeps_its_fallback_contrast() {
+    use crate::history_cell::new_spoken_user_prompt;
+    use crate::terminal_palette::rgb_color;
+    use ratatui::style::Color;
+    use ratatui::style::Modifier;
+
+    crate::terminal_palette::with_test_default_colors(
+        /*colors*/ None::<crate::terminal_probe::DefaultColors>,
+        || {
+            let cells: Vec<Arc<dyn HistoryCell>> =
+                vec![Arc::new(new_spoken_user_prompt("one\nnext".into()))];
+            for detailed in [false, true] {
+                let mut view = TranscriptView {
+                    detailed,
+                    ..TranscriptView::default()
+                };
+                let before = render(&mut view, &cells, /*width*/ 20, /*height*/ 5);
+                let rendered = text(&before);
+                let first = rendered
+                    .lines()
+                    .position(|row| row.contains("› one"))
+                    .unwrap() as u16;
+                let second = rendered
+                    .lines()
+                    .position(|row| row.contains("next"))
+                    .unwrap() as u16;
+                view.begin_selection(&cells, /*column*/ 2, first, /*clicks*/ 1);
+                view.extend_selection(/*column*/ 2, second);
+                let selected = render(&mut view, &cells, /*width*/ 20, /*height*/ 5);
+                let newline = &selected[(5, first)];
+                assert_eq!(
+                    (
+                        view.selected_text(&cells).as_deref(),
+                        selected[(0, first)].fg,
+                        newline.fg,
+                        newline.bg,
+                        newline.modifier.contains(Modifier::REVERSED),
+                    ),
+                    (
+                        Some("one\n"),
+                        Color::Red,
+                        rgb_color((238, 238, 238)),
+                        rgb_color((68, 68, 68)),
+                        true
+                    )
+                );
+            }
+        },
+    );
+}
+
+fn parked_screen(
+    view: &mut TranscriptView,
+    cells: &[Arc<dyn HistoryCell>],
+    active: Option<&dyn HistoryCell>,
+) -> String {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 8,
+    );
+    let mut buf = Buffer::empty(area);
+    view.render_parked(
+        area,
+        &mut buf,
+        cells,
+        active,
+        &[],
+        /*collapse_turn_details*/ true,
+    );
+    text(&buf).trim_end().to_owned()
+}
+
+fn turn_screen(view: &mut TranscriptView, cells: &[Arc<dyn HistoryCell>]) -> String {
+    text(&render(view, cells, /*width*/ 52, /*height*/ 22))
+}
+
+#[test]
+fn tool_disclosure_hides_output() {
+    let image = crate::history_cell::new_image_generation_call(
+        "image".into(),
+        "failed",
+        Some("private prompt".into()),
+        /*saved_path*/ None,
+    );
+    let cells: &[Arc<dyn HistoryCell>] = &[Arc::new(image)];
+    let mut view = TranscriptView::default();
+    let collapsed = parked_screen(&mut view, cells, /*active*/ None);
+    view.handle_key(KeyCode::F(4).into(), cells);
+    view.handle_key(KeyCode::Enter.into(), cells);
+    let expanded = parked_screen(&mut view, cells, /*active*/ None);
+    insta::assert_snapshot!(format!("{collapsed}\n{expanded}"), @r"
+        ▸ Image generation failed
+        ▾ Image generation failed
+          Image generation failed
+    ");
+}
+
+fn assistant_message(
+    text: &str,
+    phase: Option<codex_protocol::models::MessagePhase>,
+) -> Arc<dyn HistoryCell> {
+    Arc::new(
+        crate::history_cell::AgentMarkdownCell::new(
+            text.into(),
+            &crate::test_support::test_path_buf("/repo"),
+        )
+        .with_phase(phase),
+    )
+}
+
+#[test]
+fn collapsing_tool_group_refills_viewport() {
+    let mut cells = vec![
+        prompt("Check the field notes"),
+        cell("Opened the field notes\nChecking dates and locations\nChecking names and totals"),
+    ];
+    for id in 1..=6 {
+        cells.push(Arc::new(crate::history_cell::new_web_search_call(
+            format!("lookup-{id}"),
+            format!("field note {id}"),
+            codex_app_server_protocol::WebSearchAction::Other,
+        )));
+    }
+    cells.push(cell("Checking the last source"));
+    let mut view = TranscriptView::default();
+    view.sync_turn_details(&cells, /*enabled*/ true, /*active*/ None);
+    let screen = |view: &mut TranscriptView| {
+        text(&render(view, &cells, /*width*/ 52, /*height*/ 8))
+    };
+    let initial = screen(&mut view);
+    view.handle_key(KeyCode::F(4).into(), &cells);
+    view.handle_key(KeyCode::Enter.into(), &cells);
+    screen(&mut view);
+    // Read down to the expanded group's details, then close it in place.
+    view.scroll(&cells, /*rows*/ 2);
+    let expanded = screen(&mut view);
+    assert!(expanded.contains("▾ 6 tool calls"), "{expanded}");
+    view.handle_key(KeyCode::Enter.into(), &cells);
+    let collapsed = screen(&mut view);
+    assert_eq!(collapsed, initial);
+    assert!(view.is_activity_focused());
+    assert!(!view.is_following());
+    assert_eq!(screen(&mut view), collapsed);
+    insta::assert_snapshot!(collapsed);
+}
+
+#[test]
+fn tool_groups_expand_independently_inside_a_completed_turn() {
+    use crate::exec_cell::CommandOutput;
+    use crate::exec_cell::new_active_exec_command;
+    use codex_app_server_protocol::CommandExecutionSource;
+    use codex_protocol::models::MessagePhase::Commentary;
+    use codex_protocol::models::MessagePhase::FinalAnswer;
+    let mut cells = vec![
+        prompt("Check why the service writes a diagnostic to stderr each time it starts."),
+        assistant_message("Checking stderr.", Some(Commentary)),
+    ];
+    for id in ["hello", "world"] {
+        let mut command = new_active_exec_command(
+            id.into(),
+            vec!["echo".into(), id.into()],
+            Vec::new(),
+            CommandExecutionSource::Agent,
+            /*interaction_input*/ None,
+            /*animations_enabled*/ false,
+        );
+        command.complete_call(
+            id,
+            CommandOutput::new(/*exit_code*/ 0, "output sentinel".into()),
+            std::time::Duration::ZERO,
+        );
+        cells.push(Arc::new(command));
+    }
+    cells.push(assistant_message(
+        "The path is valid.",
+        Some(codex_protocol::models::MessagePhase::PartialAnswer),
+    ));
+    cells.push(assistant_message(
+        "The fixture is missing.",
+        Some(FinalAnswer),
+    ));
+    let mut view = TranscriptView::default();
+    view.sync_turn_details(&cells, /*enabled*/ true, /*active*/ None);
+    assert!(turn_screen(&mut view, &cells).contains("Checking stderr."));
+    cells.push(Arc::new(crate::history_cell::FinalMessageSeparator::new(
+        /*elapsed_seconds*/ None, /*runtime_metrics*/ None,
+    )));
+    view.sync_turn_details(&cells, /*enabled*/ true, /*active*/ None);
+    insta::assert_snapshot!(turn_screen(&mut view, &cells).trim(), @r"
+    › Check why the service writes a diagnostic to
+      stderr each time it starts.
+
+
+    ▸ 3 previous messages
+
+    • The path is valid.
+
+    • The fixture is missing.
+    ");
+
+    // The wrapped prompt is taller than this viewport. Keyboard expansion keeps its control visible.
+    let narrow = |view: &mut TranscriptView| {
+        text(&render(view, &cells, /*width*/ 25, /*height*/ 3))
+    };
+    narrow(&mut view);
+    view.handle_key(KeyCode::F(4).into(), &cells);
+    narrow(&mut view);
+    view.handle_key(KeyCode::Enter.into(), &cells);
+    assert!(narrow(&mut view).contains("▾ 3 previous messages"));
+    let expanded = turn_screen(&mut view, &cells);
+    assert!(expanded.contains("Checking stderr.") && expanded.contains("▸ Ran 2 commands"));
+    assert!(!expanded.contains("Ran echo hello"));
+    view.handle_key(KeyCode::Down.into(), &cells);
+    view.handle_key(KeyCode::Enter.into(), &cells);
+    let expanded = turn_screen(&mut view, &cells);
+    assert!(expanded.contains("▾ Ran 2 commands"));
+    assert!(expanded.contains("Ran echo hello") && expanded.contains("Ran echo world"));
+    assert!(!expanded.contains("output sentinel"));
+    view.begin_search();
+    view.paste_search("fixture is missing");
+    while view.advance_search(&cells) {}
+    view.handle_key(KeyCode::Enter.into(), &cells);
+    let matched = view.search.match_anchor().expect("final answer match");
+    view.scroll(&cells, /*rows*/ -20);
+    let frame = turn_screen(&mut view, &cells);
+    let row = |needle: &str| {
+        frame
+            .lines()
+            .position(|line| line.contains(needle))
+            .unwrap_or_else(|| panic!("missing {needle} in {frame}")) as u16
+    };
+    view.begin_selection(
+        &cells,
+        /*column*/ 5,
+        row("Checking stderr."),
+        /*clicks*/ 2,
+    );
+    assert!(view.toggle_disclosure_at(&cells, /*column*/ 0, row("previous messages")));
+    let collapsed = turn_screen(&mut view, &cells);
+    assert!(!collapsed.contains("Checking stderr.") && !collapsed.contains("Ran 2 commands"));
+    assert!(collapsed.contains("The fixture is missing."));
+    assert_eq!(view.search.match_anchor(), Some(matched));
+    view.handle_key(KeyCode::Esc.into(), &cells);
+    view.set_presentation(/*detailed*/ true, HistoryRenderMode::Rich);
+    assert!(turn_screen(&mut view, &cells).contains("output sentinel"));
+    view.set_presentation(/*detailed*/ false, HistoryRenderMode::Rich);
+
+    view.sync_turn_details(&cells, /*enabled*/ false, /*active*/ None);
+    view.jump_to_latest();
+    let disabled = turn_screen(&mut view, &cells);
+    assert!(disabled.contains("Checking stderr."));
+    assert!(disabled.contains("output sentinel"));
+}
+
+#[test]
+fn legacy_progress_stays_visible_until_a_final_answer() {
+    use codex_protocol::models::MessagePhase::FinalAnswer;
+    let completed = |id: &str, query: &str| {
+        Arc::new(crate::history_cell::new_web_search_call(
+            id.into(),
+            query.into(),
+            codex_app_server_protocol::WebSearchAction::Other,
+        ))
+    };
+    let mut cells = vec![
+        prompt("Check the fixture"),
+        assistant_message("Intermediate progress", /*phase*/ None),
+    ];
+    let search = crate::history_cell::new_active_web_search_call(
+        "search".into(),
+        String::new(),
+        /*animations_enabled*/ false,
+    );
+    let mut view = TranscriptView::default();
+    parked_screen(&mut view, &cells, Some(&search));
+    view.handle_key(KeyCode::F(4).into(), &cells);
+    assert!(view.is_activity_focused());
+    view.jump_to_entry(&cells, cells.len());
+    cells.push(Arc::new(search));
+    cells.push(completed("search", "fixture"));
+    parked_screen(&mut view, &cells, /*active*/ None);
+    assert!(!view.is_activity_focused());
+    assert!(
+        matches!(view.position, Position::Reading(anchor) if anchor.key == EntryKey::cell(cells.last().unwrap()))
+    );
+    view.jump_to_latest();
+    let active = turn_screen(&mut view, &cells);
+    insta::assert_snapshot!(active.trim(), @r"
+    › Check the fixture
+
+
+    • Intermediate progress
+
+    • Searched the web for fixture
+    ");
+    cells.push(completed("search-2", "docs"));
+    view.sync_turn_details(&cells, /*enabled*/ true, /*active*/ None);
+    assert!(turn_screen(&mut view, &cells).contains("⌕ 2 tool calls · Searched the web for docs"));
+    view.handle_key(KeyCode::F(4).into(), &cells);
+    view.handle_key(KeyCode::Enter.into(), &cells);
+    assert!(
+        turn_screen(&mut view, &cells)
+            .contains("      Searched the web for fixture\n      Searched the web for docs")
+    );
+    let last_row = view.area.y + view.visible.len() as u16 - 1;
+    view.begin_selection(&cells, /*column*/ 15, last_row, /*clicks*/ 2);
+    let older = crate::history_cell::new_image_generation_call(
+        "older".into(),
+        "failed",
+        /*revised_prompt*/ None,
+        /*saved_path*/ None,
+    );
+    cells.insert(/*index*/ 2, Arc::new(older));
+    view.history_loaded(&cells, 2..3);
+    view.sync_turn_details(&cells, /*enabled*/ true, /*active*/ None);
+    view.scroll(&cells, /*rows*/ -20);
+    let held = turn_screen(&mut view, &cells);
+    assert!(held.contains("▸ Image generation failed"), "{held}");
+    assert_eq!(
+        held.matches("      Searched the web for fixture").count(),
+        1,
+        "{held}"
+    );
+    view.end_selection(&cells);
+    view.sync_turn_details(&cells, /*enabled*/ true, /*active*/ None);
+    let joined = turn_screen(&mut view, &cells);
+    assert!(joined.contains("▾ 3 tool calls"));
+    assert!(joined.contains("      Image generation failed\n      Searched the web for fixture\n      Searched the web for docs"));
+    cells.extend([
+        assistant_message("Fixture verified", /*phase*/ None),
+        Arc::new(crate::history_cell::FinalMessageSeparator::new(
+            /*elapsed_seconds*/ None, /*runtime_metrics*/ None,
+        )),
+        Arc::new(crate::history_cell::FinalMessageSeparator::new(
+            Some(2),
+            /*runtime_metrics*/ None,
+        )),
+        cell("Code review started"),
+        assistant_message("Review complete", Some(FinalAnswer)),
+    ]);
+    view.sync_turn_details(&cells, /*enabled*/ true, /*active*/ None);
+    let screen = turn_screen(&mut view, &cells);
+    assert!(screen.contains("▸ Worked for 2s"), "{screen}");
+    assert!(screen.contains("Fixture verified") && screen.contains("Review complete"));
+    assert!(!screen.contains("Intermediate progress"));
+}
+
+#[test]
+fn live_search_group_keeps_its_summary_in_the_parked_pane() {
+    use codex_app_server_protocol::CommandExecutionSource;
+    use codex_shell_command::parse_command::parse_command;
+    let search = |query: &str| ["rg", "-l", query, "src"].map(str::to_owned).to_vec();
+    let first_call = search("TODO");
+    let second_call = search("FIXME");
+    let mut command = crate::exec_cell::new_active_exec_command(
+        "first".into(),
+        first_call.clone(),
+        parse_command(&first_call),
+        CommandExecutionSource::Agent,
+        /*interaction_input*/ None,
+        /*animations_enabled*/ false,
+    );
+    command.append_output("first", "private output");
+    let mut view = TranscriptView::default();
+    let first = parked_screen(&mut view, &[], Some(&command));
+    view.scroll(&[], /*rows*/ 0); // Pin the visible live row.
+    assert!(command.add_call(
+        "second".into(),
+        second_call.clone(),
+        parse_command(&second_call),
+        CommandExecutionSource::Agent,
+        /*interaction_input*/ None
+    ));
+    let (summary, expanded) =
+        view.sync_live_tool_summary(&[], /*enabled*/ true, Some(&command));
+    view.sync_live_layout(/*width*/ 40, /*key*/ None, |width| {
+        Some(summary.unwrap().layout(width, expanded, Vec::new()))
+    });
+    assert!(view.unseen_activity);
+    assert!(!view.current_tail_is_visible(&[]));
+    view.jump_to_latest();
+    let grouped = parked_screen(&mut view, &[], Some(&command));
+    assert!(view.toggle_disclosure_at(&[], /*column*/ 4, /*row*/ 0));
+    let opened = parked_screen(&mut view, &[], Some(&command));
+    view.begin_selection(&[], /*column*/ 12, /*row*/ 1, /*clicks*/ 2);
+    for id in ["first", "second"] {
+        command.complete_call(
+            id,
+            crate::exec_cell::CommandOutput::new(/*exit_code*/ 0, String::new()),
+            std::time::Duration::ZERO,
+        );
+    }
+    let cells: &[Arc<dyn HistoryCell>] = &[Arc::new(command)];
+    assert_eq!(parked_screen(&mut view, cells, /*active*/ None), opened);
+    assert!(view.toggle_disclosure_at(cells, /*column*/ 4, /*row*/ 0));
+    assert_eq!(
+        parked_screen(&mut view, cells, /*active*/ None).trim(),
+        "⌕ Explored files"
+    );
+    view.jump_to_latest();
+    view.handle_key(KeyCode::F(4).into(), cells);
+    view.handle_key(KeyCode::Enter.into(), cells);
+    assert!(parked_screen(&mut view, cells, /*active*/ None).contains("Searched for FIXME in src"));
+    insta::assert_snapshot!(format!("{first}\n{grouped}\n{opened}"), @r"
+        ⌕ Searching for TODO in src
+        ⌕ 2 tool calls · Searching for FIXME
+        ▾ 2 tool calls · Searching for FIXME
+          Searching for TODO in src
+          Searching for FIXME in src
+    ");
 }

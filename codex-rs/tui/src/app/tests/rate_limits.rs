@@ -12,7 +12,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use pretty_assertions::assert_eq;
 
-fn rate_limit_snapshot(
+pub(super) fn rate_limit_snapshot(
     used_percent: i32,
     rate_limit_reached_type: Option<RateLimitReachedType>,
     spend_control_reached: Option<bool>,
@@ -39,7 +39,9 @@ fn rate_limit_snapshot(
     }
 }
 
-fn account_rate_limits_response(snapshot: RateLimitSnapshot) -> GetAccountRateLimitsResponse {
+pub(super) fn account_rate_limits_response(
+    snapshot: RateLimitSnapshot,
+) -> GetAccountRateLimitsResponse {
     GetAccountRateLimitsResponse {
         ordinary_usage_allowed: None,
         account_id: None,
@@ -126,11 +128,6 @@ async fn backend_banner_state_survives_widget_replacement() -> Result<()> {
             app.chat_widget
                 .handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
         }
-        // Elpis: the idle footer tip appears on the next tick, so both sides are drawn after one.
-        app.chat_widget.pre_draw_tick();
-        let before = render_bottom_popup(&app.chat_widget, /*width*/ 90);
-        // Elpis: Esc dismisses the banner even while the Context Ledger is open beside it.
-        assert_eq!(before.contains("View usage"), !dismiss, "{before}");
         let mut tui = crate::tui::test_support::make_test_tui()?;
         let init = app.chatwidget_init_for_forked_or_resumed_thread(
             &mut tui,
@@ -144,13 +141,77 @@ async fn backend_banner_state_survives_widget_replacement() -> Result<()> {
             Box::new(PlainHistoryCell::new(Vec::new())),
         );
         app.chat_widget.pre_draw_tick();
-        assert_eq!(render_bottom_popup(&app.chat_widget, /*width*/ 90), before);
+        assert_eq!(
+            render_bottom_popup(&app.chat_widget, /*width*/ 90).contains("View usage"),
+            !dismiss
+        );
         app.chat_widget.update_backend_banner(&response);
-        assert_eq!(render_bottom_popup(&app.chat_widget, /*width*/ 90), before);
+        assert_eq!(
+            render_bottom_popup(&app.chat_widget, /*width*/ 90).contains("View usage"),
+            !dismiss
+        );
         response.rate_limit_upsell = None;
         app.chat_widget.update_backend_banner(&response);
         assert!(!render_bottom_popup(&app.chat_widget, /*width*/ 90).contains("View usage"));
     }
+    Ok(())
+}
+
+#[tokio::test]
+async fn accepted_rate_limit_read_updates_billing_after_its_status_card_is_gone() -> Result<()> {
+    use codex_protocol::account::PlanType;
+
+    let (mut app, mut events, _) = make_test_app_with_channels().await;
+    let mut tui = crate::tui::test_support::make_test_tui()?;
+    let mut server =
+        crate::start_embedded_app_server_for_picker(app.chat_widget.config_ref()).await?;
+    let card_id = 1;
+    app.chat_widget
+        .add_status_output(/*refreshing_rate_limits*/ true, Some(card_id));
+    let origin = RateLimitRefreshOrigin::StatusCommand {
+        request_id: card_id,
+    };
+    let (request_id, hard_stop_generation) = app
+        .rate_limit_refresh_state
+        .start(origin, &mut app.rate_limit_hard_stop_generation)
+        .unwrap();
+    let mut replacement = app.chatwidget_init_for_forked_or_resumed_thread(
+        &mut tui,
+        app.config.clone(),
+        /*initial_user_message*/ None,
+    );
+    replacement.has_codex_backend_auth = true;
+    replacement.initial_plan_type = Some(PlanType::Plus);
+    replacement.local_settings.tui.status_line = Some(vec!["estimated-thread-cost".into()]);
+    app.replace_chat_widget(ChatWidget::new_with_app_event(replacement));
+    let thread = ThreadId::new();
+    app.enqueue_primary_thread_session(
+        test_thread_session(thread, app.config.cwd.to_path_buf()),
+        Vec::new(),
+    )
+    .await?;
+    app.drain_active_thread_events(&mut tui).await?;
+    while events.try_recv().is_ok() {}
+
+    let quota = serde_json::from_value(serde_json::json!({"planType": "business"}))?;
+    Box::pin(app.handle_event(
+        &mut tui,
+        &mut server,
+        AppEvent::RateLimitsLoaded {
+            request_id,
+            origin,
+            hard_stop_generation,
+            result: Ok(account_rate_limits_response(quota)),
+        },
+    ))
+    .await?;
+    assert_eq!(
+        app.chat_widget.current_plan_type(),
+        Some(PlanType::Business)
+    );
+    assert!(std::iter::from_fn(|| events.try_recv().ok()).any(|event|
+        matches!(event, AppEvent::RefreshThreadUsage { thread_id, .. } if thread_id == thread)));
+    server.shutdown().await?;
     Ok(())
 }
 

@@ -373,6 +373,8 @@ async fn code_mode_messaging_fixture(
             }
             config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
             config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+            config.model_catalog =
+                Some(codex_models_manager::bundled_models_response().expect("valid catalog"));
             config
                 .permissions
                 .set_permission_profile(PermissionProfile::workspace_write())
@@ -801,7 +803,7 @@ async fn run_guardian_subagent_review(
         test.codex = super::guardian_checkpoint_migration::resume(
             &test,
             &test.codex,
-            vec![RolloutItem::Compacted(checkpoint)],
+            vec![RolloutItem::Compacted(Box::new(checkpoint))],
         )
         .await?;
         assert_eq!(
@@ -1016,6 +1018,8 @@ async fn run_guardian_subagent_review(
             ]
             .into_iter()
             .map(|text| ResponseItem::Message {
+                status: None,
+                encrypted_content: None,
                 id: None,
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText { text }],
@@ -1027,6 +1031,8 @@ async fn run_guardian_subagent_review(
     if matches!(root_context, RootContext::RetainedAtMessageLimit) {
         // The newest final answer must share the cap with user instructions and Q&A.
         root_history_items.extend((0..14).map(|index| ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: Some(ResponseItemId::with_suffix("root-instruction", index)),
             role: "user".to_owned(),
             content: vec![ContentItem::InputText {
@@ -1389,7 +1395,11 @@ async fn run_guardian_subagent_review(
         .thread_manager
         .list_agent_subtree_thread_ids(root_thread_id)
         .await?;
-    let failures = codex_feedback::guardian_review_failures(&feedback_thread_ids);
+    let failures = codex_feedback::guardian_review_failures(
+        test.codex.state_db().as_deref(),
+        &feedback_thread_ids,
+    )
+    .await;
     assert_eq!(failures.thread_ids, vec![worker_thread_id]);
     let feedback = failures.attachment.expect("failed worker review");
     let record: Value = serde_json::from_slice(&feedback.buffer)?;
@@ -1670,7 +1680,7 @@ async fn run_guardian_subagent_review(
                 ));
             }
             checkpoint.replacement_history = Some(replacement_history);
-            root.append_rollout_items(&[RolloutItem::Compacted(checkpoint)])
+            root.append_rollout_items(&[RolloutItem::Compacted(Box::new(checkpoint))])
                 .await?;
             root.shutdown_and_wait().await?;
             test.thread_manager.remove_thread(&root_thread_id).await;

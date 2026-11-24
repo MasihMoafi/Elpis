@@ -185,6 +185,140 @@ fn disabled_credential_broker_preserves_project_shell_settings() {
     );
 }
 
+#[tokio::test]
+async fn credential_masking_preserves_project_protections_in_both_loaders() {
+    use CredentialBrokerProjectState::Disabled;
+    use CredentialBrokerProjectState::Enabled;
+    use CredentialBrokerProjectState::Unconfigured;
+
+    for (features, requirements, broker_state) in [
+        (
+            "[features]\ncredential_masking=true\nnetwork_proxy=true",
+            "",
+            Enabled,
+        ),
+        (
+            "[features]\ncredential_masking=true\n[features.network_proxy]\nenabled=true",
+            "",
+            Enabled,
+        ),
+        (
+            "[features]\ncredential_masking=true",
+            "[experimental_network]\nenabled=true",
+            Enabled,
+        ),
+        (
+            "[features]\ncredential_masking=true\nnetwork_proxy=false",
+            "",
+            Enabled,
+        ),
+        (
+            "[features]\ncredential_masking=false\nnetwork_proxy=true",
+            "[features]\ncredential_masking=true",
+            Enabled,
+        ),
+        (
+            "[features]\ncredential_masking=true\nnetwork_proxy=true",
+            "[features]\ncredential_masking=false",
+            Unconfigured,
+        ),
+        (
+            "[features]\ncredential_masking=false\n[features.network_proxy]\nenabled=true\ncredential_broker=true",
+            "[features]\ncredential_masking=false",
+            Enabled,
+        ),
+        (
+            "[features]\ncredential_masking=true\nnetwork_proxy=true",
+            "[experimental_network]\nenabled=false",
+            Disabled,
+        ),
+        (
+            "[features]\ncredential_masking=false\nnetwork_proxy=true",
+            "[features]\ncredential_masking=true\n[experimental_network]\nenabled=false",
+            Disabled,
+        ),
+        (
+            "[features]\ncredential_masking=false\n[features.network_proxy]\nenabled=true\ncredential_broker=true",
+            "[experimental_network]\nenabled=false",
+            Disabled,
+        ),
+        (
+            "[features]\ncredential_masking=true\nnetwork_proxy=true",
+            "[features]\nnetwork_proxy=false\n[experimental_network]\nenabled=true",
+            Enabled,
+        ),
+    ] {
+        let tmp = tempdir().expect("tempdir");
+        let codex_home = tmp.path().join("codex-home");
+        let project = tmp.path().join("project");
+        let dot_codex = project.join(".codex");
+        std::fs::create_dir_all(&codex_home).expect("create Codex home");
+        std::fs::create_dir_all(&dot_codex).expect("create project config directory");
+        std::fs::write(project.join(".project-root"), "").expect("write project marker");
+        let project_key = TomlValue::String(project_trust_key(&project)).to_string();
+        std::fs::write(
+            codex_home.join(CONFIG_TOML_FILE),
+            format!("project_root_markers=['.project-root']\n[projects.{project_key}]\ntrust_level='trusted'\n{features}"),
+        )
+        .expect("write trusted config");
+        let project_config = "[features]\ncredential_masking=false\nnetwork_proxy=false\nshell_snapshot=false\n\
+            [shell_environment_policy]\nexperimental_use_profile=true\n\
+            [shell_environment_policy.set]\nGH_HOST='untrusted.example'\nGH_TOKEN='project-value'\n\
+            ZDOTDIR='/project-startup'\nBASH_ENV='/project-startup'\nUNCHANGED='allowed'";
+        std::fs::write(dot_codex.join(CONFIG_TOML_FILE), project_config)
+            .expect("write project config");
+        let requirements_path = tmp.path().join("requirements.toml");
+        std::fs::write(&requirements_path, requirements).expect("write requirements");
+        let mut overrides = LoaderOverrides::without_managed_config_for_tests();
+        overrides.system_config_path = Some(tmp.path().join("missing-system.toml"));
+        overrides.system_requirements_path = Some(requirements_path);
+        let cwd = AbsolutePathBuf::from_absolute_path(&project).expect("absolute cwd");
+        let stack = load_config_layers_state(
+            &TestFileSystem,
+            &codex_home,
+            Some(cwd.clone()),
+            &[],
+            overrides.clone(),
+            &crate::NoopThreadConfigLoader,
+        )
+        .await
+        .expect("load config stack");
+        let local = local::load_local_config_layers_with_overrides(
+            &TestFileSystem,
+            &codex_home,
+            &cwd,
+            &overrides,
+        )
+        .await
+        .expect("load local layers");
+        let expected = match broker_state {
+            Enabled => {
+                "[features]\n[shell_environment_policy]\n[shell_environment_policy.set]\nUNCHANGED='allowed'".to_string()
+            }
+            Disabled => project_config
+                .replace("credential_masking=false\n", "")
+                .replace("network_proxy=false\n", ""),
+            Unconfigured => project_config.replace("credential_masking=false\n", ""),
+        };
+        let expected: TomlValue = toml::from_str(&expected).expect("expected project config");
+        let project_layer = stack
+            .all_layers_low_to_high()
+            .find(|layer| matches!(layer.name, ConfigLayerSource::Project { .. }))
+            .expect("project config layer");
+        assert_eq!(project_layer.config, expected, "{features}; {requirements}");
+        let local_project_layer = local
+            .config
+            .layers
+            .iter()
+            .find(|layer| matches!(layer.source, ConfigLayerSource::Project { .. }))
+            .expect("local project config layer");
+        assert_eq!(
+            local_project_layer.toml, expected,
+            "{features}; {requirements}"
+        );
+    }
+}
+
 #[test]
 fn project_environment_filters_preserve_child_policy() {
     for project_config in [
@@ -431,6 +565,67 @@ impl ExecutorFileSystem for TestFileSystem {
 }
 
 #[tokio::test]
+async fn project_diagnostic_uses_the_current_file_and_ignores_its_provider() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let path = dir.path().join(CONFIG_TOML_FILE);
+    let layer = ConfigLayerEntry::new(
+        ConfigLayerSource::Project {
+            dot_codex_folder: AbsolutePathBuf::from_absolute_path(dir.path())?,
+        },
+        TomlValue::Table(Default::default()),
+    );
+    std::fs::write(
+        &path,
+        "[tui]\nstatus_line_provider = 42\nvim_mode_default = 43\n",
+    )?;
+    let error = first_layer_config_error_from_entries(&[layer])
+        .await
+        .expect("invalid vim setting");
+    assert_eq!((error.path, error.range.start.line), (path, 3));
+    assert!(error.message.contains("43"), "{}", error.message);
+    Ok(())
+}
+
+#[tokio::test]
+async fn packaged_status_line_provider_is_ignored_but_strictly_validated() -> anyhow::Result<()> {
+    let dir = tempdir()?;
+    let path = AbsolutePathBuf::resolve_path_against_base("defaults.toml", dir.path());
+    std::fs::write(&path, "[tui]\nstatus_line_provider = 42\n")?;
+    let load = |strict_config| {
+        load_config_layers_state(
+            &TestFileSystem,
+            dir.path(),
+            /*cwd*/ None,
+            &[],
+            ConfigLoadOptions {
+                loader_overrides: LoaderOverrides {
+                    packaged_defaults_path: Some(path.clone()),
+                    ..LoaderOverrides::without_managed_config_for_tests()
+                },
+                strict_config,
+                ..Default::default()
+            },
+            &crate::NoopThreadConfigLoader,
+        )
+    };
+    let stack = load(/*strict_config*/ false).await?;
+    assert_eq!(stack.effective_config().get("tui"), None);
+    let error = load(/*strict_config*/ true)
+        .await
+        .expect_err("malformed packaged provider");
+    let diagnostic = error
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<crate::ConfigLoadError>())
+        .expect("packaged config diagnostic")
+        .config_error();
+    assert_eq!(
+        (diagnostic.path.as_path(), diagnostic.range.start.line),
+        (path.as_path(), 2)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn packaged_defaults_have_lower_precedence_than_existing_config_layers() {
     let tmp = tempdir().expect("tempdir");
     let packaged_defaults_path =
@@ -582,6 +777,63 @@ async fn missing_packaged_defaults_file_returns_an_error() {
             packaged_defaults_path.display()
         )
     );
+}
+
+#[tokio::test]
+async fn multi_agent_warns_for_explicit_user_and_project_settings() -> std::io::Result<()> {
+    let home = tempdir()?;
+    let workspace = tempdir()?;
+    let cwd = AbsolutePathBuf::try_from(workspace.path())?;
+    let trust_key = TomlValue::String(project_trust_key(workspace.path()));
+    let project_config_dir = workspace.path().join(".codex");
+    std::fs::create_dir(&project_config_dir)?;
+    let session_flags = [(
+        "features.multi_agent".to_string(),
+        TomlValue::Boolean(false),
+    )];
+    for (user, project, flags, warn) in [
+        ("", "", session_flags.as_slice(), false),
+        ("[features]\nmulti_agent = false", "", &[], true),
+        (
+            "",
+            "[features]\nmulti_agent = true",
+            session_flags.as_slice(),
+            true,
+        ),
+    ] {
+        std::fs::write(
+            home.path().join(CONFIG_TOML_FILE),
+            format!("[projects.{trust_key}]\ntrust_level = 'trusted'\n{user}"),
+        )?;
+        std::fs::write(project_config_dir.join(CONFIG_TOML_FILE), project)?;
+        let stack = load_config_layers_state(
+            &TestFileSystem,
+            home.path(),
+            Some(cwd.clone()),
+            flags,
+            LoaderOverrides::without_managed_config_for_tests(),
+            &crate::NoopThreadConfigLoader,
+        )
+        .await?;
+        let warned = stack
+            .startup_warnings()
+            .unwrap_or_default()
+            .iter()
+            .any(|warning| {
+                warning.contains(
+                    "`[features].multi_agent` is deprecated. It still controls the V1 fallback.",
+                )
+            });
+        assert_eq!(
+            (
+                stack.effective_config()["features"]["multi_agent"].as_bool(),
+                warned
+            ),
+            (Some(false), warn),
+            "user={user:?}, project={project:?}"
+        );
+    }
+    Ok(())
 }
 
 #[cfg(windows)]
@@ -1058,8 +1310,61 @@ async fn local_layers_keep_raw_paths_order_and_legacy_requirements() {
 }
 
 #[test]
-fn project_config_cannot_change_system_proxy_routing() {
-    for key in ["respect_system_proxy", "system_proxy_fallback"] {
+fn project_config_cannot_supply_guardian_v3_prompts_or_their_cap() {
+    let mut project: TomlValue = toml::toml! {
+        [features.guardianv3]
+        max_instruction_tokens = 1
+        [features.guardianv3.housekeeper]
+        routing_instructions = "Use project routing"
+        batch_timeout_ms = 15000
+        [features.guardianv3.reviewer]
+        retrieval_instructions = "Use project retrieval"
+    }
+    .into();
+    let mut user: TomlValue = toml::toml! {
+        [features.guardianv3]
+        max_instruction_tokens = 200
+        [features.guardianv3.housekeeper]
+        routing_instructions = "Use my routing"
+    }
+    .into();
+
+    let ignored = sanitize_project_config(
+        &mut project,
+        CredentialBrokerProjectState::Unconfigured,
+        &[],
+    );
+    merge_toml_values(&mut user, &project);
+
+    assert_eq!(
+        ignored,
+        [
+            "features.guardianv3.max_instruction_tokens",
+            "features.guardianv3.housekeeper.routing_instructions",
+            "features.guardianv3.reviewer.retrieval_instructions",
+        ]
+    );
+    assert_eq!(
+        user,
+        toml::toml! {
+            [features.guardianv3]
+            max_instruction_tokens = 200
+            [features.guardianv3.housekeeper]
+            routing_instructions = "Use my routing"
+            batch_timeout_ms = 15000
+            [features.guardianv3.reviewer]
+        }
+        .into()
+    );
+}
+
+#[test]
+fn project_config_cannot_change_system_proxy_routing_or_credential_masking() {
+    for key in [
+        "respect_system_proxy",
+        "system_proxy_fallback",
+        "credential_masking",
+    ] {
         for enabled in [false, true] {
             let mut config: TomlValue =
                 toml::from_str(&format!("[features]\n{key} = {enabled}\nplugins = true"))
@@ -1077,4 +1382,132 @@ fn project_config_cannot_change_system_proxy_routing() {
             );
         }
     }
+}
+
+#[test]
+fn otel_headers_helpers_cannot_come_from_repository_config() {
+    let mut config: TomlValue = toml::from_str(
+        "[otel]\nheaders_helper = 'untrusted-command'\nheaders_helper_refresh_interval_ms = 1",
+    )
+    .unwrap();
+    let ignored =
+        sanitize_project_config(&mut config, CredentialBrokerProjectState::Unconfigured, &[]);
+    assert_eq!(ignored, ["otel"]);
+    assert!(config.get("otel").is_none());
+}
+
+#[test]
+fn otel_headers_helper_interval_must_be_positive() {
+    assert!(
+        toml::from_str::<ConfigToml>(
+            "[otel]\nheaders_helper = 'helper'\nheaders_helper_refresh_interval_ms = 0"
+        )
+        .is_err()
+    );
+    let config: ConfigToml = toml::from_str(
+        "[otel]\nheaders_helper = 'helper'\nheaders_helper_refresh_interval_ms = 900000",
+    )
+    .unwrap();
+    let otel = config.otel.unwrap();
+    assert_eq!(otel.headers_helper.as_deref(), Some("helper"));
+    assert_eq!(
+        otel.headers_helper_refresh_interval_ms.unwrap().get(),
+        900000
+    );
+}
+
+#[tokio::test]
+async fn guardian_refresh_validates_fallback_after_merging_retained_layers() {
+    let mut stack = ConfigLayerStack::new(
+        vec![
+            ConfigLayerEntry::new(
+                ConfigLayerSource::EnterpriseManaged {
+                    id: "workspace".into(),
+                    name: "Workspace".into(),
+                },
+                toml::from_str("[auto_review]\npolicy = 'old policy'").unwrap(),
+            ),
+            ConfigLayerEntry::new(
+                ConfigLayerSource::SessionFlags,
+                toml::from_str("model = 'session-model'").unwrap(),
+            ),
+        ],
+        ConfigRequirements {
+            allow_login_shell: Some(crate::Sourced::new(
+                /*value*/ false,
+                RequirementSource::Unknown,
+            )),
+            ..Default::default()
+        },
+        ConfigRequirementsToml {
+            allow_login_shell: Some(false),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let home = tempdir().unwrap();
+    let path = home.path().join("managed.toml");
+    std::fs::write(&path, "sandbox_mode = 'invalid'").unwrap();
+    let overrides = LoaderOverrides::with_managed_config_path_for_tests(path);
+    let load = |cloud_config_bundle, revision| {
+        load_guardian_policy_snapshot(
+            &TestFileSystem,
+            home.path(),
+            &overrides,
+            cloud_config_bundle,
+            revision,
+        )
+    };
+    let bundle =
+        crate::test_support::CloudConfigBundleFixture::enterprise_config("model = 'irrelevant'")
+            .add_enterprise_config("auto_review = 1")
+            .add_enterprise_config("auto_review.policy = 'lower priority'")
+            .add_enterprise_requirement("allowed_approvals_reviewers = ['auto_review']")
+            .into_loader();
+    let snapshot = load(&bundle, /*revision*/ 1).await.unwrap();
+    let before = stack.effective_config();
+    let mut retained = stack.clone();
+    stack.apply_guardian_policy(&snapshot);
+    retained.retain_guardian_policy_from(&stack);
+    assert_eq!(retained, stack);
+    assert!(
+        stack
+            .requirements()
+            .approvals_reviewer
+            .can_set(&codex_protocol::config_types::ApprovalsReviewer::User)
+            .is_err()
+    );
+    assert_eq!(stack.effective_config(), before);
+    assert_eq!(
+        stack.requirements().allow_login_shell,
+        Some(crate::Sourced::new(
+            /*value*/ false,
+            RequirementSource::Unknown
+        ))
+    );
+    assert!(stack.guardian_config().is_err());
+
+    let local = stack
+        .clone()
+        .with_session_config(toml::from_str("auto_review.policy = 'local'").unwrap())
+        .unwrap();
+    assert_eq!(
+        local.guardian_config().unwrap(),
+        crate::config_toml::AutoReviewToml {
+            policy: Some("local".to_owned()),
+            ..Default::default()
+        }
+    );
+    // Removing the workspace bundle must not revive its old managed fallback.
+    let removed = load(
+        &crate::CloudConfigBundleLoader::default(),
+        snapshot.revision + 1,
+    )
+    .await
+    .unwrap();
+    stack.apply_guardian_policy(&removed);
+    assert_eq!(
+        stack.guardian_config().unwrap(),
+        crate::config_toml::AutoReviewToml::default()
+    );
 }

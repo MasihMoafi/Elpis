@@ -8,6 +8,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioExecutor;
 use hyper_util::rt::TokioIo;
 use pretty_assertions::assert_eq;
+use prost::Message;
 use std::convert::Infallible;
 use tokio::sync::mpsc;
 
@@ -22,15 +23,20 @@ impl Drop for Fixture {
     }
 }
 async fn fixture(response: http::Response<Body>) -> Fixture {
+    fixture_responses(vec![response]).await
+}
+async fn fixture_responses(responses: Vec<http::Response<Body>>) -> Fixture {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let endpoint = format!("http://{}", listener.local_addr().unwrap());
     let (sender, requests) = mpsc::unbounded_channel();
-    let response = std::sync::Arc::new(std::sync::Mutex::new(Some(response)));
+    let responses = std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::from(
+        responses,
+    )));
     let task = tokio::spawn(async move {
         let (socket, _) = listener.accept().await.unwrap();
         let service = service_fn(move |request: http::Request<hyper::body::Incoming>| {
             let sender = sender.clone();
-            let response = response.lock().unwrap().take().unwrap();
+            let response = responses.lock().unwrap().pop_front().unwrap();
             async move {
                 let (parts, body) = request.into_parts();
                 sender
@@ -93,6 +99,442 @@ async fn assert_request(fixture: &mut Fixture, method: &str, expected: &[u8]) {
     assert_eq!(body, frame(expected));
 }
 #[tokio::test]
+async fn activation_sends_only_identity_and_excludes_turns() {
+    let mut fixture = fixture(response(vec![frame(&[])], tonic::Status::ok(""))).await;
+    assert!(matches!(
+        fixture.client.activate("t").await,
+        Err(MutationError::OutcomeUnknown(Error::InvalidResponse))
+    ));
+    // exclude_turns=true (field 7), thread_id="t" (field 18).
+    assert_request(&mut fixture, "UpdateConfig", &[56, 1, 0x92, 1, 1, b't']).await;
+}
+
+#[tokio::test]
+async fn archive_addresses_the_requested_thread_and_requires_acknowledgment() {
+    let mut fixture = fixture_responses(vec![
+        response(vec![frame(&[])], tonic::Status::ok("")),
+        response(
+            vec![frame(&[])],
+            tonic::Status::permission_denied("synthetic denial"),
+        ),
+    ])
+    .await;
+
+    fixture.client.archive_thread("t").await.unwrap();
+    assert_request(&mut fixture, "ArchiveThread", b"\x0a\x01t").await;
+
+    let error = fixture.client.archive_thread("u").await.unwrap_err();
+    let MutationError::OutcomeUnknown(Error::Rpc(status)) = error else {
+        panic!("expected a remote archive failure");
+    };
+    assert_eq!(status.code, tonic::Code::PermissionDenied as i32);
+    assert_request(&mut fixture, "ArchiveThread", b"\x0a\x01u").await;
+    assert!(fixture.requests.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn rename_sends_the_thread_and_title_and_requires_acknowledgment() {
+    let mut fixture = fixture_responses(vec![
+        response(vec![frame(&[])], tonic::Status::ok("")),
+        response(
+            vec![frame(&[])],
+            tonic::Status::permission_denied("synthetic denial"),
+        ),
+    ])
+    .await;
+
+    fixture.client.set_thread_name("t", "New").await.unwrap();
+    assert_request(&mut fixture, "SetThreadName", b"\x0a\x01t\x12\x03New").await;
+
+    let error = fixture
+        .client
+        .set_thread_name("u", "Other")
+        .await
+        .unwrap_err();
+    let MutationError::OutcomeUnknown(Error::Rpc(status)) = error else {
+        panic!("expected a remote rename failure");
+    };
+    assert_eq!(status.code, tonic::Code::PermissionDenied as i32);
+    assert_request(&mut fixture, "SetThreadName", b"\x0a\x01u\x12\x05Other").await;
+    assert!(fixture.requests.try_recv().is_err());
+}
+
+#[tokio::test]
+async fn reads_a_saved_name_without_attaching_to_the_thread() {
+    let mut fixture = fixture_responses(vec![
+        response(
+            vec![frame(b"\x0a\x09\x72\x01t\x8a\x01\x03New")],
+            tonic::Status::ok(""),
+        ),
+        response(vec![frame(b"\x0a\x03\x72\x01u")], tonic::Status::ok("")),
+    ])
+    .await;
+    assert_eq!(
+        fixture.client.read_thread_name("t").await.unwrap(),
+        Some("New".to_string())
+    );
+    assert_request(&mut fixture, "ReadThread", b"\x0a\x01t").await;
+    assert_eq!(fixture.client.read_thread_name("u").await.unwrap(), None);
+    assert_request(&mut fixture, "ReadThread", b"\x0a\x01u").await;
+}
+
+#[tokio::test]
+async fn activation_preserves_native_settings_and_thread_metadata() {
+    // Native Thread fields encoded independently of the client's wire types.
+    let thread_base: &[u8] = &[
+        0x22, 1, b'v', // cli_version (4)
+        0x28, 1, // created_at (5)
+        0x32, 1, b'/', // cwd (6)
+        0x48, 0, // ephemeral (9)
+        0x72, 1, b't', // id (14)
+        0x82, 1, 1, b'p', // model_provider (16)
+        0xaa, 1, 0, // preview (21)
+        0xda, 1, 1, b's', // session_id (27)
+        0xe2, 1, 2, 8, 99, // source (28): future simple value
+        0xea, 1, 2, 0x12, 0, // status (29): idle
+        0xfa, 1, 0, // turns (31): empty
+        0x80, 2, 2, // updated_at (32)
+    ];
+    let encode_response = |mode: u8, daybreak: Option<bool>, approval: u8| {
+        let mut thread = thread_base.to_vec();
+        if let Some(enabled) = daybreak {
+            thread.extend_from_slice(&[0x38, u8::from(enabled)]); // daybreak_enabled (7)
+        }
+        // Settings has developer_instructions (1), model (2), and reasoning_effort (3).
+        let settings = Bytes::from_static(if mode == 1 {
+            b"\x0a\x01d\x12\x01m\x1a\x04high"
+        } else {
+            b"\x12\x01m"
+        });
+        let mut collaboration_mode = vec![8, mode];
+        prost::encoding::bytes::encode(/* settings */ 2, &settings, &mut collaboration_mode);
+        let mut response_bytes = vec![0x12, 2, 8, approval, 0x18, 1]; // approval and reviewer
+        prost::encoding::bytes::encode(
+            /* collaboration_mode */ 4,
+            &collaboration_mode,
+            &mut response_bytes,
+        );
+        // instruction_sources (8) wraps repeated string values (1).
+        response_bytes.extend_from_slice(b"\x42\x0c\x0a\x0a/AGENTS.md");
+        response_bytes.extend_from_slice(&[
+            0x2a, 1, b'/', // cwd (5)
+            0x52, 1, b'm', // model (10)
+            0x5a, 1, b'p', // model_provider (11)
+            0x6a, 4, b'h', b'i', b'g', b'h', // reasoning_effort (13)
+            0x7a, 4, 0x12, 2, 8, 1, // sandbox (15): read-only with network access
+        ]);
+        prost::encoding::bytes::encode(/* thread */ 17, &thread, &mut response_bytes);
+        (response_bytes, thread)
+    };
+
+    // Activation retains stricter runtime requirements than stored list metadata.
+    for (session_id, model_provider) in [("", "p"), ("s", "")] {
+        let (response_bytes, _) = encode_response(1, Some(true), 2);
+        let mut settings =
+            crate::activation_wire::UpdateConfigResponse::decode(Bytes::from(response_bytes))
+                .unwrap();
+        let mut thread =
+            crate::activation_wire::Thread::decode(settings.thread.take().unwrap()).unwrap();
+        thread.session_id = Some(session_id.into());
+        thread.model_provider = Some(model_provider.into());
+        settings.thread = Some(thread.encode_to_vec().into());
+        assert!(matches!(
+            ThreadActivation::from_settings(settings),
+            Err(Error::InvalidResponse)
+        ));
+    }
+
+    for (mode, daybreak) in [(1, Some(true)), (2, Some(false)), (2, None)] {
+        let (response_bytes, thread) = encode_response(mode, daybreak, 2);
+        let mut server = fixture(response(
+            vec![frame(&response_bytes)],
+            tonic::Status::ok(""),
+        ))
+        .await;
+        let activation = server.client.activate("t").await.unwrap();
+        assert_eq!(activation.thread.protobuf().as_ref(), thread.as_slice());
+        assert_eq!(
+            (
+                activation.model.as_str(),
+                activation.reasoning_effort.as_deref()
+            ),
+            ("m", Some("high")),
+        );
+        let json = serde_json::to_value(&activation).unwrap();
+        assert_eq!(json["thread"]["source"], "unknown");
+        assert_eq!(
+            json["thread"].get("daybreakEnabled"),
+            Some(&serde_json::json!(daybreak))
+        );
+        assert_eq!(
+            json["instructionSources"],
+            serde_json::json!(["/AGENTS.md"])
+        );
+        assert_eq!(json["approvalPolicy"], "on-request");
+        assert_eq!(json["approvalsReviewer"], "user");
+        assert_eq!(
+            json["sandbox"],
+            serde_json::json!({"type": "readOnly", "networkAccess": true})
+        );
+        assert_eq!(
+            json["collaborationMode"],
+            serde_json::json!({
+                "mode": if mode == 1 { "plan" } else { "default" },
+                "settings": {
+                    "model": "m",
+                    "developer_instructions": if mode == 1 { Some("d") } else { None },
+                    "reasoning_effort": if mode == 1 { Some("high") } else { None }
+                }
+            })
+        );
+        assert_request(&mut server, "UpdateConfig", &[56, 1, 0x92, 1, 1, b't']).await;
+        assert!(server.requests.try_recv().is_err());
+    }
+
+    // Unknown security policy must remain an error, never a default.
+    let (response_bytes, _) = encode_response(1, Some(true), 99);
+    let mut server = fixture(response(
+        vec![frame(&response_bytes)],
+        tonic::Status::ok(""),
+    ))
+    .await;
+    assert!(matches!(
+        server.client.activate("t").await,
+        Err(MutationError::OutcomeUnknown(Error::UnsupportedResponse(
+            "approval policy"
+        )))
+    ));
+    assert_request(&mut server, "UpdateConfig", &[56, 1, 0x92, 1, 1, b't']).await;
+    assert!(server.requests.try_recv().is_err());
+}
+
+// Native Prewarm pluginsMcp (28) with productSku (1) set to "codex".
+const PREWARM_CODEX_PLUGINS: &[u8] = b"\xe2\x01\x07\x0a\x05codex";
+
+#[tokio::test]
+async fn prewarm_defers_readiness_for_explicit_environments() {
+    let mut fixture = fixture_responses(vec![
+        response(vec![frame(&[])], tonic::Status::ok("")),
+        response(vec![frame(&[])], tonic::Status::ok("")),
+        response(vec![frame(&[])], tonic::Status::ok("")),
+    ])
+    .await;
+
+    assert!(matches!(
+        fixture
+            .client
+            .prewarm_default_thread(/*model*/ None, /*model_provider*/ None)
+            .await,
+        Err(Error::InvalidResponse)
+    ));
+    let expected = [
+        b"\x52\x04\x0a\x02\x0a\x00".as_slice(),
+        PREWARM_CODEX_PLUGINS,
+    ]
+    .concat();
+    assert_request(&mut fixture, "Prewarm", &expected).await;
+
+    assert!(matches!(
+        fixture
+            .client
+            .prewarm_thread(
+                /*model*/ None,
+                /*model_provider*/ None,
+                Some(EnvironmentSelection::Project(ProjectEnvironment {
+                    name: "App".to_owned(),
+                    cwd: Some("/workspace/acme/app".to_owned()),
+                    origin_urls: vec![
+                        "git@github.com:acme/app.git".to_owned(),
+                        "https://github.com/acme/lib.git".to_owned(),
+                    ],
+                })),
+            )
+            .await,
+        Err(Error::InvalidResponse)
+    ));
+    let expected = [
+        b"\x52\x73\x0a\x71\x0a\x6f\x0a\x0d" as &[u8],
+        b"asenvcfg_base",
+        b"\x12\x13/workspace/acme/app",
+        b"\x1a\x49\x0a\x42\x0a\x1d\x2a\x1b",
+        b"git@github.com:acme/app.git",
+        b"\x0a\x21\x2a\x1f",
+        b"https://github.com/acme/lib.git",
+        b"\x12\x03App",
+        PREWARM_CODEX_PLUGINS,
+        b"\xe8\x01\x01",
+    ]
+    .concat();
+    assert_request(&mut fixture, "Prewarm", &expected).await;
+
+    assert!(matches!(
+        fixture
+            .client
+            .prewarm_thread(
+                /*model*/ None,
+                /*model_provider*/ None,
+                Some(EnvironmentSelection::Saved("ws~asenvcfg_saved".to_owned())),
+            )
+            .await,
+        Err(Error::InvalidResponse)
+    ));
+    let expected = [
+        b"\x52\x17\x0a\x15\x0a\x13\x0a\x11ws~asenvcfg_saved".as_slice(),
+        PREWARM_CODEX_PLUGINS,
+        b"\xe8\x01\x01",
+    ]
+    .concat();
+    assert_request(&mut fixture, "Prewarm", &expected).await;
+}
+
+#[tokio::test]
+async fn saved_environment_catalog_follows_each_scope_cursor() {
+    let mut fixture = fixture_responses(
+        [
+            br#"{"data":[{"id":"asenvcfg_base","name":"Default"}],"next_cursor":"a+b"}"#.as_slice(),
+            br#"{"data":[{"id":"asenvcfg_personal","name":"Personal Rust"}],"next_cursor":null}"#,
+            br#"{"data":[{"id":"ws~asenvcfg_saved","name":"Team Rust"}],"next_cursor":null}"#,
+        ]
+        .into_iter()
+        .map(|body| {
+            http::Response::new(Body::new(http_body_util::Full::new(Bytes::from_static(
+                body,
+            ))))
+        })
+        .collect(),
+    )
+    .await;
+    assert_eq!(
+        fixture.client.list_saved_environments().await.unwrap(),
+        vec![
+            SavedEnvironment {
+                id: "asenvcfg_personal".into(),
+                name: "Personal Rust".into(),
+                workspace_shared: false,
+            },
+            SavedEnvironment {
+                id: "ws~asenvcfg_saved".into(),
+                name: "Team Rust".into(),
+                workspace_shared: true,
+            },
+        ]
+    );
+
+    for query in [
+        "scope=user&limit=100&omitDraft=true&view=picker",
+        "scope=user&limit=100&omitDraft=true&view=picker&cursor=a%2Bb",
+        "scope=workspace&limit=100&omitDraft=true&view=picker",
+    ] {
+        let (parts, body) = fixture.requests.recv().await.unwrap();
+        assert_eq!(parts.method, http::Method::GET);
+        assert_eq!(parts.uri.path(), "/v1/environment-configs");
+        assert_eq!(parts.uri.query(), Some(query));
+        assert_eq!(parts.headers["chatgpt-account-id"], "synthetic-account");
+        assert_eq!(parts.headers["x-openai-product-sku"], "codex");
+        assert!(body.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn prewarm_uses_managed_defaults_and_preserves_resolved_settings() {
+    // PrewarmThread uses Thread field numbers but omits turns entirely.
+    let thread = Bytes::from_static(&[
+        0x22, 1, b'v', // cli_version (4)
+        0x28, 1, // created_at (5)
+        0x32, 1, b'/', // cwd (6)
+        0x48, 0, // ephemeral (9)
+        0x72, 1, b't', // id (14)
+        0x82, 1, 1, b'p', // model_provider (16)
+        0xaa, 1, 0, // preview (21)
+        0xda, 1, 1, b's', // session_id (27)
+        0xe2, 1, 2, 8, 1, // source (28): cli
+        0xea, 1, 2, 0x12, 0, // status (29): idle
+        0x80, 2, 2, // updated_at (32)
+        0xa0, 6, 7, // unknown field (100)
+    ]);
+    let native_thread = [b"\xfa\x01\x00".as_slice(), thread.as_ref()].concat(); // empty turns (31)
+    // The settings use different field numbers in Prewarm and UpdateConfig.
+    let fields = [
+        (1, 1, b"\x0a\x01e\x12\x01i".as_slice()), // active permission profile
+        (2, 2, b"\x08\x02".as_slice()),           // on-request approval
+        (4, 5, b"/".as_slice()),                  // cwd
+        (7, 10, b"m".as_slice()),                 // model
+        (8, 11, b"p".as_slice()),                 // provider
+        (10, 13, b"high".as_slice()),             // reasoning effort
+        (11, 14, b"\x0a\x01/".as_slice()),        // workspace roots
+        (12, 15, b"\x12\x02\x08\x01".as_slice()), // read-only sandbox
+        (13, 16, b"\x0a\x04fast".as_slice()),     // service tier
+    ];
+    let mut prewarm = vec![0x18, 1]; // approvals reviewer (3): user
+    let mut activation = prewarm.clone();
+    for (prewarm_tag, activation_tag, bytes) in fields {
+        prost::encoding::bytes::encode(prewarm_tag, &bytes.to_vec(), &mut prewarm);
+        prost::encoding::bytes::encode(activation_tag, &bytes.to_vec(), &mut activation);
+    }
+    prost::encoding::bytes::encode(/* tag */ 14, &thread, &mut prewarm);
+    prost::encoding::bytes::encode(/* tag */ 17, &native_thread, &mut activation);
+    let mut server = fixture_responses(vec![
+        response(vec![frame(&activation)], tonic::Status::ok("")),
+        response(vec![frame(&prewarm)], tonic::Status::ok("")),
+        response(vec![frame(&prewarm)], tonic::Status::ok("")),
+    ])
+    .await;
+    let expected = server.client.activate("t").await.unwrap();
+    assert_request(&mut server, "UpdateConfig", &[56, 1, 0x92, 1, 1, b't']).await;
+    for (model, model_provider, mut request) in [
+        (None, None, vec![0x52, 4, 0x0a, 2, 0x0a, 0]),
+        (
+            Some("m".to_owned()),
+            Some("p".to_owned()),
+            vec![0x52, 4, 0x0a, 2, 0x0a, 0, 0x7a, 1, b'm', 0x82, 1, 1, b'p'],
+        ),
+    ] {
+        let actual = server
+            .client
+            .prewarm_default_thread(model, model_provider)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&actual).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        assert_eq!(actual.thread.protobuf().as_ref(), native_thread.as_slice());
+        // Exactly one default managed selection with Codex Apps.
+        request.extend_from_slice(PREWARM_CODEX_PLUGINS);
+        assert_request(&mut server, "Prewarm", &request).await;
+        assert!(server.requests.try_recv().is_err());
+    }
+
+    // Missing authoritative policy must fail rather than supplying local defaults.
+    let mut missing_sandbox = vec![0x18, 1];
+    for (tag, _, bytes) in fields {
+        if tag != 12 {
+            prost::encoding::bytes::encode(tag, &bytes.to_vec(), &mut missing_sandbox);
+        }
+    }
+    prost::encoding::bytes::encode(/* tag */ 14, &thread, &mut missing_sandbox);
+    let mut server = fixture(response(
+        vec![frame(&missing_sandbox)],
+        tonic::Status::ok(""),
+    ))
+    .await;
+    assert!(matches!(
+        server
+            .client
+            .prewarm_default_thread(/*model*/ None, /*model_provider*/ None)
+            .await,
+        Err(Error::InvalidResponse)
+    ));
+    let expected = [
+        b"\x52\x04\x0a\x02\x0a\x00".as_slice(),
+        PREWARM_CODEX_PLUGINS,
+    ]
+    .concat();
+    assert_request(&mut server, "Prewarm", &expected).await;
+    assert!(server.requests.try_recv().is_err());
+}
+
+#[tokio::test]
 async fn resume_sends_protobuf_and_preserves_admission_flags() {
     for wait in [false, true] {
         let mut fixture = fixture(response(vec![frame(&[])], tonic::Status::ok(""))).await;
@@ -123,10 +565,21 @@ async fn attach_preserves_opaque_events_and_native_error_details() {
         secret.clone(),
     );
     let data = [frame(&[10, 3, 10, 1, b'n']), frame(&[18, 3, 10, 1, b'r'])].concat();
-    let mut fixture = fixture(response(
-        data.iter().map(|b| Bytes::from(vec![*b])).collect(),
-        status,
-    ))
+    let large = vec![b'x'; 256 * 1024];
+    let burst = frame(
+        &wire::AttachResponse {
+            event: Some(wire::Payload::ServerRequest(large.clone().into())),
+        }
+        .encode_to_vec(),
+    );
+    let fragmented = data.iter().map(|b| Bytes::from(vec![*b]));
+    let mut fixture = fixture_responses(vec![
+        response(
+            fragmented.chain(std::iter::repeat_n(burst, 16)).collect(),
+            status,
+        ),
+        response(vec![frame(&[0x0a, 0x00])], tonic::Status::ok("")),
+    ])
     .await;
     let mut events = fixture.client.attach("t").await.unwrap();
     assert_request(&mut fixture, "Attach", &[10, 1, b't']).await;
@@ -140,6 +593,27 @@ async fn attach_preserves_opaque_events_and_native_error_details() {
         panic!("server request expected")
     };
     assert_eq!(bytes.as_ref(), &[10, 1, b'r']);
+    // History completes with several megabytes still unread on the Attach body.
+    let request = ListItemsRequest {
+        thread_id: "t".into(),
+        turn_id: None,
+        page: HistoryQuery::default(),
+    };
+    let history = fixture.client.list_items(&request);
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), history)
+            .await
+            .unwrap()
+            .unwrap()
+            .data
+            .is_empty()
+    );
+    for _ in 0..16 {
+        let Event::ServerRequest(bytes) = events.next().await.unwrap().unwrap() else {
+            panic!("burst event expected")
+        };
+        assert_eq!(bytes.as_ref(), large.as_slice());
+    }
     let error = events.next().await.unwrap().unwrap_err();
     assert!(!format!("{error:?} {error}").contains("private"));
     let Error::Rpc(status) = error else {
@@ -345,4 +819,35 @@ async fn https_enforces_unmanaged_endpoint_restrictions_before_connecting() {
     })
     .await
     .unwrap();
+}
+#[path = "transcript_tests.rs"]
+mod transcript;
+
+#[path = "discovery_tests.rs"]
+mod discovery;
+
+#[test]
+fn model_catalog_delivery_rejects_a_revoked_account() {
+    let controller = codex_http_client::NetworkPolicyController::default();
+    let policy = controller.policy();
+    assert!(controller.publish(
+        policy.revision(),
+        codex_http_client::DestinationPolicy::Unrestricted,
+    ));
+    let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault)
+        .with_network_policy(policy.clone().for_current_account());
+    let client = Client::new(
+        &factory,
+        "https://example.com",
+        Credentials::new("synthetic-token", "synthetic-account").unwrap(),
+    )
+    .unwrap();
+
+    assert!(client.model_catalog_is_current());
+    policy.invalidate();
+    assert!(controller.publish(
+        policy.revision(),
+        codex_http_client::DestinationPolicy::Unrestricted,
+    ));
+    assert!(!client.model_catalog_is_current());
 }

@@ -3,6 +3,8 @@
 use super::*;
 use crate::history_cell::StartupWarningsCell;
 use codex_app_server_protocol::McpServerStartupFailureReason;
+use codex_utils_path_uri::LegacyAppPathString;
+use codex_utils_path_uri::PathConvention;
 use pretty_assertions::assert_eq;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -47,7 +49,7 @@ async fn deprecation_delivery_deduplicates_retained_transcript() -> Result<()> {
     tui.set_owned_screen(/*owned*/ false)?;
     let notice = ServerNotification::DeprecationNotice(
         codex_app_server_protocol::DeprecationNoticeNotification {
-            summary: "`transcript_v2` is deprecated.".into(),
+            summary: "`legacy_option` is deprecated.".into(),
             details: Some("Remove it from your configuration.".into()),
         },
     );
@@ -63,7 +65,7 @@ async fn deprecation_delivery_deduplicates_retained_transcript() -> Result<()> {
             text_elements: Vec::new(),
             local_image_paths: Vec::new(),
             remote_image_urls: Vec::new(),
-            spoken: false,
+            presentation: Default::default(),
         }),
     );
     app.open_transcript_overlay(&mut tui);
@@ -82,12 +84,14 @@ async fn deprecation_delivery_deduplicates_retained_transcript() -> Result<()> {
     let Some(Overlay::Transcript(overlay)) = app.overlay.as_mut() else {
         panic!("expected transcript")
     };
-    overlay.render(area, &mut buffer);
+    crate::terminal_palette::with_test_default_colors(/*colors*/ None, || {
+        overlay.render(area, &mut buffer);
+    });
     insta::assert_snapshot!("deduplicated_deprecation_transcript", format!("{buffer:?}"));
 
     for (summary, details) in [
-        ("`transcript_v2` is deprecated.", None),
-        ("`transcript_v2` is deprecated.", Some("Updated guidance.")),
+        ("`legacy_option` is deprecated.", None),
+        ("`legacy_option` is deprecated.", Some("Updated guidance.")),
         ("Another deprecated setting.", Some("Updated guidance.")),
     ] {
         app.chat_widget.handle_server_notification(
@@ -109,7 +113,7 @@ async fn deprecation_delivery_deduplicates_retained_transcript() -> Result<()> {
             .map(|entry| entry.details)
             .collect::<Vec<_>>(),
         vec![
-            "`transcript_v2` is deprecated.\nRemove it from your configuration.\n\n`transcript_v2` is deprecated.\nUpdated guidance.",
+            "`legacy_option` is deprecated.\nRemove it from your configuration.\n\n`legacy_option` is deprecated.\nUpdated guidance.",
             "Another deprecated setting.\nUpdated guidance.",
         ],
     );
@@ -148,7 +152,7 @@ async fn startup_warnings_preserve_stream_repair_and_backtrack_selection() -> Re
         text_elements: Vec::new(),
         local_image_paths: Vec::new(),
         remote_image_urls: Vec::new(),
-        spoken: false,
+        presentation: Default::default(),
     })];
     app.transcript_reflow.mark_resize_requested_during_stream();
     insert_warnings(&mut app, &mut tui, &["First warning"]);
@@ -185,17 +189,23 @@ async fn startup_warnings_preserve_stream_repair_and_backtrack_selection() -> Re
 async fn mcp_startup_summary_counts_servers_and_sign_in_subset() -> Result<()> {
     let (mut app, mut events, _op_rx) = make_test_app_with_channels().await;
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    app.chat_widget
-        .set_mcp_startup_expected_servers(["alpha", "beta", "gamma"].map(str::to_owned));
+    use McpServerStartupState::Failed;
+    use McpServerStartupState::Starting;
     insert_splash(&mut app, &mut tui);
     let sign_in = Some(McpServerStartupFailureReason::ReauthenticationRequired);
-    for (name, failure_reason) in [("alpha", sign_in), ("beta", sign_in), ("gamma", None)] {
+    for (name, status, failure_reason) in [
+        ("gamma", Starting, None),
+        ("alpha", Failed, sign_in),
+        ("beta", Failed, sign_in),
+        ("gamma", Failed, None),
+    ] {
         app.chat_widget.handle_server_notification(
             ServerNotification::McpServerStatusUpdated(McpServerStatusUpdatedNotification {
+                environment_id: None,
                 thread_id: None,
                 name: name.into(),
-                status: McpServerStartupState::Failed,
-                error: Some(format!("MCP {name}: connection unavailable")),
+                status,
+                error: (status == Failed).then(|| format!("MCP {name}: connection unavailable")),
                 failure_reason,
             }),
             /*replay_kind*/ None,
@@ -260,10 +270,16 @@ async fn startup_skill_load_order_preserves_runtime_error_recurrence() -> Result
         let (mut app, mut events, _op_rx) = make_test_app_with_channels().await;
         let mut tui = crate::tui::test_support::make_test_tui()?;
         let mut server = start_config_write_test_app_server(&app).await?;
-        let cwd = app.config.cwd.to_path_buf();
+        let server_cwd = r"/\repo";
+        let cwd =
+            LegacyAppPathString::from_string(server_cwd).to_path_uri(PathConvention::Posix)?;
+        let mut session = test_thread_session(ThreadId::new(), app.config.cwd.to_path_buf());
+        session.cwd = cwd.clone();
+        app.chat_widget.app_server_path_convention = Some(PathConvention::Posix);
+        app.chat_widget.handle_thread_session_quiet(session);
         let response = SkillsListResponse {
             data: vec![codex_app_server_protocol::SkillsListEntry {
-                cwd: cwd.clone(),
+                cwd: PathBuf::from(server_cwd),
                 skills: vec![],
                 errors: vec![SkillErrorInfo {
                     path: PathBuf::from("bad/SKILL.md"),

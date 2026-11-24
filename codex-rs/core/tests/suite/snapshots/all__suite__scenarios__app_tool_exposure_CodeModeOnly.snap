@@ -15,17 +15,22 @@ Settings:
   stream: true
   text: {"verbosity":"low"}
   tool_choice: "auto"
-  tools (4; hash=aa7c4090dac68d7b):
-    - custom/exec: Run JavaScript code to orchestrate/compose tool calls - Evaluates the provided JavaScript code in...; hash=9c848ebf633880a2
+  tools (4; hash=a7487f34befd82f2):
+    - custom/exec: Run JavaScript code to orchestrate/compose tool calls - Evaluates the provided JavaScript code in...; hash=9fcc2faba4cf8149
     - function/wait: Waits on a yielded `exec` cell and returns new output or completion. - Use `wait` only after `exe...; args=[cell_id, max_tokens, terminate, yield_time_ms]; hash=6692d8f6c55be489
     - function/request_user_input: Request user input for one to three short questions and wait for the response. This tool is only ...; args=[questions]; hash=64a729b25c424fc6
     - web_search; hash=e214d4db1bc49e89
 -- request 1 (turn) --
 00:message/developer:
     <MODEL_INSTRUCTIONS>
-01:message/developer[2]:
+01:message/developer[3]:
     [01] <PERMISSIONS_INSTRUCTIONS>
     [02] <APPS_INSTRUCTIONS>
+    [03] <tools>
+        Deferred tool namespaces:
+        - mcp__codex_apps__notes: Tools for working with notes.
+        - multi_agent_v1: Tools for spawning and managing sub-agents.
+        </tools>
 02:message/user:
     <ENVIRONMENT_CONTEXT>
 03:message/user:

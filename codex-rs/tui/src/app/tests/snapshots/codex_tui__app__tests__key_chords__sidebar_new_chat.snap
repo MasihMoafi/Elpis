@@ -1,0 +1,17 @@
+---
+source: tui/src/app/tests/key_chords.rs
+assertion_line: 1372
+expression: frame
+---
+                                                                               │                                     +
+                                                                               │
+                                                                               │ Open in sidebar
+                                                                               │
+                                                                               │ › + New side chat
+                                                                               │     Start from this conversation
+                                                                               │
+                                                                               │
+› parent draft                                                                 │
+                                                                               │
+  gpt-test default                                                             │
+                                                                               │ f5 g open · esc back · ↑/↓ move …

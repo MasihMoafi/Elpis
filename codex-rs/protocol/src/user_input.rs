@@ -3,6 +3,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use ts_rs::TS;
 
+use crate::models::AudioReference;
 use crate::models::ImageDetail;
 use crate::models::ImageReference;
 
@@ -32,17 +33,19 @@ pub enum UserInput {
         #[ts(optional)]
         detail: Option<ImageDetail>,
     },
-    /// Local image path provided by the user.  This will be converted to an
-    /// `Image` variant (base64 data URL) during request serialization.
+    /// Local image attachment provided by path.
     LocalImage {
         path: std::path::PathBuf,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         #[ts(optional)]
         detail: Option<ImageDetail>,
     },
-    /// Pre-encoded audio data URI forwarded to the Responses API.
-    Audio { audio_url: String },
-    /// Local audio path converted to an `Audio` data URI during request serialization.
+    /// Audio reference forwarded to the Responses API.
+    Audio {
+        #[serde(flatten)]
+        audio: AudioReference,
+    },
+    /// Local audio attachment provided by path.
     LocalAudio { path: std::path::PathBuf },
 
     /// Skill selected by the user (name + path to SKILL.md).

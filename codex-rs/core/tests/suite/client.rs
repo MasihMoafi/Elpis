@@ -6,10 +6,10 @@ use codex_core::Prompt;
 use codex_core::ResponseEvent;
 use codex_core::StartThreadOptions;
 use codex_core::ThreadManager;
+use codex_core::ThreadStoreBuilder;
 use codex_core::TurnInputRequest;
 use codex_core::X_CODEX_ROUTING_HINT_HEADER;
 use codex_core::resolve_installation_id;
-use codex_core::thread_store_from_config;
 use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
 use codex_history::RolloutItem;
@@ -26,6 +26,7 @@ use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_model_provider_info::built_in_model_providers;
 use codex_models_manager::bundled_models_response;
+use codex_models_manager::manager::ModelCatalogSettings;
 use codex_otel::SessionTelemetry;
 use codex_otel::TelemetryAuthMode;
 use codex_protocol::ResponseItemId;
@@ -37,6 +38,8 @@ use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::Settings;
 use codex_protocol::config_types::Verbosity;
 use codex_protocol::error::CodexErr;
+use codex_protocol::items::TurnItem;
+use codex_protocol::models::AudioReference;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::FunctionCallOutputContentItem;
@@ -54,12 +57,14 @@ use codex_protocol::models::WebSearchAction;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
+use codex_protocol_test_support::uuid_v7_item_id_generator_for_test;
 use core_test_support::TestCodexResponsesRequestKind;
 use core_test_support::apps_test_server::AppsTestServer;
 use core_test_support::load_default_config_for_test;
@@ -70,6 +75,7 @@ use core_test_support::responses::ev_completed_with_tokens;
 use core_test_support::responses::ev_function_call;
 use core_test_support::responses::ev_message_item_added;
 use core_test_support::responses::ev_output_text_delta;
+use core_test_support::responses::ev_reasoning_item;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_once_match;
@@ -85,6 +91,7 @@ use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::local_requests;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_match;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -251,6 +258,97 @@ async fn responses_request_uses_implicit_default_tier_for_bedrock() -> anyhow::R
             "provider={provider_id}",
         );
     }
+    Ok(())
+}
+
+#[test_case::test_case(AMAZON_BEDROCK_PROVIDER_ID; "mantle")]
+#[test_case::test_case(AMAZON_BEDROCK_RUNTIME_PROVIDER_ID; "runtime")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bedrock_function_continuation_replays_assistant_commentary(
+    provider_id: &'static str,
+) -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = start_mock_server().await;
+    let mut commentary = ev_assistant_message("msg_progress", "Checking.");
+    commentary["item"]["phase"] = json!("commentary");
+    commentary["item"]["content"] = json!([
+        {"type": "output_text", "text": "Checking.", "annotations": [], "logprobs": []},
+        {"type": "output_text", "text": "Source", "annotations": [{
+            "type": "url_citation", "url": "https://example.org", "title": "Source",
+            "start_index": 0, "end_index": 6
+        }]}
+    ]);
+    let mut expected_content = commentary["item"]["content"].clone();
+    if provider_id == AMAZON_BEDROCK_PROVIDER_ID {
+        expected_content[0]
+            .as_object_mut()
+            .expect("output text part")
+            .remove("annotations");
+    }
+    let reasoning = ev_reasoning_item("rs_plan", &[], &[]);
+    let mut answer = ev_assistant_message("msg_answer", "Checked.");
+    answer["item"]["phase"] = json!("final_answer");
+    answer["item"]["content"][0]["annotations"] = json!([]);
+    let mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                commentary,
+                reasoning.clone(),
+                ev_function_call(
+                    "plan",
+                    "update_plan",
+                    r#"{"plan":[{"step":"Check","status":"completed"}]}"#,
+                ),
+                ev_completed("tool"),
+            ]),
+            sse(vec![answer.clone(), ev_completed("answer")]),
+            sse(vec![ev_completed("next")]),
+        ],
+    )
+    .await;
+    let test = test_codex()
+        .with_auth(CodexAuth::BedrockApiKey(BedrockApiKeyAuth {
+            api_key: "dummy".to_string(),
+            region: "us-east-1".to_string(),
+        }))
+        .with_config(move |config| {
+            let base_url = config.model_provider.base_url.clone();
+            config.model_provider_id = provider_id.to_string();
+            config.model_provider = built_in_model_providers(/*openai_base_url*/ None)
+                .remove(provider_id)
+                .expect("built-in Bedrock provider");
+            config.model_provider.base_url = base_url;
+            config.model_provider.supports_websockets = false;
+            config.update_plan_enabled = true;
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    test.submit_text_turn("Check the plan.").await?;
+    test.submit_text_turn("Continue.").await?;
+
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 3);
+    for request in &requests[1..] {
+        let input = request.input();
+        let progress = input
+            .iter()
+            .position(|item| item["id"] == "msg_progress")
+            .expect("replayed commentary");
+        assert_eq!(input[progress]["content"], expected_content);
+        assert_eq!(
+            input[progress + 1]["encrypted_content"],
+            reasoning["item"]["encrypted_content"]
+        );
+        assert_eq!(input[progress + 2]["type"], "function_call");
+        assert_eq!(input[progress + 3]["type"], "function_call_output");
+    }
+    let input = requests[2].input();
+    let replayed_answer = input
+        .iter()
+        .find(|item| item["id"] == "msg_answer")
+        .expect("replayed final answer");
+    assert_eq!(replayed_answer["content"], answer["item"]["content"]);
     Ok(())
 }
 
@@ -528,7 +626,9 @@ async fn sends_audio_urls_to_responses() {
 
     codex
         .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Audio {
-            audio_url: audio_url.to_string(),
+            audio: AudioReference::Inline {
+                audio_url: audio_url.to_string(),
+            },
         }]))
         .await
         .unwrap();
@@ -561,26 +661,63 @@ async fn sends_local_audio_to_responses() -> anyhow::Result<()> {
         sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
     )
     .await;
-    let codex = test_codex()
+    let test = test_codex()
         .with_model_info_override("gpt-5.5", |model_info| {
             model_info.input_modalities.push(InputModality::Audio);
         })
-        .build(&server)
-        .await?
-        .codex;
+        .build_with_auto_env(&server)
+        .await?;
+    // Client-selected attachments live on the app-server host, even with a remote executor.
     let temp_dir = tempfile::tempdir()?;
     let audio_path = temp_dir.path().join("recording.wav");
     std::fs::write(&audio_path, b"audio")?;
 
-    codex
-        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::LocalAudio {
+    let unsupported = temp_dir.path().join("clip.flac");
+    std::fs::write(&unsupported, b"audio")?;
+    let missing = temp_dir.path().join("missing.wav");
+    let inline = "data:audio/wav;base64,YXVkaW8=";
+    let input = vec![
+        UserInput::Audio {
+            audio: AudioReference::Inline {
+                audio_url: inline.into(),
+            },
+        },
+        UserInput::LocalAudio {
+            path: unsupported.clone(),
+        },
+        UserInput::LocalAudio {
             path: audio_path.clone(),
-        }]))
+        },
+        UserInput::LocalAudio {
+            path: missing.clone(),
+        },
+    ];
+    test.codex
+        .start_or_steer_turn(TurnInputRequest::user_input(input.clone()))
         .await?;
-    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    let displayed_input = wait_for_event_match(&test.codex, |event| match event {
+        EventMsg::ItemCompleted(ItemCompletedEvent {
+            item: TurnItem::UserMessage(message),
+            ..
+        }) => Some(message.content.clone()),
+        _ => None,
+    })
+    .await;
+    assert_eq!(displayed_input, input);
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
 
     let request = response_mock.single_request();
-    assert!(request.has_content_kinds(&["user.text", "user.audio", "user.text"]));
+    assert!(request.has_content_kinds(&[
+        "user.audio",
+        "user.text",
+        "user.text",
+        "user.audio",
+        "user.text",
+        "user.text"
+    ]));
     let user_message = request
         .input()
         .into_iter()
@@ -588,12 +725,20 @@ async fn sends_local_audio_to_responses() -> anyhow::Result<()> {
         .find(|item| item.get("role").and_then(serde_json::Value::as_str) == Some("user"))
         .expect("request should include a user message");
     let audio_path = audio_path.display();
+    let unsupported = unsupported.display();
+    let missing_error = std::fs::File::open(&missing).unwrap_err();
+    let missing = missing.display();
     assert_eq!(
         user_message["content"],
         json!([
+            {"type": "input_audio", "audio_url": inline},
             {
                 "type": "input_text",
-                "text": format!(r#"<audio name=[Audio #1] path="{audio_path}">"#),
+                "text": format!("Codex cannot attach audio at `{unsupported}`: unsupported audio format; use wav, mp3, m4a, webm, or ogg."),
+            },
+            {
+                "type": "input_text",
+                "text": format!(r#"<audio name=[Audio #3] path="{audio_path}">"#),
             },
             {
                 "type": "input_audio",
@@ -602,6 +747,10 @@ async fn sends_local_audio_to_responses() -> anyhow::Result<()> {
             {
                 "type": "input_text",
                 "text": "</audio>",
+            },
+            {
+                "type": "input_text",
+                "text": format!("Codex could not read the local audio at `{missing}`: {missing_error}"),
             },
         ])
     );
@@ -673,7 +822,7 @@ async fn synthetic_call_output_id_is_stable_across_resumes() -> anyhow::Result<(
         RolloutLine {
             timestamp: "2024-01-01T00:00:00.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::SessionMeta(SessionMetaLine {
+            item: RolloutItem::SessionMeta(Box::new(SessionMetaLine {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
@@ -686,12 +835,14 @@ async fn synthetic_call_output_id_is_stable_across_resumes() -> anyhow::Result<(
                     ..Default::default()
                 },
                 git: None,
-            }),
+            })),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.000Z".to_string(),
             ordinal: None,
             item: rollout_response_item(ResponseItem::FunctionCall {
+                status: None,
+                encrypted_content: None,
                 id: Some(ResponseItemId::with_suffix("fc", "existing")),
                 name: "do_it".to_string(),
                 namespace: None,
@@ -869,14 +1020,30 @@ fn write_auth_json(
     fake_jwt
 }
 
-struct ProviderAuthCommandFixture {
+pub(super) struct ProviderAuthCommandFixture {
     tempdir: TempDir,
     command: String,
     args: Vec<String>,
 }
 
 impl ProviderAuthCommandFixture {
-    fn new(tokens: &[&str]) -> std::io::Result<Self> {
+    /// Each thread can resolve credentials independently, including at the same time.
+    pub(super) fn fixed_token(token: &str) -> std::io::Result<Self> {
+        let tempdir = tempfile::tempdir()?;
+        std::fs::write(tempdir.path().join("token.txt"), token)?;
+        let (command, args): (&str, &[&str]) = if cfg!(windows) {
+            ("cmd.exe", &["/D", "/C", "type", "token.txt"])
+        } else {
+            ("cat", &["token.txt"])
+        };
+        Ok(Self {
+            tempdir,
+            command: command.to_owned(),
+            args: args.iter().copied().map(str::to_owned).collect(),
+        })
+    }
+
+    pub(super) fn new(tokens: &[&str]) -> std::io::Result<Self> {
         let tempdir = tempfile::tempdir()?;
         let tokens_file = tempdir.path().join("tokens.txt");
         let mut token_file_contents = String::new();
@@ -892,6 +1059,7 @@ impl ProviderAuthCommandFixture {
             codex_utils_cargo_bin::write_executable(
                 &script_path,
                 r#"#!/bin/sh
+printf '%s\n' "$GOOGLE_APPLICATION_CREDENTIALS" >> credential-env.txt
 if [ -f fail-until-401 ]; then
     exit 1
 fi
@@ -911,6 +1079,9 @@ mv tokens.next tokens.txt
                 &script_path,
                 r#"@echo off
 setlocal EnableExtensions DisableDelayedExpansion
+setlocal EnableDelayedExpansion
+echo(!GOOGLE_APPLICATION_CREDENTIALS!>> credential-env.txt
+endlocal
 if exist fail-until-401 exit /b 1
 
 set "first_line="
@@ -940,7 +1111,7 @@ move /y tokens.next tokens.txt >nul
         })
     }
 
-    fn auth(&self) -> ModelProviderAuthInfo {
+    pub(super) fn auth(&self) -> ModelProviderAuthInfo {
         ModelProviderAuthInfo {
             command: self.command.clone(),
             args: self.args.iter().cloned().map(Into::into).collect(),
@@ -951,6 +1122,41 @@ move /y tokens.next tokens.txt >nul
                 .expect("tempdir should be absolute"),
         }
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn provider_auth_command_logs_credential_paths_with_cmd_metacharacters() -> anyhow::Result<()> {
+    let auth_fixture = ProviderAuthCommandFixture::new(&["first-token", "second-token"])?;
+    let credential_file = auth_fixture
+        .tempdir
+        .path()
+        .join("ADC (team)&^!credentials!%PATH%.json");
+
+    for (credential_path, token) in [
+        (Some(credential_file.as_os_str()), "first-token"),
+        (None, "second-token"),
+    ] {
+        let mut command = codex_utils_process::background_command(&auth_fixture.command);
+        command
+            .args(&auth_fixture.args)
+            .current_dir(auth_fixture.tempdir.path());
+        if let Some(credential_path) = credential_path {
+            command.env("GOOGLE_APPLICATION_CREDENTIALS", credential_path);
+        } else {
+            command.env_remove("GOOGLE_APPLICATION_CREDENTIALS");
+        }
+        let output = command.output()?;
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(String::from_utf8(output.stdout)?, format!("{token}\r\n"));
+        assert_eq!(output.stderr, Vec::<u8>::new());
+    }
+
+    assert_eq!(
+        std::fs::read_to_string(auth_fixture.tempdir.path().join("credential-env.txt"))?,
+        format!("{}\r\n\r\n", credential_file.display()),
+    );
+    Ok(())
 }
 
 fn non_zero_u64(value: u64) -> NonZeroU64 {
@@ -988,6 +1194,8 @@ async fn resume_sends_prior_items() {
 
     // Prior item: user message (should be delivered)
     let prior_user = codex_protocol::models::ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "user".to_string(),
         content: vec![codex_protocol::models::ContentItem::InputText {
@@ -1010,9 +1218,13 @@ async fn resume_sends_prior_items() {
 
     // Prior item: system message (excluded from API history)
     let prior_system = codex_protocol::models::ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "system".to_string(),
         content: vec![codex_protocol::models::ContentItem::OutputText {
+            annotations: None,
+            logprobs: None,
             text: "resumed system instruction".to_string(),
         }],
         phase: None,
@@ -1032,9 +1244,13 @@ async fn resume_sends_prior_items() {
 
     // Prior item: assistant message
     let prior_item = codex_protocol::models::ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "assistant".to_string(),
         content: vec![codex_protocol::models::ContentItem::OutputText {
+            annotations: None,
+            logprobs: None,
             text: "resumed assistant message".to_string(),
         }],
         phase: Some(MessagePhase::Commentary),
@@ -1160,6 +1376,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
     // Current image tests cover today's shapes; this keeps resume compatibility for that
     // legacy rollout representation.
     let legacy_custom_tool_call = ResponseItem::CustomToolCall {
+        encrypted_content: None,
         id: None,
         status: None,
         call_id: "legacy-js-call".to_string(),
@@ -1174,7 +1391,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
         RolloutLine {
             timestamp: "2024-01-01T00:00:00.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::SessionMeta(SessionMetaLine {
+            item: RolloutItem::SessionMeta(Box::new(SessionMetaLine {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
@@ -1187,7 +1404,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
                     ..Default::default()
                 },
                 git: None,
-            }),
+            })),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.000Z".to_string(),
@@ -1209,6 +1426,8 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
             timestamp: "2024-01-01T00:00:03.000Z".to_string(),
             ordinal: None,
             item: rollout_response_item(ResponseItem::Message {
+                status: None,
+                encrypted_content: None,
                 id: None,
                 role: "user".to_string(),
                 content: vec![ContentItem::InputImage {
@@ -1316,7 +1535,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
         RolloutLine {
             timestamp: "2024-01-01T00:00:00.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::SessionMeta(SessionMetaLine {
+            item: RolloutItem::SessionMeta(Box::new(SessionMetaLine {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
@@ -1329,12 +1548,14 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                     ..Default::default()
                 },
                 git: None,
-            }),
+            })),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.000Z".to_string(),
             ordinal: None,
             item: rollout_response_item(ResponseItem::FunctionCall {
+                status: None,
+                encrypted_content: None,
                 id: None,
                 name: "view_image".to_string(),
                 namespace: None,
@@ -1367,6 +1588,7 @@ async fn resume_replays_image_tool_outputs_with_detail() {
             timestamp: "2024-01-01T00:00:02.000Z".to_string(),
             ordinal: None,
             item: rollout_response_item(ResponseItem::CustomToolCall {
+                encrypted_content: None,
                 id: None,
                 status: Some("completed".to_string()),
                 call_id: custom_call_id.to_string(),
@@ -1449,8 +1671,14 @@ async fn resume_replays_image_tool_outputs_with_detail() {
     );
 }
 
+#[test_case::test_case("Test API Key", None; "legacy_key")]
+#[test_case::test_case("sk-proj-fedramp-synthetic-test-key", Some("true"); "fedramp_project_key")]
+#[test_case::test_case("sk-syntheticfixture1syntheticfixture1", Some("true"); "fedramp_service_account_key")] // secret-guard: allow (synthetic test credential)
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn includes_session_id_thread_id_and_model_headers_in_request() {
+async fn includes_session_id_thread_id_and_model_headers_in_request(
+    api_key: &str,
+    expected_fedramp_header: Option<&str>,
+) {
     skip_if_no_network!();
 
     // Mock server
@@ -1462,7 +1690,7 @@ async fn includes_session_id_thread_id_and_model_headers_in_request() {
     )
     .await;
 
-    let mut builder = test_codex().with_auth(CodexAuth::from_api_key("Test API Key"));
+    let mut builder = test_codex().with_auth(CodexAuth::from_api_key(api_key));
     let test = builder
         .build(&server)
         .await
@@ -1477,7 +1705,7 @@ async fn includes_session_id_thread_id_and_model_headers_in_request() {
             text_elements: Vec::new(),
         }]))
         .await
-        .unwrap();
+        .expect("start test turn");
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
@@ -1500,7 +1728,11 @@ async fn includes_session_id_thread_id_and_model_headers_in_request() {
     assert_eq!(request_session_id, session_id_string.as_str());
     assert_eq!(request_thread_id, thread_id_string.as_str());
     assert_eq!(request_originator, originator().value);
-    assert_eq!(request_authorization, "Bearer Test API Key");
+    assert_eq!(request_authorization, format!("Bearer {api_key}"));
+    assert_eq!(
+        request.header("x-openai-fedramp").as_deref(),
+        expected_fedramp_header
+    );
     assert_eq!(
         request_body["prompt_cache_key"].as_str(),
         Some(session_id_string.as_str())
@@ -1700,6 +1932,9 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
         supports_websockets: false,
         supports_standalone_web_search: false,
         capabilities: None,
+        project_id: None,
+        location: None,
+        credential_file: None,
         include_internal_metadata: false,
     };
 
@@ -1734,12 +1969,15 @@ async fn send_request_with_provider(provider: ModelProviderInfo) {
         SessionSource::Exec,
     );
     let client = ModelClient::new(
-        Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-            "unused-api-key",
-        ))),
+        codex_model_provider::create_model_provider(
+            provider,
+            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
+                "unused-api-key",
+            ))),
+        ),
         AgentIdentityAuthPolicy::JwtOnly,
         thread_id,
-        provider,
+        uuid_v7_item_id_generator_for_test(),
         SessionSource::Exec,
         "test_originator".to_string(),
         config.model_verbosity,
@@ -1752,6 +1990,7 @@ async fn send_request_with_provider(provider: ModelProviderInfo) {
         config
             .features
             .enabled(Feature::ConcurrentReasoningSummaries),
+        /*output_token_replay_enabled*/ false,
         /*attestation_provider*/ None,
         config.http_client_factory(),
         config.workspace_routing_context(),
@@ -1772,6 +2011,8 @@ async fn send_request_with_provider(provider: ModelProviderInfo) {
     }
     let mut prompt = Prompt::default();
     prompt.input.push(ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "user".to_string(),
         content: vec![ContentItem::InputText {
@@ -1783,7 +2024,7 @@ async fn send_request_with_provider(provider: ModelProviderInfo) {
 
     let mut stream = client_session
         .stream(
-            &prompt,
+            &Arc::new(prompt),
             &model_info,
             &session_telemetry,
             effort,
@@ -1982,8 +2223,12 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
         .expect("resolve installation id");
     let thread_manager = ThreadManager::new(
         &config,
-        auth_manager.clone(),
-        codex_core::build_models_manager(&config, auth_manager),
+        codex_core::build_startup_models(
+            &config,
+            auth_manager.clone(),
+            installation_id,
+            Arc::new(ModelCatalogSettings::disk(config.codex_home.to_path_buf())),
+        ),
         codex_core::CodexAppsToolsCache::default(),
         SessionSource::Exec,
         Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
@@ -1991,9 +2236,8 @@ async fn prefers_apikey_when_config_prefers_apikey_even_with_chatgpt_tokens() {
         Arc::new(codex_core::test_support::EmptyUserInstructionsProvider),
         /*analytics_events_client*/ None,
         codex_core::passthrough_image_store(),
-        thread_store_from_config(&config, /*state_db*/ None),
+        ThreadStoreBuilder::from_config(&config, /*state_db*/ None).build(),
         /*agent_graph_store*/ None,
-        installation_id,
         /*attestation_provider*/ None,
         /*external_time_provider*/ None,
     );
@@ -2088,8 +2332,33 @@ async fn includes_user_instructions_message_in_request() {
     );
 }
 
+const CATALOG_APPS_GUIDANCE: &str = "Distinctive catalog Apps guidance.";
+
+fn assert_no_apps_guidance(request: &ResponsesRequest) {
+    for text in [
+        "<apps_instructions>",
+        "<catalog_apps_instructions>",
+        CATALOG_APPS_GUIDANCE,
+    ] {
+        assert!(
+            !request.body_contains_text(text),
+            "unexpected Apps guidance: {text:?}"
+        );
+    }
+}
+
+#[test_case::test_case(false, true, true, true; "catalog_missing")]
+#[test_case::test_case(true, false, true, true; "catalog_feature_off_by_default")]
+#[test_case::test_case(true, true, true, true; "catalog_override")]
+#[test_case::test_case(true, true, false, true; "model_excludes")]
+#[test_case::test_case(true, true, true, false; "apps_feature_off")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn includes_apps_guidance_as_developer_message_for_chatgpt_auth() {
+async fn includes_apps_guidance_as_developer_message_for_chatgpt_auth(
+    catalog_override: bool,
+    enable_catalog: bool,
+    model_includes: bool,
+    apps_enabled: bool,
+) {
     skip_if_no_network!();
     let server = MockServer::start().await;
     let apps_server = AppsTestServer::mount(&server)
@@ -2108,12 +2377,27 @@ async fn includes_apps_guidance_as_developer_message_for_chatgpt_auth() {
         .with_config(move |config| {
             config
                 .features
-                .enable(Feature::Apps)
+                .set_enabled(Feature::Apps, apps_enabled)
                 .expect("test config should allow feature update");
+            if enable_catalog {
+                config
+                    .features
+                    .enable(Feature::CatalogAppsInstructions)
+                    .expect("enable catalog Apps instructions");
+            }
             config.chatgpt_base_url = apps_base_url;
+        })
+        .with_model_info_override("gpt-5.5", move |model| {
+            model.include_apps_usage_instructions = model_includes;
+            model.model_messages = catalog_override.then(|| {
+                serde_json::from_value(
+                    json!({"apps": {"usage_instructions": CATALOG_APPS_GUIDANCE}}),
+                )
+                .expect("catalog Apps messages")
+            });
         });
     let codex = builder
-        .build(&server)
+        .build_with_auto_env(&server)
         .await
         .expect("create new conversation")
         .codex;
@@ -2124,25 +2408,153 @@ async fn includes_apps_guidance_as_developer_message_for_chatgpt_auth() {
             text_elements: Vec::new(),
         }]))
         .await
-        .unwrap();
+        .expect("start Apps guidance turn");
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request = resp_mock.single_request();
-    let apps_snippet =
-        "Apps (Connectors) can be explicitly triggered in user messages in the format";
-
-    assert!(
-        message_input_text_contains(&request, "developer", apps_snippet),
-        "expected apps guidance in a developer message, got {:?}",
-        request.body_json()["input"]
+    let use_catalog = catalog_override && enable_catalog;
+    assert_eq!(
+        request.body_contains_text(CATALOG_APPS_GUIDANCE),
+        use_catalog && model_includes && apps_enabled
     );
+    let apps_snippet = if use_catalog {
+        CATALOG_APPS_GUIDANCE
+    } else {
+        "Apps (Connectors) can be explicitly triggered in user messages in the format"
+    };
+
+    assert_eq!(
+        message_input_text_contains(&request, "developer", apps_snippet),
+        model_includes && apps_enabled
+    );
+    if !model_includes || !apps_enabled {
+        assert_no_apps_guidance(&request);
+    }
+    if !apps_enabled {
+        assert!(!request.body_contains_text("mcp__codex_apps"));
+    }
 
     assert!(
         !message_input_text_contains(&request, "user", apps_snippet),
         "did not expect apps guidance in user messages, got {:?}",
         request.body_json()["input"]
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn resume_without_apps_checkpoint_restores_bundled_guidance_once() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = MockServer::start().await;
+    let apps = AppsTestServer::mount(&server).await?;
+    let builder = || {
+        let base_url = apps.chatgpt_base_url.clone();
+        let mut builder = test_codex()
+            .with_auth(create_dummy_codex_auth())
+            .with_config(move |config| {
+                config.chatgpt_base_url = base_url;
+                config.features.enable(Feature::Apps).unwrap();
+            });
+        for (model, wording) in [
+            ("apps-bundled", None),
+            ("apps-custom", Some(CATALOG_APPS_GUIDANCE)),
+            ("apps-clear", Some("")),
+        ] {
+            builder = builder.with_model_info_override(model, move |info| {
+                info.include_apps_usage_instructions = true;
+                info.model_messages = Some(
+                    serde_json::from_value(json!({"apps": {"usage_instructions": wording}}))
+                        .unwrap(),
+                );
+            });
+        }
+        builder
+    };
+    let writer = builder()
+        .with_model("apps-bundled")
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CatalogAppsInstructions)
+                .unwrap();
+        })
+        .build(&server)
+        .await?;
+    let mock = mount_sse_sequence(
+        &server,
+        (0..5)
+            .map(|i| sse(vec![ev_completed(&format!("apps-{i}"))]))
+            .collect(),
+    )
+    .await;
+    writer.submit_text_turn("Use bundled guidance").await?;
+    for model in ["apps-custom", "apps-clear"] {
+        core_test_support::submit_thread_settings(
+            &writer.codex,
+            ThreadSettingsOverrides {
+                model: Some(model.to_string()),
+                ..Default::default()
+            },
+        )
+        .await?;
+        writer.submit_text_turn(model).await?;
+    }
+    writer.codex.shutdown_and_wait().await?;
+
+    // Preserve the recorded conversation while simulating loss of the Apps checkpoint.
+    let path = writer.codex.rollout_path().expect("rollout path");
+    let mut rollout = String::new();
+    let mut removed_checkpoint = false;
+    for line in std::fs::read_to_string(&path)?.lines() {
+        let mut record = codex_rollout::parse_rollout_line(line)?;
+        if let RolloutItem::WorldState(state) = &mut record.item
+            && state.state.remove("apps_instructions").is_some()
+        {
+            removed_checkpoint = true;
+            rollout.push_str(&serde_json::to_string(&record)?);
+        } else {
+            rollout.push_str(line);
+        }
+        rollout.push('\n');
+    }
+    assert!(removed_checkpoint);
+    std::fs::write(&path, rollout)?;
+
+    // Resume on the updated reader with catalog wording still off.
+    let reader = builder()
+        .with_model("apps-clear")
+        .resume(&server, Arc::clone(&writer.home), path)
+        .await?;
+    reader
+        .submit_text_turn("Resume with bundled guidance")
+        .await?;
+    reader.submit_text_turn("Continue").await?;
+    let guidance = |request: &ResponsesRequest| {
+        request
+            .message_input_texts("developer")
+            .into_iter()
+            .filter(|text| {
+                text.starts_with("<apps_instructions>")
+                    || text.starts_with("<catalog_apps_instructions>")
+            })
+            .collect::<Vec<_>>()
+    };
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 5);
+    let [bundled, replacement, retirement]: [String; 3] = guidance(&requests[2])
+        .try_into()
+        .expect("bundled, replaced, then retired");
+    assert!(bundled.starts_with("<apps_instructions>"));
+    assert!(replacement.contains(CATALOG_APPS_GUIDANCE));
+    assert!(
+        retirement.contains("The previously provided Apps usage instructions no longer apply.")
+    );
+    let expected = vec![bundled.clone(), replacement, retirement, bundled];
+    assert_eq!(guidance(&requests[0]), expected[..1]);
+    assert_eq!(guidance(&requests[1]), expected[..2]);
+    assert_eq!(guidance(&requests[3]), expected);
+    assert_eq!(guidance(&requests[4]), expected);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2167,10 +2579,22 @@ async fn omits_apps_guidance_for_api_key_auth_even_when_feature_enabled() {
                 .features
                 .enable(Feature::Apps)
                 .expect("test config should allow feature update");
+            config
+                .features
+                .enable(Feature::CatalogAppsInstructions)
+                .expect("enable catalog Apps instructions");
             config.chatgpt_base_url = apps_base_url;
+        })
+        .with_model_info_override("gpt-5.5", |model| {
+            model.model_messages = Some(
+                serde_json::from_value(
+                    json!({"apps": {"usage_instructions": CATALOG_APPS_GUIDANCE}}),
+                )
+                .expect("catalog Apps messages"),
+            );
         });
     let codex = builder
-        .build(&server)
+        .build_with_auto_env(&server)
         .await
         .expect("create new conversation")
         .codex;
@@ -2181,19 +2605,16 @@ async fn omits_apps_guidance_for_api_key_auth_even_when_feature_enabled() {
             text_elements: Vec::new(),
         }]))
         .await
-        .unwrap();
+        .expect("start API-key Apps guidance turn");
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request = resp_mock.single_request();
-    let apps_snippet =
-        "Apps (Connectors) can be explicitly triggered in user messages in the format";
-
+    assert_no_apps_guidance(&request);
     assert!(
-        !message_input_text_contains(&request, "developer", apps_snippet)
-            && !message_input_text_contains(&request, "user", apps_snippet),
-        "did not expect apps guidance for API key auth, got {:?}",
-        request.body_json()["input"]
+        !request.body_contains_text("mcp__codex_apps"),
+        "did not expect Apps tools for API key auth, got {:?}",
+        request.body_json()["tools"]
     );
 }
 
@@ -2219,11 +2640,23 @@ async fn omits_apps_guidance_when_configured_off() {
                 .features
                 .enable(Feature::Apps)
                 .expect("test config should allow feature update");
+            config
+                .features
+                .enable(Feature::CatalogAppsInstructions)
+                .expect("enable catalog Apps instructions");
             config.chatgpt_base_url = apps_base_url;
             config.include_apps_instructions = false;
+        })
+        .with_model_info_override("gpt-5.5", |model| {
+            model.model_messages = Some(
+                serde_json::from_value(
+                    json!({"apps": {"usage_instructions": CATALOG_APPS_GUIDANCE}}),
+                )
+                .unwrap(),
+            );
         });
     let codex = builder
-        .build(&server)
+        .build_with_auto_env(&server)
         .await
         .expect("create new conversation")
         .codex;
@@ -2239,11 +2672,7 @@ async fn omits_apps_guidance_when_configured_off() {
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let request = resp_mock.single_request();
-    assert!(
-        !message_input_text_contains(&request, "developer", "<apps_instructions>"),
-        "did not expect apps instructions when include_apps_instructions = false, got {:?}",
-        request.body_json()["input"]
-    );
+    assert_no_apps_guidance(&request);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -2290,11 +2719,23 @@ async fn omits_apps_guidance_when_orchestrator_mcp_is_disabled() {
                 .features
                 .enable(Feature::Apps)
                 .expect("test config should allow feature update");
+            config
+                .features
+                .enable(Feature::CatalogAppsInstructions)
+                .expect("enable catalog Apps instructions");
             config.chatgpt_base_url = apps_base_url;
             config.orchestrator_mcp_enabled = false;
+        })
+        .with_model_info_override("gpt-5.5", |model| {
+            model.model_messages = Some(
+                serde_json::from_value(
+                    json!({"apps": {"usage_instructions": CATALOG_APPS_GUIDANCE}}),
+                )
+                .expect("catalog Apps messages"),
+            );
         });
     let codex = builder
-        .build(&server)
+        .build_with_auto_env(&server)
         .await
         .expect("create new conversation")
         .codex;
@@ -2305,18 +2746,16 @@ async fn omits_apps_guidance_when_orchestrator_mcp_is_disabled() {
             text_elements: Vec::new(),
         }]))
         .await
-        .unwrap();
+        .expect("start disabled-orchestrator Apps guidance turn");
 
     wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let requests = resp_mock.requests();
     assert_eq!(requests.len(), 3);
+    for request in &requests {
+        assert_no_apps_guidance(request);
+    }
     let request = &requests[0];
-    assert!(
-        !message_input_text_contains(request, "developer", "<apps_instructions>"),
-        "did not expect apps instructions when orchestrator MCP is disabled, got {:?}",
-        request.body_json()["input"]
-    );
     assert!(
         !request.body_contains_text("mcp__codex_apps"),
         "did not expect codex_apps MCP tools when orchestrator MCP is disabled, got {:?}",
@@ -2548,7 +2987,7 @@ async fn user_turn_collaboration_mode_overrides_model_and_effort() -> anyhow::Re
             .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_requests(config.cwd.clone())),
                 approval_policy: Some(config.permissions.approval_policy.value()),
-                sandbox_policy: Some(config.legacy_sandbox_policy()),
+                permission_profile: Some(config.permissions.effective_permission_profile()),
                 summary: Some(
                     config
                         .model_reasoning_summary
@@ -2806,7 +3245,7 @@ async fn user_turn_explicit_reasoning_summary_overrides_model_catalog_default() 
             .with_thread_settings(ThreadSettingsOverrides {
                 environments: Some(local_requests(config.cwd.clone())),
                 approval_policy: Some(config.permissions.approval_policy.value()),
-                sandbox_policy: Some(config.legacy_sandbox_policy()),
+                permission_profile: Some(config.permissions.effective_permission_profile()),
                 summary: Some(ReasoningSummary::Concise),
                 collaboration_mode: Some(CollaborationMode {
                     mode: ModeKind::Default,
@@ -3203,6 +3642,9 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
         supports_websockets: false,
         supports_standalone_web_search: false,
         capabilities: None,
+        project_id: None,
+        location: None,
+        credential_file: None,
         include_internal_metadata: false,
     };
 
@@ -3234,10 +3676,10 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
     );
 
     let client = ModelClient::new(
-        /*auth_manager*/ None,
+        codex_model_provider::create_model_provider(provider.clone(), /*auth_manager*/ None),
         AgentIdentityAuthPolicy::JwtOnly,
         thread_id,
-        provider.clone(),
+        uuid_v7_item_id_generator_for_test(),
         SessionSource::Exec,
         "test_originator".to_string(),
         config.model_verbosity,
@@ -3247,6 +3689,7 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
         /*concurrent_reasoning_summaries_enabled*/ false,
+        /*output_token_replay_enabled*/ false,
         /*attestation_provider*/ None,
         config.http_client_factory(),
         config.workspace_routing_context(),
@@ -3268,15 +3711,20 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
         internal_chat_message_metadata_passthrough: None,
     });
     prompt.input.push(ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: Some(ResponseItemId::with_suffix("msg", "message-id")),
         role: "assistant".into(),
         content: vec![ContentItem::OutputText {
+            annotations: None,
+            logprobs: None,
             text: "message".into(),
         }],
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     });
     prompt.input.push(ResponseItem::WebSearchCall {
+        encrypted_content: None,
         id: Some(ResponseItemId::with_suffix("ws", "web-search-id")),
         status: Some("completed".into()),
         action: Some(WebSearchAction::Search {
@@ -3286,6 +3734,8 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
         internal_chat_message_metadata_passthrough: None,
     });
     prompt.input.push(ResponseItem::FunctionCall {
+        status: None,
+        encrypted_content: None,
         id: Some(ResponseItemId::with_suffix("fc", "function-id")),
         name: "do_thing".into(),
         namespace: None,
@@ -3303,6 +3753,7 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
         internal_chat_message_metadata_passthrough: None,
     });
     prompt.input.push(ResponseItem::LocalShellCall {
+        encrypted_content: None,
         id: Some(ResponseItemId::with_suffix("lsh", "local-shell-id")),
         call_id: Some("local-shell-call-id".into()),
         status: LocalShellStatus::Completed,
@@ -3316,6 +3767,7 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
         internal_chat_message_metadata_passthrough: None,
     });
     prompt.input.push(ResponseItem::CustomToolCall {
+        encrypted_content: None,
         id: Some(ResponseItemId::with_suffix("ctc", "custom-tool-id")),
         status: Some("completed".into()),
         call_id: "custom-tool-call-id".into(),
@@ -3352,7 +3804,7 @@ async fn azure_responses_request_does_not_store_and_preserves_prefixed_item_ids(
 
     let mut stream = client_session
         .stream(
-            &prompt,
+            &Arc::new(prompt),
             &model_info,
             &session_telemetry,
             effort,
@@ -3474,6 +3926,7 @@ async fn token_count_includes_rate_limits_snapshot() {
                     "reasoning_output_tokens": 0,
                     "total_tokens": 123
                 },
+                "last_usage_includes_reasoning": false,
                 // Default model is gpt-5.4 in tests → 95% usable context window
                 "model_context_window": 258400
             },
@@ -3768,6 +4221,208 @@ async fn incomplete_response_emits_content_filter_error_message() -> anyhow::Res
     Ok(())
 }
 
+#[test_case::test_case(false, json!({"input_tokens": 120, "output_tokens": 30, "total_tokens": 150}); "sse_usage")]
+#[test_case::test_case(true, json!({"input_tokens": 120, "output_tokens": 30, "total_tokens": 150}); "websocket_usage")]
+#[test_case::test_case(false, serde_json::Value::Null; "sse_missing_usage")]
+#[test_case::test_case(true, serde_json::Value::Null; "websocket_missing_usage")]
+#[test_case::test_case(false, json!({"malformed": true}); "sse_malformed_usage")]
+#[test_case::test_case(true, json!({"malformed": true}); "websocket_malformed_usage")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn incomplete_response_is_terminal(
+    use_websocket: bool,
+    reported_usage: serde_json::Value,
+) -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let incomplete = vec![
+        ev_response_created("resp-incomplete"),
+        ev_assistant_message("partial", "Partial reply."),
+        json!({
+            "type": "response.incomplete",
+            "response": {
+                "id": "resp-incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "usage": reported_usage
+            }
+        }),
+    ];
+    let server = MockServer::start().await;
+    let response_mock = if use_websocket {
+        None
+    } else {
+        Some(mount_sse_once(&server, sse(incomplete.clone())).await)
+    };
+    let websocket_server = if use_websocket {
+        Some(
+            core_test_support::responses::start_websocket_server(vec![vec![
+                vec![ev_response_created("prewarm"), ev_completed("prewarm")],
+                incomplete,
+            ]])
+            .await,
+        )
+    } else {
+        None
+    };
+    let mut builder = test_codex().with_config(|config| {
+        config.model_provider.stream_max_retries = Some(2);
+        config.model_provider.request_max_retries = Some(0);
+    });
+    let test = if let Some(server) = &websocket_server {
+        builder.build_with_websocket_server(server).await?
+    } else {
+        builder.build_with_auto_env(&server).await?
+    };
+    test.codex
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "trigger output limit".into(),
+            text_elements: Vec::new(),
+        }]))
+        .await?;
+    let mut errors = Vec::new();
+    wait_for_event(&test.codex, |event| {
+        match event {
+            EventMsg::Error(error) => errors.push(error.message.clone()),
+            EventMsg::StreamError(_) | EventMsg::Warning(_) | EventMsg::RawResponseCompleted(_) => {
+                panic!("unexpected incomplete-response event: {event:?}")
+            }
+            _ => {}
+        }
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    insta::allow_duplicates! {
+        insta::assert_snapshot!(errors.join("\n"), @"Incomplete response returned, reason: max_output_tokens");
+    }
+    let expected_usage = if reported_usage.get("input_tokens").is_some() {
+        codex_protocol::protocol::TokenUsage {
+            input_tokens: 120,
+            output_tokens: 30,
+            total_tokens: 150,
+            ..Default::default()
+        }
+    } else {
+        codex_protocol::protocol::TokenUsage::default()
+    };
+    assert_eq!(
+        test.codex
+            .token_usage_info()
+            .await
+            .map(|info| info.total_token_usage)
+            .unwrap_or_default(),
+        expected_usage
+    );
+    test.codex.flush_rollout().await?;
+    let records = std::fs::read_to_string(test.codex.rollout_path().expect("rollout path"))?
+        .lines()
+        .filter_map(|line| codex_rollout::parse_rollout_line(line).ok())
+        .filter_map(|line| match line.item {
+            RolloutItem::TokenUsageRecord(record) => Some(record.usage),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        records,
+        if reported_usage.get("input_tokens").is_some() {
+            vec![expected_usage]
+        } else {
+            vec![]
+        }
+    );
+    if let Some(server) = websocket_server {
+        assert_eq!(
+            server
+                .connections()
+                .iter()
+                .map(Vec::len)
+                .collect::<Vec<_>>(),
+            vec![2],
+        );
+        server.shutdown().await;
+    } else {
+        response_mock.expect("SSE response mock").single_request();
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn incomplete_response_without_output_does_not_compact_the_next_turn() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = start_mock_server().await;
+    let test = test_codex()
+        .with_config(|config| {
+            config.model_auto_compact_token_limit = Some(128_000);
+            config.model_post_turn_compact_threshold_percent = 0;
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    let initial = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("initial", "Initial reply."),
+            ev_completed_with_tokens("initial", /*total_tokens*/ 40_000),
+        ]),
+    )
+    .await;
+    test.submit_turn("hello").await?;
+    initial.single_request();
+
+    // An unfinished parallel call can report usage without emitting an output item.
+    // This input fits the window, but counting it again on top of reported usage does not.
+    let incomplete = mount_sse_once(
+        &server,
+        sse(vec![json!({
+            "type": "response.incomplete",
+            "response": {
+                "id": "incomplete",
+                "incomplete_details": {"reason": "max_output_tokens"},
+                "usage": {"input_tokens": 100_000, "output_tokens": 16, "total_tokens": 100_016}
+            }
+        })]),
+    )
+    .await;
+    test.submit_turn(&"x".repeat(240_000)).await?;
+    incomplete.single_request();
+    assert_eq!(
+        test.codex
+            .token_usage_info()
+            .await
+            .unwrap()
+            .total_token_usage
+            .total_tokens,
+        140_016,
+    );
+
+    let continuation = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_assistant_message("continued", "Continued."),
+            ev_completed("continued"),
+        ]),
+    )
+    .await;
+    test.codex
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "continue".into(),
+            text_elements: Vec::new(),
+        }]))
+        .await?;
+    wait_for_event(&test.codex, |event| {
+        assert!(
+            !matches!(event, EventMsg::Error(_) | EventMsg::StreamError(_)),
+            "continuation failed: {event:?}"
+        );
+        assert!(
+            !matches!(event, EventMsg::ItemStarted(event)
+            if matches!(&event.item, codex_protocol::items::TurnItem::ContextCompaction(_))),
+            "the incomplete request's input must only count once toward compaction"
+        );
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    continuation.single_request();
+    Ok(())
+}
+
 /// We try to avoid setting env vars in tests because std::env::set_var() is
 /// process-wide and unsafe. Though for this test, we want to simulate the
 /// presence of an environment variable that the provider will read for auth, so
@@ -3839,6 +4494,9 @@ async fn azure_overrides_assign_properties_used_for_responses_url() {
         supports_websockets: false,
         supports_standalone_web_search: false,
         capabilities: None,
+        project_id: None,
+        location: None,
+        credential_file: None,
         include_internal_metadata: false,
     };
 
@@ -3927,6 +4585,9 @@ async fn env_var_overrides_loaded_auth() {
         supports_websockets: false,
         supports_standalone_web_search: false,
         capabilities: None,
+        project_id: None,
+        location: None,
+        credential_file: None,
         include_internal_metadata: false,
     };
 

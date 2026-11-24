@@ -11,14 +11,14 @@ import { spawnPrivate, startSharedEngine, shutdownRuntime } from "../runtime-tra
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
 // Assert what each actual subprocess inherits, including lowercase settings and the
-// Node proxy switch. The provider bridge's environment must remain available to Mother.
+// Node proxy switch, matching the launching terminal's environment.
 const proxy = {
     HTTP_PROXY: "http://127.0.0.1:9", HTTPS_PROXY: "http://127.0.0.1:9", ALL_PROXY: "socks5://127.0.0.1:9",
     http_proxy: "http://127.0.0.1:9", https_proxy: "http://127.0.0.1:9", all_proxy: "socks5://127.0.0.1:9",
     NO_PROXY: "localhost,127.0.0.1,::1", no_proxy: "localhost,127.0.0.1,::1", NODE_USE_ENV_PROXY: "1",
 };
 
-test("Codex subprocesses bypass the proxy while Mother's provider environment is preserved", { timeout: 15000 }, async t => {
+test("Codex subprocesses inherit the terminal proxy environment", { timeout: 15000 }, async t => {
     const root = createTestTempDir(path.join(os.tmpdir(), "native-proxy-"));
     const executable = path.join(root, "engine.mts"), trace = path.join(root, "env.jsonl");
     fs.writeFileSync(executable, `#!${process.execPath}
@@ -38,7 +38,7 @@ await import(${JSON.stringify(new URL("./fake-app-server.mts", import.meta.url).
         }
         removeTestTempDir(root);
     });
-    const direct = async (pid?: number) => {
+    const inherited = async (pid?: number) => {
         let record: { pid: number; env: NodeJS.ProcessEnv } | undefined;
         const deadline = Date.now() + 3000;
         while (!record && Date.now() < deadline) {
@@ -49,29 +49,29 @@ await import(${JSON.stringify(new URL("./fake-app-server.mts", import.meta.url).
         }
         assert.ok(record, "the engine recorded its startup environment");
         for (const name of Object.keys(proxy)) {
-            assert.equal(record.env[name], undefined, `${name} must not reach Codex`);
+            assert.equal(record.env[name], proxy[name as keyof typeof proxy], `${name} reaches Codex`);
             assert.equal(process.env[name], proxy[name as keyof typeof proxy], `${name} remains available to Mother`);
         }
         assert.equal(record.env.NATIVE_PROXY_TRACE, trace, "unrelated environment reaches the engine");
     };
     await t.test("shared chat engine", async () => {
         const entry = await startSharedEngine().promise;
-        try { await direct(entry?.child?.pid); } finally { await shutdownRuntime(); }
+        try { await inherited(entry?.child?.pid); } finally { await shutdownRuntime(); }
     });
     await t.test("private helper engine", async () => {
         const child = spawnPrivate();
-        try { await direct(child.pid); } finally { const exited = once(child, "exit"); child.kill(); await exited; }
+        try { await inherited(child.pid); } finally { const exited = once(child, "exit"); child.kill(); await exited; }
     });
     await t.test("standalone app-server connection", async () => {
         fs.writeFileSync(trace, "");
         const conn = connectAppServer({ engineBin: executable });
-        try { await conn.ready; await direct(); } finally { conn.close(); }
+        try { await conn.ready; await inherited(); } finally { conn.close(); }
     });
     await t.test("ACP fallback without a shared bridge", async () => {
         const engine = new Engine(executable, null);
         try {
             await engine.call("initialize", { clientInfo: { name: "proxy-test", title: null, version: "1" }, capabilities: {} });
-            await direct(engine.child?.pid);
+            await inherited(engine.child?.pid);
         } finally { await engine.stop(); }
     });
 });

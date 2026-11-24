@@ -165,47 +165,11 @@ impl HooksBrowserView {
             .and_then(|idx| self.entry.hooks.get(idx))
     }
 
-    fn move_up(&mut self) {
-        let len = self.page_len();
-        self.state.move_up_wrap(len);
-        self.state.ensure_visible(len, self.max_visible_rows());
-    }
-
-    fn move_down(&mut self) {
-        let len = self.page_len();
-        self.state.move_down_wrap(len);
-        self.state.ensure_visible(len, self.max_visible_rows());
-    }
-
-    fn page_up(&mut self) {
-        let len = self.page_len();
-        self.state.page_up_clamped(len, self.max_visible_rows());
-    }
-
-    fn page_down(&mut self) {
-        let len = self.page_len();
-        self.state.page_down_clamped(len, self.max_visible_rows());
-    }
-
-    fn jump_top(&mut self) {
-        let len = self.page_len();
-        self.state.jump_top(len, self.max_visible_rows());
-    }
-
-    fn jump_bottom(&mut self) {
-        let len = self.page_len();
-        self.state.jump_bottom(len, self.max_visible_rows());
-    }
-
     fn page_len(&self) -> usize {
         match self.page {
             HooksBrowserPage::Events => codex_protocol::protocol::HookEventName::iter().count(),
             HooksBrowserPage::Handlers(event_name) => self.handlers_for_event(event_name).count(),
         }
-    }
-
-    fn max_visible_rows(&self) -> usize {
-        MAX_POPUP_ROWS.min(self.page_len().max(1))
     }
 
     fn open_selected_event(&mut self) {
@@ -613,13 +577,14 @@ impl BottomPaneView for HooksBrowserView {
     }
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        if let Some(action) = self.keymap.vertical_action_for(key_event) {
+            let len = self.page_len();
+            self.state
+                .apply_vertical_action(action, len, MAX_POPUP_ROWS.min(len.max(1)));
+            return;
+        }
+
         match key_event {
-            _ if self.keymap.move_up.is_pressed(key_event) => self.move_up(),
-            _ if self.keymap.move_down.is_pressed(key_event) => self.move_down(),
-            _ if self.keymap.page_up.is_pressed(key_event) => self.page_up(),
-            _ if self.keymap.page_down.is_pressed(key_event) => self.page_down(),
-            _ if self.keymap.jump_top.is_pressed(key_event) => self.jump_top(),
-            _ if self.keymap.jump_bottom.is_pressed(key_event) => self.jump_bottom(),
             _ if self.keymap.accept.is_pressed(key_event)
                 && self.page == HooksBrowserPage::Events =>
             {
@@ -711,6 +676,8 @@ fn event_label(event_name: HookEventName) -> &'static str {
         HookEventName::PostToolUse => "PostToolUse",
         HookEventName::PreCompact => "PreCompact",
         HookEventName::PostCompact => "PostCompact",
+        HookEventName::PreModelRequest => "PreModelRequest",
+        HookEventName::PostModelRequest => "PostModelRequest",
         HookEventName::SessionStart => "SessionStart",
         HookEventName::SessionEnd => "SessionEnd",
         HookEventName::UserPromptSubmit => "UserPromptSubmit",
@@ -728,6 +695,8 @@ fn event_description(event_name: HookEventName) -> &'static str {
         HookEventName::PostToolUse => "After a tool executes",
         HookEventName::PreCompact => "Before context compaction",
         HookEventName::PostCompact => "After context compaction",
+        HookEventName::PreModelRequest => "Before a model request",
+        HookEventName::PostModelRequest => "After a model request, including failures",
         HookEventName::SessionStart => "When a new session starts",
         HookEventName::SessionEnd => "Right before a session ends",
         HookEventName::UserPromptSubmit => "When the user submits a prompt",
@@ -739,6 +708,9 @@ fn event_description(event_name: HookEventName) -> &'static str {
 }
 
 fn hook_source_summary(hook: &HookMetadata) -> String {
+    if let Some(id) = &hook.environment_id {
+        return format!("Environment - {id}");
+    }
     match hook.source {
         HookSource::Plugin => hook
             .plugin_id
@@ -750,6 +722,9 @@ fn hook_source_summary(hook: &HookMetadata) -> String {
 }
 
 fn detail_source_value(hook: &HookMetadata) -> String {
+    if hook.environment_id.is_some() {
+        return hook_source_summary(hook);
+    }
     match hook.source {
         HookSource::Plugin => hook_source_summary(hook),
         HookSource::System
@@ -870,6 +845,7 @@ mod tests {
             source_path: test_path_buf("/tmp/hooks.json").abs(),
             source,
             plugin_id: plugin_id.map(str::to_string),
+            environment_id: None,
             display_order,
             enabled,
             current_hash,
@@ -926,6 +902,11 @@ mod tests {
     fn renders_event_browser() {
         let mut view = view();
         assert_snapshot!("hooks_browser_events", render_lines(&view, /*width*/ 112));
+        view.state.selected_idx = Some(view.event_rows().len() - 1);
+        assert_snapshot!(
+            "hooks_browser_model_requests",
+            render_lines(&view, /*width*/ 112),
+        );
         view.keymap.accept.clear();
         assert!(!render_lines(&view, /*width*/ 112).contains("enter details"));
     }

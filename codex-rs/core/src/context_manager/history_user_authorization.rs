@@ -37,6 +37,17 @@ impl ContextManager {
 
     /// Bounded instruction candidates from the legacy backup; their ordering is unknown.
     pub(crate) fn legacy_user_messages(&self) -> impl Iterator<Item = RetainedUserMessage> + '_ {
+        self.original_legacy_user_messages().map(|mut message| {
+            message.text =
+                guardian_truncate_text(&message.text, GUARDIAN_MAX_ROOT_MESSAGE_TOKENS).0;
+            message
+        })
+    }
+
+    /// Original legacy candidates for request preparation; storage remains independently bounded.
+    pub(crate) fn original_legacy_user_messages(
+        &self,
+    ) -> impl Iterator<Item = RetainedUserMessage> + '_ {
         self.guardian_history_items()
             .into_iter()
             .flatten()
@@ -54,7 +65,6 @@ impl ContextManager {
                 {
                     return None;
                 }
-                let text = guardian_truncate_text(&text, GUARDIAN_MAX_ROOT_MESSAGE_TOKENS).0;
                 Some(RetainedUserMessage {
                     phase: None,
                     origin: codex_history::UserInputOrigin::from_message(item),
@@ -135,6 +145,7 @@ impl ContextManager {
                     complete: true,
                 },
                 source,
+                &self.item_id_generator,
             );
             return None;
         }
@@ -173,7 +184,7 @@ impl ContextManager {
             let text = content
                 .iter()
                 .filter_map(|content| match content {
-                    ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                    ContentItem::InputText { text } | ContentItem::OutputText { text, .. } => {
                         Some(text.as_str())
                     }
                     _ => {
@@ -198,9 +209,9 @@ impl ContextManager {
             };
             let retained = Arc::make_mut(&mut self.retained_context);
             captured = if is_assistant {
-                retained.record_assistant_message(message, metadata.into())
+                retained.record_assistant_message(message, metadata.into(), &self.item_id_generator)
             } else {
-                retained.record_user_message(message, metadata.into())
+                retained.record_user_message(message, metadata.into(), &self.item_id_generator)
             };
         }
         if !is_assistant {

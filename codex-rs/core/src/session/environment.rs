@@ -1,3 +1,4 @@
+use crate::McpRefreshReason;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -5,9 +6,14 @@ use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::MAX_SELECTED_CAPABILITY_ROOTS;
 use codex_exec_server::SelectedCapabilityRootsStatus;
 use codex_execpolicy::Policy;
+use codex_features::Feature;
 use codex_protocol::capabilities::CapabilityRootLocation;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::models::SandboxEnforcement;
+use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::EnvironmentConfig;
 use codex_protocol::protocol::EnvironmentConfigState;
@@ -16,6 +22,7 @@ use codex_protocol::sandbox::SandboxType;
 
 use crate::config::ConstraintError;
 use crate::config::ConstraintResult;
+use crate::config::ManagedFeatures;
 use crate::config::NetworkProxySpec;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::session::session::Session;
@@ -23,6 +30,7 @@ use crate::session::session::SessionConfiguration;
 use crate::session::session::SessionSettingsUpdate;
 
 /// Defaults for environments that inherit their configuration from the running turn.
+#[derive(Clone)]
 pub(crate) struct ThreadEnvironmentDefaults {
     pub(crate) common: EnvironmentConfig,
     // Chosen once when the session starts; it does not apply to remote environments.
@@ -49,6 +57,7 @@ impl ThreadEnvironmentDefaults {
 
 pub(super) fn validate_environment_configs(
     selections: &[TurnEnvironmentSelection],
+    features: &ManagedFeatures,
 ) -> ConstraintResult<()> {
     for selection in selections {
         match &selection.config {
@@ -56,7 +65,7 @@ pub(super) fn validate_environment_configs(
             | EnvironmentConfigState::Pending
             | EnvironmentConfigState::Failed(_) => {}
             EnvironmentConfigState::Ready(config) => {
-                validate_environment_config(selection, config).map_err(|error| {
+                validate_environment_config(selection, config, features).map_err(|error| {
                     ConstraintError::InvalidValue {
                         field_name: "environments",
                         candidate: "environment configuration".to_string(),
@@ -94,7 +103,16 @@ pub(super) fn ensure_configs_stay_owner_provided(
 fn validate_environment_config(
     selection: &TurnEnvironmentSelection,
     config: &EnvironmentConfig,
+    features: &ManagedFeatures,
 ) -> CodexResult<()> {
+    if features.enabled(Feature::CodexHooks) {
+        codex_hooks::validate_environment_hooks(
+            &selection.environment_id,
+            &selection.cwd,
+            &config.environment_hooks,
+        )
+        .map_err(|error| CodexErr::InvalidRequest(error.to_string()))?;
+    }
     if let Some(policy) = config.network_policy.as_ref() {
         if selection.environment_id == LOCAL_ENVIRONMENT_ID {
             return Err(CodexErr::InvalidRequest(
@@ -169,7 +187,52 @@ impl Session {
             ensure_configs_stay_owner_provided(current_environments, &environments.environments)?;
         }
 
-        current.apply(updates, current_environments)
+        if updates.permission_profile.is_none() && updates.sandbox_policy.is_none() {
+            return current.apply(updates, current_environments);
+        }
+
+        // Normalize a copy so preview leaves compatibility input available for admission.
+        let mut updates = updates.clone();
+        let sandbox_policy = updates.sandbox_policy.take();
+        let current_file_system = current.file_system_sandbox_policy(current_environments);
+        if let Some(profile) = updates.permission_profile.take() {
+            // Infer identity from the requested profile before merging current denials.
+            updates.active_permission_profile = updates.active_permission_profile.or_else(|| {
+                (profile == current.permission_profile())
+                    .then(|| current.active_permission_profile())
+                    .flatten()
+            });
+            let (mut file_system, network) = profile.to_runtime_permissions();
+            file_system.preserve_deny_read_restrictions_from(&current_file_system);
+            updates.permission_profile = Some(
+                PermissionProfile::from_runtime_permissions_with_enforcement(
+                    profile.enforcement(),
+                    &file_system,
+                    network,
+                ),
+            );
+        } else if let Some(policy) = sandbox_policy {
+            let cwd = updates.environments.as_ref().map_or_else(
+                || current.cwd(),
+                |environments| &environments.legacy_fallback_cwd,
+            );
+            let file_system =
+                FileSystemSandboxPolicy::from_legacy_sandbox_policy_preserving_deny_entries(
+                    &policy,
+                    cwd,
+                    &current_file_system,
+                );
+            updates.permission_profile = Some(
+                PermissionProfile::from_runtime_permissions_with_enforcement(
+                    SandboxEnforcement::from_legacy_sandbox_policy(&policy),
+                    &file_system,
+                    NetworkSandboxPolicy::from(&policy),
+                ),
+            );
+            updates.active_permission_profile = None;
+            updates.profile_workspace_roots = Some(Vec::new());
+        }
+        current.apply(&updates, current_environments)
     }
 
     /// Activates the environments accepted for a new task. Configuration may have arrived for
@@ -201,11 +264,9 @@ impl Session {
                 self.services
                     .turn_environments
                     .set_active_thread_defaults(configuration.inferred_environment_config());
-                if environments != self.services.turn_environments.selections() {
-                    self.services
-                        .turn_environments
-                        .update_selections(&environments);
-                }
+                self.services
+                    .turn_environments
+                    .activate_selections(&environments);
             }
             self.services.turn_environments.snapshot()
         };
@@ -312,7 +373,8 @@ impl Session {
             return Ok(());
         }
         if let Ok(config) = &result {
-            validate_environment_config(selection, config)?;
+            // Return the specific readiness error before applying session-level constraints.
+            validate_environment_config(selection, config, &self.features)?;
         }
         let (current_environment, future_environment) = match environments {
             (None, None) => {
@@ -362,10 +424,15 @@ impl Session {
             }
         }
 
+        if update_future {
+            self.services
+                .turn_environments
+                .update_configured_selections(&future);
+        }
         state.session_configuration.environments = future;
         if update_current {
             // Invalidate MCP before installed configuration can wake a waiting turn.
-            self.mark_mcp_runtime_dirty();
+            self.mark_mcp_runtime_dirty(McpRefreshReason::CurrentEnvironmentsChanged);
             self.services.turn_environments.update_selections(&current);
         }
         Ok(())

@@ -210,13 +210,19 @@ async fn revocation_during_renewal_prevents_dispatch() -> anyhow::Result<()> {
     let server = MockServer::start().await;
     let endpoint = format!("{}/mcp", server.uri());
     let (gate, validated_rx, release_tx) = CredentialGate::new();
-    let (client, source, params) = fixture(&endpoint);
+    let (mut client, source, params) = fixture(&endpoint);
+    let current = Arc::new(AtomicBool::new(true));
+    client.authority = EmaRequestAuthority::new(CancellationToken::new(), {
+        let current = Arc::clone(&current);
+        move || current.load(Ordering::SeqCst)
+    });
     *client.cached_token() = None;
     *source.credential_gate.lock().unwrap() = Some(gate);
     let authority = client.authority.clone();
     let request = tokio::spawn(async move { client.http_request(params).await });
     validated_rx.await?;
-    authority.revoke();
+    // A watcher need not have run: dispatch must check the current owner itself.
+    current.store(false, Ordering::SeqCst);
     let _ = release_tx.send(());
     tokio::time::timeout(Duration::from_secs(1), authority.quiesce()).await?;
     assert!(matches!(
@@ -241,12 +247,13 @@ async fn revocation_ends_an_existing_response_stream() -> anyhow::Result<()> {
         .respond_with(ResponseTemplate::new(200).set_body_string("account-a-data"))
         .mount(&server)
         .await;
-    let (client, _source, params) = fixture(&format!("{}/mcp", server.uri()));
+    let (mut client, _source, params) = fixture(&format!("{}/mcp", server.uri()));
+    let cancellation = CancellationToken::new();
+    client.authority = EmaRequestAuthority::new(cancellation.child_token(), || true);
     crate::oauth::test_support::warm_http_client(client.inner.as_ref()).await?;
-    let authority = client.authority.clone();
     let (_response, mut body) = client.http_request_stream(params).await?;
 
-    authority.revoke();
+    cancellation.cancel();
 
     assert_eq!(body.recv().await?, None);
     Ok(())
@@ -369,16 +376,22 @@ async fn initial_bearer_aged_during_validation_is_renewed_before_dispatch() -> a
             .mount(&server)
             .await;
         let (client, source, params) = fixture(&format!("{}/mcp", server.uri()));
+        // Age the token by advancing time: backdating an Instant can underflow
+        // on a Windows runner that has only recently booted.
+        tokio::time::pause();
+        let received_at = Instant::now();
+        tokio::time::advance(Duration::from_secs(301)).await;
         let client = EmaAuthenticatedHttpClient::new(
             client.inner,
             Arc::clone(&source),
             EmaAccessToken {
                 access_token: "aged-in-validation".to_string(),
                 expires_in: Some(Duration::from_secs(300)),
-                received_at: Instant::now() - Duration::from_secs(301),
+                received_at,
             },
             client.authority,
         );
+        tokio::time::resume();
         if streaming {
             client.http_request_stream(params).await?;
         } else {

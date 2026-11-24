@@ -12,6 +12,7 @@ use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalClearedNotification;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnItemsView;
@@ -44,6 +45,7 @@ fn item_completed(thread_id: ThreadId, turn_id: &str, item: ThreadItem) -> Serve
         item,
         thread_id: thread_id.to_string(),
         turn_id: turn_id.to_string(),
+        content_token_count: None,
         completed_at_ms: 0,
     })
 }
@@ -67,14 +69,15 @@ fn turn_completed(thread_id: ThreadId, turn_id: &str) -> ServerNotification {
 }
 
 fn agent_message(text: &str) -> ThreadItem {
-    ThreadItem::AgentMessage {
+    ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+        moderation: None,
         id: "message".to_string(),
         text: text.to_string(),
         phase: None,
         memory_citation: None,
         delivery: None,
         questions: None,
-    }
+    })
 }
 
 fn goal_updated(thread_id: ThreadId, objective: &str) -> ServerNotification {
@@ -116,7 +119,7 @@ async fn a_finished_turn_checkpoints_its_result_files_and_commands() -> anyhow::
     );
 
     for item in [
-        ThreadItem::FileChange {
+        ThreadItem::untimed(ThreadItemPayload::FileChange {
             id: "change".to_string(),
             changes: vec![FileUpdateChange {
                 path: "src/main.rs".to_string(),
@@ -124,8 +127,8 @@ async fn a_finished_turn_checkpoints_its_result_files_and_commands() -> anyhow::
                 diff: "the exact diff stays in the transcript".to_string(),
             }],
             status: PatchApplyStatus::Completed,
-        },
-        ThreadItem::CommandExecution {
+        }),
+        ThreadItem::untimed(ThreadItemPayload::CommandExecution {
             sandbox_type: None,
             model_context: None,
             id: "command".to_string(),
@@ -140,7 +143,7 @@ async fn a_finished_turn_checkpoints_its_result_files_and_commands() -> anyhow::
             aggregated_output: None,
             exit_code: Some(0),
             duration_ms: Some(5),
-        },
+        }),
         agent_message(RESULT_SENTINEL),
     ] {
         app.mirror_elpis_context_notification(&item_completed(primary, "primary-turn", item))

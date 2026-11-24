@@ -1,17 +1,16 @@
 #!/usr/bin/env node
-// Generated from codex-rs/skills/assets-src/openai-docs/resolve-latest-model-info.cts by scripts/emit-compat-js.mts; do not edit.
 
 // Keep this entrypoint CommonJS-safe when the skill is copied into a type=module repo.
 
-const fs = require("node:fs/promises")                                     ;
-const path = require("node:path")                              ;
+const fs = require("node:fs/promises");
+const path = require("node:path");
 
 const DEFAULT_URL =
   "https://developers.openai.com/api/docs/guides/latest-model.md";
 const DEFAULT_BASE_URL = "https://developers.openai.com";
 
-function parseArgs(argv          ) {
-  const args                                                              = {
+function parseArgs(argv) {
+  const args = {
     source: process.env.LATEST_MODEL_URL || DEFAULT_URL,
     baseUrl: process.env.LATEST_MODEL_BASE_URL || DEFAULT_BASE_URL,
   };
@@ -30,10 +29,7 @@ function parseArgs(argv          ) {
   return args;
 }
 
-async function readSource(source                    ) {
-  if (source === undefined) {
-    throw new TypeError("Cannot read properties of undefined (reading 'startsWith')");
-  }
+async function readSource(source) {
   if (source.startsWith("file://")) {
     return fs.readFile(new URL(source), "utf8");
   }
@@ -50,10 +46,13 @@ async function readSource(source                    ) {
       });
 
       if (response.ok) {
-        return response.text();
+        // Body failures must be caught by this attempt's retry handler.
+        return await response.text();
       }
 
-      lastError = new Error("failed to fetch " + source + ": " + response.status);
+      lastError = new Error(
+        "failed to fetch " + source + ": " + response.status,
+      );
       if (response.status < 500 && response.status !== 429) {
         break;
       }
@@ -69,12 +68,11 @@ async function readSource(source                    ) {
   throw lastError;
 }
 
-function parseIndentedInfo(lines          , startIndex        ) {
-  const info                         = {};
+function parseIndentedInfo(lines, startIndex) {
+  const info = {};
 
   for (let i = startIndex + 1; i < lines.length; i += 1) {
     const line = lines[i];
-    if (line === undefined) continue;
     if (!line.trim()) {
       continue;
     }
@@ -84,33 +82,29 @@ function parseIndentedInfo(lines          , startIndex        ) {
       break;
     }
 
-    const [, key, value] = match;
-    if (key === undefined || value === undefined) break;
-    info[key] = value.replace(/^["']|["']$/g, "");
+    info[match[1]] = match[2].replace(/^["']|["']$/g, "");
   }
 
   return info;
 }
 
-function parseFlatInfo(block        ) {
-  const info                         = {};
+function parseFlatInfo(block) {
+  const info = {};
 
   for (const line of block.split(/\r?\n/)) {
     const match = line.match(/^\s*([A-Za-z][A-Za-z0-9_-]*):\s*(.+?)\s*$/);
     if (match) {
-      const [, key, value] = match;
-      if (key === undefined || value === undefined) continue;
-      info[key] = value.replace(/^["']|["']$/g, "");
+      info[match[1]] = match[2].replace(/^["']|["']$/g, "");
     }
   }
 
   return info;
 }
 
-function extractLatestModelInfo(markdown        ) {
+function extractLatestModelInfo(markdown) {
   const lines = markdown.split(/\r?\n/);
   const latestModelInfoIndex = lines.findIndex((line) =>
-    /^latestModelInfo:\s*$/.test(line)
+    /^latestModelInfo:\s*$/.test(line),
   );
 
   if (latestModelInfoIndex >= 0) {
@@ -118,37 +112,32 @@ function extractLatestModelInfo(markdown        ) {
   }
 
   const commentMatch = markdown.match(
-    /<!--\s*latestModelInfo\s*\n([\s\S]*?)\n\s*-->/m
+    /<!--\s*latestModelInfo\s*\n([\s\S]*?)\n\s*-->/m,
   );
-  if (commentMatch && commentMatch[1] !== undefined) {
+  if (commentMatch) {
     return parseFlatInfo(commentMatch[1]);
   }
 
   return undefined;
 }
 
-function modelToSkillSlug(model        ) {
-  return model.trim().replace(/\./g, "p");
-}
-
-function absoluteUrl(baseUrl                    , value        ) {
+function absoluteUrl(baseUrl, value) {
   return new URL(value, baseUrl).toString();
 }
 
-function normalizeInfo(info                        , baseUrl                    ) {
+function normalizeInfo(info, baseUrl) {
   const model = info?.model?.trim();
   const migrationGuide = info?.migrationGuide?.trim();
   const promptingGuide = info?.promptingGuide?.trim();
 
   if (!model || !migrationGuide || !promptingGuide) {
     throw new Error(
-      "latestModelInfo must include model, migrationGuide, and promptingGuide"
+      "latestModelInfo must include model, migrationGuide, and promptingGuide",
     );
   }
 
   return {
     model,
-    modelSlug: modelToSkillSlug(model),
     migrationGuideUrl: absoluteUrl(baseUrl, migrationGuide),
     promptingGuideUrl: absoluteUrl(baseUrl, promptingGuide),
   };
@@ -164,11 +153,11 @@ async function main() {
   }
 
   process.stdout.write(
-    `${JSON.stringify(normalizeInfo(info, baseUrl), null, 2)}\n`
+    `${JSON.stringify(normalizeInfo(info, baseUrl), null, 2)}\n`,
   );
 }
 
-main().catch((error       ) => {
+main().catch((error) => {
   console.error(error.message);
   process.exit(1);
 });

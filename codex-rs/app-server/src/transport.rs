@@ -1,6 +1,7 @@
 use crate::message_processor::ConnectionSessionState;
 use crate::outgoing_message::OutgoingEnvelope;
 use codex_app_server_protocol::ExperimentalApi;
+use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -34,6 +35,7 @@ pub(crate) use codex_app_server_transport::start_remote_control;
 pub(crate) use codex_app_server_transport::start_stdio_connection;
 pub(crate) use codex_app_server_transport::start_websocket_acceptor;
 pub use codex_app_server_transport::take_remote_control_disabled_env;
+pub use codex_app_server_transport::verified_local_daemon_socket;
 
 pub(crate) struct ConnectionState {
     pub(crate) origin: ConnectionOrigin,
@@ -153,11 +155,25 @@ async fn send_message_to_connection(
     }
 
     let writer = connection_state.writer.clone();
+    let optional_progress = matches!(
+        &message,
+        OutgoingMessage::AppServerNotification(envelope)
+            if matches!(&envelope.notification, ServerNotification::ThreadSearchPartial(_))
+    );
     let queued_message = QueuedOutgoingMessage {
         message,
         write_complete_tx,
     };
-    if connection_state.can_disconnect() {
+    if optional_progress {
+        // Keep room for the required response that follows optional progress.
+        if writer.capacity() <= 1 {
+            return false;
+        }
+        if let Err(mpsc::error::TrySendError::Closed(_)) = writer.try_send(queued_message) {
+            return disconnect_connection(connections, connection_id);
+        }
+        false
+    } else if connection_state.can_disconnect() {
         match writer.try_send(queued_message) {
             Ok(()) => false,
             Err(mpsc::error::TrySendError::Full(_)) => {
@@ -229,11 +245,12 @@ pub(crate) async fn route_outgoing_envelope(
                 })
                 .collect();
 
-            for connection_id in target_connections {
+            let messages = std::iter::repeat_n(message, target_connections.len());
+            for (connection_id, message) in target_connections.into_iter().zip(messages) {
                 let _ = send_message_to_connection(
                     connections,
                     connection_id,
-                    message.clone(),
+                    message,
                     /*write_complete_tx*/ None,
                 )
                 .await;

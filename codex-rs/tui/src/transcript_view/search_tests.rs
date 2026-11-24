@@ -31,6 +31,87 @@ fn finish_scan(view: &mut TranscriptView, cells: &[Arc<dyn HistoryCell>]) {
 }
 
 #[test]
+fn search_match_separates_user_prompts_only_while_visible() {
+    use crate::history_cell::ReasoningSummaryCell;
+    use crate::history_cell::new_user_prompt;
+    use std::path::Path;
+
+    crate::terminal_palette::with_test_default_colors(
+        crate::terminal_probe::DefaultColors {
+            fg: (235, 235, 235),
+            bg: (18, 20, 30),
+        },
+        || {
+            let prompt = |text| {
+                Arc::new(new_user_prompt(text, Vec::new(), Vec::new(), Vec::new()))
+                    as Arc<dyn HistoryCell>
+            };
+            let cells: Vec<Arc<dyn HistoryCell>> = vec![
+                prompt("first".into()),
+                Arc::new(ReasoningSummaryCell::new(
+                    "Reasoning".into(),
+                    "needle detail".into(),
+                    Path::new("."),
+                    /*transcript_only*/ true,
+                )),
+                prompt("needle second".into()),
+            ];
+            let area = Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 30, /*height*/ 12,
+            );
+            let mut view = TranscriptView::default();
+            view.render(area, &mut Buffer::empty(area), &cells);
+            view.begin_search();
+            view.paste_search("needle");
+            finish_scan(&mut view, &cells);
+            assert_eq!(view.search.current.as_ref().unwrap().anchor.index, 2);
+
+            view.handle_key(
+                KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+                &cells,
+            );
+            finish_scan(&mut view, &cells);
+            assert_eq!(view.search.current.as_ref().unwrap().anchor.index, 1);
+            assert!(view.current_layout(&cells, /*index*/ 2).unwrap().separated);
+
+            view.handle_key(
+                KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+                &cells,
+            );
+            finish_scan(&mut view, &cells);
+            assert_eq!(view.search.current.as_ref().unwrap().anchor.index, 2);
+            let mut buffer = Buffer::empty(area);
+            view.render(area, &mut buffer, &cells);
+            let rendered = crate::transcript_view::tests::text(&buffer);
+            let rows = rendered.lines().collect::<Vec<_>>();
+            let first = rows.iter().position(|row| row.contains("› first")).unwrap();
+            let second = rows
+                .iter()
+                .position(|row| row.contains("› needle second"))
+                .unwrap();
+            let background = buffer[(area.width - 1, first as u16)].bg;
+            assert_ne!(background, ratatui::style::Color::Reset);
+            let joined = (first..=second)
+                .map(|row| {
+                    let marker = if buffer[(area.width - 1, row as u16)].bg == background {
+                        '#'
+                    } else {
+                        '.'
+                    };
+                    format!("{marker}|{}|", rows[row])
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            insta::assert_snapshot!(joined, @r"
+            #|› first|
+            #||
+            #|› needle second|
+            ");
+        },
+    );
+}
+
+#[test]
 fn find_keeps_context_and_allows_reading_without_losing_the_query() {
     let cells = vec![
         cell("earlier needle"),
@@ -805,9 +886,20 @@ fn search_scans_a_page_inserted_after_the_retained_session_header() {
     view.paste_search("needle");
     finish_scan(&mut view, &cells);
     assert!(view.search.needs_history(view.history));
-    cells.insert(/*index*/ 1, cell("older NEEDLE"));
+    view.search.saved_select = Some(SavedSelectSearch {
+        query: "needle".to_string(),
+        current: None,
+        progress: view.search.progress,
+        page_start: view.search.page_start,
+    });
+    view.search.progress = Progress::Restart;
+    cells.insert(/*index*/ 1, cell("older messages"));
+    view.history = TranscriptHistoryState::Partial;
+    view.history_loaded(&cells, 1..2);
+    cells.insert(/*index*/ 1, cell("oldest NEEDLE"));
     view.history = TranscriptHistoryState::Complete;
     view.history_loaded(&cells, 1..2);
+    assert!(view.search.restore_saved_select());
     finish_scan(&mut view, &cells);
     let found = view
         .search
@@ -821,9 +913,82 @@ fn search_scans_a_page_inserted_after_the_retained_session_header() {
             found.anchor.offset,
             found.end
         ),
-        (EntryKey::cell(&cells[1]), 1, 6, 12)
+        (EntryKey::cell(&cells[1]), 1, 7, 13)
     );
     assert!(Arc::ptr_eq(&cells[0], &header));
+}
+
+#[test]
+fn search_resumes_from_the_text_in_a_page_with_a_relocated_image() {
+    let mut cells = vec![cell("answer"), cell("completion")];
+    let mut view = TranscriptView {
+        area: Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 6,
+        ),
+        history: TranscriptHistoryState::Partial,
+        ..TranscriptView::default()
+    };
+    view.begin_search();
+    view.paste_search("needle");
+    finish_scan(&mut view, &cells);
+    assert!(view.search.needs_history(view.history));
+
+    let match_cell = cell("older needle");
+    cells.insert(/*index*/ 1, cell("Generated image"));
+    cells.insert(/*index*/ 0, Arc::clone(&match_cell));
+    view.history = TranscriptHistoryState::Complete;
+    view.history_page_loaded(&cells, 0..1, Some(1..2));
+    finish_scan(&mut view, &cells);
+    assert_eq!(
+        view.search.current.as_ref().unwrap().anchor.key,
+        EntryKey::cell(&match_cell)
+    );
+}
+
+#[test]
+fn search_finds_the_first_older_entry_after_replaying_the_session_header() {
+    let header = || -> Arc<dyn HistoryCell> {
+        Arc::new(crate::history_cell::SessionHeaderHistoryCell::new(
+            "test model".to_string(),
+            /*reasoning_effort*/ None,
+            std::path::PathBuf::from("/project"),
+            "test",
+        ))
+    };
+    let parked = vec![header(), cell("recent needle")];
+    let mut view = TranscriptView {
+        history: TranscriptHistoryState::Partial,
+        ..TranscriptView::default()
+    };
+    view.begin_search();
+    view.paste_search("needle");
+    finish_scan(&mut view, &parked);
+    view.handle_key(KeyCode::Enter.into(), &parked);
+
+    let mut replayed = vec![header(), cell("recent needle")];
+    view.restore_after_replay(
+        &parked, &replayed, /*replay_may_have_output*/ false, /*replayed_live*/ None,
+    );
+    view.handle_key(
+        KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+        &replayed,
+    );
+    finish_scan(&mut view, &replayed);
+    assert!(view.needs_history(&replayed));
+
+    let oldest = cell("oldest needle");
+    replayed.splice(1..1, [Arc::clone(&oldest), cell("older messages")]);
+    view.history = TranscriptHistoryState::Complete;
+    view.history_loaded(&replayed, 1..3);
+    assert!(Arc::ptr_eq(
+        &view.snapshot().expect("held reading").cells[0],
+        &parked[0]
+    ));
+    finish_scan(&mut view, &replayed);
+    assert_eq!(
+        view.search.current.as_ref().map(|found| found.anchor.key),
+        Some(EntryKey::cell(&oldest)),
+    );
 }
 
 #[test]
@@ -1011,7 +1176,7 @@ fn find_expands_only_the_match_and_preserves_manual_disclosures() {
     insta::assert_snapshot!(hints.join("\n"), @"
     ↑ Loading earlier messages… · esc latest
     Retry history: ⌥</⌃home.  esc latest
-    ↑ previous · ↓ next · enter details · esc back
+    ↑ previous · ↓ next · enter expand · esc back
     ");
     view.handle_key(KeyCode::Enter.into(), &cells);
     view.handle_key(KeyCode::Esc.into(), &cells);
@@ -1025,6 +1190,13 @@ fn find_expands_only_the_match_and_preserves_manual_disclosures() {
     view.handle_key(KeyCode::F(4).into(), &cells);
     view.handle_key(KeyCode::End.into(), &cells);
     view.handle_key(KeyCode::Up.into(), &cells);
+    assert!(
+        view.footer(/*width*/ 80, crate::motion::MotionMode::Reduced)
+            .unwrap()
+            .text
+            .to_string()
+            .contains("enter collapse")
+    );
     for (key, expanded) in [
         (KeyCode::Right, true),
         (KeyCode::Left, false),

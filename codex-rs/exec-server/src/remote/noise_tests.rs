@@ -35,11 +35,12 @@ const HARNESS_KEY_AUTHORIZATION: &str = "authorization-that-must-not-leak";
 struct StaticRegistryAuthProvider;
 
 impl AuthProvider for StaticRegistryAuthProvider {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
         let _ = headers.insert(
             http::header::AUTHORIZATION,
             HeaderValue::from_static("Bearer registry-token"),
         );
+        Ok(())
     }
 }
 
@@ -116,7 +117,7 @@ async fn registry_requests_do_not_log_sensitive_urls_or_response_headers() -> Re
                     )
                     .set_body_json(response),
             )
-            .expect(1)
+            .expect(if operation == "validate" { 2 } else { 1 })
             .mount(&server)
             .await;
     }
@@ -134,13 +135,51 @@ async fn registry_requests_do_not_log_sensitive_urls_or_response_headers() -> Re
     client
         .connect_environment("environment-requested", harness_public_key.clone())
         .await?;
-    RegistryHarnessKeyValidator {
+    let validator = RegistryHarnessKeyValidator {
         client,
         environment_id: "environment-requested".to_string(),
         executor_registration_id: "registration-1".to_string(),
-    }
-    .validate_harness_key(&harness_public_key, HARNESS_KEY_AUTHORIZATION)
-    .await?;
+    };
+    let stream_id = uuid::Uuid::new_v4();
+    validator
+        .validate_harness_key(
+            &harness_public_key,
+            HARNESS_KEY_AUTHORIZATION,
+            Some(stream_id),
+        )
+        .await?;
+    validator
+        .validate_harness_key(
+            &harness_public_key,
+            HARNESS_KEY_AUTHORIZATION,
+            /*stream_id*/ None,
+        )
+        .await?;
+
+    let requests = server.received_requests().await.expect("recorded requests");
+    let validation_requests: Vec<_> = requests
+        .iter()
+        .filter(|request| {
+            request
+                .url
+                .query_pairs()
+                .any(|(key, value)| key == "registry_token" && value.ends_with("/validate"))
+        })
+        .collect();
+    assert_eq!(validation_requests.len(), 2);
+    assert_eq!(
+        validation_requests[0]
+            .headers
+            .get("x-codex-noise-stream-id")
+            .map(|value| value.to_str().unwrap()),
+        Some(stream_id.to_string().as_str())
+    );
+    assert!(
+        validation_requests[1]
+            .headers
+            .get("x-codex-noise-stream-id")
+            .is_none()
+    );
 
     let logs = String::from_utf8(log_buffer.lock().expect("log buffer lock").clone())?;
     assert!(logs.contains("registry log capture sentinel"));
@@ -305,7 +344,11 @@ async fn validate_harness_key_requires_explicit_valid_response() {
         environment_id: "environment-requested".to_string(),
         executor_registration_id: "registration-1".to_string(),
     }
-    .validate_harness_key(&harness_public_key, HARNESS_KEY_AUTHORIZATION)
+    .validate_harness_key(
+        &harness_public_key,
+        HARNESS_KEY_AUTHORIZATION,
+        /*stream_id*/ None,
+    )
     .await
     .expect_err("a false validation response must fail closed");
 
@@ -335,7 +378,11 @@ async fn validate_harness_key_does_not_expose_error_body() {
         environment_id: "environment-requested".to_string(),
         executor_registration_id: "registration-1".to_string(),
     }
-    .validate_harness_key(&harness_public_key, HARNESS_KEY_AUTHORIZATION)
+    .validate_harness_key(
+        &harness_public_key,
+        HARNESS_KEY_AUTHORIZATION,
+        /*stream_id*/ None,
+    )
     .await
     .expect_err("validation HTTP error should fail closed");
 

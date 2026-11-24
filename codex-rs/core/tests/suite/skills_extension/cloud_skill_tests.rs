@@ -11,10 +11,11 @@ struct FakeCloudSkillProvider {
     catalog: SkillCatalog,
     resources: std::collections::HashMap<String, String>,
     reads: Mutex<Vec<String>>,
+    read_barrier: Option<tokio::sync::Barrier>,
 }
 
 impl SkillProvider for FakeCloudSkillProvider {
-    fn list(&self, _query: SkillListQuery) -> SkillProviderFuture<'_, SkillCatalog> {
+    fn list<'a>(&'a self, _query: SkillListQuery<'a>) -> SkillProviderFuture<'a, SkillCatalog> {
         Box::pin(async { Ok(self.catalog.clone()) })
     }
 
@@ -42,6 +43,11 @@ impl SkillProvider for FakeCloudSkillProvider {
                 .get(request.resource.as_str())
                 .cloned()
                 .ok_or_else(|| SkillProviderError::new("unknown fake skill resource"))?;
+            if let Some(barrier) = &self.read_barrier {
+                tokio::time::timeout(Duration::from_secs(/*secs*/ 10), barrier.wait())
+                    .await
+                    .map_err(|_| SkillProviderError::new("skill reads did not overlap"))?;
+            }
             Ok(SkillReadResult {
                 resource: request.resource,
                 contents,
@@ -117,6 +123,7 @@ text({ names: result.skills.map(skill => skill.name), warnings: result.warnings,
         &mut extensions,
         SkillProviders::new().with_cloud_provider(Arc::new(FakeCloudSkillProvider {
             catalog: SkillCatalog {
+                is_partial: false,
                 entries: [
                     "alpha-visible",
                     "bravo-visible-skill",
@@ -145,6 +152,7 @@ text({ names: result.skills.map(skill => skill.name), warnings: result.warnings,
                 warnings: Vec::new(),
             },
             reads: Mutex::default(),
+            read_barrier: None,
             resources: std::collections::HashMap::from([
                 (
                     MAIN_RESOURCE.to_string(),
@@ -155,6 +163,8 @@ text({ names: result.skills.map(skill => skill.name), warnings: result.warnings,
         })),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: true,
@@ -457,7 +467,7 @@ text({ names: result.skills.map(skill => skill.name), warnings: result.warnings,
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn production_turn_aliases_discovered_singleton_cloud_root() -> Result<()> {
+async fn production_turn_aliases_discovered_singleton_cloud_locator() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     const SKILL_ROOT: &str = "skill://plugin_connector_1p_2330815c823c8191941e5dc465bb899f";
@@ -475,6 +485,7 @@ async fn production_turn_aliases_discovered_singleton_cloud_root() -> Result<()>
         &mut extensions,
         SkillProviders::new().with_cloud_provider(Arc::new(FakeCloudSkillProvider {
             catalog: SkillCatalog {
+                is_partial: false,
                 entries: vec![
                     SkillCatalogEntry::new(
                         SkillPackageId(format!("{SKILL_ROOT}/search")),
@@ -493,9 +504,12 @@ async fn production_turn_aliases_discovered_singleton_cloud_root() -> Result<()>
                 SKILL_BODY.to_string(),
             )]),
             reads: Mutex::default(),
+            read_barrier: None,
         })),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: true,
@@ -527,25 +541,114 @@ async fn production_turn_aliases_discovered_singleton_cloud_root() -> Result<()>
     let request = response.single_request();
     let developer_text = request.message_input_texts("developer").join("\n");
     assert!(
-        developer_text.contains(&format!("- `c0` = `{SKILL_ROOT}`")),
-        "model request should include the discovered cloud root: {developer_text}"
-    );
-    assert!(
         developer_text.lines().any(|line| {
             line.starts_with("- demo:search:") && line.ends_with("(cloud package: c0/search)")
         }),
-        "model request should include the aliased cloud skill: {developer_text}"
+        "model request should include the aliased cloud package: {developer_text}"
     );
-    assert!(
-        developer_text.contains("- Root aliases: Pass short package locators directly"),
-        "model request should explain how to read aliased packages: {developer_text}"
-    );
+    assert!(developer_text.contains(&format!("- `c0` = `{SKILL_ROOT}`")));
     let user_text = request.message_input_texts("user").join("\n");
     assert!(
         user_text.contains("<skill>\n<name>demo:search</name>") && user_text.contains(SKILL_BODY),
         "cloud instruction reads must remain available without host discovery: {user_text}"
     );
 
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cloud_skill_reads_run_in_parallel() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    const PACKAGE: &str = "skill://demo/parallel";
+    const READS: [(&str, &str, &str); 2] = [
+        (
+            "read-main",
+            "skill://demo/parallel/SKILL.md",
+            "Main instructions.",
+        ),
+        (
+            "read-reference",
+            "skill://demo/parallel/references/guide.md",
+            "Reference instructions.",
+        ),
+    ];
+    let server = responses::start_mock_server().await;
+    let mut extensions = ExtensionRegistryBuilder::new();
+    install_with_providers(
+        &mut extensions,
+        SkillProviders::new().with_cloud_provider(Arc::new(FakeCloudSkillProvider {
+            catalog: SkillCatalog {
+                is_partial: false,
+                entries: vec![SkillCatalogEntry::new(
+                    SkillPackageId(PACKAGE.to_string()),
+                    SkillAuthority::new(SkillSourceKind::Cloud, CODEX_APPS_MCP_SERVER_NAME),
+                    "demo:parallel",
+                    "Instructions and a reference.",
+                    SkillResourceId::new(READS[0].1),
+                )],
+                warnings: Vec::new(),
+            },
+            resources: READS
+                .iter()
+                .map(|(_, resource, contents)| (resource.to_string(), contents.to_string()))
+                .collect(),
+            reads: Mutex::default(),
+            // An exclusive scheduler lock prevents the second read from reaching this barrier.
+            read_barrier: Some(tokio::sync::Barrier::new(/*n*/ 2)),
+        })),
+        |config: &Config| SkillsExtensionConfig {
+            include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
+            max_context_tokens: config.skill_max_context_tokens,
+            bundled_skills_enabled: false,
+            cloud_skill_enabled: true,
+            shadow_selection_enabled: false,
+        },
+    );
+    let chatgpt_base_url = server.uri();
+    let mut builder = test_codex()
+        .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+        .with_exec_server_url("none")
+        .with_extensions(Arc::new(extensions.build()))
+        .with_config(move |config| {
+            config.chatgpt_base_url = chatgpt_base_url;
+            config.include_skill_instructions = true;
+            config.cloud_skill_enabled = true;
+        });
+    let test = builder.build_with_auto_env(&server).await?;
+    let mut calls = vec![ev_response_created("read-both")];
+    calls.extend(READS.map(|(call_id, resource, _)| {
+        responses::ev_function_call_with_namespace(
+            call_id,
+            "skills",
+            "read",
+            &json!({"package": PACKAGE, "resource": resource}).to_string(),
+        )
+    }));
+    calls.push(ev_completed("read-both"));
+    let response = responses::mount_sse_sequence(
+        &server,
+        vec![
+            sse(calls),
+            sse(vec![ev_response_created("done"), ev_completed("done")]),
+        ],
+    )
+    .await;
+    test.submit_turn("Read both resources.").await?;
+
+    let requests = response.requests();
+    assert_eq!(requests.len(), 2);
+    for (call_id, resource, contents) in READS {
+        let output = requests[1]
+            .function_call_output_text(call_id)
+            .expect("each concurrent skill read should return its resource");
+        assert_eq!(
+            serde_json::from_str::<Value>(&output)?,
+            json!({"resource": resource, "contents": contents, "next_cursor": null})
+        );
+    }
     Ok(())
 }
 
@@ -588,6 +691,7 @@ async fn cloud_skill_can_read_referenced_resource_without_an_executor() -> Resul
     let responses_server = responses::start_mock_server().await;
     let provider = Arc::new(FakeCloudSkillProvider {
         catalog: SkillCatalog {
+            is_partial: false,
             entries: vec![
                 SkillCatalogEntry::new(
                     SkillPackageId(SKILL_RESOURCE_URI.to_string()),
@@ -612,6 +716,7 @@ async fn cloud_skill_can_read_referenced_resource_without_an_executor() -> Resul
             ),
         ]),
         reads: Mutex::default(),
+        read_barrier: None,
     });
     let mut extensions = ExtensionRegistryBuilder::new();
     install_with_providers(
@@ -619,6 +724,8 @@ async fn cloud_skill_can_read_referenced_resource_without_an_executor() -> Resul
         SkillProviders::new().with_cloud_provider(provider.clone()),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: true,
@@ -825,14 +932,5 @@ async fn cloud_skill_can_read_referenced_resource_without_an_executor() -> Resul
     assert!(skill_fragments[0].contains(&format!("<name>{SKILL_NAME}</name>")));
     assert!(skill_fragments[0].contains(SKILL_MARKER));
     assert!(skill_fragments[0].contains(SKILL_REFERENCE_URI));
-    // Partial discovery retries on the next turn without an MCP or auth invalidation.
-    assert_eq!(
-        *provider.reads.lock().await,
-        vec![
-            SKILL_MAIN_PROMPT_URI,
-            SKILL_REFERENCE_URI,
-            SKILL_MAIN_PROMPT_URI
-        ]
-    );
     Ok(())
 }

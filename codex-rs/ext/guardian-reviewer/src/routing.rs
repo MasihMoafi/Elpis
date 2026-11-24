@@ -25,6 +25,8 @@ use tokio_util::sync::CancellationToken;
 /// One captured action and its host-enforced constraints. Guardian derives the
 /// contributor input and owns cancellation for the complete review operation.
 pub struct ReviewRequest<'a, H> {
+    /// Final serving value retained by the host for this action.
+    pub serving_assessment: Option<bool>,
     pub host: H,
     pub approval_id: &'a str,
     pub tool_call_id: Option<&'a str>,
@@ -32,6 +34,7 @@ pub struct ReviewRequest<'a, H> {
     pub action: Option<&'a serde_json::Value>,
     pub thread_id: ThreadId,
     pub thread_store: &'a ExtensionData,
+    pub turn_store: &'a ExtensionData,
     pub category: GuardianScope,
     pub approval_policy: AskForApproval,
     pub approvals_reviewer: ApprovalsReviewer,
@@ -43,6 +46,8 @@ pub struct ReviewRequest<'a, H> {
     pub escalated_exec: bool,
     pub full_access: bool,
     pub cancellation: CancellationToken,
+    /// Overall review budget; None disables only the review deadline.
+    pub timeout: Option<std::time::Duration>,
     pub model: &'a ModelInfo,
     pub telemetry: &'a SessionTelemetry,
     /// The host verified the assessment opt-in and an explicit OTLP log destination.
@@ -71,6 +76,10 @@ impl<H: ReviewHost> ReviewRequest<'_, H> {
             .telemetry
             .start_timer("codex.guardian.decision.duration_ms", &[])
             .ok();
+        let _blocking = self
+            .thread_store
+            .get::<crate::ReviewBlocking>()
+            .map(|blocking| blocking.enter());
         let runtime = self.thread_store.get::<crate::ReviewerTasks>();
         let _task = runtime.as_ref().map(|runtime| runtime.tasks.token());
         if runtime
@@ -96,12 +105,14 @@ impl<H: ReviewHost> ReviewRequest<'_, H> {
             };
             let permissions = self.host.permissions();
             let input = ApprovalDecisionInput {
+                serving_assessment: self.serving_assessment,
                 permissions: permissions.as_ref(),
                 approval_id: self.approval_id,
                 tool_call_id: self.tool_call_id,
                 action,
                 thread_id: self.thread_id,
                 thread_store: self.thread_store,
+                turn_store: self.turn_store,
                 category: self.category,
                 approval_policy: self.approval_policy,
                 approvals_reviewer: self.approvals_reviewer,

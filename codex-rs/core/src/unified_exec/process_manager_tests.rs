@@ -1,9 +1,17 @@
 use super::*;
-use crate::shell::Shell;
-use crate::shell::ShellInvocation;
-use crate::shell::ShellType;
+use crate::sandboxing::ExecOptions;
+use crate::tools::handlers::unified_exec::preparation::ExecCommandLifetime;
+use crate::tools::handlers::unified_exec::preparation::ParsedExecCommand;
 use crate::unified_exec::clamp_yield_time;
+use codex_exec_server::ExecOutputStream;
 use codex_network_proxy::ManagedNetworkSandboxContext;
+use codex_network_proxy::NetworkProxyConfig;
+use codex_network_proxy::RemoteNetworkProxyConfig;
+use codex_network_proxy::RemoteNetworkProxyLaunchConfig;
+use codex_protocol::config_types::WindowsSandboxLevel;
+use codex_protocol::sandbox::SandboxOverride;
+use codex_sandboxing::SandboxExecRequest;
+use codex_sandboxing::SandboxType;
 use core_test_support::assert_regex_match;
 use pretty_assertions::assert_eq;
 use tokio::sync::Notify;
@@ -172,21 +180,22 @@ fn exec_env_policy_excludes_non_inheritable_and_runtime_variables() {
     );
 }
 
-#[test]
-fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
-    let cwd: codex_utils_absolute_path::AbsolutePathBuf = std::env::current_dir()
-        .expect("current dir")
-        .try_into()
-        .expect("absolute path");
+#[tokio::test]
+async fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
+    let policy_cwd = PathUri::parse("file:///workspace").expect("policy cwd");
+    let command_cwd = PathUri::parse("file:///workspace/subdir").expect("command cwd");
     let permission_profile = codex_protocol::models::PermissionProfile::Disabled;
     let managed_network = ManagedNetworkSandboxContext {
         loopback_ports: vec![43123],
         allow_local_binding: false,
+        transparent_tcp: true,
         ..Default::default()
     };
-    let mut request = ExecRequest {
+    let launch = SandboxExecRequest {
         command: vec!["bash".to_string(), "-lc".to_string(), "true".to_string()],
-        cwd: cwd.clone().into(),
+        native_program: None,
+        cwd: command_cwd.clone(),
+        sandbox_policy_cwd: policy_cwd.clone(),
         env: HashMap::from([
             ("HOME".to_string(), "/client-home".to_string()),
             ("PATH".to_string(), "/sandbox-path".to_string()),
@@ -201,46 +210,48 @@ fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
                 "/client/custom-ca.pem".to_string(),
             ),
         ]),
-        exec_server_env_config: Some(ExecServerEnvConfig {
-            policy: codex_exec_server::ExecEnvPolicy {
-                inherit: codex_protocol::config_types::ShellEnvironmentPolicyInherit::Core,
-                ignore_default_excludes: false,
-                exclude: Vec::new(),
-                r#set: HashMap::new(),
-                include_only: Vec::new(),
-            },
-            local_policy_env: HashMap::from([
-                ("HOME".to_string(), "/client-home".to_string()),
-                ("PATH".to_string(), "/client-path".to_string()),
-                (
-                    "HTTP_PROXY".to_string(),
-                    "http://127.0.0.1:43123".to_string(),
-                ),
-                ("CODEX_NETWORK_PROXY_ACTIVE".to_string(), "1".to_string()),
-                (
-                    "SSL_CERT_FILE".to_string(),
-                    "/client/custom-ca.pem".to_string(),
-                ),
-            ]),
-        }),
-        exec_server_shell_snapshot: None,
         network: None,
         network_environment_id: None,
-        expiration: crate::exec::ExecExpiration::DefaultTimeout,
-        capture_policy: crate::exec::ExecCapturePolicy::ShellTool,
-        sandbox: codex_sandboxing::SandboxType::None,
-        windows_sandbox_policy_cwd: cwd.clone().into(),
-        windows_sandbox_workspace_roots: vec![cwd],
-        windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel::Disabled,
+        sandbox: SandboxType::None,
+        sandbox_override: SandboxOverride::NoOverride,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
         permission_profile: permission_profile.clone(),
-        windows_sandbox_filesystem_overrides: None,
         arg0: None,
-        exec_server_sandbox: None,
-        exec_server_enforce_managed_network: true,
-        exec_server_managed_network: Some(managed_network.clone()),
-        exec_server_network_proxy: None,
     };
-
+    let mut request = ExecRequest::from_sandbox_exec_request(
+        launch,
+        ExecOptions {
+            expiration: crate::exec::ExecExpiration::DefaultTimeout,
+            capture_policy: crate::exec::ExecCapturePolicy::ShellTool,
+        },
+        &[],
+    )
+    .await
+    .expect("exec request");
+    request.exec_server_env_config = Some(ExecServerEnvConfig {
+        policy: codex_exec_server::ExecEnvPolicy {
+            inherit: codex_protocol::config_types::ShellEnvironmentPolicyInherit::Core,
+            ignore_default_excludes: false,
+            exclude: Vec::new(),
+            r#set: HashMap::new(),
+            include_only: Vec::new(),
+        },
+        local_policy_env: HashMap::from([
+            ("HOME".to_string(), "/client-home".to_string()),
+            ("PATH".to_string(), "/client-path".to_string()),
+            (
+                "HTTP_PROXY".to_string(),
+                "http://127.0.0.1:43123".to_string(),
+            ),
+            ("CODEX_NETWORK_PROXY_ACTIVE".to_string(), "1".to_string()),
+            (
+                "SSL_CERT_FILE".to_string(),
+                "/client/custom-ca.pem".to_string(),
+            ),
+        ]),
+    });
+    request.exec_server_enforce_managed_network = true;
+    request.exec_server_managed_network = Some(managed_network.clone());
     let proxy_settings_mode = codex_sandboxing::WindowsSandboxProxySettingsMode::Preserve;
     let params_for_request = |request: &ExecRequest| {
         exec_server_params_for_request(
@@ -259,9 +270,14 @@ fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
     );
     assert_ne!(params.process_id, params_for_request(&request).process_id);
     assert_eq!(params.metadata, None);
-    assert_eq!(params.cwd, request.cwd);
     assert!(params.enforce_managed_network);
-    assert_eq!(params.managed_network, Some(managed_network));
+    assert_eq!(
+        params.managed_network,
+        Some(ManagedNetworkSandboxContext {
+            transparent_tcp: false,
+            ..managed_network
+        })
+    );
     assert!(params.env_policy.is_some());
     assert_eq!(
         params.env,
@@ -285,16 +301,20 @@ fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
     let mut snapshot_env = params.env;
     snapshot_env.remove("PATH");
     assert_eq!(params_for_request(&request).env, snapshot_env);
-    request.exec_server_shell_snapshot = None;
-
     request.exec_server_sandbox = Some(
         codex_exec_server::FileSystemSandboxContext::from_permission_profile(
             permission_profile,
-            request.cwd.clone(),
+            request.sandbox_policy_cwd().clone(),
         ),
     );
     let first = params_for_request(&request);
     let second = params_for_request(&request);
+    assert_eq!(first.cwd, command_cwd);
+    assert_eq!(
+        first.sandbox.as_ref().map(|sandbox| &sandbox.cwd),
+        Some(&policy_cwd)
+    );
+    assert_eq!(first.requests_transparent_tcp(), cfg!(target_os = "linux"));
     assert_eq!(
         first
             .sandbox
@@ -305,6 +325,22 @@ fn exec_server_params_use_path_uri_and_env_policy_overlay_contract() {
     assert!(first.process_id.as_str().starts_with("123-"));
     assert!(second.process_id.as_str().starts_with("123-"));
     assert_ne!(first.process_id, second.process_id);
+
+    request.exec_server_shell_snapshot = None;
+    request.exec_server_managed_network = None;
+    request.exec_server_network_proxy = Some(RemoteNetworkProxyLaunchConfig::new(
+        RemoteNetworkProxyConfig::from_effective_config(&NetworkProxyConfig {
+            enabled: true,
+            transparent_tcp: true,
+            ..Default::default()
+        })
+        .unwrap(),
+    ));
+    assert!(params_for_request(&request).requests_transparent_tcp());
+    request.exec_server_sandbox = None;
+    let proxy = params_for_request(&request).network_proxy.unwrap().proxy;
+    assert!(proxy.enabled);
+    assert!(!proxy.transparent_tcp);
 }
 
 #[cfg(windows)]
@@ -355,6 +391,8 @@ async fn output_collection_stays_bounded_across_repeated_drains() {
         output_closed: Arc::clone(&output_closed),
         output_closed_notify: Arc::clone(&output_closed_notify),
         cancellation_token: cancellation_token.clone(),
+        collection_finished: CancellationToken::new(),
+        drain_policy: OutputDrainPolicy::BoundedAfterExit,
     };
 
     let collect = UnifiedExecProcessManager::collect_output_until_deadline(
@@ -364,7 +402,10 @@ async fn output_collection_stays_bounded_across_repeated_drains() {
     );
     let produce = async {
         for chunk in chunks {
-            output_buffer.lock().await.push_chunk(chunk);
+            output_buffer
+                .lock()
+                .await
+                .push_chunk(ExecOutputStream::Stdout, chunk);
             output_notify.notify_one();
             tokio::time::timeout(Duration::from_secs(1), async {
                 loop {
@@ -396,8 +437,8 @@ async fn output_collection_stays_bounded_across_repeated_drains() {
 #[tokio::test]
 async fn output_collection_preserves_omissions_from_drained_buffer() {
     let mut buffered_output = OutputBuffers::<10>::default();
-    buffered_output.push_chunk(&[b'a'; 10]);
-    buffered_output.push_chunk(b"overflow");
+    buffered_output.push_chunk(ExecOutputStream::Stdout, &[b'a'; 10]);
+    buffered_output.push_chunk(ExecOutputStream::Stdout, b"overflow");
     let mut expected = HeadTailBuffer::<10>::default();
     expected.push_chunk(&[b'a'; 10]);
     expected.push_chunk(b"overflow");
@@ -413,6 +454,8 @@ async fn output_collection_preserves_omissions_from_drained_buffer() {
         output_closed,
         output_closed_notify,
         cancellation_token,
+        collection_finished: CancellationToken::new(),
+        drain_policy: OutputDrainPolicy::BoundedAfterExit,
     };
 
     let collected = UnifiedExecProcessManager::collect_output_until_deadline(
@@ -435,16 +478,121 @@ async fn network_denial_fallback_message_names_sandbox_network_proxy() {
     );
 }
 
-#[tokio::test]
-async fn late_network_denial_grace_observes_cancellation_after_exit() {
-    let cancellation = CancellationToken::new();
-    let cancellation_for_task = cancellation.clone();
-    tokio::spawn(async move {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        cancellation_for_task.cancel();
-    });
+#[tokio::test(start_paused = true)]
+async fn late_network_denial_grace_observes_cancellation_after_exit() -> anyhow::Result<()> {
+    use crate::environment_selection::EnvironmentAttachment;
+    use crate::environment_selection::TurnEnvironmentSnapshot;
+    use crate::environment_selection::TurnEnvironmentState;
+    use crate::guardian::GuardianNetworkAccessTrigger;
+    use crate::tools::network_approval::NetworkApprovalSpec;
+    use crate::tools::network_approval::begin_network_approval;
+    use crate::tools::network_approval::build_blocked_request_observer;
+    use codex_network_proxy::BlockedRequest;
+    use codex_network_proxy::BlockedRequestArgs;
+    use codex_network_proxy::EnvironmentNetworkPolicy;
+    use codex_tools::ToolName;
 
-    assert!(wait_for_late_network_denial(Some(cancellation)).await);
+    let (session, mut turn) = crate::session::tests::make_session_and_context().await;
+    let session = Arc::new(session);
+    Arc::make_mut(&mut turn.config).permissions.network = None;
+    let mut remote = turn
+        .initial_environments
+        .primary()
+        .expect("primary environment")
+        .clone();
+    let remote_id = codex_exec_server::REMOTE_ENVIRONMENT_ID;
+    let (attachment, _guard, _) = EnvironmentAttachment::new(
+        remote_id,
+        Arc::new(codex_exec_server::Environment::create_for_tests(Some(
+            "ws://127.0.0.1:1".into(),
+        ))?),
+    );
+    remote.attachment = attachment;
+    remote.selection.environment_id = remote_id.to_string();
+    remote.config_mut().permission_profile =
+        codex_protocol::models::PermissionProfileSnapshot::legacy(
+            codex_protocol::models::PermissionProfile::workspace_write(),
+        );
+    remote.config_mut().network_policy = Some(EnvironmentNetworkPolicy::from_config(
+        &codex_network_proxy::NetworkProxyConfig {
+            enabled: true,
+            ..Default::default()
+        },
+        /*managed_allowed_domains_only*/ false,
+    ));
+    let environments = TurnEnvironmentSnapshot {
+        environments: vec![TurnEnvironmentState::Ready(remote)],
+    };
+    let remote = environments.primary().expect("remote environment");
+
+    for register_shared_listener in [false, true] {
+        let approval = begin_network_approval(
+            &session,
+            &turn,
+            &environments,
+            /*managed_network_active*/ true,
+            Some(NetworkApprovalSpec {
+                network: None,
+                environment_id: remote_id.to_string(),
+                tool_name: ToolName::plain("exec_command"),
+                command: "pwd".into(),
+                trigger: GuardianNetworkAccessTrigger {
+                    call_id: "exec".into(),
+                    tool_name: "exec_command".into(),
+                    command: vec!["pwd".into()],
+                    cwd: remote.cwd().clone(),
+                    sandbox_permissions: crate::sandboxing::SandboxPermissions::UseDefault,
+                    additional_permissions: None,
+                    justification: None,
+                    tty: None,
+                },
+                permission_profile: remote.permission_profile().clone(),
+                network_policy: remote.config().network_policy.clone(),
+            }),
+        )
+        .await
+        .expect("build network proxy")
+        .expect("network approval");
+        let callback = approval
+            .execution_proxy()
+            .remote_policy_decider(/*allow_local_binding*/ true)
+            .expect("remote policy callback");
+        let finish = finish_deferred_network_approval_after_process_exit_for_session(
+            Some(&session),
+            approval.into_deferred(),
+        );
+        tokio::pin!(finish);
+        assert!(futures::poll!(&mut finish).is_pending());
+
+        let observer = register_shared_listener.then(|| {
+            build_blocked_request_observer(Arc::clone(&session.services.network_approval))
+        });
+        drop(callback);
+        if let Some(observer) = observer {
+            // A shared listener started during the command and can report an untagged denial.
+            tokio::time::advance(Duration::from_millis(10)).await;
+            assert!(futures::poll!(&mut finish).is_pending());
+            let blocked = BlockedRequest::new(BlockedRequestArgs {
+                host: "blocked.example".into(),
+                protocol: "http".into(),
+                port: Some(80),
+                reason: "not_allowed".into(),
+                decision: Some("deny".into()),
+                source: Some("decider".into()),
+                client: None,
+                method: None,
+                mode: None,
+            });
+            let expected = crate::network_policy_decision::denied_network_policy_message(&blocked)
+                .expect("blocked request must describe the denied host");
+            observer.on_blocked_request(blocked).await;
+            assert_eq!(finish.await, Err(expected));
+        } else {
+            assert_eq!(futures::poll!(&mut finish), std::task::Poll::Ready(Ok(())));
+        }
+    }
+
+    Ok(())
 }
 
 #[tokio::test]
@@ -456,52 +604,37 @@ async fn failed_initial_end_for_unstored_process_uses_fallback_output() {
         tokio_util::sync::CancellationToken::new(),
         "call-unified-denied".to_string(),
     );
+    let environment = turn
+        .initial_environments
+        .primary()
+        .expect("primary environment");
+    let prepared = ParsedExecCommand::parse(
+        r#"{"cmd":"echo before"}"#,
+        &session,
+        &context.step_context,
+        environment,
+    )
+    .expect("parse command")
+    .prepare(ExecCommandLifetime::Interactive)
+    .expect("prepare command");
     let request = ExecCommandRequest {
-        command: vec![
-            "sh".to_string(),
-            "-lc".to_string(),
-            "echo before".to_string(),
-        ],
-        shell: ShellInvocation {
-            shell: Shell {
-                shell_type: ShellType::Sh,
-                shell_path: "sh".into(),
-            },
-            use_login_shell: true,
-        },
-        hook_command: "echo before".to_string(),
+        prepared,
         process_id: 123,
-        yield_time_ms: 1000,
-        max_output_tokens: None,
-        #[allow(deprecated)]
-        cwd: turn.cwd.clone().into(),
-        #[allow(deprecated)]
-        sandbox_cwd: turn.cwd.clone().into(),
-        turn_environment: turn
-            .initial_environments
-            .primary()
-            .cloned()
-            .expect("primary environment"),
-        shell_mode: codex_tools::UnifiedExecShellMode::Direct,
         network: None,
-        tty: true,
-        sandbox_permissions: crate::sandboxing::SandboxPermissions::UseDefault,
-        additional_permissions: None,
-        additional_permissions_preapproved: false,
-        justification: None,
-        prefix_rule: None,
     };
 
     let output_buffer = Arc::new(tokio::sync::Mutex::new(OutputBuffers::default()));
-    output_buffer.lock().await.push_chunk(b"PARTIAL_TRANSCRIPT");
+    output_buffer
+        .lock()
+        .await
+        .push_chunk(ExecOutputStream::Stdout, b"PARTIAL_TRANSCRIPT");
 
     emit_failed_initial_exec_end_if_unstored(
-        /*process_started_alive*/ false,
+        /*process_stored*/ false,
         Some(codex_protocol::sandbox::SandboxType::WindowsMxc),
         &context,
         &request,
-        #[allow(deprecated)]
-        turn.cwd.clone().into(),
+        request.prepared.cwd.clone(),
         /*plugin_attribution*/ None,
         output_buffer,
         "PRE_DENIAL_MARKER".to_string(),

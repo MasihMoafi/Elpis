@@ -25,7 +25,7 @@ fn stadiums_with_other_shapes_in_every_direction() {
     let mut cases = Vec::new();
     for direction in ["TD", "BT", "LR", "RL"] {
         let source = format!(
-            "flowchart {direction}; A([请求]) -- go --> B[Work] & C{{Done?}}; B -. no .-> C; C <--> A; B --- A; C -.- B; A <-.-> B"
+            "flowchart {direction}; A([\"请求<br>Ready\"]) -- go --> B[Work<br/>next] & C{{\"Done?<br />Retry?\"}}; B -. no .-> C; C <--> A; B --- A; C -.- B; A <-.-> B"
         );
         let output = render(&source, /*max_width*/ 100).unwrap();
         let width = output.lines().map(UnicodeWidthStr::width).max().unwrap();
@@ -182,6 +182,8 @@ fn quoted_flowchart_labels_reject_malformed_and_unsafe_text() {
         "\"\"",
         "\"<b>HTML</b>\"",
         "\"before <b\"",
+        "\"one<br/><b>two</b>\"",
+        "\"one<br class='x'>two\"",
         "\"\u{1b}\"",
     ] {
         for source in [
@@ -205,6 +207,101 @@ fn branches_merges_and_retry_loop() {
 }
 
 #[test]
+fn flat_subgraphs_and_cross_group_edges() {
+    let body = r#"
+  Z --> A
+  subgraph Old["Old approach"]
+    A[Input] --> B[Output]
+  end
+  subgraph New["New approach"]
+    C[Input] --> D[Output]
+  end
+  B -->|compare| C
+"#;
+    for direction in ["TB", "BT", "LR", "RL"] {
+        let source = format!("flowchart {direction}\n{body}");
+        let output = render(&source, /*max_width*/ 200).unwrap();
+        let width = output.lines().map(UnicodeWidthStr::width).max().unwrap();
+        assert_eq!(render(&source, width - 1), Err(RenderError::TooWide));
+        if direction == "TB" {
+            assert_snapshot!(output);
+        }
+    }
+    assert_eq!(
+        render(
+            "graph; subgraph\tSimple title; A; end",
+            /*max_width*/ 100
+        ),
+        render(
+            r#"graph; subgraph "Simple title"; A; end"#,
+            /*max_width*/ 100
+        ),
+    );
+    assert!(
+        render(
+            r#"graph; subgraph "Old [deprecated]"; A; end"#,
+            /*max_width*/ 100
+        )
+        .unwrap()
+        .contains("Old [deprecated]")
+    );
+    assert!(
+        render(
+            r#"graph; subgraph "G --> H"; A; end"#,
+            /*max_width*/ 100
+        )
+        .unwrap()
+        .contains("G --> H")
+    );
+    let graph = super::parse::parse(
+        "graph",
+        &[
+            "subgraph Old",
+            "A --> C",
+            "end",
+            "subgraph New",
+            "C[Input] --> D",
+            "end",
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        graph
+            .subgraphs
+            .iter()
+            .map(|group| group.nodes.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0, 1], vec![2]]
+    );
+}
+
+#[test]
+fn invalid_or_unsupported_subgraphs_keep_source() {
+    for source in [
+        "graph; end",
+        "graph; subgraph X; A",
+        "graph; subgraph X; end",
+        "graph; subgraph X; subgraph Y; A; end; end",
+        "graph; subgraph X; A; end; subgraph X; B; end",
+        "graph; subgraph X; A[First]; end; subgraph Y; A[Second]; end",
+        "graph; subgraph X; A; end; X --> A",
+        "graph; subgraph X; direction LR; A; end",
+        "graph; subgraph G --> H; A; end",
+        "graph; subgraph G -.-> H; A; end",
+        "graph; subgraph G ==> H; A; end",
+        "graph; subgraph G ~~~ H; A; end",
+        r#"graph; subgraph "`**Old**`"; A; end"#,
+        "graph; subgraph Old approach; A; end; subGraph0 --> B",
+    ] {
+        assert_eq!(
+            render(source, /*max_width*/ 100),
+            Err(RenderError::Unsupported),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn rejects_partial_or_unsupported_input() {
     for source in [
         "flowchart TD; P --> Q; A[(Database)]",
@@ -218,7 +315,6 @@ fn rejects_partial_or_unsupported_input() {
         r#"flowchart TD; P --> Q; A{"`Decision`"}"#,
         r#"flowchart TD; P --> Q; A(["`Stadium`"])"#,
         r#"flowchart TD; P --> Q; A -->|"`Caption`"| B"#,
-        "flowchart TD; subgraph X; A; end",
         "flowchart TD; A --> B; garbage syntax",
         "flowchart TD; A --> B &",
         "flowchart TD; A && B",
@@ -260,6 +356,9 @@ fn rejects_partial_or_unsupported_input() {
         "flowchart TD; A -->|unclosed B",
         "flowchart TD; A[لا]",
         "flowchart TD; A -->|yes┐| B",
+        "flowchart TD; A -->|one<br/>two| B",
+        "flowchart TD; A -- one<br>two --> B",
+        "flowchart TD; A[<br/><br />]",
     ] {
         assert_eq!(
             render(source, /*max_width*/ 100),
@@ -281,6 +380,7 @@ fn source_graph_and_width_limits() {
         format!("graph; {} --> B", ["A"; 25].join(" & ")),
         format!("graph TD; A[\"{}\"]", "[]".repeat(21)),
         format!("graph TD; A([{}])", "x".repeat(41)),
+        format!("graph TD; A[\"ok<br />{}\"]", "界".repeat(21)),
         format!(
             "graph TD; {}",
             (0..17).map(|n| format!("N{n};")).collect::<String>()
@@ -289,13 +389,15 @@ fn source_graph_and_width_limits() {
     ] {
         assert_eq!(render(&source, /*max_width*/ 200), Err(RenderError::Limit));
     }
-    let output = render("graph TD; A --> B", /*max_width*/ 100).unwrap();
-    let width = output.lines().map(UnicodeWidthStr::width).max().unwrap();
-    assert_eq!(render("graph TD; A --> B", width), Ok(output));
-    assert_eq!(
-        render("graph TD; A --> B", width - 1),
-        Err(RenderError::TooWide)
+    let source = format!(
+        "graph LR; A[\"{}<br/>{}\"] --> B[Done]",
+        "界".repeat(20),
+        "x".repeat(40)
     );
+    let output = render(&source, /*max_width*/ 100).unwrap();
+    let width = output.lines().map(UnicodeWidthStr::width).max().unwrap();
+    assert_eq!(render(&source, width), Ok(output));
+    assert_eq!(render(&source, width - 1), Err(RenderError::TooWide));
     assert_eq!(
         render("graph TD; A", /*max_width*/ 0),
         Err(RenderError::TooWide)
@@ -440,3 +542,6 @@ fn semantic_spans_distinguish_labels_from_matching_endpoint_glyphs() {
         assert_eq!(ports, vec![Role::Node, Role::Node]);
     }
 }
+
+#[path = "families_tests.rs"]
+mod families_tests;

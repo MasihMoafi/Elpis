@@ -2,6 +2,8 @@
 //! a usable process security environment and never enters MXC's ACL fallbacks.
 
 #[cfg(windows)]
+mod availability;
+#[cfg(windows)]
 mod native;
 #[cfg(any(windows, test))]
 mod policy;
@@ -18,6 +20,10 @@ use anyhow::Result;
 use anyhow::ensure;
 use codex_network_proxy::ManagedNetworkSandboxContext;
 use codex_protocol::models::PermissionProfile;
+use codex_utils_absolute_path::AbsolutePathBuf;
+#[cfg(windows)]
+use codex_utils_absolute_path::AbsolutePathBufGuard;
+use codex_windows_sandbox::environment_transport;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -46,6 +52,8 @@ struct MxcCommand {
     sandbox_policy_cwd: PathBuf,
     managed_network: Option<ManagedNetworkSandboxContext>,
     command: Vec<String>,
+    #[serde(default)]
+    default_child_env: bool,
 }
 
 /// Inputs used to build an MXC helper invocation.
@@ -80,10 +88,27 @@ pub fn create_command_args(args: CreateMxcCommandArgsParams<'_>) -> Result<Vec<S
             sandbox_policy_cwd: sandbox_policy_cwd.to_owned(),
             managed_network: managed_network.cloned(),
             command,
+            default_child_env: env
+                .keys()
+                .all(|key| environment_transport::is_key(key.as_ref())),
         },
         env,
     )?;
-    Ok(vec![CODEX_WINDOWS_MXC_ARG1.to_owned()])
+    // The workload environment can omit or override the host's CODEX_HOME.
+    #[cfg(windows)]
+    let codex_home = match std::env::var("CODEX_HOME").as_deref() {
+        Ok(home) if !home.is_empty() => std::fs::canonicalize(home)
+            .ok()
+            .filter(|home| home.is_dir()),
+        _ => AbsolutePathBufGuard::home_directory().map(|home| home.join(".codex")),
+    }
+    .and_then(|home| AbsolutePathBuf::from_absolute_path(home).ok());
+    #[cfg(not(windows))]
+    let codex_home: Option<AbsolutePathBuf> = None;
+    Ok(std::iter::once(CODEX_WINDOWS_MXC_ARG1)
+        .chain(codex_home.as_deref().and_then(Path::to_str))
+        .map(str::to_owned)
+        .collect())
 }
 
 /// Whether the executor can create a native MXC process security environment.
@@ -91,12 +116,47 @@ pub fn create_command_args(args: CreateMxcCommandArgsParams<'_>) -> Result<Vec<S
 pub fn is_available() -> bool {
     #[cfg(windows)]
     {
-        appcontainer_common::base_container_runner::BaseContainerRunner::is_process_security_environment_usable()
+        availability::is_available()
     }
     #[cfg(not(windows))]
     {
         false
     }
+}
+
+/// Resolve configured symbols and snapshot deny globs for policy inspection.
+/// Reuses MXC's resolution without adding native grants or protections.
+#[cfg(windows)]
+pub fn prepare_file_system_policy(
+    policy: codex_protocol::permissions::FileSystemSandboxPolicy,
+    env: &HashMap<String, String>,
+    policy_cwd: &AbsolutePathBuf,
+    command_cwd: &Path,
+) -> Result<codex_protocol::permissions::FileSystemSandboxPolicy> {
+    use codex_utils_path_uri::PathUri;
+
+    let env_entries = env
+        .iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect::<Vec<_>>();
+    let mut policy = policy::materialize_temporary_paths(policy, &env_entries)?;
+    let denied = codex_windows_sandbox::resolve_windows_deny_read_paths(&policy, policy_cwd)
+        .map_err(anyhow::Error::msg)?;
+    policy = policy.with_expanded_deny_globs(denied);
+    if policy.has_full_disk_write_access() {
+        return Ok(policy);
+    }
+    let volumes = windows::volume_roots(policy_cwd.as_path(), command_cwd)?;
+    let read_volumes = windows::implicit_read_roots(&volumes, policy_cwd.as_path(), command_cwd)?;
+    let volumes = volumes
+        .into_iter()
+        .map(PathUri::from_host_native_path)
+        .collect::<std::io::Result<Vec<_>>>()?;
+    Ok(policy::materialize_volume_roots(
+        policy,
+        &volumes,
+        &read_volumes,
+    )?)
 }
 
 /// Entry point dispatched before ordinary Codex CLI parsing.
@@ -106,6 +166,7 @@ pub fn run_main() -> ! {
         match windows::run() {
             Ok(exit_code) => std::process::exit(exit_code),
             Err(error) => {
+                windows::log_launch(format_args!("launch failed: {error:#}"));
                 eprintln!("MXC launcher: {error:#}");
                 std::process::exit(1);
             }

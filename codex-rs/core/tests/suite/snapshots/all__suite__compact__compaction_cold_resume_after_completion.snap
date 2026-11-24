@@ -63,8 +63,8 @@ Scenario: Real paginated mid-turn compaction and cold resume from the bounded su
     <MULTI_AGENT_MODE>
 04:message/user:
     function call limit push
-05:function_call/test_tool:{}
-06:function_call_output:unsupported call: test_tool
+05:function_call/request_user_input:{"questions":[{"header":"Next","id":"next","options":[{"description":"Continue.","label":"Yes"},{"description":"Stop.","label":"No"}],"question":"Continue?"}]}
+06:function_call_output:{"answers":{"next":{"answers":["Yes"]}}}
 07:message/user:
     <SUMMARIZATION_PROMPT>
 

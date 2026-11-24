@@ -107,6 +107,7 @@ async fn misalignment_retires_late_voice_handoff_before_it_starts_a_turn() -> Re
             realtime_end_instructions: None,
             prompt: Some(Some("backend prompt".to_string())),
             realtime_session_id: None,
+            voice_session_id: None,
             transport: None,
             version: None,
             voice: None,

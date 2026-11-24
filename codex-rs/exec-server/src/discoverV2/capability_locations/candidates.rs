@@ -5,6 +5,7 @@ use super::CapabilityLocations;
 use super::MAX_LOCATIONS;
 use super::discover_cached_plugins;
 use crate::LocalFileSystem;
+use crate::SkillDiscoveryRoot;
 use codex_file_system::ExecutorFileSystem;
 use codex_file_watcher::WatchPath;
 use codex_utils_path_uri::PathUri;
@@ -22,7 +23,7 @@ pub(super) struct CandidateCapabilityLocations {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum CandidateCapabilityLocation {
     Cache(PathUri),
-    Standalone(PathUri),
+    Standalone(SkillDiscoveryRoot),
 }
 
 impl CandidateCapabilityLocations {
@@ -30,7 +31,7 @@ impl CandidateCapabilityLocations {
     pub(super) async fn resolve(
         fs: &LocalFileSystem,
         cache_root: Option<PathUri>,
-        skill_roots: Vec<PathUri>,
+        skill_roots: Vec<SkillDiscoveryRoot>,
     ) -> io::Result<CapabilityLocations> {
         let mut candidates = cache_root
             .into_iter()
@@ -38,7 +39,7 @@ impl CandidateCapabilityLocations {
             .collect::<Vec<_>>();
         let mut standalone = skill_roots;
         let mut seen = std::collections::HashSet::new();
-        standalone.retain(|root| seen.insert(root.clone()));
+        standalone.retain(|root| seen.insert(root.path.clone()));
         candidates.extend(
             standalone
                 .into_iter()
@@ -49,8 +50,8 @@ impl CandidateCapabilityLocations {
         let mut retained_candidates = Vec::new();
         for candidate in candidates {
             let root = match &candidate {
-                CandidateCapabilityLocation::Cache(root)
-                | CandidateCapabilityLocation::Standalone(root) => root,
+                CandidateCapabilityLocation::Cache(root) => root,
+                CandidateCapabilityLocation::Standalone(root) => &root.path,
             };
             let exists = match fs
                 .get_metadata(root, Default::default(), /*sandbox*/ None)
@@ -90,7 +91,8 @@ impl CandidateCapabilityLocations {
             // Standalone roots need no manifest or version selection.
             CandidateCapabilityLocation::Standalone(root) => Ok(CapabilityLocations {
                 locations: vec![CapabilityLocation {
-                    root: root.clone(),
+                    root: root.path.clone(),
+                    standalone_root_id: Some(root.id.clone()),
                     plugin: None,
                 }],
                 ..Default::default()

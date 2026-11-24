@@ -20,6 +20,18 @@ pub const MAX_LOG_FILES: usize = 90;
 // Service provisioning never appends to a caller-controlled existing log entry.
 // An initialized but empty slot also prevents falling back after an open failure.
 static SETUP_LOG: OnceLock<Mutex<Option<(File, OwnedHandle)>>> = OnceLock::new();
+static RUNTIME_LOG: OnceLock<(PathBuf, Mutex<Option<RollingFileAppender>>)> = OnceLock::new();
+
+/// Set the default sandbox log directory for this launcher process.
+pub fn init_runtime_log(codex_home: &Path) {
+    if codex_home.is_absolute() {
+        RUNTIME_LOG.get_or_init(|| {
+            let dir = crate::sandbox_dir(codex_home);
+            let _ = std::fs::create_dir_all(&dir);
+            (dir, Mutex::new(None))
+        });
+    }
+}
 
 fn exe_label() -> &'static str {
     static LABEL: OnceLock<String> = OnceLock::new();
@@ -109,7 +121,18 @@ fn append_line(line: &str, base_dir: Option<&Path>) {
         }
         return;
     }
-    if let Some(dir) = base_dir
+    if let Some((dir, cache)) = RUNTIME_LOG.get()
+        && base_dir == Some(dir.as_path())
+    {
+        if let Ok(mut cached) = cache.lock() {
+            if cached.is_none() {
+                *cached = log_writer(dir);
+            }
+            if let Some(writer) = cached.as_mut() {
+                let _ = writer.write_all(format!("{line}\n").as_bytes());
+            }
+        }
+    } else if let Some(dir) = base_dir
         && let Some(mut f) = log_writer(dir)
     {
         let _ = writeln!(f, "{line}");
@@ -143,6 +166,13 @@ pub fn debug_log(msg: &str, base_dir: Option<&Path>) {
 pub fn log_note(msg: &str, base_dir: Option<&Path>) {
     let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     append_line(&format!("[{ts} {}] {}", exe_label(), msg), base_dir);
+}
+
+/// Log a note in a launcher process configured with a sandbox log directory.
+pub fn log_runtime_note(msg: &str) {
+    if let Some((dir, _)) = RUNTIME_LOG.get() {
+        log_note(msg, Some(dir));
+    }
 }
 
 #[cfg(test)]

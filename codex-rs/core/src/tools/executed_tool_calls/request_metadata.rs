@@ -1,6 +1,7 @@
 //! Attaches host observations to request metadata without changing tool execution.
 
 use super::*;
+use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RequestKind {
@@ -9,6 +10,100 @@ enum RequestKind {
 }
 
 impl ExecutedToolCalls {
+    /// Projects only the wire metadata; retained calls keep their original indexes for late results.
+    /// Restore full WebSocket inputs before saving them as the continuation baseline.
+    pub(crate) fn scope_request_metadata(
+        &self,
+        items: &mut [ResponseItem],
+    ) -> Vec<(usize, InternalChatMessageMetadataPassthrough)> {
+        self.scope_request_metadata_with(|| items)
+    }
+
+    /// Only request mutable input when a connector-only projection is needed.
+    pub(crate) fn scope_request_metadata_with<'a>(
+        &self,
+        items: impl FnOnce() -> &'a mut [ResponseItem],
+    ) -> Vec<(usize, InternalChatMessageMetadataPassthrough)> {
+        if !self.captures_result_bodies
+            || self
+                .lock_state()
+                .as_ref()
+                .is_some_and(|state| state.include_general_metadata)
+        {
+            return Vec::new();
+        }
+        let mut originals = Vec::new();
+        for (index, item) in items().iter_mut().enumerate() {
+            let (ResponseItem::FunctionCallOutput {
+                internal_chat_message_metadata_passthrough: Some(metadata),
+                ..
+            }
+            | ResponseItem::CustomToolCallOutput {
+                internal_chat_message_metadata_passthrough: Some(metadata),
+                ..
+            }
+            | ResponseItem::ToolSearchOutput {
+                internal_chat_message_metadata_passthrough: Some(metadata),
+                ..
+            }) = item
+            else {
+                continue;
+            };
+            if metadata.executed_tool_calls.is_none()
+                && metadata.cell_id.is_none()
+                && metadata.tool_calls_complete.is_none()
+            {
+                continue;
+            }
+            if metadata.tool_calls_complete.is_none()
+                && metadata.executed_tool_calls.as_ref().is_some_and(|calls| {
+                    !calls.is_empty() && calls.iter().all(|call| call.tool_result_id().is_some())
+                })
+            {
+                continue;
+            }
+            originals.push((index, metadata.clone()));
+            if let Some(calls) = metadata.executed_tool_calls.as_mut() {
+                calls.retain(|call| call.tool_result_id().is_some());
+            }
+            // Earlier outputs from this cell can have omitted unrelated calls, including on a
+            // previous frame. A connector-only subset cannot claim a complete cell inventory.
+            metadata.tool_calls_complete = None;
+            if metadata
+                .executed_tool_calls
+                .as_ref()
+                .is_none_or(Vec::is_empty)
+            {
+                metadata.executed_tool_calls = None;
+                metadata.cell_id = None;
+            }
+        }
+        originals
+    }
+
+    pub(crate) fn restore_request_metadata(
+        items: &mut [ResponseItem],
+        originals: Vec<(usize, InternalChatMessageMetadataPassthrough)>,
+    ) {
+        for (index, original) in originals {
+            if let ResponseItem::FunctionCallOutput {
+                internal_chat_message_metadata_passthrough: metadata,
+                ..
+            }
+            | ResponseItem::CustomToolCallOutput {
+                internal_chat_message_metadata_passthrough: metadata,
+                ..
+            }
+            | ResponseItem::ToolSearchOutput {
+                internal_chat_message_metadata_passthrough: metadata,
+                ..
+            } = &mut items[index]
+            {
+                *metadata = Some(original);
+            }
+        }
+    }
+
     pub(crate) fn attach_to_compaction_prompt(&self, items: &mut [ResponseItem]) {
         self.attach_to_request(items, &mut HashMap::new(), RequestKind::Compaction);
     }
@@ -27,7 +122,7 @@ impl ExecutedToolCalls {
         retry_cache: &mut ExecutedToolCallCache,
         request_kind: RequestKind,
     ) {
-        let recording = {
+        {
             let mut state = self.lock_state();
             let Some(state) = state.as_mut() else {
                 // Disabling capture also stops replaying Direct records from history.
@@ -36,9 +131,23 @@ impl ExecutedToolCalls {
             };
             for item in items.iter_mut() {
                 if let Some(call) = item.id().and_then(|id| state.direct_calls.get(id)) {
+                    let keep_result_id = call.tool_result_id().is_none_or(|id| {
+                        item.executed_tool_call_metadata().is_some_and(|metadata| {
+                            metadata.cell_id.is_none()
+                                && matches!(
+                                    metadata.executed_tool_calls.as_deref(),
+                                    Some([original]) if original.tool_result_id() == Some(id)
+                                )
+                        })
+                    });
+                    // Release the old arguments and metadata before cloning the cached row.
                     item.clear_executed_tool_calls();
-                    item.append_executed_tool_calls(vec![call.clone()]);
-                    if matches!(call.arguments(), ExecutedToolCallArguments::Raw(_)) {
+                    let mut observation = call.clone();
+                    if !keep_result_id {
+                        observation.clear_tool_result_id();
+                    }
+                    item.append_executed_tool_calls(vec![observation]);
+                    if call.has_complete_inventory() {
                         item.mark_tool_calls_complete();
                     }
                 }
@@ -50,26 +159,19 @@ impl ExecutedToolCalls {
                     .iter()
                     .filter_map(ResponseItem::id)
                     .collect::<HashSet<_>>();
-                state.direct_calls.retain(|id, _| output_ids.contains(id));
-            }
-            Self::attach_pending_to_prompt_with_state(state, items, retry_cache, request_kind);
-            Arc::downgrade(&state.recording)
-        };
-
-        // Existing history can contain arguments recorded by an older client. Keep the
-        // per-call limit, and prevent newly truncated cells from claiming completeness
-        // on a later wait. Do the serialization outside the recorder lock.
-        let truncated_origins = normalize_executed_tool_call_arguments(items);
-        if !truncated_origins.is_empty() {
-            let mut state = self.lock_state();
-            if let Some(state) = state.as_mut()
-                && recording.ptr_eq(&Arc::downgrade(&state.recording))
-            {
-                for origin in truncated_origins {
-                    state.invalidate_origin(&origin);
+                for (_, call) in state
+                    .direct_calls
+                    .extract_if(|id, _| !output_ids.contains(id))
+                {
+                    ResultBodyTurn::discard(&state.body_turn, call.tool_result_id());
                 }
             }
+            Self::attach_pending_to_prompt_with_state(state, items, retry_cache, request_kind);
         }
+
+        // Argument truncation preserves inventory completeness; omitted calls or
+        // names still invalidate completion across the cell's outputs.
+        normalize_executed_tool_call_completeness(items);
     }
 
     fn attach_pending_to_prompt_with_state(
@@ -177,7 +279,7 @@ impl ExecutedToolCalls {
             }
             for cell_id in &untrusted_cells {
                 if let Some(cell) = state.cells.get_mut(cell_id) {
-                    cell.truncated_metadata_binding_valid = false;
+                    cell.invalidate_binding(&state.body_turn);
                 }
             }
             for retained in state.retained_calls.values_mut() {
@@ -186,7 +288,7 @@ impl ExecutedToolCalls {
                     .as_ref()
                     .is_some_and(|id| untrusted_cells.contains(id))
                 {
-                    retained.clear_late_truncated_metadata();
+                    retained.invalidate_output(&state.body_turn);
                 }
             }
         }
@@ -228,6 +330,7 @@ impl ExecutedToolCalls {
                 cached.clone()
             } else {
                 let mut runtime_cell_id = None;
+                let mut output_item_id = None;
                 let mut calls = Vec::new();
                 let mut call_index_by_id = HashMap::new();
                 let mut truncated_call_index_by_id = HashMap::new();
@@ -259,8 +362,13 @@ impl ExecutedToolCalls {
                         cell.completion = CellCompletion::Incomplete;
                         cell.truncated_metadata_binding_valid = false;
                     }
+                    if cell.truncated_metadata_binding_valid
+                        && cell.output_item_id.as_ref() == item.id()
+                    {
+                        output_item_id = cell.output_item_id.take();
+                    }
                     let pending_calls = cell.pending_calls.len();
-                    for (call_id, call) in cell.pending_calls.drain(..) {
+                    for (call_id, mut call) in cell.pending_calls.drain(..) {
                         if matches!(call.arguments(), ExecutedToolCallArguments::Raw(_)) {
                             call_index_by_id.insert(call_id, calls.len());
                         } else if cell.truncated_metadata_binding_valid
@@ -268,9 +376,11 @@ impl ExecutedToolCalls {
                         {
                             truncated_call_index_by_id.insert(call_id, calls.len());
                         }
+                        if output_item_id.is_none() {
+                            ResultBodyTurn::discard_call(&state.body_turn, &mut call);
+                        }
                         calls.push(call);
                     }
-                    cell.pending_full_argument_bytes = 0;
                     complete = cell.completion == CellCompletion::Complete
                         && (state.can_prove_wait_completion
                             || matches!(item, ResponseItem::CustomToolCallOutput { .. }));
@@ -306,6 +416,7 @@ impl ExecutedToolCalls {
                 state.retained_calls.insert(
                     key,
                     RetainedToolCalls {
+                        output_item_id,
                         calls: calls.clone(),
                         complete,
                         cell_id: cell_id.clone(),
@@ -333,9 +444,11 @@ impl ExecutedToolCalls {
         // Compaction may retry with a shortened history without installing that history.
         // Keep absent observations until a normal sampling request confirms the live window.
         if request_kind == RequestKind::Sampling && !pending_outputs.is_empty() {
-            state
-                .retained_calls
-                .retain(|key, _| !pending_outputs.contains(key));
+            for key in pending_outputs {
+                if let Some(mut retained) = state.retained_calls.remove(&key) {
+                    retained.invalidate_output(&state.body_turn);
+                }
+            }
         }
         let mut invalid_cells = HashSet::new();
         for index in 0..items.len() {
@@ -375,6 +488,9 @@ impl ExecutedToolCalls {
             let intact =
                 output_counts.get(call_id) == Some(&1) && matches_inventory && matches_input;
             retained.complete &= intact;
+            if !intact {
+                retained.invalidate_output(&state.body_turn);
+            }
             if !intact && let Some(cell) = retained.runtime_cell_id.clone() {
                 invalid_cells.insert(cell);
             }
@@ -382,7 +498,7 @@ impl ExecutedToolCalls {
         for cell_id in &invalid_cells {
             if let Some(cell) = state.cells.get_mut(cell_id) {
                 cell.completion = CellCompletion::Incomplete;
-                cell.truncated_metadata_binding_valid = false;
+                cell.invalidate_binding(&state.body_turn);
             }
         }
         if !invalid_cells.is_empty() {
@@ -393,8 +509,8 @@ impl ExecutedToolCalls {
                     .is_some_and(|cell_id| invalid_cells.contains(cell_id))
                 {
                     retained.complete = false;
+                    retained.invalidate_output(&state.body_turn);
                     retained.call_index_by_id.clear();
-                    retained.clear_late_truncated_metadata();
                 }
             }
         }
@@ -406,9 +522,15 @@ impl ExecutedToolCalls {
                 continue;
             };
             let key = (std::mem::discriminant(&*item), call_id.to_string());
-            let Some(retained) = state.retained_calls.get(&key) else {
-                continue;
-            };
+            let retained = state.retained_calls.get(&key);
+            if state.body_turn.strong_count() != 0
+                && retained
+                    .and_then(|row| row.output_item_id.as_ref())
+                    .is_none_or(|id| Some(id) != item.id())
+            {
+                item.clear_tool_result_ids();
+            }
+            let Some(retained) = retained else { continue };
             if retained.complete {
                 item.mark_tool_calls_complete();
             } else {

@@ -11,10 +11,12 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use codex_protocol::ResponseItemId;
+use codex_protocol::models::AudioReference;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ImageReference;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::UserMessageAudioKind;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::protocol::UserMessageImageKind;
 use codex_rollout::CompactedItem;
@@ -86,7 +88,7 @@ impl RollbackPlan {
         // A rolled-back turn can still own the empty checkpoint that keeps cold resume from
         // replaying older history.
         if let Some(compacted) = self.compacted_items.get(&record_index) {
-            line.item = RolloutItem::Compacted(compacted.clone());
+            line.item = RolloutItem::Compacted(Box::new(compacted.clone()));
             return Ok(Some(line));
         }
         if boundary.is_some_and(|boundary| !self.boundary_alive[boundary]) {
@@ -159,7 +161,9 @@ impl RollbackPlanner {
         self.pending_delivery_boundary = None;
 
         match &line.item {
-            RolloutItem::SessionMeta(_) => self.record_boundaries[index] = None,
+            RolloutItem::DynamicToolsUpdated { .. } | RolloutItem::SessionMeta(_) => {
+                self.record_boundaries[index] = None
+            }
             RolloutItem::ResponseItem(response) => {
                 if matches!(&response.item, ResponseItem::Message { role, .. } if role == "assistant")
                     || matches!(&response.item, ResponseItem::FunctionCall { .. })
@@ -178,7 +182,7 @@ impl RollbackPlanner {
                     self.record_boundaries[index] = Some(boundary);
                     self.boundaries[boundary].message_id = response.id().cloned();
                     self.boundaries[boundary].input_source = response.metadata.as_ref().into();
-                } else if rollback::counts_as_boundary(&response.item) {
+                } else if rollback::counts_as_boundary(response) {
                     let boundary = self.start_boundary(index);
                     self.boundaries[boundary].message_id = response.id().cloned();
                     self.boundaries[boundary].input_source = response.metadata.as_ref().into();
@@ -192,7 +196,12 @@ impl RollbackPlanner {
                             content: content.clone(),
                         });
                     }
-                } else if rollback::is_pre_turn_context_update(&response.item) {
+                } else if !response
+                    .metadata
+                    .as_ref()
+                    .is_some_and(|metadata| metadata.realtime_session_end_input)
+                    && rollback::is_pre_turn_context_update(&response.item)
+                {
                     // Until another user boundary arrives, this is trailing context for the
                     // previous turn. Keep that fallback owner so rollback drops it when there is
                     // no later turn to attach it to.
@@ -262,7 +271,7 @@ impl RollbackPlanner {
                     record_index: index,
                     boundary_depth: self.boundary_stack.len(),
                     owner,
-                    item: item.clone(),
+                    item: item.as_ref().clone(),
                 });
             }
             RolloutItem::TurnContext(_) => {
@@ -274,6 +283,11 @@ impl RollbackPlanner {
                 {
                     self.pending_turn_records.push(index);
                 }
+            }
+            RolloutItem::RetainedContext(
+                codex_rollout::RetainedContextEvent::AcceptedFileAudio { evidence },
+            ) => {
+                self.assign_targeted_record(index, Some(&evidence.turn_id));
             }
             RolloutItem::TokenUsageRecord(record) => {
                 self.assign_targeted_record(index, Some(record.turn_id.as_str()));
@@ -303,6 +317,7 @@ impl RollbackPlanner {
                 codex_rollout::RetainedContextEvent::DeliveredAssistantMessage {
                     message,
                     acceptance_order,
+                    ..
                 },
             ) => {
                 // Nested calls have no response item; match them to instructions by acceptance order.
@@ -578,7 +593,7 @@ fn user_response_matches_event(content: &[ContentItem], event: &UserMessageEvent
                     file_ids.push(file_id.as_str());
                 }
             },
-            ContentItem::InputAudio { audio_url } => audio.push(audio_url.as_str()),
+            ContentItem::InputAudio { audio: reference } => audio.push(reference),
             ContentItem::OutputText { .. } => return false,
         }
     }
@@ -600,14 +615,48 @@ fn user_response_matches_event(content: &[ContentItem], event: &UserMessageEvent
                 .iter()
                 .map(String::as_str)
                 .collect::<Vec<_>>()
-        && audio
-            == event
-                .audio
-                .as_deref()
-                .unwrap_or_default()
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
+        && {
+            if event.has_complete_audio_order() {
+                let mut actual = audio.into_iter();
+                let mut inline = event.audio.as_deref().unwrap_or_default().iter();
+                let mut file = event.audio_references.as_deref().unwrap_or_default().iter();
+                event.audio_order.iter().all(|kind| {
+                    let Some(actual) = actual.next() else {
+                        return false;
+                    };
+                    match kind {
+                        UserMessageAudioKind::Inline => matches!(
+                            (actual, inline.next()),
+                            (
+                                AudioReference::Inline { audio_url },
+                                Some(expected),
+                            ) if audio_url == expected
+                        ),
+                        UserMessageAudioKind::File => {
+                            file.next().is_some_and(|expected| actual == expected)
+                        }
+                    }
+                }) && actual.next().is_none()
+                    && inline.next().is_none()
+                    && file.next().is_none()
+            } else {
+                match &event.audio_references {
+                    Some(references) => audio.into_iter().eq(references),
+                    None => audio
+                        .into_iter()
+                        .map(|reference| match reference {
+                            AudioReference::Inline { audio_url } => Some(audio_url.as_str()),
+                            AudioReference::File { .. } => None,
+                        })
+                        .eq(event
+                            .audio
+                            .as_deref()
+                            .unwrap_or_default()
+                            .iter()
+                            .map(|url| Some(url.as_str()))),
+                }
+            }
+        }
         && event.local_images.is_empty()
         && event.local_audio.is_empty()
 }

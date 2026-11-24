@@ -177,7 +177,7 @@ impl ChatComposer {
         if self.history_search.is_some()
             || (Self::is_history_search_key(&key, &self.history_search_previous_keys)
                 && (self.popups.active() || !self.draft.textarea.wants_vim_search_key(key))
-                && !self.wants_vim_history_key(key))
+                && !self.wants_edit_history_key(key))
             || self.empty_prompt_shortcut_toggle(&key).is_some()
         {
             return None;
@@ -379,7 +379,7 @@ impl ChatComposer {
             || self.is_task_running
             || self.voice_strip.is_some()
             || self.popup_active()
-            || self.footer_mode() == FooterMode::ShortcutOverlay
+            || matches!(self.footer_mode(), FooterMode::ShortcutOverlay(_))
             || area.height < 3
             || textarea.is_empty()
             || effective_stdout_color_level() != StdoutColorLevel::TrueColor

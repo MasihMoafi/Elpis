@@ -3,7 +3,9 @@
 
 use crate::without_update_plan_instructions;
 use codex_context_fragments::ContextualUserFragment;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::input_text;
 
 const DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT: &str = "Full-history forks (`fork_turns` omitted or `\"all\"`) inherit the parent model and reasoning effort and do not accept overrides. Only set `model` or `reasoning_effort` when explicitly requested by the user, applicable `AGENTS.md` instructions, or skill instructions; when doing so, set `fork_turns` to `\"none\"`.";
 const DEFAULT_MULTI_AGENT_V2_WAIT_AGENT_USAGE_HINT_TEXT: &str =
@@ -32,9 +34,14 @@ pub enum MultiAgentRoleInstructions {
     },
 }
 
+impl MultiAgentRoleInstructions {
+    /// Content classification shared by role producers and inherited-history filtering.
+    pub const KIND: &str = "multi_agent.role_instructions";
+}
+
 impl ContextualUserFragment for MultiAgentRoleInstructions {
     fn content_kind(&self) -> ContentItemKind {
-        ContentItemKind("multi_agent.role_instructions".to_string())
+        ContentItemKind(Self::KIND.to_string())
     }
 
     fn role(&self) -> &'static str {
@@ -52,8 +59,8 @@ impl ContextualUserFragment for MultiAgentRoleInstructions {
         ("<multi_agent_role>", "</multi_agent_role>")
     }
 
-    fn body(&self) -> String {
-        match self {
+    fn body(&self) -> ContentItem {
+        input_text(match self {
             Self::Configured(text) => text.clone(),
             Self::Composed {
                 base,
@@ -83,7 +90,7 @@ impl ContextualUserFragment for MultiAgentRoleInstructions {
                 }
                 text
             }
-        }
+        })
     }
 }
 

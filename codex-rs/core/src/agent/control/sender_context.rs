@@ -1,16 +1,20 @@
 //! Captures genuine sender instructions and assistant context for host-delivered task messages.
 //! Only turn-input admission calls this, before queueing; ordinary tool results and
-//! quoted delegation text cannot establish sender provenance. Lookup stays in this host.
+//! quoted delegation text cannot establish sender provenance. Unloaded senders are read
+//! through the host's authenticated thread store, without resuming their runtime.
 
-use crate::context::ContextualUserFragment;
-use crate::context::GuardianSenderExchange;
 use crate::context::GuardianSenderMessages;
-use codex_guardian_context::GuardianRootMessage;
-use codex_history::RetainedContextEntry;
-use codex_history::RetainedContextOrder;
-use codex_history::SenderUserMessages;
+use crate::context_manager::ContextManager;
+use crate::session::session::Session;
+use codex_history::RolloutItem;
+use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::ThreadHistoryMode;
+use codex_thread_store::LoadThreadHistoryParams;
+use codex_utils_output_truncation::TruncationPolicy;
+use std::sync::Arc;
+use std::time::Duration;
 
 use super::LocalAgentRuntime;
 
@@ -19,8 +23,7 @@ impl LocalAgentRuntime {
         &self,
         item: &ResponseItem,
         receiver_thread_id: ThreadId,
-        receiver_turn_id: &str,
-    ) -> Option<SenderUserMessages> {
+    ) -> Option<GuardianSenderMessages> {
         let ResponseItem::FunctionCallOutput {
             id: Some(id),
             call_id: None,
@@ -35,6 +38,7 @@ impl LocalAgentRuntime {
         if !matches!(
             (namespace.as_str(), name.as_str()),
             ("codex_app" | "codex_tui", "send_message_to_thread")
+                | ("codex_app", "create_thread")
                 | ("cloud_threads", "send_message")
         ) {
             return None;
@@ -47,10 +51,18 @@ impl LocalAgentRuntime {
                 .trim()
                 .strip_prefix("<source_thread_id>")?
                 .split_once("</source_thread_id>")?;
-            input
-                .trim()
-                .strip_prefix("<input>")?
-                .strip_suffix("</input>")?;
+            let input = input.trim();
+            // Cloud deliveries include Dot attribution, but authority comes from the source thread.
+            let input = if let Some(rest) = input.strip_prefix("<source_orbit_id>") {
+                let (orbit_id, input) = rest.split_once("</source_orbit_id>")?;
+                if orbit_id.contains('<') {
+                    return None;
+                }
+                input.trim()
+            } else {
+                input
+            };
+            input.strip_prefix("<input>")?.strip_suffix("</input>")?;
             ThreadId::from_string(source)
                 .ok()
                 .filter(|source| *source != receiver_thread_id)
@@ -58,54 +70,81 @@ impl LocalAgentRuntime {
         let mut fragment = GuardianSenderMessages {
             source: source_thread_id,
             delivery: id.to_string(),
+            from_storage: false,
             messages: Vec::new(),
         };
         if let Some(source_thread_id) = source_thread_id
             && let Ok(manager) = self.upgrade()
-            && let Ok(sender) = manager.get_thread(source_thread_id).await
         {
-            let history = sender.conversation_history_snapshot().await;
-            if let Some(context) = history.retained_context() {
-                let mut exchanges = Vec::new();
-                let mut assistant = None;
-                for (order, entry) in context.ordered_entries() {
-                    match (order, entry) {
-                        (
-                            RetainedContextOrder::Local(_),
-                            RetainedContextEntry::UserMessage(message),
-                        ) => exchanges.push((message, assistant.take())),
-                        (
-                            RetainedContextOrder::Local(_),
-                            RetainedContextEntry::AssistantMessage(message),
-                        ) => assistant = Some(message),
-                        (RetainedContextOrder::Inherited(_), _)
-                        | (_, RetainedContextEntry::VerifiedAnswer(_)) => {}
-                    }
-                }
-                fragment.messages = exchanges
-                    .into_iter()
-                    .rev()
-                    .take(/*n*/ 3)
-                    .map(|(user, assistant)| GuardianSenderExchange {
-                        user: user.complete.then(|| user.text.clone()),
-                        assistant: assistant.map(|message| {
-                            if message.complete {
-                                GuardianRootMessage::Assistant(message.text.clone())
-                            } else {
-                                GuardianRootMessage::IncompleteAssistantContext
-                            }
+            let context = match manager.get_thread(source_thread_id).await {
+                Ok(sender) => sender
+                    .conversation_history_snapshot()
+                    .await
+                    .retained_context()
+                    .cloned(),
+                Err(_) => {
+                    // The store owns authorization, including cross-worker tenant boundaries.
+                    // Bound the read so unavailable storage cannot stall turn admission.
+                    let stored = tokio::time::timeout(
+                        Duration::from_secs(/*secs*/ 5),
+                        manager.load_latest_model_context(LoadThreadHistoryParams {
+                            thread_id: source_thread_id,
+                            include_archived: true,
                         }),
-                    })
-                    .collect();
-                fragment.messages.reverse();
+                    )
+                    .await;
+                    let capture = || {
+                        let stored = stored.ok()?.ok()?;
+                        if stored.thread_id != source_thread_id {
+                            return None;
+                        }
+                        let RolloutItem::SessionMeta(meta) = stored.items.first()? else {
+                            return None;
+                        };
+                        if meta.meta.id != source_thread_id || meta.meta.source.is_internal() {
+                            return None;
+                        }
+                        let history_mode = meta.meta.history_mode;
+                        let referenced_agent_fork = meta.meta.history_base.is_some()
+                            && meta.meta.session_id != SessionId::from(source_thread_id)
+                            && meta.meta.subagent_history_start_ordinal.is_none();
+                        let version = if referenced_agent_fork {
+                            if history_mode != ThreadHistoryMode::Paginated
+                                || meta.meta.forked_from_id.is_none()
+                            {
+                                return None;
+                            }
+                            Some(meta.meta.multi_agent_version?)
+                        } else {
+                            None
+                        };
+                        let mut history = Arc::new(stored.items);
+                        if let Some(version) = version {
+                            crate::agent::sanitize_referenced_agent_fork(
+                                source_thread_id,
+                                &mut history,
+                                version,
+                            )
+                            .ok()?;
+                        }
+                        let context = ContextManager::reconstruct_rollout(
+                            &history,
+                            history_mode,
+                            ContextManager::new(Session::new_item_id_generator()),
+                            // Tool bodies are not sender authorization evidence.
+                            TruncationPolicy::Bytes(0),
+                        )
+                        .retained_context;
+                        fragment.from_storage = true;
+                        Some(context)
+                    };
+                    capture()
+                }
+            };
+            if let Some(context) = context {
+                fragment.messages = codex_guardian_reviewer::guardian_sender_exchanges(&context);
             }
         }
-        let mut snapshot = SenderUserMessages {
-            receiver_turn_id: receiver_turn_id.to_owned(),
-            receiver_message_id: id.to_string(),
-            text: fragment.render(),
-        };
-        snapshot.bound();
-        Some(snapshot)
+        Some(fragment)
     }
 }

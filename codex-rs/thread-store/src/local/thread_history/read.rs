@@ -5,14 +5,14 @@ use serde::Serialize;
 use sqlx::Row;
 
 use super::super::LocalThreadStore;
-use super::super::rollout_lineage::RolloutLineage;
+use super::super::rollout_lineage::LineageWalk;
 use super::super::rollout_lineage::RolloutLineageSegment;
 use super::super::thread_rollout_resolver;
 use super::segment_paging::page_item_rows;
 use super::segment_paging::page_turn_rows;
 use super::segment_paging::validate_page_size;
 use super::sqlite_integer;
-use super::turn_lookup::find_source_turn;
+use super::turn_lookup::find_turn;
 use crate::ItemPage;
 use crate::ListItemsParams;
 use crate::ListTurnsParams;
@@ -120,14 +120,12 @@ pub(in crate::local) async fn list_turns(
     )
     .await?;
     validate_page_size(params.page_size)?;
-    let lineage = store
-        .resolve_rollout_lineage(params.thread_id, /*initial_path*/ None)
-        .await?;
     let pool = store.thread_history_db().await?;
+    let mut lineage = LineageWalk::for_history_page(store, params.thread_id);
     let page = page_turn_rows(
         pool,
         params.thread_id,
-        &lineage,
+        &mut lineage,
         params.cursor.as_deref(),
         params.page_size,
         params.sort_direction,
@@ -145,7 +143,7 @@ pub(in crate::local) async fn list_turns(
             {
                 // Synthetic fork-boundary rows are interrupted without local summary IDs.
                 // Load their summary from the earliest visible source turn.
-                load_inherited_summary_items(pool, &lineage, &turn).await?
+                load_inherited_summary_items(pool, &mut lineage, &turn).await?
             }
             StoredTurnItemsView::Summary => turn.summary_items,
         };
@@ -180,23 +178,37 @@ pub(in crate::local) async fn list_items(
         "list_items",
     )
     .await?;
+    if let Some(ids) = &params.item_ids {
+        if params.turn_id.is_none()
+            || params.position.is_some()
+            || params.after_updated_at_ordinal.is_some()
+            || params.before_updated_at_ordinal.is_some()
+            || params.sort_key != crate::ItemSortKey::CreatedAtOrdinal
+            || !(1..=100).contains(&ids.len())
+        {
+            return Err(ThreadStoreError::InvalidRequest {
+                message: "itemIds requires turnId, 1 to 100 IDs, and no cursor or update replay"
+                    .to_string(),
+            });
+        }
+        params.page_size = ids.len();
+        params.sort_direction = crate::SortDirection::Asc;
+    }
     validate_page_size(params.page_size)?;
-    let (lineage, recovered_path) = match store
-        .resolve_rollout_lineage(params.thread_id, /*initial_path*/ None)
-        .await
-    {
-        Ok(lineage) => (lineage, None),
+    let mut lineage = LineageWalk::for_history_page(store, params.thread_id);
+    // Resolve the missing-history bit for every page, including one entirely within the leaf.
+    let (recovered_path, recovery_id) = match lineage.resolve_all().await {
+        Ok(_) => (None, None),
         Err(error) => match missing_source_projection(store, params.thread_id).await? {
-            Some(lineage) => {
-                let path = lineage.segments[0].rollout_path.clone();
-                (lineage, Some(path))
+            Some(segment) => {
+                let path = segment.rollout_path.clone();
+                let id = segment.rollout_id;
+                lineage = lineage.recovered_projection(segment);
+                (Some(path), Some(id))
             }
             None => return Err(error),
         },
     };
-    let recovery_id = recovered_path
-        .as_ref()
-        .map(|_| lineage.segments[0].rollout_id);
     if let Some(crate::ListItemsPosition::Cursor(cursor)) = &params.position {
         let recovered_cursor = serde_json::from_str::<RecoveredItemsCursor>(cursor).ok();
         match (recovery_id, recovered_cursor) {
@@ -210,7 +222,7 @@ pub(in crate::local) async fn list_items(
         }
     }
     let pool = store.thread_history_db().await?;
-    let mut page = page_item_rows(pool, &lineage, &params).await?;
+    let mut page = page_item_rows(pool, &mut lineage, &params).await?;
     if let Some(recovery_rollout_id) = recovery_id {
         let bind = |cursor: String| {
             serde_json::to_string(&RecoveredItemsCursor {
@@ -259,7 +271,7 @@ pub(in crate::local) async fn list_items(
 async fn missing_source_projection(
     store: &LocalThreadStore,
     thread_id: ThreadId,
-) -> ThreadStoreResult<Option<RolloutLineage>> {
+) -> ThreadStoreResult<Option<RolloutLineageSegment>> {
     let Some(state) = store.state_db().await else {
         return Ok(None);
     };
@@ -299,14 +311,12 @@ async fn missing_source_projection(
     if present == 0 {
         return Ok(None);
     }
-    Ok(Some(RolloutLineage {
-        segments: vec![RolloutLineageSegment {
-            rollout_id,
-            rollout_path: metadata.rollout_path,
-            start_ordinal: 0,
-            end: None,
-        }],
-        missing_earlier: true,
+    Ok(Some(RolloutLineageSegment {
+        rollout_id,
+        rollout_path: metadata.rollout_path,
+        start_ordinal: 0,
+        end: None,
+        hides_parent: false,
     }))
 }
 
@@ -342,19 +352,20 @@ pub(super) async fn validate_thread_for_paginated_reads(
 
 async fn load_inherited_summary_items(
     pool: &sqlx::SqlitePool,
-    lineage: &RolloutLineage,
+    lineage: &mut LineageWalk<'_>,
     turn: &StoredTurnRow,
 ) -> ThreadStoreResult<Vec<StoredThreadItem>> {
-    let source = match find_source_turn(pool, lineage, turn.turn_id.as_str()).await {
+    lineage.resolve_all().await?;
+    let missing_earlier = lineage.missing_earlier();
+    let lineage = lineage.resolved_segments();
+    let source = match find_turn(pool, lineage.iter().rev(), turn.turn_id.as_str()).await {
         Ok(source) => source,
-        // The source turn was in the earlier part that is missing; the turn keeps no summary.
-        Err(ThreadStoreError::InvalidRequest { .. }) if lineage.missing_earlier() => {
+        Err(ThreadStoreError::InvalidRequest { .. }) if missing_earlier => {
             return Ok(Vec::new());
         }
-        Err(err) => return Err(err),
+        Err(error) => return Err(error),
     };
     let Some(segment) = lineage
-        .segments()
         .iter()
         .find(|segment| segment.rollout_id() == source.rollout_id)
     else {

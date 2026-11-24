@@ -1,5 +1,6 @@
 use super::STRUCTURED_RESPONSE_MAX_BYTES;
 use super::TemporaryStructuredThreadOptions;
+use super::TemporaryThreadKind;
 use super::collect_structured_response;
 use super::start_temporary_thread;
 use crate::legacy_core::config::ConfigBuilder;
@@ -10,7 +11,7 @@ use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::SandboxPolicy;
 use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnCompletedNotification;
@@ -23,8 +24,11 @@ use tempfile::tempdir;
 use tokio::sync::mpsc::unbounded_channel;
 
 fn agent_message_notification(turn_id: &str, text: &str) -> ServerNotification {
-    ServerNotification::ItemCompleted(ItemCompletedNotification {
-        item: ThreadItem::AgentMessage {
+    ServerNotification::ItemCompleted(ItemCompletedNotification::new(
+        "thread-1".to_string(),
+        turn_id.to_string(),
+        ThreadItemPayload::AgentMessage {
+            moderation: None,
             id: "message-1".to_string(),
             text: text.to_string(),
             phase: None,
@@ -32,10 +36,9 @@ fn agent_message_notification(turn_id: &str, text: &str) -> ServerNotification {
             delivery: None,
             questions: None,
         },
-        thread_id: "thread-1".to_string(),
-        turn_id: turn_id.to_string(),
-        completed_at_ms: 0,
-    })
+        /*started_at_ms*/ None,
+        /*completed_at_ms*/ 0,
+    ))
 }
 
 fn turn_completed_notification(turn_id: &str, status: TurnStatus) -> ServerNotification {
@@ -57,14 +60,40 @@ fn turn_completed_notification(turn_id: &str, status: TurnStatus) -> ServerNotif
 
 #[tokio::test]
 async fn managed_workspace_default_respects_read_only_availability() -> color_eyre::Result<()> {
-    for read_only_allowed in [true, false] {
+    for (kind, read_only_allowed, policies, expected_approval) in [
+        (
+            TemporaryThreadKind::Recap,
+            true,
+            r#""on-request""#,
+            AskForApproval::OnRequest,
+        ),
+        (
+            TemporaryThreadKind::Recap,
+            false,
+            r#""on-request""#,
+            AskForApproval::OnRequest,
+        ),
+        (
+            TemporaryThreadKind::Title,
+            true,
+            r#""on-request", "never""#,
+            AskForApproval::Never,
+        ),
+        (
+            TemporaryThreadKind::Title,
+            true,
+            r#""on-request""#,
+            AskForApproval::OnRequest,
+        ),
+    ] {
         let codex_home = tempdir()?;
         let requirements_path = codex_home.path().join("requirements.toml");
         std::fs::write(
             &requirements_path,
             format!(
-                "allowed_approval_policies = [\"on-request\"]\n\
+                "allowed_approval_policies = [{policies}]\n\
                  default_permissions = \":workspace\"\n\n\
+                 [features]\nskill_mcp_dependency_install = true\n\n\
                  [allowed_permission_profiles]\n\
                  \":read-only\" = {read_only_allowed}\n\
                  \":workspace\" = true\n"
@@ -82,7 +111,7 @@ async fn managed_workspace_default_respects_read_only_availability() -> color_ey
             .build()
             .await?;
         let options = TemporaryStructuredThreadOptions {
-            thread_source: ThreadSource::Feature("thread_title".to_string()),
+            kind,
             model: "gpt-5.2".to_string(),
             model_provider: config.model_provider_id.clone(),
             cwd: config.cwd.to_string_lossy().into_owned(),
@@ -90,7 +119,6 @@ async fn managed_workspace_default_respects_read_only_availability() -> color_ey
                 .permissions
                 .active_permission_profile()
                 .map(|profile| profile.id),
-            mcp_server_names: Vec::new(),
         };
         let client = crate::start_embedded_app_server(
             Default::default(),
@@ -117,7 +145,9 @@ async fn managed_workspace_default_respects_read_only_availability() -> color_ey
                     continue;
                 };
                 match *notification {
-                    ServerNotification::ConfigWarning(warning) => {
+                    ServerNotification::ConfigWarning(warning)
+                        if kind == TemporaryThreadKind::Recap =>
+                    {
                         assert!(
                             !warning.summary.contains("`approval_policy`"),
                             "{warning:?}"
@@ -141,7 +171,7 @@ async fn managed_workspace_default_respects_read_only_availability() -> color_ey
                 ),
                 (
                     Some(":read-only".to_string()),
-                    AskForApproval::OnRequest,
+                    expected_approval,
                     SandboxPolicy::ReadOnly {
                         network_access: false,
                     },
@@ -186,12 +216,11 @@ async fn preserves_custom_permissions_and_disables_required_mcp_servers() -> col
     let response = start_temporary_thread(
         &app_server.request_handle(),
         TemporaryStructuredThreadOptions {
-            thread_source: ThreadSource::Feature("thread_title".to_string()),
+            kind: TemporaryThreadKind::Recap,
             model: "gpt-5.2".to_string(),
             model_provider: config.model_provider_id.clone(),
             cwd: config.cwd.display().to_string(),
             active_permission_profile: Some("title-restricted".to_string()),
-            mcp_server_names: vec!["forbidden".to_string()],
         },
     )
     .await?;
@@ -207,7 +236,7 @@ async fn preserves_custom_permissions_and_disables_required_mcp_servers() -> col
             Some("title-restricted".to_string()),
             config.model_provider_id,
             true,
-            Some(ThreadSource::Feature("thread_title".to_string())),
+            Some(ThreadSource::Feature("system".to_string())),
         )
     );
 

@@ -50,7 +50,6 @@ impl ChatWidget {
             }
             ServerRequest::DynamicToolCall { .. }
             | ServerRequest::AttestationGenerate { .. }
-            | ServerRequest::CurrentTimeRead { .. }
             | ServerRequest::ChatgptAuthTokensRefresh { .. }
             | ServerRequest::ApplyPatchApproval { .. }
             | ServerRequest::ExecCommandApproval { .. } => {
@@ -59,10 +58,6 @@ impl ChatWidget {
                 }
             }
         }
-    }
-
-    pub(crate) fn handle_skills_list_response(&mut self, response: SkillsListResponse) {
-        self.on_list_skills(response);
     }
 
     pub(super) fn on_patch_apply_output_delta(&mut self, _item_id: String, _delta: String) {}

@@ -183,10 +183,10 @@ pub(crate) async fn managed_codex_version(codex_bin: &Path) -> Result<String> {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ExecutableIdentity {
-    digest: [u8; 32],
+    pub(crate) digest: [u8; 32],
     // Distinguish release generations whose executable bytes are identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    path_digest: Option<[u8; 32]>,
+    pub(crate) path_digest: Option<[u8; 32]>,
 }
 
 impl ExecutableIdentity {
@@ -222,7 +222,7 @@ pub(crate) fn executable_identity_from_reader(
     })
 }
 
-fn path_digest(path: &Path) -> [u8; 32] {
+pub(crate) fn path_digest(path: &Path) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     #[cfg(unix)]
     {

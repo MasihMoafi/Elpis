@@ -41,7 +41,9 @@ mod wait_for_environment;
 pub(crate) mod work_graphs;
 pub(crate) mod work_graphs_spec;
 
-use codex_features::Feature;
+use crate::tools::context::ToolEnvironments;
+use crate::tools::context::ToolInvocation;
+use crate::tools::context::ToolPayload;
 use codex_file_system::FileSystemSandboxContext;
 use codex_sandboxing::policy_transforms::materialize_additional_permissions_with_context;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
@@ -53,6 +55,7 @@ use serde::Deserialize;
 use serde_json::Map;
 use serde_json::Value;
 
+use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::function_tool::FunctionCallError;
 use crate::sandboxing::SandboxPermissions;
 use crate::session::step_context::StepContext;
@@ -67,12 +70,13 @@ pub use dynamic::DynamicToolHandler;
 pub use get_context_remaining::GetContextRemainingHandler;
 pub use list_available_plugins_to_install::ListAvailablePluginsToInstallHandler;
 pub use mcp::McpHandler;
+pub(crate) use mcp::McpHandlerDefinition;
 pub use mcp_resource::ListMcpResourceTemplatesHandler;
 pub use mcp_resource::ListMcpResourcesHandler;
 pub use mcp_resource::ReadMcpResourceHandler;
 pub use new_context_window::NewContextWindowHandler;
 pub use plan::PlanHandler;
-pub(crate) use request_permissions::RequestPermissionsEnvironmentArgs;
+pub(crate) use request_permissions::PreparedPermissionRequest;
 pub use request_permissions::RequestPermissionsHandler;
 pub use request_plugin_install::RequestPluginInstallHandler;
 pub use request_user_input::RequestUserInputHandler;
@@ -164,18 +168,46 @@ where
     parse_arguments(arguments)
 }
 
-fn resolve_tool_environment<'a>(
-    step_context: &'a StepContext,
-    environment_id: Option<&str>,
-    legacy_unavailable_message: &'static str,
+#[derive(Deserialize)]
+pub(crate) struct ToolEnvironmentArgs {
+    pub(crate) environment_id: Option<String>,
+}
+
+fn function_tool_environment<T: serde::de::DeserializeOwned>(
+    invocation: &ToolInvocation,
+    environment_id: impl FnOnce(T) -> Option<String>,
+) -> Result<ToolEnvironments, FunctionCallError> {
+    let ToolPayload::Function { arguments } = &invocation.payload else {
+        return Err(FunctionCallError::Fatal(
+            "expected function arguments for environment selection".to_string(),
+        ));
+    };
+    let environment_id = environment_id(parse_arguments(arguments)?);
+    resolve_tool_environment(
+        &invocation.step_context.environments,
+        environment_id.as_deref(),
+    )
+    .map(ToolEnvironments::single_executor)
+}
+
+pub(crate) fn selected_executor<'a>(
+    environments: &'a ToolEnvironments,
+    snapshot: &'a TurnEnvironmentSnapshot,
 ) -> Result<&'a TurnEnvironment, FunctionCallError> {
-    let environments = &step_context.environments;
-    let stable_environment_tools = step_context
-        .turn
-        .config
-        .features
-        .get()
-        .enabled(Feature::StableEnvironmentTools);
+    match environments {
+        ToolEnvironments::Arguments(args) if let [(_, env)] = args.as_slice() => Ok(env),
+        // Direct handler callers may supply only the step context.
+        ToolEnvironments::All => resolve_tool_environment(snapshot, /*environment_id*/ None),
+        _ => Err(FunctionCallError::Fatal(
+            "expected one executor for this call".to_string(),
+        )),
+    }
+}
+
+pub(crate) fn resolve_tool_environment<'a>(
+    environments: &'a TurnEnvironmentSnapshot,
+    environment_id: Option<&str>,
+) -> Result<&'a TurnEnvironment, FunctionCallError> {
     environment_id.map_or_else(
         || environments.primary(),
         |environment_id| {
@@ -185,21 +217,19 @@ fn resolve_tool_environment<'a>(
         },
     ).ok_or_else(|| {
         if let Some(environment_id) = environment_id
-            && (!stable_environment_tools
-                || !environments
-                    .all_selections()
-                    .iter()
-                    .any(|selection| selection.environment_id == environment_id))
+            && !environments
+                .all_selections()
+                .iter()
+                .any(|selection| selection.environment_id == environment_id)
         {
             return FunctionCallError::RespondToModel(format!(
                 "unknown turn environment id `{environment_id}`"
             ));
         }
-        FunctionCallError::RespondToModel(if stable_environment_tools {
-            "No usable execution environment is available. Wait for an environment to become available before using this tool.".to_string()
-        } else {
-            legacy_unavailable_message.to_string()
-        })
+        FunctionCallError::RespondToModel(
+            "No usable execution environment is available. Wait for an environment to become available before using this tool."
+                .to_string(),
+        )
     })
 }
 
@@ -261,7 +291,8 @@ pub(crate) fn normalize_and_validate_additional_permissions(
     }
 }
 
-pub(super) struct EffectiveAdditionalPermissions {
+#[derive(Debug)]
+pub(crate) struct EffectiveAdditionalPermissions {
     pub sandbox_permissions: SandboxPermissions,
     pub additional_permissions: Option<AdditionalPermissionProfile>,
     pub permissions_preapproved: bool,

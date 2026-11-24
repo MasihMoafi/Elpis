@@ -1,17 +1,22 @@
 //! Pin enterprise credentials to a non-secret version advanced by cooperating writers.
 //! Exchanges reread the pinned keyring record and reject changes made outside this protocol.
 
+use std::future::Future;
+
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
 use codex_keyring_store::DefaultKeyringStore;
 use codex_keyring_store::KeyringStore;
+use oauth2::TokenResponse;
 use tracing::instrument::WithSubscriber;
 
 use crate::ema_auth_policy::EmaAuthFailure;
+use crate::ema_auth_policy::EmaErrorDetail;
 use crate::ema_auth_policy::ema_reauthentication_required;
-use crate::ema_claims::OidcClaims;
 use crate::ema_claims::oidc_identity;
+use crate::ema_claims::validate_oidc_identity_assertion;
+use crate::ema_exchange::EmaSubjectToken;
 use crate::oauth::EnterpriseOAuthGeneration;
 use crate::oauth::EnterpriseOAuthGenerationFile;
 use crate::oauth::EnterpriseOAuthGenerationKind;
@@ -39,7 +44,7 @@ pub struct EmaCredentialLease {
 fn sanitize_ema_credential_error(error: anyhow::Error, message: &'static str) -> anyhow::Error {
     match error.downcast::<EmaAuthFailure>() {
         Ok(failure) => anyhow::Error::new(failure).context(message),
-        Err(_) => anyhow!(message),
+        Err(_) => EmaErrorDetail::new(message).into(),
     }
 }
 
@@ -49,7 +54,7 @@ impl std::fmt::Debug for EmaCredentialLease {
     }
 }
 
-pub(crate) fn stored_oidc_identity(tokens: &StoredOAuthTokens) -> Result<OidcClaims> {
+pub(crate) fn stored_ema_subject(tokens: &StoredOAuthTokens) -> Result<EmaSubjectToken> {
     let assertion = tokens
         .token_response
         .0
@@ -62,12 +67,26 @@ pub(crate) fn stored_oidc_identity(tokens: &StoredOAuthTokens) -> Result<OidcCla
                 "enterprise IdP session has no OIDC ID token; sign in again",
             )
         })?;
-    // The ID token binds the login identity. Its expiry does not determine
-    // whether the IdP will accept the independently valid refresh token.
-    oidc_identity(assertion, &tokens.url, &tokens.client_id).map_err(|error| {
+    let invalid_identity = || {
         ema_reauthentication_required("stored enterprise IdP identity is invalid; sign in again")
-            .context(error.to_string())
-    })
+    };
+    if let Some(refresh_token) = tokens
+        .token_response
+        .0
+        .refresh_token()
+        .filter(|token| !token.secret().trim().is_empty())
+    {
+        // An expired ID token still corroborates the binding of a separate refresh token.
+        oidc_identity(assertion, &tokens.url, &tokens.client_id).map_err(|_| invalid_identity())?;
+        return Ok(EmaSubjectToken::RefreshToken(refresh_token.clone()));
+    }
+    // When the assertion itself is the exchange credential, it must still be live.
+    validate_oidc_identity_assertion(assertion, &tokens.url, &tokens.client_id).map_err(|_| {
+        ema_reauthentication_required(
+            "enterprise IdP ID token is expired or invalid; sign in again",
+        )
+    })?;
+    Ok(EmaSubjectToken::IdToken(assertion.to_owned()))
 }
 
 impl StoredOAuthCredentialSnapshot {
@@ -89,7 +108,7 @@ impl StoredOAuthCredentialSnapshot {
         )
         .with_subscriber(tracing::subscriber::NoSubscriber::default())
         .await
-        .map_err(|_| anyhow!("failed to lock enterprise credentials"))?;
+        .map_err(|_| anyhow!(EmaErrorDetail::new("failed to lock enterprise credentials")))?;
         let keyring_store = keyring_store.clone();
         tokio::task::spawn_blocking(move || {
             tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
@@ -111,7 +130,11 @@ impl StoredOAuthCredentialSnapshot {
             })
         })
         .await
-        .map_err(|_| anyhow!("enterprise credential pinning task failed"))?
+        .map_err(|_| {
+            anyhow!(EmaErrorDetail::new(
+                "enterprise credential pinning task failed"
+            ))
+        })?
         .map_err(|error: anyhow::Error| {
             sanitize_ema_credential_error(error, "failed to pin enterprise credentials")
         })
@@ -127,7 +150,7 @@ impl EmaCredentialSnapshot {
         )
         .with_subscriber(tracing::subscriber::NoSubscriber::default())
         .await
-        .map_err(|_| anyhow!("failed to lock enterprise credentials"))?;
+        .map_err(|_| anyhow!(EmaErrorDetail::new("failed to lock enterprise credentials")))?;
         let pinned = self.clone();
         tokio::task::spawn_blocking(move || {
             tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
@@ -149,21 +172,29 @@ impl EmaCredentialSnapshot {
             })
         })
         .await
-        .map_err(|_| anyhow!("enterprise credential validation task failed"))?
+        .map_err(|_| {
+            anyhow!(EmaErrorDetail::new(
+                "enterprise credential validation task failed"
+            ))
+        })?
         .map_err(|error: anyhow::Error| {
             sanitize_ema_credential_error(error, "failed to validate enterprise credentials")
         })
     }
 
     /// Exclusively lock and delete a rejected grant only if its pinned record is still current.
-    pub async fn invalidate_ema_credentials_if_current(&self) -> Result<()> {
-        self.invalidate_ema_credentials_if_current_in(&DefaultKeyringStore)
+    pub async fn invalidate_ema_credentials_if_current(
+        &self,
+        is_current: impl Future<Output = bool> + Send,
+    ) -> Result<()> {
+        self.invalidate_ema_credentials_if_current_in(&DefaultKeyringStore, is_current)
             .await
     }
 
     async fn invalidate_ema_credentials_if_current_in<K: KeyringStore + Clone + 'static>(
         &self,
         keyring_store: &K,
+        is_current: impl Future<Output = bool> + Send,
     ) -> Result<()> {
         let credential_lock = RefreshCredentialLock::acquire_for_server(
             &self.snapshot.credentials.server_name,
@@ -171,7 +202,12 @@ impl EmaCredentialSnapshot {
         )
         .with_subscriber(tracing::subscriber::NoSubscriber::default())
         .await
-        .map_err(|_| anyhow!("failed to lock enterprise credentials"))?;
+        .map_err(|_| anyhow!(EmaErrorDetail::new("failed to lock enterprise credentials")))?;
+        if !is_current.await {
+            return Ok(());
+        }
+        let cancelled = tokio_util::sync::CancellationToken::new();
+        let _cancel_on_drop = cancelled.clone().drop_guard();
         let pinned = self.clone();
         let keyring_store = keyring_store.clone();
         tokio::task::spawn_blocking(move || {
@@ -193,7 +229,7 @@ impl EmaCredentialSnapshot {
                         .load(&keyring_store, &previous.server_name, &previous.url)?
                 {
                     latest.token_response.0.set_expires_in(None);
-                    if latest == *previous {
+                    if latest == *previous && !cancelled.is_cancelled() {
                         invalidate_enterprise_credential_version(
                             &previous.server_name,
                             &previous.url,
@@ -241,15 +277,12 @@ impl StoredOAuthCredentialSnapshot {
         // There is no refresh-token rotation writer in the supported EMA profile.
         // Pin the whole atomic login record, not just the claims of its ID token.
         latest.token_response.0.set_expires_in(None);
-        if latest != *previous
-            || previous.bound_issuer() != Some(previous.url.as_str())
-            || !latest.has_refresh_token()
-        {
+        if latest != *previous || previous.bound_issuer() != Some(previous.url.as_str()) {
             return Err(ema_reauthentication_required(
                 "enterprise IdP identity changed; sign in again and reconnect",
             ));
         }
-        stored_oidc_identity(&latest)?;
+        stored_ema_subject(&latest)?;
         Ok(latest)
     }
 }

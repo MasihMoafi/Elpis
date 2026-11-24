@@ -5,6 +5,8 @@ use crate::legacy_core::config::ConfigBuilder;
 use app_test_support::create_fake_paginated_rollout;
 use app_test_support::create_fake_rollout;
 use app_test_support::rollout_path;
+use codex_app_server_client::AppServerEvent;
+use codex_app_server_protocol::ServerNotification;
 use codex_protocol::ThreadId;
 use core_test_support::responses;
 use pretty_assertions::assert_eq;
@@ -12,6 +14,7 @@ use tempfile::TempDir;
 
 async fn test_server(
     tool_arguments: Value,
+    older_messages: usize,
 ) -> color_eyre::Result<(TempDir, AppServerSession, String, String)> {
     let codex_home = tempfile::tempdir()?;
     let config = ConfigBuilder::default()
@@ -32,12 +35,26 @@ async fn test_server(
         .lines()
         .map(serde_json::from_str::<Value>)
         .collect::<Result<Vec<_>, _>>()?;
-    for payload in [
+    let start = json!({
+        "type": "task_started",
+        "turn_id": "persisted-turn",
+        "model_context_window": null
+    });
+    let messages = (0..older_messages).map(|i| {
         json!({
-            "type": "task_started",
+            "type": "item_completed",
+            "thread_id": target,
             "turn_id": "persisted-turn",
-            "model_context_window": null
-        }),
+            "item": {
+                "type": "AgentMessage",
+                "id": format!("older-{i}"),
+                "phase": "commentary",
+                "content": [{"type":"Text","text":"Working"}]
+            },
+            "completed_at_ms": 0
+        })
+    });
+    for payload in std::iter::once(start).chain(messages).chain([
         json!({
             "type": "item_completed",
             "thread_id": target,
@@ -70,7 +87,7 @@ async fn test_server(
             "turn_id": "persisted-turn",
             "last_agent_message": "Persisted assistant output"
         }),
-    ] {
+    ]) {
         serde_json::from_value::<codex_protocol::protocol::EventMsg>(payload.clone())?;
         records.push(json!({
             "timestamp": "2026-01-02T00:00:00Z",
@@ -142,9 +159,43 @@ fn response_json(response: DynamicToolCallResponse) -> Value {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn read_thread_returns_the_newest_twenty_items_in_order() -> color_eyre::Result<()> {
+    let (_home, server, source, target) = test_server(json!({}), /*older_messages*/ 25).await?;
+    let mut expected = (7..25).map(|i| format!("older-{i}")).collect::<Vec<_>>();
+    expected.extend([
+        "persisted-message".to_string(),
+        "persisted-tool".to_string(),
+    ]);
+    for include_outputs in [false, true] {
+        let read = response_json(
+            call_tool(
+                &server,
+                &source,
+                "read_thread",
+                json!({
+                    "threadId": target, "includeOutputs": include_outputs
+                }),
+            )
+            .await,
+        );
+        let ids = read["turns"][0]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["id"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected);
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn oversized_read_preserves_answer_in_next_model_request() -> color_eyre::Result<()> {
-    let (_home, app_server, source, target) =
-        test_server(json!({"padding": "supporting tool arguments".repeat(4_000)})).await?;
+    let (_home, app_server, source, target) = test_server(
+        json!({"padding": "supporting tool arguments".repeat(4_000)}),
+        /*older_messages*/ 0,
+    )
+    .await?;
     let mock_server = responses::start_mock_server().await;
     let call_id = "read-task";
     let mock = responses::mount_sse_sequence(
@@ -236,7 +287,7 @@ stream_max_retries = 0
     assert_eq!(expected["page"]["order"], "newest_first");
     tokio::time::timeout(Duration::from_secs(/*secs*/ 30), async {
         while let Some(event) = model_server.next_event().await {
-            match event {
+            match event.event {
                 codex_app_server_client::AppServerEvent::ServerRequest(request) => {
                     if let codex_app_server_protocol::ServerRequest::DynamicToolCall {
                         request_id,
@@ -256,6 +307,8 @@ stream_max_retries = 0
                         return Ok::<_, color_eyre::eyre::Report>(());
                     }
                 }
+                codex_app_server_client::AppServerEvent::ThreadStreamReconnected(_)
+                | codex_app_server_client::AppServerEvent::ThreadStreamDisconnected(_) => {}
                 codex_app_server_client::AppServerEvent::Lagged { .. }
                 | codex_app_server_client::AppServerEvent::Disconnected { .. } => {
                     panic!("lost app-server events during the tool round trip");
@@ -400,11 +453,55 @@ fn activity_metadata_is_retained_without_including_outputs() -> color_eyre::Resu
     Ok(())
 }
 
+/// File-backed generated images retain their reference when task output is requested without
+/// exposing that output when the caller asks for metadata only.
+#[test]
+fn file_backed_image_generation_is_retained_as_a_reference() -> color_eyre::Result<()> {
+    let turn: Turn = serde_json::from_value(json!({
+        "id": "turn-1",
+        "status": "completed",
+        "items": [{
+            "type": "imageGeneration",
+            "id": "image-1",
+            "status": "completed",
+            "fileId": "file-generated-image"
+        }]
+    }))?;
+
+    assert_eq!(
+        turn_summary(&turn, /*include_outputs*/ true, DEFAULT_OUTPUT_CHARS)["items"][0],
+        json!({
+            "type": "imageGeneration",
+            "id": "image-1",
+            "status": "completed",
+            "revisedPrompt": null,
+            "savedPath": null,
+            "fileId": "file-generated-image"
+        })
+    );
+    assert_eq!(
+        turn_summary(&turn, /*include_outputs*/ false, DEFAULT_OUTPUT_CHARS)["items"][0],
+        json!({
+            "type": "imageGeneration",
+            "id": "image-1",
+            "status": "completed",
+            "revisedPrompt": null,
+            "savedPath": null
+        })
+    );
+    Ok(())
+}
+
 #[tokio::test]
 async fn task_management_tools_use_existing_app_server_operations() -> color_eyre::Result<()> {
-    let (codex_home, server, source, target) = test_server(json!({})).await?;
+    let (codex_home, server, source, target) = test_server(json!({}), /*older_messages*/ 0).await?;
 
     let listed = response_json(call_tool(&server, &source, "list_threads", json!({})).await);
+    assert_eq!(listed["schemaVersion"], 5);
+    assert_eq!(
+        listed["navigationHint"],
+        "Link to a returned thread in Markdown as [title](codex://threads/<id>); clicking opens it in the TUI."
+    );
     assert!(
         listed["threads"]
             .as_array()
@@ -534,6 +631,7 @@ async fn task_management_tools_use_existing_app_server_operations() -> color_eyr
     );
     let mut listed_archived = Vec::new();
     loop {
+        assert_eq!(archived_threads["navigationHint"], listed["navigationHint"]);
         listed_archived.extend(
             archived_threads["threads"]
                 .as_array()
@@ -575,7 +673,8 @@ async fn task_management_tools_use_existing_app_server_operations() -> color_eyr
 
 #[tokio::test]
 async fn wait_threads_preserves_snapshots_and_rejects_self_wait() -> color_eyre::Result<()> {
-    let (_codex_home, server, source, target) = test_server(json!({})).await?;
+    let (_codex_home, server, source, target) =
+        test_server(json!({}), /*older_messages*/ 0).await?;
 
     let snapshot = response_json(
         call_tool(
@@ -667,7 +766,8 @@ async fn wait_threads_preserves_snapshots_and_rejects_self_wait() -> color_eyre:
 
 #[tokio::test]
 async fn task_creation_and_followup_start_background_turns() -> color_eyre::Result<()> {
-    let (_codex_home, server, source, target) = test_server(json!({})).await?;
+    let (codex_home, mut server, source, target) =
+        test_server(json!({}), /*older_messages*/ 0).await?;
 
     for (tool, arguments) in [
         (
@@ -713,6 +813,37 @@ async fn task_creation_and_followup_start_background_turns() -> color_eyre::Resu
     .await;
     assert!(!rejected.success);
 
+    let inherited_sandbox = codex_app_server_protocol::SandboxPolicy::WorkspaceWrite {
+        writable_roots: vec![
+            codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(codex_home.path())?
+                .into(),
+        ],
+        network_access: true,
+        exclude_tmpdir_env_var: true,
+        exclude_slash_tmp: true,
+    };
+    request::<codex_app_server_protocol::ThreadSettingsUpdateResponse>(
+        &server.request_handle(),
+        |request_id| ClientRequest::ThreadSettingsUpdate {
+            request_id,
+            params: codex_app_server_protocol::ThreadSettingsUpdateParams {
+                thread_id: target.clone(),
+                sandbox_policy: Some(inherited_sandbox.clone()),
+                ..Default::default()
+            },
+        },
+    )
+    .await
+    .map_err(color_eyre::eyre::Error::msg)?;
+    while let Some(event) = server.next_event().await {
+        if let AppServerEvent::ServerNotification(notification) = event.event
+            && matches!(*notification, ServerNotification::ThreadSettingsUpdated(ref update)
+                if update.thread_id == target && update.thread_settings.sandbox_policy == inherited_sandbox)
+        {
+            break;
+        }
+    }
+
     let created = response_json(
         call_tool(
             &server,
@@ -723,6 +854,21 @@ async fn task_creation_and_followup_start_background_turns() -> color_eyre::Resu
         .await,
     );
     assert!(created["threadId"].is_string());
+    let child: ThreadResumeResponse = request(&server.request_handle(), |request_id| {
+        ClientRequest::ThreadResume {
+            request_id,
+            params: ThreadResumeParams {
+                thread_id: created["threadId"]
+                    .as_str()
+                    .expect("created thread id")
+                    .to_string(),
+                ..Default::default()
+            },
+        }
+    })
+    .await
+    .map_err(color_eyre::eyre::Error::msg)?;
+    assert_eq!(child.sandbox, inherited_sandbox);
 
     let continued = response_json(
         call_tool(

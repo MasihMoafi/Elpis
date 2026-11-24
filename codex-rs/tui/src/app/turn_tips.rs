@@ -44,8 +44,8 @@ pub(super) enum TipSurface {
     Completion,
 }
 
-fn is_final_answer(item: &ThreadItem) -> bool {
-    matches!(item, ThreadItem::AgentMessage { text, phase: Some(MessagePhase::FinalAnswer) | None, .. }
+fn is_final_answer(item: &ThreadItemPayload) -> bool {
+    matches!(item, ThreadItemPayload::AgentMessage { text, phase: Some(MessagePhase::FinalAnswer) | None, .. }
         if !text.trim().is_empty())
 }
 
@@ -84,14 +84,18 @@ impl TurnTips {
                 if item.thread_id == current.thread_id.to_string()
                     && item.turn_id == current.turn_id =>
             {
-                current.has_final_answer |= is_final_answer(&item.item);
+                current.has_final_answer |= is_final_answer(&item.item.payload);
             }
             ServerNotification::TurnCompleted(completed)
                 if completed.thread_id == current.thread_id.to_string()
                     && completed.turn.id == current.turn_id
                     && matches!(current.phase, Phase::Working) =>
             {
-                current.has_final_answer |= completed.turn.items.iter().any(is_final_answer);
+                current.has_final_answer |= completed
+                    .turn
+                    .items
+                    .iter()
+                    .any(|entry| is_final_answer(&entry.payload));
                 if completed.turn.status == TurnStatus::Completed
                     && current.has_final_answer
                     && !current.shown
@@ -152,7 +156,7 @@ impl App {
         if !self.local_settings.tui.show_tooltips
             || !self.chat_widget.no_modal_or_popup_active()
             || !self.chat_widget.composer_is_empty()
-            || self.chat_widget.is_external_writer_view()
+            || self.chat_widget.is_read_only_view()
             || self.chat_widget.has_queued_follow_up_messages()
             || self.backtrack.primed
             || self.backtrack.overlay_preview_active

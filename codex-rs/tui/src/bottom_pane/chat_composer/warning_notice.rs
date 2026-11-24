@@ -1,22 +1,27 @@
 //! Fit warning counts and the configured warnings shortcut into the existing passive hint row.
-//! Interactive hints retain priority; warning delivery never changes composer geometry.
+//! Interactive hints retain priority. Warnings occupy the trailing edge of the hints row.
 //! Only the count and warning label receive an amber accent; surrounding hints stay muted.
 
 use super::*;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+
+pub(super) fn before_warning(mut area: Rect, warning: Option<Rect>) -> Rect {
+    if let Some(warning) = warning {
+        area.width = warning.x.saturating_sub(area.x).saturating_sub(/*rhs*/ 2);
+    }
+    area
+}
 
 impl ChatComposer {
-    pub(crate) fn warning_notice_contains(&self, position: ratatui::layout::Position) -> bool {
-        self.footer
-            .warning_notice_area
-            .get()
-            .is_some_and(|area| area.contains(position))
+    pub(crate) fn warning_notice_area(&self) -> Option<Rect> {
+        self.footer.warning_notice_area.get()
     }
 
     pub(super) fn show_warning_notice(&self, options: ComposerRenderOptions<'_>) -> bool {
         options.warning_count > 0
             && !options.footer.is_some_and(|footer| footer.is_interactive)
             && matches!(self.popups.active, ActivePopup::None)
-            && super::super::footer::shows_passive_footer_line(&self.footer_props())
+            && self.footer_mode().shows_passive_line(self.is_task_running)
             && self.footer.hint_override.is_none()
             && !self.footer.flash_visible()
             && self.history_search.is_none()
@@ -56,6 +61,17 @@ impl ChatComposer {
     }
 
     pub(super) fn warning_notice(&self, count: usize, width: u16) -> Line<'static> {
+        let [full, compact, count] = self.warning_labels(count);
+        if full.width() <= usize::from(width) {
+            return full;
+        }
+        if compact.width() <= usize::from(width) {
+            return compact;
+        }
+        truncate_line_with_ellipsis_if_overflow(count, usize::from(width))
+    }
+
+    pub(super) fn warning_labels(&self, count: usize) -> [Line<'static>; 3] {
         let plural = if count == 1 { "" } else { "s" };
         let accent = crate::style::warning_notice_style();
         let secondary = crate::style::secondary_text_style();
@@ -72,9 +88,6 @@ impl ChatComposer {
         .style(secondary);
         full.extend(key_hint::key_label_spans(&shortcut));
         full.push_span(" to view");
-        if full.width() <= usize::from(width) {
-            return full;
-        }
         let mut compact = Line::from(vec![
             "⚠ ".into(),
             Span::styled(count.to_string(), accent),
@@ -82,13 +95,9 @@ impl ChatComposer {
         ])
         .style(secondary);
         compact.extend(key_hint::key_label_spans(&shortcut));
-        if compact.width() <= usize::from(width) {
-            return compact;
-        }
-        truncate_line_with_ellipsis_if_overflow(
-            Line::from(vec!["⚠ ".into(), Span::styled(count.to_string(), accent)]).style(secondary),
-            usize::from(width),
-        )
+        let count =
+            Line::from(vec!["⚠ ".into(), Span::styled(count.to_string(), accent)]).style(secondary);
+        [full, compact, count]
     }
 }
 

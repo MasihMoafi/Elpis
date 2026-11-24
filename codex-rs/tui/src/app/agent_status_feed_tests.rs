@@ -2,6 +2,8 @@ use super::*;
 use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::ItemCompletedNotification;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 #[test]
@@ -31,6 +33,7 @@ fn ledger_read_attempt_evidence_names_tool_and_outcome() {
                     item,
                     thread_id: "child".to_string(),
                     turn_id: "turn".to_string(),
+                    content_token_count: None,
                     completed_at_ms: 1,
                 },
             ));
@@ -47,8 +50,10 @@ fn ledger_read_attempt_evidence_names_tool_and_outcome() {
 fn agent_status_uses_bounded_buffered_activity() {
     let mut store = ThreadEventStore::new(/*capacity*/ 8);
     store.push_notification(ServerNotification::ItemCompleted(
-        ItemCompletedNotification {
-            item: ThreadItem::CommandExecution {
+        ItemCompletedNotification::new(
+            "thread-child".to_string(),
+            "turn-1".to_string(),
+            ThreadItemPayload::CommandExecution {
                 model_context: None,
                 sandbox_type: None,
                 id: "command-1".to_string(),
@@ -66,14 +71,16 @@ fn agent_status_uses_bounded_buffered_activity() {
                 exit_code: Some(0),
                 duration_ms: Some(42),
             },
-            thread_id: "thread-child".to_string(),
-            turn_id: "turn-1".to_string(),
-            completed_at_ms: 1,
-        },
+            /*started_at_ms*/ None,
+            /*completed_at_ms*/ 1,
+        ),
     ));
     store.push_notification(ServerNotification::ItemCompleted(
-        ItemCompletedNotification {
-            item: ThreadItem::AgentMessage {
+        ItemCompletedNotification::new(
+            "thread-child".to_string(),
+            "turn-1".to_string(),
+            ThreadItemPayload::AgentMessage {
+                moderation: None,
                 id: "message-1".to_string(),
                 text: "Finished checking the focused TUI tests.".to_string(),
                 phase: None,
@@ -81,10 +88,9 @@ fn agent_status_uses_bounded_buffered_activity() {
                 delivery: None,
                 questions: None,
             },
-            thread_id: "thread-child".to_string(),
-            turn_id: "turn-1".to_string(),
-            completed_at_ms: 2,
-        },
+            /*started_at_ms*/ None,
+            /*completed_at_ms*/ 2,
+        ),
     ));
 
     let preview = AgentStatusThreadPreview::from_store("/root/reviewer".to_string(), &store);
@@ -111,28 +117,30 @@ fn agent_status_uses_bounded_buffered_activity() {
 fn agent_status_uses_reasoning_summaries_only() {
     let mut store = ThreadEventStore::new(/*capacity*/ 8);
     store.push_notification(ServerNotification::ItemCompleted(
-        ItemCompletedNotification {
-            item: ThreadItem::Reasoning {
+        ItemCompletedNotification::new(
+            "thread-child".to_string(),
+            "turn-1".to_string(),
+            ThreadItemPayload::Reasoning {
                 id: "reasoning-with-summary".to_string(),
                 summary: vec!["safe summary".to_string()],
                 content: vec!["hidden raw reasoning".to_string()],
             },
-            thread_id: "thread-child".to_string(),
-            turn_id: "turn-1".to_string(),
-            completed_at_ms: 1,
-        },
+            /*started_at_ms*/ None,
+            /*completed_at_ms*/ 1,
+        ),
     ));
     store.push_notification(ServerNotification::ItemCompleted(
-        ItemCompletedNotification {
-            item: ThreadItem::Reasoning {
+        ItemCompletedNotification::new(
+            "thread-child".to_string(),
+            "turn-1".to_string(),
+            ThreadItemPayload::Reasoning {
                 id: "reasoning-without-summary".to_string(),
                 summary: Vec::new(),
                 content: vec!["raw-only reasoning".to_string()],
             },
-            thread_id: "thread-child".to_string(),
-            turn_id: "turn-1".to_string(),
-            completed_at_ms: 2,
-        },
+            /*started_at_ms*/ None,
+            /*completed_at_ms*/ 2,
+        ),
     ));
 
     let preview = AgentStatusThreadPreview::from_store("/root/reviewer".to_string(), &store);
@@ -169,16 +177,18 @@ fn latest_activity_is_the_newest_summary_and_none_when_quiet() {
     ] {
         store.push_notification(ServerNotification::ItemCompleted(
             ItemCompletedNotification {
-                item: ThreadItem::AgentMessage {
+                item: ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                    moderation: None,
                     id: id.to_string(),
                     text: text.to_string(),
                     phase: None,
                     memory_citation: None,
                     delivery: None,
                     questions: None,
-                },
+                }),
                 thread_id: "thread-child".to_string(),
                 turn_id: "turn-1".to_string(),
+                content_token_count: None,
                 completed_at_ms: 1,
             },
         ));

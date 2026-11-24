@@ -268,7 +268,7 @@ async fn external_writer_view_shows_notice_instead_of_composer() {
 async fn external_writer_fork_progress_restores_the_previous_view() {
     let (mut widget, _sender, _events, _operations) = make_chatwidget_manual_with_sender().await;
     for locked in [false, true] {
-        widget.external_writer_view = locked;
+        widget.read_only_thread = locked.then_some(ReadOnlyThread::ExternalWriter);
         let previous = render_frame(&widget, /*width*/ 60);
         widget.fork_in_progress = true;
         let frame = render_frame(&widget, /*width*/ 60);
@@ -367,7 +367,9 @@ fn active_transcript_preserves_clipped_markdown_hyperlinks() {
         size.height,
     ));
     terminal
-        .draw_with_size(size, |frame| renderable.render(area, frame.buffer_mut()))
+        .draw_with_size(size, &mut Vec::new(), |frame| {
+            renderable.render(area, frame.buffer_mut())
+        })
         .expect("render terminal frame");
     let output = String::from_utf8(terminal.backend().writer().clone()).expect("UTF-8 output");
     assert!(output.contains("\x1b]8;;https://example.com/\x07OSC8 label\x1b]8;;\x07"));
@@ -544,24 +546,103 @@ async fn removing_active_cell_invalidates_layout_before_reusing_its_identity() {
 }
 
 #[tokio::test]
-async fn external_writer_notice_offers_command_center_on_shared_servers() {
-    let endpoint = crate::resolve_remote_addr("ws://127.0.0.1:4500").unwrap();
-    for target in [
-        crate::AppServerTarget::LocalDaemon {
-            allow_embedded_fallback: true,
-            endpoint: endpoint.clone(),
-        },
-        crate::AppServerTarget::Remote { endpoint },
+async fn external_writer_notice_offers_command_center() {
+    let (mut widget, _sender, _events, _operations) = make_chatwidget_manual_with_sender().await;
+    widget.show_external_writer_thread();
+    for width in [60, 100] {
+        let rendered = crate::chatwidget::tests::render_bottom_popup(&widget, width);
+        insta::assert_snapshot!(format!("external_writer_command_center_{width}"), rendered);
+    }
+}
+
+#[tokio::test]
+async fn provider_error_preserves_draft_and_survives_thread_navigation() {
+    use codex_app_server_protocol::ModelProviderError;
+    let mut snapshots = Vec::new();
+    for (kind, error) in [
+        (
+            "",
+            ModelProviderError::ModelProviderNotConfigured {
+                model_provider: "old-provider".into(),
+            },
+        ),
+        (
+            "_mismatch",
+            ModelProviderError::ModelProviderMismatch {
+                model_provider: "custom-gateway".into(),
+                current_model_provider: "amazon-bedrock-runtime".into(),
+            },
+        ),
+        (
+            "_policy_provider",
+            ModelProviderError::ModelProviderPolicyConflict {
+                model_provider: "openai".into(),
+                required_model_provider: "amazon-bedrock".into(),
+            },
+        ),
+        (
+            "_policy_settings",
+            ModelProviderError::ModelProviderPolicyConflict {
+                model_provider: "openai".into(),
+                required_model_provider: "openai".into(),
+            },
+        ),
     ] {
         let (mut widget, _sender, _events, _operations) =
             make_chatwidget_manual_with_sender().await;
-        widget.remote_connection = crate::status::remote_connection::remote_connection_status_value(
-            &target, /*server_version*/ None,
+        widget
+            .bottom_pane
+            .set_composer_text("unsent draft".to_string(), Vec::new(), Vec::new());
+        widget.show_provider_error(error, /*rejected_message_id*/ None);
+        let state = widget
+            .capture_thread_input_state()
+            .expect("saved input state");
+        let (mut restored, _sender, _events, mut operations) =
+            make_chatwidget_manual_with_sender().await;
+        let mut gateway = restored.config.model_provider.clone();
+        gateway.name = "Team Gateway".into();
+        restored
+            .config
+            .model_providers
+            .insert("custom-gateway".into(), gateway);
+        restored.restore_thread_input_state(
+            Some(state),
+            ThreadInputStateRestoreMode {
+                preserve_in_flight_turn: false,
+            },
         );
-        widget.show_external_writer_thread();
-        for width in [60, 100] {
-            let rendered = crate::chatwidget::tests::render_bottom_popup(&widget, width);
-            insta::assert_snapshot!(format!("external_writer_command_center_{width}"), rendered);
+        assert!(restored.has_provider_error());
+        restored.thread_id = Some(ThreadId::from_u128(/*value*/ 1));
+        restored.current_rollout_path = Some(PathBuf::from("/tmp/saved-conversation.jsonl"));
+        restored.handle_paste("ignored paste".into());
+        restored.handle_key_event(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE));
+        restored.handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert_eq!(restored.bottom_pane.composer_text(), "unsent draft");
+        assert!(operations.try_recv().is_err());
+        // Cover each message once; mismatch also exercises wrapping and the remote host note.
+        for (location, target, width) in [
+            ("local", crate::AppServerTarget::Embedded, 80),
+            ("local", crate::AppServerTarget::Embedded, 40),
+            (
+                "remote",
+                crate::AppServerTarget::Remote {
+                    endpoint: crate::resolve_remote_addr("ws://devbox.example.com:4500").unwrap(),
+                },
+                80,
+            ),
+        ] {
+            if kind != "_mismatch" && (location == "remote" || width == 40) {
+                continue;
+            }
+            restored.remote_connection =
+                crate::status::remote_connection::remote_connection_status_value(
+                    &target, /*server_version*/ None,
+                );
+            let rendered = crate::chatwidget::tests::render_bottom_popup(&restored, width);
+            snapshots.push(format!(
+                "provider_error{kind}_{location}_{width}\n{rendered}"
+            ));
         }
     }
+    insta::assert_snapshot!("provider_errors", snapshots.join("\n\n"));
 }

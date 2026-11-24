@@ -1,8 +1,8 @@
 # Native Windows MXC sandbox
 
 This crate routes a command through the current Codex executable and directly
-into Microsoft's MXC `BaseContainerRunner`. It requires a working Windows
-process security environment (PSEC). It never invokes MXC's AppContainer
+into Microsoft's public MXC V1 SDK with inherited stdio. It requires a working
+Windows process security environment (PSEC). It never invokes MXC's AppContainer
 dispatcher, edits host ACLs, creates sandbox users, runs setup, or requests
 elevation. The existing Codex Windows sandboxes remain separate backends.
 
@@ -10,11 +10,10 @@ Windows executors record `codex.windows_mxc.available` once per process with an
 `available=true|false` tag. This measures runtime availability independently of
 selection. Unsupported Windows executors reject MXC requests before execution.
 
-`is_available()` uses MXC's cached create/close probe, rather than an OS build
-number or the SDK's broad `platform_support()` result. The latter also reports
-older AppContainer backends as supported. A requested deny path additionally
-requires the native `PSE_SUPPORT_FS_DENY` capability; otherwise the command
-fails before launch.
+`is_available()` caches the public SDK's ProcessContainer probe. This checks
+API presence and capabilities without creating a security environment; creation
+and request-specific failures remain launch errors. The SDK rejects requested
+deny paths when the host cannot enforce them.
 
 The wrapper inherits the command's pipes or ConPTY console. MXC creates its
 child suspended, assigns a kill-on-close job before resuming it, and retains
@@ -25,6 +24,28 @@ clients and servers, including the dedicated proxy listeners, while denying
 direct non-loopback egress and general inbound network access.
 Win32k calls and desktop handles remain available for PowerShell startup;
 clipboard, input-injection, and desktop/system-control restrictions remain.
+
+Filesystem conflicts in the emitted policy are enforced by BaseContainer:
+equivalent path spellings and symlink/junction aliases use the strictest access
+(`deny` > read-only > read-write), while more-specific paths override ancestor
+grants. See the [BaseContainer path-precedence rules](https://github.com/microsoft/mxc/blob/main/docs/schema.md#overlapping-paths-for-windows-basecontainer).
+
+Do not call MXC's shared `normalize_object_conflicts` before or after volume
+expansion. Its identity preflight is used by mount-based backends and can reject
+an otherwise usable Windows policy when a network share does not support
+`FileIdInfo`, or a protected deny path cannot be opened for metadata. Codex sends
+explicit path grants without that object-identity lookup. The public SDK does
+perform metadata checks for missing paths: immediate failures produce warnings,
+while a check that exceeds five seconds rejects startup, including on a slow or
+unreachable network share. We intentionally accept two alias limitations:
+
+- Hard-link names retain independent path permissions. An allowed name can read
+  or modify the same file as a denied or read-only name; we do not tighten all
+  names to an object-wide restriction.
+- Volume-root expansion uses each root's declared access without reconciling
+  aliases first. For example, a writable `V:\` plus a read-only junction to
+  `V:\` can produce a writable `V:\projects` grant. That generated, more-specific
+  grant permits writes through either name despite the read-only root alias.
 
 ## Selection and rollout
 
@@ -44,6 +65,13 @@ executor's Codex executable as the native SDK helper. It carries one typed
 request: the canonical `PermissionProfile`, policy cwd, proxy context, and exact
 argv. The helper inherits command cwd, environment, and stdio from the shared
 process path; policy cwd can differ from command cwd.
+
+Windows MXC reserves `SystemDrive` and `LOCALAPPDATA` for the host's validated,
+nonempty values in both wrapper and explicit child environments. Caller
+overrides are replaced case-insensitively; unavailable host values fail before
+launch with a diagnostic naming the variable.
+Windows may virtualize the child's `LOCALAPPDATA` into a sandbox directory
+beneath the host profile.
 
 The request uses launcher-only environment chunks to leave Windows' command-line
 budget to the workload. Payloads are limited to 1,000,000 UTF-8 bytes and chunks
@@ -65,13 +93,19 @@ to 4096 bytes; the helper removes them before native process creation. Use
   the proxy's additional private-network destination checks. Proxy domain rules
   still apply to proxied traffic; direct DNS remains denied. This default also
   applies to remote Windows executors and does not enable disabled networking.
-- Windows volume-root grants do not recurse. The adapter grants the root and
-  its immediate children; directories added or newly mounted during a running
-  command are not implicitly granted.
+- Read-only volume-root grants recurse without enumerating children. Writable
+  volume-root grants do not recurse, so the adapter grants the root and its
+  immediate children; new children added during a running command are not
+  implicitly writable.
+- Default read access excludes network shares unrelated to the policy or command
+  cwd. Explicit read/write grants remain supported. Unrelated shares are not
+  probed for object identity or enumerated for implicit reads.
 - The native API represents paths and environment values as Unicode strings.
   Non-Unicode values fail instead of undergoing lossy conversion.
-- An explicitly empty child environment is rejected: the SDK replaces an empty
-  environment list with profile defaults and has no explicit-empty option.
+- An empty child environment still uses the Windows user-profile defaults.
+  Supplying only two keys would turn it into an incomplete explicit environment,
+  so the wrapper's bootstrap values are removed before the SDK selects defaults.
+  Nonempty environments remain explicit except for these two host-owned values.
 - The upstream runner terminates remaining descendants when the foreground
   process exits, as well as on cancellation. Both existing Windows backends
   preserve descendants after normal exit, so detached servers currently lose

@@ -4,6 +4,7 @@
 use super::capture::CapturedSnapshot;
 use codex_protocol::config_types::ShellEnvironmentPolicy;
 use codex_protocol::shell_environment::create_env_from_vars;
+use std::borrow::Cow;
 
 impl CapturedSnapshot<'_> {
     /// Render native functions, options, and aliases; the executor restores environment separately.
@@ -45,7 +46,7 @@ pub(super) enum ValuePart {
 pub(super) enum Export<'a> {
     Captured(&'a str),
     Assignment {
-        declaration: &'a str,
+        declaration: Cow<'a, str>,
         value: Value,
     },
     Array {

@@ -11,6 +11,7 @@ use codex_features::FEATURES;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::openai_models::ReasoningEffort;
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -62,6 +63,8 @@ pub enum ConfigEdit {
     SetSkillConfig { path: PathBuf, enabled: bool },
     /// Set or clear a skill config entry under `[[skills.config]]` by name.
     SetSkillConfigByName { name: String, enabled: bool },
+    /// Enable or disable TUI notifications without replacing custom event filters.
+    SetTuiNotificationsEnabled { enabled: bool },
     /// Set trust_level under `[projects."<path>"]`,
     /// migrating inline tables to explicit tables.
     SetProjectTrustLevel { path: PathBuf, level: TrustLevel },
@@ -311,19 +314,39 @@ impl ConfigDocument {
             ConfigEdit::SetSkillConfigByName { name, enabled } => {
                 Ok(self.set_skill_config(SkillConfigSelector::Name(name.clone()), *enabled))
             }
+            ConfigEdit::SetTuiNotificationsEnabled { enabled } => {
+                let segments = ["tui", "notifications"];
+                let custom_filters = segments
+                    .iter()
+                    .try_fold(self.doc.as_item(), |item, segment| {
+                        item.as_table_like()?.get(segment)
+                    })
+                    .and_then(TomlItem::as_array)
+                    .is_some();
+                if custom_filters {
+                    anyhow::bail!(
+                        "Event-specific notifications are configured. Edit those filters in the config file."
+                    );
+                }
+                Ok(self.write_value(&segments, value(*enabled)))
+            }
             ConfigEdit::SetPath { segments, value } => {
+                let mut path = Cow::Borrowed(segments.as_slice());
                 if is_structured_feature_path(segments) && value.as_bool().is_some() {
                     let mut existing = Some(self.doc.as_item());
                     for segment in segments {
                         existing = existing.and_then(|item| item.as_table_like()?.get(segment));
                     }
                     if existing.and_then(TomlItem::as_table_like).is_some() {
-                        let mut enabled_segments = segments.clone();
-                        enabled_segments.push("enabled".to_string());
-                        return Ok(self.insert(&enabled_segments, value.clone()));
+                        path.to_mut().push("enabled".to_string());
                     }
                 }
-                Ok(self.insert(segments, value.clone()))
+                anyhow::ensure!(
+                    self.insert(&path, value.clone()),
+                    "could not set config path `{}`",
+                    segments.join(".")
+                );
+                Ok(true)
             }
             ConfigEdit::ClearPath { segments } => {
                 let preserves_broker_settings = is_structured_feature_path(segments)

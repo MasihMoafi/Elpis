@@ -11,6 +11,18 @@ during a Codex session. It records raw runtime evidence into a local bundle on
 disk, then replays that bundle into a semantic graph that a debugger or UI can
 inspect.
 
+**Same-binary replay only.** The exact Codex executable that recorded a bundle
+must reduce it. Matching release or schema versions do not make a different
+binary compatible. The raw event log and payload formats are temporary
+implementation details and can change with the writer and reducer.
+
+Viewers and other consumers read `state.json`, the reduced trace API. They can
+use `manifest.json` for bundle discovery and identity, such as selecting a trace
+by `root_thread_id`. Payload references in the reduced state let consumers
+inspect the original evidence. Every change to the `state.json` schema bumps
+`REDUCED_TRACE_SCHEMA_VERSION`. Consider the impact on existing consumers.
+Breaking changes are allowed.
+
 The key design choice is: **observe first, interpret later**.
 
 Hot-path Codex code does not try to build the final graph while the session is
@@ -55,7 +67,7 @@ flowchart TD
     subgraph Bundle["trace bundle"]
         Manifest["manifest.json\ntrace_id, rollout_id, root_thread_id"]
         Events["trace.jsonl\nordered raw event spine"]
-        Payloads["payloads/*.json\nlarge raw evidence"]
+        Payloads["payloads/*.zst\nlarge raw evidence"]
     end
 
     Reducer["replay_bundle\ndeterministic offline reducer"]
@@ -96,10 +108,10 @@ one from `CODEX_ROLLOUT_TRACE_ROOT`; fresh spawned child threads derive their
 own context from the parent's context so the whole rollout tree shares one
 writer. Disabled contexts accept the same calls and record nothing.
 
-Trace startup and writes are best-effort. Rollout tracing must never make a
-Codex session fail just because diagnostic recording failed. Core emits raw
-observations; this crate owns the bundle schema, trace-context APIs, writer, and
-reducer.
+When tracing is enabled, a thread can start or resume only if its recorder
+initializes successfully. A later write failure stops recording. Partial
+bundles remain available for replay. The reduced `recording_status` is `unclosed` until the closing record arrives. It then becomes
+`complete` or `closed_with_partial_payloads` according to the referenced captures.
 
 ## Bundle Layout
 
@@ -107,22 +119,91 @@ A trace bundle contains:
 
 - `manifest.json`: trace identity and bundle metadata.
 - `trace.jsonl`: append-only raw events ordered by writer-assigned `seq`.
-- `payloads/*.json`: raw requests, responses, tool inputs/results, runtime
+- `payloads/*.zst`: raw requests, responses, tool inputs/results, runtime
   events, terminal output, compaction data, and protocol snapshots.
-- `state.json`: optional reducer output written by `codex debug trace-reduce`.
+- `state.json`: reduced trace for consumers, written by `codex debug trace-reduce`.
+
+Schema v3 indexes numbered Zstandard shards in `state.json` under `raw_payloads`.
+Prepared prompts share exact input items. In tool results and tool runtime events, the writer
+can share any string value whose JSON encoding is at least 64 KiB, including quotes and escapes.
+Each occurrence keeps its own parent record. Within one bundle, identical encoded values reuse
+one child reference. The writer hashes the complete value before applying capture limits.
+
+For example, two results might carry the same large string under unrelated keys:
+
+```text
+result A: {"preview": <large string>, "source": "raw_payload:7"}
+result B: {"attachments": [<same large string>]}
+
+A's literal fragments   {"preview":  |  , "source": "raw_payload:7"}
+A's parts                           [child #7]
+B's literal fragments   {"attachments": [  |  ]}
+B's parts                                 [child #7]
+```
+
+Only entries in the recorder's ordered `parts` are references. The reader inserts each child's
+bytes between adjacent fragments. Once it reaches a record with no parts, it returns its bytes
+verbatim. The literal `"raw_payload:7"` survives even when it names a real child in that bundle.
+
+`PayloadReader::read` reconstructs the original bytes, including whitespace and escapes, or
+reports an incomplete capture. The reducer can also read surviving JSON with a separate map of
+missing slots. This preserves the difference between a literal `null` and a value omitted by
+the recorder. A truncated record has original and retained lengths and can be inspected with
+`read_prefix`.
+
+Configure the capture limits in `config.toml`. Both values are in bytes.
+
+```toml
+[rollout_trace]
+max_payload_bytes = 67108864  # Default: 64 MiB per new body or separated value
+max_bytes = 268435456         # Default: 256 MiB per bundle
+```
+
+The bundle budget covers the manifest, event log, layouts, and compressed payloads.
+Space is reserved for later events carrying explicit omissions.
+If even an event cannot fit, the log ends at the preceding complete event.
+The optional reduced-state cache is generated separately. Reduce a bundle with its recording binary.
+
+For an inference call, `raw_request_payload_id` resolves to the outgoing HTTP
+body or WebSocket message, including its `previous_response_id` and incremental
+`input`. `prepared_prompt_payload_id` resolves to Core's input to formatting,
+including base instructions and their provenance, ordered history, tools and
+output settings. For a continuation from an unrecorded WebSocket warmup, the
+start event also links the full formatted input so the reducer can resolve the
+missing history.
+
+One worker per bundle records events in submission order. For inference starts,
+the transport shares its encoded request and Core shares the prepared prompt.
+The worker serializes the prompt, compresses both bodies, and writes them before
+publishing the start event. Remote compaction uses the same worker to snapshot
+the model, instructions, input history, and parallel tool-call setting. Up to
+eight jobs can wait for the worker. Use `TraceWriter::flush` to read a live
+snapshot. Shutdown waits for the worker to finish accepted jobs, seal the shards,
+and write the closing marker. A recording failure prevents the marker.
+
+The writer keeps one active shard for separated content values and one for all other
+records. Alternating between a value and its parent layout keeps both compression windows open.
+Each shard is one Zstandard frame (level 3, 8 MiB window, checksum enabled).
+Each record contains a little-endian 16-bit ID length, a little-endian 64-bit
+retained body length, the UTF-8 ID, then the retained bytes. The writer flushes a record
+before publishing its reference. Each stream rotates before its next record would
+exceed 8 MiB uncompressed. An oversized record occupies one shard. Near the
+bundle byte limit, a record can be admitted as a separately compressed frame.
+A live bundle can be reduced with both current frames open. The writer seals
+both before publishing `RecordingCompleted`.
 
 `trace_id` identifies this diagnostic artifact. `rollout_id` identifies the
 Codex rollout/session being observed. Keeping those separate lets us reason about
 the stored trace without confusing it with the product-level session identity.
 
-To reduce a bundle:
+Run the recording executable to reduce its bundle:
 
 ```bash
 codex debug trace-reduce <trace-bundle>
 ```
 
-By default this writes `<trace-bundle>/state.json`. Rust callers can also call
-`codex_rollout_trace::replay_bundle` directly.
+By default this writes `<trace-bundle>/state.json`. Within the recording binary,
+`codex_rollout_trace::replay_bundle` returns the same reduced graph in memory.
 
 ## Raw Evidence vs Reduced Graph
 
@@ -130,7 +211,7 @@ By default this writes `<trace-bundle>/state.json`. Rust callers can also call
 flowchart LR
     Model["model-visible payloads\nrequests and response output items"]
     Runtime["runtime observations\ntool dispatch, terminal output, code-mode JSON"]
-    RawPayloads["payloads/*.json\nexact evidence"]
+    RawPayloads["payloads/*.zst\nexact evidence"]
     Reducer["reducer"]
     Conversation["ConversationItem\nwhat the model saw"]
     ToolCall["ToolCall\nruntime tool boundary"]
@@ -201,7 +282,7 @@ the same raw event log, payload directory, and reduced `state.json`.
 The reducer is strict where the raw evidence should be self-consistent:
 
 - raw events are replayed in `seq` order;
-- payload files must exist before events refer to them;
+- payload records must be readable before events refer to them;
 - reduced object IDs are stable within one replay;
 - runtime events may be queued until the model-visible source or delivery target
   has been observed;

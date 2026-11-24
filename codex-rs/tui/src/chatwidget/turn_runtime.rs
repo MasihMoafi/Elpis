@@ -11,9 +11,20 @@ const LEGACY_SAFETY_ACCESS_BLOCK_PREFIX: &str =
 const BIO_POLICY_SAFETY_ACCESS_BLOCK_PREFIX: &str =
     "This content was flagged for possible biological risk.";
 
+pub(super) fn is_bio_policy_error(message: &str) -> bool {
+    is_safety_access_block_message(message)
+        || serde_json::from_str::<serde_json::Value>(message).is_ok_and(|response| {
+            response["error"]["code"].as_str() == Some("bio_policy")
+                || response["error"]["message"]
+                    .as_str()
+                    .is_some_and(is_safety_access_block_message)
+        })
+}
+
 fn is_safety_access_block_message(message: &str) -> bool {
     message.starts_with(LEGACY_SAFETY_ACCESS_BLOCK_PREFIX)
         || message.starts_with(BIO_POLICY_SAFETY_ACCESS_BLOCK_PREFIX)
+        || message.starts_with("This request has been flagged for possible biological risk.")
 }
 
 impl ChatWidget {
@@ -33,7 +44,7 @@ impl ChatWidget {
     /// both the agent turn lifecycle and MCP startup lifecycle.
     pub(super) fn update_task_running_state(&mut self) {
         self.bottom_pane.set_task_running(
-            self.turn_lifecycle.agent_turn_running
+            self.turn_lifecycle.is_running_or_admitted()
                 || self.review.is_review_mode
                 || self.mcp_startup_status.is_some(),
         );
@@ -75,6 +86,8 @@ impl ChatWidget {
     // Raw reasoning uses the same flow as summarized reasoning
 
     pub(super) fn on_task_started(&mut self) {
+        self.status_state.program_status_after_turn =
+            crate::terminal_program_status::ProgramStatus::Idle;
         self.bottom_pane.dismiss_composer_sparkle();
         self.clear_context_compaction();
         self.input_queue.user_turn_pending_start = false;
@@ -114,6 +127,16 @@ impl ChatWidget {
         self.request_redraw();
     }
 
+    pub(super) fn on_replayed_task_started(&mut self, started_at: Option<i64>) {
+        self.on_task_started();
+        if let Some(started_at) = started_at {
+            let elapsed_secs = chrono::Utc::now().timestamp().saturating_sub(started_at);
+            self.bottom_pane.reset_status_timer(Duration::from_secs(
+                elapsed_secs.try_into().unwrap_or_default(),
+            ));
+        }
+    }
+
     pub(super) fn on_task_complete(
         &mut self,
         last_agent_message: Option<String>,
@@ -130,19 +153,13 @@ impl ChatWidget {
         });
         // For desktop notifications: prefer the notification payload, fall back to
         // the item-level copy source if present, otherwise send an empty string.
+        let committed = self.transcript.committed_turn_response.take();
         let notification_response = sanitized_last_agent_message
             .as_ref()
             .filter(|message| !message.is_empty())
             .cloned()
-            .or_else(|| {
-                if self.transcript.saw_copy_source_this_turn {
-                    self.transcript.last_agent_markdown.clone()
-                } else {
-                    None
-                }
-            })
+            .or_else(|| committed.map(|(_, text)| text))
             .unwrap_or_default();
-        self.transcript.saw_copy_source_this_turn = false;
         // If a stream is currently active, finalize it.
         self.flush_answer_and_plan_streams();
         self.flush_interrupt_activity();
@@ -178,6 +195,11 @@ impl ChatWidget {
         self.clear_active_hook_cell();
         self.clear_guardian_review_status();
         self.turn_lifecycle.finish();
+        self.status_state.program_status_after_turn = if from_replay {
+            crate::terminal_program_status::ProgramStatus::Idle
+        } else {
+            crate::terminal_program_status::ProgramStatus::Done
+        };
         self.clear_safety_buffering();
         self.update_task_running_state();
         self.running_commands.clear();
@@ -295,6 +317,12 @@ impl ChatWidget {
         None
     }
 
+    pub(crate) fn has_unsent_input(&self) -> bool {
+        !self.composer_is_empty()
+            || self.pending_image_submission.is_some()
+            || self.has_queued_follow_up_messages()
+    }
+
     pub(crate) fn has_queued_follow_up_messages(&self) -> bool {
         self.input_queue.has_queued_follow_up_messages()
     }
@@ -327,6 +355,7 @@ impl ChatWidget {
         self.reasoning_header = None;
         self.clear_context_compaction();
         self.clear_safety_buffering();
+        self.safety_recourse = None;
         // Drop preview-only stream tail content on any termination path before
         // failed-cell finalization, so transient tail cells are never persisted.
         self.clear_active_stream_tail();
@@ -340,6 +369,12 @@ impl ChatWidget {
         self.input_queue.user_turn_pending_start = false;
         self.clear_guardian_review_status();
         self.turn_lifecycle.finish();
+        self.status_state.program_status_after_turn = if self.thread_usage.replaying_turn_completion
+        {
+            crate::terminal_program_status::ProgramStatus::Idle
+        } else {
+            crate::terminal_program_status::ProgramStatus::Error
+        };
         self.update_task_running_state();
         self.running_commands.clear();
         self.suppressed_exec_calls.clear();
@@ -394,15 +429,19 @@ impl ChatWidget {
         true
     }
 
-    pub(super) fn on_cyber_policy_error(&mut self) {
+    pub(super) fn cyber_policy_notice(&self) -> crate::daybreak::Notice {
         let can_enable_daybreak =
             self.daybreak_account_eligible() && !self.side_conversation_active();
-        let notice = crate::daybreak::notice_for_setting(
+        crate::daybreak::notice_for_setting(
             &self.model_catalog.models,
             self.current_model(),
             self.daybreak_enabled && can_enable_daybreak,
             can_enable_daybreak,
-        );
+        )
+    }
+
+    pub(super) fn on_cyber_policy_error(&mut self) {
+        let notice = self.cyber_policy_notice();
         self.input_queue.submit_pending_steers_after_interrupt = false;
         self.finalize_turn();
         self.add_to_history(history_cell::new_cyber_policy_error_event(notice));
@@ -519,14 +558,7 @@ impl ChatWidget {
             .is_some_and(is_app_server_cyber_policy_error)
         {
             self.on_cyber_policy_error();
-        } else if is_safety_access_block_message(&message)
-            || serde_json::from_str::<serde_json::Value>(&message).is_ok_and(|response| {
-                response["error"]["code"].as_str() == Some("bio_policy")
-                    || response["error"]["message"]
-                        .as_str()
-                        .is_some_and(is_safety_access_block_message)
-            })
-        {
+        } else if is_bio_policy_error(&message) {
             self.input_queue.submit_pending_steers_after_interrupt = false;
             self.finalize_turn();
             self.add_to_history(history_cell::new_safety_access_block_event());

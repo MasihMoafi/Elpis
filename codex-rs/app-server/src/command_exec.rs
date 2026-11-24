@@ -22,7 +22,7 @@ use codex_core::config::StartedNetworkProxy;
 use codex_core::exec::ExecExpiration;
 use codex_core::exec::ExecExpirationOutcome;
 use codex_core::exec::IO_DRAIN_TIMEOUT_MS;
-use codex_core::sandboxing::ExecRequest;
+use codex_core::sandboxing::PreparedLocalExecRequest;
 use codex_protocol::exec_output::bytes_to_string_smart;
 use codex_sandboxing::SandboxType;
 use codex_utils_pty::DEFAULT_OUTPUT_BYTES_CAP;
@@ -88,7 +88,7 @@ pub(crate) struct StartCommandExecParams {
     pub(crate) outgoing: Arc<OutgoingMessageSender>,
     pub(crate) request_id: ConnectionRequestId,
     pub(crate) process_id: Option<String>,
-    pub(crate) exec_request: ExecRequest,
+    pub(crate) exec_request: PreparedLocalExecRequest,
     pub(crate) started_network_proxy: Option<StartedNetworkProxy>,
     pub(crate) tty: bool,
     pub(crate) stream_stdin: bool,
@@ -175,7 +175,7 @@ impl CommandExecManager {
             process_id: process_id.clone(),
         };
 
-        if matches!(exec_request.sandbox, SandboxType::WindowsRestrictedToken) {
+        if exec_request.as_ref().sandbox() == SandboxType::WindowsRestrictedToken {
             if tty || stream_stdin || stream_stdout_stderr {
                 return Err(invalid_request(
                     "streaming command/exec is not supported with windows sandbox",
@@ -202,8 +202,11 @@ impl CommandExecManager {
             let sessions = Arc::clone(&self.sessions);
             tokio::spawn(async move {
                 let _started_network_proxy = started_network_proxy;
-                match codex_core::sandboxing::execute_env(exec_request, /*stdout_stream*/ None)
-                    .await
+                match codex_core::sandboxing::execute_env(
+                    exec_request.into_exec_request(),
+                    /*stdout_stream*/ None,
+                )
+                .await
                 {
                     Ok(output) => {
                         outgoing
@@ -228,19 +231,18 @@ impl CommandExecManager {
             return Ok(());
         }
 
-        let ExecRequest {
-            command,
-            cwd,
-            env,
-            expiration,
-            sandbox: _sandbox,
-            arg0,
-            ..
-        } = exec_request;
+        let command = exec_request
+            .direct_command()
+            .ok_or_else(|| invalid_request("command must not be empty"))?;
+        let program = command.program;
         // TODO(anp): Keep PathUri through the local command launch boundary.
-        let cwd = cwd
+        let cwd = command
+            .cwd
             .to_abs_path()
             .map_err(|err| invalid_request(format!("invalid command cwd: {err}")))?;
+        let args = command.args;
+        let env = command.env;
+        let arg0 = command.arg0;
 
         let stream_stdin = tty || stream_stdin;
         let stream_stdout_stderr = tty || stream_stdout_stderr;
@@ -251,9 +253,6 @@ impl CommandExecManager {
         };
 
         let sessions = Arc::clone(&self.sessions);
-        let (program, args) = command
-            .split_first()
-            .ok_or_else(|| invalid_request("command must not be empty"))?;
         {
             let mut sessions = self.sessions.lock().await;
             if sessions.contains_key(&process_key) {
@@ -272,22 +271,21 @@ impl CommandExecManager {
                 program,
                 args,
                 cwd.as_path(),
-                &env,
-                &arg0,
+                env,
+                arg0,
                 size.unwrap_or_default(),
                 codex_utils_pty::ChildFds::Inherited(&[]),
             )
             .await
         } else if stream_stdin {
-            codex_utils_pty::spawn_pipe_process(program, args, cwd.as_path(), &env, &arg0, &[])
-                .await
+            codex_utils_pty::spawn_pipe_process(program, args, cwd.as_path(), env, arg0, &[]).await
         } else {
             codex_utils_pty::spawn_pipe_process_no_stdin(
                 program,
                 args,
                 cwd.as_path(),
-                &env,
-                &arg0,
+                env,
+                arg0,
                 &[],
             )
             .await
@@ -309,7 +307,7 @@ impl CommandExecManager {
                 control_rx,
                 stream_stdin,
                 stream_stdout_stderr,
-                expiration,
+                expiration: exec_request.into_exec_request().expiration,
                 output_bytes_cap,
             })
             .await;
@@ -689,9 +687,17 @@ mod tests {
     use std::collections::HashMap;
 
     use crate::error_code::INVALID_REQUEST_ERROR_CODE;
+    use codex_core::exec::ExecCapturePolicy;
     use codex_protocol::config_types::WindowsSandboxLevel;
     use codex_protocol::models::PermissionProfile;
+    use codex_sandboxing::SandboxCommand;
+    use codex_sandboxing::SandboxExecutables;
+    use codex_sandboxing::SandboxManager;
+    use codex_sandboxing::SandboxNetwork;
+    use codex_sandboxing::SandboxSelection;
+    use codex_sandboxing::SandboxTransformRequest;
     use codex_utils_absolute_path::AbsolutePathBuf;
+    use codex_utils_path_uri::PathUri;
     use pretty_assertions::assert_eq;
     #[cfg(not(target_os = "windows"))]
     use tokio::time::Duration;
@@ -706,22 +712,42 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     use crate::outgoing_message::OutgoingMessage;
 
-    fn windows_sandbox_exec_request() -> ExecRequest {
-        let cwd = AbsolutePathBuf::current_dir().expect("current dir");
-        ExecRequest::new(
-            vec!["cmd".to_string()],
-            cwd.clone(),
-            HashMap::new(),
-            /*network*/ None,
-            /*network_environment_id*/ None,
-            ExecExpiration::DefaultTimeout,
-            codex_core::exec::ExecCapturePolicy::ShellTool,
-            SandboxType::WindowsRestrictedToken,
-            vec![cwd],
-            WindowsSandboxLevel::Disabled,
-            PermissionProfile::read_only(),
-            /*arg0*/ None,
+    async fn prepared_exec_request(
+        sandbox: SandboxType,
+        program: &str,
+        args: &[&str],
+        expiration: ExecExpiration,
+    ) -> PreparedLocalExecRequest {
+        let cwd = PathUri::from(AbsolutePathBuf::current_dir().expect("current dir"));
+        let roots = std::slice::from_ref(&cwd);
+        let wrapped = SandboxManager::new()
+            .transform(SandboxTransformRequest {
+                command: SandboxCommand {
+                    program: program.into(),
+                    args: args.iter().copied().map(str::to_owned).collect(),
+                    cwd: cwd.clone(),
+                    env: HashMap::new(),
+                    managed_network: None,
+                    additional_permissions: None,
+                },
+                permissions: &PermissionProfile::read_only(),
+                workspace_roots: Some(roots),
+                selection: SandboxSelection::Explicit(sandbox),
+                network: SandboxNetwork::default(),
+                sandbox_policy_cwd: &cwd,
+                executables: SandboxExecutables::Launcher(None),
+                use_legacy_landlock: false,
+                windows_sandbox_level: WindowsSandboxLevel::RestrictedToken,
+            })
+            .expect("wrap command");
+        PreparedLocalExecRequest::from_wrapped(
+            wrapped,
+            expiration,
+            ExecCapturePolicy::ShellTool,
+            roots,
         )
+        .await
+        .expect("prepare local command")
     }
 
     #[tokio::test]
@@ -739,7 +765,13 @@ mod tests {
                     request_id: codex_app_server_protocol::RequestId::Integer(42),
                 },
                 process_id: Some("proc-42".to_string()),
-                exec_request: windows_sandbox_exec_request(),
+                exec_request: prepared_exec_request(
+                    SandboxType::WindowsRestrictedToken,
+                    "cmd",
+                    &[],
+                    ExecExpiration::DefaultTimeout,
+                )
+                .await,
                 started_network_proxy: None,
                 tty: false,
                 stream_stdin: false,
@@ -775,7 +807,13 @@ mod tests {
                 )),
                 request_id: request_id.clone(),
                 process_id: Some("proc-99".to_string()),
-                exec_request: windows_sandbox_exec_request(),
+                exec_request: prepared_exec_request(
+                    SandboxType::WindowsRestrictedToken,
+                    "cmd",
+                    &[],
+                    ExecExpiration::DefaultTimeout,
+                )
+                .await,
                 started_network_proxy: None,
                 tty: false,
                 stream_stdin: false,
@@ -815,7 +853,6 @@ mod tests {
             connection_id: ConnectionId(8),
             request_id: codex_app_server_protocol::RequestId::Integer(100),
         };
-        let cwd = AbsolutePathBuf::current_dir().expect("current dir");
 
         manager
             .start(StartCommandExecParams {
@@ -825,20 +862,13 @@ mod tests {
                 )),
                 request_id: request_id.clone(),
                 process_id: Some("proc-100".to_string()),
-                exec_request: ExecRequest::new(
-                    vec!["sh".to_string(), "-lc".to_string(), "sleep 30".to_string()],
-                    cwd.clone(),
-                    HashMap::new(),
-                    /*network*/ None,
-                    /*network_environment_id*/ None,
-                    ExecExpiration::Cancellation(CancellationToken::new()),
-                    codex_core::exec::ExecCapturePolicy::ShellTool,
+                exec_request: prepared_exec_request(
                     SandboxType::None,
-                    vec![cwd.clone()],
-                    WindowsSandboxLevel::Disabled,
-                    PermissionProfile::read_only(),
-                    /*arg0*/ None,
-                ),
+                    "sh",
+                    &["-lc", "sleep 30"],
+                    ExecExpiration::Cancellation(CancellationToken::new()),
+                )
+                .await,
                 started_network_proxy: None,
                 tty: false,
                 stream_stdin: false,
@@ -905,7 +935,6 @@ mod tests {
         };
         let cancellation = CancellationToken::new();
         let cancel = cancellation.clone();
-        let cwd = AbsolutePathBuf::current_dir().expect("current dir");
 
         manager
             .start(StartCommandExecParams {
@@ -915,23 +944,16 @@ mod tests {
                 )),
                 request_id: request_id.clone(),
                 process_id: Some("proc-101".to_string()),
-                exec_request: ExecRequest::new(
-                    vec!["sh".to_string(), "-lc".to_string(), "sleep 30".to_string()],
-                    cwd.clone(),
-                    HashMap::new(),
-                    /*network*/ None,
-                    /*network_environment_id*/ None,
+                exec_request: prepared_exec_request(
+                    SandboxType::None,
+                    "sh",
+                    &["-lc", "sleep 30"],
                     ExecExpiration::TimeoutOrCancellation {
                         timeout: Duration::from_secs(30),
                         cancellation,
                     },
-                    codex_core::exec::ExecCapturePolicy::ShellTool,
-                    SandboxType::None,
-                    vec![cwd],
-                    WindowsSandboxLevel::Disabled,
-                    PermissionProfile::read_only(),
-                    /*arg0*/ None,
-                ),
+                )
+                .await,
                 started_network_proxy: None,
                 tty: false,
                 stream_stdin: false,

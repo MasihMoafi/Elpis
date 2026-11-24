@@ -5,6 +5,8 @@ use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::ThreadStartInput;
 use codex_features::Feature;
+use codex_protocol::capabilities::CapabilityRootLocation;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AgentStatus;
@@ -15,6 +17,7 @@ use codex_protocol::protocol::McpStartupUpdateEvent;
 use codex_protocol::protocol::RawResponseItemEvent;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
+use codex_protocol::protocol::TurnEnvironmentSelection;
 use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
@@ -74,6 +77,7 @@ async fn forward_events_filters_private_events_before_blocked_send_is_cancelled(
     for msg in [
         EventMsg::McpStartupUpdate(McpStartupUpdateEvent {
             server: "pending".to_string(),
+            environment_id: None,
             status: McpStartupStatus::Starting,
         }),
         EventMsg::McpStartupComplete(McpStartupCompleteEvent::default()),
@@ -88,6 +92,7 @@ async fn forward_events_filters_private_events_before_blocked_send_is_cancelled(
     }
     let visible_msg = EventMsg::RawResponseItem(RawResponseItemEvent {
         item: ResponseItem::CustomToolCall {
+            encrypted_content: None,
             id: None,
             status: None,
             call_id: "call-1".to_string(),
@@ -123,11 +128,13 @@ async fn forward_events_filters_private_events_before_blocked_send_is_cancelled(
         ops.push(sub.op);
     }
     assert!(
-        ops.iter().any(|op| matches!(op, Op::Interrupt)),
+        ops.iter()
+            .any(|op| matches!(op.as_protocol(), Some(Op::Interrupt))),
         "expected Interrupt op after cancellation"
     );
     assert!(
-        ops.iter().any(|op| matches!(op, Op::Shutdown)),
+        ops.iter()
+            .any(|op| matches!(op.as_protocol(), Some(Op::Shutdown))),
         "expected Shutdown op after cancellation"
     );
 }
@@ -149,7 +156,7 @@ async fn forward_ops_preserves_submission_trace_context() {
 
     let submission = Submission {
         id: "sub-1".to_string(),
-        op: Op::Interrupt,
+        op: Op::Interrupt.into(),
         turn_extension_init: None,
         trace: Some(codex_protocol::protocol::W3cTraceContext {
             traceparent: Some(
@@ -160,8 +167,9 @@ async fn forward_ops_preserves_submission_trace_context() {
         parent_turn_id: Some("parent-turn".to_string()),
         root_turn_id: Some("root-turn".to_string()),
         residency_guard: None,
+        message_delivery: None,
     };
-    tx_ops.send(submission).await.unwrap();
+    tx_ops.send(Box::new(submission)).await.unwrap();
     drop(tx_ops);
 
     let forwarded = timeout(Duration::from_secs(1), rx_sub.recv())
@@ -169,7 +177,7 @@ async fn forward_ops_preserves_submission_trace_context() {
         .expect("forward_ops hung")
         .expect("forwarded submission missing");
     assert_eq!("sub-1", forwarded.id);
-    assert!(matches!(forwarded.op, Op::Interrupt));
+    assert!(matches!(forwarded.op.as_protocol(), Some(Op::Interrupt)));
     assert_eq!(
         forwarded.trace,
         Some(codex_protocol::protocol::W3cTraceContext {
@@ -258,11 +266,7 @@ async fn delegate_start_analytics_honors_child_opt_out_with_enabled_parent() {
         .services
         .analytics_events_client = client.clone();
     parent_session
-        .set_app_server_client_info(
-            Some("codex-test".to_string()),
-            Some("1.0.0".to_string()),
-            /*mcp_elicitations_auto_deny*/ false,
-        )
+        .set_app_server_client_info(Some("codex-test".to_string()), Some("1.0.0".to_string()))
         .await
         .expect("set parent client metadata");
 
@@ -314,8 +318,11 @@ async fn delegate_start_analytics_honors_child_opt_out_with_enabled_parent() {
 
 #[tokio::test]
 async fn delegate_isolation_does_not_depend_on_attribution() {
-    let (mut parent_session, parent_ctx, _rx_events) =
+    let (mut parent_session, mut parent_ctx, _rx_events) =
         crate::session::tests::make_session_and_context_with_rx().await;
+    Arc::get_mut(&mut parent_ctx)
+        .expect("parent turn should be uniquely owned")
+        .disabled_plugin_ids = vec!["parent-root".to_string()];
     let thread_starts = Arc::new(AtomicUsize::new(0));
     let mut extensions = ExtensionRegistryBuilder::<Config>::new();
     extensions
@@ -324,6 +331,28 @@ async fn delegate_isolation_does_not_depend_on_attribution() {
         .expect("parent session should be uniquely owned")
         .services
         .extensions = Arc::new(extensions.build());
+
+    let request = parent_ctx
+        .initial_environments
+        .inheritable_requests()
+        .into_iter()
+        .next()
+        .expect("parent environment");
+    let root = SelectedCapabilityRoot {
+        id: "parent-root".to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: request.environment_id.clone(),
+            path: request.cwd.clone(),
+        },
+    };
+    parent_session
+        .services
+        .turn_environments
+        .update_selections(&[TurnEnvironmentSelection::new(
+            request,
+            std::slice::from_ref(&root),
+        )]);
+    let parent_environments = parent_session.services.turn_environments.snapshot().await;
 
     for (subagent_source, isolation, expected_thread_starts, expected_thread_source) in [
         (
@@ -353,7 +382,7 @@ async fn delegate_isolation_does_not_depend_on_attribution() {
             Arc::clone(&parent_session.services.models_manager),
             Arc::clone(&parent_session),
             Arc::clone(&parent_ctx),
-            parent_ctx.initial_environments.clone(),
+            parent_environments.clone(),
             CancellationToken::new(),
             subagent_source,
             isolation,
@@ -376,6 +405,28 @@ async fn delegate_isolation_does_not_depend_on_attribution() {
         assert_eq!(
             session.thread_config_snapshot().await.thread_source,
             Some(expected_thread_source)
+        );
+        let expected_roots = match isolation {
+            codex_extension_api::SessionIsolation::Inherit => vec![root.clone()],
+            codex_extension_api::SessionIsolation::Isolated => Vec::new(),
+        };
+        assert_eq!(session.services.selected_capability_roots, expected_roots);
+        let expected_disabled_plugins = match isolation {
+            codex_extension_api::SessionIsolation::Inherit => vec!["parent-root".to_string()],
+            codex_extension_api::SessionIsolation::Isolated => Vec::new(),
+        };
+        assert_eq!(
+            session.thread_settings_snapshot().await.disabled_plugin_ids,
+            expected_disabled_plugins,
+        );
+        assert_eq!(
+            session
+                .services
+                .turn_environments
+                .snapshot()
+                .await
+                .selected_capability_roots(),
+            expected_roots,
         );
         io.shutdown_and_wait()
             .await

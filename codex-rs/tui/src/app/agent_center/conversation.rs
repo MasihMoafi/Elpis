@@ -1,7 +1,7 @@
 //! Selected-thread conversation, bounded history, live activity and attention evidence.
 
 use super::*;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 
 impl AgentsOverviewView {
     pub(in crate::app::agents_overview_view) fn render_details(
@@ -90,13 +90,13 @@ impl AgentsOverviewView {
             .turns
             .iter()
             .flat_map(|turn| &turn.items)
-            .any(|item| matches!(item, ThreadItem::UserMessage { .. }));
+            .any(|item| matches!(&item.payload, ThreadItemPayload::UserMessage { .. }));
         let has_agent_message = row
             .thread
             .turns
             .iter()
             .flat_map(|turn| &turn.items)
-            .any(|item| matches!(item, ThreadItem::AgentMessage { .. }));
+            .any(|item| matches!(&item.payload, ThreadItemPayload::AgentMessage { .. }));
         let activity_preview = row
             .details
             .lines
@@ -129,9 +129,9 @@ impl AgentsOverviewView {
         let mut tools = ToolTally::default();
         for turn in &row.thread.turns {
             for item in &turn.items {
-                let shows_agent = match item {
-                    ThreadItem::UserMessage { .. } => false,
-                    ThreadItem::Reasoning { summary, .. } => {
+                let shows_agent = match &item.payload {
+                    ThreadItemPayload::UserMessage { .. } => false,
+                    ThreadItemPayload::Reasoning { summary, .. } => {
                         !activity_preview && summary.iter().any(|text| !text.trim().is_empty())
                     }
                     _ => true,
@@ -145,17 +145,17 @@ impl AgentsOverviewView {
                     agent_heading = true;
                 }
                 let is_tool = matches!(
-                    item,
-                    ThreadItem::CommandExecution { .. }
-                        | ThreadItem::McpToolCall { .. }
-                        | ThreadItem::DynamicToolCall { .. }
-                        | ThreadItem::FileChange { .. }
+                    &item.payload,
+                    ThreadItemPayload::CommandExecution { .. }
+                        | ThreadItemPayload::McpToolCall { .. }
+                        | ThreadItemPayload::DynamicToolCall { .. }
+                        | ThreadItemPayload::FileChange { .. }
                 );
                 if !is_tool {
                     tools.flush(&mut conversation);
                 }
-                match item {
-                    ThreadItem::UserMessage {
+                match &item.payload {
+                    ThreadItemPayload::UserMessage {
                         content, client_id, ..
                     } => {
                         let human_steer = client_id.as_deref().is_some_and(|id| {
@@ -200,7 +200,7 @@ impl AgentsOverviewView {
                         first_input = false;
                         agent_heading = false;
                     }
-                    ThreadItem::AgentMessage { text, .. } => {
+                    ThreadItemPayload::AgentMessage { text, .. } => {
                         conversation.extend(
                             crate::markdown_render::render_markdown_lines_with_width_and_cwd(
                                 text,
@@ -209,7 +209,7 @@ impl AgentsOverviewView {
                             ),
                         );
                     }
-                    ThreadItem::CommandExecution { status, .. } => match status {
+                    ThreadItemPayload::CommandExecution { status, .. } => match status {
                         codex_app_server_protocol::CommandExecutionStatus::InProgress => {
                             tools.running += 1
                         }
@@ -218,7 +218,7 @@ impl AgentsOverviewView {
                         }
                         _ => tools.commands += 1,
                     },
-                    ThreadItem::Reasoning { summary, .. } if !activity_preview => {
+                    ThreadItemPayload::Reasoning { summary, .. } if !activity_preview => {
                         for text in summary {
                             conversation.extend(
                                 crate::markdown_render::render_markdown_lines_with_width_and_cwd(
@@ -229,10 +229,9 @@ impl AgentsOverviewView {
                             );
                         }
                     }
-                    ThreadItem::McpToolCall { .. } | ThreadItem::DynamicToolCall { .. } => {
-                        tools.calls += 1
-                    }
-                    ThreadItem::FileChange {
+                    ThreadItemPayload::McpToolCall { .. }
+                    | ThreadItemPayload::DynamicToolCall { .. } => tools.calls += 1,
+                    ThreadItemPayload::FileChange {
                         changes, status, ..
                     } => {
                         if *status == codex_app_server_protocol::PatchApplyStatus::Completed

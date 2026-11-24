@@ -28,6 +28,7 @@ pub(crate) struct LocalSettings {
     pub(crate) transcript_mode: TranscriptMode,
     pub(crate) history: History,
     pub(crate) notices: Notice,
+    pub(crate) custom_notification_filters: bool,
     pub(crate) codex_home: AbsolutePathBuf,
     pub(crate) user_config_path: AbsolutePathBuf,
 }
@@ -43,6 +44,13 @@ impl From<&Config> for LocalSettings {
 }
 
 impl LocalSettings {
+    pub(crate) fn workspace_enabled(&self, config: &Config) -> bool {
+        self.transcript_mode.is_owned()
+            && config
+                .features
+                .enabled(codex_features::Feature::TuiWorkspace)
+    }
+
     fn with_accessibility_preferences(
         config: &Config,
         system_motion: crate::motion::MotionMode,
@@ -55,6 +63,7 @@ impl LocalSettings {
                 config.tui_alternate_screen != codex_config::types::AltScreenMode::Never,
             ),
             tui: Tui {
+                default_hosts: Default::default(),
                 notification_settings: config.tui_notifications.clone(),
                 animations: config.animations,
                 screen_reader_detection_done: None,
@@ -68,11 +77,15 @@ impl LocalSettings {
                 question_esc_back: config.tui_question_esc_back,
                 raw_output_mode: config.tui_raw_output_mode,
                 fullscreen_transcript: config.tui_fullscreen_transcript,
+                collapse_turn_details: config.tui_collapse_turn_details,
+                sidebar_width_percent: config.tui_sidebar_width_percent,
                 mouse_scroll_speed: config.tui_mouse_scroll_speed,
                 copy_on_select: config.tui_copy_on_select,
+                copy_on_select_clear_selection: config.tui_copy_on_select_clear_selection,
                 right_click_paste: config.tui_right_click_paste,
                 alternate_screen: config.tui_alternate_screen,
                 status_line: config.tui_status_line.clone(),
+                status_line_provider: config.tui_status_line_provider.clone(),
                 status_line_use_colors: config.tui_status_line_use_colors,
                 terminal_title: config.tui_terminal_title.clone(),
                 theme: config.tui_theme.clone(),
@@ -83,6 +96,7 @@ impl LocalSettings {
                 agents_overview_grouping: config.tui_agents_overview_grouping,
                 resume_cwd: config.tui_resume_cwd,
                 keymap: config.tui_keymap.clone(),
+                quick_dials: config.tui_quick_dials.clone(),
                 model_availability_nux: config.model_availability_nux.clone(),
                 terminal_resize_reflow_max_rows: match config.terminal_resize_reflow.max_rows {
                     TerminalResizeReflowMaxRows::Auto => None,
@@ -92,6 +106,7 @@ impl LocalSettings {
             },
             history: config.history.clone(),
             notices: config.notices.clone(),
+            custom_notification_filters: custom_notification_filters(&config.config_layer_stack),
             codex_home: config.codex_home.clone(),
             user_config_path: config
                 .config_layer_stack
@@ -133,6 +148,7 @@ impl LocalSettings {
             tui,
             history: config.history.clone().unwrap_or_default(),
             notices: config.notice.clone().unwrap_or_default(),
+            custom_notification_filters: custom_notification_filters(&bootstrap.config_layer_stack),
             user_config_path: bootstrap
                 .config_layer_stack
                 .get_user_config_file()
@@ -154,6 +170,15 @@ impl LocalSettings {
         system_motion: crate::motion::MotionMode,
         screen_reader_default: crate::motion::MotionMode,
     ) {
+        self.tui.default_hosts = layers
+            .effective_user_config()
+            .and_then(|config| {
+                config
+                    .get("tui")
+                    .and_then(|tui| tui.get("default_hosts"))
+                    .and_then(|value| value.clone().try_into().ok())
+            })
+            .unwrap_or_default();
         if screen_reader_default == crate::motion::MotionMode::Reduced {
             // Consult the current layers so preferences edited after startup still win.
             self.tui.animations &= layers
@@ -177,6 +202,15 @@ impl LocalSettings {
     }
 }
 
+fn custom_notification_filters(layers: &ConfigLayerStack) -> bool {
+    layers.effective_user_config().is_some_and(|config| {
+        config
+            .get("tui")
+            .and_then(|tui| tui.get("notifications"))
+            .is_some_and(toml::Value::is_array)
+    })
+}
+
 impl LocalSettings {
     /// Adopt the screen selected before first paint, including command-line restrictions.
     pub(crate) fn for_tui(config: &Config, tui: &crate::tui::Tui) -> Self {
@@ -195,6 +229,13 @@ impl LocalSettings {
         let mut settings = Self::from(config);
         settings.transcript_mode = self.transcript_mode;
         settings.tui.alternate_screen = self.tui.alternate_screen;
+        // Generic reloads do not update these values in the live UI. The config panel updates
+        // both copies when the user changes one.
+        settings.tui.animations = self.tui.animations;
+        settings.tui.auto_recap = self.tui.auto_recap;
+        settings.tui.effects.starfield = self.tui.effects.starfield;
+        settings.tui.disable_paste_burst = self.tui.disable_paste_burst;
+        settings.tui.show_tooltips = self.tui.show_tooltips;
         settings
     }
 
@@ -231,6 +272,7 @@ impl LocalSettings {
                         | TerminalName::Iterm2
                         | TerminalName::WarpTerminal
                         | TerminalName::WezTerm
+                        | TerminalName::Rex
                         | TerminalName::Alacritty
                         | TerminalName::Konsole
                         | TerminalName::GnomeTerminal

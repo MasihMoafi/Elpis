@@ -8,7 +8,7 @@ impl App {
         app_server: &mut AppServerSession,
         thread_id: ThreadId,
         enabled: bool,
-    ) {
+    ) -> bool {
         if !self
             .chat_widget
             .config_ref()
@@ -16,16 +16,16 @@ impl App {
             .enabled(Feature::CliDaybreak)
             || self.active_thread_id != Some(thread_id)
         {
-            return;
+            return false;
         }
         if enabled
-            && (!self.chat_widget.daybreak_turn_eligible(enabled)
+            && (!self.chat_widget.daybreak_account_eligible()
                 || !crate::daybreak::available(&self.chat_widget.model_catalog().models))
         {
             self.chat_widget.add_error_message(
                 "Daybreak availability could not be confirmed for this account.".into(),
             );
-            return;
+            return false;
         }
         match app_server
             .thread_read(thread_id, /*include_turns*/ false)
@@ -50,7 +50,7 @@ impl App {
                     self.chat_widget.add_error_message(format!(
                         "Failed to save Daybreak for this thread: {error}"
                     ));
-                    return;
+                    return false;
                 }
             }
             Ok(_) => {}
@@ -58,7 +58,7 @@ impl App {
                 self.chat_widget.add_error_message(format!(
                     "Failed to read the thread to save Daybreak: {error}"
                 ));
-                return;
+                return false;
             }
         }
         self.chat_widget.set_daybreak_enabled(enabled);
@@ -119,5 +119,6 @@ impl App {
             ),
             /*hint*/ None,
         );
+        true
     }
 }

@@ -10,11 +10,9 @@ use std::time::Duration;
 use anyhow::Result;
 use anyhow::anyhow;
 use chrono::DateTime;
-use chrono::Local;
 use chrono::Utc;
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_core::SleepFuture;
-use codex_core::TimeFuture;
 use codex_core::TimeProvider;
 use codex_core::TurnInputRequest;
 use codex_core::config::CurrentTimeReminderConfig;
@@ -87,7 +85,7 @@ impl Default for TestTimeProvider {
 }
 
 impl TimeProvider for TestTimeProvider {
-    fn current_time(&self, _thread_id: ThreadId) -> TimeFuture<'_> {
+    fn current_time(&self, _thread_id: ThreadId) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
         let timestamp = if let Some(script) = &self.scripted_current_time {
             script
                 .lock()
@@ -97,11 +95,9 @@ impl TimeProvider for TestTimeProvider {
         } else {
             Ok(self.current_time.fetch_add(60, Ordering::Relaxed))
         };
-        Box::pin(async move {
-            let timestamp = timestamp.map_err(anyhow::Error::msg)?;
-            Ok(DateTime::<Utc>::from_timestamp(timestamp, 0)
-                .expect("test timestamp should be valid"))
-        })
+
+        let timestamp = timestamp.map_err(anyhow::Error::msg)?;
+        Ok(DateTime::<Utc>::from_timestamp(timestamp, 0).expect("test timestamp should be valid"))
     }
 
     fn sleep(&self, _thread_id: ThreadId, duration: Duration) -> SleepFuture<'_> {
@@ -114,8 +110,8 @@ impl TimeProvider for TestTimeProvider {
 struct FailingTimeProvider;
 
 impl TimeProvider for FailingTimeProvider {
-    fn current_time(&self, _thread_id: ThreadId) -> TimeFuture<'_> {
-        Box::pin(async { Err(anyhow!("test clock unavailable")) })
+    fn current_time(&self, _thread_id: ThreadId) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
+        Err(anyhow!("test clock unavailable"))
     }
 
     fn sleep(&self, _thread_id: ThreadId, _duration: Duration) -> SleepFuture<'_> {
@@ -148,8 +144,13 @@ fn enable_current_time_reminder(
     });
 }
 
+#[test_case(true, SECOND_REMINDER; "default")]
+#[test_case(false, FIRST_REMINDER; "time_omitted")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn environment_context_uses_external_current_time_on_each_turn() -> Result<()> {
+async fn environment_context_time_follows_config(
+    include_time: bool,
+    expected_reminder: &str,
+) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -158,43 +159,71 @@ async fn environment_context_uses_external_current_time_on_each_turn() -> Result
         vec![
             sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
             sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]),
+            sse(vec![ev_response_created("resp-3"), ev_completed("resp-3")]),
         ],
     )
     .await;
     let time_provider = Arc::new(TestTimeProvider::default());
     let test = test_codex()
-        .with_config(|config| {
+        .with_config(move |config| {
             enable_current_time_reminder(config, /*interval*/ 0, CurrentTimeSource::External);
             config.include_environment_context = true;
+            config
+                .features
+                .enable(Feature::UtcEnvironmentDate)
+                .expect("enable UTC environment date");
+            if !include_time {
+                config.include_environment_context_time = false;
+            }
         })
         .with_external_time_provider(time_provider.clone())
         .build_with_auto_env(&server)
         .await?;
 
     test.submit_turn("first simulated day").await?;
+    let next_day = DateTime::parse_from_rfc3339("2026-06-18T00:00:00Z")?.timestamp();
     time_provider
         .current_time
-        .store(FIRST_TIME_UNIX_SECONDS + 86_400, Ordering::Relaxed);
+        .store(next_day, Ordering::Relaxed);
     test.submit_turn("second simulated day").await?;
+    time_provider
+        .current_time
+        .store(next_day + 3_600, Ordering::Relaxed);
+    test.submit_turn("same simulated day").await?;
 
     let requests = responses.requests();
-    assert_eq!(requests.len(), 2);
-    for (request, timestamp) in requests
+    assert_eq!(requests.len(), 3);
+    for pair in requests.windows(2) {
+        let previous = pair[0].input();
+        assert_eq!(&pair[1].input()[..previous.len()], previous.as_slice());
+    }
+    for (index, (request, timestamp)) in requests
         .iter()
-        .zip([FIRST_TIME_UNIX_SECONDS, FIRST_TIME_UNIX_SECONDS + 86_400])
+        .zip([FIRST_TIME_UNIX_SECONDS, next_day, next_day + 3_600])
+        .enumerate()
     {
         assert!(request.has_content_kinds(&["environments.environment_context"]));
-        let current_date = DateTime::<Utc>::from_timestamp(timestamp, 0)
-            .expect("test timestamp should be valid")
-            .with_timezone(&Local)
-            .format("%Y-%m-%d")
-            .to_string();
-        assert!(request.message_input_texts("user").iter().any(|text| {
-            text.contains("<environment_context>")
-                && text.contains(&format!("<current_date>{current_date}</current_date>"))
-        }));
+        let text = request.message_input_texts("user").join("\n");
+        assert_eq!(
+            text.matches("<environment_context>").count(),
+            if include_time { index.min(1) + 1 } else { 1 }
+        );
+        assert_eq!(text.contains("<current_date_utc"), include_time);
+        assert_eq!(text.contains("<timezone"), include_time);
+        if include_time {
+            let current_date = DateTime::<Utc>::from_timestamp(timestamp, 0)
+                .expect("test timestamp should be valid")
+                .format("%Y-%m-%d")
+                .to_string();
+            assert!(text.contains(&format!(
+                "<current_date_utc>{current_date}</current_date_utc>"
+            )));
+        }
     }
-    assert_eq!(current_time_reminders(&requests[0]), vec![SECOND_REMINDER]);
+    assert_eq!(
+        current_time_reminders(&requests[0]),
+        vec![expected_reminder]
+    );
 
     Ok(())
 }
@@ -738,7 +767,7 @@ async fn opted_in_clock_failures_reach_the_model_without_aborting() -> Result<()
             !request
                 .message_input_texts("user")
                 .iter()
-                .any(|text| text.contains("<current_date>"))
+                .any(|text| text.contains("<current_date"))
         );
     }
     Ok(())

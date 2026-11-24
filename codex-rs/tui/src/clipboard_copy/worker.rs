@@ -11,6 +11,7 @@ use super::CopyFormat;
 use super::CopyStatus;
 use crate::tui::FrameRequester;
 use std::cell::Cell;
+use std::cell::LazyCell;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::Weak;
@@ -96,6 +97,7 @@ pub(crate) enum PasteSource {
 }
 
 enum Request {
+    WarmTextReader,
     Copy {
         text: Arc<str>,
         format: CopyFormat,
@@ -120,7 +122,7 @@ struct PendingRead {
 
 struct Response {
     result: CopyResult,
-    terminal_text: Option<String>,
+    terminal_sequence: Option<String>,
 }
 
 #[derive(Default)]
@@ -221,26 +223,40 @@ impl ClipboardWorker {
         Ok(CopyStatus::Pending(id))
     }
 
+    pub(crate) fn warm_text_reader(&mut self, frames: FrameRequester) -> Result<(), String> {
+        self.ensure_started(frames)?;
+        self.requests
+            .as_ref()
+            .ok_or("clipboard worker stopped")?
+            .send(Request::WarmTextReader)
+            .map_err(|_| "clipboard worker stopped".to_string())
+    }
+
     fn ensure_started(&mut self, frames: FrameRequester) -> Result<(), String> {
         if self.requests.is_none() {
             self.start(
                 frames,
                 |text, format, setup| {
-                    let terminal_text = Cell::new(/*value*/ None);
+                    let terminal_sequence = Cell::new(/*value*/ None);
                     let result = super::copy_to_clipboard(
                         text,
                         format,
                         || setup.begin_delivery(),
                         |text| {
-                            // Validate the limit before accepting a deferred terminal send.
-                            super::osc52_sequence(text, std::env::var_os("TMUX").is_some())?;
-                            terminal_text.set(Some(text.to_owned()));
+                            let target = if std::env::var_os("TMUX").is_some() {
+                                super::Osc52Target::Tmux
+                            } else if std::env::var_os("STY").is_some() {
+                                super::Osc52Target::Screen
+                            } else {
+                                super::Osc52Target::Direct
+                            };
+                            terminal_sequence.set(Some(super::osc52_sequence(text, target)?));
                             Ok(())
                         },
                     );
-                    (result, terminal_text.into_inner())
+                    (result, terminal_sequence.into_inner())
                 },
-                crate::clipboard_paste::text::read,
+                crate::clipboard_paste::text::reader,
             )?;
         }
         Ok(())
@@ -295,6 +311,21 @@ impl ClipboardWorker {
         Ok(())
     }
 
+    /// The original budget follows the read until its owner consumes the result.
+    pub(crate) fn text_read_deadline(&self, request: &Arc<()>) -> Option<Instant> {
+        let request = Arc::downgrade(request);
+        self.pending_read
+            .as_ref()
+            .filter(|read| read.owner.ptr_eq(&request))
+            .map(|read| read.deadline)
+            .or_else(|| {
+                self.read_result
+                    .as_ref()
+                    .filter(|(_, owner, _)| owner.ptr_eq(&request))
+                    .map(|(deadline, _, _)| *deadline)
+            })
+    }
+
     pub(crate) fn take_text_result(&mut self) -> Option<Result<String, String>> {
         let (deadline, owner, result) = self.read_result.take()?;
         (owner.strong_count() > 0).then(|| {
@@ -340,7 +371,7 @@ impl ClipboardWorker {
         }
     }
 
-    fn start(
+    fn start<R>(
         &mut self,
         frames: FrameRequester,
         mut copy: impl FnMut(
@@ -350,19 +381,27 @@ impl ClipboardWorker {
         ) -> (Result<super::CopyOutcome, String>, Option<String>)
         + Send
         + 'static,
-        mut read: impl FnMut(Instant) -> Result<String, String> + Send + 'static,
-    ) -> Result<(), String> {
+        make_reader: impl FnOnce() -> R + Send + 'static,
+    ) -> Result<(), String>
+    where
+        R: FnMut(Instant) -> Result<String, String>,
+    {
         let (requests, incoming) = mpsc::channel::<Request>();
         let (outgoing, responses) = mpsc::channel();
         // Native calls can wait indefinitely; shutdown waits only for a bounded handoff.
         std::thread::Builder::new()
             .name("clipboard-copy".into())
             .spawn(move || {
+                let mut read = LazyCell::new(make_reader);
                 let mut lease: Option<ClipboardLease> = None;
                 // An ordinary copy must not relinquish PRIMARY, or vice versa.
                 let mut primary_lease: Option<ClipboardLease> = None;
                 while let Ok(request) = incoming.recv() {
-                    let (outcome, terminal_text) = match request {
+                    let (outcome, terminal_sequence) = match request {
+                        Request::WarmTextReader => {
+                            LazyCell::force(&read);
+                            continue;
+                        }
                         Request::Copy {
                             text,
                             format,
@@ -406,7 +445,7 @@ impl ClipboardWorker {
                     if outgoing
                         .send(Response {
                             result,
-                            terminal_text,
+                            terminal_sequence,
                         })
                         .is_err()
                     {
@@ -482,8 +521,8 @@ impl ClipboardWorker {
                         return self.completed.as_ref();
                     }
                     let mut result = response.result;
-                    if let Some(text) = response.terminal_text
-                        && let Err(error) = super::osc52_copy(&text)
+                    if let Some(sequence) = response.terminal_sequence
+                        && let Err(error) = super::write_osc52(&sequence)
                         && result != Ok(CopyStatus::Confirmed)
                     {
                         result = Err(error);

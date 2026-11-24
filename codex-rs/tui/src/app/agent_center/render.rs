@@ -143,6 +143,7 @@ impl Renderable for AgentsOverviewView {
         };
         let grouping = match state.grouping {
             AgentsOverviewGrouping::Project => "Project",
+            AgentsOverviewGrouping::Directory => "Directory",
             AgentsOverviewGrouping::Status => "Status",
             AgentsOverviewGrouping::Model => "Model",
         };
@@ -160,12 +161,14 @@ impl Renderable for AgentsOverviewView {
             inset(layout.header),
             buf,
         );
+        let history = state.history.as_ref();
         let labels = TASK_FILTERS
             .iter()
             .map(|(label, group)| {
                 let count = self
                     .rows
                     .iter()
+                    .filter(|row| state.includes_row(row))
                     .filter(|row| group.is_none_or(|group| group == row.group))
                     .count();
                 format!("{label} {count}")
@@ -244,10 +247,21 @@ impl Renderable for AgentsOverviewView {
                     .then(|| "Creating worktree…".to_owned())
             })
             .or_else(|| {
-                (state.refresh_failed && !state.loading).then(|| "Error loading tasks".to_owned())
+                state.removal.map(|action| match action {
+                    AgentsOverviewAction::Archive => {
+                        "Archiving task…  You can still browse.".to_owned()
+                    }
+                    AgentsOverviewAction::Delete => {
+                        "Deleting task…  You can still browse.".to_owned()
+                    }
+                })
+            })
+            .or_else(|| {
+                let failed = state.refresh_failed || history.is_some_and(|s| s.failed);
+                (failed && !state.loading).then(|| "Error loading tasks".to_owned())
             })
             .or_else(|| state.server_version_notice.clone());
-        if let Some(notice) = notice.filter(|_| !state.help && state.key_chord_hint.is_none()) {
+        if let Some(notice) = notice.filter(|_| !state.help) {
             line(notice.dim(), inset(layout.footer), buf);
         } else {
             line(hint_line(&footer_hints), inset(layout.footer), buf);

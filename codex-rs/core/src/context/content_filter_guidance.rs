@@ -1,7 +1,9 @@
 //! Bounded recovery guidance for a response blocked by an unspecified content filter.
 
 use super::ContextualUserFragment;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::input_text;
 
 pub(crate) struct ContentFilterGuidance {
     pub(crate) text: String,
@@ -24,7 +26,7 @@ impl ContextualUserFragment for ContentFilterGuidance {
         ("<content_filter_guidance>", "</content_filter_guidance>")
     }
 
-    fn body(&self) -> String {
-        format!("\n{}\n", self.text)
+    fn body(&self) -> ContentItem {
+        input_text(format!("\n{}\n", self.text))
     }
 }

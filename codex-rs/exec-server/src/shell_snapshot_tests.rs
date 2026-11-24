@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_protocol::config_types::ShellEnvironmentPolicyInherit;
+use codex_sandboxing::WrappedSandboxCommand;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::metrics::data::AggregatedMetrics;
 use opentelemetry_sdk::metrics::data::MetricData;
@@ -95,22 +96,24 @@ async fn snapshot_failure_retries_are_bounded_and_single_flight(
                 "printf x >> \"$HOME/captures\"\nprofile_helper() { printf recovered; }\n",
             )?;
         }
-        let mut prepared = prepare_exec_request_with_telemetry(
+        let (mut prepared, _) = prepare_exec_request_with_telemetry(
             &params,
             params.env.clone(),
             /*runtime_paths*/ None,
             /*network_policy_decider*/ None,
             /*network_policy_audit_observer*/ None,
+            &codex_network_proxy::RemoteCredentialBrokerCache::default(),
             &ProcessTelemetry::default(),
         )
         .await
         .expect("prepare capture");
-        let mut concurrent = prepare_exec_request_with_telemetry(
+        let (mut concurrent, _) = prepare_exec_request_with_telemetry(
             &params,
             params.env.clone(),
             /*runtime_paths*/ None,
             /*network_policy_decider*/ None,
             /*network_policy_audit_observer*/ None,
+            &codex_network_proxy::RemoteCredentialBrokerCache::default(),
             &ProcessTelemetry::default(),
         )
         .await
@@ -121,10 +124,11 @@ async fn snapshot_failure_retries_are_bounded_and_single_flight(
         } else {
             CapturePurpose::Execution
         };
+        let credential_brokers = codex_network_proxy::RemoteCredentialBrokerCache::default();
         let (first, second) = tokio::join!(
             biased;
-            cache.prepare(&params, &mut prepared, &telemetry, purpose),
-            cache.prepare(&params, &mut concurrent, &telemetry, CapturePurpose::Execution),
+            cache.prepare(&params, &mut prepared, /*proxy*/ None, &telemetry, purpose, &credential_brokers),
+            cache.prepare(&params, &mut concurrent, /*proxy*/ None, &telemetry, CapturePurpose::Execution, &credential_brokers),
         );
         let first = if prewarming {
             first.expect_err("prewarm must report failure without caching it");
@@ -133,19 +137,18 @@ async fn snapshot_failure_retries_are_bounded_and_single_flight(
             first.expect("capture failure must preserve command fallback")
         };
         let second = second.expect("waiting command must complete even when prewarm fails");
-        for (prepared, reader) in [(&mut prepared, first), (&mut concurrent, second)] {
+        let replay = |prepared: WrappedSandboxCommand, reader: Option<std::fs::File>| {
+            let mut request = prepared.into_command_request().expect("shell command");
             if let Some(reader) = reader {
                 let fd = std::os::fd::AsRawFd::as_raw_fd(&reader);
-                prepared.command[2] =
-                    prepared.command[2].replace(&format!("/dev/fd/{fd}"), "/dev/fd/SNAPSHOT");
+                request.command[2] =
+                    request.command[2].replace(&format!("/dev/fd/{fd}"), "/dev/fd/SNAPSHOT");
             }
-        }
-        assert_eq!(
-            (&prepared.command, &prepared.env),
-            (&concurrent.command, &concurrent.env)
-        );
+            (request.command, request.env)
+        };
+        let (command, env) = replay(concurrent, second);
 
-        let outcome = if concurrent.command != params.argv {
+        let outcome = if command != params.argv {
             "used"
         } else {
             "fallback"
@@ -158,19 +161,19 @@ async fn snapshot_failure_retries_are_bounded_and_single_flight(
                 .prepare(
                     &params,
                     &mut prepared,
+                    /*proxy*/ None,
                     &telemetry,
                     CapturePurpose::Execution,
+                    &credential_brokers,
                 )
                 .await
                 .expect("capture must stay cached during backoff");
             *expected_commands.entry("fallback".to_string()).or_insert(0) += 1;
-            assert_eq!(
-                (&prepared.command, &prepared.env),
-                (&params.argv, &params.env)
-            );
+            assert_eq!((&command, &env), (&params.argv, &params.env));
         } else {
-            assert_ne!(prepared.command, params.argv);
+            assert_ne!(command, params.argv);
         }
+        assert_eq!(replay(prepared, first), (command, env));
         assert_eq!(
             std::fs::read_to_string(home.path().join("captures"))?,
             "x".repeat(
@@ -310,12 +313,21 @@ fn snapshot_filters_profile_exports_after_capture() {
         inherit: ShellEnvironmentPolicyInherit::All,
         ignore_default_excludes: false,
         exclude: vec!["PROFILE_DENIED".to_string()],
-        r#set: HashMap::from([("PROFILE_ALLOWED".to_string(), "override".to_string())]),
-        include_only: vec!["PROFILE_*".to_string()],
+        r#set: HashMap::from([
+            ("PROFILE_ALLOWED".to_string(), "override".to_string()),
+            ("CODEX_THREAD_ID".to_string(), "policy-thread".to_string()),
+            ("CODEX_TOOL_CALL_ID".to_string(), "policy-call".to_string()),
+        ]),
+        // Metadata must survive policy filtering so the cache owns its removal.
+        include_only: vec![
+            "PROFILE_*".to_string(),
+            "CODEX_THREAD_ID".to_string(),
+            "CODEX_TOOL_CALL_ID".to_string(),
+        ],
     };
     let snapshot = parse_snapshot(
         ShellType::Bash,
-        b"profile \xff noise\n# Snapshot file\nfunction profile_helper() { :; }\n\0alias profile_alias='profile_helper'\n\0PROFILE_DENIED\0export PROFILE_DENIED=denied\n\0NON_UTF8\0export NON_UTF8='\xff'\n\0\0PROFILE_ALLOWED=profile\0PROFILE_DENIED=denied\0PROFILE_SECRET=secret\0PWD=/tmp\0NON_UTF8=\xff\0",
+        b"profile \xff noise\n# Snapshot file\nfunction profile_helper() { :; }\n\0alias profile_alias='profile_helper'\n\0PROFILE_DENIED\0export PROFILE_DENIED=denied\n\0NON_UTF8\0export NON_UTF8='\xff'\n\0\0PROFILE_ALLOWED=profile\0PROFILE_DENIED=denied\0PROFILE_SECRET=secret\0PWD=/tmp\0NON_UTF8=\xff\0CODEX_THREAD_ID=capture-thread\0CODEX_TOOL_CALL_ID=profile-call\0",
         Some(&policy),
         SnapshotReplay::Environment,
     )
@@ -380,7 +392,9 @@ fn snapshot_caches_only_unmanaged_proxy_state() {
             ]),
         ),
     ] {
-        let output = format!("# Snapshot file\n\0\0\0{exports}");
+        let output = format!(
+            "# Snapshot file\n\0\0\0{exports}CODEX_THREAD_ID=capture-thread\0CODEX_TOOL_CALL_ID=profile-call\0"
+        );
         let snapshot = parse_snapshot(
             ShellType::Bash,
             output.as_bytes(),
@@ -392,6 +406,7 @@ fn snapshot_caches_only_unmanaged_proxy_state() {
         assert_eq!(snapshot.environment, expected);
     }
 }
+
 use codex_shell_command::shell_detect::ShellType;
 
 #[test_case(SnapshotReplay::File, 1024 * 1024, 0, None; "file_accepts_large_state")]

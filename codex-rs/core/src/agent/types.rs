@@ -7,6 +7,7 @@ use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::AgentStatus;
 use codex_protocol::turn_input::CyberAccessProgram;
+use std::collections::HashMap;
 
 /// Registry identity shared by loaded and unloaded agents.
 /// Registered agents have an `agent_id`; a reserved spawn can still be awaiting its ID.
@@ -23,8 +24,17 @@ pub enum SpawnAgentForkMode {
     FullHistory,
 }
 
+/// Whether a spawn program was chosen for the child or copied from its parent turn.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SpawnProgramSource {
+    #[default]
+    Explicit,
+    ParentTurn,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct SpawnAgentOptions {
+    pub request_country: codex_protocol::RequestCountry,
     pub fork_parent_spawn_call_id: Option<String>,
     pub fork_mode: Option<SpawnAgentForkMode>,
     pub parent_thread_id: Option<ThreadId>,
@@ -32,10 +42,17 @@ pub struct SpawnAgentOptions {
     /// Attribute delegated usage to the turn that initiated it.
     pub turn_trigger: Option<String>,
     pub root_turn_id: Option<String>,
-    /// Exact environment bindings from the step that requested the child.
+    /// Client attribution captured from the turn that requested the child.
+    pub inherited_client_metadata: HashMap<String, String>,
+    /// Inheritable bindings captured by the step that requested the child.
     pub environments: Option<TurnEnvironmentSnapshot>,
+    /// Plugin choices from the turn requesting the child. Omission inherits the parent's
+    /// current choices; an explicit list, including an empty one, overrides them and history.
+    pub disabled_plugin_ids: Option<Vec<String>>,
     pub multi_agent_v2_usage_hints: Option<ResolvedMultiAgentV2UsageHints>,
     pub cyber_access_program: Option<CyberAccessProgram>,
+    /// Parent selections apply to the first turn and may need adapting to the child's model.
+    pub cyber_access_program_source: SpawnProgramSource,
 }
 
 /// Identity and status observed from a loaded agent, without a handle to its runtime.

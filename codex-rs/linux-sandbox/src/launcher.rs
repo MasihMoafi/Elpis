@@ -38,7 +38,11 @@ struct SystemBwrapCapabilities {
 
 static LAUNCHER: OnceLock<BubblewrapLauncher> = OnceLock::new();
 
-pub(crate) fn exec_bwrap(mut argv: Vec<String>, preserved_files: Vec<File>) -> ! {
+pub(crate) fn exec_bwrap(
+    mut argv: Vec<String>,
+    preserved_files: Vec<File>,
+    transparent_tcp: bool,
+) -> ! {
     if argv
         .iter()
         .take_while(|arg| arg.as_str() != "--")
@@ -53,7 +57,11 @@ pub(crate) fn exec_bwrap(mut argv: Vec<String>, preserved_files: Vec<File>) -> !
                 translate_legacy_bwrap_fd_mounts(&mut argv)
                     .unwrap_or_else(|error| panic!("invalid legacy bubblewrap fd mount: {error}"));
             }
-            exec_system_bwrap(&launcher.program, argv, preserved_files)
+            make_files_inheritable(&preserved_files);
+            if transparent_tcp {
+                crate::tcp_net_setup::exec_setup(launcher.program.as_path(), &argv[1..]);
+            }
+            exec_system_bwrap(&launcher.program, argv)
         }
         BubblewrapLauncher::Bundled(launcher) => launcher.exec(argv, preserved_files),
         BubblewrapLauncher::Unavailable => {
@@ -135,6 +143,7 @@ fn translate_legacy_bwrap_fd_mounts(argv: &mut Vec<String>) -> Result<(), String
 pub(crate) fn initialize_bwrap_launcher(
     file_system_policy: &FileSystemSandboxPolicy,
     sandbox_policy_cwd: &Path,
+    require_system: bool,
 ) {
     LAUNCHER.get_or_init(|| {
         if let Some(path) = find_system_bwrap_in_path(file_system_policy, sandbox_policy_cwd)
@@ -143,6 +152,9 @@ pub(crate) fn initialize_bwrap_launcher(
             return BubblewrapLauncher::System(launcher);
         }
 
+        if require_system {
+            panic!("transparent TCP requires a supported distro bubblewrap on PATH");
+        }
         match bundled_bwrap::launcher() {
             Some(launcher) => BubblewrapLauncher::Bundled(launcher),
             None => BubblewrapLauncher::Unavailable,
@@ -219,14 +231,7 @@ fn system_bwrap_capabilities(system_bwrap_path: &Path) -> Option<SystemBwrapCapa
     })
 }
 
-fn exec_system_bwrap(
-    program: &AbsolutePathBuf,
-    argv: Vec<String>,
-    preserved_files: Vec<File>,
-) -> ! {
-    // System bwrap runs across an exec boundary, so preserved fds must survive exec.
-    make_files_inheritable(&preserved_files);
-
+fn exec_system_bwrap(program: &AbsolutePathBuf, argv: Vec<String>) -> ! {
     let program_path = program.as_path().display().to_string();
     let program = CString::new(program.as_path().as_os_str().as_bytes())
         .unwrap_or_else(|err| panic!("invalid system bubblewrap path: {err}"));
@@ -248,226 +253,5 @@ fn exec_system_bwrap(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use pretty_assertions::assert_eq;
-    use tempfile::NamedTempFile;
-
-    #[test]
-    fn prefers_system_bwrap_when_help_lists_argv0() {
-        let fake_bwrap = NamedTempFile::new().expect("temp file");
-        let fake_bwrap_path = fake_bwrap.path();
-        let expected = AbsolutePathBuf::from_absolute_path(fake_bwrap_path).expect("absolute");
-
-        assert_eq!(
-            system_bwrap_launcher_for_path_with_probe(fake_bwrap_path, |_| {
-                Some(SystemBwrapCapabilities {
-                    supports_argv0: true,
-                    supports_perms: true,
-                    supports_ro_bind_fd: true,
-                })
-            }),
-            Some(SystemBwrapLauncher {
-                program: expected,
-                supports_argv0: true,
-                supports_ro_bind_fd: true,
-            })
-        );
-    }
-
-    #[test]
-    fn prefers_system_bwrap_when_system_bwrap_lacks_argv0() {
-        let fake_bwrap = NamedTempFile::new().expect("temp file");
-        let fake_bwrap_path = fake_bwrap.path();
-
-        assert_eq!(
-            system_bwrap_launcher_for_path_with_probe(fake_bwrap_path, |_| {
-                Some(SystemBwrapCapabilities {
-                    supports_argv0: false,
-                    supports_perms: true,
-                    supports_ro_bind_fd: false,
-                })
-            }),
-            Some(SystemBwrapLauncher {
-                program: AbsolutePathBuf::from_absolute_path(fake_bwrap_path).expect("absolute"),
-                supports_argv0: false,
-                supports_ro_bind_fd: false,
-            })
-        );
-    }
-
-    #[test]
-    fn ignores_system_bwrap_when_system_bwrap_lacks_perms() {
-        let fake_bwrap = NamedTempFile::new().expect("temp file");
-
-        assert_eq!(
-            system_bwrap_launcher_for_path_with_probe(fake_bwrap.path(), |_| {
-                Some(SystemBwrapCapabilities {
-                    supports_argv0: false,
-                    supports_perms: false,
-                    supports_ro_bind_fd: false,
-                })
-            }),
-            None
-        );
-    }
-
-    #[test]
-    fn detects_fd_backed_read_only_mount_support_in_system_bwrap_help() {
-        let temp_dir = tempfile::tempdir().expect("temp directory");
-        let fake_bwrap_path = temp_dir.path().join("bwrap");
-        codex_utils_cargo_bin::write_executable(
-            &fake_bwrap_path,
-            "#!/bin/sh\nprintf '%s\\n' '--as-pid-1' '--perms' '--argv0' '--ro-bind-fd'\n",
-        )
-        .expect("write fake bubblewrap");
-
-        assert_eq!(
-            system_bwrap_capabilities(&fake_bwrap_path),
-            Some(SystemBwrapCapabilities {
-                supports_argv0: true,
-                supports_perms: true,
-                supports_ro_bind_fd: true,
-            })
-        );
-    }
-
-    #[test]
-    fn translates_fd_mounts_for_legacy_system_bubblewrap() {
-        let mut argv = vec![
-            "bwrap".to_string(),
-            "--ro-bind-fd".to_string(),
-            "7".to_string(),
-            "/tmp/socket-root".to_string(),
-            "--".to_string(),
-            "/usr/bin/codex-linux-sandbox".to_string(),
-            "--apply-seccomp-then-exec".to_string(),
-            "--".to_string(),
-            "echo".to_string(),
-            "--ro-bind-fd".to_string(),
-        ];
-
-        translate_legacy_bwrap_fd_mounts(&mut argv).expect("fd mount should translate");
-
-        assert_eq!(
-            argv,
-            vec![
-                "bwrap".to_string(),
-                "--ro-bind".to_string(),
-                "/proc/self/fd/7".to_string(),
-                "/tmp/socket-root".to_string(),
-                "--".to_string(),
-                "/usr/bin/codex-linux-sandbox".to_string(),
-                "--verify-fd-mount".to_string(),
-                "7:/tmp/socket-root".to_string(),
-                "--apply-seccomp-then-exec".to_string(),
-                "--".to_string(),
-                "echo".to_string(),
-                "--ro-bind-fd".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn translates_multiple_fd_mounts_for_legacy_system_bubblewrap() {
-        let mut argv = vec![
-            "bwrap".to_string(),
-            "--ro-bind-fd".to_string(),
-            "7".to_string(),
-            "/tmp/first".to_string(),
-            "--ro-bind-fd".to_string(),
-            "9".to_string(),
-            "/tmp/second:with-colon".to_string(),
-            "--".to_string(),
-            "codex-linux-sandbox".to_string(),
-            "--apply-seccomp-then-exec".to_string(),
-            "--".to_string(),
-            "true".to_string(),
-        ];
-
-        translate_legacy_bwrap_fd_mounts(&mut argv).expect("fd mounts should translate");
-
-        assert_eq!(
-            argv,
-            vec![
-                "bwrap".to_string(),
-                "--ro-bind".to_string(),
-                "/proc/self/fd/7".to_string(),
-                "/tmp/first".to_string(),
-                "--ro-bind".to_string(),
-                "/proc/self/fd/9".to_string(),
-                "/tmp/second:with-colon".to_string(),
-                "--".to_string(),
-                "codex-linux-sandbox".to_string(),
-                "--verify-fd-mount".to_string(),
-                "7:/tmp/first".to_string(),
-                "--verify-fd-mount".to_string(),
-                "9:/tmp/second:with-colon".to_string(),
-                "--apply-seccomp-then-exec".to_string(),
-                "--".to_string(),
-                "true".to_string(),
-            ]
-        );
-    }
-
-    #[test]
-    fn rejects_malformed_legacy_bubblewrap_fd_mounts() {
-        for (fd, destination) in [
-            ("invalid", "/tmp/socket-root"),
-            ("2", "/tmp/socket-root"),
-            ("7", "relative/socket-root"),
-        ] {
-            let mut argv = vec![
-                "bwrap".to_string(),
-                "--ro-bind-fd".to_string(),
-                fd.to_string(),
-                destination.to_string(),
-                "--".to_string(),
-                "codex-linux-sandbox".to_string(),
-            ];
-
-            assert!(translate_legacy_bwrap_fd_mounts(&mut argv).is_err());
-        }
-    }
-
-    #[test]
-    fn rejects_fd_mounts_without_the_trusted_inner_sandbox_stage() {
-        let mut argv = vec![
-            "bwrap".to_string(),
-            "--ro-bind-fd".to_string(),
-            "7".to_string(),
-            "/tmp/socket-root".to_string(),
-            "--".to_string(),
-            "/bin/true".to_string(),
-            "--".to_string(),
-            "--apply-seccomp-then-exec".to_string(),
-        ];
-
-        assert!(translate_legacy_bwrap_fd_mounts(&mut argv).is_err());
-    }
-
-    #[test]
-    fn rejects_duplicate_legacy_bubblewrap_fd_mounts() {
-        let mut argv = vec![
-            "bwrap".to_string(),
-            "--ro-bind-fd".to_string(),
-            "7".to_string(),
-            "/tmp/first".to_string(),
-            "--ro-bind-fd".to_string(),
-            "7".to_string(),
-            "/tmp/second".to_string(),
-            "--".to_string(),
-            "codex-linux-sandbox".to_string(),
-        ];
-
-        assert!(translate_legacy_bwrap_fd_mounts(&mut argv).is_err());
-    }
-
-    #[test]
-    fn ignores_system_bwrap_when_system_bwrap_is_missing() {
-        assert_eq!(
-            system_bwrap_launcher_for_path(Path::new("/definitely/not/a/bwrap")),
-            None
-        );
-    }
-}
+#[path = "launcher_tests.rs"]
+mod tests;

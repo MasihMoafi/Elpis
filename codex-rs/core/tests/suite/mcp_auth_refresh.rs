@@ -19,6 +19,7 @@ use codex_mcp::McpRuntimeContext;
 use codex_mcp::McpRuntimeInput;
 use codex_mcp::McpStartupPolicy;
 use codex_mcp::McpToolCatalogCache;
+use codex_mcp::McpToolStartup;
 use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::protocol::AskForApproval;
 use core_test_support::apps_test_server::AppsTestServer;
@@ -80,7 +81,7 @@ async fn hosted_plugin_runtime_ps_mcp_tool_calls_use_current_auth_manager_token(
     // debug bearer override in their environment.
     *bearer_token_env_var = None;
     let mcp_servers = HashMap::from([(
-        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        codex_mcp::McpServerKey::unscoped(CODEX_APPS_MCP_SERVER_NAME),
         EffectiveMcpServer::from_host_config(hosted_plugin_runtime_config),
     )]);
     let mut config = ConfigBuilder::default()
@@ -91,6 +92,8 @@ async fn hosted_plugin_runtime_ps_mcp_tool_calls_use_current_auth_manager_token(
     let plugins_manager = plugins_manager_for_config(&config, Arc::clone(&auth_manager));
     let mcp_config = Arc::new(config.to_mcp_config(&plugins_manager).await);
     let runtime = McpRuntime::new(McpRuntimeInput {
+        network_policy_metadata: None,
+        runtime_auth: None,
         startup_policy: McpStartupPolicy::Eager,
         config: mcp_config,
         plugins_available: false,
@@ -140,10 +143,10 @@ async fn hosted_plugin_runtime_ps_mcp_tool_calls_use_current_auth_manager_token(
             })),
             /*meta*/ None,
             /*requested_timeout*/ None,
-            /*wait_for_server*/ true,
+            McpToolStartup::Wait,
         )
         .await?;
-    assert_eq!(tool_result.is_error, Some(false));
+    assert_eq!(tool_result.result.is_error, Some(false));
 
     let requests = server
         .received_requests()

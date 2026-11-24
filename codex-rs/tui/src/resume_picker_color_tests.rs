@@ -15,6 +15,8 @@ fn thread_colors_and_selection_contrast_in_both_picker_layouts() {
             .clone(),
     );
     let row = Row {
+        backend_id: None,
+        history_mode: None,
         path: None,
         thread_id: Some(ThreadId::from_u128(/*value*/ 42)),
         thread_name: Some("Named task".into()),
@@ -25,6 +27,7 @@ fn thread_colors_and_selection_contrast_in_both_picker_layouts() {
         git_branch: None,
     };
     let mut state = PickerState::new(
+        crate::backend_id::BackendId::new(),
         FrameRequester::test_dummy(),
         Arc::new(|_| {}),
         ProviderFilter::Any,
@@ -32,6 +35,9 @@ fn thread_colors_and_selection_contrast_in_both_picker_layouts() {
         /*filter_cwd*/ None,
         SessionPickerAction::Resume,
     );
+    state
+        .unread
+        .insert((state.backend_id, row.thread_id.unwrap()), "rev".into());
     let (fg, bg) = ((0, 0, 0), (255, 255, 255));
     with_test_default_colors(DefaultColors { fg, bg }, || {
         for density in [SessionListDensity::Comfortable, SessionListDensity::Dense] {
@@ -61,7 +67,9 @@ fn thread_colors_and_selection_contrast_in_both_picker_layouts() {
                         SessionListDensity::Comfortable => 2,
                         SessionListDensity::Dense => 14,
                     };
-                    let title_cell = &buffer[(title_x, 0)];
+                    let dot = &buffer[(title_x, 0)];
+                    assert_eq!((dot.symbol(), dot.fg), ("●", rgb_color((0x3b, 0x82, 0xf6))));
+                    let title_cell = &buffer[(title_x + 2, 0)];
                     if use_colors {
                         assert_eq!(
                             title_cell.fg,
@@ -149,6 +157,7 @@ fn compact_picker_keeps_metadata_and_labeled_primary_actions() {
 
     let timestamp = parse_timestamp_str("2026-09-17T12:00:00Z");
     let mut state = PickerState::new(
+        crate::backend_id::BackendId::new(),
         FrameRequester::test_dummy(),
         Arc::new(|_| {}),
         ProviderFilter::Any,
@@ -159,6 +168,8 @@ fn compact_picker_keeps_metadata_and_labeled_primary_actions() {
     state.relative_time_reference = timestamp;
     state.filtered_rows = (1..=6)
         .map(|id| Row {
+            backend_id: None,
+            history_mode: None,
             path: None,
             thread_id: Some(ThreadId::from_u128(id)),
             thread_name: Some(format!("Session {id}")),
@@ -229,24 +240,23 @@ fn compact_picker_keeps_metadata_and_labeled_primary_actions() {
 
 #[test]
 fn reversed_selection_overrides_thread_color() {
-    let line = apply_line_background(
-        Line::from("Title".fg(rgb_color((150, 50, 170)))),
-        Style::default()
-            .fg(Color::Reset)
-            .bg(Color::Reset)
-            .reversed(),
+    let row = Style::default()
+        .fg(Color::Reset)
+        .bg(Color::Reset)
+        .reversed();
+    let line = session_summary_line(
+        vec![],
+        "Title".fg(rgb_color((150, 50, 170))),
+        /*unread*/ true,
+        row,
         /*width*/ 12,
     );
-    assert_eq!(
-        (
-            line.spans[0].style.fg,
-            line.spans[0]
-                .style
-                .add_modifier
-                .contains(Modifier::REVERSED)
-        ),
-        (Some(Color::Reset), true)
-    );
+    let dot = &line.spans[0];
+    let title = &line.spans[2];
+    assert_eq!(dot.content, "●");
+    assert_eq!(dot.style, row.bg(rgb_color((0x3b, 0x82, 0xf6))));
+    assert_eq!(title.style.fg, row.fg);
+    assert!(title.style.add_modifier.contains(Modifier::REVERSED));
 }
 
 #[tokio::test]
@@ -258,6 +268,7 @@ async fn narrow_toolbar_keeps_keyboard_focused_control_visible() {
     for action in [SessionPickerAction::Resume, SessionPickerAction::Fork] {
         for (width, height) in [(38, 12), (24, 9)] {
             let mut state = PickerState::new(
+                crate::backend_id::BackendId::new(),
                 FrameRequester::test_dummy(),
                 Arc::new(|_| {}),
                 ProviderFilter::Any,

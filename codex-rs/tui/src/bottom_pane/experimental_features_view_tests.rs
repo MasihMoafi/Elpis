@@ -53,6 +53,8 @@ fn experimental_features_display_metadata() {
     for feature in [
         Feature::AnalyticsPlanHistory,
         Feature::LoginShellPackagePath,
+        Feature::RespectSystemProxy,
+        Feature::TuiExtensionsStatusLine,
     ] {
         let stage = feature.stage();
         let (app_tx, _app_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -103,6 +105,8 @@ fn experimental_features_discovery_preserves_server_order_and_accepts_new_keys()
         .send(Ok(vec![
             server_feature("network_proxy"),
             server_feature("future_feature"),
+            server_feature("worktrees"),
+            server_feature("realtime_conversation"),
             stable,
             server_feature("prevent_idle_sleep"),
         ]))
@@ -188,14 +192,10 @@ fn experimental_features_discovery_preserves_server_order_and_accepts_new_keys()
         .send(Err("Persistent write rejection".to_string()))
         .unwrap();
     view.pre_draw_tick(Instant::now());
-    // Cancel saves new special edits without retrying the failed generic write.
+    // Cancel discards new edits without retrying the failed write.
     view.features[2].enabled = true;
     view.handle_key_event(KeyEvent::from(KeyCode::Esc));
     assert!(view.is_complete());
-    assert!(
-        matches!(app_rx.try_recv().unwrap(), AppEvent::UpdateFeatureFlags { updates }
-        if updates == vec![(Feature::PreventIdleSleep, true)])
-    );
     assert!(app_rx.try_recv().is_err());
 }
 
@@ -236,6 +236,7 @@ fn experimental_features_empty_error_and_cancel_remain_usable() {
         let mut buffer = Buffer::empty(area);
         view.render(area, &mut buffer);
         insta::assert_snapshot!(snapshot, buffer_text(&buffer));
+        view.toggle_selected();
         view.on_ctrl_c();
         assert!(view.is_complete());
         assert!(app_rx.try_recv().is_err());
@@ -278,28 +279,4 @@ fn snapshot_view(name: &str, view: &ExperimentalFeaturesView) {
     let mut buffer = Buffer::empty(area);
     view.render(area, &mut buffer);
     insta::assert_snapshot!(name, buffer_text(&buffer));
-}
-
-#[test]
-fn voice_discovery_requires_the_client_runtime() {
-    for supported in [false, true] {
-        let (app_tx, _app_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (catalog_tx, catalog_rx) = oneshot::channel();
-        let mut view = ExperimentalFeaturesView::new(
-            Vec::new(),
-            ThreadId::new(),
-            Some(catalog_rx),
-            AppEventSender::new(app_tx),
-            crate::keymap::RuntimeKeymap::defaults().list,
-        );
-        view.voice_supported = supported;
-        catalog_tx
-            .send(Ok(vec![server_feature("realtime_conversation")]))
-            .unwrap();
-        assert!(view.pre_draw_tick(Instant::now()));
-        assert_eq!(view.features.len(), usize::from(supported));
-        if supported {
-            snapshot_view("voice_runtime_available", &view);
-        }
-    }
 }

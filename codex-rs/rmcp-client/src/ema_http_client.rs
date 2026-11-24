@@ -37,19 +37,81 @@ pub trait EmaTokenSource: Send + Sync {
 }
 
 /// Revocable authority held while one EMA connection awaits HTTP responses.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct EmaRequestAuthority {
     revoked: CancellationToken,
+    is_current: Arc<dyn Fn() -> bool + Send + Sync>,
     responses: Arc<RwLock<()>>,
+    policy: Option<codex_config::CloudConfigBundleBinding>,
+}
+
+impl Default for EmaRequestAuthority {
+    fn default() -> Self {
+        Self::new(CancellationToken::new(), || true)
+    }
 }
 
 impl EmaRequestAuthority {
+    /// Couples prompt cancellation with a synchronous check at each HTTP boundary.
+    /// The check must be cheap and must not perform credential or network I/O.
+    pub fn new(
+        revoked: CancellationToken,
+        is_current: impl Fn() -> bool + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            revoked,
+            is_current: Arc::new(is_current),
+            responses: Arc::default(),
+            policy: None,
+        }
+    }
+
+    /// Policy changes stop new dispatches without cancelling already admitted responses.
+    pub fn with_policy(mut self, policy: Option<codex_config::CloudConfigBundleBinding>) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    /// Isolate one connection's credential failure while sharing the owner's response drain.
+    pub fn child(&self) -> Self {
+        let owner = self.clone();
+        Self {
+            revoked: self.revoked.child_token(),
+            is_current: Arc::new(move || !owner.is_revoked()),
+            responses: Arc::clone(&self.responses),
+            policy: self.policy.clone(),
+        }
+    }
+
     pub fn revoke(&self) {
         self.revoked.cancel();
     }
 
     pub fn is_revoked(&self) -> bool {
+        if !self.revoked.is_cancelled() && !(self.is_current)() {
+            self.revoke();
+        }
         self.revoked.is_cancelled()
+    }
+
+    pub fn check(&self) -> Result<(), ExecServerError> {
+        if self.is_revoked() {
+            return Err(revoked_authority_error());
+        }
+        Ok(())
+    }
+
+    pub fn check_new_request(&self) -> Result<(), ExecServerError> {
+        self.check()?;
+        if self.policy.as_ref().is_some_and(|binding| {
+            binding.read().status != codex_config::CloudConfigBundleBindingStatus::Current
+        }) {
+            return Err(ExecServerError::RequestNotSent(
+                "enterprise MCP policy is updating or unavailable; retry after it is applied"
+                    .into(),
+            ));
+        }
+        Ok(())
     }
 
     /// Wait until response futures admitted before revocation complete or are cancelled.
@@ -59,9 +121,7 @@ impl EmaRequestAuthority {
 
     async fn acquire(&self) -> Result<OwnedRwLockReadGuard<()>, ExecServerError> {
         let response = self.responses.clone().read_owned().await;
-        if self.is_revoked() {
-            return Err(revoked_authority_error());
-        }
+        self.check_new_request()?;
         Ok(response)
     }
 
@@ -152,7 +212,15 @@ impl<S: EmaTokenSource> EmaAuthenticatedHttpClient<S> {
             if let Some(value) = current_token() {
                 value
             } else {
-                let renewed = self.source.access_token().await.map_err(auth_error)?;
+                let renewed = self.source.access_token().await.map_err(|error| {
+                    if let Err(refusal) = self.authority.check_new_request() {
+                        return refusal;
+                    }
+                    if is_authentication_required_error(&error) {
+                        self.authority.revoke();
+                    }
+                    auth_error(error)
+                })?;
                 let token = CachedToken::new(renewed);
                 if Instant::now() >= token.refresh_at {
                     return Err(ExecServerError::HttpRequest(
@@ -206,6 +274,13 @@ impl<S: EmaTokenSource> EmaAuthenticatedHttpClient<S> {
 }
 
 fn auth_error(error: anyhow::Error) -> ExecServerError {
+    if let Some(error) = error.downcast_ref::<crate::EmaTokenSourceError>() {
+        return if error.is_authentication_required() {
+            ExecServerError::AuthenticationRequired(error.to_string())
+        } else {
+            ExecServerError::HttpRequest(error.to_string())
+        };
+    }
     if is_authentication_required_error(&error) {
         ExecServerError::AuthenticationRequired(
             "enterprise MCP authentication is required".to_string(),
@@ -229,10 +304,12 @@ impl<S: EmaTokenSource> HttpClient for EmaAuthenticatedHttpClient<S> {
             let request = async {
                 let _authority = self.authority.acquire().await?;
                 let token = self.authenticate(&mut params).await?;
+                self.authority.check_new_request()?;
                 if let Some(deadline) = deadline {
                     params.timeout_ms = Some(remaining_timeout(deadline)?);
                 }
                 let response = self.inner.http_request(params).await?;
+                self.authority.check()?;
                 self.validate_response(&response, &token)?;
                 Ok(response)
             };
@@ -256,10 +333,12 @@ impl<S: EmaTokenSource> HttpClient for EmaAuthenticatedHttpClient<S> {
             let request = async {
                 let _authority = self.authority.acquire().await?;
                 let token = self.authenticate(&mut params).await?;
+                self.authority.check_new_request()?;
                 if let Some(deadline) = deadline {
                     params.timeout_ms = Some(remaining_timeout(deadline)?);
                 }
                 let response = self.inner.http_request_stream(params).await?;
+                self.authority.check()?;
                 self.validate_response(&response.0, &token)?;
                 Ok((
                     response.0,

@@ -8,8 +8,8 @@ use crate::thread_transcript::thread_items_to_transcript_cells;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 
-fn item(status: DynamicToolCallStatus, output: Option<&str>) -> ThreadItem {
-    ThreadItem::DynamicToolCall {
+fn item(status: DynamicToolCallStatus, output: Option<&str>) -> ThreadItemPayload {
+    ThreadItemPayload::DynamicToolCall {
         id: "dynamic-1".to_string(),
         namespace: Some("example".to_string()),
         tool: "inspect".to_string(),
@@ -54,7 +54,7 @@ fn read_attempt_evidence_names_the_tool_and_outcome() {
             "failed (detail unavailable)",
         ),
     ] {
-        let call = ThreadItem::DynamicToolCall {
+        let call = ThreadItemPayload::DynamicToolCall {
             id: "read-agents".to_string(),
             namespace: None,
             tool: "read_file".to_string(),
@@ -128,6 +128,9 @@ fn dynamic_status_and_output_match_persisted_presentations() {
         );
         assert_eq!(replayed.len(), 1);
         let cell = &replayed[0];
+        if label == "success" {
+            assert_eq!(cell.tool_call_labels(), ["Called example.inspect"]);
+        }
         for (mode, lines) in [
             ("compact", cell.display_lines(/*width*/ 80)),
             (

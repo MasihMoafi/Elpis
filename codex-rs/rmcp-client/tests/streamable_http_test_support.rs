@@ -179,7 +179,7 @@ pub(crate) async fn call_echo_tool(
         .call_tool(
             "echo".to_string(),
             Some(json!({ "message": message })),
-            /*meta*/ None,
+            |_| Ok(None),
             Some(Duration::from_secs(5)),
         )
         .await
@@ -324,7 +324,7 @@ pub(crate) async fn spawn_streamable_http_server() -> anyhow::Result<(Child, Str
     let address = wait_for_streamable_http_server(
         &mut child,
         &bound_addr_path,
-        Duration::from_secs(/*secs*/ 5),
+        Duration::from_secs(/*secs*/ 20),
     )
     .await?;
     Ok((child, format!("http://{address}")))

@@ -1,16 +1,24 @@
 use super::*;
+#[cfg(unix)]
+use http::HeaderValue;
 use pretty_assertions::assert_eq;
 
-#[test]
-fn helper_output_errors_do_not_echo_secrets() {
-    for output in [
-        br#"{"Host":"secret"}"#.as_slice(),
-        br#"{"secret":"secret","secret":"secret"}"#.as_slice(),
-        br#"{"secret":"secret","Secret":"secret"}"#.as_slice(),
-    ] {
-        let error = parse_helper_output(output.to_vec()).expect_err("invalid helper output");
-        assert!(!error.to_string().contains("secret"));
-    }
+#[tokio::test]
+async fn reserved_header_errors_do_not_echo_secrets() {
+    let dir = tempfile::tempdir().expect("helper directory");
+    std::fs::write(dir.path().join("headers.json"), r#"{"Host":"secret"}"#).expect("write headers");
+    let command = if cfg!(windows) {
+        "type headers.json"
+    } else {
+        "cat headers.json"
+    };
+    let error = run_helper(command, dir.path())
+        .await
+        .expect_err("reserved header");
+    assert_eq!(
+        error.to_string(),
+        "MCP HTTP headers helper returned a reserved header"
+    );
 }
 
 #[cfg(unix)]
@@ -43,8 +51,14 @@ async fn helper_attempt_is_shared_after_cancellation() {
             .await
             .is_err()
     );
-    tokio::time::sleep(Duration::from_millis(500)).await;
-    assert!(cancelled_finished.exists());
+    // Observe the helper finishing without polling the cancelled attempt again.
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 5), async {
+        while !cancelled_finished.exists() {
+            tokio::time::sleep(Duration::from_millis(/*millis*/ 10)).await;
+        }
+    })
+    .await
+    .expect("cancelled helper finished independently");
     assert!(cancelled.headers().await.is_ok());
     assert_eq!(
         std::fs::read_to_string(&cancelled_invocations).expect("cancelled invocation count"),
@@ -60,8 +74,13 @@ async fn helper_attempt_is_shared_after_cancellation() {
         .await
         .is_err()
     );
-    tokio::time::sleep(Duration::from_millis(/*millis*/ 500)).await;
-    assert!(cancelled_finished.exists());
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 5), async {
+        while !cancelled_finished.exists() {
+            tokio::time::sleep(Duration::from_millis(/*millis*/ 10)).await;
+        }
+    })
+    .await
+    .expect("cancelled refresh finished independently");
     assert_eq!(
         cancelled.refresh(headers.refresh_epoch).await.unwrap(),
         headers.values

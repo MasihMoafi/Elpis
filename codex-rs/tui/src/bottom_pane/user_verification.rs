@@ -36,6 +36,7 @@ pub(crate) struct UserVerificationRequest {
     pub description: String,
     pub thread_label: Option<String>,
     pub server_name: String,
+    pub environment_id: Option<String>,
     pub request_id: RequestId,
 }
 
@@ -218,6 +219,12 @@ impl BottomPaneView for UserVerificationView {
     fn terminal_title_requires_action(&self) -> bool {
         !self.is_complete()
     }
+
+    fn program_status_blocked_kind(
+        &self,
+    ) -> Option<crate::terminal_program_status::ProgramStatusKind> {
+        (!self.is_complete()).then_some(crate::terminal_program_status::ProgramStatusKind::Auth)
+    }
 }
 
 impl Renderable for UserVerificationView {
@@ -279,7 +286,14 @@ fn request_details(request: &UserVerificationRequest) -> Box<dyn Renderable> {
         lines.push(Line::from(""));
     }
     lines.extend([
-        Line::from(vec!["Server: ".into(), request.server_name.clone().bold()]),
+        Line::from(vec![
+            "Server: ".into(),
+            crate::app_server_approval_conversions::mcp_server_label(
+                &request.server_name,
+                request.environment_id.as_deref(),
+            )
+            .bold(),
+        ]),
         Line::from(""),
         Line::from(request.description.clone()),
     ]);

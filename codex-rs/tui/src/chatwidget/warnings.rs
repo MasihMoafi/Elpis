@@ -3,7 +3,9 @@
 use crate::history_cell::HistoryCell;
 use crate::history_cell::WarningEntry;
 use crate::history_cell::WarningId;
+use crate::transcript_view::TextLayout;
 use crate::tui::TuiEvent;
+use ratatui::layout::Rect;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -15,6 +17,7 @@ const FALLBACK_MODEL_METADATA_WARNING_SUFFIX: &str =
 #[derive(Default)]
 pub(crate) struct WarningDisplayState {
     pub(super) count: usize,
+    discovery: Option<WarningEntry>,
     /// Completed resume history does not end startup; active work does.
     pub(super) startup_complete: bool,
     /// Initialization config warnings may also arrive as ordinary thread warnings.
@@ -33,6 +36,7 @@ impl WarningDisplayState {
     fn visible_entries(&self, cells: &[Arc<dyn HistoryCell>]) -> Vec<WarningEntry> {
         crate::history_cell::warning_entries(cells)
             .into_iter()
+            .chain(self.discovery.clone())
             .filter(|entry| self.dismissed.get(&entry.id) != Some(&entry.details))
             .collect()
     }
@@ -51,11 +55,53 @@ fn fallback_model_metadata_warning_slug(message: &str) -> Option<&str> {
 }
 
 impl super::ChatWidget {
+    pub(crate) fn take_warning_body(&self) -> Option<(Rect, TextLayout, usize)> {
+        let view = self.bottom_pane.active_warning()?;
+        let (layout, offset) = view.body_layout.take()?;
+        Some((view.body_area.get(), layout, offset))
+    }
+
+    pub(crate) fn record_warning_activity(&mut self) {
+        self.bottom_pane
+            .record_composer_activity_at(std::time::Instant::now());
+    }
+
     pub(crate) fn open_warnings(&mut self, cells: &[Arc<dyn HistoryCell>]) {
+        *self.rendered_selection.borrow_mut() = Default::default();
+        let entries = self.warning_display_state.visible_entries(cells);
+        let daemon_restart_hint_at = self
+            .remote_connection
+            .as_ref()
+            .filter(|connection| connection.is_managed_daemon)
+            .and_then(|_| {
+                entries.iter().position(|entry| match &entry.id {
+                    WarningId::Message(message) => self
+                        .warning_display_state
+                        .startup_config_warnings
+                        .contains(message),
+                    WarningId::McpServer(_) | WarningId::StatuslineDiscovery(_) => false,
+                })
+            });
         self.bottom_pane.show_warnings(
-            self.warning_display_state.visible_entries(cells),
+            entries,
             Arc::clone(&self.warning_display_state.transcript),
+            daemon_restart_hint_at,
         );
+    }
+
+    pub(crate) fn set_statusline_discovery_warning(
+        &mut self,
+        scan: uuid::Uuid,
+        details: Option<String>,
+    ) {
+        let state = &mut self.warning_display_state;
+        state.discovery = details.map(|details| WarningEntry {
+            id: WarningId::StatuslineDiscovery(scan),
+            source: "Status line provider discovery".into(),
+            details,
+        });
+        state.synced_cells = None;
+        self.request_redraw();
     }
 
     pub(crate) fn sync_warnings(&mut self, cells: &[Arc<dyn HistoryCell>]) {
@@ -69,12 +115,28 @@ impl super::ChatWidget {
         }) {
             return;
         }
+        state.dismissed.retain(|id, _| match id {
+            WarningId::StatuslineDiscovery(_) => state
+                .discovery
+                .as_ref()
+                .is_some_and(|entry| id == &entry.id),
+            WarningId::Message(_) | WarningId::McpServer(_) => true,
+        });
         state.count = if state.dismissed.is_empty() {
-            crate::history_cell::warning_count(cells)
+            crate::history_cell::warning_count(cells) + usize::from(state.discovery.is_some())
         } else {
             state.visible_entries(cells).len()
         };
         state.synced_cells = Some(cells.to_vec());
+    }
+
+    pub(crate) fn warning_notice_at(
+        &self,
+        point: ratatui::layout::Position,
+    ) -> Option<ratatui::layout::Rect> {
+        self.bottom_pane
+            .warning_notice_area()
+            .filter(|area| area.contains(point))
     }
 
     pub(crate) fn handle_warning_event(
@@ -100,15 +162,24 @@ impl super::ChatWidget {
             )
         {
             // Chord routing may consume this key before it reaches the warning panel.
-            self.bottom_pane
-                .record_composer_activity_at(std::time::Instant::now());
+            self.record_warning_activity();
+        }
+        if let TuiEvent::Mouse(mouse) = event
+            && self
+                .bottom_pane
+                .active_warning()
+                .is_some_and(|view| view.scroll_mouse(*mouse))
+        {
+            self.record_warning_activity();
+            self.request_redraw();
+            return true;
         }
         if let TuiEvent::Mouse(mouse) = event
             && mouse.kind
                 == crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left)
             && self
-                .bottom_pane
-                .warning_notice_contains(ratatui::layout::Position::new(mouse.column, mouse.row))
+                .warning_notice_at((mouse.column, mouse.row).into())
+                .is_some()
         {
             self.open_warnings(cells);
             return true;

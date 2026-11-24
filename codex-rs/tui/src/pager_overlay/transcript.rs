@@ -5,8 +5,7 @@
 
 use super::*;
 use crate::history_cell::HistoryRenderMode;
-use crate::history_cell::SessionHeaderHistoryCell;
-use crate::history_cell::SessionInfoCell;
+use crate::history_cell::is_session_history_prefix_cell;
 use crate::keymap::RuntimeKeymap;
 use crate::motion::MotionMode;
 use crate::transcript_view::TranscriptBookmark;
@@ -27,8 +26,21 @@ pub(crate) struct TranscriptOverlay {
     notice: Option<String>,
     pub(crate) pending_prune_link: Option<String>,
     pub(crate) key_chord_hint: Option<Vec<(String, String)>>,
+    pub(crate) pending_thread_link: Option<codex_protocol::ThreadId>,
     pub(crate) browsing_footer: Option<Line<'static>>,
+    find_transcript: Vec<crate::key_hint::KeyBinding>,
+    select_transcript: Vec<crate::key_hint::KeyBinding>,
+    pub(super) pending_follow_close: Option<(u64, bool)>,
+    pending_select_mode: bool,
     is_done: bool,
+}
+
+impl Overlay {
+    pub(crate) fn set_keymap_bindings(&mut self, keymap: &RuntimeKeymap) {
+        if let Self::Transcript(view) = self {
+            view.set_keymap_bindings(keymap);
+        }
+    }
 }
 
 impl TranscriptOverlay {
@@ -72,7 +84,12 @@ impl TranscriptOverlay {
             notice: None,
             pending_prune_link: None,
             key_chord_hint: None,
+            pending_thread_link: None,
             browsing_footer: None,
+            find_transcript: Vec::new(),
+            select_transcript: Vec::new(),
+            pending_follow_close: None,
+            pending_select_mode: false,
             is_done: false,
         }
     }
@@ -80,6 +97,7 @@ impl TranscriptOverlay {
     pub(crate) fn render(&mut self, area: Rect, buf: &mut Buffer) {
         Clear.render(area, buf);
         let browsing = self.browsing_footer.is_some()
+            && !self.pending_select_mode
             && !self.view.has_active_interaction()
             && self.view.history != TranscriptHistoryState::Failed;
         let chrome_height = if browsing { 2 } else { 5 };
@@ -91,6 +109,14 @@ impl TranscriptOverlay {
             content_height,
         );
         self.view.render(self.content_area, buf, &self.cells);
+        if self.pending_select_mode {
+            self.pending_select_mode = false;
+            if self.view.begin_select_mode(&self.cells) {
+                self.view.render(self.content_area, buf, &self.cells);
+            } else {
+                self.is_done = true;
+            }
+        }
         if let Some(index) = self.pending_highlight.take() {
             self.view.ensure_entry_visible(&self.cells, index);
             self.view.render(self.content_area, buf, &self.cells);
@@ -109,11 +135,7 @@ impl TranscriptOverlay {
         .intersection(area);
         self.cursor = None;
         if browsing && let Some(footer) = &self.browsing_footer {
-            if let Some(items) = &self.key_chord_hint {
-                crate::bottom_pane::footer_hint_items_line(items).render(status, buf);
-            } else {
-                Widget::render(footer, status, buf);
-            }
+            Widget::render(footer, status, buf);
             return;
         }
         let hints = Rect::new(area.x, status.bottom(), area.width, /*height*/ 2).intersection(area);
@@ -159,11 +181,6 @@ impl TranscriptOverlay {
             }
             self.render_hints(hints, buf);
         }
-        if let Some(items) = &self.key_chord_hint {
-            let row = Rect::new(hints.x, hints.y, hints.width, 1).intersection(area);
-            Clear.render(row, buf);
-            crate::bottom_pane::footer_hint_items_line(items).render(row, buf);
-        }
     }
 
     pub(crate) fn draw(&mut self, tui: &mut tui::Tui) -> Result<()> {
@@ -184,27 +201,24 @@ impl TranscriptOverlay {
         Ok(())
     }
 
-    pub(crate) fn handle_event(&mut self, tui: &mut tui::Tui, event: TuiEvent) -> Result<()> {
-        if let Some(completion) = tui.clipboard.poll()
-            && let Some(follow) =
-                self.view
-                    .finish_copy(&self.cells, completion, /*current*/ true)
-        {
-            self.notice = Some(match &completion.1 {
-                Ok(status) => status.message("selection"),
-                Err(error) => format!("Copy failed: {error}"),
-            });
-            if follow {
-                self.view.jump_to_latest();
-                self.is_done = self.browsing_footer.is_some();
-            }
-        }
+    pub(crate) fn handle_event(
+        &mut self,
+        tui: &mut tui::Tui,
+        event: TuiEvent,
+    ) -> Result<Option<u64>> {
+        let completed_copy = if let Some(completion) = tui.clipboard.poll() {
+            let id = completion.0;
+            self.finish_pending_copy(completion);
+            Some(id)
+        } else {
+            None
+        };
         if matches!(event, TuiEvent::Resume | TuiEvent::FocusLost) {
             self.view.cancel_primary();
             self.view.end_drag();
         }
         // Apply a queued prompt jump before navigation can move away from it.
-        if self.pending_highlight.is_some()
+        if (self.pending_select_mode || self.pending_highlight.is_some())
             && (matches!(&event, TuiEvent::Key(key) if key.kind != KeyEventKind::Release)
                 || matches!(&event, TuiEvent::Mouse(mouse) if mouse.kind != MouseEventKind::Moved))
         {
@@ -223,6 +237,9 @@ impl TranscriptOverlay {
                 self.view.handle_mouse(mouse, &self.cells)
             }
             TuiEvent::Paste(text) => {
+                if self.view.is_select_mode() && !self.view.is_search_editing() {
+                    return Ok(completed_copy);
+                }
                 if self.view.is_search_editing() {
                     self.view.end_selection(&self.cells);
                 }
@@ -234,7 +251,7 @@ impl TranscriptOverlay {
                         .schedule_frame_in(crate::tui::TARGET_FRAME_INTERVAL);
                 }
                 self.draw(tui)?;
-                return Ok(());
+                return Ok(completed_copy);
             }
             TuiEvent::FocusLost => None,
         };
@@ -242,7 +259,7 @@ impl TranscriptOverlay {
             self.apply_action(tui, action);
             tui.frame_requester().schedule_frame();
         }
-        Ok(())
+        Ok(completed_copy)
     }
 
     pub(crate) fn is_done(&self) -> bool {
@@ -254,6 +271,10 @@ impl TranscriptOverlay {
     }
 
     pub(crate) fn set_keymap_bindings(&mut self, keymap: &RuntimeKeymap) {
+        self.keymap.clone_from(&keymap.pager);
+        self.find_transcript.clone_from(&keymap.app.find_transcript);
+        self.select_transcript
+            .clone_from(&keymap.app.select_transcript);
         self.view.set_keymap_bindings(keymap);
     }
 
@@ -261,16 +282,28 @@ impl TranscriptOverlay {
         self.view.begin_search();
     }
 
+    pub(crate) fn begin_select_mode(&mut self) {
+        self.pending_select_mode = true;
+    }
+
     pub(crate) fn is_search_editing(&self) -> bool {
         self.view.is_search_editing()
     }
 
+    pub(crate) fn is_select_mode(&self) -> bool {
+        self.pending_select_mode || self.view.is_select_mode()
+    }
+
     pub(crate) fn owns_interaction_key(&self, key: KeyEvent) -> bool {
-        self.view.owns_interaction_key(key)
+        self.pending_select_mode || self.view.owns_interaction_key(key)
     }
 
     pub(crate) fn has_active_interaction(&self) -> bool {
-        self.view.has_active_interaction()
+        self.pending_select_mode || self.view.has_active_interaction()
+    }
+
+    pub(crate) fn pending_follow_id(&self) -> Option<u64> {
+        self.pending_follow_close.map(|(id, _)| id)
     }
 
     pub(crate) fn needs_history(&mut self) -> bool {
@@ -289,7 +322,11 @@ impl TranscriptOverlay {
         if previous == TranscriptHistoryState::LoadingBeginning
             && state == TranscriptHistoryState::Complete
         {
-            self.view.jump_to_entry(&self.cells, /*index*/ 0);
+            if self.view.is_select_mode() {
+                self.view.complete_select_beginning(&self.cells);
+            } else {
+                self.view.jump_to_entry(&self.cells, /*index*/ 0);
+            }
         }
         previous
     }
@@ -322,11 +359,13 @@ impl TranscriptOverlay {
         let index = self
             .cells
             .iter()
-            .rposition(|cell| {
-                cell.as_any().is::<SessionInfoCell>()
-                    || cell.as_any().is::<SessionHeaderHistoryCell>()
-            })
+            .rposition(|cell| is_session_history_prefix_cell(cell.as_ref()))
             .map_or(/*default*/ 0, |index| index + 1);
+        self.insert_history_page(index, cells);
+        index
+    }
+
+    pub(crate) fn insert_history_page(&mut self, index: usize, cells: Vec<Arc<dyn HistoryCell>>) {
         let added = cells.len();
         self.cells.splice(index..index, cells);
         for highlight in [&mut self.highlight_cell, &mut self.pending_highlight] {
@@ -336,7 +375,6 @@ impl TranscriptOverlay {
         }
         self.view.set_highlight(self.highlight_cell);
         self.view.history_loaded(&self.cells, index..index + added);
-        index
     }
 
     pub(crate) fn replace_cells(&mut self, cells: Vec<Arc<dyn HistoryCell>>) {
@@ -434,10 +472,38 @@ impl TranscriptOverlay {
             return None;
         }
         if !self.view.is_search_editing()
+            && !self.view.is_select_mode()
             && (!self.view.has_active_interaction() || !self.view.owns_interaction_key(key))
             && self.keymap.find.is_pressed(key)
         {
             self.view.begin_search();
+            return Some(ViewAction::Changed);
+        }
+        if !self.view.is_search_editing()
+            && !self.view.is_select_mode()
+            && self.find_transcript.is_pressed(key)
+        {
+            self.view.begin_search();
+            return Some(ViewAction::Changed);
+        }
+        if !self.view.is_search_editing()
+            && !self.view.is_select_mode()
+            && self.select_transcript.is_pressed(key)
+        {
+            self.begin_select_mode();
+            return Some(ViewAction::Changed);
+        }
+        if self.view.is_select_mode() && !self.view.is_search_editing() {
+            if let Some(action) = self.view.handle_select_mode_key(key, &self.cells) {
+                return Some(action);
+            }
+            if self.keymap.find.is_pressed(key) || self.find_transcript.is_pressed(key) {
+                self.view.begin_search();
+                return Some(ViewAction::Changed);
+            }
+            if self.keymap.close.is_pressed(key) || self.keymap.close_transcript.is_pressed(key) {
+                self.is_done = true;
+            }
             return Some(ViewAction::Changed);
         }
         if self.view.has_active_interaction()
@@ -459,37 +525,81 @@ impl TranscriptOverlay {
         self.view.cancel_beginning();
     }
 
+    fn finish_select_follow(&mut self, close_overlay: bool) {
+        self.view.jump_to_latest();
+        if close_overlay {
+            self.is_done = true;
+        }
+    }
+
     fn apply_action(&mut self, tui: &mut tui::Tui, action: ViewAction) {
         self.notice = None;
         let resume_following = matches!(action, ViewAction::CopyAndFollow(_));
-        let copy_on_select = matches!(action, ViewAction::CopyOnSelect(_));
-        match action {
-            ViewAction::Changed => {}
-            ViewAction::PrimarySelection(text) => self.view.publish_primary(tui, &text),
-            ViewAction::Copy(text)
-            | ViewAction::CopyOnSelect(text)
-            | ViewAction::CopyAndFollow(text) => {
-                let result = self
-                    .view
-                    .copy_selected_text(tui, &self.cells, &text, !copy_on_select);
-                if resume_following
-                    && matches!(result, Ok(crate::clipboard_copy::CopyStatus::Pending(_)))
-                {
-                    self.view.follow_pending_copy();
+        let close_overlay = self.view.is_select_mode() || self.browsing_footer.is_some();
+        if matches!(action, ViewAction::ExitSelectMode) {
+            self.is_done = true;
+        } else if let Some((_, result)) = self.view.copy_action(
+            tui,
+            &self.cells,
+            &action,
+            crate::clipboard_copy::CopyFormat::Markdown,
+        ) {
+            if resume_following {
+                match result {
+                    Ok(crate::clipboard_copy::CopyStatus::Confirmed) => {
+                        self.pending_follow_close = None;
+                        self.finish_select_follow(close_overlay);
+                    }
+                    Ok(crate::clipboard_copy::CopyStatus::Pending(id)) => {
+                        self.pending_follow_close = Some((id, close_overlay));
+                    }
+                    Ok(
+                        crate::clipboard_copy::CopyStatus::Unconfirmed
+                        | crate::clipboard_copy::CopyStatus::Busy,
+                    )
+                    | Err(_) => {}
                 }
-                self.notice = Some(match result {
-                    Ok(status) => status.message("selection"),
-                    Err(error) => error,
-                });
             }
-            ViewAction::OpenLink(url) => {
-                if url.starts_with(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX) {
-                    self.pending_prune_link = Some(url);
-                    return;
-                }
-                if let Err(error) = webbrowser::open(&url) {
-                    self.notice = Some(format!("Could not open link: {error}"));
-                }
+            self.notice = Some(match result {
+                Ok(status) => status.message("selection"),
+                Err(error) => error,
+            });
+        } else if let ViewAction::OpenLink(url) = action {
+            if url.starts_with(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX) {
+                self.pending_prune_link = Some(url);
+            } else if let Some(thread_id) = crate::thread_links::thread_id(&url) {
+                self.pending_thread_link = Some(thread_id);
+            } else if let Err(error) = webbrowser::open(&url) {
+                self.notice = Some(format!("Could not open link: {error}"));
+            }
+        }
+    }
+
+    pub(super) fn finish_pending_copy(
+        &mut self,
+        completion: &(u64, crate::clipboard_copy::worker::CopyResult),
+    ) {
+        let close_overlay = match self.pending_follow_close {
+            Some((id, close_overlay)) if id == completion.0 => {
+                self.pending_follow_close = None;
+                Some(close_overlay)
+            }
+            Some((id, _)) if id < completion.0 => {
+                self.pending_follow_close = None;
+                None
+            }
+            _ => None,
+        };
+        if let Some(follow) = self
+            .view
+            .finish_copy(&self.cells, completion, /*current*/ true)
+        {
+            self.notice = Some(match &completion.1 {
+                Ok(status) => status.message("selection"),
+                Err(error) => format!("Copy failed: {error}"),
+            });
+            if follow {
+                self.finish_select_follow(close_overlay.unwrap_or(false));
             }
         }
     }

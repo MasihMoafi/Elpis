@@ -1,6 +1,7 @@
 use crate::FunctionCallError;
 use crate::ToolName;
 use crate::ToolPayload;
+use codex_attachment_store::AttachmentStore;
 use codex_extension_items::ExtensionItem;
 use codex_file_system::EnvironmentAccess;
 use codex_protocol::models::ResponseItem;
@@ -154,6 +155,8 @@ pub struct ToolCall<'call> {
     pub source: ToolCallSource,
     pub conversation_history: ConversationHistory,
     pub turn_item_emitter: Arc<dyn TurnItemEmitter>,
+    pub attachment_store: Arc<dyn AttachmentStore>,
+    pub ephemeral: bool,
     pub environments: Vec<ToolEnvironment<'call>>,
     pub payload: ToolPayload,
 }
@@ -173,6 +176,8 @@ impl std::fmt::Debug for ToolCall<'_> {
             .field("source", &self.source)
             .field("conversation_history", &self.conversation_history)
             .field("turn_item_emitter", &"<host turn item emitter>")
+            .field("attachment_store", &"<host attachment store>")
+            .field("ephemeral", &self.ephemeral)
             .field("environment_count", &self.environments.len())
             .field("payload", &self.payload)
             .finish()

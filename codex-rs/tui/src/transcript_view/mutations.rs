@@ -3,8 +3,19 @@
 use std::ops::Range;
 
 use super::*;
+use crate::history_cell::is_session_history_prefix_cell;
 
 impl TranscriptView {
+    /// Rebuild the layout of an observed revision without counting the reflow as new output.
+    pub(crate) fn rebind_observed_live_revision(&mut self, observed: u64, updated: u64) {
+        if let Some((_, key)) = &mut self.live_key
+            && key.revision == observed
+        {
+            key.revision = updated;
+            key.cacheable = false;
+        }
+    }
+
     /// Refresh unseen activity before either footer measurement or transcript painting.
     pub(crate) fn sync_history_tail(&mut self, cells: &[Arc<dyn HistoryCell>]) {
         let tail = cells.last().map(EntryKey::cell);
@@ -35,6 +46,7 @@ impl TranscriptView {
         if range.is_empty() {
             return;
         }
+        self.invalidate_turn_details_from(range.start);
         self.retain_search_origin(cells, range.clone());
         if range.end == cells.len() && self.last_tail == cells.last().map(EntryKey::cell) {
             self.last_tail = Some(EntryKey::cell(replacement));
@@ -82,6 +94,7 @@ impl TranscriptView {
         if range.is_empty() {
             return;
         }
+        self.invalidate_turn_details_from(range.start);
         self.retain_search_origin(cells, range.clone());
         // Older history may extend the final group without introducing new activity.
         if range.end == cells.len() && self.last_tail == cells.last().map(EntryKey::cell) {
@@ -148,14 +161,11 @@ impl TranscriptView {
         if self.last_tail == Some(tail_key) {
             self.last_tail = preceding.last().map(EntryKey::cell);
         }
-        let following = self.is_following();
-        if let Some((_, key)) = &mut self.live_key {
-            if !following && key.revision != previous_revision {
+        if let Some((_, key)) = self.live_key {
+            if !self.is_following() && key.revision != previous_revision {
                 self.unseen_activity = true;
             }
-            key.revision = hydrated_revision;
-            // Force fresh lines even if the next draw receives this exact hydrated revision.
-            key.cacheable = false;
+            self.rebind_observed_live_revision(key.revision, hydrated_revision);
         }
         if self.snapshot().is_some() {
             return;
@@ -176,9 +186,12 @@ impl TranscriptView {
         &mut self,
         cells: &[Arc<dyn HistoryCell>],
         inserted: Range<usize>,
-    ) {
+    ) -> Range<usize> {
+        if inserted.is_empty() {
+            return inserted;
+        }
         let Some(snapshot) = self.snapshot_mut() else {
-            return;
+            return inserted;
         };
         let existing = snapshot
             .cells
@@ -191,21 +204,22 @@ impl TranscriptView {
             .cloned()
             .collect::<Vec<_>>();
         if older.is_empty() {
-            return;
+            return 0..0;
         }
-        let index = cells[..inserted.start]
+        let preceding = &cells[..inserted.start];
+        let index = snapshot
+            .cells
             .iter()
-            .rev()
-            .find_map(|cell| {
-                snapshot
-                    .cells
-                    .iter()
-                    .position(|retained| Arc::ptr_eq(retained, cell))
+            .rposition(|retained| {
+                is_session_history_prefix_cell(retained.as_ref())
+                    || preceding.iter().any(|cell| Arc::ptr_eq(retained, cell))
             })
             .map_or(/*default*/ 0, |index| index + 1);
+        let retained = index..index + older.len();
         let mut extended = snapshot.cells.to_vec();
         extended.splice(index..index, older);
         snapshot.cells = extended.into();
+        retained
     }
 }
 

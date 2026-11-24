@@ -18,6 +18,7 @@ codex-execpolicy = { workspace = true }
 codex-features = { workspace = true }
 codex-file-system = { workspace = true }
 codex-git-utils = { workspace = true }
+codex-http-client = { workspace = true }
 codex-model-provider-info = { workspace = true }
 codex-network-proxy = { workspace = true }
 codex-protocol = { workspace = true }
@@ -40,6 +41,7 @@ serde_path_to_error = { workspace = true }
 sha2 = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["fs"] }
+tokio-util = { workspace = true, features = ["rt"] }
 toml = { workspace = true, features = ["preserve_order"] }
 toml_edit = { workspace = true }
 tonic = { workspace = true, features = ["tls-native-roots", "tls-ring"] }
@@ -62,10 +64,12 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Com",
     "Win32_UI_Shell",
 ] }
+winreg = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+test-case = "3.3.1"
 tokio = { workspace = true, features = ["full"] }
 tokio-stream = { workspace = true, features = ["net"] }
 tonic = { workspace = true, features = ["router", "transport"] }

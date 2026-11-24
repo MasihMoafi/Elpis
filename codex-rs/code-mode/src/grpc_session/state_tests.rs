@@ -11,6 +11,7 @@ use super::SessionState;
 
 fn request(execution_id: &str) -> grpc::ExecuteRequest {
     grpc::ExecuteRequest {
+        catalog_revision: None,
         session_id: "session".to_string(),
         execution_id: execution_id.to_string(),
         tool_call_id: "call".to_string(),
@@ -34,6 +35,7 @@ fn request(execution_id: &str) -> grpc::ExecuteRequest {
 fn tool_call(execution_id: &str, invocation_id: u128) -> grpc::ToolCall {
     let invocation_id = Uuid::from_u128(invocation_id).to_string();
     grpc::ToolCall {
+        heartbeat: None,
         session_id: "session".to_string(),
         execution_id: execution_id.to_string(),
         cell_id: "cell".to_string(),
@@ -75,13 +77,13 @@ fn callbacks_use_their_execution_delegate_before_cell_admission() {
     for (index, delegate) in delegates.iter().enumerate() {
         let mut call = tool_call(&index.to_string(), index as u128 + 1);
         call.cell_id = format!("cell-{index}");
-        let CallbackAdmission::Active(_, actual) = state.admit_invocation(&call).unwrap() else {
+        let CallbackAdmission::Active(_, actual, _) = state.admit_invocation(&call).unwrap() else {
             panic!("callback should be admitted before the execute response");
         };
         assert!(Arc::ptr_eq(&actual, delegate));
         let mut notice = notification(&index.to_string(), index as u128 + 1);
         notice.cell_id = call.cell_id;
-        let CallbackAdmission::Active(_, actual) = state.admit_notification(&notice).unwrap()
+        let CallbackAdmission::Active(_, actual, _) = state.admit_notification(&notice).unwrap()
         else {
             panic!("notification should be admitted before the execute response");
         };
@@ -102,10 +104,10 @@ fn cell_closure_drains_notifications_and_cancels_tool_callbacks() {
     let first = state
         .admit_invocation(&tool_call("execution", /*invocation_id*/ 1))
         .expect("accept early invocation");
-    let CallbackAdmission::Active(first_cancellation, _) = first else {
+    let CallbackAdmission::Active(first_cancellation, ..) = first else {
         panic!("first callback was not admitted");
     };
-    let CallbackAdmission::Active(notification_cancellation, _) = state
+    let CallbackAdmission::Active(notification_cancellation, ..) = state
         .admit_notification(&notification("execution", /*notification_id*/ 1))
         .expect("admit notification")
     else {
@@ -259,7 +261,7 @@ fn abandonment_revokes_callbacks_and_ignores_late_events() {
     state
         .begin_execution(&request("execution"), Arc::new(NoopCodeModeSessionDelegate))
         .expect("register execution");
-    let CallbackAdmission::Active(invocation, _) = state
+    let CallbackAdmission::Active(invocation, ..) = state
         .admit_invocation(&tool_call("execution", /*invocation_id*/ 1))
         .expect("admit callback before execution starts")
     else {
@@ -304,7 +306,7 @@ fn invocation_cancellation_revokes_delegate_and_late_completion() {
         .mark_execution_ready("execution")
         .expect("claim execution");
     let invocation = tool_call("execution", /*invocation_id*/ 1);
-    let CallbackAdmission::Active(cancellation, _) = state
+    let CallbackAdmission::Active(cancellation, ..) = state
         .admit_invocation(&invocation)
         .expect("accept invocation")
     else {
@@ -390,7 +392,7 @@ fn tool_callbacks_must_match_the_executions_enabled_tools() {
     });
     assert!(matches!(
         state.admit_invocation(&explicit_default_namespace),
-        Ok(CallbackAdmission::Active(_, _))
+        Ok(CallbackAdmission::Active(..))
     ));
     assert_eq!(state.require_open(), Ok(()));
 }
@@ -436,7 +438,7 @@ fn notification_call_ids_must_match_their_execution() {
     );
     assert!(matches!(
         state.admit_notification(&notification("execution", /*notification_id*/ 3)),
-        Ok(CallbackAdmission::Active(_, _))
+        Ok(CallbackAdmission::Active(..))
     ));
 }
 
@@ -489,7 +491,7 @@ fn notifications_and_tools_share_the_pending_delegate_limit() {
     for index in 0..MAX_PENDING_DELEGATE_CALLS {
         assert!(matches!(
             state.admit_notification(&notification("execution", index as u128 + 1)),
-            Ok(CallbackAdmission::Active(_, _))
+            Ok(CallbackAdmission::Active(..))
         ));
     }
 
@@ -507,7 +509,7 @@ fn notifications_and_tools_share_the_pending_delegate_limit() {
     assert!(state.finish_notification("execution").is_none());
     assert!(matches!(
         state.admit_invocation(&tool_call("execution", /*invocation_id*/ 2)),
-        Ok(CallbackAdmission::Active(_, _))
+        Ok(CallbackAdmission::Active(..))
     ));
 }
 
@@ -517,7 +519,7 @@ fn terminated_cells_cancel_pending_notifications() {
     state
         .begin_execution(&request("execution"), Arc::new(NoopCodeModeSessionDelegate))
         .expect("register execution");
-    let CallbackAdmission::Active(cancellation, _) = state
+    let CallbackAdmission::Active(cancellation, ..) = state
         .admit_notification(&notification("execution", /*notification_id*/ 1))
         .expect("admit notification")
     else {
@@ -539,13 +541,13 @@ fn disconnect_revokes_callbacks_and_returns_each_live_cell_once() {
     state
         .admit_execution("execution", "cell")
         .expect("admit execution");
-    let CallbackAdmission::Active(cancellation, _) = state
+    let CallbackAdmission::Active(cancellation, ..) = state
         .admit_invocation(&tool_call("execution", /*invocation_id*/ 1))
         .expect("accept invocation")
     else {
         panic!("invocation was not admitted");
     };
-    let CallbackAdmission::Active(notification_cancellation, _) = state
+    let CallbackAdmission::Active(notification_cancellation, ..) = state
         .admit_notification(&notification("execution", /*notification_id*/ 1))
         .expect("admit notification")
     else {

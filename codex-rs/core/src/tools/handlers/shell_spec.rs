@@ -1,3 +1,4 @@
+use super::unified_exec::ExecCommandHandlerOptions;
 use codex_tools::JsonSchema;
 use codex_tools::ResponsesApiTool;
 use codex_tools::ToolSpec;
@@ -5,28 +6,7 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CommandToolOptions {
-    pub include_login_parameter: bool,
-    pub exec_permission_approvals_enabled: bool,
-}
-
-#[cfg(test)]
-pub fn create_exec_command_tool(options: CommandToolOptions) -> ToolSpec {
-    create_exec_command_tool_with_environment_id(
-        options,
-        /*include_environment_id*/ false,
-        /*include_shell_parameter*/ true,
-        /*include_windows_shell_guidance*/ cfg!(windows),
-    )
-}
-
-pub(crate) fn create_exec_command_tool_with_environment_id(
-    options: CommandToolOptions,
-    include_environment_id: bool,
-    include_shell_parameter: bool,
-    include_windows_shell_guidance: bool,
-) -> ToolSpec {
+pub(crate) fn create_exec_command_tool(options: ExecCommandHandlerOptions) -> ToolSpec {
     let yield_time_ms_description = if cfg!(windows) {
         "Maximum time to wait before returning a session ID for a still-running command. Commands that finish sooner return immediately. For ordinary commands, omit this parameter to use the 10000 ms default. Effective range on Windows is 10000-30000 ms."
     } else {
@@ -62,24 +42,24 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
             )),
         ),
     ]);
-    if include_shell_parameter {
-        properties.insert(
-            "shell".to_string(),
-            JsonSchema::string(Some(
-                "Shell binary to launch. Defaults to the user's default shell.".to_string(),
-            )),
-        );
-    }
-    if options.include_login_parameter {
-        properties.insert(
-            "login".to_string(),
-            JsonSchema::boolean(Some(
-                "True runs the shell with -l/-i semantics; false disables them. Defaults to true."
-                    .to_string(),
-            )),
-        );
-    }
-    if include_environment_id {
+    properties.insert(
+        "shell".to_string(),
+        JsonSchema::string(Some(
+            "Shell binary to launch. Defaults to the user's default shell.".to_string(),
+        )),
+    );
+    properties.insert(
+        "login".to_string(),
+        JsonSchema::boolean(Some(
+            if options.has_powershell {
+                "Login-shell startup. In PowerShell, false skips profiles. Keep them enabled for profile-defined commands, even unattended. Omit to inherit."
+            } else {
+                "Request login-shell startup. Omit to inherit."
+            }
+            .to_string(),
+        )),
+    );
+    if options.include_environment_id {
         properties.insert(
             "environment_id".to_string(),
             JsonSchema::string(Some(
@@ -94,7 +74,7 @@ pub(crate) fn create_exec_command_tool_with_environment_id(
 
     ToolSpec::Function(ResponsesApiTool {
         name: "exec_command".to_string(),
-        description: if include_windows_shell_guidance {
+        description: if options.include_windows_shell_guidance {
             format!(
                 "Runs a command in a PTY, returning output or a session ID for ongoing interaction.\n\n{}",
                 windows_shell_guidance()
@@ -269,7 +249,7 @@ fn create_approval_parameters(
         let mut additional_permissions = permission_profile_schema();
         additional_permissions.description = Some(
             "Sandboxed filesystem or network access for this command; only with `sandbox_permissions: \"with_additional_permissions\"`."
-                .to_string(),
+                .into(),
         );
         properties.insert("additional_permissions".to_string(), additional_permissions);
     }
@@ -286,7 +266,7 @@ fn permission_profile_schema() -> JsonSchema {
         /*required*/ None,
         Some(false.into()),
     );
-    schema.description = Some("Filesystem or network access request.".to_string());
+    schema.description = Some("Filesystem or network access request.".into());
     schema
 }
 
@@ -301,7 +281,7 @@ fn network_permissions_schema() -> JsonSchema {
         /*required*/ None,
         Some(false.into()),
     );
-    schema.description = Some("Network access request.".to_string());
+    schema.description = Some("Network access request.".into());
     schema
 }
 
@@ -332,7 +312,7 @@ fn file_system_permissions_schema() -> JsonSchema {
         /*required*/ None,
         Some(false.into()),
     );
-    schema.description = Some("Filesystem access request.".to_string());
+    schema.description = Some("Filesystem access request.".into());
     schema
 }
 

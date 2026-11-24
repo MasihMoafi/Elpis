@@ -193,6 +193,7 @@ async fn assert_legacy_oauth_without_starting_an_mcp_session(
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "resource": resource_url,
             "authorization_servers": [authorization_server.uri()],
+            "scopes_supported": ["mcp:read"],
         })))
         .expect(2)
         .mount(&resource_server)
@@ -201,7 +202,6 @@ async fn assert_legacy_oauth_without_starting_an_mcp_session(
     let mut metadata = json!({
         "authorization_endpoint": format!("{}/authorize", authorization_server.uri()),
         "token_endpoint": format!("{}/token", authorization_server.uri()),
-        "scopes_supported": ["mcp:read"],
         "code_challenge_methods_supported": ["S256"],
     });
     match metadata_issuer {

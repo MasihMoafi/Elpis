@@ -1,6 +1,7 @@
 //! Render the live mention frame at full, clipped and narrow dimensions.
 
 use super::*;
+use crate::thread_label::ThreadLabelStyle;
 use pretty_assertions::assert_eq;
 
 fn rows() -> Vec<SearchResult> {
@@ -9,6 +10,7 @@ fn rows() -> Vec<SearchResult> {
             display_name: format!("Plugin {index:02}"),
             description: Some("Tools and workflows".to_string()),
             mention_type: MentionType::Plugin,
+            label_style: ThreadLabelStyle::Plain,
             selection: Selection::Tool {
                 insert_text: format!("plugin-{index}"),
                 path: None,
@@ -22,6 +24,7 @@ fn rows() -> Vec<SearchResult> {
             display_name: name.to_string(),
             description: None,
             mention_type: MentionType::File,
+            label_style: ThreadLabelStyle::Plain,
             selection: Selection::File(name.into()),
             match_indices: None,
             score: 0,
@@ -163,6 +166,43 @@ fn filesystem_columns_use_terminal_cell_widths() {
 }
 
 #[test]
+fn fuzzy_matches_preserve_graphemes_when_truncated() {
+    let mut plugin = rows().remove(0);
+    plugin.display_name = "👩‍💻abcdef".to_string();
+    plugin.description = None;
+    plugin.match_indices = Some(vec![2, 3]);
+    let path = "👩‍💻abcdef/f";
+    let file = SearchResult {
+        display_name: path.to_string(),
+        description: None,
+        mention_type: MentionType::File,
+        label_style: ThreadLabelStyle::Plain,
+        selection: Selection::File(path.into()),
+        match_indices: Some(vec![0, 1]),
+        score: 0,
+    };
+    let mut rendered = Vec::new();
+    for (row, width, bold_cells) in [(plugin, 13, &[2][..]), (file, 17, &[5, 7][..])] {
+        let mut buffer = Buffer::empty(Rect::new(
+            /*x*/ 0, /*y*/ 0, width, /*height*/ 1,
+        ));
+        render_rows(buffer.area, &mut buffer, &[row], &ScrollState::new(), "");
+        for &x in bold_cells {
+            assert!(
+                buffer[(x, 0)]
+                    .modifier
+                    .contains(ratatui::style::Modifier::BOLD)
+            );
+        }
+        rendered.push(text(&buffer));
+    }
+    insta::assert_snapshot!(rendered.join("\n"), @"
+    👩‍💻…  Plugin
+    f  👩‍💻a…  File
+    ");
+}
+
+#[test]
 fn long_mentions_leave_room_for_distinguishing_parent_paths() {
     let mut rows = rows();
     rows[0].display_name = "Long off-screen plugin name ".repeat(/*n*/ 16);
@@ -175,6 +215,7 @@ fn long_mentions_leave_room_for_distinguishing_parent_paths() {
             display_name: name.to_string(),
             description: None,
             mention_type: MentionType::File,
+            label_style: ThreadLabelStyle::Plain,
             selection: Selection::File(name.into()),
             match_indices: None,
             score: 0,

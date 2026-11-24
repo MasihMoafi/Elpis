@@ -31,7 +31,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
       - name: Install Rust
-        run: rustup toolchain install 1.95.0 --profile minimal --no-self-update
+        run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
       - name: Test DNS resolution and proxy policies
         working-directory: codex-rs
         run: cargo test --locked -p codex-network-proxy

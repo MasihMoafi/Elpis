@@ -137,7 +137,12 @@ impl CodeModeExecuteHandler {
         code_cell_trace.record_initial_response(&response);
         // Yielded cells keep running, so terminal lifecycle is only emitted
         // here when the first response also ended the runtime.
-        if !matches!(response, codex_code_mode::RuntimeResponse::Yielded { .. }) {
+        if matches!(response, codex_code_mode::RuntimeResponse::Yielded { .. }) {
+            telemetry.record_cell_timing(
+                &cell_id,
+                codex_extension_api::CodeModeCellTiming::ExecYielded,
+            );
+        } else {
             code_cell_trace.record_ended(&response);
             exec.session
                 .services
@@ -160,6 +165,7 @@ impl CodeModeExecuteHandler {
             &step_context.settings.model_info,
             response,
             args.max_output_tokens,
+            exec.session.services.code_mode_service.output_truncation(),
             wall_time,
             exec.turn.config.code_mode.experimental_show_cell_overhead,
         ))

@@ -7,6 +7,7 @@ use anyhow::Context;
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
+use codex_config::McpEmaTokenEndpointAuthMethod;
 use codex_exec_server::HttpClient;
 use futures::future::BoxFuture;
 use http::StatusCode;
@@ -15,10 +16,11 @@ use serde_json::Value;
 use url::Url;
 
 use crate::EmaCredentialLease;
+use crate::EmaErrorDetail;
 use crate::ema_auth_policy::advertised_capability;
+use crate::ema_auth_policy::resolve_ema_client_auth;
 use crate::ema_auth_policy::validate_ema_auth_resource;
 use crate::ema_auth_policy::validate_ema_oauth_endpoint;
-use crate::ema_auth_policy::validate_ema_public_client_auth;
 use crate::ema_exchange::EmaAccessToken;
 use crate::ema_exchange::EmaIdJagExchangeRequest;
 use crate::ema_exchange::JWT_BEARER_GRANT_TYPE;
@@ -28,6 +30,7 @@ use crate::ema_resource::EmaDiscoveryRequest;
 use crate::ema_resource::EmaResource;
 use crate::ema_resource::discover_ema_resource;
 use crate::ema_resource::validate_ema_metadata_issuer;
+use rmcp::transport::auth::enterprise::EmaClientAuthentication;
 
 const ID_JAG_GRANT_PROFILE: &str = "urn:ietf:params:oauth:grant-profile:id-jag";
 
@@ -41,21 +44,23 @@ struct EmaAuthorizationMetadata {
 }
 
 /// Inputs for non-interactive enterprise-managed MCP authorization.
-pub struct EmaAuthTokenExchangeRequest<'a> {
+pub struct EmaAuthTokenExchangeRequest<'a, L = EmaCredentialLease> {
     pub server_url: &'a str,
     pub resource: Option<&'a str>,
     pub scopes: &'a [String],
     pub mcp_client_id: Option<&'a str>,
+    pub mcp_client_secret: Option<&'a str>,
+    pub token_endpoint_auth_method: Option<McpEmaTokenEndpointAuthMethod>,
     pub expected_authorization_server_issuer: Option<&'a str>,
     pub idp_issuer: &'a str,
     pub idp_client_id: &'a str,
-    pub idp_identity: BoxFuture<'a, Result<EmaIdpIdentity>>,
+    pub idp_identity: BoxFuture<'a, Result<EmaIdpIdentity<L>>>,
     pub idp_http_client: Arc<dyn HttpClient>,
     pub resource_http_client: Arc<dyn HttpClient>,
 }
 
-impl<'a> From<&EmaAuthTokenExchangeRequest<'a>> for EmaDiscoveryRequest<'a> {
-    fn from(request: &EmaAuthTokenExchangeRequest<'a>) -> Self {
+impl<'a, L> From<&EmaAuthTokenExchangeRequest<'a, L>> for EmaDiscoveryRequest<'a> {
+    fn from(request: &EmaAuthTokenExchangeRequest<'a, L>) -> Self {
         Self {
             server_url: request.server_url,
             resource: request.resource,
@@ -66,9 +71,10 @@ impl<'a> From<&EmaAuthTokenExchangeRequest<'a>> for EmaDiscoveryRequest<'a> {
 }
 
 /// Discover the resource's authorization server, then perform the ID-JAG flow.
-pub async fn exchange_ema_auth_token(
-    request: EmaAuthTokenExchangeRequest<'_>,
-) -> Result<(EmaAccessToken, EmaCredentialLease)> {
+pub async fn exchange_ema_auth_token<L: Send, R: Send>(
+    request: EmaAuthTokenExchangeRequest<'_, L>,
+    finish_idp: impl FnOnce(L) -> R + Send,
+) -> Result<(EmaAccessToken, R)> {
     validate_ema_auth_resource(request.server_url, request.resource)?;
     let client_id = request
         .mcp_client_id
@@ -78,37 +84,59 @@ pub async fn exchange_ema_auth_token(
                 "ema_auth requires the OAuth client ID registered with the MCP authorization server"
             )
         })?;
-    let (metadata, resource) =
-        discover_ema_authorization_metadata(EmaDiscoveryRequest::from(&request)).await?;
+    if request.mcp_client_secret.is_some()
+        && request
+            .expected_authorization_server_issuer
+            .is_none_or(|issuer| issuer.trim().is_empty())
+    {
+        bail!("confidential ema_auth requires a configured authorization server issuer");
+    }
+    let (metadata, resource, resource_client_authentication) = discover_ema_authorization_metadata(
+        EmaDiscoveryRequest::from(&request),
+        request.mcp_client_secret,
+        request.token_endpoint_auth_method,
+    )
+    .await
+    .context(EmaErrorDetail::new(
+        "enterprise MCP authorization server discovery failed",
+    ))?;
     let issuer = metadata
         .issuer
         .as_deref()
         .ok_or_else(|| anyhow!("MCP authorization metadata is missing an issuer"))?;
     let EmaIdpIdentity {
         token_endpoint,
-        refresh_token,
+        subject_token,
         credentials,
+        client_authentication: idp_client_authentication,
     } = request.idp_identity.await?;
-    let token = exchange_id_jag(EmaIdJagExchangeRequest {
-        resource: &resource,
-        scopes: request.scopes,
-        mcp_client_id: client_id,
-        authorization_server_issuer: issuer,
-        authorization_server_token_endpoint: &metadata.token_endpoint,
-        idp_token_endpoint: &token_endpoint,
-        idp_issuer: request.idp_issuer,
-        idp_client_id: request.idp_client_id,
-        refresh_token,
-        idp_http_client: request.idp_http_client,
-        resource_http_client: request.resource_http_client,
-    })
-    .await?;
-    Ok((token, credentials))
+    exchange_id_jag(
+        EmaIdJagExchangeRequest {
+            resource: &resource,
+            scopes: request.scopes,
+            mcp_client_id: client_id,
+            authorization_server_issuer: issuer,
+            authorization_server_token_endpoint: &metadata.token_endpoint,
+            idp_token_endpoint: &token_endpoint,
+            idp_issuer: request.idp_issuer,
+            idp_client_id: request.idp_client_id,
+            idp_client_authentication,
+            resource_client_authentication,
+            subject_token,
+            idp_http_client: request.idp_http_client,
+            resource_http_client: request.resource_http_client,
+        },
+        credentials,
+        finish_idp,
+    )
+    .await
 }
 
 async fn discover_ema_authorization_metadata(
     request: EmaDiscoveryRequest<'_>,
-) -> Result<(EmaAuthorizationMetadata, String)> {
+    client_secret: Option<&str>,
+    token_endpoint_auth_method: Option<McpEmaTokenEndpointAuthMethod>,
+) -> Result<(EmaAuthorizationMetadata, String, EmaClientAuthentication)> {
     let expected_issuer = request.expected_issuer;
     let EmaResource {
         server_url: server,
@@ -155,9 +183,9 @@ async fn discover_ema_authorization_metadata(
                 continue;
             };
             if metadata.issuer.as_deref() != Some(issuer.as_str()) {
-                bail!(
+                bail!(EmaErrorDetail::new(
                     "enterprise authorization metadata issuer does not match its advertised issuer"
-                );
+                ));
             }
             validate_ema_oauth_endpoint(
                 &metadata.token_endpoint,
@@ -183,20 +211,22 @@ async fn discover_ema_authorization_metadata(
             if profile == Some(false) || grant != Some(true) {
                 break;
             }
-            match validate_ema_public_client_auth(
+            match resolve_ema_client_auth(
                 metadata
                     .additional_fields
                     .get("token_endpoint_auth_methods_supported"),
+                client_secret,
+                token_endpoint_auth_method,
                 "MCP authorization server",
             ) {
-                Ok(()) => return Ok((metadata, resource)),
+                Ok(authentication) => return Ok((metadata, resource, authentication)),
                 Err(error) if expected_issuer.is_some() => return Err(error),
                 Err(_) => break,
             }
         }
     }
     bail!(
-        "enterprise MCP discovery found no authorization server advertising public-client JWT bearer support for ID-JAG"
+        "enterprise MCP discovery found no authorization server supporting the configured client authentication and ID-JAG JWT bearer grant"
     )
 }
 

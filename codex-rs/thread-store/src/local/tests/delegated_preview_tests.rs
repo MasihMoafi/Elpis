@@ -29,6 +29,7 @@ async fn delegated_thread_is_listed_before_user_followup() {
         live_thread
             .append_items(&[RolloutItem::EventMsg(EventMsg::ItemCompleted(
                 ItemCompletedEvent {
+                    content_token_count: None,
                     thread_id,
                     turn_id: "delegated-turn".to_string(),
                     item: TurnItem::FunctionCallOutput(FunctionCallOutputItem {
@@ -49,6 +50,7 @@ async fn delegated_thread_is_listed_before_user_followup() {
 
         let listed = store
             .list_threads(ListThreadsParams {
+                included_thread_ids: None,
                 page_size: 10,
                 cursor: None,
                 sort_key: ThreadSortKey::CreatedAt,

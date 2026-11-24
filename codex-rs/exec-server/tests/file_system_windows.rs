@@ -30,7 +30,6 @@ use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::FileSystemSpecialPath;
 use codex_protocol::permissions::NetworkSandboxPolicy;
-use codex_protocol::protocol::SandboxPolicy;
 use codex_sandboxing::SandboxType;
 use codex_utils_path_uri::PathUri;
 use codex_windows_sandbox_test_support::WindowsSandboxAccountTestGuard;
@@ -103,6 +102,9 @@ async fn file_system_operations_can_reject_junctions_in_any_path_component(
     std::fs::write(&removable, "keep")?;
     let directory_junction = tmp.path().join("directory-junction");
     create_directory_junction(&real, &directory_junction)?;
+    assert!(
+        codex_exec_server::BoundOutput::open(&directory_junction.join("existing.txt")).is_err()
+    );
 
     let no_follow_read = ReadFileOptions {
         follow_symlinks: false,
@@ -447,6 +449,19 @@ async fn file_system_remote_fs_helper_respects_windows_sandbox_write_policy(
         "sandboxed fs helper must not create blocked file after error: {error}"
     );
 
+    let mut writable_sandbox = workspace_write_sandbox(readonly_dir.clone());
+    writable_sandbox.windows_sandbox_selection = sandbox.windows_sandbox_selection;
+    let allowed_file = readonly_dir.join("allowed.txt");
+    file_system
+        .write_file(
+            &PathUri::from_host_native_path(&allowed_file)?,
+            b"allowed".to_vec(),
+            WriteFileOptions::default(),
+            Some(&writable_sandbox),
+        )
+        .await?;
+    assert_eq!(std::fs::read(&allowed_file)?, b"allowed");
+
     Ok(())
 }
 
@@ -730,8 +745,8 @@ fn process_private_desktops() -> Result<BTreeSet<String>> {
 }
 
 fn read_only_sandbox_for_cwd(cwd: std::path::PathBuf) -> Result<FileSystemSandboxContext> {
-    Ok(FileSystemSandboxContext::from_legacy_sandbox_policy(
-        SandboxPolicy::new_read_only_policy(),
+    Ok(FileSystemSandboxContext::from_permission_profile(
+        PermissionProfile::read_only(),
         PathUri::from_host_native_path(cwd)?,
-    )?)
+    ))
 }

@@ -1,5 +1,6 @@
 //! Resolves global, thread, and repository instructions into one validated snapshot.
 //! Refreshes are serialized; the state lock is never held while calling providers.
+//! Isolated reviewers can pin a captured repository snapshot without executor discovery.
 
 use crate::agents_md::LoadedAgentsMd;
 use crate::agents_md::load_project_instructions;
@@ -29,6 +30,8 @@ pub(crate) struct AgentsMdManager {
 pub(crate) struct SessionInstructions {
     pub(crate) user: Option<Instructions>,
     pub(crate) thread: Option<Instructions>,
+    /// A reviewer-owned repository snapshot. `Some`, even when empty, skips discovery.
+    pub(crate) project_snapshot: Option<Arc<LoadedAgentsMd>>,
     pub(crate) user_provider: Option<Arc<dyn UserInstructionsProvider>>,
     pub(crate) thread_provider: Option<Arc<dyn ThreadInstructionsProvider>>,
 }
@@ -41,6 +44,7 @@ struct AgentsMdState {
 #[derive(Default)]
 struct AgentsMdCache {
     selections: Option<Vec<TurnEnvironmentSelection>>,
+    project_doc_max_bytes: usize,
     active_project_trust_level: Option<TrustLevel>,
     loaded: Option<Arc<LoadedAgentsMd>>,
 }
@@ -103,7 +107,8 @@ impl AgentsMdManager {
             let mut state = self.state.lock().await;
             let refresh_repository = force
                 || state.cache.selections.as_ref() != Some(&selections)
-                || state.cache.active_project_trust_level != active_project_trust_level;
+                || state.cache.active_project_trust_level != active_project_trust_level
+                || state.cache.project_doc_max_bytes != config.project_doc_max_bytes;
             if refresh_repository {
                 // Tightened read permissions must not leave inaccessible instructions visible,
                 // even if discovery fails or the caller cancels the refresh.
@@ -140,19 +145,31 @@ impl AgentsMdManager {
                 }
             }
 
-            let loaded = if refresh_repository {
-                load_project_instructions(config, /*user_instructions*/ None, environments)
-                    .await?
-                    .unwrap_or_default()
+            let loaded = if let Some(project) = &instructions.project_snapshot {
+                project.as_ref().clone()
+            } else if refresh_repository {
+                load_project_instructions(config, environments, &mut warnings).await?
             } else {
                 cached.as_deref().cloned().unwrap_or_default()
             }
             .with_instructions(instructions.user.clone(), instructions.thread.clone())
             .map(Arc::new);
+            let budget = config.project_doc_max_bytes;
+            if budget > 0
+                && let Some(loaded) = &loaded
+            {
+                let bytes = loaded.text().len();
+                if bytes > budget {
+                    warnings.push(format!(
+                        "Combined user instructions use {bytes} bytes, above the {budget}-byte `project_doc_max_bytes` setting. The total includes global and thread instructions. The limit applies only to project files."
+                    ));
+                }
+            }
             let mut state = self.state.lock().await;
             state.instructions = instructions;
             state.cache = AgentsMdCache {
                 selections: Some(selections),
+                project_doc_max_bytes: budget,
                 active_project_trust_level,
                 loaded: loaded.clone(),
             };
@@ -168,6 +185,24 @@ impl AgentsMdManager {
 
     pub(crate) async fn get_loaded(&self) -> Option<Arc<LoadedAgentsMd>> {
         self.state.lock().await.cache.loaded.clone()
+    }
+
+    /// Captures even an empty result, but never attributes another environment's cache
+    /// to a turn-only reviewer that has no issuing step snapshot.
+    pub(crate) async fn project_snapshot(
+        &self,
+        config: &Config,
+        environments: &TurnEnvironmentSnapshot,
+    ) -> Option<Arc<LoadedAgentsMd>> {
+        let selections = environments
+            .turn_environments()
+            .map(|environment| environment.selection.clone())
+            .collect::<Vec<_>>();
+        let state = self.state.lock().await;
+        (state.cache.selections.as_ref() == Some(&selections)
+            && state.cache.active_project_trust_level == config.active_project.trust_level
+            && state.cache.project_doc_max_bytes == config.project_doc_max_bytes)
+            .then(|| state.cache.loaded.clone().unwrap_or_default())
     }
 
     pub(crate) async fn inherited_instructions(&self) -> SessionInstructions {

@@ -1054,11 +1054,20 @@ fn blocking_replace_mcp_servers_round_trips() {
     let codex_home = tmp.path();
 
     let mut servers = BTreeMap::new();
-    servers.insert("ema".to_string(), serde_json::from_value(serde_json::json!({
-        "url": "https://ema.example/mcp", "auth": "ema_auth", "scopes": ["tools"],
-        "oauth_resource": "https://ema.example",
-        "oauth": {"client_id": "resource-client", "authorization_server_issuer": "https://as.example"}
-    })).expect("EMA server"));
+    servers.insert(
+        "ema".to_string(),
+        serde_json::from_value(serde_json::json!({
+            "url": "https://ema.example/mcp", "auth": "ema_auth", "scopes": ["tools"],
+            "oauth_resource": "https://ema.example",
+            "oauth": {
+                "client_id": "resource-client",
+                "client_secret": "test-ema-secret",
+                "token_endpoint_auth_method": "client_secret_post",
+                "authorization_server_issuer": "https://as.example"
+            }
+        }))
+        .expect("EMA server"),
+    );
     servers.insert(
         "stdio".to_string(),
         McpServerConfig {
@@ -1154,6 +1163,8 @@ oauth_resource = \"https://ema.example\"
 
 [mcp_servers.ema.oauth]
 client_id = \"resource-client\"
+client_secret = \"test-ema-secret\"
+token_endpoint_auth_method = \"client_secret_post\"
 authorization_server_issuer = \"https://as.example\"
 
 [mcp_servers.http]
@@ -1495,28 +1506,36 @@ fn blocking_clear_path_noop_when_missing() {
 }
 
 #[test]
-fn blocking_set_path_updates_notifications() {
+fn blocking_notification_toggle_updates_boolean_and_preserves_custom_filters() {
     let tmp = tempdir().expect("tmpdir");
     let codex_home = tmp.path();
+    let config_path = codex_home.join(CONFIG_TOML_FILE);
 
-    let item = value(false);
     apply_blocking(
         codex_home,
-        &[ConfigEdit::SetPath {
-            segments: vec!["tui".to_string(), "notifications".to_string()],
-            value: item,
-        }],
+        &[ConfigEdit::SetTuiNotificationsEnabled { enabled: false }],
     )
     .expect("apply");
+    assert_eq!(
+        std::fs::read_to_string(&config_path).expect("read config"),
+        "[tui]\nnotifications = false\n"
+    );
 
-    let raw = std::fs::read_to_string(codex_home.join(CONFIG_TOML_FILE)).expect("read config");
-    let config: TomlValue = toml::from_str(&raw).expect("parse config");
-    let notifications = config
-        .get("tui")
-        .and_then(|item| item.as_table())
-        .and_then(|tbl| tbl.get("notifications"))
-        .and_then(toml::Value::as_bool);
-    assert_eq!(notifications, Some(false));
+    let custom_filters = "[tui]\nnotifications = [\"approval-requested\"]\n";
+    std::fs::write(&config_path, custom_filters).expect("write config");
+    let error = apply_blocking(
+        codex_home,
+        &[ConfigEdit::SetTuiNotificationsEnabled { enabled: false }],
+    )
+    .expect_err("custom filters should reject a boolean toggle");
+    assert_eq!(
+        error.to_string(),
+        "Event-specific notifications are configured. Edit those filters in the config file."
+    );
+    assert_eq!(
+        std::fs::read_to_string(config_path).expect("read config"),
+        custom_filters
+    );
 }
 
 #[tokio::test]

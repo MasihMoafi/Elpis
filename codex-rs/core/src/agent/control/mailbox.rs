@@ -1,12 +1,12 @@
 //! Retains queue-only mail while local sessions are unloaded.
 //! Eviction transfers mail before releasing the recipient's residency guard.
 
+use crate::PendingAgentMessage;
 use crate::agent_communication::PENDING_MAILBOX_MESSAGES;
 use codex_diagnostics::GaugeGuard;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result;
-use codex_protocol::protocol::InterAgentCommunication;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::PoisonError;
@@ -28,7 +28,7 @@ struct Mailbox {
 
 struct StoredMail {
     id: Option<String>,
-    communication: InterAgentCommunication,
+    communication: PendingAgentMessage,
     _diagnostics_guard: GaugeGuard,
 }
 
@@ -37,7 +37,7 @@ impl Mailboxes {
         &self,
         agent: ThreadId,
         id: Option<String>,
-        messages: Vec<InterAgentCommunication>,
+        messages: Vec<PendingAgentMessage>,
     ) -> Result<()> {
         let mut mailboxes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let mailbox = mailboxes
@@ -45,18 +45,26 @@ impl Mailboxes {
             .ok_or_else(|| CodexErr::InvalidRequest("agent runtime is shutting down".into()))?
             .entry(agent)
             .or_default();
-        mailbox
-            .pending
-            .extend(messages.into_iter().map(|communication| StoredMail {
-                id: id.clone(),
-                communication,
-                _diagnostics_guard: PENDING_MAILBOX_MESSAGES.track(),
-            }));
+        let mail = messages.into_iter().map(|communication| StoredMail {
+            id: id.clone(),
+            communication,
+            _diagnostics_guard: PENDING_MAILBOX_MESSAGES.track(),
+        });
+        if id.is_some() {
+            mailbox.pending.extend(mail);
+        } else {
+            // Mail returned by eviction predates results published while its writer closed.
+            mailbox.pending.splice(..0, mail);
+        }
         mailbox.state.send_replace(!mailbox.pending.is_empty());
         Ok(())
     }
 
-    pub(super) fn take(&self, agent: ThreadId) -> Vec<InterAgentCommunication> {
+    pub(super) fn take(
+        &self,
+        agent: ThreadId,
+        accept: impl Fn(&PendingAgentMessage) -> bool,
+    ) -> Vec<PendingAgentMessage> {
         let mut mailboxes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let Some(mailbox) = mailboxes
             .as_mut()
@@ -66,8 +74,10 @@ impl Mailboxes {
         };
         let pending = std::mem::take(&mut mailbox.pending);
         mailbox.state.send_if_modified(std::mem::take);
+        drop(mailboxes);
         pending
             .into_iter()
+            .filter(|mail| accept(&mail.communication))
             .map(|mail| {
                 // Mail transferred during eviction was already received by the old session.
                 if let Some(id) = mail.id {
@@ -94,18 +104,20 @@ impl Mailboxes {
     }
 
     pub(super) fn remove(&self, agent: ThreadId) {
-        if let Some(mailboxes) = self
+        // Dropping pending mail can run extension destructors. Release the lock first.
+        let mailbox = self
             .0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .as_mut()
-        {
-            mailboxes.remove(&agent);
-        }
+            .and_then(|mailboxes| mailboxes.remove(&agent));
+        drop(mailbox);
     }
 
     pub(super) fn close(&self) {
-        if let Some(mailboxes) = self.0.lock().unwrap_or_else(PoisonError::into_inner).take() {
+        // Detach under the lock, then notify readers and drop pending mail outside it.
+        let mailboxes = self.0.lock().unwrap_or_else(PoisonError::into_inner).take();
+        if let Some(mailboxes) = mailboxes {
             for mailbox in mailboxes.values() {
                 mailbox.state.send_replace(false);
             }

@@ -89,7 +89,7 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
           df -h /
       - name: Download and verify the pinned sandbox V8
         shell: bash
@@ -101,9 +101,9 @@ jobs:
           mkdir -p "$directory"
           archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
           binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
-          gh release download rusty-v8-v150.4.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
-          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
-            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          gh release download rusty-v8-v152.2.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
+          printf '%s  %s\n' b3b490f2aa809eda7f6ac727f851fb00ce8355be72827577cfaac28c7137dbcd "$archive" \
+            3e4d5fecdbe0f98a6017e69d7ca82519a77fb032c5eb5e4cdbecdd3e2ec519d5 "$binding" > "$directory/SHA256SUMS"
           (cd "$directory" && sha256sum -c SHA256SUMS)
           echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
           echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"

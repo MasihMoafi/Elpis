@@ -11,10 +11,6 @@ use pretty_assertions::assert_eq;
 #[tokio::test]
 async fn voice_settings_selects_a_voice_without_starting_audio() {
     let (mut chat, _sender, mut events, mut ops) = make_chatwidget_manual_with_sender().await;
-    chat.config
-        .features
-        .enable(Feature::RealtimeConversation)
-        .unwrap();
     chat.config.realtime.voice = Some(RealtimeVoice::Maple);
     chat.dispatch_command_with_args(SlashCommand::Voice, "settings".to_string(), Vec::new());
     assert!(
@@ -70,7 +66,7 @@ async fn voice_settings_uses_server_catalog() {
     chat.open_realtime_voices(
         Some(RealtimeVoice::Cove),
         RealtimeVoicesList {
-            v1: vec![RealtimeVoice::Cove, RealtimeVoice::Maple],
+            v3: vec![RealtimeVoice::Cove, RealtimeVoice::Maple],
             ..RealtimeVoicesList::builtin()
         },
     );

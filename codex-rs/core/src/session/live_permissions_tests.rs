@@ -142,7 +142,7 @@ async fn mid_turn_revocation_reaches_every_reader() {
         "Full Access approves the elicitation without review"
     );
 
-    thread_settings::update(&session, default_access())
+    thread_settings::update(&session, default_access(), /*reply_requested*/ false)
         .await
         .expect("revocation accepted");
 
@@ -248,7 +248,7 @@ async fn children_take_permissions_accepted_during_the_turn(grant: bool) {
     let expected = (accepted.approval_policy.expect("policy"), grant);
     let (session, _turn, step) = running_turn(start).await;
 
-    thread_settings::update(&session, accepted)
+    thread_settings::update(&session, accepted, /*reply_requested*/ false)
         .await
         .expect("update accepted");
 
@@ -271,7 +271,7 @@ async fn children_of_a_step_that_outlives_its_turn_take_the_thread_permissions(g
     let expected = (accepted.approval_policy.expect("policy"), grant);
     let (session, _turn, cell_step) = running_turn(start).await;
     session.abort_all_tasks(TurnAbortReason::Interrupted).await;
-    thread_settings::update(&session, accepted)
+    thread_settings::update(&session, accepted, /*reply_requested*/ false)
         .await
         .expect("update between turns accepted");
     start_next_turn(&session).await;
@@ -295,6 +295,7 @@ async fn accept_thread_reviewer(session: &Session, reviewer: ApprovalsReviewer) 
             approvals_reviewer: Some(reviewer),
             ..Default::default()
         },
+        /*reply_requested*/ false,
     )
     .await
     .expect("thread reviewer accepted");
@@ -359,7 +360,7 @@ async fn the_reviewer_accepted_last_applies(thread_update_last: bool) {
 #[tokio::test]
 async fn a_step_that_outlives_its_turn_takes_the_thread_permissions() {
     let (session, _turn, cell_step) = running_turn(default_access()).await;
-    thread_settings::update(&session, full_access())
+    thread_settings::update(&session, full_access(), /*reply_requested*/ false)
         .await
         .expect("mid-turn grant accepted");
     let during_turn = session
@@ -373,7 +374,7 @@ async fn a_step_that_outlives_its_turn_takes_the_thread_permissions() {
     );
     session.abort_all_tasks(TurnAbortReason::Interrupted).await;
 
-    thread_settings::update(&session, default_access())
+    thread_settings::update(&session, default_access(), /*reply_requested*/ false)
         .await
         .expect("revocation between turns accepted");
     start_next_turn(&session).await;

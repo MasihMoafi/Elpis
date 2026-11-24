@@ -12,7 +12,7 @@ use crate::terminal_hyperlinks::visible_lines;
 use crate::wrapping::RtOptions;
 use codex_app_server_protocol::DynamicToolCallOutputContentItem;
 use codex_app_server_protocol::DynamicToolCallStatus;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use serde_json::Value;
@@ -70,7 +70,7 @@ pub(crate) fn read_attempt_summary(
 }
 
 impl DynamicToolCallCell {
-    pub(crate) fn from_item(item: ThreadItem) -> Option<Self> {
+    pub(crate) fn from_item(item: ThreadItemPayload) -> Option<Self> {
         let (call_id, data) = DynamicToolCallData::from_item(item)?;
         Some(Self {
             call_id,
@@ -90,7 +90,7 @@ impl DynamicToolCallCell {
     }
 
     /// Updates the original retained row when concurrent calls complete in a different order.
-    pub(crate) fn update_from_item(&self, item: ThreadItem) -> bool {
+    pub(crate) fn update_from_item(&self, item: ThreadItemPayload) -> bool {
         let Some((call_id, data)) = DynamicToolCallData::from_item(item) else {
             return false;
         };
@@ -121,8 +121,8 @@ impl DynamicToolCallCell {
 }
 
 impl DynamicToolCallData {
-    fn from_item(item: ThreadItem) -> Option<(String, Self)> {
-        let ThreadItem::DynamicToolCall {
+    fn from_item(item: ThreadItemPayload) -> Option<(String, Self)> {
+        let ThreadItemPayload::DynamicToolCall {
             id,
             namespace,
             tool,
@@ -220,6 +220,19 @@ impl DynamicToolCallData {
 }
 
 impl HistoryCell for DynamicToolCallCell {
+    fn tool_call_labels(&self) -> Vec<String> {
+        let data = self
+            .data
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        vec![
+            data.header()
+                .to_string()
+                .trim_start_matches("• ")
+                .to_owned(),
+        ]
+    }
+
     fn has_stable_transcript_height(&self) -> bool {
         false
     }

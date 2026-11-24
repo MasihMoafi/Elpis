@@ -1,9 +1,12 @@
 use std::fmt;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value as JsonValue;
 use tokio_util::sync::CancellationToken;
+
+use crate::output::OutputCollector;
 
 /// Identifies one execution cell within a session runtime.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -54,63 +57,41 @@ impl From<ObserveMode> for Observation {
 }
 
 /// An observable cell lifecycle event.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub(crate) enum CellEvent {
     Yielded {
-        content_items: Vec<OutputItem>,
+        content_items: OutputCollector,
     },
     Pending {
-        content_items: Vec<OutputItem>,
+        content_items: OutputCollector,
         pending_tool_call_ids: Vec<String>,
     },
     Completed {
-        content_items: Vec<OutputItem>,
+        content_items: OutputCollector,
+        /// None is success. Server diagnostics have already been bounded
+        /// independently of the observing request's output budget.
         error_text: Option<String>,
+        /// Time the completed result spent waiting for an observer.
+        result_buffered_for: Duration,
     },
     Terminated {
-        content_items: Vec<OutputItem>,
+        content_items: OutputCollector,
     },
 }
 
-/// Output emitted by a cell since its preceding observation.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum OutputItem {
-    Text {
-        text: String,
-    },
-    Image {
-        image_url: String,
-        detail: Option<ImageDetail>,
-    },
-    Audio {
-        audio_url: String,
-    },
-}
-
-/// Requested image fidelity for an output image.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ImageDetail {
-    Auto,
-    Low,
-    High,
-    Original,
-}
+/// Ordered callback slots frozen for a cell. Sessions can share individual tool definitions.
+pub(crate) type ToolCatalog = Arc<[Arc<codex_code_mode_protocol::EnabledToolMetadata>]>;
 
 /// Transport-neutral input for creating a cell.
 ///
 /// The owning session assigns the cell ID when it admits the request.
 pub(crate) struct CreateCellRequest {
+    pub(crate) output_truncation: codex_code_mode_protocol::CodeModeOutputTruncation,
     pub(crate) tool_call_id: String,
-    pub(crate) enabled_tools: Vec<ToolDefinition>,
+    pub(crate) enabled_tools: ToolCatalog,
+    pub(crate) tool_preloads: &'static [crate::ToolPreload],
     pub(crate) source: String,
-}
-
-/// Tool metadata exposed to code running inside a cell.
-pub(crate) struct ToolDefinition {
-    pub(crate) name: String,
-    pub(crate) tool_name: ToolName,
-    pub(crate) description: String,
-    pub(crate) kind: ToolKind,
 }
 
 /// A tool name with an optional namespace.

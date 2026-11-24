@@ -1,6 +1,10 @@
+//! Initial base instructions, recorded in history for incremental-tools windows.
+
 use super::ContextualUserFragment;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::models::input_text;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BaseInstructionsFragment(pub(crate) String);
@@ -8,18 +12,29 @@ pub(crate) struct BaseInstructionsFragment(pub(crate) String);
 impl BaseInstructionsFragment {
     pub(crate) const KIND: &str = "model.base_instructions";
 
-    pub(crate) fn matches_item(item: &ResponseItem) -> bool {
+    /// Reads only a dedicated, harness-classified base item, including an explicitly empty base.
+    pub(crate) fn text_from_item(item: &ResponseItem) -> Option<&str> {
         let ResponseItem::Message {
+            role,
+            content,
             internal_chat_message_metadata_passthrough: Some(metadata),
             ..
         } = item
         else {
-            return false;
+            return None;
         };
-        metadata
-            .content_item_kinds
-            .as_ref()
-            .is_some_and(|kinds| kinds.iter().any(|kind| kind.as_str() == Self::KIND))
+        match (
+            role.as_str(),
+            content.as_slice(),
+            metadata.content_item_kinds.as_deref(),
+        ) {
+            ("developer", [ContentItem::InputText { text }], Some([kind]))
+                if kind.as_str() == Self::KIND =>
+            {
+                Some(text)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -40,7 +55,7 @@ impl ContextualUserFragment for BaseInstructionsFragment {
         ("", "")
     }
 
-    fn body(&self) -> String {
-        self.0.clone()
+    fn body(&self) -> ContentItem {
+        input_text(self.0.clone())
     }
 }

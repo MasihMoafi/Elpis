@@ -1,6 +1,7 @@
 use super::CodexErrorInfo;
 use super::ThreadEnvironment;
 use super::ThreadItem;
+use super::ThreadItemPayload;
 use super::ThreadStatus;
 use super::TurnStatus;
 use crate::JsonSchema;
@@ -13,7 +14,7 @@ use codex_protocol::protocol::SessionSource as CoreSessionSource;
 use codex_protocol::protocol::SubAgentSource as CoreSubAgentSource;
 use codex_protocol::protocol::ThreadHistoryMode as CoreThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource as CoreThreadSource;
-use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::LegacyAppPathString;
 #[cfg(test)]
 use schemars::r#gen::SchemaGenerator;
 #[cfg(test)]
@@ -221,6 +222,9 @@ pub struct Thread {
     pub session_id: String,
     /// Source thread id when this thread was created by forking another thread.
     pub forked_from_id: Option<String>,
+    /// Parent that owns this persisted attached thread, independent of fork or spawn lineage.
+    #[experimental("thread.attachedToThreadId")]
+    pub attached_to_thread_id: Option<String>,
     /// The ID of the parent thread. This will only be set if this thread is a subagent.
     pub parent_thread_id: Option<String>,
     /// Usually the first user message in the thread, if available.
@@ -265,7 +269,10 @@ pub struct Thread {
     /// [UNSTABLE] Path to the thread on disk.
     pub path: Option<PathBuf>,
     /// Working directory captured for the thread.
-    pub cwd: AbsolutePathBuf,
+    // Preserve the published SDK type for this server-native absolute path.
+    #[schemars(with = "codex_utils_absolute_path::AbsolutePathBuf")]
+    #[ts(as = "codex_utils_absolute_path::AbsolutePathBuf")]
+    pub cwd: LegacyAppPathString,
     /// Version of the CLI that created the thread.
     pub cli_version: String,
     /// Originator recorded when the thread was created, independent of its current client or executor.
@@ -290,6 +297,10 @@ pub struct Thread {
     /// Saved Daybreak choice, independent of turn execution. Null if unset.
     #[experimental("thread.daybreakEnabled")]
     pub daybreak_enabled: Option<bool>,
+    /// Whether the live thread joined the Daybreak propagation experiment at startup.
+    /// Null when only stored metadata is available. Older servers can omit this field.
+    #[experimental("thread.daybreakProgramPropagationEnrolled")]
+    pub daybreak_program_propagation_enrolled: Option<bool>,
     /// Only populated on `thread/resume`, `thread/fork`, and `thread/read`
     /// (when `includeTurns` is true) responses.
     /// For all other responses and notifications returning a Thread,
@@ -308,6 +319,7 @@ struct ThreadCompatibility {
     extra: Option<ThreadExtra>,
     session_id: String,
     forked_from_id: Option<String>,
+    attached_to_thread_id: Option<String>,
     parent_thread_id: Option<String>,
     preview: String,
     ephemeral: bool,
@@ -327,7 +339,7 @@ struct ThreadCompatibility {
     recency_at: Option<i64>,
     status: ThreadStatus,
     path: Option<PathBuf>,
-    cwd: AbsolutePathBuf,
+    cwd: LegacyAppPathString,
     cli_version: String,
     originator: Option<String>,
     source: SessionSource,
@@ -338,6 +350,7 @@ struct ThreadCompatibility {
     git_info: Option<GitInfo>,
     name: Option<String>,
     daybreak_enabled: Option<bool>,
+    daybreak_program_propagation_enrolled: Option<bool>,
     turns: Vec<Turn>,
 }
 
@@ -353,6 +366,7 @@ impl<'de> Deserialize<'de> for Thread {
             extra: thread.extra,
             session_id: thread.session_id,
             forked_from_id: thread.forked_from_id,
+            attached_to_thread_id: thread.attached_to_thread_id,
             parent_thread_id: thread.parent_thread_id,
             preview: thread.preview,
             ephemeral: thread.ephemeral,
@@ -379,6 +393,7 @@ impl<'de> Deserialize<'de> for Thread {
             git_info: thread.git_info,
             name: thread.name,
             daybreak_enabled: thread.daybreak_enabled,
+            daybreak_program_propagation_enrolled: thread.daybreak_program_propagation_enrolled,
             turns: thread.turns,
         })
     }
@@ -413,6 +428,15 @@ pub struct Turn {
     pub duration_ms: Option<i64>,
 }
 
+impl Turn {
+    /// Iterates over the item payloads in this turn.
+    pub fn item_payloads(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = &ThreadItemPayload> + ExactSizeIterator {
+        self.items.iter().map(|item| &item.payload)
+    }
+}
+
 #[derive(Default, Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -438,6 +462,18 @@ pub struct TurnError {
     /// Optional public explanation and continuation instruction for a misalignment block.
     #[serde(default)]
     pub misalignment: Option<MisalignmentErrorDetails>,
+}
+
+impl From<codex_protocol::protocol::ErrorEvent> for TurnError {
+    fn from(error: codex_protocol::protocol::ErrorEvent) -> Self {
+        let additional_details = None;
+        Self {
+            message: error.message,
+            codex_error_info: error.codex_error_info.map(Into::into),
+            additional_details,
+            misalignment: error.misalignment.map(Into::into),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, Eq, JsonSchema, TS)]

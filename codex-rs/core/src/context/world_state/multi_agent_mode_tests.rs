@@ -4,6 +4,7 @@ use crate::context::MultiAgentRoleInstructions;
 use crate::context::world_state::WorldState;
 use crate::context::world_state::test_support::FragmentSectionTestExt as _;
 use codex_protocol::models::ResponseItem;
+use codex_protocol_test_support::ContentItemTestExt;
 use codex_utils_output_truncation::approx_token_count;
 use pretty_assertions::assert_eq;
 
@@ -89,10 +90,11 @@ fn unchanged_mode_is_reemitted_after_usage_hint_migration() {
         .expect("unchanged mode should follow migrated usage instructions");
 
     assert_eq!(
-        instructions.render(),
+        instructions.render().expect_text(),
         MultiAgentModeInstructions::from_mode(MultiAgentMode::Proactive)
             .expect("proactive mode should render")
             .render()
+            .expect_text()
     );
 }
 
@@ -136,8 +138,12 @@ fn catalog_role_updates_remain_separate_from_active_mode() {
     assert_eq!(
         updates,
         vec![
-            ContextualUserFragment::into(current_role),
-            ContextualUserFragment::into(expected_mode),
+            ContextualUserFragment::into(current_role.with_metadata(
+                codex_protocol::models::ContentItemMetadata::tool(/*namespace*/ None)
+            )),
+            ContextualUserFragment::into(expected_mode.with_metadata(
+                codex_protocol::models::ContentItemMetadata::tool(/*namespace*/ None)
+            )),
         ],
     );
 }
@@ -159,6 +165,7 @@ fn custom_mode_is_bounded_before_snapshot_and_rendering() {
         .render_fragment_diff(PreviousSectionState::Absent)
         .1
         .expect("custom mode should render")
-        .render();
+        .render()
+        .expect_text();
     assert!(approx_token_count(&rendered) < 1_000);
 }

@@ -7,7 +7,9 @@ use crate::SectionError;
 use crate::SectionInput;
 use crate::SectionScope;
 use codex_context_fragments::ContextualUserFragment;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::input_text;
 
 /// Display paths and globs denied by the reviewed environment's active policy.
 /// These are evidence strings, not filesystem paths to resolve in the reviewer.
@@ -38,7 +40,7 @@ impl ContextualUserFragment for PermissionContext {
         )
     }
 
-    fn body(&self) -> String {
+    fn body(&self) -> ContentItem {
         let entries = self
             .denied_paths
             .iter()
@@ -55,14 +57,14 @@ impl ContextualUserFragment for PermissionContext {
             }
             None => "The parent turn's active permission profile".to_string(),
         };
-        if entries.is_empty() {
+        input_text(if entries.is_empty() {
             format!("{scope} has no explicit denied-read paths/globs.\n")
         } else {
             format!(
                 "{scope} denies reading these paths/globs. These are policy restrictions; do not approve escalation whose purpose is to read them.\n{}\n",
                 entries.join("\n")
             )
-        }
+        })
     }
 }
 
@@ -80,20 +82,29 @@ impl SectionContributor for PermissionContextSection {
         let Some(permissions) = input.permissions else {
             return Ok(None);
         };
-        if permissions.environment_id.is_none()
-            && permissions.denied_paths.is_empty()
-            && permissions.denied_globs.is_empty()
+        permissions.section(input.target)
+    }
+}
+
+impl PermissionContext {
+    pub(crate) fn section(
+        &self,
+        target: crate::ContextTarget,
+    ) -> Result<Option<ContextSection>, SectionError> {
+        if self.environment_id.is_none()
+            && self.denied_paths.is_empty()
+            && self.denied_globs.is_empty()
         {
             return Ok(None);
         }
-        let body = permissions.body();
+        let body = self.body().into_text().unwrap_or_default();
         // Async scoring falls back to synchronous review instead of dropping restrictions.
-        if input.target == crate::ContextTarget::Async && body.len() > MAX_ASYNC_PERMISSION_BYTES {
+        if target == crate::ContextTarget::Async && body.len() > MAX_ASYNC_PERMISSION_BYTES {
             return Err(SectionError::EvidenceLimitExceeded {
                 section: "permissions",
             });
         }
-        let (start, end) = permissions.markers();
+        let (start, end) = self.markers();
         Ok(Some(ContextSection::PermissionContext {
             items: vec![start.into(), body, end.into()],
         }))

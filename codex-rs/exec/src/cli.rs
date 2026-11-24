@@ -17,6 +17,24 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
 
+    /// Connect to an existing app server.
+    #[arg(
+        id = "exec_remote",
+        long = "remote",
+        value_name = "ADDR",
+        global = true
+    )]
+    pub remote: Option<String>,
+
+    /// Environment variable containing the remote WebSocket bearer token.
+    #[arg(
+        id = "exec_remote_auth_token_env",
+        long = "remote-auth-token-env",
+        value_name = "ENV_VAR",
+        global = true
+    )]
+    pub remote_auth_token_env: Option<String>,
+
     /// Error out when config.toml contains fields that are not recognized by this version of Elpis.
     #[arg(long = "strict-config", global = true, default_value_t = false)]
     pub strict_config: bool,
@@ -41,6 +59,11 @@ pub struct Cli {
     /// Allow running Elpis outside a Git repository.
     #[arg(long = "skip-git-repo-check", global = true, default_value_t = false)]
     pub skip_git_repo_check: bool,
+
+    /// Save trust for this project and future chats, including MCP commands outside the sandbox.
+    /// Persists even with --ephemeral. Does not override an explicitly untrusted project.
+    #[arg(long, global = true)]
+    pub trust: bool,
 
     /// Run without persisting session files to disk.
     #[arg(long = "ephemeral", global = true, default_value_t = false)]

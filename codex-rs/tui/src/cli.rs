@@ -48,7 +48,7 @@ pub struct Cli {
     #[clap(skip)]
     pub resume_include_non_interactive: bool,
 
-    /// Internal: open the daemon-wide agents overview instead of starting a thread.
+    /// Internal: open the agents overview instead of starting a thread.
     #[clap(skip)]
     pub agents_overview: bool,
 

@@ -9,6 +9,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use anyhow::anyhow;
 use anyhow::bail;
+use codex_config::McpEmaTokenEndpointAuthMethod;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::OAuthCredentialsStoreMode;
 use codex_exec_server::HttpClient;
@@ -24,6 +25,7 @@ use tracing::instrument::WithSubscriber;
 use url::Host;
 use url::Url;
 
+use crate::EmaErrorDetail;
 use crate::StoredOAuthTokens;
 use crate::ema_auth_policy::validate_ema_oauth_endpoint;
 use crate::ema_claims::validate_oidc_identity_assertion;
@@ -137,7 +139,7 @@ impl EnterpriseOAuthLoginHandle {
             .complete(/*emit_browser_url*/ false)
             .with_subscriber(tracing::subscriber::NoSubscriber::default())
             .await
-            .map_err(|_| anyhow!("enterprise IdP authorization failed"))?;
+            .map_err(|_| anyhow!(EmaErrorDetail::new("enterprise IdP authorization failed")))?;
         validate_enterprise_credentials(&stored)?;
         Ok(EnterpriseOAuthCredentials {
             stored,
@@ -170,15 +172,20 @@ impl EnterpriseOAuthCredentials {
             self.keyring_backend,
         )
         .await?;
-        let generation = guard
-            .generation_file
-            .current()
-            .map_err(|_| anyhow!("failed to read enterprise login generation"))?;
+        let generation = guard.generation_file.current().map_err(|_| {
+            anyhow!(EmaErrorDetail::new(
+                "failed to read enterprise login generation"
+            ))
+        })?;
         if generation.as_ref() != Some(&self.generation) {
-            bail!("enterprise sign-in was invalidated by logout");
+            bail!(EmaErrorDetail::new(
+                "enterprise sign-in was invalidated by logout"
+            ));
         }
         let Some(authority) = is_current().await else {
-            bail!("enterprise sign-in no longer matches the active account or configuration");
+            bail!(EmaErrorDetail::new(
+                "enterprise sign-in no longer matches the active account or configuration"
+            ));
         };
         tracing::subscriber::with_default(tracing::subscriber::NoSubscriber::default(), || {
             save_oauth_tokens_with_lock_held(
@@ -189,7 +196,11 @@ impl EnterpriseOAuthCredentials {
                 self.keyring_backend,
             )
         })
-        .map_err(|_| anyhow!("failed to store enterprise credentials"))?;
+        .map_err(|_| {
+            anyhow!(EmaErrorDetail::new(
+                "failed to store enterprise credentials"
+            ))
+        })?;
         Ok(authority)
     }
 }
@@ -225,6 +236,8 @@ pub async fn perform_enterprise_oauth_login_return_url(
         &["openid".to_string(), "offline_access".to_string()],
         Some(&codex_config::McpServerOAuthConfig {
             client_id: Some(request.client_id.to_string()),
+            client_secret: request.client_secret.map(Into::into),
+            token_endpoint_auth_method: request.token_endpoint_auth_method,
             ..Default::default()
         }),
         OAuthLoginPurpose::EnterpriseIdp,
@@ -238,7 +251,14 @@ pub async fn perform_enterprise_oauth_login_return_url(
     )
     .with_subscriber(tracing::subscriber::NoSubscriber::default())
     .await
-    .map_err(|_| anyhow!("failed to start enterprise IdP authorization"))?;
+    .map_err(|error| {
+        if error.downcast_ref::<EmaErrorDetail>().is_some() {
+            return EmaErrorDetail::from_error(&error);
+        }
+        EmaErrorDetail::from_error(&error.context(EmaErrorDetail::new(
+            "failed to start enterprise IdP authorization",
+        )))
+    })?;
     // Keep the current attempt valid until replacement setup succeeds. A logout
     // or another completed setup during this work must still invalidate this start.
     let generation = async {
@@ -310,9 +330,6 @@ pub(crate) fn enterprise_callback_settings(
 }
 
 fn validate_enterprise_credentials(stored: &StoredOAuthTokens) -> Result<()> {
-    if !stored.has_refresh_token() {
-        bail!("enterprise IdP login did not return a refresh token");
-    }
     let assertion = stored
         .token_response
         .0
@@ -332,12 +349,24 @@ fn validate_enterprise_credentials(stored: &StoredOAuthTokens) -> Result<()> {
 pub(crate) async fn resolve_enterprise_authorization_manager(
     issuer: &str,
     http_client: Arc<dyn OAuthHttpClient>,
+    client_secret: Option<&str>,
+    token_endpoint_auth_method: Option<McpEmaTokenEndpointAuthMethod>,
 ) -> Result<(AuthorizationManager, AuthorizationMetadata)> {
-    let (manager, metadata) = resolve_ema_idp_authorization_manager(
+    let (manager, mut metadata, _) = resolve_ema_idp_authorization_manager(
         issuer,
         Arc::new(EnterpriseOAuthHttpClient(http_client)),
+        client_secret,
+        token_endpoint_auth_method,
     )
     .await?;
+    if client_secret.is_some() {
+        // The SDK chooses Basic when both methods are advertised. Its login client
+        // must use the validated registration method, just like the EMA exchanges.
+        metadata.additional_fields.insert(
+            "token_endpoint_auth_methods_supported".to_owned(),
+            serde_json::json!([token_endpoint_auth_method.unwrap_or_default().as_str()]),
+        );
+    }
     validate_authorization_server_endpoints(&metadata)?;
     validate_ema_oauth_endpoint(
         &metadata.authorization_endpoint,
@@ -399,6 +428,8 @@ pub struct EnterpriseOAuthLoginRequest<'a> {
     pub credential_name: &'a str,
     pub issuer: &'a str,
     pub client_id: &'a str,
+    pub client_secret: Option<&'a str>,
+    pub token_endpoint_auth_method: Option<McpEmaTokenEndpointAuthMethod>,
     pub keyring_backend_kind: AuthKeyringBackendKind,
     pub callback_port: Option<u16>,
     pub callback_url: Option<&'a str>,

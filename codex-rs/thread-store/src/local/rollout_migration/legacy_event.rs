@@ -26,8 +26,10 @@ use codex_protocol::items::SubAgentActivityItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::items::WebSearchItem;
+use codex_protocol::models::AudioReference;
 use codex_protocol::models::ImageReference;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::UserMessageAudioKind;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::protocol::UserMessageImageKind;
 use codex_protocol::user_input::UserInput;
@@ -40,6 +42,7 @@ pub(super) fn user_message_item(
 ) -> ThreadStoreResult<TurnItem> {
     let mut content = Vec::new();
     let has_image_order = event.has_complete_image_order();
+    let has_audio_order = event.has_complete_audio_order();
     if !event.message.trim().is_empty() {
         content.push(UserInput::Text {
             text: event.message,
@@ -110,12 +113,26 @@ pub(super) fn user_message_item(
             detail: event.local_image_details.get(index).copied().flatten(),
         });
     }
-    if let Some(audio) = event.audio {
-        content.extend(
-            audio
-                .into_iter()
-                .map(|audio_url| UserInput::Audio { audio_url }),
-        );
+    if has_audio_order {
+        let mut inline_audio = event.audio.unwrap_or_default().into_iter();
+        let mut file_audio = event.audio_references.unwrap_or_default().into_iter();
+        for audio_kind in event.audio_order {
+            let audio = match audio_kind {
+                UserMessageAudioKind::Inline => inline_audio
+                    .next()
+                    .map(|audio_url| AudioReference::Inline { audio_url }),
+                UserMessageAudioKind::File => file_audio.next(),
+            };
+            if let Some(audio) = audio {
+                content.push(UserInput::Audio { audio });
+            }
+        }
+    } else if let Some(audio) = event.audio_references {
+        content.extend(audio.into_iter().map(|audio| UserInput::Audio { audio }));
+    } else if let Some(audio) = event.audio {
+        content.extend(audio.into_iter().map(|audio_url| UserInput::Audio {
+            audio: AudioReference::Inline { audio_url },
+        }));
     }
     content.extend(
         event
@@ -141,7 +158,16 @@ pub(super) fn completed_item(
     let result = match event {
         EventMsg::AgentMessage(event) if !event.message.is_empty() => Some((
             TurnItem::AgentMessage(AgentMessageItem {
-                id: next_item_id()?,
+                moderation: event.moderation.as_ref().map(|decision| {
+                    codex_protocol::items::AgentMessageModeration {
+                        moderated: decision.moderated,
+                        display: decision.display.clone(),
+                    }
+                }),
+                id: event
+                    .moderation
+                    .as_ref()
+                    .map_or(next_item_id()?, |decision| decision.item_id.clone()),
                 content: vec![AgentMessageContent::Text {
                     text: event.message.clone(),
                 }],
@@ -177,6 +203,7 @@ pub(super) fn completed_item(
                 TurnItem::McpToolCall(McpToolCallItem {
                     id: event.call_id.clone(),
                     server: event.invocation.server.clone(),
+                    environment_id: event.invocation.environment_id.clone(),
                     tool: event.invocation.tool.clone(),
                     arguments: event
                         .invocation
@@ -217,12 +244,13 @@ pub(super) fn completed_item(
                 id: event.call_id.clone(),
                 status: event.status.clone(),
                 revised_prompt: event.revised_prompt.clone(),
-                result: event.result.clone(),
+                image: event.image.clone(),
                 transparent_background: event.transparent_background,
                 failure: event.failure.clone(),
                 saved_path: event.saved_path.clone(),
+                input_images: event.input_images.clone(),
                 imagegen_request_id: None,
-                generation_id: None,
+                generation_id: event.generation_id.clone(),
             })),
             None,
         )),

@@ -3,6 +3,7 @@
 use super::*;
 use crate::external_agent_config_migration::flow::ExternalAgentConfigMigrationFlowOutcome;
 use crate::external_agent_config_migration::flow::handle_external_agent_config_migration_prompt;
+use codex_app_server_client::AppServerEvent;
 use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::ServerNotification;
 use futures::SinkExt;
@@ -58,8 +59,11 @@ async fn external_agent_config_migration_over_shared_transport() -> Result<()> {
             }
             Ok::<_, color_eyre::Report>(requests)
         });
-        let mut session =
-            AppServerSession::new(crate::connect_remote_app_server(endpoint).await?, mode);
+        let mut session = AppServerSession::new(
+            crate::backend_id::BackendId::new(),
+            crate::connect_remote_app_server(endpoint).await?,
+            mode,
+        );
         let workspace = tempfile::tempdir()?;
         let cwd = workspace.path();
         let mut tui = crate::tui::test_support::make_test_tui()?;
@@ -100,7 +104,9 @@ async fn external_agent_config_migration_over_shared_transport() -> Result<()> {
         for (import_id, consumed) in [("other-client", false), ("this-client", true)] {
             let event =
                 tokio::time::timeout(Duration::from_secs(/*secs*/ 5), session.next_event()).await?;
-            let Some(AppServerEvent::ServerNotification(notification)) = event else {
+            let Some(AppServerEvent::ServerNotification(notification)) =
+                event.map(|event| event.event)
+            else {
                 panic!("expected import completion");
             };
             let ServerNotification::ExternalAgentConfigImportCompleted(notification) =

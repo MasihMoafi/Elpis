@@ -12,34 +12,67 @@ use codex_protocol::permissions::NetworkSandboxPolicy;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
-async fn worktree_creation_event_requires_feature() -> Result<()> {
-    let (mut app, mut events, _op_rx) = make_test_app_with_channels().await;
-    app.config.features.disable(Feature::Worktrees)?;
-    let mut tui = crate::tui::test_support::make_test_tui()?;
-    let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-    while events.try_recv().is_ok() {}
-    app.handle_event(
-        &mut tui,
-        &mut app_server,
-        AppEvent::StartManagedWorktree {
-            mode: crate::app_event::ManagedWorktreeMode::New,
-            name: None,
-        },
-    )
-    .await?;
-    drain_managed_worktree_start(&mut app, &mut app_server).await;
-    let message = std::iter::from_fn(|| events.try_recv().ok())
-        .find_map(|event| match event {
-            AppEvent::InsertHistoryCell(cell) => {
-                Some(lines_to_single_string(&cell.display_lines(/*width*/ 100)))
-            }
-            _ => None,
-        })
-        .expect("disabled feature message");
-    insta::assert_snapshot!(message, @"■ Enable worktrees in your Elpis configuration to create a worktree.");
-    assert!(!app.config.codex_home.join("worktrees").exists());
-    app_server.shutdown().await?;
-    Ok(())
+async fn cloud_admission_keeps_tab_input_queued_until_the_admitted_turn_finishes() {
+    use crate::app_command::CloudSubmissionIntent;
+    use crate::app_server_session::user_message_submission::UserMessageAdmission;
+
+    for receipt in [
+        UserMessageAdmission::Started("next".into()),
+        UserMessageAdmission::Steered("next".into()),
+    ] {
+        let (mut app, _events, mut ops) = make_test_app_with_channels().await;
+        let id = ThreadId::new();
+        let session = test_thread_session(id, app.config.cwd.to_path_buf());
+        let chat = &mut app.chat_widget;
+        chat.handle_thread_session_quiet(session);
+        chat.handle_server_notification(
+            turn_started_notification(id, "previous"),
+            /*replay_kind*/ None,
+        );
+        chat.apply_external_edit("queued draft".into());
+        chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+        chat.apply_external_edit("enter input".into());
+        chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+        let mut turns = std::iter::from_fn(|| ops.try_recv().ok())
+            .filter(|op| matches!(op, Op::UserTurn { .. }));
+        let op = turns.next().expect("expected Enter submission");
+        let Op::UserTurn {
+            client_user_message_id,
+            ..
+        } = &op
+        else {
+            unreachable!();
+        };
+        chat.user_message_admitted(receipt, &op, client_user_message_id);
+        chat.handle_server_notification(
+            turn_completed_notification(id, "previous", TurnStatus::Completed),
+            /*replay_kind*/ None,
+        );
+        assert_eq!(chat.queued_user_message_texts(), ["queued draft"]);
+        assert!(turns.next().is_none());
+        chat.apply_external_edit("another draft".into());
+        chat.handle_key_event(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(
+            chat.queued_user_message_texts(),
+            ["queued draft", "another draft"]
+        );
+        chat.handle_server_notification(
+            turn_started_notification(id, "next"),
+            /*replay_kind*/ None,
+        );
+        assert!(turns.next().is_none());
+        chat.handle_server_notification(
+            turn_completed_notification(id, "next", TurnStatus::Completed),
+            /*replay_kind*/ None,
+        );
+        assert!(matches!(
+            turns.next(),
+            Some(Op::UserTurn { cloud_submission: CloudSubmissionIntent::StartIfIdle, items, .. })
+                if matches!(items.as_slice(), [UserInput::Text { text, .. }] if text == "queued draft")
+        ));
+        assert_eq!(chat.queued_user_message_texts(), ["another draft"]);
+        assert!(turns.next().is_none());
+    }
 }
 
 #[tokio::test]
@@ -47,7 +80,6 @@ async fn worktree_creation_rejects_untrusted_source_before_allocation() -> Resul
     use crate::app_event::ManagedWorktreeMode;
 
     let (mut app, mut events, _op_rx) = make_test_app_with_channels().await;
-    app.config.features.enable(Feature::Worktrees)?;
     app.config.active_project.trust_level =
         Some(codex_protocol::config_types::TrustLevel::Untrusted);
     let thread_id = ThreadId::new();
@@ -97,7 +129,6 @@ async fn worktree_creation_rejects_running_agent_before_allocation() -> Result<(
     let (mut app, mut events, _op_rx) = make_test_app_with_channels().await;
     let home = tempfile::tempdir()?;
     app.config.codex_home = home.path().to_path_buf().abs();
-    app.config.features.enable(Feature::Worktrees)?;
     app.config.active_project.trust_level = Some(codex_protocol::config_types::TrustLevel::Trusted);
     let primary = ThreadId::new();
     app.primary_thread_id = Some(primary);
@@ -144,6 +175,7 @@ async fn turn_start_failure_is_shown_without_exiting() -> Result<()> {
     let mut tui = crate::tui::test_support::make_test_tui()?;
     let mut app_server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
     let thread_id = ThreadId::from_string("123e4567-e89b-12d3-a456-426614174000")?;
+    app_server.side_chat_fork_names.insert(thread_id, None);
     app.active_thread_id = Some(thread_id);
     app.chat_widget
         .handle_thread_session(test_thread_session(thread_id, app.config.cwd.to_path_buf()));
@@ -163,6 +195,7 @@ async fn turn_start_failure_is_shown_without_exiting() -> Result<()> {
         .handle_event(&mut tui, &mut app_server, AppEvent::CodexOp(op))
         .await?;
 
+    assert!(app_server.side_chat_fork_names.contains_key(&thread_id));
     assert!(matches!(control, AppRunControl::Continue));
     let error_cell = std::iter::from_fn(|| app_event_rx.try_recv().ok())
         .find_map(|event| match event {
@@ -278,6 +311,7 @@ async fn misalignment_policy_blocks_queued_turns_and_goal_resumption() -> Result
         AppEvent::StartSide {
             parent_thread_id: thread_id,
             user_message: Some("Do not fork this stopped thread".into()),
+            mode: crate::app_event::SideStartMode::Reuse,
         },
         AppEvent::ForkCurrentSession { name: None },
         AppEvent::StartManagedWorktree {

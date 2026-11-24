@@ -2,6 +2,7 @@ use super::*;
 use crate::context::world_state::WorldState;
 use codex_config::RequirementSource;
 use codex_protocol::models::ResponseItem;
+use codex_protocol_test_support::ContentItemTestExt;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -85,6 +86,7 @@ fn managed_policy_limit_includes_replacement_notice_and_markers() -> io::Result<
         instructions: format!("{REPLACEMENT_NOTICE}\n\n"),
     }
     .render()
+    .expect_text()
     .len();
     let mut requirement = Sourced::new(
         "x".repeat(approx_bytes_for_tokens(MAX_MANAGED_DEVELOPER_INSTRUCTIONS_TOKENS) - overhead),

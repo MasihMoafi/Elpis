@@ -2,6 +2,9 @@ pub(crate) mod agent_resolver;
 pub(crate) mod api;
 pub(crate) mod child_config;
 pub(crate) mod control;
+pub(crate) mod helper_daybreak;
+mod history;
+pub(crate) mod host;
 mod registry;
 pub(crate) mod role;
 pub(crate) mod status;
@@ -9,6 +12,8 @@ pub(crate) mod types;
 
 pub(crate) use codex_protocol::protocol::AgentStatus;
 pub(crate) use control::LocalAgentControl;
+pub(crate) use history::sanitize_agent_fork_prefix;
+pub(crate) use history::sanitize_referenced_agent_fork;
 pub(crate) use registry::exceeds_thread_spawn_depth_limit;
 pub(crate) use registry::next_thread_spawn_depth;
 pub(crate) use status::agent_status_from_event;

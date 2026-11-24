@@ -14,10 +14,12 @@ use super::LegacyUnifiedExecProcessLimitWarning;
 use super::RecommendedPluginsInstructions;
 use super::SubagentNotification;
 use super::TurnAborted;
+use super::UnsupportedMedia;
 use super::UserGoalUpdate;
 use super::UserInstructions;
 use super::UserShellCommand;
 use super::world_state::EnvironmentsState;
+use crate::image_preparation::ImagePreparationError;
 
 const CONTEXTUAL_USER_FRAGMENT_MATCHERS: &[fn(&str) -> bool] = &[
     UserInstructions::matches_text,
@@ -73,9 +75,9 @@ pub(crate) fn is_user_authorization_message(item: &ResponseItem) -> bool {
                                 kind.0.as_str(),
                                 "" | "unknown"
                                     // Media preparation can replace real user input.
-                                    | "images.preparation_error"
-                                    | "images.unsupported"
-                                    | "audio.unsupported"
+                                    | ImagePreparationError::KIND
+                                    | UnsupportedMedia::IMAGE_KIND
+                                    | UnsupportedMedia::AUDIO_KIND
                             )
                     })
             })

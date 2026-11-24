@@ -14,6 +14,7 @@ use ratatui::widgets::Wrap;
 
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
+use crate::clipboard_paste::normalize_pasted_search_query;
 use crate::key_hint;
 use crate::key_hint::KeyBindingListExt;
 use crate::key_hint::ShortcutHint;
@@ -162,44 +163,6 @@ impl SkillsToggleView {
             .collect()
     }
 
-    fn move_up(&mut self) {
-        let len = self.visible_len();
-        self.state.move_up_wrap(len);
-        let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
-    }
-
-    fn move_down(&mut self) {
-        let len = self.visible_len();
-        self.state.move_down_wrap(len);
-        let visible = Self::max_visible_rows(len);
-        self.state.ensure_visible(len, visible);
-    }
-
-    fn page_up(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.page_up_clamped(len, visible);
-    }
-
-    fn page_down(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.page_down_clamped(len, visible);
-    }
-
-    fn jump_top(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.jump_top(len, visible);
-    }
-
-    fn jump_bottom(&mut self) {
-        let len = self.visible_len();
-        let visible = Self::max_visible_rows(len);
-        self.state.jump_bottom(len, visible);
-    }
-
     fn toggle_selected(&mut self) {
         let Some(idx) = self.state.selected_idx else {
             return;
@@ -224,8 +187,6 @@ impl SkillsToggleView {
         }
         self.complete = true;
         self.app_event_tx.send(AppEvent::ManageSkillsClosed);
-        self.app_event_tx
-            .list_skills(Vec::new(), /*force_reload*/ true);
     }
 
     fn rows_height(&self, rows: &[GenericDisplayRow]) -> u16 {
@@ -243,25 +204,16 @@ impl BottomPaneView for SkillsToggleView {
         // plain j/k only apply through non-text events or modified bindings.
         let allow_plain_char_navigation = !is_plain_text_key_event(key_event);
 
+        if allow_plain_char_navigation
+            && let Some(action) = self.keymap.vertical_action_for(key_event)
+        {
+            let len = self.visible_len();
+            self.state
+                .apply_vertical_action(action, len, Self::max_visible_rows(len));
+            return;
+        }
+
         match key_event {
-            _ if allow_plain_char_navigation && self.keymap.move_up.is_pressed(key_event) => {
-                self.move_up()
-            }
-            _ if allow_plain_char_navigation && self.keymap.move_down.is_pressed(key_event) => {
-                self.move_down()
-            }
-            _ if allow_plain_char_navigation && self.keymap.page_up.is_pressed(key_event) => {
-                self.page_up()
-            }
-            _ if allow_plain_char_navigation && self.keymap.page_down.is_pressed(key_event) => {
-                self.page_down()
-            }
-            _ if allow_plain_char_navigation && self.keymap.jump_top.is_pressed(key_event) => {
-                self.jump_top()
-            }
-            _ if allow_plain_char_navigation && self.keymap.jump_bottom.is_pressed(key_event) => {
-                self.jump_bottom()
-            }
             KeyEvent {
                 code: KeyCode::Backspace,
                 ..
@@ -290,6 +242,15 @@ impl BottomPaneView for SkillsToggleView {
             }
             _ => {}
         }
+    }
+
+    fn handle_paste(&mut self, pasted: String) -> bool {
+        let Some(pasted) = normalize_pasted_search_query(&pasted) else {
+            return false;
+        };
+        self.search_query.push_str(&pasted);
+        self.apply_filter();
+        true
     }
 
     fn is_complete(&self) -> bool {
@@ -517,8 +478,14 @@ mod tests {
             tx,
             crate::keymap::RuntimeKeymap::defaults().list,
         );
-        view.search_query = "completion".to_string();
-        view.apply_filter();
+        view.handle_key_event(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE));
+        assert!(view.handle_paste("  ompletion\r\n\t ".to_string()));
+        assert_eq!(view.search_query, "completion");
+
+        let rendered = render_lines(&view, /*width*/ 96);
+        assert_snapshot!("skills_toggle_pasted_search", rendered);
+        assert!(!view.handle_paste(" \r\n\t ".to_string()));
+        assert_eq!(render_lines(&view, /*width*/ 96), rendered);
 
         let row_names = view
             .build_rows()

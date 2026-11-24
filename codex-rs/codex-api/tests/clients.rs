@@ -19,16 +19,26 @@ use codex_client::RequestBody;
 use codex_client::Response;
 use codex_client::StreamResponse;
 use codex_client::TransportError;
+use codex_http_client::HttpClientBuilder;
 use codex_protocol::ResponseItemId;
 use codex_protocol::models::ContentItem;
+use codex_protocol::models::ExecutedToolCall;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::models::ToolResultBody;
+use codex_protocol::models::ToolResultMetadata;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use http::HeaderMap;
 use http::HeaderValue;
 use http::StatusCode;
+use http::header::AUTHORIZATION;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
 use serde_json::value::RawValue;
+use wiremock::Mock;
+use wiremock::MockServer;
+use wiremock::ResponseTemplate;
+use wiremock::matchers::method;
 
 fn assert_path_ends_with(requests: &[Request], suffix: &str) {
     assert_eq!(requests.len(), 1);
@@ -105,7 +115,9 @@ impl HttpTransport for RecordingTransport {
 struct NoAuth;
 
 impl AuthProvider for NoAuth {
-    fn add_auth_headers(&self, _headers: &mut HeaderMap) {}
+    fn add_auth_headers(&self, _headers: &mut HeaderMap) -> Result<(), AuthError> {
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -124,7 +136,7 @@ impl StaticAuth {
 }
 
 impl AuthProvider for StaticAuth {
-    fn add_auth_headers(&self, headers: &mut HeaderMap) {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), AuthError> {
         let token = &self.token;
         if let Ok(header) = HeaderValue::from_str(&format!("Bearer {token}")) {
             headers.insert(http::header::AUTHORIZATION, header);
@@ -132,6 +144,7 @@ impl AuthProvider for StaticAuth {
         if let Ok(header) = HeaderValue::from_str(&self.account_id) {
             headers.insert("ChatGPT-Account-ID", header);
         }
+        Ok(())
     }
 }
 
@@ -199,19 +212,10 @@ struct FailsOnceAuth {
 }
 
 impl FailsOnceAuth {
-    fn transient() -> Self {
+    fn new(error: AuthError) -> Self {
         Self {
             attempts: Arc::new(Mutex::new(0)),
-            error: Arc::new(AuthError::Transient(
-                "sts temporarily unavailable".to_string(),
-            )),
-        }
-    }
-
-    fn build() -> Self {
-        Self {
-            attempts: Arc::new(Mutex::new(0)),
-            error: Arc::new(AuthError::Build("invalid auth configuration".to_string())),
+            error: Arc::new(error),
         }
     }
 
@@ -231,6 +235,7 @@ impl FailsOnceAuth {
 
         if *attempts == 1 {
             return match self.error.as_ref() {
+                AuthError::Policy(denied) => Err(AuthError::Policy(*denied)),
                 AuthError::Build(message) => Err(AuthError::Build(message.clone())),
                 AuthError::Transient(message) => Err(AuthError::Transient(message.clone())),
             };
@@ -241,7 +246,9 @@ impl FailsOnceAuth {
 }
 
 impl AuthProvider for FailsOnceAuth {
-    fn add_auth_headers(&self, _headers: &mut HeaderMap) {}
+    fn add_auth_headers(&self, _headers: &mut HeaderMap) -> Result<(), AuthError> {
+        Ok(())
+    }
 
     fn apply_auth(&self, request: Request) -> codex_api::AuthProviderFuture<'_> {
         Box::pin(FailsOnceAuth::apply_auth(self, request))
@@ -338,8 +345,11 @@ async fn responses_client_stream_request_preserves_item_ids() -> Result<()> {
     let transport = RecordingTransport::new(state.clone());
     let client = ResponsesClient::new(transport, provider("openai"), Arc::new(NoAuth));
     let request = ResponsesApiRequest {
+        request_country: Default::default(),
         model: "gpt-test".into(),
         input: vec![ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: Some(ResponseItemId::with_suffix("msg", "1")),
             role: "user".into(),
             content: vec![ContentItem::InputText { text: "hi".into() }],
@@ -356,6 +366,7 @@ async fn responses_client_stream_request_preserves_item_ids() -> Result<()> {
         include: Vec::new(),
         service_tier: None,
         prompt_cache_key: None,
+        prompt_cache_options: None,
         text: None,
         client_metadata: None,
         access_programs: None,
@@ -392,8 +403,11 @@ async fn responses_client_stream_request_sends_routing_fields_ahead_of_large_inp
     // buffering a potentially multi-megabyte prompt first.
     let large_input = "x".repeat(2 * 1024 * 1024);
     let request = ResponsesApiRequest {
+        request_country: Default::default(),
         model: "gpt-test".into(),
         input: vec![ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".into(),
             content: vec![ContentItem::InputText { text: large_input }],
@@ -410,6 +424,7 @@ async fn responses_client_stream_request_sends_routing_fields_ahead_of_large_inp
         include: Vec::new(),
         service_tier: Some("priority".into()),
         prompt_cache_key: None,
+        prompt_cache_options: None,
         text: None,
         client_metadata: None,
         access_programs: None,
@@ -480,16 +495,11 @@ async fn streaming_client_adds_auth_headers() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn streaming_client_retries_on_transport_error() -> Result<()> {
-    let transport = FlakyTransport::new();
-
-    let mut provider = provider("openai");
-    provider.retry.max_attempts = 2;
-
-    let request = ResponsesApiRequest {
+fn sampling_request(input: Vec<ResponseItem>) -> ResponsesApiRequest {
+    ResponsesApiRequest {
+        request_country: Default::default(),
         model: "gpt-test".into(),
-        input: Vec::new(),
+        input,
         tools: Some(empty_tools().into()),
         tool_choice: "auto".into(),
         parallel_tool_calls: false,
@@ -500,10 +510,96 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
         include: Vec::new(),
         service_tier: None,
         prompt_cache_key: None,
+        prompt_cache_options: None,
         text: None,
         client_metadata: None,
         access_programs: None,
-    };
+    }
+}
+
+#[tokio::test]
+async fn responses_retry_keeps_tool_results_and_redirect_omits_them() -> Result<()> {
+    let mut item: ResponseItem = serde_json::from_value(serde_json::json!({
+        "type": "function_call_output", "call_id": "read", "output": "one match",
+    }))?;
+    let mut call = ExecutedToolCall::new("search".into(), serde_json::json!({"query": "test"}));
+    call.set_tool_result_metadata(ToolResultMetadata::new(&serde_json::json!({"matches": 1})));
+    item.append_executed_tool_calls(vec![call]);
+    let request = sampling_request(vec![item]);
+    let private = serde_json::json!({"content": [{"type": "text", "text": "private match"}]});
+    let result = serde_json::from_value(private.clone())?;
+    let body = Arc::new(ToolResultBody::from_mcp_result(&result).expect("eligible Apps result"));
+    let canonical = serde_json::to_value(&request)?;
+    let mut enriched = canonical.clone();
+    enriched["input"][0]["internal_chat_message_metadata_passthrough"]["executed_tool_calls"][0]
+        ["tool_result"] = private;
+
+    for status in [307, 308] {
+        let origin = MockServer::start().await;
+        let destination = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(503))
+            .with_priority(/*p*/ 1)
+            .up_to_n_times(1)
+            .mount(&origin)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(status).insert_header("location", destination.uri()),
+            )
+            .mount(&origin)
+            .await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw("", "text/event-stream"))
+            .mount(&destination)
+            .await;
+        let mut provider = provider("openai");
+        provider.base_url = origin.uri();
+        provider.retry.retry_5xx = true;
+        let transport = codex_client::ReqwestTransport::from_http_client(
+            HttpClientBuilder::new().build_direct()?,
+        );
+        let client = ResponsesClient::new(
+            transport,
+            provider,
+            Arc::new(StaticAuth::new("test-secret", "account")),
+        );
+        let mut observed = Bytes::new();
+        let _stream = client
+            .stream_request_with_observer(
+                request.clone(),
+                ResponsesOptions {
+                    tool_results: vec![(0, 0, Arc::clone(&body))],
+                    ..Default::default()
+                },
+                |json| observed = json.clone(),
+            )
+            .await?;
+        assert_eq!(serde_json::from_slice::<Value>(&observed)?, canonical);
+
+        let sent = origin.received_requests().await.unwrap();
+        let forwarded = destination.received_requests().await.unwrap();
+        assert_eq!((sent.len(), forwarded.len()), (3, 1));
+        assert_eq!(sent[0].body, sent[1].body);
+        for (actual, expected, authenticated) in [
+            (&sent[0], &enriched, true),
+            (&sent[1], &enriched, true),
+            (&sent[2], &canonical, true),
+            (&forwarded[0], &canonical, false),
+        ] {
+            assert_eq!(&actual.body_json::<Value>()?, expected);
+            assert_eq!(actual.headers.contains_key(AUTHORIZATION), authenticated);
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn streaming_client_retries_on_transport_error() -> Result<()> {
+    let transport = FlakyTransport::new();
+    let mut provider = provider("openai");
+    provider.retry.max_attempts = 2;
+    let request = sampling_request(Vec::new());
     let client = ResponsesClient::new(transport.clone(), provider, Arc::new(NoAuth));
 
     let _stream = client
@@ -541,7 +637,7 @@ async fn streaming_client_retries_on_transport_error() -> Result<()> {
 async fn streaming_client_retries_on_transient_auth_error() -> Result<()> {
     let state = RecordingState::default();
     let transport = RecordingTransport::new(state.clone());
-    let auth = FailsOnceAuth::transient();
+    let auth = FailsOnceAuth::new(AuthError::Transient("sts temporarily unavailable".into()));
 
     let mut provider = provider("openai");
     provider.retry.max_attempts = 2;
@@ -563,36 +659,39 @@ async fn streaming_client_retries_on_transient_auth_error() -> Result<()> {
 }
 
 #[tokio::test]
-async fn streaming_client_does_not_retry_auth_build_error() -> Result<()> {
-    let state = RecordingState::default();
-    let transport = RecordingTransport::new(state.clone());
-    let auth = FailsOnceAuth::build();
-
-    let mut provider = provider("openai");
-    provider.retry.max_attempts = 2;
-
-    let client = ResponsesClient::new(transport, provider, Arc::new(auth.clone()));
-    let body = serde_json::json!({ "model": "gpt-test" });
-    let result = client
-        .stream(
-            body,
-            HeaderMap::new(),
-            Compression::None,
-            /*turn_state*/ None,
-        )
-        .await;
-    let err = result
-        .err()
-        .expect("auth build errors should fail without retry");
-
-    assert!(matches!(
-        err,
-        ApiError::Transport(TransportError::Build(message))
-            if message == "invalid auth configuration"
-    ));
-    assert_eq!(auth.attempts(), 1);
-    assert_eq!(state.take_stream_requests().len(), 0);
-    Ok(())
+async fn streaming_client_does_not_retry_terminal_auth_errors() {
+    for error in [
+        AuthError::Build("invalid auth configuration".into()),
+        AuthError::Policy(codex_http_client::NetworkPolicyDenied::Revoked),
+    ] {
+        let state = RecordingState::default();
+        let transport = RecordingTransport::new(state.clone());
+        let auth = FailsOnceAuth::new(error);
+        let mut provider = provider("openai");
+        provider.retry.max_attempts = 2;
+        let client = ResponsesClient::new(transport, provider, Arc::new(auth.clone()));
+        let error = client
+            .stream(
+                serde_json::json!({ "model": "gpt-test" }),
+                HeaderMap::new(),
+                Compression::None,
+                /*turn_state*/ None,
+            )
+            .await
+            .err()
+            .expect("terminal auth errors must fail without retry");
+        match (error, auth.error.as_ref()) {
+            (ApiError::Transport(TransportError::Build(actual)), AuthError::Build(expected)) => {
+                assert_eq!(&actual, expected);
+            }
+            (ApiError::Transport(TransportError::Policy(actual)), AuthError::Policy(expected)) => {
+                assert_eq!(&actual, expected);
+            }
+            (actual, expected) => panic!("expected {expected:?}, got {actual:?}"),
+        }
+        assert_eq!(auth.attempts(), 1);
+        assert!(state.take_stream_requests().is_empty());
+    }
 }
 
 #[tokio::test]
@@ -602,8 +701,11 @@ async fn azure_store_sends_ids_and_headers() -> Result<()> {
     let client = ResponsesClient::new(transport, provider("azure"), Arc::new(NoAuth));
 
     let request = ResponsesApiRequest {
+        request_country: Default::default(),
         model: "gpt-test".into(),
         input: vec![ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: Some(ResponseItemId::with_suffix("msg", "1")),
             role: "user".into(),
             content: vec![ContentItem::InputText { text: "hi".into() }],
@@ -620,6 +722,7 @@ async fn azure_store_sends_ids_and_headers() -> Result<()> {
         include: Vec::new(),
         service_tier: None,
         prompt_cache_key: None,
+        prompt_cache_options: None,
         text: None,
         client_metadata: None,
         access_programs: None,
@@ -636,6 +739,7 @@ async fn azure_store_sends_ids_and_headers() -> Result<()> {
                 session_source: Some(SessionSource::SubAgent(SubAgentSource::Review)),
                 extra_headers,
                 compression: Compression::None,
+                tool_results: Vec::new(),
                 turn_state: None,
             },
         )
@@ -680,5 +784,87 @@ async fn azure_store_sends_ids_and_headers() -> Result<()> {
         .and_then(|id| id.as_str());
     assert_eq!(input_id, Some("msg_1"));
 
+    Ok(())
+}
+
+struct RejectedHeaderAuth;
+
+impl AuthProvider for RejectedHeaderAuth {
+    fn add_auth_headers(&self, headers: &mut HeaderMap) -> Result<(), AuthError> {
+        headers.insert(
+            http::header::AUTHORIZATION,
+            HeaderValue::from_static("Bearer partial-auth"),
+        );
+        Err(AuthError::Build("header authentication failed".to_string()))
+    }
+}
+
+#[tokio::test]
+async fn header_auth_error_prevents_sending_partial_authentication() {
+    let state = RecordingState::default();
+    let client = ResponsesClient::new(
+        RecordingTransport::new(state.clone()),
+        provider("openai"),
+        Arc::new(RejectedHeaderAuth),
+    );
+    let result = client
+        .stream(
+            serde_json::json!({"echo": true}),
+            HeaderMap::new(),
+            Compression::None,
+            /*turn_state*/ None,
+        )
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(ApiError::Transport(TransportError::Build(_)))
+    ));
+    assert!(state.take_stream_requests().is_empty());
+}
+
+struct AsyncHeaderAuth;
+
+impl AuthProvider for AsyncHeaderAuth {
+    fn add_auth_headers(&self, _headers: &mut HeaderMap) -> Result<(), codex_api::AuthError> {
+        Err(codex_api::AuthError::Build(
+            "authentication requires async header resolution".to_string(),
+        ))
+    }
+
+    fn apply_auth_headers(&self, mut headers: HeaderMap) -> codex_api::AuthHeadersFuture<'_> {
+        Box::pin(async move {
+            headers.insert(
+                http::header::AUTHORIZATION,
+                HeaderValue::from_static("Bearer async-auth"),
+            );
+            Ok(headers)
+        })
+    }
+}
+
+#[tokio::test]
+async fn async_auth_provider_rejects_sync_resolution_and_authenticates_requests() -> Result<()> {
+    assert!(AsyncHeaderAuth.to_auth_headers().is_err());
+    let state = RecordingState::default();
+    let client = ResponsesClient::new(
+        RecordingTransport::new(state.clone()),
+        provider("openai"),
+        Arc::new(AsyncHeaderAuth),
+    );
+    let _stream = client
+        .stream(
+            serde_json::json!({"echo": true}),
+            HeaderMap::new(),
+            Compression::None,
+            /*turn_state*/ None,
+        )
+        .await?;
+    let requests = state.take_stream_requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].headers.get(http::header::AUTHORIZATION),
+        Some(&HeaderValue::from_static("Bearer async-auth"))
+    );
     Ok(())
 }

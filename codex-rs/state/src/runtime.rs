@@ -19,6 +19,7 @@ use crate::model::datetime_to_epoch_millis;
 use crate::model::datetime_to_epoch_seconds;
 use crate::model::epoch_millis_to_datetime;
 use crate::paths::file_modified_time_utc;
+use crate::sqlite::SqliteWriteQueryExt;
 use crate::telemetry::DbKind;
 use crate::telemetry::DbTelemetry;
 use chrono::DateTime;
@@ -42,10 +43,12 @@ use tracing::warn;
 mod backfill;
 mod external_agent_config_imports;
 mod goals;
+mod guardian_feedback;
 mod logs;
 mod logs_maintenance;
 mod memories;
 mod memory_versions;
+pub(crate) mod model_ids;
 mod projects;
 mod queued_items;
 pub(crate) mod reclamation;
@@ -56,6 +59,7 @@ mod rollout_migration;
 pub(crate) mod test_support;
 mod thread_attachments;
 mod thread_metadata;
+mod thread_read_state;
 mod thread_section_order;
 mod thread_sections;
 mod threads;
@@ -69,6 +73,10 @@ pub use goals::GoalAccountingMode;
 pub use goals::GoalAccountingOutcome;
 pub use goals::GoalStore;
 pub use goals::GoalUpdate;
+pub use guardian_feedback::GuardianReviewRecord;
+pub use guardian_feedback::MAX_GUARDIAN_REVIEW_BYTES;
+pub use guardian_feedback::MAX_GUARDIAN_REVIEW_RECORDS;
+pub use guardian_feedback::MAX_GUARDIAN_REVIEW_RECORDS_PER_THREAD;
 pub use memories::MemoryStore;
 pub use queued_items::SqliteQueueStore;
 pub use recovery::backup_runtime_db_for_fresh_start;
@@ -77,6 +85,9 @@ pub use recovery::is_sqlite_corruption_error;
 pub use recovery::runtime_db_path_for_corruption_error;
 pub use recovery::sqlite_error_detail_is_lock;
 pub use remote_control::RemoteControlEnrollmentRecord;
+pub use thread_read_state::ReadStateOperation;
+pub use thread_read_state::ReadStateUpdate;
+pub use thread_read_state::ThreadReadState;
 pub use threads::ThreadFilterOptions;
 
 // "Partition" is the retained-log-content bucket we cap at 10 MiB:
@@ -93,7 +104,8 @@ pub struct StateRuntime {
     sqlite: SqliteConfig,
     default_provider: String,
     pool: Arc<sqlx::SqlitePool>,
-    logs_pool: Arc<sqlx::SqlitePool>,
+    logs_pool: Option<Arc<sqlx::SqlitePool>>,
+    diagnostic_logs_error: Option<String>,
     thread_goals: GoalStore,
     memories: MemoryStore,
     memories_v2: Arc<tokio::sync::OnceCell<MemoryStore>>,
@@ -140,7 +152,6 @@ impl StateRuntime {
         let goals_path = sqlite.goals_db_path();
         let memories_path = sqlite.memories_db_path();
         let queue_path = sqlite.queue_db_path();
-        let has_memories_v2 = tokio::fs::try_exists(sqlite.memories_v2_db_path()).await?;
         let pool = match sqlite
             .open_state_db(&state_migrator, telemetry_override)
             .await
@@ -151,16 +162,23 @@ impl StateRuntime {
                 return Err(err);
             }
         };
-        let logs_pool = match sqlite
+        let has_memories_v2 = tokio::fs::try_exists(sqlite.memories_v2_db_path()).await?;
+        let (logs_pool, diagnostic_logs_error) = match sqlite
             .open_logs_db(&logs_migrator, telemetry_override)
             .await
         {
-            Ok(db) => Arc::new(db),
-            Err(err) => {
-                warn!("failed to open logs db at {}: {err}", logs_path.display());
-                close_sqlite_pools(&[pool.as_ref()]).await;
+            Ok(db) => (Some(Arc::new(db)), None),
+            Err(err) if is_sqlite_corruption_error(&err) => {
+                pool.close().await;
                 return Err(err);
             }
+            Err(err) => (
+                None,
+                Some(format!(
+                    "failed to open logs db at {}: {err:#}",
+                    logs_path.display()
+                )),
+            ),
         };
         let goals_pool = match sqlite
             .open_goals_db(&goals_migrator, telemetry_override)
@@ -169,7 +187,7 @@ impl StateRuntime {
             Ok(db) => Arc::new(db),
             Err(err) => {
                 warn!("failed to open goals db at {}: {err}", goals_path.display());
-                close_sqlite_pools(&[pool.as_ref(), logs_pool.as_ref()]).await;
+                close_sqlite_pools(&[Some(pool.as_ref()), logs_pool.as_deref()]).await;
                 return Err(err);
             }
         };
@@ -183,7 +201,12 @@ impl StateRuntime {
                     "failed to open memories db at {}: {err}",
                     memories_path.display()
                 );
-                close_sqlite_pools(&[pool.as_ref(), logs_pool.as_ref(), goals_pool.as_ref()]).await;
+                close_sqlite_pools(&[
+                    Some(pool.as_ref()),
+                    logs_pool.as_deref(),
+                    Some(goals_pool.as_ref()),
+                ])
+                .await;
                 return Err(err);
             }
         };
@@ -195,10 +218,10 @@ impl StateRuntime {
             Err(err) => {
                 warn!("failed to open queue db at {}: {err}", queue_path.display());
                 close_sqlite_pools(&[
-                    pool.as_ref(),
-                    logs_pool.as_ref(),
-                    goals_pool.as_ref(),
-                    memories_pool.as_ref(),
+                    Some(pool.as_ref()),
+                    logs_pool.as_deref(),
+                    Some(goals_pool.as_ref()),
+                    Some(memories_pool.as_ref()),
                 ])
                 .await;
                 return Err(err);
@@ -215,11 +238,11 @@ impl StateRuntime {
         );
         if let Err(err) = backfill_state_result {
             close_sqlite_pools(&[
-                pool.as_ref(),
-                logs_pool.as_ref(),
-                goals_pool.as_ref(),
-                memories_pool.as_ref(),
-                queue_pool.as_ref(),
+                Some(pool.as_ref()),
+                logs_pool.as_deref(),
+                Some(goals_pool.as_ref()),
+                Some(memories_pool.as_ref()),
+                Some(queue_pool.as_ref()),
             ])
             .await;
             return Err(err);
@@ -244,11 +267,11 @@ impl StateRuntime {
                 Ok(value) => value,
                 Err(err) => {
                     close_sqlite_pools(&[
-                        pool.as_ref(),
-                        logs_pool.as_ref(),
-                        goals_pool.as_ref(),
-                        memories_pool.as_ref(),
-                        queue_pool.as_ref(),
+                        Some(pool.as_ref()),
+                        logs_pool.as_deref(),
+                        Some(goals_pool.as_ref()),
+                        Some(memories_pool.as_ref()),
+                        Some(queue_pool.as_ref()),
                     ])
                     .await;
                     return Err(err);
@@ -265,6 +288,7 @@ impl StateRuntime {
             thread_queue: SqliteQueueStore::new(queue_pool),
             pool,
             logs_pool,
+            diagnostic_logs_error,
             sqlite,
             default_provider,
             thread_updated_at_millis: Arc::new(AtomicI64::new(thread_updated_at_millis)),
@@ -302,6 +326,21 @@ impl StateRuntime {
         &self.thread_queue
     }
 
+    /// Startup failure to report after tracing is installed and before destructive cleanup.
+    pub fn diagnostic_logs_error(&self) -> Option<&str> {
+        self.diagnostic_logs_error.as_deref()
+    }
+
+    fn diagnostic_logs_pool(&self) -> anyhow::Result<&SqlitePool> {
+        self.logs_pool.as_deref().ok_or_else(|| {
+            anyhow::anyhow!(
+                "diagnostic database unavailable: {}",
+                self.diagnostic_logs_error()
+                    .unwrap_or("logs pool was not initialized")
+            )
+        })
+    }
+
     /// Close all SQLite pools and wait for outstanding pool workers to exit.
     pub async fn close(&self) {
         self.reclamation.close().await;
@@ -314,7 +353,9 @@ impl StateRuntime {
             work_graphs.close().await;
         }
         self.thread_goals.close().await;
-        self.logs_pool.close().await;
+        if let Some(pool) = &self.logs_pool {
+            pool.close().await;
+        }
         self.pool.close().await;
     }
 
@@ -351,8 +392,8 @@ impl StateRuntime {
     }
 }
 
-async fn close_sqlite_pools(pools: &[&SqlitePool]) {
-    for pool in pools {
+async fn close_sqlite_pools(pools: &[Option<&SqlitePool>]) {
+    for pool in pools.iter().flatten() {
         pool.close().await;
     }
 }
@@ -388,7 +429,7 @@ ON CONFLICT(id) DO NOTHING
     .bind(1_i64)
     .bind(crate::BackfillStatus::Pending.as_str())
     .bind(Utc::now().timestamp())
-    .execute(pool)
+    .execute_with_busy_retry(pool)
     .await?;
     Ok(())
 }

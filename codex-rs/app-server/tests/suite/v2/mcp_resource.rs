@@ -13,6 +13,7 @@ use anyhow::Result;
 use app_test_support::ChatGptAuthFixture;
 use app_test_support::MockResponsesConfig;
 use app_test_support::TestAppServer;
+use app_test_support::create_fake_paginated_rollout;
 use app_test_support::create_fake_rollout;
 use app_test_support::create_mock_responses_server_repeating_assistant;
 use app_test_support::rollout_path;
@@ -78,6 +79,7 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSettingsAppliedEvent;
 use codex_rollout::RolloutItem;
 use codex_rollout::RolloutRecorder;
@@ -105,7 +107,7 @@ use rmcp::model::ReadResourceResult;
 use rmcp::model::Resource;
 use rmcp::model::ResourceContents;
 use rmcp::model::ServerCapabilities;
-use rmcp::model::ServerInfo;
+use rmcp::model::ServerConfig;
 use rmcp::service::RequestContext;
 use rmcp::service::RoleServer;
 use rmcp::transport::StreamableHttpServerConfig;
@@ -119,6 +121,8 @@ use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
+#[path = "mcp_resource/caller_metadata.rs"]
+mod caller_metadata;
 #[path = "mcp_resource/plugin_metadata_refresh.rs"]
 mod plugin_metadata_refresh;
 
@@ -168,22 +172,29 @@ async fn mcp_resource_read_returns_resource_contents() -> Result<()> {
             ..Default::default()
         })
         .await?;
-    for thread_id in [Some(thread.id), None] {
-        for target in [
-            None,
-            Some(McpResourceReadTarget {
-                connector_id: "calendar".to_string(),
-                link_id: Some("link_calendar".to_string()),
-            }),
-            Some(McpResourceReadTarget {
-                connector_id: "calendar".to_string(),
-                link_id: None,
-            }),
-        ] {
+    let metadata_value = json!({"sequence": [1, 2]});
+    let targets = [
+        None,
+        Some(McpResourceReadTarget {
+            connector_id: "calendar".to_string(),
+            link_id: Some("link_calendar".to_string()),
+        }),
+        Some(McpResourceReadTarget {
+            connector_id: "calendar".to_string(),
+            link_id: None,
+        }),
+    ];
+    for thread_id in [Some(thread.id.clone()), None] {
+        for target in &targets {
             let read_response: McpResourceReadResponse = mcp
                 .request(|request_id| ClientRequest::McpResourceRead {
                     request_id,
                     params: McpResourceReadParams {
+                        environment_id: None,
+                        meta: Some(serde_json::Map::from_iter([(
+                            "example/trace".into(),
+                            metadata_value.clone(),
+                        )])),
                         thread_id: thread_id.clone(),
                         origin_call_id: None,
                         server: "codex_apps".to_string(),
@@ -201,12 +212,13 @@ async fn mcp_resource_read_returns_resource_contents() -> Result<()> {
             let metadata = metadata
                 .last()
                 .expect("resource read reached the MCP server");
+            assert_eq!(metadata.get("example/trace"), Some(&metadata_value));
             assert_eq!(
                 (
                     metadata.get("connector_id").cloned(),
                     metadata.get("link_id").cloned()
                 ),
-                match &target {
+                match target {
                     Some(target) => (
                         Some(json!(target.connector_id)),
                         Some(json!(target.link_id)),
@@ -216,6 +228,41 @@ async fn mcp_resource_read_returns_resource_contents() -> Result<()> {
             );
         }
     }
+
+    let reads_before_invalid_requests = apps_server_calls.read_metadata.lock().unwrap().len();
+    let other_route = json!({"resource_uri": "/calendar/link_other/events"});
+    let [_, pinned, no_auth] = targets;
+    for (key, value, origin_call_id, target) in [
+        ("connector_id", json!("spoofed"), None, None),
+        ("link_id", json!("spoofed"), Some("call".into()), None),
+        ("_codex_apps", other_route.clone(), None, pinned),
+        ("_codex_apps", other_route, None, no_auth),
+    ] {
+        let request_id = mcp
+            .send_mcp_resource_read_request(McpResourceReadParams {
+                environment_id: None,
+                thread_id: Some(thread.id.clone()),
+                origin_call_id,
+                meta: Some(serde_json::Map::from_iter([(key.into(), value)])),
+                server: "codex_apps".into(),
+                uri: TEST_RESOURCE_URI.into(),
+                connector_id: None,
+                target,
+            })
+            .await?;
+        let error = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+        )
+        .await??;
+        assert_eq!(error.error.code, -32600);
+        assert!(error.error.message.contains(key));
+    }
+
+    assert_eq!(
+        apps_server_calls.read_metadata.lock().unwrap().len(),
+        reads_before_invalid_requests
+    );
 
     apps_server_handle.abort();
     let _ = apps_server_handle.await;
@@ -269,6 +316,8 @@ async fn mcp_resource_read_preserves_protocol_errors(protocol: ProtocolVersion) 
         for thread_id in [Some(thread.id.clone()), None] {
             let request_id = mcp
                 .send_mcp_resource_read_request(McpResourceReadParams {
+                    environment_id: None,
+                    meta: None,
                     thread_id,
                     origin_call_id: None,
                     server: server.to_string(),
@@ -485,6 +534,8 @@ apps = true
         .request(|request_id| ClientRequest::McpResourceRead {
             request_id,
             params: McpResourceReadParams {
+                environment_id: None,
+                meta: None,
                 thread_id: None,
                 origin_call_id: None,
                 server: "codex_apps".to_string(),
@@ -499,6 +550,8 @@ apps = true
         .request(|request_id| ClientRequest::McpResourceRead {
             request_id,
             params: McpResourceReadParams {
+                environment_id: None,
+                meta: None,
                 thread_id: None,
                 origin_call_id: None,
                 server: "codex_apps".to_string(),
@@ -541,6 +594,8 @@ async fn mcp_resource_read_returns_error_for_unknown_thread() -> Result<()> {
         .request(ClientRequest::McpResourceRead {
             request_id: RequestId::Integer(1),
             params: McpResourceReadParams {
+                environment_id: None,
+                meta: None,
                 thread_id: Some("00000000-0000-4000-8000-000000000000".to_string()),
                 origin_call_id: None,
                 server: "codex_apps".to_string(),
@@ -615,6 +670,8 @@ async fn metadata_and_mcp_requests_complete_while_unrelated_resume_loads_config(
             thread_id: "00000000-0000-4000-8000-000000000000".to_string(),
             cwd: Some(resume_cwd.path().to_string_lossy().into_owned()),
             history: Some(vec![ResponseItem::Message {
+                status: None,
+                encrypted_content: None,
                 id: None,
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
@@ -666,6 +723,8 @@ async fn metadata_and_mcp_requests_complete_while_unrelated_resume_loads_config(
                 sender.request(ClientRequest::McpResourceRead {
                     request_id: RequestId::Integer(7),
                     params: McpResourceReadParams {
+                        environment_id: None,
+                        meta: None,
                         thread_id: Some(thread.id.clone()),
                         origin_call_id: None,
                         server: "resource_server".to_string(),
@@ -677,6 +736,7 @@ async fn metadata_and_mcp_requests_complete_while_unrelated_resume_loads_config(
                 sender.request(ClientRequest::McpServerToolCall {
                     request_id: RequestId::Integer(8),
                     params: McpServerToolCallParams {
+                        environment_id: None,
                         thread_id: thread.id.clone(),
                         server: "resource_server".to_string(),
                         tool: "best_buy_product_search".to_string(),
@@ -763,6 +823,7 @@ async fn metadata_and_mcp_requests_complete_while_unrelated_resume_loads_config(
 
 #[derive(Clone, Copy)]
 enum ResumeMutation {
+    Unchanged,
     GitMetadata,
     ProjectDeletion,
     Archive,
@@ -770,20 +831,40 @@ enum ResumeMutation {
     DuplicateResume,
 }
 
-#[test_case(ResumeMutation::GitMetadata; "git_metadata_and_project_assignment")]
-#[test_case(ResumeMutation::ProjectDeletion; "project_deletion")]
-#[test_case(ResumeMutation::Archive; "archive")]
-#[test_case(ResumeMutation::Delete; "delete")]
-#[test_case(ResumeMutation::DuplicateResume; "duplicate_resume")]
+#[test_case(ResumeMutation::GitMetadata, ThreadHistoryMode::Legacy; "git_metadata_and_project_assignment")]
+#[test_case(ResumeMutation::ProjectDeletion, ThreadHistoryMode::Legacy; "project_deletion")]
+#[test_case(ResumeMutation::Archive, ThreadHistoryMode::Legacy; "archive")]
+#[test_case(ResumeMutation::Delete, ThreadHistoryMode::Legacy; "delete")]
+#[test_case(ResumeMutation::DuplicateResume, ThreadHistoryMode::Legacy; "duplicate_resume")]
+#[test_case(ResumeMutation::Unchanged, ThreadHistoryMode::Paginated; "unchanged_paginated_history")]
+#[test_case(ResumeMutation::GitMetadata, ThreadHistoryMode::Paginated; "paginated_git_metadata")]
+#[test_case(ResumeMutation::ProjectDeletion, ThreadHistoryMode::Paginated; "paginated_project_deletion")]
+#[test_case(ResumeMutation::Archive, ThreadHistoryMode::Paginated; "paginated_archive")]
+#[test_case(ResumeMutation::Delete, ThreadHistoryMode::Paginated; "paginated_delete")]
+#[test_case(ResumeMutation::DuplicateResume, ThreadHistoryMode::Paginated; "paginated_duplicate_resume")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn resume_revalidates_persisted_thread_after_config_load(
     mutation: ResumeMutation,
+    history_mode: ThreadHistoryMode,
 ) -> Result<()> {
-    let responses_server = create_mock_responses_server_repeating_assistant("Ready").await;
+    let responses_server = responses::start_mock_server().await;
+    let model_requests = responses::mount_sse_once(
+        &responses_server,
+        responses::sse(vec![
+            responses::ev_response_created("resp-1"),
+            responses::ev_assistant_message("msg-1", "Ready"),
+            responses::ev_completed("resp-1"),
+        ]),
+    )
+    .await;
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&responses_server.uri()).write(codex_home.path())?;
     let filename_timestamp = "2025-01-05T12-00-00";
-    let thread_id = create_fake_rollout(
+    let create_rollout = match history_mode {
+        ThreadHistoryMode::Legacy => create_fake_rollout,
+        ThreadHistoryMode::Paginated => create_fake_paginated_rollout,
+    };
+    let thread_id = create_rollout(
         codex_home.path(),
         filename_timestamp,
         "2025-01-05T12:00:00Z",
@@ -852,11 +933,19 @@ async fn resume_revalidates_persisted_thread_after_config_load(
             thread_id: "resume-by-path".to_string(),
             path: Some(path.canonicalize()?),
             cwd: Some(resume_cwd.path().to_string_lossy().into_owned()),
+            exclude_turns: matches!(history_mode, ThreadHistoryMode::Paginated),
             ..Default::default()
         },
     }));
     let mut early_resume = poll!(&mut resume);
     let mutation_request = match mutation {
+        ResumeMutation::Unchanged => ClientRequest::ThreadRead {
+            request_id: RequestId::Integer(2),
+            params: ThreadReadParams {
+                thread_id: thread_id.clone(),
+                include_turns: false,
+            },
+        },
         ResumeMutation::GitMetadata => ClientRequest::ThreadMetadataUpdate {
             request_id: RequestId::Integer(2),
             params: ThreadMetadataUpdateParams {
@@ -893,6 +982,7 @@ async fn resume_revalidates_persisted_thread_after_config_load(
             params: ThreadResumeParams {
                 thread_id: thread_id.clone(),
                 cwd: Some(resume_cwd.path().to_string_lossy().into_owned()),
+                exclude_turns: matches!(history_mode, ThreadHistoryMode::Paginated),
                 ..Default::default()
             },
         },
@@ -918,7 +1008,9 @@ async fn resume_revalidates_persisted_thread_after_config_load(
     };
     let resume_config_loads = blocked_resume.matching_loads.load(Ordering::Relaxed);
     let turn_result = match mutation {
-        ResumeMutation::GitMetadata | ResumeMutation::ProjectDeletion => {
+        ResumeMutation::Unchanged
+        | ResumeMutation::GitMetadata
+        | ResumeMutation::ProjectDeletion => {
             complete_in_process_turn(&mut client, RequestId::Integer(3), &thread_id).await
         }
         ResumeMutation::Archive | ResumeMutation::Delete | ResumeMutation::DuplicateResume => {
@@ -945,7 +1037,8 @@ async fn resume_revalidates_persisted_thread_after_config_load(
         ThreadLoadedListResponse {
             data: match mutation {
                 ResumeMutation::Archive | ResumeMutation::Delete => Vec::new(),
-                ResumeMutation::GitMetadata
+                ResumeMutation::Unchanged
+                | ResumeMutation::GitMetadata
                 | ResumeMutation::ProjectDeletion
                 | ResumeMutation::DuplicateResume => vec![thread_id.clone()],
             },
@@ -953,7 +1046,9 @@ async fn resume_revalidates_persisted_thread_after_config_load(
         }
     );
     match mutation {
-        ResumeMutation::GitMetadata | ResumeMutation::ProjectDeletion => {
+        ResumeMutation::Unchanged
+        | ResumeMutation::GitMetadata
+        | ResumeMutation::ProjectDeletion => {
             let resumed: ThreadResumeResponse =
                 serde_json::from_value(resumed.expect("resume updated thread"))?;
             let expected_git_info =
@@ -971,11 +1066,23 @@ async fn resume_revalidates_persisted_thread_after_config_load(
                 (resumed.thread.git_info, resumed.thread.project_id),
                 (expected_git_info.clone(), expected_project_id.clone())
             );
-            assert!(
-                resume_config_loads >= 2,
-                "changed persisted metadata must reload config"
-            );
+            if matches!(mutation, ResumeMutation::Unchanged) {
+                assert_eq!(resume_config_loads, 1);
+            } else {
+                assert!(
+                    resume_config_loads >= 2,
+                    "changed persisted metadata must reload config"
+                );
+            }
             turn_result?;
+            assert!(
+                model_requests
+                    .single_request()
+                    .message_input_texts("user")
+                    .iter()
+                    .any(|text| text == "Saved user message"),
+                "resumed model context must retain the saved user message"
+            );
 
             // Check persisted metadata after the resumed writer appends a turn
             // and shuts down; an in-memory response alone can hide stale writes.
@@ -1031,13 +1138,21 @@ async fn resume_revalidates_persisted_thread_after_config_load(
     Ok(())
 }
 
+#[test_case(ThreadHistoryMode::Legacy; "legacy")]
+#[test_case(ThreadHistoryMode::Paginated; "paginated")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn resume_reloads_config_when_saved_workspace_roots_change() -> Result<()> {
+async fn resume_reloads_config_when_saved_workspace_roots_change(
+    history_mode: ThreadHistoryMode,
+) -> Result<()> {
     let responses_server = create_mock_responses_server_repeating_assistant("Ready").await;
     let codex_home = TempDir::new()?;
     MockResponsesConfig::new(&responses_server.uri()).write(codex_home.path())?;
     let filename_timestamp = "2025-01-05T12-00-00";
-    let thread_id = create_fake_rollout(
+    let create_rollout = match history_mode {
+        ThreadHistoryMode::Legacy => create_fake_rollout,
+        ThreadHistoryMode::Paginated => create_fake_paginated_rollout,
+    };
+    let thread_id = create_rollout(
         codex_home.path(),
         filename_timestamp,
         "2025-01-05T12:00:00Z",
@@ -1083,6 +1198,7 @@ async fn resume_reloads_config_when_saved_workspace_roots_change() -> Result<()>
         params: ThreadResumeParams {
             thread_id: thread_id.clone(),
             cwd: Some(cwd.to_string_lossy().into_owned()),
+            exclude_turns: matches!(history_mode, ThreadHistoryMode::Paginated),
             ..Default::default()
         },
     }));
@@ -1343,7 +1459,7 @@ fn expected_resource_read_response() -> McpResourceReadResponse {
 
 #[derive(Debug, Default)]
 pub(super) struct ResourceAppsMcpCalls {
-    read_metadata: Mutex<Vec<serde_json::Map<String, serde_json::Value>>>,
+    pub(super) read_metadata: Mutex<Vec<serde_json::Map<String, serde_json::Value>>>,
     list_resources: AtomicUsize,
     main_prompt_reads: AtomicUsize,
     reference_reads: AtomicUsize,
@@ -1374,8 +1490,8 @@ struct ResourceAppsMcpServer {
 }
 
 impl ServerHandler for ResourceAppsMcpServer {
-    fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_resources().build())
+    fn get_info(&self) -> ServerConfig {
+        let mut info = ServerConfig::new(ServerCapabilities::builder().enable_resources().build())
             .with_protocol_version(ProtocolVersion::V_2025_06_18);
         if self.calls.tools_enabled.load(Ordering::Relaxed) {
             info.capabilities.tools = Some(Default::default());

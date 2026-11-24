@@ -3,7 +3,7 @@ use super::*;
 #[cfg(test)]
 use crate::linux_run_main::install_bwrap_signal_forwarders;
 #[cfg(test)]
-use crate::linux_run_main::wait_for_bwrap_child;
+use crate::linux_run_main::wait_for_child;
 #[cfg(test)]
 use codex_network_proxy::ManagedNetworkSandboxContext;
 #[cfg(test)]
@@ -16,8 +16,6 @@ use codex_protocol::protocol::NetworkSandboxPolicy;
 use codex_utils_absolute_path::AbsolutePathBuf;
 #[cfg(test)]
 use pretty_assertions::assert_eq;
-#[cfg(test)]
-use std::os::unix::fs::PermissionsExt;
 
 fn read_only_permission_profile() -> PermissionProfile {
     PermissionProfile::read_only()
@@ -27,28 +25,25 @@ fn read_only_file_system_policy() -> FileSystemSandboxPolicy {
     read_only_permission_profile().file_system_sandbox_policy()
 }
 
-#[test]
-fn detects_proc_mount_invalid_argument_failure() {
-    let stderr = "bwrap: Can't mount proc on /newroot/proc: Invalid argument";
-    assert!(is_proc_mount_failure(stderr));
+#[test_case::test_case("/newroot/proc"; "older bubblewrap")]
+#[test_case::test_case("/proc"; "bubblewrap 0.12")]
+fn detects_proc_mount_failures(destination: &str) {
+    for error in [
+        "Invalid argument",
+        "Operation not permitted",
+        "Permission denied",
+    ] {
+        let stderr = format!("bwrap: Can't mount proc on {destination}: {error}\n");
+        assert!(is_proc_mount_failure(&stderr), "{stderr}");
+    }
 }
 
-#[test]
-fn detects_proc_mount_operation_not_permitted_failure() {
-    let stderr = "bwrap: Can't mount proc on /newroot/proc: Operation not permitted";
-    assert!(is_proc_mount_failure(stderr));
-}
-
-#[test]
-fn detects_proc_mount_permission_denied_failure() {
-    let stderr = "bwrap: Can't mount proc on /newroot/proc: Permission denied";
-    assert!(is_proc_mount_failure(stderr));
-}
-
-#[test]
-fn ignores_non_proc_mount_errors() {
-    let stderr = "bwrap: Can't bind mount /dev/null: Operation not permitted";
-    assert!(!is_proc_mount_failure(stderr));
+#[test_case::test_case("bwrap: Can't bind mount /dev/null: Operation not permitted"; "non proc mount")]
+#[test_case::test_case("bwrap: Can't mount proc on /proc-other: Operation not permitted"; "different destination")]
+#[test_case::test_case("bwrap: Can't mount proc on /proc: Limit exceeded (ENOSPC)"; "unhandled mount error")]
+#[test_case::test_case("bwrap: Can't mount proc on /newroot/proc: Limit exceeded (ENOSPC)\nbwrap: Permission denied"; "unrelated error on a different line")]
+fn ignores_unrelated_mount_errors(stderr: &str) {
+    assert!(!is_proc_mount_failure(stderr), "{stderr}");
 }
 
 #[test]
@@ -459,68 +454,6 @@ fn cleanup_synthetic_mount_targets_preserves_real_pre_existing_empty_file() {
 }
 
 #[test]
-fn cleanup_protected_create_targets_removes_created_path_and_reports_violation() {
-    let temp_dir = tempfile::TempDir::new().expect("tempdir");
-    let dot_git = temp_dir.path().join(".git");
-    let target = crate::bwrap::ProtectedCreateTarget::missing(&dot_git);
-
-    let registrations = register_protected_create_targets(&[target]);
-    std::fs::create_dir(&dot_git).expect("create protected path");
-    let violation = cleanup_protected_create_targets(&registrations);
-
-    assert!(violation);
-    assert!(!dot_git.exists());
-}
-
-#[test]
-fn cleanup_protected_create_targets_removes_path_despite_active_marker() {
-    let temp_dir = tempfile::TempDir::new().expect("tempdir");
-    let dot_git = temp_dir.path().join(".git");
-    let target = crate::bwrap::ProtectedCreateTarget::missing(&dot_git);
-
-    let registrations = register_protected_create_targets(std::slice::from_ref(&target));
-    let active_marker = registrations[0].marker_dir.join("1");
-    std::fs::write(&active_marker, PROTECTED_CREATE_MARKER).expect("write active marker");
-    std::fs::write(&dot_git, "").expect("create protected path");
-
-    let violation = cleanup_protected_create_targets(&registrations);
-    assert!(violation);
-    assert!(!dot_git.exists());
-}
-
-#[test]
-fn cleanup_protected_create_targets_removes_read_only_directory_and_reports_violation() {
-    let temp_dir = tempfile::TempDir::new().expect("tempdir");
-    let dot_git = temp_dir.path().join(".git");
-    let outside = temp_dir.path().join("outside");
-    let target = crate::bwrap::ProtectedCreateTarget::missing(&dot_git);
-
-    let registrations = register_protected_create_targets(&[target]);
-    std::fs::create_dir(&outside).expect("create outside directory");
-    std::fs::set_permissions(&outside, std::fs::Permissions::from_mode(0o755))
-        .expect("set outside directory permissions");
-    std::fs::create_dir(&dot_git).expect("create protected path");
-    std::fs::write(dot_git.join("config"), "[core]\n").expect("write protected child");
-    std::os::unix::fs::symlink(&outside, dot_git.join("outside-link"))
-        .expect("link outside directory");
-    std::fs::set_permissions(&dot_git, std::fs::Permissions::from_mode(0o000))
-        .expect("make protected path read-only");
-
-    let violation = cleanup_protected_create_targets(&registrations);
-
-    assert!(violation);
-    assert!(!dot_git.exists());
-    assert_eq!(
-        std::fs::metadata(&outside)
-            .expect("outside directory remains")
-            .permissions()
-            .mode()
-            & 0o777,
-        0o755
-    );
-}
-
-#[test]
 fn bwrap_signal_forwarder_terminates_child_and_keeps_parent_alive() {
     let supervisor_pid = unsafe { libc::fork() };
     assert!(supervisor_pid >= 0, "failed to fork supervisor");
@@ -529,7 +462,7 @@ fn bwrap_signal_forwarder_terminates_child_and_keeps_parent_alive() {
         run_bwrap_signal_forwarder_test_supervisor();
     }
 
-    let status = wait_for_bwrap_child(supervisor_pid);
+    let (_, status) = wait_for_child(supervisor_pid);
     assert!(libc::WIFEXITED(status), "supervisor status: {status}");
     assert_eq!(libc::WEXITSTATUS(status), 0);
 }
@@ -556,7 +489,7 @@ fn run_bwrap_signal_forwarder_test_supervisor() -> ! {
         libc::raise(libc::SIGTERM);
     }
 
-    let status = wait_for_bwrap_child(child_pid);
+    let (_, status) = wait_for_child(child_pid);
     let child_terminated_by_sigterm =
         libc::WIFSIGNALED(status) && libc::WTERMSIG(status) == libc::SIGTERM;
     unsafe {
@@ -570,6 +503,7 @@ fn managed_proxy_inner_command_includes_route_spec() {
     for managed_network in [
         ManagedNetworkSandboxContext::default(),
         ManagedNetworkSandboxContext {
+            transparent_tcp: false,
             loopback_ports: vec![8080, 9090],
             allow_local_binding: true,
             allow_unix_sockets: vec!["/tmp/daemon.sock".to_string()],
@@ -587,7 +521,7 @@ fn managed_proxy_inner_command_includes_route_spec() {
 
         assert!(args.iter().any(|arg| arg == "--proxy-route-spec"));
         assert!(args.iter().any(|arg| arg == "{\"routes\":[]}"));
-        let parsed = LandlockCommand::try_parse_from(args)
+        let parsed = LinuxSandboxCommand::try_parse_from(args)
             .expect("inner command should preserve the managed network policy");
         assert_eq!(parsed.managed_network, Some(managed_network));
     }
@@ -595,7 +529,7 @@ fn managed_proxy_inner_command_includes_route_spec() {
 
 #[test]
 fn managed_network_policy_alone_enables_proxy_mode() {
-    let parsed = LandlockCommand::try_parse_from([
+    let parsed = LinuxSandboxCommand::try_parse_from([
         "codex-linux-sandbox",
         "--sandbox-policy-cwd",
         "/tmp",
@@ -613,7 +547,7 @@ fn managed_network_policy_alone_enables_proxy_mode() {
 
 #[test]
 fn malformed_managed_network_policy_is_rejected() {
-    let error = LandlockCommand::try_parse_from([
+    let error = LinuxSandboxCommand::try_parse_from([
         "codex-linux-sandbox",
         "--sandbox-policy-cwd",
         "/tmp",
@@ -658,7 +592,7 @@ fn non_managed_inner_command_omits_route_spec() {
     });
 
     assert!(!args.iter().any(|arg| arg == "--proxy-route-spec"));
-    let parsed = LandlockCommand::try_parse_from(args)
+    let parsed = LinuxSandboxCommand::try_parse_from(args)
         .expect("unmanaged inner command should preserve ordinary sandbox mode");
     assert_eq!(parsed.managed_network, None);
 }

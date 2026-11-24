@@ -1,6 +1,7 @@
 use codex_extension_api::PreviousWorldStateSection;
 use codex_extension_api::RenderedWorldStateFragment;
 use codex_extension_api::WorldStateSectionContribution;
+use codex_extension_api::input_text;
 use serde_json::Value;
 
 const WORLD_STATE_ID: &str = "git_attribution";
@@ -36,13 +37,13 @@ pub(super) fn git_attribution_world_state_section(enabled: bool) -> WorldStateSe
             | (true, PreviousWorldStateSection::Known(_)) => Some(RenderedWorldStateFragment::new(
                 "developer",
                 (START_MARKER, END_MARKER),
-                ENABLED_INSTRUCTIONS,
+                input_text(ENABLED_INSTRUCTIONS),
             )),
             (false, PreviousWorldStateSection::Known(Value::Bool(true)))
             | (false, PreviousWorldStateSection::Unknown) => Some(RenderedWorldStateFragment::new(
                 "developer",
                 (START_MARKER, END_MARKER),
-                DISABLED_INSTRUCTIONS,
+                input_text(DISABLED_INSTRUCTIONS),
             )),
             (false, PreviousWorldStateSection::Absent)
             | (false, PreviousWorldStateSection::Known(_)) => None,

@@ -14,6 +14,7 @@ fn modifier_combinations_stay_compact_inside_chords() {
         (KeyModifiers::ALT, "⌥t"),
         (KeyModifiers::CONTROL | KeyModifiers::SHIFT, "⌃⇧t"),
         (KeyModifiers::CONTROL | KeyModifiers::ALT, "⌃⌥t"),
+        (KeyModifiers::SUPER, "⌘t"),
     ];
     for (modifiers, expected) in cases {
         let prefix = KeyBinding::new(KeyCode::Char('t'), modifiers);

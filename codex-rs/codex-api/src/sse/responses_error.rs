@@ -2,10 +2,9 @@
 //! Only rate-limit codes derive retry delays from plaintext messages.
 
 use crate::error::ApiError;
-use crate::error::parse_flex_unavailable;
+use crate::error::parse_terminal_provider_error;
 use crate::responses_headers::json_headers_to_http_headers;
 use codex_http_client::RetryAfter;
-use codex_protocol::protocol::MisalignmentErrorDetails;
 use serde::Deserialize;
 use serde_json::Value;
 use std::time::Duration;
@@ -23,13 +22,40 @@ struct Error {
     misalignment: Option<Value>,
 }
 
+fn retry_after_header(headers: Option<&Value>) -> Option<RetryAfter> {
+    headers
+        .and_then(Value::as_object)
+        .and_then(|headers| RetryAfter::from_headers(&json_headers_to_http_headers(headers)))
+}
+
+/// Classifies recognized statusless error events without treating unknown notifications as failures.
+pub(super) fn parse_error_event(
+    error: Option<&Value>,
+    headers: Option<&Value>,
+) -> Option<ApiError> {
+    if let Some(error) = parse_terminal_provider_error(error, /*status*/ None) {
+        return Some(error);
+    }
+    let error = error?;
+    let code = error.get("code")?.as_str()?;
+    match code {
+        "policy_capacity_unavailable" | "server_is_overloaded" => {
+            let retry_after =
+                retry_after_header(error.get("headers")).or_else(|| retry_after_header(headers));
+            Some(if code == "policy_capacity_unavailable" {
+                ApiError::PolicyCapacityUnavailable { retry_after }
+            } else {
+                ApiError::ServerOverloaded { retry_after }
+            })
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn parse_failed_response(response: Option<Value>) -> ApiError {
     let error = response.as_ref().and_then(|response| response.get("error"));
-    let retry_after_header = error
-        .and_then(|error| error.get("headers"))
-        .and_then(Value::as_object)
-        .and_then(|headers| RetryAfter::from_headers(&json_headers_to_http_headers(headers)));
-    if let Some(error) = error.and_then(parse_flex_unavailable) {
+    let retry_after_header = retry_after_header(error.and_then(|error| error.get("headers")));
+    if let Some(error) = parse_terminal_provider_error(error, /*status*/ None) {
         return error;
     }
     let Some(error) = error.and_then(|error| serde_json::from_value::<Error>(error.clone()).ok())
@@ -45,44 +71,8 @@ pub(super) fn parse_failed_response(response: Option<Value>) -> ApiError {
     };
 
     match error.code.as_deref() {
-        Some("context_length_exceeded") => ApiError::ContextWindowExceeded,
-        Some(
-            "insufficient_quota"
-            | "credit_balance_exhausted"
-            | "organization_spend_limit_exceeded"
-            | "project_spend_limit_exceeded",
-        ) => ApiError::QuotaExceeded,
-        Some("usage_not_included") => ApiError::UsageNotIncluded,
-        Some("cyber_policy") => ApiError::CyberPolicy {
-            message: cyber_policy_message(error.message),
-        },
-        Some("bio_policy") => {
-            let message = error
-                .message
-                .filter(|message| !message.trim().is_empty())
-                .unwrap_or_else(|| {
-                    "This content was flagged for possible biological risk.".to_string()
-                });
-            ApiError::BioPolicy { message }
-        }
-        Some("misalignment_policy_violation") => {
-            let message = error
-                .message
-                .filter(|message| !message.trim().is_empty())
-                .unwrap_or_else(|| {
-                    "This request was blocked due to a misalignment policy violation.".to_string()
-                });
-            ApiError::MisalignmentPolicyViolation {
-                message,
-                misalignment: error.misalignment.and_then(|details| {
-                    serde_json::from_value::<MisalignmentErrorDetails>(details).ok()
-                }),
-            }
-        }
-        Some("invalid_prompt") => ApiError::InvalidPrompt {
-            message: error
-                .message
-                .unwrap_or_else(|| "Invalid request.".to_string()),
+        Some("policy_capacity_unavailable") => ApiError::PolicyCapacityUnavailable {
+            retry_after: retry_after_header,
         },
         Some("server_is_overloaded") => ApiError::ServerOverloaded {
             retry_after: retry_after_header,
@@ -122,16 +112,6 @@ fn try_parse_retry_delay(err: &Error) -> Option<Duration> {
         }
     }
     None
-}
-
-fn cyber_policy_fallback_message() -> String {
-    "This request has been flagged for possible cybersecurity risk.".to_string()
-}
-
-fn cyber_policy_message(message: Option<String>) -> String {
-    message
-        .filter(|message| !message.trim().is_empty())
-        .unwrap_or_else(cyber_policy_fallback_message)
 }
 
 fn rate_limit_regex() -> &'static regex_lite::Regex {

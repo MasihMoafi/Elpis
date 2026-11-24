@@ -1,8 +1,8 @@
 ---
 source: core/tests/suite/scenarios_incremental_tools.rs
-expression: "context_snapshot::format_request_history_snapshot(\"Tool definitions enter history in one batch; a catalog change appends only the changed exec definition with an incremental namespace hint. The next unchanged turn appends no tool definitions.\",\n&requests,\n&ContextSnapshotOptions::default().rewrite_known_segments().include_request_settings(),)"
+expression: "context_snapshot::format_request_history_snapshot(if use_responses_lite\n{\n    \"Tool definitions precede the initial base instructions. A model switch appends one developer notice, changed tools, and replacement instructions without rewriting the prefix; compaction starts a new window with the updated base.\"\n} else\n{\n    \"Regular Responses requests carry the full current tool catalog without an incremental notice; changed execution instructions replace the catalog on subsequent requests.\"\n}, &requests,\n&ContextSnapshotOptions::default().rewrite_known_segments().include_request_settings(),)"
 ---
-Scenario: Tool definitions enter history in one batch; a catalog change appends only the changed exec definition with an incremental namespace hint. The next unchanged turn appends no tool definitions.
+Scenario: Tool definitions precede the initial base instructions. A model switch appends one developer notice, changed tools, and replacement instructions without rewriting the prefix; compaction starts a new window with the updated base.
 
 ## Window 1
 Settings:
@@ -16,8 +16,8 @@ Settings:
   text: {"verbosity":"low"}
   tool_choice: "auto"
 -- request 1 (turn) --
-00:additional_tools/developer (2; hash=49f981f03ae5c5ce):
-        - namespace/functions; hash=cc6e8cf0e5405f3a
+00:additional_tools/developer (2; hash=b3f9de88bb863770):
+        - namespace/functions; hash=ee349513b63bdca2
           - custom/exec
           - function/wait
           - function/exec_command
@@ -25,11 +25,15 @@ Settings:
           - function/request_user_input
           - custom/apply_patch
           - function/view_image
-        - tool_search: # Tool discovery  Searches over deferred tool metadata with BM25 and exposes matching tools for t...; args=[limit, query]; hash=400cd6ac61d524a9
+        - tool_search: # Tool discovery  Searches over deferred tool metadata with BM25 and exposes matching tools for t...; args=[limit, query]; hash=b573ed69c0b0e6c7
 01:message/developer:
     <MODEL_INSTRUCTIONS>
-02:message/developer:
-    <PERMISSIONS_INSTRUCTIONS>
+02:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] <tools>
+        Deferred tool namespaces:
+        - multi_agent_v1: Tools for spawning and managing sub-agents.
+        </tools>
 03:message/user:
     <ENVIRONMENT_CONTEXT>
 04:message/user:
@@ -42,8 +46,8 @@ Settings:
 Settings: relative to window 1
   model: "updated-tools-model"
 -- request 3 (turn) --
-00:additional_tools/developer (2; hash=49f981f03ae5c5ce):
-        - namespace/functions; hash=cc6e8cf0e5405f3a
+00:additional_tools/developer (2; hash=b3f9de88bb863770):
+        - namespace/functions; hash=ee349513b63bdca2
           - custom/exec
           - function/wait
           - function/exec_command
@@ -51,24 +55,72 @@ Settings: relative to window 1
           - function/request_user_input
           - custom/apply_patch
           - function/view_image
-        - tool_search: # Tool discovery  Searches over deferred tool metadata with BM25 and exposes matching tools for t...; args=[limit, query]; hash=400cd6ac61d524a9
+        - tool_search: # Tool discovery  Searches over deferred tool metadata with BM25 and exposes matching tools for t...; args=[limit, query]; hash=b573ed69c0b0e6c7
 01:message/developer:
     <MODEL_INSTRUCTIONS>
-02:message/developer:
-    <PERMISSIONS_INSTRUCTIONS>
+02:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] <tools>
+        Deferred tool namespaces:
+        - multi_agent_v1: Tools for spawning and managing sub-agents.
+        </tools>
 03:message/user:
     <ENVIRONMENT_CONTEXT>
 04:message/user:
     Begin work.
 05:message/user:
     Continue with the same tools.
-06:additional_tools/developer (1; hash=fd00dfa0a0c11da2):
-        - namespace/functions: This is an incremental namespace update. Previously declared tools remain available for direct ca...; hash=dd09638a0d29d0ca
+06:message/developer:
+    This is an incremental tools update. Previously declared tools remain available for direct calls unless ...here, its latest definition replaces the earlier one. [hash=bceb65fad1afdf9c]
+07:additional_tools/developer (1; hash=26cd263a29587cc7):
+        - namespace/functions; hash=771cad2ff250d2f3
           - custom/exec
-07:message/developer:
-    <MODEL_SWITCH>
-08:message/user:
+08:message/developer:
+    <model_instructions>
+    The current model is updated-tools-model.
+    The following instructions replace the previous base instructions:
+
+    Review results before responding.
+    </model_instructions>
+09:message/user:
     Continue with the updated execution instructions.
 -- request 4 (turn) --
-09:message/user:
+10:message/user:
     Continue with the same updated tools.
+-- request 5 (compaction) --
+11:compaction_trigger
+
+## Window 3 (after request 5: input diverged at item 00)
+Settings: same as window 2
+-- request 6 (turn) --
+00:additional_tools/developer (2; hash=2bfff69f5a101a44):
+        - namespace/functions; hash=427bc355d0340fb0
+          - custom/exec
+          - function/wait
+          - function/exec_command
+          - function/write_stdin
+          - function/request_user_input
+          - custom/apply_patch
+          - function/view_image
+        - tool_search: # Tool discovery  Searches over deferred tool metadata with BM25 and exposes matching tools for t...; args=[limit, query]; hash=b573ed69c0b0e6c7
+01:message/developer:
+    <MODEL_INSTRUCTIONS>
+02:message/user:
+    Begin work.
+03:message/user:
+    Continue with the same tools.
+04:message/user:
+    Continue with the updated execution instructions.
+05:message/developer[2]:
+    [01] <PERMISSIONS_INSTRUCTIONS>
+    [02] <tools>
+        Deferred tool namespaces:
+        - multi_agent_v1: Tools for spawning and managing sub-agents.
+        </tools>
+06:message/user:
+    <ENVIRONMENT_CONTEXT>
+07:message/user:
+    Continue with the same updated tools.
+08:compaction:encrypted=true; chars=28; hash=e4a73156e0a498bc
+09:message/user:
+    Continue after compaction.

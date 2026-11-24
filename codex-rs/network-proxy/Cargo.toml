@@ -18,6 +18,8 @@ workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
+aws-credential-types = { workspace = true }
+aws-sigv4 = { workspace = true }
 base64 = { workspace = true }
 clap = { workspace = true, features = ["derive"] }
 chrono = { workspace = true }
@@ -56,6 +58,7 @@ sha2 = { workspace = true }
 rama-dns = { version = "=0.3.0-alpha.4" }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 
 [target.'cfg(target_family = "unix")'.dependencies]
 libc = { workspace = true }

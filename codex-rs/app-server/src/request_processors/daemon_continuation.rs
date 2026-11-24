@@ -82,7 +82,7 @@ impl ThreadRequestProcessor {
             return;
         }
         // Recovery must not override a stricter saved or newly configured policy.
-        if previous_context.permission_profile() != config.permission_profile {
+        if previous_context.permission_profile != config.permission_profile {
             return;
         }
         let continuation = ContextualUserFragment::into(InternalModelContextFragment::new(
@@ -130,7 +130,11 @@ impl ThreadRequestProcessor {
             Ok(TurnInputSubmission::NotSubmitted { reason }) => {
                 tracing::debug!(%thread_id, ?reason, "recovery continuation was not started");
             }
-            Ok(TurnInputSubmission::Steered { .. }) => unreachable!("continuation cannot steer"),
+            Ok(TurnInputSubmission::Steered { .. } | TurnInputSubmission::Accepted) => {
+                // continue_turn_if_idle uses start_if_idle, which cannot steer or
+                // enter the agent-message path that returns Accepted.
+                unreachable!("continuation must start or decline")
+            }
             Err(err) => tracing::warn!(%thread_id, %err, "recovery continuation failed"),
         }
     }

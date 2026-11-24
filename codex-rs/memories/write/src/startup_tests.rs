@@ -24,6 +24,8 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::EventMsg;
@@ -48,6 +50,7 @@ use core_test_support::responses::sse;
 use core_test_support::responses::sse_failed;
 use core_test_support::responses::start_mock_server;
 use core_test_support::test_codex::TestCodex;
+use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
@@ -86,7 +89,9 @@ async fn dual_write_prepares_both_roots_without_importing_old_notes() -> anyhow:
     tokio::fs::write(old_notes.join("old.md"), "old memory").await?;
     let mut memories = startup_test_memories_config();
     memories.dual_write = true;
-    let test = build_test_codex_with_memories_config(&server, Arc::clone(&home), memories).await?;
+    let test = memory_test_codex(Arc::clone(&home), memories)
+        .build(&server)
+        .await?;
     trigger_memories_startup(&test).await;
     wait_for_dir(&home.path().join("memories/extensions/ad_hoc")).await?;
     wait_for_dir(&home.path().join("memories_v2/extensions/ad_hoc")).await?;
@@ -143,7 +148,7 @@ async fn memories_startup_fails_consolidation_when_worker_creates_extension_syml
             ev_assistant_message("msg-phase2-complete", "phase2 complete"),
             ev_completed("resp-phase2-complete"),
         ]),
-        sse_failed("resp-phase2-failed", "server_error", "worker failed"),
+        sse_failed("resp-phase2-failed", "invalid_prompt", "worker failed"),
     ];
 
     for response in responses {
@@ -442,6 +447,46 @@ async fn memories_startup_phase2_tracks_workspace_diff_across_runs() -> anyhow::
 }
 
 #[tokio::test]
+async fn phase2_replays_legacy_baseline_with_unchanged_inputs() -> anyhow::Result<()> {
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+    let db = init_state_db(&home).await?;
+    let root = home.path().join("memories");
+    db.memories()
+        .enqueue_global_consolidation(/*input_watermark*/ 1)
+        .await?;
+    sync_rollout_summaries_from_memories(&root, &[], /*max_raw_memories_for_consolidation*/ 0)
+        .await?;
+    rebuild_raw_memories_file_from_memories(
+        &root,
+        &[],
+        /*max_raw_memories_for_consolidation*/ 0,
+    )
+    .await?;
+    seed_extension_instructions(&root).await?;
+    seed_required_memory_artifacts(&root).await?;
+    reset_git_repository(&root).await?;
+    assert!(!diff_since_latest_init(&root).await?.has_changes());
+    tokio::fs::remove_file(root.join(".git/codex-baseline-version")).await?;
+
+    let phase2 = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-phase2-replay"),
+            ev_assistant_message("msg-phase2-replay", "phase2 complete"),
+            ev_completed("resp-phase2-replay"),
+        ]),
+    )
+    .await;
+    let test = build_test_codex(&server, home.clone()).await?;
+    trigger_memories_startup(&test).await;
+    wait_for_single_request(&phase2).await;
+    wait_for_phase2_workspace_reset(db.memories(), &root).await?;
+    shutdown_test_codex(&test).await?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn phase2_retries_when_clean_workspace_is_missing_artifacts() -> anyhow::Result<()> {
     let server = start_mock_server().await;
     let home = Arc::new(TempDir::new()?);
@@ -520,12 +565,12 @@ async fn memories_startup_phase2_prunes_old_extension_resources() -> anyhow::Res
     .await?;
     let old_file = chronicle_resources.join(format!(
         "{}-abcd-10min-old.md",
-        (now - chrono::Duration::days(8)).format("%Y-%m-%dT%H-%M-%S")
+        (now - chrono::Duration::days(15)).format("%Y-%m-%dT%H-%M-%S")
     ));
     tokio::fs::write(&old_file, "old resource").await?;
     let recent_file = chronicle_resources.join(format!(
         "{}-abcd-10min-recent.md",
-        (now - chrono::Duration::days(6)).format("%Y-%m-%dT%H-%M-%S")
+        (now - chrono::Duration::days(13)).format("%Y-%m-%dT%H-%M-%S")
     ));
     tokio::fs::write(&recent_file, "recent resource").await?;
     seed_required_memory_artifacts(&home.path().join("memories")).await?;
@@ -586,7 +631,7 @@ async fn memories_startup_phase2_prunes_old_extension_resources_without_stage1_i
     .await?;
     let old_file = chronicle_resources.join(format!(
         "{}-abcd-10min-old.md",
-        (now - chrono::Duration::days(8)).format("%Y-%m-%dT%H-%M-%S")
+        (now - chrono::Duration::days(15)).format("%Y-%m-%dT%H-%M-%S")
     ));
     tokio::fs::write(&old_file, "old resource").await?;
     seed_required_memory_artifacts(&home.path().join("memories")).await?;
@@ -647,7 +692,10 @@ async fn memories_startup_phase1_uses_live_thread_service_tier_and_detached_meta
 
     let context = crate::runtime::MemoryStartupContext::new(
         Arc::clone(&test.thread_manager),
-        test.thread_manager.auth_manager(),
+        test.codex
+            .thread_extension_data()
+            .get::<codex_model_provider::ProviderAuthContext>()
+            .expect("session startup installs the provider auth context"),
         test.session_configured.thread_id,
         Arc::clone(&test.codex),
         &test.config,
@@ -677,8 +725,9 @@ async fn memories_startup_phase1_uses_live_thread_service_tier_and_detached_meta
     context
         .stream_stage_one_prompt(
             &test.config,
-            &codex_core::Prompt::default(),
+            codex_core::Prompt::default(),
             &request_context,
+            tokio::task::JoinSet::new(),
         )
         .await?;
     let request = wait_for_single_request(&stage_one).await;
@@ -748,7 +797,7 @@ async fn memories_startup_phase1_provider_default_drives_request_model() -> anyh
 }
 
 #[tokio::test]
-async fn memories_startup_phase2_provider_default_drives_request_model() -> anyhow::Result<()> {
+async fn memories_startup_phase2_uses_provider_model_and_standard_tier() -> anyhow::Result<()> {
     let server = start_mock_server().await;
     let home = Arc::new(TempDir::new()?);
     let request =
@@ -759,6 +808,7 @@ async fn memories_startup_phase2_provider_default_drives_request_model() -> anyh
         request.body_json()["model"].as_str(),
         Some(MOCK_PROVIDER_PHASE_TWO_MODEL)
     );
+    assert_eq!(request.body_json().get("service_tier"), None);
 
     Ok(())
 }
@@ -803,7 +853,9 @@ async fn run_memory_phase_one_model_request_test(
     memories: MemoriesConfig,
 ) -> anyhow::Result<ResponsesRequest> {
     let version = memories.version;
-    let test = build_test_codex_with_memories_config(server, Arc::clone(&home), memories).await?;
+    let test = memory_test_codex(Arc::clone(&home), memories)
+        .build(server)
+        .await?;
     let provider = Arc::new(MockMemoryModelProvider::new(
         test.config.model_provider.clone(),
         Some(test.thread_manager.auth_manager()),
@@ -819,10 +871,18 @@ async fn run_memory_phase_one_model_request_test(
         "startup-models",
     )
     .await?;
+    let path = home.path().join(format!("rollout-{source_id}.jsonl"));
+    let mut contents = tokio::fs::read_to_string(&path).await?;
+    let mut items = vec![
+        json!({"type":"message", "role":"assistant", "phase":"final_answer",
+        "encrypted_content":"memory-message-ciphertext", "status":"completed", "content":[
+            {"type":"output_text", "text":"replay-bearing assistant evidence", "annotations":[], "logprobs":[]},
+        ]}),
+        json!({"type":"function_call", "name":"memory_test_tool", "call_id":"memory-test-call",
+            "arguments":"{}", "encrypted_content":"memory-tool-ciphertext", "status":"completed"}),
+    ];
     if version == codex_protocol::MemoryVersion::V2 {
-        let path = home.path().join(format!("rollout-{source_id}.jsonl"));
-        let mut contents = tokio::fs::read_to_string(&path).await?;
-        let mut items = vec![
+        items.extend([
             json!({"type":"message", "role":"user", "content":[
                 {"type":"input_image", "image_url":format!("data:image/png;base64,{}", "A".repeat(12_000))},
                 {"type":"input_text", "text":"Keep the migration read-only."},
@@ -841,7 +901,7 @@ async fn run_memory_phase_one_model_request_test(
             json!({"type":"message", "role":"user", "content":[
                 {"type":"input_text", "text":"<environment_context>harness context noise</environment_context>"},
             ]}),
-        ];
+        ]);
         for (namespace, call_id, answer) in [
             (None, "plain-question", "Use SQLite only."),
             (
@@ -879,19 +939,55 @@ async fn run_memory_phase_one_model_request_test(
         items.push(json!({"type":"message", "role":"user", "content":[
             {"type":"input_text", "text":"last human constraint"},
         ]}));
-        for item in items {
-            let line = RolloutLine {
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                ordinal: None,
-                item: RolloutItem::ResponseItem(
-                    serde_json::from_value::<ResponseItem>(item)?.into(),
-                ),
-            };
-            contents.push_str(&serde_json::to_string(&line)?);
+    }
+    for item in items {
+        let line = RolloutLine {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            ordinal: None,
+            item: RolloutItem::ResponseItem(serde_json::from_value::<ResponseItem>(item)?.into()),
+        };
+        contents.push_str(&serde_json::to_string(&line)?);
+        contents.push('\n');
+    }
+    // Each block exceeds the 8 MiB reader budget, while each record stays below 1 MiB.
+    // Excluded items and ciphertext must not displace the earlier extraction evidence.
+    for item in [
+        json!({"type":"reasoning", "summary":[],
+            "encrypted_content":"r".repeat(/*n*/ 512 * 1024)}),
+        json!({"type":"message", "role":"developer", "content":[
+            {"type":"input_text", "text":"d".repeat(/*n*/ 512 * 1024)},
+        ]}),
+        json!({"type":"message", "role":"assistant", "phase":"final_answer",
+        "encrypted_content":"a".repeat(/*n*/ 512 * 1024), "content":[
+            {"type":"output_text", "text":"small assistant evidence behind ciphertext"},
+        ]}),
+    ] {
+        let line = RolloutLine {
+            timestamp: chrono::Utc::now().to_rfc3339(),
+            ordinal: None,
+            item: RolloutItem::ResponseItem(serde_json::from_value::<ResponseItem>(item)?.into()),
+        };
+        let line = serde_json::to_string(&line)?;
+        for _ in 0..16 {
+            contents.push_str(&line);
             contents.push('\n');
         }
-        tokio::fs::write(path, contents).await?;
     }
+    // Exercise bounded reading through the actual extraction request, for both memory versions.
+    contents.push_str(&"x".repeat(1024 * 1024 + 1));
+    contents.push('\n');
+    contents.push_str(
+        &json!({
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "type": "response_item",
+            "payload": {"type": "message", "role": "user", "content": [
+                {"type": "input_text", "text": "newest correction after an oversized record"}
+            ]}
+        })
+        .to_string(),
+    );
+    contents.push('\n');
+    tokio::fs::write(&path, &contents).await?;
     db.update_thread_git_info(
         source_id,
         /*git_sha*/ None,
@@ -927,6 +1023,15 @@ async fn run_memory_phase_one_model_request_test(
     let (context, config) = memory_startup_context_with_provider(&test, provider).await;
     phase1::run(context, config).await;
     let request = wait_for_single_request(&response).await;
+    let evidence = request.message_input_texts("user").join("");
+    assert!(evidence.contains("replay-bearing assistant evidence"));
+    assert!(evidence.contains("small assistant evidence behind ciphertext"));
+    assert!(evidence.contains("newest correction after an oversized record"));
+    assert!(!evidence.contains("encrypted_content"));
+    if version == codex_protocol::MemoryVersion::V1 {
+        assert!(evidence.contains("memory_test_tool"));
+    }
+    assert_eq!(tokio::fs::read_to_string(&path).await?, contents);
     if version == codex_protocol::MemoryVersion::V2 {
         let outputs = db
             .memories_for_version(version)
@@ -962,7 +1067,27 @@ async fn run_memory_phase_two_model_request_test(
     memories: MemoriesConfig,
 ) -> anyhow::Result<ResponsesRequest> {
     let version = memories.version;
-    let test = build_test_codex_with_memories_config(server, home.clone(), memories).await?;
+    // Both models support Ultrafast so an inherited tier would reach the wire.
+    let advertise_ultrafast = |model: &mut ModelInfo| {
+        model.service_tiers.push(ModelServiceTier {
+            id: "ultrafast".to_string(),
+            name: "Ultrafast".to_string(),
+            description: String::new(),
+        });
+        model.default_service_tier = Some("ultrafast".to_string());
+    };
+    let test = memory_test_codex(Arc::clone(&home), memories)
+        .with_model_info_override(MOCK_PROVIDER_PHASE_TWO_MODEL, advertise_ultrafast)
+        .with_model_info_override("mock.interactive", advertise_ultrafast)
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::UltrafastMode)
+                .expect("enable Ultrafast");
+            config.service_tier = Some("ultrafast".to_string());
+        })
+        .build_with_auto_env(server)
+        .await?;
     let provider = Arc::new(MockMemoryModelProvider::new(
         test.config.model_provider.clone(),
         Some(test.thread_manager.auth_manager()),
@@ -1072,25 +1197,19 @@ async fn build_test_codex(
     server: &wiremock::MockServer,
     home: Arc<TempDir>,
 ) -> anyhow::Result<TestCodex> {
-    build_test_codex_with_memories_config(server, home, startup_test_memories_config()).await
-}
-
-async fn build_test_codex_with_memories_config(
-    server: &wiremock::MockServer,
-    home: Arc<TempDir>,
-    memories: MemoriesConfig,
-) -> anyhow::Result<TestCodex> {
-    test_codex()
-        .with_home(home)
-        .with_config(move |config| {
-            config
-                .features
-                .enable(Feature::Sqlite)
-                .expect("test config should allow feature update");
-            config.memories = memories;
-        })
+    memory_test_codex(home, startup_test_memories_config())
         .build(server)
         .await
+}
+
+fn memory_test_codex(home: Arc<TempDir>, memories: MemoriesConfig) -> TestCodexBuilder {
+    test_codex().with_home(home).with_config(move |config| {
+        config
+            .features
+            .enable(Feature::Sqlite)
+            .expect("test config should allow feature update");
+        config.memories = memories;
+    })
 }
 
 async fn init_state_db(home: &Arc<TempDir>) -> anyhow::Result<Arc<codex_state::StateRuntime>> {
@@ -1113,7 +1232,6 @@ async fn trigger_memories_startup(test: &TestCodex) {
     let parent_permission_profile = config.permissions.effective_permission_profile();
     start_memories_startup_task(
         Arc::clone(&test.thread_manager),
-        test.thread_manager.auth_manager(),
         test.session_configured.thread_id,
         Arc::clone(&test.codex),
         Arc::new(config),
@@ -1207,15 +1325,15 @@ async fn seed_stage1_output(
     rollout_slug: &str,
 ) -> anyhow::Result<ThreadId> {
     let thread_id = ThreadId::new();
-    let mut metadata_builder = codex_state::ThreadMetadataBuilder::new(
+    let metadata_builder = codex_state::ThreadMetadataBuilder::new(
         thread_id,
         codex_home.join(format!("rollout-{thread_id}.jsonl")),
         updated_at,
         SessionSource::Cli,
-    );
-    metadata_builder.cwd = codex_home.join(format!("workspace-{rollout_slug}"));
-    metadata_builder.model_provider = Some("test-provider".to_string());
-    metadata_builder.git_branch = Some(format!("branch-{rollout_slug}"));
+    )
+    .with_cwd(codex_home.join(format!("workspace-{rollout_slug}")))
+    .with_model_provider(Some("test-provider".to_string()))
+    .with_git_branch(Some(format!("branch-{rollout_slug}")));
     let metadata = metadata_builder.build("test-provider");
     db.upsert_thread(&metadata).await?;
 
@@ -1245,6 +1363,8 @@ async fn seed_stage1_candidate(
         ordinal: None,
         item: RolloutItem::ResponseItem(
             ResponseItem::Message {
+                status: None,
+                encrypted_content: None,
                 id: None,
                 role: "user".to_string(),
                 content: vec![ContentItem::InputText {
@@ -1257,17 +1377,28 @@ async fn seed_stage1_candidate(
         ),
     };
     let jsonl = serde_json::to_string(&line)?;
-    tokio::fs::write(&rollout_path, format!("{jsonl}\n")).await?;
+    let meta = json!({
+        "timestamp": updated_at.to_rfc3339(),
+        "type": "session_meta",
+        "payload": codex_rollout::SessionMeta {
+            id: thread_id,
+            session_id: thread_id.into(),
+            timestamp: updated_at.to_rfc3339(),
+            cwd: codex_home.to_path_buf(),
+            ..Default::default()
+        }
+    });
+    tokio::fs::write(&rollout_path, format!("{meta}\n{jsonl}\n")).await?;
 
-    let mut metadata_builder = codex_state::ThreadMetadataBuilder::new(
+    let metadata_builder = codex_state::ThreadMetadataBuilder::new(
         thread_id,
         rollout_path,
         updated_at,
         SessionSource::Cli,
-    );
-    metadata_builder.cwd = codex_home.join(format!("workspace-{rollout_slug}"));
-    metadata_builder.model_provider = Some("test-provider".to_string());
-    metadata_builder.git_branch = Some(format!("branch-{rollout_slug}"));
+    )
+    .with_cwd(codex_home.join(format!("workspace-{rollout_slug}")))
+    .with_model_provider(Some("test-provider".to_string()))
+    .with_git_branch(Some(format!("branch-{rollout_slug}")));
     let mut metadata = metadata_builder.build("test-provider");
     metadata.preview = Some("remember this startup test conversation".to_string());
     metadata.first_user_message = metadata.preview.clone();
@@ -1507,6 +1638,180 @@ async fn memories_startup_phase2_v2_consolidates_without_a_handbook() -> anyhow:
     let home = Arc::new(TempDir::new()?);
     let mut memories = startup_test_memories_config();
     memories.version = codex_protocol::MemoryVersion::V2;
-    run_memory_phase_two_model_request_test(&server, home, memories).await?;
+    memories.consolidation_service_tier = "flex".to_string();
+    let request = run_memory_phase_two_model_request_test(&server, home, memories).await?;
+    assert_eq!(request.body_json()["service_tier"], "flex");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn memories_startup_uses_thread_runtime_and_keeps_custom_destinations_independent()
+-> anyhow::Result<()> {
+    use base64::Engine;
+    use codex_features::RuntimeAuthMode;
+    use codex_login::AuthManager;
+    use codex_login::CodexAuth;
+    use codex_model_provider::ProviderAuthContext;
+    use codex_runtime_agent_instance::AgentHostAuthorization;
+    use codex_runtime_agent_instance::RuntimeAuthManager;
+    use codex_runtime_agent_instance::RuntimeRegistrationMetadata;
+    use codex_runtime_agent_instance::RuntimeRole;
+    use core_test_support::runtime_auth::PROBE_SERVER;
+    use core_test_support::runtime_auth::run_harness_through_proxy;
+    use pretty_assertions::assert_eq;
+    use serde_json::json;
+    use std::sync::Arc;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
+    use wiremock::matchers::path;
+
+    core_test_support::skip_if_no_network!(Ok(()));
+    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+        json!({
+            "iss": "https://auth.openai.com/", "session_id": "memory-login",
+            "https://api.openai.com/auth": {"user_id": "actor", "chatgpt_account_id": "account_id"}
+        })
+        .to_string(),
+    );
+    let token = format!("header.{claims}.signature");
+    if let Ok(server) = std::env::var(PROBE_SERVER) {
+        let credentials =
+            AuthManager::from_auth_for_testing(CodexAuth::from_external_chatgpt_tokens(
+                &token,
+                "account_id",
+                /*chatgpt_plan_type*/ None,
+            )?);
+        let runtime = Arc::new(RuntimeAuthManager::new(
+            Arc::clone(&credentials),
+            AgentHostAuthorization::InstallationId {
+                installation_id: uuid::Uuid::nil(),
+            },
+            RuntimeRegistrationMetadata {
+                harness: Some("codex".into()),
+                harness_version: None,
+                role: RuntimeRole::Orchestrator,
+            },
+            "https://auth.openai.com/agent/register".parse()?,
+        ));
+        for mode in [RuntimeAuthMode::DualHeader, RuntimeAuthMode::AssertionOnly] {
+            let auth = ProviderAuthContext {
+                credentials: Arc::clone(&credentials),
+                runtime_auth: Some((Arc::clone(&runtime), mode)),
+            };
+            for base_url in [
+                "https://chatgpt.com/backend-api".to_owned(),
+                format!("{server}/custom/backend-api"),
+            ] {
+                let model_server = MockServer::start().await;
+                let home = Arc::new(TempDir::new()?);
+                let mut test = test_codex()
+                    .with_home(Arc::clone(&home))
+                    .with_auth(CodexAuth::from_api_key("ambient-key"))
+                    .with_config(|config| {
+                        config
+                            .features
+                            .enable(Feature::Sqlite)
+                            .expect("enable state database");
+                        config.memories = startup_test_memories_config();
+                        config.memories.version = codex_protocol::MemoryVersion::V1;
+                        config.memories.dual_write = false;
+                    })
+                    .build(&model_server)
+                    .await?;
+                test.config.chatgpt_base_url = base_url;
+                test.codex.thread_extension_data().insert(auth.clone());
+                let db = test.codex.state_db().expect("startup state database");
+                seed_stage1_output(
+                    db.as_ref(),
+                    home.path(),
+                    chrono::Utc::now(),
+                    "source memory",
+                    "source summary",
+                    "quota-auth",
+                )
+                .await?;
+                let root = home.path().join("memories");
+                tokio::fs::create_dir_all(&root).await?;
+                seed_required_memory_artifacts(&root).await?;
+                let phase2 = mount_sse_once(
+                    &model_server,
+                    sse(vec![
+                        ev_response_created("quota-consolidation"),
+                        ev_assistant_message("quota-result", "memory complete"),
+                        ev_completed("quota-consolidation"),
+                    ]),
+                )
+                .await;
+                trigger_memories_startup(&test).await;
+                // Consolidation starts only after the startup quota request finishes.
+                wait_for_single_request(&phase2).await;
+                shutdown_test_codex(&test).await?;
+            }
+        }
+        return Ok(());
+    }
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/agent/register"))
+        .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_json(json!({
+            "runtime_agent_instance_id": "runtime-memory", "agent_host_id": "host",
+            "actor": {"kind": "chatgpt", "user_id": "actor", "account_id": "account_id"}
+        })))
+        .expect(/*r*/ 1)
+        .mount(&server)
+        .await;
+    let quota = json!({"plan_type": "plus", "rate_limit": {
+        "allowed": true, "limit_reached": false,
+        "primary_window": {"used_percent": 0, "limit_window_seconds": 300,
+            "reset_after_seconds": 60, "reset_at": 2000000000}
+    }});
+    for url in ["/backend-api/wham/usage", "/custom/backend-api/wham/usage"] {
+        Mock::given(method("GET"))
+            .and(path(url))
+            .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_json(quota.clone()))
+            .expect(/*r*/ 2)
+            .mount(&server)
+            .await;
+    }
+    run_harness_through_proxy(
+        &server,
+        "startup_tests::memories_startup_uses_thread_runtime_and_keeps_custom_destinations_independent",
+        /*realtime_target*/ None,
+    )
+    .await?;
+    let requests = server.received_requests().await.unwrap();
+    let quota_requests = requests
+        .iter()
+        .filter(|r| r.url.path() == "/backend-api/wham/usage")
+        .collect::<Vec<_>>();
+    assert_eq!(quota_requests.len(), 2);
+    let mut dual = 0;
+    for request in quota_requests {
+        assert_eq!(request.headers["chatgpt-account-id"], "account_id");
+        let authorization = request.headers["authorization"].to_str()?;
+        let proof = if let Some(proof) = request.headers.get("x-openai-agent-assertion") {
+            dual += 1;
+            assert_eq!(authorization, format!("Bearer {token}"));
+            proof.to_str()?
+        } else {
+            authorization.strip_prefix("AgentAssertion ").unwrap()
+        };
+        let payload: serde_json::Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(proof.split('.').nth(/*n*/ 2).unwrap())?,
+        )?;
+        assert_eq!(payload["runtime_agent_instance"], "runtime-memory");
+    }
+    assert_eq!(dual, 1);
+    for request in requests
+        .iter()
+        .filter(|r| r.url.path().starts_with("/custom/"))
+    {
+        assert_eq!(request.headers["authorization"], format!("Bearer {token}"));
+        assert!(!request.headers.contains_key("x-openai-agent-assertion"));
+    }
+    server.verify().await;
     Ok(())
 }

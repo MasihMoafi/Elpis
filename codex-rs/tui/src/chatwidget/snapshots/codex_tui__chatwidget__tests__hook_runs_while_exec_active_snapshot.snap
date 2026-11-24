@@ -15,6 +15,7 @@ exec and hook running:
 "› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "
+"  ? for shortcuts                                                               "
 history after exec:
 • Ran echo done
   └ done
@@ -27,6 +28,7 @@ hook running after exec:
 "› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "
+"  ? for shortcuts                                                               "
 quiet hook completed:
 "                                                                                "
 "• Elpising (0s • esc to interrupt)                                              "
@@ -35,3 +37,4 @@ quiet hook completed:
 "› Ask Elpis to do anything                                                      "
 "                                                                                "
 "  GPT-5.6-Sol default · /tmp/project                                            "
+"  ? for shortcuts                                                               "

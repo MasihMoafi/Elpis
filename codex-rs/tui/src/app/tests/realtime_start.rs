@@ -33,6 +33,7 @@ async fn rejected_voice_start_does_not_leave_local_capture_active() -> Result<()
             &mut app_server,
             AppEvent::CodexOp(Op::RealtimeConversationStart {
                 thread_id,
+                attempt_id: 1,
                 offer_sdp: String::from("v=0\r\n").into(),
             }),
         ))
@@ -102,7 +103,7 @@ async fn rejected_voice_stop_clears_the_owned_session() -> Result<()> {
 
 #[tokio::test]
 async fn background_voice_closes_with_its_owner_not_the_visible_thread() -> Result<()> {
-    for owner_closed in [false, true] {
+    for (owner_closed, background_backend) in [(false, false), (true, false), (true, true)] {
         let (mut app, _events, mut ops) = make_test_app_with_channels().await;
         let owner = ThreadId::new();
         let visible = ThreadId::new();
@@ -117,13 +118,27 @@ async fn background_voice_closes_with_its_owner_not_the_visible_thread() -> Resu
             ));
         app.active_thread_id = Some(visible);
         let closed = if owner_closed { owner } else { visible };
-        app.enqueue_thread_notification(
-            closed,
-            ServerNotification::ThreadClosed(codex_app_server_protocol::ThreadClosedNotification {
-                thread_id: closed.to_string(),
-            }),
-        )
-        .await?;
+        let notification = thread_closed_notification(closed);
+        if background_backend {
+            let source = crate::start_embedded_app_server_for_picker(&app.config).await?;
+            app.handle_polled_backend_event(
+                &source,
+                crate::backend_id::BackendId::new(),
+                &mut std::collections::HashMap::new(),
+                crate::app_server_session::AppServerSessionEvent {
+                    backend_id: source.backend_id(),
+                    event: codex_app_server_client::AppServerEvent::ServerNotification(Box::new(
+                        notification,
+                    )),
+                },
+            )
+            .await;
+            source.shutdown().await?;
+        } else {
+            app.enqueue_thread_notification(closed, notification)
+                .await?;
+        }
+        assert_eq!(app.chat_widget.thread_id(), Some(visible));
         assert_eq!(
             app.voice_owner_thread_id(),
             (!owner_closed).then_some(owner)
@@ -193,6 +208,12 @@ async fn lifecycle_actions_stop_parked_voice_before_removing_owner() -> Result<(
             match action {
                 AgentsOverviewAction::Archive => {
                     Box::pin(app.archive_current_thread(&mut tui, &mut server)).await?;
+                    app.agents_overview
+                        .pending_archives
+                        .remove(&root)
+                        .expect("archive started")
+                        .await?
+                        .expect("archive succeeded");
                 }
                 AgentsOverviewAction::Delete => {
                     Box::pin(app.delete_current_thread(&mut tui, &mut server)).await?;
@@ -221,7 +242,7 @@ async fn voice_mute_shortcut_reaches_the_active_widget() -> Result<()> {
     app.handle_tui_event(
         &mut tui,
         &mut server,
-        tui::TuiEvent::Key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL)),
+        tui::TuiEvent::Key(KeyEvent::new(KeyCode::F(9), KeyModifiers::NONE)),
     )
     .await?;
     assert!(

@@ -9,8 +9,8 @@
 //!
 //! The flow is intentionally split into three steps: choose an action, choose
 //! whether to replace/add/remove a binding, then capture either one terminal
-//! key event or a bounded two-stroke key chord. Validation happens after
-//! capture by reusing runtime keymap resolution, so conflict rules stay
+//! key event, a bounded two-stroke chord, or the key following the configured
+//! leader. Validation reuses runtime keymap resolution, so conflict rules stay
 //! centralized in `keymap.rs` instead of being duplicated in the UI.
 //!
 //! This module does not persist config files directly. It emits app events with
@@ -62,7 +62,7 @@ use crate::keymap::bindings_for_action;
 use crate::keymap::keymap_action_id;
 use crate::style::accent_color;
 use actions::KEYMAP_ACTIONS;
-use actions::action_label;
+pub(crate) use actions::action_label;
 use actions::binding_slot;
 use actions::format_action_binding_summary;
 #[cfg(test)]
@@ -249,7 +249,35 @@ pub(crate) fn build_keymap_action_menu_params(
             ));
         }
     }
-    if active_binding_count == 0 {
+    if action != "leader" {
+        let leader_available = !runtime_keymap.chords.leader.is_empty();
+        items.push(SelectionItem {
+            name: "Use leader...".to_string(),
+            description: Some("Capture the key that follows the configured leader".to_string()),
+            disabled_reason: (!leader_available).then(|| "The leader is unbound".to_string()),
+            actions: vec![open_capture_action(
+                context.clone(),
+                action.clone(),
+                KeymapEditIntent::ReplaceAll,
+                KeymapCaptureMode::LeaderChord,
+            )],
+            ..Default::default()
+        });
+        if !leader_available {
+            items.push(SelectionItem {
+                name: "Configure leader...".to_string(),
+                description: Some("Set a leader before assigning this shortcut".to_string()),
+                actions: vec![Box::new(|tx| {
+                    tx.send(AppEvent::OpenKeymapActionMenu {
+                        context: "global".to_string(),
+                        action: "leader".to_string(),
+                    });
+                })],
+                ..Default::default()
+            });
+        }
+    }
+    if action != "leader" && active_binding_count == 0 {
         items.push(action_menu_item(
             "Set key chord",
             "Capture two consecutive keys for this action".to_string(),
@@ -258,7 +286,7 @@ pub(crate) fn build_keymap_action_menu_params(
             KeymapEditIntent::ReplaceAll,
             KeymapCaptureMode::Chord,
         ));
-    } else {
+    } else if action != "leader" {
         items.push(action_menu_item(
             "Replace with key chord",
             format!("Replace `{current_binding}` with a two-stroke key chord"),
@@ -297,6 +325,7 @@ pub(crate) fn build_keymap_action_menu_params(
     });
 
     SelectionViewParams {
+        allow_input_when_disconnected: true,
         view_id: Some(KEYMAP_ACTION_MENU_VIEW_ID),
         header: Box::new(Paragraph::new(header).wrap(Wrap { trim: false })),
         footer_note: Some(Line::from(vec![
@@ -358,10 +387,13 @@ pub(crate) fn build_keymap_replace_binding_menu_params(
                     ..Default::default()
                 },
             ]
+            .into_iter()
+            .take(if action == "leader" { 1 } else { 2 })
         })
         .collect();
 
     SelectionViewParams {
+        allow_input_when_disconnected: true,
         view_id: Some(KEYMAP_REPLACE_BINDING_MENU_VIEW_ID),
         header: Box::new(Paragraph::new(header).wrap(Wrap { trim: false })),
         footer_hint: Some(picker_hint_line_for_keymap(&runtime_keymap.list)),
@@ -378,12 +410,15 @@ pub(crate) fn build_keymap_conflict_params(
     error: String,
     runtime_keymap: &RuntimeKeymap,
 ) -> SelectionViewParams {
-    let capture_mode = if key.contains(' ') {
+    let capture_mode = if key.starts_with("leader ") {
+        KeymapCaptureMode::LeaderChord
+    } else if key.contains(' ') {
         KeymapCaptureMode::Chord
     } else {
         KeymapCaptureMode::SingleKey
     };
     SelectionViewParams {
+        allow_input_when_disconnected: true,
         header: Box::new(
             Paragraph::new(vec![
                 Line::from("Shortcut Conflict".bold()),
@@ -566,20 +601,43 @@ pub(crate) fn active_binding_specs(
     let bindings = bindings_for_action(runtime_keymap, context, action).ok_or_else(|| {
         format!("Unknown keymap action `{context}.{action}`. Reopen /keymap and choose an action.")
     })?;
-    if let Some(action_id) = action_id
-        && let Some(crate::key_hint::ShortcutHint::Chord { prefix, completion }) =
-            runtime_keymap.chords.primary_hint(action_id, bindings)
-    {
-        return Ok(vec![format!(
-            "{} {}",
-            binding_to_config_key_spec(prefix)?,
-            binding_to_config_key_spec(completion)?
-        )]);
-    }
-    bindings
+    let mut specs = bindings
         .iter()
+        .filter(|binding| !crate::keymap::is_dispatch_token(**binding))
         .map(|binding| binding_to_config_key_spec(*binding))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()?;
+    if let Some(action_id) = action_id {
+        let chords: Vec<_> = runtime_keymap
+            .chords
+            .bindings
+            .iter()
+            .filter(|binding| binding.action == action_id)
+            .collect();
+        let available: std::collections::HashSet<_> = chords
+            .iter()
+            .map(|binding| (binding.chord.prefix, binding.chord.completion))
+            .collect();
+        for binding in &chords {
+            // An implicit default can yield to a different action on some leader aliases.
+            // Only persist the symbolic form when all aliases remain available.
+            let partial_leader = binding.spec.starts_with("leader ")
+                && runtime_keymap
+                    .chords
+                    .leader
+                    .iter()
+                    .any(|prefix| !available.contains(&(*prefix, binding.chord.completion)));
+            specs.push(if partial_leader {
+                format!(
+                    "{} {}",
+                    binding_to_config_key_spec(binding.chord.prefix)?,
+                    binding_to_config_key_spec(binding.chord.completion)?
+                )
+            } else {
+                binding.spec.clone()
+            });
+        }
+    }
+    Ok(dedup_bindings(specs))
 }
 
 fn dedup_bindings(bindings: Vec<String>) -> Vec<String> {
@@ -633,16 +691,21 @@ fn key_parts_to_config_key_spec(
     let (code, normalized_modifiers) = crate::key_hint::normalize_key_parts(code, modifiers);
     modifiers = normalized_modifiers;
 
-    let supported_modifiers = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT;
+    let supported_modifiers =
+        KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER;
     if !modifiers.difference(supported_modifiers).is_empty() {
         return Err(
-            "Only ctrl, alt, and shift modifiers can be stored in `tui.keymap`.".to_string(),
+            "Only ctrl, alt, shift, and super modifiers can be stored in `tui.keymap`.".to_string(),
         );
     }
 
     let key = match code {
         KeyCode::Enter => "enter".to_string(),
         KeyCode::Tab => "tab".to_string(),
+        KeyCode::BackTab => {
+            modifiers.insert(KeyModifiers::SHIFT);
+            "tab".to_string()
+        }
         KeyCode::Backspace => "backspace".to_string(),
         KeyCode::Esc => "esc".to_string(),
         KeyCode::Delete => "delete".to_string(),
@@ -692,6 +755,9 @@ fn format_key_spec(modifiers: KeyModifiers, key: &str) -> String {
     }
     if modifiers.contains(KeyModifiers::SHIFT) {
         parts.push("shift");
+    }
+    if modifiers.contains(KeyModifiers::SUPER) {
+        parts.push("super");
     }
     parts.push(key);
     parts.join("-")
@@ -756,6 +822,7 @@ mod tests {
     fn fast_mode_action_filter() -> KeymapActionFilter {
         KeymapActionFilter {
             fast_mode_enabled: true,
+            ..Default::default()
         }
     }
 
@@ -829,11 +896,16 @@ mod tests {
 
     #[test]
     fn picker_covers_every_replaceable_action() {
-        let runtime = RuntimeKeymap::defaults();
+        let keymap = TuiKeymap::default();
+        let runtime = RuntimeKeymap::for_session(&keymap, /*workspace*/ true).unwrap();
         let params = build_keymap_picker_params_with_filter(
             &runtime,
-            &TuiKeymap::default(),
-            fast_mode_action_filter(),
+            &keymap,
+            KeymapActionFilter {
+                fast_mode_enabled: true,
+                multi_backend_enabled: true,
+                workspace_enabled: true,
+            },
         );
         let all_tab = selection_tab(&params, KEYMAP_ALL_TAB_ID);
 
@@ -1207,13 +1279,21 @@ mod tests {
 
     #[test]
     fn picker_all_tab_items_remain_searchable() {
-        let runtime = RuntimeKeymap::defaults();
-        let params = build_keymap_picker_params(&runtime, &TuiKeymap::default());
+        let keymap = TuiKeymap::default();
+        let runtime = RuntimeKeymap::for_session(&keymap, /*workspace*/ true).unwrap();
+        let params = build_keymap_picker_params_with_filter(
+            &runtime,
+            &keymap,
+            KeymapActionFilter {
+                workspace_enabled: true,
+                ..Default::default()
+            },
+        );
         let all_tab = selection_tab(&params, KEYMAP_ALL_TAB_ID);
         let snapshot = all_tab
             .items
             .iter()
-            .take(12)
+            .take(13)
             .map(|item| {
                 format!(
                     "{} | {} | {}",
@@ -1242,6 +1322,15 @@ mod tests {
         let params = build_keymap_picker_params(&runtime, &TuiKeymap::default());
 
         assert_snapshot!("keymap_picker_narrow", render_picker(params, /*width*/ 78));
+    }
+
+    #[test]
+    fn picker_editor_render_snapshot() {
+        let runtime = RuntimeKeymap::defaults();
+        let mut params = build_keymap_picker_params(&runtime, &TuiKeymap::default());
+        params.initial_tab_id = Some("editor-shortcuts".to_string());
+
+        assert_snapshot!("keymap_picker_editor", render_picker(params, /*width*/ 120));
     }
 
     #[test]
@@ -1720,12 +1809,12 @@ mod tests {
     fn key_capture_serializes_modifier_order_for_config() {
         let event = KeyEvent::new(
             KeyCode::Char('K'),
-            KeyModifiers::CONTROL | KeyModifiers::ALT,
+            KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
         );
 
         assert_eq!(
             key_event_to_config_key_spec(event),
-            Ok("ctrl-alt-shift-k".to_string())
+            Ok("ctrl-alt-shift-super-k".to_string())
         );
     }
 
@@ -1734,6 +1823,14 @@ mod tests {
         assert_eq!(
             key_event_to_config_key_spec(KeyEvent::new(KeyCode::PageDown, KeyModifiers::SHIFT)),
             Ok("shift-page-down".to_string())
+        );
+        assert_eq!(
+            key_event_to_config_key_spec(KeyEvent::from(KeyCode::BackTab)),
+            Ok("shift-tab".to_string())
+        );
+        assert_eq!(
+            key_event_to_config_key_spec(KeyEvent::new(KeyCode::Tab, KeyModifiers::SHIFT)),
+            Ok("shift-tab".to_string())
         );
     }
 
@@ -1909,6 +2006,25 @@ mod tests {
                 KeybindingSpec("ctrl-shift-b".to_string())
             ]))
         );
+    }
+
+    #[test]
+    fn add_alternate_preserves_super_default_binding() {
+        let runtime = RuntimeKeymap::defaults();
+        let outcome = keymap_with_edit(
+            &TuiKeymap::default(),
+            &runtime,
+            "editor",
+            "move_line_start",
+            "f12",
+            &KeymapEditIntent::AddAlternate,
+        )
+        .expect("add alternate");
+
+        let KeymapEditOutcome::Updated { bindings, .. } = outcome else {
+            panic!("expected updated keymap");
+        };
+        assert_eq!(bindings, vec!["home", "ctrl-a", "super-left", "f12"]);
     }
 
     #[test]

@@ -3,8 +3,6 @@ use crate::keymap::keymap_action_id;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use codex_config::types::TuiKeymap;
 use codex_features::FEATURES;
-use codex_features::Feature;
-use codex_features::FeatureSpec;
 use codex_protocol::account::PlanType;
 use lazy_static::lazy_static;
 use rand::Rng;
@@ -34,23 +32,13 @@ lazy_static! {
     static ref ALL_TOOLTIPS: Vec<&'static str> = {
         let mut tips = Vec::new();
         tips.extend(TOOLTIPS.iter().copied());
-        tips.extend(experimental_tooltips(
-            FEATURES,
-            codex_realtime_webrtc::RealtimeWebrtcSession::is_supported,
-        ));
+        tips.extend(
+            FEATURES
+                .iter()
+                .filter_map(|spec| spec.stage.experimental_announcement()),
+        );
         tips
     };
-}
-
-fn experimental_tooltips(
-    features: &[FeatureSpec],
-    voice_supported: impl Fn() -> bool,
-) -> Vec<&'static str> {
-    features
-        .iter()
-        .filter(|spec| spec.id != Feature::RealtimeConversation || voice_supported())
-        .filter_map(|spec| spec.stage.experimental_announcement())
-        .collect()
 }
 
 /// Pick a random tooltip to show to the user when starting Codex.
@@ -371,5 +359,319 @@ pub(crate) mod announcement {
             }
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tooltips::announcement::AnnouncementTips;
+    use pretty_assertions::assert_eq;
+    use rand::SeedableRng;
+    use rand::rngs::StdRng;
+
+    #[test]
+    fn random_tooltip_returns_some_tip_when_available() {
+        let mut rng = StdRng::seed_from_u64(42);
+        assert!(pick_tooltip(&mut rng, &TuiKeymap::default()).is_some());
+    }
+
+    #[test]
+    fn random_tooltip_is_reproducible_with_seed() {
+        let expected = {
+            let mut rng = StdRng::seed_from_u64(7);
+            pick_tooltip(&mut rng, &TuiKeymap::default())
+        };
+
+        let mut rng = StdRng::seed_from_u64(7);
+        assert_eq!(expected, pick_tooltip(&mut rng, &TuiKeymap::default()));
+    }
+
+    #[test]
+    fn desktop_app_tips_render_at_narrow_width() {
+        let cwd = std::env::current_dir().unwrap();
+        for (platform, tip) in [
+            ("macos", MACOS_APP_TOOLTIP),
+            ("windows", WINDOWS_APP_TOOLTIP),
+            ("linux", LINUX_APP_TOOLTIP),
+        ] {
+            let rendered = render_tooltip_lines(tip, /*width*/ 40, &cwd)
+                .iter()
+                .map(|line| format!("{:?} {:?}", line.line, line.hyperlinks))
+                .collect::<Vec<_>>()
+                .join("\n");
+            insta::assert_snapshot!(format!("desktop_app_tip_{platform}"), rendered);
+        }
+    }
+
+    #[test]
+    fn desktop_app_tooltip_uses_supported_platform_launcher() {
+        let tooltip = TOOLTIPS
+            .iter()
+            .copied()
+            .find(|tip| tip.contains("desktop app"));
+
+        if linux_app_tooltip(LinuxDesktopSession::current()).is_some() {
+            let tooltip = tooltip.expect("Linux should advertise the desktop app");
+            assert_eq!(app_tooltip(), Some(tooltip));
+        } else if IS_MACOS {
+            let tooltip = tooltip.expect("macOS should advertise the desktop app");
+            assert_eq!(app_tooltip(), Some(tooltip));
+        } else if IS_WINDOWS {
+            let tooltip = tooltip.expect("Windows should advertise the desktop app");
+            assert_eq!(app_tooltip(), Some(tooltip));
+        } else {
+            assert_eq!(tooltip, None);
+            assert_eq!(app_tooltip(), None);
+        }
+    }
+
+    #[test]
+    fn linux_desktop_app_tooltip_requires_graphical_native_session() {
+        assert_eq!(
+            linux_app_tooltip(LinuxDesktopSession {
+                has_display: true,
+                is_wsl: false,
+            }),
+            Some(LINUX_APP_TOOLTIP)
+        );
+
+        assert_eq!(
+            linux_app_tooltip(LinuxDesktopSession {
+                has_display: false,
+                is_wsl: false,
+            }),
+            None
+        );
+        assert_eq!(
+            linux_app_tooltip(LinuxDesktopSession {
+                has_display: true,
+                is_wsl: true,
+            }),
+            None
+        );
+    }
+
+    #[test]
+    fn plans_use_platform_app_tip() {
+        for plan in [
+            Some(PlanType::Free),
+            Some(PlanType::Go),
+            Some(PlanType::Plus),
+            Some(PlanType::Pro),
+            None,
+        ] {
+            let mut seen = std::collections::BTreeSet::new();
+            for seed in 0..32 {
+                let mut rng = StdRng::seed_from_u64(seed);
+                seen.insert(preferred_tooltip(&mut rng, plan));
+            }
+            assert_eq!(
+                seen,
+                std::collections::BTreeSet::from([None, app_tooltip().map(str::to_string)])
+            );
+        }
+    }
+
+    #[test]
+    fn announcement_tip_toml_picks_last_matching() {
+        let toml = r#"
+[[announcements]]
+content = "first"
+from_date = "2000-01-01"
+
+[[announcements]]
+content = "latest match"
+version_regex = ".*"
+target_app = "cli"
+
+[[announcements]]
+content = "should not match"
+to_date = "2000-01-01"
+        "#;
+
+        assert_eq!(
+            Some("latest match".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+
+        let toml = r#"
+[[announcements]]
+content = "first"
+from_date = "2000-01-01"
+target_app = "cli"
+
+[[announcements]]
+content = "latest match"
+version_regex = ".*"
+
+[[announcements]]
+content = "should not match"
+to_date = "2000-01-01"
+        "#;
+
+        assert_eq!(
+            Some("latest match".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_picks_no_match() {
+        let toml = r#"
+[[announcements]]
+content = "first"
+from_date = "2000-01-01"
+to_date = "2000-01-05"
+
+[[announcements]]
+content = "latest match"
+version_regex = "invalid_version_name"
+
+[[announcements]]
+content = "should not match either "
+target_app = "vsce"
+        "#;
+
+        assert_eq!(
+            None,
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_bad_deserialization() {
+        let toml = r#"
+[[announcements]]
+content = 123
+from_date = "2000-01-01"
+        "#;
+
+        assert_eq!(
+            None,
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_parse_comments() {
+        let toml = r#"
+# Example announcement tips for Codex TUI.
+# Each [[announcements]] entry is evaluated in order; the last matching one is shown.
+# Dates are UTC, formatted as YYYY-MM-DD. The from_date is inclusive and the to_date is exclusive.
+# version_regex matches against the CLI version (env!("CARGO_PKG_VERSION")); omit to apply to all versions.
+# target_app specify which app should display the announcement (cli, vsce, ...).
+# target_plan_types optionally restricts the announcement to plan types like ["plus", "pro"].
+# target_oses optionally restricts the announcement to operating systems like ["macos", "windows"].
+
+[[announcements]]
+content = "Welcome to Codex! Check out the new onboarding flow."
+from_date = "2024-10-01"
+to_date = "2024-10-15"
+target_app = "cli"
+version_regex = "^0\\.0\\.0$"
+
+[[announcements]]
+content = "This is a test announcement"
+        "#;
+
+        assert_eq!(
+            Some("This is a test announcement".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_matches_target_plan_type() {
+        let toml = r#"
+[[announcements]]
+content = "all plans"
+
+[[announcements]]
+content = "pro announcement"
+target_plan_types = ["pro", "enterprise"]
+
+[[announcements]]
+content = "free announcement"
+target_plan_types = ["free"]
+        "#;
+
+        let tips = AnnouncementTips::parse(toml).unwrap();
+        assert_eq!(
+            Some("pro announcement".to_string()),
+            tips.select(Some(PlanType::Pro))
+        );
+        assert_eq!(
+            Some("free announcement".to_string()),
+            tips.select(Some(PlanType::Free))
+        );
+        assert_eq!(
+            Some("all plans".to_string()),
+            tips.select(Some(PlanType::Plus))
+        );
+        assert_eq!(Some("all plans".to_string()), tips.select(/*plan*/ None));
+    }
+
+    #[test]
+    fn announcement_tip_toml_rejects_unknown_target_plan_type() {
+        let toml = r#"
+[[announcements]]
+content = "all plans"
+
+[[announcements]]
+content = "typo announcement"
+target_plan_types = ["prp"]
+        "#;
+
+        assert_eq!(
+            Some("all plans".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(Some(PlanType::Unknown)))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_matches_target_os() {
+        let toml = r#"
+[[announcements]]
+content = "linux announcement"
+target_oses = ["linux"]
+
+[[announcements]]
+content = "macos announcement"
+target_oses = ["macos"]
+
+[[announcements]]
+content = "windows announcement"
+target_oses = ["windows"]
+        "#;
+
+        let expected = if cfg!(target_os = "macos") {
+            "macos announcement"
+        } else if cfg!(target_os = "windows") {
+            "windows announcement"
+        } else {
+            "linux announcement"
+        };
+        assert_eq!(
+            Some(expected.to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
+    }
+
+    #[test]
+    fn announcement_tip_toml_rejects_unknown_target_os() {
+        let toml = r#"
+[[announcements]]
+content = "all operating systems"
+
+[[announcements]]
+content = "typo announcement"
+target_oses = ["amiga"]
+        "#;
+
+        assert_eq!(
+            Some("all operating systems".to_string()),
+            AnnouncementTips::parse(toml).and_then(|tips| tips.select(/*plan*/ None))
+        );
     }
 }

@@ -10,7 +10,7 @@ use ratatui::layout::Rect;
 use ratatui::layout::Size;
 
 async fn app_with_pending_thread_usage()
--> Result<(Box<App>, AppServerSession, tui::Tui, ThreadId, u64)> {
+-> Result<(Box<App>, AppServerSession, tui::Tui, ThreadId, Uuid)> {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     let thread_id = ThreadId::new();
     app.chat_widget.handle_thread_session(test_thread_session(
@@ -53,11 +53,12 @@ async fn app_with_pending_thread_usage()
     Ok((app, app_server, tui, thread_id, request_id))
 }
 
-fn successful_thread_usage(thread_id: ThreadId, request_id: u64) -> AppEvent {
+fn successful_thread_usage(thread_id: ThreadId, request_id: Uuid) -> AppEvent {
     AppEvent::ThreadUsageLoaded {
         thread_id,
         request_id,
         result: Ok(ThreadUsageOutcome::Available(ThreadUsage {
+            native_usage_usd_micros: None,
             thread_id: thread_id.to_string(),
             estimated_usage_credits_micros: 50_000_000,
             estimated_usage_usd_micros: Some(1_820_000),
@@ -96,6 +97,7 @@ async fn account_updated_with_backend_only_auth_enables_thread_usage() -> Result
         &app_server,
         AppServerEvent::ServerNotification(Box::new(ServerNotification::AccountUpdated(
             AccountUpdatedNotification {
+                reason: None,
                 auth_mode: Some(AuthMode::AgentIdentity),
                 plan_type: Some(PlanType::Business),
             },
@@ -256,6 +258,7 @@ async fn account_change_discards_thread_usage_deferred_while_overlay_is_open() -
         &app_server,
         AppServerEvent::ServerNotification(Box::new(ServerNotification::AccountUpdated(
             AccountUpdatedNotification {
+                reason: None,
                 auth_mode: Some(AuthMode::AgentIdentity),
                 plan_type: Some(PlanType::Business),
             },
@@ -283,7 +286,7 @@ async fn terminal_reflow_rebases_pending_status_update_to_new_width() -> Result<
     app.insert_history_cell(
         &mut tui,
         Box::new(
-            history_cell::DynamicToolCallCell::from_item(ThreadItem::DynamicToolCall {
+            history_cell::DynamicToolCallCell::from_item(ThreadItemPayload::DynamicToolCall {
                 id: "pending-tool".into(),
                 namespace: None,
                 tool: "lookup".into(),

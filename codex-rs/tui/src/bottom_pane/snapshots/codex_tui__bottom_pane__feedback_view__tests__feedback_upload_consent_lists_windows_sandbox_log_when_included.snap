@@ -1,0 +1,16 @@
+---
+source: tui/src/bottom_pane/feedback_view.rs
+expression: rendered
+---
+Include logs and session history?
+
+Saving a ZIP does not submit feedback to OpenAI.
+Files may contain prompts, commands, and tool output:
+  • codex-logs.log
+  • client-logs.txt (if available)
+  • codex-doctor-report.json
+  • codex-apps-tools-cache.json (if available)
+  • codex-app-directory-cache.json (if available)
+  • windows-sandbox.log
+  • rollout.jsonl
+  • auto-review-rollout.jsonl

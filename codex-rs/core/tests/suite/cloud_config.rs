@@ -2,10 +2,12 @@ use anyhow::Context;
 use anyhow::Result;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
+use codex_config::loader::load_guardian_policy_snapshot;
 use codex_config::test_support::CloudConfigBundleFixture;
 use codex_config::types::WindowsSandboxModeToml;
 use codex_core::CodexThreadSettingsOverrides;
 use codex_core::config::ConfigBuilder;
+use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::NetworkSandboxPolicy;
@@ -21,6 +23,141 @@ use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use std::sync::RwLock;
 use tempfile::TempDir;
+
+#[tokio::test]
+async fn session_requires_managed_configuration_from_configured_service() -> Result<()> {
+    let server = start_mock_server().await;
+    let home = TempDir::new()?;
+    let requirements_path = home.path().join("requirements.toml");
+    let required_config_server = codex_config::ConfigServer {
+        base_url: "https://required.example/managed/settings".into(),
+        oauth: None,
+    };
+    std::fs::write(
+        &requirements_path,
+        format!(
+            "[config_server]\n{}",
+            toml::to_string(&required_config_server)?
+        ),
+    )?;
+    let policy = CloudConfigBundleFixture::enterprise_requirement(
+        "allowed_approval_policies = ['on-request']",
+    )
+    .into_loader();
+    for (loader, should_start) in [
+        (CloudConfigBundleLoader::default(), false),
+        (
+            policy
+                .clone()
+                .with_config_server(codex_config::ConfigServer {
+                    base_url: "https://other.example/managed/settings".into(),
+                    oauth: None,
+                }),
+            false,
+        ),
+        (policy.with_config_server(required_config_server), true),
+    ] {
+        let managed = ConfigBuilder::default()
+            .codex_home(home.path().to_path_buf())
+            .loader_overrides(LoaderOverrides {
+                system_requirements_path: Some(requirements_path.clone()),
+                ..LoaderOverrides::without_managed_config_for_tests()
+            })
+            .cloud_config_bundle(loader)
+            .build()
+            .await?;
+        let mut builder = test_codex().with_config(move |config| {
+            config.config_layer_stack = managed.config_layer_stack;
+            config.permissions = managed.permissions;
+        });
+        match builder.build_with_auto_env(&server).await {
+            Ok(test) => {
+                assert!(
+                    should_start,
+                    "session started without required company policy"
+                );
+                assert_eq!(
+                    test.session_configured.approval_policy,
+                    AskForApproval::OnRequest
+                );
+            }
+            Err(error) => {
+                assert!(
+                    !should_start,
+                    "matching managed configuration should start a session: {error:#}"
+                );
+                assert!(
+                    format!("{error:#}")
+                        .contains("Required managed configuration has not been loaded")
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn guardian_refresh_reports_live_thread_rejection() -> Result<()> {
+    struct TestPolicyLoader {
+        home: Arc<TempDir>,
+        bundle: RwLock<CloudConfigBundleLoader>,
+    }
+    impl codex_core::GuardianPolicyLoader for TestPolicyLoader {
+        fn load_guardian_policy_snapshot(
+            &self,
+            revision: u64,
+        ) -> futures::future::BoxFuture<'_, std::io::Result<codex_config::GuardianPolicySnapshot>>
+        {
+            let bundle = self.bundle.read().unwrap().clone();
+            Box::pin(async move {
+                load_guardian_policy_snapshot(
+                    LOCAL_FS.as_ref(),
+                    self.home.path(),
+                    &LoaderOverrides::without_managed_config_for_tests(),
+                    &bundle,
+                    revision,
+                )
+                .await
+            })
+        }
+    }
+
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+    let loader = Arc::new(TestPolicyLoader {
+        home: Arc::clone(&home),
+        bundle: RwLock::new(
+            CloudConfigBundleFixture::loader_with_enterprise_requirement(
+                "guardian_policy_config = 'startup policy'",
+            ),
+        ),
+    });
+    let test = test_codex()
+        .with_home(home)
+        .with_thread_manager({
+            let loader = Arc::clone(&loader);
+            move |manager| manager.with_guardian_policy_loader(loader)
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    let startup = test.codex.config().await;
+    assert!(startup.guardian_policy_revision > 0);
+    let policy = startup.guardian_policy_config.as_deref();
+    assert_eq!(policy, Some("startup policy"));
+    *loader.bundle.write().unwrap() =
+        CloudConfigBundleFixture::loader_with_enterprise_config("auto_review = false");
+
+    let error = test
+        .thread_manager
+        .refresh_guardian_policy()
+        .await
+        .expect_err("the live thread cannot apply the invalid Guardian fallback");
+    assert_eq!(
+        error.to_string(),
+        "Guardian policy refresh rejected by one or more live threads"
+    );
+    Ok(())
+}
 
 #[tokio::test]
 async fn managed_mxc_opt_out_blocks_preferred_and_explicit_selection() -> Result<()> {

@@ -28,6 +28,7 @@ pub(super) async fn fork_source(
     )
     .await?;
     let client = InProcessAppServerClient::start(InProcessClientStartArgs {
+        required_human_approval: false,
         arg0_paths: arg0_paths.clone(),
         config: std::sync::Arc::new(config.clone()),
         cli_overrides: cli_overrides.to_vec(),
@@ -53,6 +54,7 @@ pub(super) async fn fork_source(
         channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
     })
     .await?;
+    let client = AppServerClient::InProcess(client);
     let result = async {
         let lookup = crate::cli::ResumeArgs {
             session_id: Some(args.session_id.clone()),

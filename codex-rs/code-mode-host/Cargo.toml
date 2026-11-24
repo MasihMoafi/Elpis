@@ -32,13 +32,17 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["io-std", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true, features = ["rt"] }
-tonic = { workspace = true, features = ["router", "transport"] }
+tonic = { workspace = true, features = ["router", "transport", "zstd"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
+codex-core = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
+codex-plugin-host = { workspace = true }
 codex-code-mode = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
+codex-utils-process = { workspace = true }
 pretty_assertions = { workspace = true }
 tempfile = { workspace = true }

@@ -1,5 +1,6 @@
 ---
 source: tui/src/transcript_view/search_tests.rs
+assertion_line: 989
 expression: "crate::transcript_view::tests::text(&buffer)"
 ---
 • Running 'echo visible …
@@ -12,8 +13,8 @@ expression: "crate::transcript_view::tests::text(&buffer)"
 
 $ 'echo visible
     echo hidden newer needle'
-    − Show less
+    − Hide details
 
 $ 'echo visible
     echo hidden manual'
-    − Show less
+    − Hide details

@@ -17,6 +17,7 @@ fn plugin(renewal: &str) -> RemoteInstalledPlugin {
         marketplace_name: REMOTE_GLOBAL_MARKETPLACE_NAME.to_string(),
         id: "plugin-test".to_string(),
         version: Some("1.0.0".to_string()),
+        active_bundle: None,
         name: "test".to_string(),
         canonical_app_id: None,
         installed_at: None,
@@ -45,16 +46,38 @@ fn catalog(plugins: &[RemoteInstalledPlugin]) -> Vec<RemoteMarketplace> {
 }
 
 #[test]
-fn behavioral_metadata_changes_still_invalidate() {
+fn runtime_metadata_changes_invalidate() {
     let changes: &[fn(&mut RemoteInstalledPlugin)] = &[
+        |plugin| plugin.marketplace_name.push_str("-other"),
         |plugin| plugin.id.push_str("-other"),
         |plugin| plugin.name.push_str("-other"),
+        |plugin| plugin.canonical_app_id = Some("new-app".to_string()),
+        |plugin| plugin.enabled = false,
+        |plugin| {
+            plugin.active_bundle = Some(crate::remote::ActiveRemotePluginBundle {
+                directory_version: "2.0.0".into(),
+                remote_plugin_id: None,
+            })
+        },
+    ];
+    for change in changes {
+        let previous = [plugin("old")];
+        let mut current = previous.clone();
+        change(&mut current[0]);
+        assert!(!installed_plugin_metadata_eq(&previous, &current));
+    }
+    assert!(!installed_plugin_metadata_eq(&[plugin("old")], &[]));
+    assert!(!remote_catalog_metadata_eq(&catalog(&[plugin("old")]), &[]));
+}
+
+#[test]
+fn catalog_metadata_changes_do_not_invalidate_the_installed_runtime() {
+    let changes: &[fn(&mut RemoteInstalledPlugin)] = &[
         |plugin| plugin.version = Some("2.0.0".to_string()),
         |plugin| {
             plugin.installed_at =
                 chrono::DateTime::from_timestamp(/*secs*/ 1, /*nsecs*/ 0)
         },
-        |plugin| plugin.enabled = false,
         |plugin| plugin.install_policy = PluginInstallPolicy::NotAvailable,
         |plugin| {
             plugin.install_policy_source =
@@ -67,20 +90,15 @@ fn behavioral_metadata_changes_still_invalidate() {
     ];
     for change in changes {
         let previous = [plugin("old")];
-        let mut current = [plugin("new")];
+        let mut current = previous.clone();
         change(&mut current[0]);
-        assert!(!installed_plugin_metadata_eq(&previous, &current));
+        assert!(installed_plugin_metadata_eq(&previous, &current));
+        assert!(installed_plugin_metadata_changes(&previous, &current).is_empty());
         assert!(!remote_catalog_metadata_eq(
             &catalog(&previous),
             &catalog(&current)
         ));
     }
-    let previous = [plugin("old")];
-    let mut current = [plugin("new")];
-    current[0].canonical_app_id = Some("new-app".to_string());
-    assert!(!installed_plugin_metadata_eq(&previous, &current));
-    assert!(!installed_plugin_metadata_eq(&previous, &[]));
-    assert!(!remote_catalog_metadata_eq(&catalog(&previous), &[]));
 }
 
 #[test]
@@ -121,6 +139,13 @@ fn installed_ordering_remains_significant() {
     let mut current = previous.clone();
     current.reverse();
     assert!(!installed_plugin_metadata_eq(&previous, &current));
+    assert_eq!(
+        installed_plugin_metadata_changes(&previous, &current),
+        BTreeMap::from([
+            (previous[0].id.clone(), vec!["position"]),
+            (previous[1].id.clone(), vec!["position"]),
+        ])
+    );
 }
 
 #[test]
@@ -178,4 +203,34 @@ fn catalog_display_reordering_does_not_invalidate() {
         &previous_catalog,
         &catalog(&current)
     ));
+}
+
+#[test]
+fn diagnostics_attribute_fields_by_plugin_id_across_membership_changes() {
+    let previous = [
+        plugin("old"),
+        RemoteInstalledPlugin {
+            id: "removed".into(),
+            ..plugin("old")
+        },
+    ];
+    let mut updated = previous[0].clone();
+    updated.enabled = !updated.enabled;
+    updated.version = Some("2".into());
+    let id = updated.id.clone();
+    let current = [
+        RemoteInstalledPlugin {
+            id: "added".into(),
+            ..plugin("new")
+        },
+        updated,
+    ];
+    assert_eq!(
+        installed_plugin_metadata_changes(&previous, &current),
+        std::collections::BTreeMap::from([
+            ("added".into(), vec!["added"]),
+            ("removed".into(), vec!["removed"]),
+            (id, vec!["enabled"]),
+        ])
+    );
 }

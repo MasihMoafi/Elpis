@@ -13,6 +13,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Widget;
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
@@ -215,7 +216,13 @@ fn build_line(
     let primary_column_width =
         primary_column_width.min(content_width.saturating_sub(/*rhs*/ 2) / 2);
     let content = truncate_line_with_ellipsis_if_overflow(
-        content_line(row, base_style, dim_style, primary_column_width),
+        content_line(
+            row,
+            base_style,
+            dim_style,
+            primary_column_width,
+            content_width,
+        ),
         content_width,
     );
     let rendered_content_width = content.width();
@@ -248,10 +255,11 @@ fn content_line(
     base_style: Style,
     dim_style: Style,
     primary_column_width: usize,
+    content_width: usize,
 ) -> Line<'static> {
     let primary = Line::from(primary_spans(row, base_style));
     if let Some(secondary) = secondary_line(row, base_style, dim_style) {
-        let primary = truncate_line_with_ellipsis_if_overflow(primary, primary_column_width);
+        let primary = row.label_style.render(primary, primary_column_width);
         let padding = primary_column_width
             .saturating_sub(primary.width())
             .saturating_add(/*rhs*/ 2);
@@ -260,7 +268,7 @@ fn content_line(
         spans.extend(secondary.spans);
         Line::from(spans)
     } else {
-        primary
+        row.label_style.render(primary, content_width)
     }
 }
 
@@ -274,7 +282,6 @@ fn primary_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
         return vec![file_name.to_string().set_style(style)];
     }
 
-    let mut spans = Vec::with_capacity(row.display_name.len());
     let name_style = match row.mention_type {
         MentionType::Plugin => base_style.fg(crate::style::accent_color()),
         MentionType::Skill => base_style.dim(),
@@ -282,20 +289,44 @@ fn primary_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
         MentionType::File | MentionType::Directory => base_style,
     };
     if let Some(indices) = row.match_indices.as_ref() {
-        let mut idx_iter = indices.iter().peekable();
-        for (char_idx, ch) in row.display_name.chars().enumerate() {
-            let mut style = name_style;
-            if idx_iter.peek().is_some_and(|next| **next == char_idx) {
-                idx_iter.next();
-                style = style.bold();
-            }
-            spans.push(ch.to_string().set_style(style));
-        }
+        highlighted_spans(
+            &row.display_name,
+            indices,
+            name_style,
+            MatchIndexUnit::Scalar,
+        )
+        .collect()
     } else {
-        spans.push(row.display_name.clone().set_style(name_style));
+        vec![row.display_name.clone().set_style(name_style)]
     }
+}
 
-    spans
+enum MatchIndexUnit {
+    Scalar,
+    Grapheme,
+}
+
+fn highlighted_spans<'a>(
+    text: &'a str,
+    indices: &'a [usize],
+    style: Style,
+    unit: MatchIndexUnit,
+) -> impl Iterator<Item = Span<'static>> + 'a {
+    let mut indices = indices.iter().peekable();
+    let mut index_end = 0;
+    text.graphemes(/*is_extended*/ true).map(move |grapheme| {
+        index_end += match unit {
+            MatchIndexUnit::Scalar => grapheme.chars().count(),
+            MatchIndexUnit::Grapheme => 1,
+        };
+        let mut matched = false;
+        while indices.next_if(|index| **index < index_end).is_some() {
+            matched = true;
+        }
+        grapheme
+            .to_owned()
+            .set_style(if matched { style.bold() } else { style })
+    })
 }
 
 fn secondary_line(
@@ -328,16 +359,6 @@ fn path_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
     let path_style = base_style.dim();
     if file_name_start == 0 {
         spans.push("./".set_style(path_style));
-    } else if let Some(indices) = row.match_indices.as_ref() {
-        let mut idx_iter = indices.iter().peekable();
-        for (char_idx, ch) in row.display_name.chars().enumerate().take(file_name_start) {
-            let mut style = path_style;
-            if idx_iter.peek().is_some_and(|next| **next == char_idx) {
-                idx_iter.next();
-                style = style.bold();
-            }
-            spans.push(ch.to_string().set_style(style));
-        }
     } else if file_name_start != usize::MAX {
         let byte_start = row
             .display_name
@@ -345,11 +366,17 @@ fn path_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
             .nth(file_name_start)
             .map(|(idx, _)| idx)
             .unwrap_or(row.display_name.len());
-        spans.push(
-            row.display_name[..byte_start]
-                .to_string()
-                .set_style(path_style),
-        );
+        let path = &row.display_name[..byte_start];
+        if let Some(indices) = row.match_indices.as_ref() {
+            spans.extend(highlighted_spans(
+                path,
+                indices,
+                path_style,
+                MatchIndexUnit::Grapheme,
+            ));
+        } else {
+            spans.push(path.to_string().set_style(path_style));
+        }
     } else {
         spans.push(row.display_name.clone().set_style(base_style));
     }
@@ -357,9 +384,10 @@ fn path_spans(row: &SearchResult, base_style: Style) -> Vec<Span<'static>> {
 }
 
 fn primary_text_width(row: &SearchResult) -> usize {
-    file_name(row)
+    let width = file_name(row)
         .map(UnicodeWidthStr::width)
-        .unwrap_or_else(|| UnicodeWidthStr::width(row.display_name.as_str()))
+        .unwrap_or_else(|| UnicodeWidthStr::width(row.display_name.as_str()));
+    width + row.label_style.prefix_width()
 }
 
 fn file_name(row: &SearchResult) -> Option<&str> {

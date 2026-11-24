@@ -335,8 +335,16 @@ mod tests {
             // popup, and /context is the one Elpis command that works there.
             vec![
                 SlashCommand::Ide,
+                SlashCommand::Rename,
+                SlashCommand::Agents,
                 SlashCommand::Copy,
                 SlashCommand::Diff,
+                SlashCommand::Mention,
+                SlashCommand::Status,
+                SlashCommand::Daemon,
+                SlashCommand::Rc,
+                SlashCommand::Warnings,
+                SlashCommand::Pwd,
                 SlashCommand::Usage,
                 SlashCommand::Context,
             ]

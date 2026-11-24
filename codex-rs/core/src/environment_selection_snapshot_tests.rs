@@ -69,6 +69,7 @@ async fn capability_roots_follow_attachments_through_configuration_changes() {
         &snapshot.environments[1],
         TurnEnvironmentState::Failed { .. }
     ));
+    let starting = Arc::clone(&snapshot.starting().next().unwrap().attachment);
 
     let child = ThreadEnvironments::new(
         Arc::clone(&manager),
@@ -78,6 +79,7 @@ async fn capability_roots_follow_attachments_through_configuration_changes() {
         snapshot,
         /*non_blocking_snapshots*/ false,
     );
+    child.activate_configured(async_channel::unbounded().0);
     assert_eq!(
         child.snapshot().await.selected_capability_roots(),
         vec![roots[1].clone()]
@@ -109,25 +111,26 @@ async fn capability_roots_follow_attachments_through_configuration_changes() {
         independent_roots
     );
     assert_eq!(parent.snapshot().await.selected_capability_roots(), roots);
+    let child_snapshot = child.snapshot().await;
+    let child_local = child_snapshot.primary().expect("child executor");
+    let parent_snapshot = parent.snapshot().await;
+    let parent_local = parent_snapshot.primary().expect("parent executor");
     assert!(Arc::ptr_eq(
-        &child
-            .snapshot()
-            .await
-            .primary()
-            .expect("child executor")
-            .environment,
-        &parent
-            .snapshot()
-            .await
-            .turn_environments()
-            .find(|environment| environment.selection.environment_id == LOCAL_ENVIRONMENT_ID)
-            .expect("parent executor")
-            .environment,
+        child_local.environment(),
+        parent_local.environment()
     ));
+    assert!(Arc::ptr_eq(&starting, &parent_local.attachment));
+    parent.update_selections(std::slice::from_ref(&local));
+    assert!(!parent_local.attachment.detached.is_cancelled());
+    drop(parent);
+    assert!(parent_local.attachment.detached.is_cancelled());
+    assert!(!child_local.attachment.detached.is_cancelled());
 }
 
+#[test_case::test_case(false; "standalone startup")]
+#[test_case::test_case(true; "configured startup")]
 #[tokio::test]
-async fn unpolled_snapshot_does_not_delay_canceling_a_removed_environment() {
+async fn unpolled_snapshot_does_not_delay_canceling_a_removed_environment(shared_startup: bool) {
     let cwd = PathUri::from_abs_path(&AbsolutePathBuf::current_dir().expect("cwd"));
     let selection = TurnEnvironmentSelection {
         selected_capability_roots: Default::default(),
@@ -144,7 +147,10 @@ async fn unpolled_snapshot_does_not_delay_canceling_a_removed_environment() {
         TurnEnvironmentSnapshot::default(),
         /*non_blocking_snapshots*/ false,
     );
-    environments.update_selections(&[selection]);
+    if shared_startup {
+        environments.update_configured_selections(std::slice::from_ref(&selection));
+    }
+    environments.update_selections(std::slice::from_ref(&selection));
     let starting = environments
         .snapshot()
         .await
@@ -153,8 +159,10 @@ async fn unpolled_snapshot_does_not_delay_canceling_a_removed_environment() {
         .unwrap()
         .clone();
     let held_snapshot = environments.snapshot();
+    let original = Arc::downgrade(&starting.attachment);
 
     environments.update_selections(&[]);
+    assert!(starting.attachment.detached.is_cancelled());
 
     let error = timeout(Duration::from_secs(5), starting.wait_until_ready())
         .await
@@ -169,6 +177,19 @@ async fn unpolled_snapshot_does_not_delay_canceling_a_removed_environment() {
         held_snapshot.await.environments.as_slice(),
         [TurnEnvironmentState::Failed { .. }]
     ));
+
+    environments.update_selections(&[selection]);
+    let snapshot = environments.snapshot_now();
+    let reattached = &snapshot.starting().next().unwrap().attachment;
+    assert!(Arc::ptr_eq(
+        &reattached.environment,
+        &starting.attachment.environment
+    ));
+    assert!(!Arc::ptr_eq(reattached, &starting.attachment));
+    environments.update_configured_selections(&[]);
+    assert!(!reattached.detached.is_cancelled());
+    drop(starting);
+    assert!(original.upgrade().is_none());
 }
 
 #[tokio::test]
@@ -208,7 +229,7 @@ async fn updating_another_environment_retries_the_executor_without_canceling_pen
         (
             failing.resolution.clone(),
             failing.pending_completion.as_ref().unwrap().subscribe(),
-            failing.owner_config_result.clone().unwrap(),
+            pending_configuration(failing.pending_completion.as_ref().unwrap()),
         )
     };
 
@@ -218,9 +239,9 @@ async fn updating_another_environment_retries_the_executor_without_canceling_pen
 
     local.config = EnvironmentConfigState::Ready(tests::test_environment_config());
     environments.update_selections(&[local.clone(), pending.clone()]);
-    let (second_attempt, _, second_owner) = current();
+    let (second_attempt, second_config, _) = current();
     assert!(!first_attempt.ptr_eq(&second_attempt));
-    assert!(original_owner.ptr_eq(&second_owner));
+    assert!(original_config.same_channel(&second_config));
     assert!(second_attempt.await.is_err());
     assert!(original_config.borrow().is_none());
 

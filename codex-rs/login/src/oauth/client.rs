@@ -39,6 +39,27 @@ pub(crate) struct AuthorizationCodeGrant<'a> {
 pub(crate) struct RefreshTokenGrant<'a> {
     pub refresh_token: &'a str,
     pub resource: Option<&'a str>,
+    pub refresh_reason: Option<RefreshReason>,
+}
+
+/// Caller-reported diagnostics for AuthAPI; never evidence of token validity.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RefreshReason {
+    ProactiveExpiry,
+    Scheduled,
+    UnauthorizedRecovery,
+    Forced,
+}
+
+impl RefreshReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::ProactiveExpiry => "proactive_expiry",
+            Self::Scheduled => "scheduled",
+            Self::UnauthorizedRecovery => "unauthorized_recovery",
+            Self::Forced => "forced",
+        }
+    }
 }
 
 /// Shared OAuth protocol implementation; callers retain tokens, storage, and recovery decisions.
@@ -84,6 +105,9 @@ impl<'a> OAuthClient<'a> {
         ];
         if let Some(resource) = grant.resource {
             parameters.push(("resource", resource));
+        }
+        if let Some(reason) = grant.refresh_reason {
+            parameters.push(("refresh_reason", reason.as_str()));
         }
         self.exchange(&parameters, &[grant.refresh_token]).await
     }

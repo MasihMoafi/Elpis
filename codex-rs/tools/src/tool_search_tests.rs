@@ -180,7 +180,7 @@ fn default_search_text_uses_model_visible_namespace_metadata_once() {
         /*required*/ None,
         /*additional_properties*/ None,
     );
-    schedule_schema.description = Some("Schedule settings.".to_string());
+    schedule_schema.description = Some("Schedule settings.".into());
     let mut parameters = JsonSchema::object(
         BTreeMap::from([
             (
@@ -192,7 +192,7 @@ fn default_search_text_uses_model_visible_namespace_metadata_once() {
         /*required*/ None,
         /*additional_properties*/ None,
     );
-    parameters.description = Some("Automation options.".to_string());
+    parameters.description = Some("Automation options.".into());
     let spec = ToolSpec::Namespace(crate::ResponsesApiNamespace {
         name: "codex_app".to_string(),
         description: "Manage Codex automations.".to_string(),

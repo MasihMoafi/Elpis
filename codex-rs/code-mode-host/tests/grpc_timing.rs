@@ -10,12 +10,12 @@ use codex_code_mode::CodeModeSessionProvider;
 use codex_code_mode::ExecuteRequest;
 use codex_code_mode::GrpcCodeModeSessionProvider;
 use codex_code_mode::NoopCodeModeSessionDelegate;
-use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
 use codex_code_mode::RuntimeResponse;
 use codex_code_mode::WaitOutcome;
 use codex_code_mode::WaitRequest;
 use codex_code_mode_protocol::grpc;
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
+use codex_core::ProcessOwnedGrpcCodeModeSessionProvider;
 use pretty_assertions::assert_eq;
 use tokio::time::sleep;
 use tokio::time::timeout;
@@ -39,7 +39,10 @@ async fn execution_timing_includes_javascript_but_excludes_delayed_reads() -> Re
     let mut client = CodeModeHostClient::connect(host.endpoint).await?;
     let mut events = client
         .open_session(grpc::OpenSessionRequest {
+            heartbeat_interval_s: 0,
+            max_pending_delegate_calls: None,
             cell_execution_limits: None,
+            output_truncation: None,
         })
         .await?
         .into_inner();
@@ -55,6 +58,7 @@ async fn execution_timing_includes_javascript_but_excludes_delayed_reads() -> Re
         let observed = Instant::now();
         let mut execution = client
             .execute(grpc::ExecuteRequest {
+                catalog_revision: None,
                 session_id: opened.session_id.clone(),
                 execution_id: format!("execution-{index}"),
                 tool_call_id: format!("call-{index}"),
@@ -114,7 +118,7 @@ async fn execution_timing_includes_javascript_but_excludes_delayed_reads() -> Re
 /// the client reads its initial response, including JavaScript computation and timers.
 #[tokio::test]
 async fn stdio_execution_timing_includes_javascript_but_excludes_delayed_reads() -> Result<()> {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host")?,
     );
     let delegate = Arc::new(RecordingDelegate::default());
@@ -164,11 +168,10 @@ async fn stdio_execution_timing_includes_javascript_but_excludes_delayed_reads()
         if suffix.is_empty() {
             assert_eq!(error_text, None);
         } else {
-            assert!(
-                error_text
-                    .context("expected JS failure")?
-                    .contains("timed failure")
-            );
+            let Some(error_text) = error_text else {
+                anyhow::bail!("expected JS failure");
+            };
+            assert!(error_text.contains("timed failure"));
         }
     }
     session.shutdown().await.map_err(anyhow::Error::msg)?;
@@ -181,7 +184,7 @@ async fn stdio_execution_timing_includes_javascript_but_excludes_delayed_reads()
 async fn observation_timing_excludes_previous_requests_and_background_time() -> Result<()> {
     let host = HostHarness::start("grpc://127.0.0.1:0").await?;
     let providers: [Arc<dyn CodeModeSessionProvider>; 2] = [
-        Arc::new(ProcessOwnedCodeModeSessionProvider::with_host_program(
+        Arc::new(ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
             codex_utils_cargo_bin::cargo_bin("codex-code-mode-host")?,
         )),
         Arc::new(GrpcCodeModeSessionProvider::new(host.endpoint)),
@@ -229,6 +232,7 @@ async fn observation_timing_excludes_previous_requests_and_background_time() -> 
                     WaitRequest {
                         cell_id: cell_id.clone(),
                         yield_time_ms: 50,
+                        max_output_tokens: None,
                     },
                     /*preempt*/ None,
                 )
@@ -254,7 +258,7 @@ async fn observation_timing_excludes_previous_requests_and_background_time() -> 
 
         let observed = Instant::now();
         let terminated = session
-            .terminate(cell_id.clone())
+            .terminate(cell_id.clone().into())
             .await
             .map_err(anyhow::Error::msg)?;
         let duration = terminated
@@ -276,6 +280,7 @@ async fn observation_timing_excludes_previous_requests_and_background_time() -> 
                 WaitRequest {
                     cell_id: cell_id.clone(),
                     yield_time_ms: 50,
+                    max_output_tokens: None,
                 },
                 /*preempt*/ None,
             )
@@ -288,6 +293,7 @@ async fn observation_timing_excludes_previous_requests_and_background_time() -> 
         assert_eq!(
             missing,
             WaitOutcome::MissingCell(RuntimeResponse::Result {
+                result_buffered_for: Duration::ZERO,
                 error_text: Some(format!("exec cell {cell_id} not found")),
                 cell_id,
                 content_items: Vec::new(),

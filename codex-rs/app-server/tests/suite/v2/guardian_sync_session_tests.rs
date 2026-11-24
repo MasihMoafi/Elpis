@@ -5,6 +5,7 @@ use app_test_support::create_final_assistant_message_sse_response as assistant_r
 use codex_app_server_protocol::CodexErrorInfo;
 use codex_app_server_protocol::GuardianWarningNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
+use codex_app_server_protocol::RawResponseItemCompletedNotification;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ReviewDelivery;
 use codex_app_server_protocol::ReviewStartParams;
@@ -12,6 +13,10 @@ use codex_app_server_protocol::ReviewStartResponse;
 use codex_app_server_protocol::ReviewTarget;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::ThreadClosedNotification;
+use codex_app_server_protocol::ThreadGuardianReviewParams;
+use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ThreadInjectItemsParams;
+use codex_app_server_protocol::ThreadInjectItemsResponse;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
@@ -32,7 +37,7 @@ use tokio::sync::oneshot;
 
 const ALLOW: &str = r#"{"outcome":"allow","rationale":"completed seed assessment"}"#;
 
-fn sync_config(responses_url: &str) -> MockResponsesConfig {
+pub(super) fn sync_config(responses_url: &str) -> MockResponsesConfig {
     MockResponsesConfig::new(responses_url)
         .with_provider_config("supports_websockets = false")
         .with_approval_policy("on-request")
@@ -60,6 +65,85 @@ fn tool_response(server: &str, tool: &str, calls: &[&str]) -> String {
 enum ReviewEnding {
     Complete,
     Interrupt,
+}
+
+#[tokio::test]
+async fn unavailable_guardian_board_reports_why_review_preparation_failed() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let requests = responses::mount_sse_sequence(
+        &server,
+        vec![
+            tool_response(TEST_SERVER_NAME, TEST_TOOL_NAME, &["check"]),
+            assistant_response("Done.")?,
+        ],
+    )
+    .await;
+    let (mcp_url, mcp_server) = start_mcp_server(/*sensitive_action*/ None).await?;
+    let home = TempDir::new()?;
+    // A directory at the database path prevents SQLite from opening the board.
+    std::fs::create_dir(home.path().join("message_board_guardian_1.sqlite"))?;
+    sync_config(&server.uri())
+        .with_root_config(&format!("sqlite_home = {}", serde_json::to_string(home.path())?))
+        .with_extra_config("[features.guardianv3]\nenabled = true")
+        .with_extra_config(&format!(
+            "[mcp_servers.{TEST_SERVER_NAME}]\nurl = \"{mcp_url}/mcp\"\ndefault_tools_approval_mode = \"prompt\""
+        ))
+        .write(home.path())?;
+    let mut app = TestAppServer::builder()
+        .with_codex_home(home.path())
+        .with_json_logging("warn,codex_core::guardian=info")
+        .build_initialized_with_timeout(TIMEOUT)
+        .await?;
+    let thread = app
+        .start_thread(ThreadStartParams {
+            history_mode: Some(ThreadHistoryMode::Paginated),
+            ..Default::default()
+        })
+        .await?
+        .thread;
+    app.start_turn_and_wait_for_completion(TurnStartParams {
+        thread_id: thread.id,
+        input: vec![UserInput::Text {
+            text: "Run the check.".into(),
+            text_elements: Vec::new(),
+        }],
+        ..Default::default()
+    })
+    .await?;
+
+    let requests = requests.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[1].function_call_output("check")["output"]
+            .to_string()
+            .contains("Guardian V3 could not prepare the evidence for this action: Guardian board evidence is unavailable")
+    );
+    let started = app
+        .wait_for_matching_json_log_event(
+            "preparation started",
+            |event| event["fields"]["message"] == "Guardian V3 review preparation started",
+            TIMEOUT,
+        )
+        .await?;
+    let finished = app
+        .wait_for_matching_json_log_event(
+            "preparation finished",
+            |event| event["fields"]["message"] == "Guardian V3 review preparation finished",
+            TIMEOUT,
+        )
+        .await?;
+    let review_id = started["fields"]["review_id"].as_str().expect("review ID");
+    assert_eq!(finished["fields"]["review_id"], review_id);
+    assert_eq!(finished["fields"]["ready"], false);
+    assert_eq!(
+        finished["fields"]["failure_reason"],
+        "Guardian board evidence is unavailable"
+    );
+    app.shutdown_gracefully().await?;
+    mcp_server.abort();
+    Ok(())
 }
 
 #[tokio::test]
@@ -191,6 +275,9 @@ async fn managed_reviewer_refreshes_global_instructions_before_reuse() -> Result
     let codex_home = TempDir::new()?;
     let instructions_path = codex_home.path().join("AGENTS.md");
     sync_config(server.uri())
+        .with_provider_name("OpenAI")
+        .enable_feature(Feature::ContentItemKinds)
+        .enable_feature(Feature::GuardianRecordedItems)
         .with_extra_config(&format!(
             "[mcp_servers.{TEST_SERVER_NAME}]\nurl = \"{mcp_url}/mcp\"\ndefault_tools_approval_mode = \"prompt\""
         ))
@@ -202,8 +289,15 @@ async fn managed_reviewer_refreshes_global_instructions_before_reuse() -> Result
     let old_instructions = "Keep this project private.";
     let new_instructions = "Ask before sharing this project's source code.";
     std::fs::write(&instructions_path, old_instructions)?;
-    let parent = app.start_thread(ThreadStartParams::default()).await?.thread;
+    let parent = app
+        .start_thread(ThreadStartParams {
+            experimental_raw_events: true,
+            ..Default::default()
+        })
+        .await?
+        .thread;
     let mut reviewer_ids = Vec::new();
+    let mut previous_recorded: Option<(String, Value)> = None;
     for (index, instructions) in [
         old_instructions,
         old_instructions,
@@ -234,6 +328,44 @@ async fn managed_reviewer_refreshes_global_instructions_before_reuse() -> Result
         assert_eq!(requests.len(), (index + 1) * 3);
         let review: Value = serde_json::from_slice(&requests[index * 3 + 1])?;
         assert!(review["input"].to_string().contains(instructions));
+        let turn_metadata: Value = serde_json::from_str(
+            review["client_metadata"]["x-codex-turn-metadata"]
+                .as_str()
+                .expect("turn metadata"),
+        )?;
+        assert_eq!(turn_metadata["guardian_recorded_items"], true);
+        if let Some((thread_id, item)) = &previous_recorded
+            && review["client_metadata"]["thread_id"] == thread_id.as_str()
+        {
+            let replayed = review["input"]
+                .as_array()
+                .expect("review input")
+                .iter()
+                .find(|replayed| replayed["content"] == item["content"])
+                .expect("previous Guardian reply is replayed");
+            assert_eq!(
+                replayed["internal_chat_message_metadata_passthrough"],
+                item["internal_chat_message_metadata_passthrough"],
+            );
+        }
+        // Private reviewer events arrive on the parent's subscription with the
+        // reviewer's identity and the metadata that its next request replays.
+        let (recorded, item) = loop {
+            let recorded: RawResponseItemCompletedNotification =
+                app.read_notification("rawResponseItem/completed").await?;
+            let item = serde_json::to_value(&recorded.item)?;
+            if recorded.thread_id != parent.id
+                && item["role"] == "assistant"
+                && item["content"][0]["text"] == ALLOW
+            {
+                break (recorded, item);
+            }
+        };
+        assert_eq!(
+            json!([recorded.thread_id, recorded.turn_id]),
+            json!([turn_metadata["thread_id"], turn_metadata["turn_id"]]),
+        );
+        previous_recorded = Some((recorded.thread_id, item));
         reviewer_ids.push(
             review["client_metadata"]["thread_id"]
                 .as_str()
@@ -250,11 +382,13 @@ async fn managed_reviewer_refreshes_global_instructions_before_reuse() -> Result
     Ok(())
 }
 
-#[test_case(ReviewEnding::Complete; "completed reviews")]
-#[test_case(ReviewEnding::Interrupt; "cancelled concurrent reviews")]
+#[test_case(ReviewEnding::Complete, true; "completed reviews")]
+#[test_case(ReviewEnding::Interrupt, true; "cancelled concurrent reviews")]
+#[test_case(ReviewEnding::Interrupt, false; "raw events without reviewer opt-in")]
 #[tokio::test]
 async fn managed_reviewers_reuse_fork_and_resume_after_parent_shutdown(
     ending: ReviewEnding,
+    recorded_items: bool,
 ) -> Result<()> {
     skip_if_no_network!(Ok(()));
     let (continue_parent, parent_gate) = oneshot::channel();
@@ -291,6 +425,7 @@ async fn managed_reviewers_reuse_fork_and_resume_after_parent_shutdown(
         "Keep this project private.",
     )?;
     sync_config(server.uri())
+        .with_features(&[(Feature::GuardianRecordedItems, recorded_items)].into())
         .with_extra_config(&format!(
             "[mcp_servers.{TEST_SERVER_NAME}]\nurl = \"{mcp_url}/mcp\"\ndefault_tools_approval_mode = \"prompt\""
         ))
@@ -299,7 +434,13 @@ async fn managed_reviewers_reuse_fork_and_resume_after_parent_shutdown(
         .with_codex_home(codex_home.path())
         .build_initialized_with_timeout(TIMEOUT)
         .await?;
-    let parent = app.start_thread(ThreadStartParams::default()).await?.thread;
+    let parent = app
+        .start_thread(ThreadStartParams {
+            experimental_raw_events: true,
+            ..Default::default()
+        })
+        .await?
+        .thread;
     let started: TurnStartResponse = app
         .request(|request_id| ClientRequest::TurnStart {
             request_id,
@@ -413,8 +554,45 @@ async fn managed_reviewers_reuse_fork_and_resume_after_parent_shutdown(
         finish_first.send(()).expect("finish first review");
         finish_second.send(()).expect("finish second review");
     }
-    let completed: TurnCompletedNotification =
-        timeout(TIMEOUT, app.read_notification("turn/completed")).await??;
+    let mut parent_completed = None;
+    let mut interrupted_reviewers = std::collections::BTreeSet::new();
+    let expected_interruptions = match ending {
+        ReviewEnding::Interrupt if recorded_items => 2,
+        ReviewEnding::Complete | ReviewEnding::Interrupt => 0,
+    };
+    while parent_completed.is_none() || interrupted_reviewers.len() < expected_interruptions {
+        let completed: TurnCompletedNotification =
+            timeout(TIMEOUT, app.read_notification("turn/completed")).await??;
+        if completed.thread_id == parent.id {
+            parent_completed = Some(completed);
+        } else {
+            assert_eq!(completed.turn.status, TurnStatus::Interrupted);
+            interrupted_reviewers.insert((completed.thread_id, completed.turn.id));
+        }
+    }
+    assert_eq!(interrupted_reviewers.len(), expected_interruptions);
+    if matches!(ending, ReviewEnding::Interrupt) && recorded_items {
+        let mut expected = std::collections::BTreeSet::new();
+        for review in [&first, &second] {
+            let metadata: Value = serde_json::from_str(
+                review["client_metadata"]["x-codex-turn-metadata"]
+                    .as_str()
+                    .expect("turn metadata"),
+            )?;
+            expected.insert((
+                metadata["thread_id"]
+                    .as_str()
+                    .expect("reviewer thread ID")
+                    .to_owned(),
+                metadata["turn_id"]
+                    .as_str()
+                    .expect("reviewer turn ID")
+                    .to_owned(),
+            ));
+        }
+        assert_eq!(interrupted_reviewers, expected);
+    }
+    let completed = parent_completed.expect("parent completes independently of its reviewers");
     let expected_status = match ending {
         ReviewEnding::Complete => TurnStatus::Completed,
         ReviewEnding::Interrupt => TurnStatus::Interrupted,
@@ -601,5 +779,240 @@ async fn inline_review_delegate_runs_strict_guardian_assessment() -> Result<()> 
     );
     app.shutdown_gracefully().await?;
     mcp_server.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn guardian_review_reuses_private_recorded_call_history_per_parent() -> Result<()> {
+    let rationale = "Guardian approved the recorded file write.";
+    let verdict = assistant_response(
+        &json!({
+            "outcome": "allow",
+            "risk_level": "medium",
+            "user_authorization": "high",
+            "rationale": rationale,
+        })
+        .to_string(),
+    )?;
+    let server = responses::start_mock_server().await;
+    let requests = responses::mount_sse_sequence(&server, vec![verdict; 3]).await;
+    let codex_home = TempDir::new()?;
+    sync_config(&server.uri()).write(codex_home.path())?;
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build_initialized()
+        .await?;
+    let parent = app.start_thread(ThreadStartParams::default()).await?.thread;
+    let other = app.start_thread(ThreadStartParams::default()).await?.thread;
+
+    for (thread, call_id) in [(&parent, "a"), (&parent, "b"), (&other, "c")] {
+        let evidence = if call_id == "b" {
+            json!({
+                "type": "function_call_output",
+                "call_id": "a",
+                "output": "Recorded success.",
+            })
+        } else {
+            json!({
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "Create the requested file."}],
+            })
+        };
+        let items = vec![
+            evidence,
+            json!({
+                "type": "function_call",
+                "name": "exec_command",
+                "call_id": call_id,
+                "arguments": r#"{"cmd":"echo reviewed > guardian-direct.txt","sandbox_permissions":"require_escalated","justification":"Create the requested file."}"#,
+            }),
+        ];
+        let _: ThreadInjectItemsResponse = app
+            .request(|request_id| ClientRequest::ThreadInjectItems {
+                request_id,
+                params: ThreadInjectItemsParams {
+                    thread_id: thread.id.clone(),
+                    items,
+                },
+            })
+            .await?;
+        let result: Value = app
+            .request(|request_id| ClientRequest::ThreadGuardianReview {
+                request_id,
+                params: ThreadGuardianReviewParams {
+                    thread_id: thread.id.clone(),
+                },
+            })
+            .await?;
+        assert_eq!(
+            result,
+            json!({
+                "callId": call_id,
+                "assessment": {
+                    "outcome": "allow",
+                    "riskLevel": "medium",
+                    "userAuthorization": "high",
+                    "rationale": rationale,
+                }
+            })
+        );
+    }
+
+    let requests = requests.requests();
+    let [a, b, c] = requests.as_slice() else {
+        anyhow::bail!("expected three Guardian requests, got {}", requests.len());
+    };
+    for request in [a, b, c] {
+        assert_eq!(
+            request.body_json()["client_metadata"]["x-openai-subagent"],
+            "guardian",
+        );
+    }
+    for (call_id, request) in [("a", a), ("c", c)] {
+        assert!(
+            !serde_json::to_string(&request.input())?.contains(rationale),
+            "unexpected prior rationale for call {call_id}",
+        );
+    }
+    assert!(
+        b.input().iter().any(|item| {
+            item["type"] == "message"
+                && item["role"] == "assistant"
+                && item["content"].to_string().contains(rationale)
+        }),
+        "B should receive A's private verdict",
+    );
+
+    app.shutdown_gracefully().await?;
+    Ok(())
+}
+
+#[test_case(None; "new_root")]
+#[test_case(Some("This instruction predates the resume."); "resumed_root")]
+#[tokio::test]
+async fn v3_routes_the_first_live_message_while_the_actor_is_still_sampling(
+    prior_message: Option<&str>,
+) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    // Neither model can finish a turn or issue a tool call before both requests arrive.
+    let (first, first_gate) = oneshot::channel();
+    let (second, second_gate) = oneshot::channel();
+    let response = assistant_response(
+        r#"{"routes":[["release"]],"descriptions":[{"channel":"release","description":"Release policy"}]}"#,
+    )?;
+    let (server, _) = start_streaming_sse_server(
+        [first_gate, second_gate]
+            .into_iter()
+            .map(|gate| {
+                vec![StreamingSseChunk {
+                    gate: Some(gate),
+                    body: response.clone(),
+                }]
+            })
+            .collect(),
+    )
+    .await;
+    let home = TempDir::new()?;
+    sync_config(server.uri())
+        .with_extra_config("[features.guardianv3]\nenabled = true")
+        .write(home.path())?;
+    let mut app = TestAppServer::builder()
+        .with_codex_home(home.path())
+        .build_initialized_with_timeout(TIMEOUT)
+        .await?;
+    let project_rule = "Write release notes in French.";
+    let env = app.auto_env()?;
+    env.environment()
+        .get_filesystem()
+        .write_file(
+            &env.selection().cwd.join("AGENTS.md")?,
+            project_rule.as_bytes().to_vec(),
+            Default::default(),
+            /*sandbox*/ None,
+        )
+        .await?;
+    let thread = if let Some(prior_message) = prior_message {
+        let thread_id = app_test_support::create_fake_paginated_rollout(
+            home.path(),
+            "2025-01-01T00-01-00",
+            "2025-01-01T00:01:00Z",
+            prior_message,
+            Some("mock_provider"),
+            /*git_info*/ None,
+        )?;
+        let resumed: ThreadResumeResponse = app
+            .request(|request_id| ClientRequest::ThreadResume {
+                request_id,
+                params: ThreadResumeParams {
+                    thread_id,
+                    // A thread override cannot disable the server's housekeeper.
+                    config: Some([("features.guardianv3.enabled".into(), json!(false))].into()),
+                    exclude_turns: true,
+                    ..Default::default()
+                },
+            })
+            .await?;
+        resumed.thread
+    } else {
+        app.start_thread(ThreadStartParams {
+            history_mode: Some(codex_app_server_protocol::ThreadHistoryMode::Paginated),
+            ..Default::default()
+        })
+        .await?
+        .thread
+    };
+    let instruction = "Hold the release until Friday.";
+    let environment = app.auto_env_params()?;
+    let _: TurnStartResponse = app
+        .request(|request_id| ClientRequest::TurnStart {
+            request_id,
+            params: TurnStartParams {
+                thread_id: thread.id,
+                environments: Some(vec![environment]),
+                input: vec![UserInput::Text {
+                    text: instruction.to_owned(),
+                    text_elements: vec![],
+                }],
+                ..Default::default()
+            },
+        })
+        .await?;
+    timeout(TIMEOUT, server.wait_for_request_count(/*count*/ 2)).await?;
+    let requests = server.requests().await;
+    let mut routed = false;
+    for request in requests {
+        let body: Value = serde_json::from_slice(&request)?;
+        let items = body["input"].as_array().expect("request input");
+        let routing_input = items
+            .iter()
+            .find(|item| item["name"] == "guardian_housekeeper_input");
+        let has_project_rule = items.iter().any(|item| {
+            item["type"] == "message" && item["content"].to_string().contains(project_rule)
+        });
+        assert_eq!(
+            has_project_rule,
+            routing_input.is_none(),
+            "only the actor receives AGENTS.md"
+        );
+        if let Some(input) = routing_input {
+            let output = input["output"].as_str().expect("housekeeper input text");
+            routed = output.contains(instruction);
+            if let Some(prior_message) = prior_message {
+                assert!(
+                    !output.contains(prior_message),
+                    "resume must skip existing history"
+                );
+            }
+        }
+    }
+    assert!(
+        routed,
+        "the background request must include the first original"
+    );
+    let _ = first.send(());
+    let _ = second.send(());
+    app.shutdown_gracefully().await?;
+    server.shutdown().await;
     Ok(())
 }

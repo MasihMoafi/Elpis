@@ -1,6 +1,7 @@
 //! Caller-facing native gRPC types. Diagnostics never include credentials or server payloads.
 
 use bytes::Bytes;
+use codex_http_client::CHATGPT_ACCOUNT_ID_HEADER;
 use http::HeaderMap;
 use http::HeaderValue;
 use http::header::AUTHORIZATION;
@@ -21,7 +22,7 @@ impl Credentials {
         for (name, value) in [
             (AUTHORIZATION, format!("Bearer {bearer_token}")),
             (
-                http::HeaderName::from_static("chatgpt-account-id"),
+                http::HeaderName::from_static(CHATGPT_ACCOUNT_ID_HEADER),
                 account_id.to_owned(),
             ),
         ] {
@@ -45,11 +46,11 @@ pub struct ResumeRequest {
     pub shared_access: bool,
 }
 
-/// An Attach event containing the complete nested protobuf message bytes.
-/// Payloads are native Notification/ServerRequest messages, not JSON-RPC or ProtoJSON.
-/// Keeping them opaque preserves unknown fields until full payload typing is added.
+/// An Attach event with selected typed transcript updates and otherwise opaque payloads.
+/// The opaque variants carry the original native Notification or ServerRequest protobuf bytes.
 pub enum Event {
     Notification(Bytes),
+    Transcript(Box<crate::TranscriptEvent>),
     ServerRequest(Bytes),
 }
 
@@ -57,6 +58,7 @@ impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Notification(_) => "Notification([redacted])",
+            Self::Transcript(_) => "Transcript([redacted])",
             Self::ServerRequest(_) => "ServerRequest([redacted])",
         })
     }
@@ -99,6 +101,14 @@ pub enum Error {
     Timeout,
     #[error("gRPC failed; request outcome may be unknown: {0:?}")]
     Rpc(RpcStatus),
+    #[error("Cloud model catalog is unavailable")]
+    ModelCatalogUnavailable,
+    #[error("Cloud model catalog exceeds the response limit")]
+    ModelCatalogTooLarge,
+    #[error("Cloud environment catalog is unavailable")]
+    EnvironmentCatalogUnavailable,
     #[error("invalid gRPC event envelope")]
     InvalidResponse,
+    #[error("cloud response contains an unsupported {0}")]
+    UnsupportedResponse(&'static str),
 }

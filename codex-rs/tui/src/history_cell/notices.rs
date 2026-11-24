@@ -107,7 +107,7 @@ pub(crate) fn new_warning_event(message: String) -> WarningHistoryCell {
     }
 }
 
-pub(crate) fn new_usage_warning_event(message: String) -> WarningHistoryCell {
+pub(crate) fn new_visible_warning_event(message: String) -> WarningHistoryCell {
     WarningHistoryCell {
         visible_in_transcript: true,
         ..new_warning_event(message)
@@ -143,6 +143,7 @@ pub(crate) fn new_server_version_warning(
 #[derive(Debug)]
 pub(crate) struct SafetyAccessBlockCell {
     title: &'static str,
+    pub(crate) explanation: Option<String>,
     body: &'static str,
     actions: &'static [(&'static str, &'static str)],
 }
@@ -152,7 +153,8 @@ const SAFETY_ACCESS_BLOCK_LEARN_MORE_URL: &str = "https://help.openai.com/en/art
 pub(crate) fn new_safety_access_block_event() -> SafetyAccessBlockCell {
     SafetyAccessBlockCell {
         title: "This content can't be shown",
-        body: "We take extra caution with requests involving biological research and applications that could pose safety risks. Eligible researchers can apply for Trusted Access.",
+        explanation: Some("We take extra caution with requests involving biological research and applications that could pose safety risks.".into()),
+        body: "Eligible researchers can apply for Trusted Access.",
         actions: &[
             (
                 "Trusted Access",
@@ -169,12 +171,12 @@ pub(crate) fn new_cyber_policy_error_event(
     use crate::daybreak::Notice;
     let (body, actions): (_, &'static [(&str, &str)]) = match notice {
         Notice::Apply => (
-            "We take extra care with some cybersecurity requests. If you’re doing authorized security work, apply for Daybreak to get broader access.",
+            "If you’re doing authorized security work, apply for Daybreak to get broader access.",
             &[
                 ("Learn more", SAFETY_ACCESS_BLOCK_LEARN_MORE_URL),
                 (
                     "Apply for Daybreak",
-                    "https://openai.com/form/enterprise-trusted-access-for-cyber/",
+                    "https://chatgpt.com/admin/status-and-access",
                 ),
             ],
         ),
@@ -184,7 +186,10 @@ pub(crate) fn new_cyber_policy_error_event(
         ),
         Notice::Astra => (
             "Daybreak isn’t available for Astra. Some cybersecurity requests may still be limited.",
-            &[("Learn more", SAFETY_ACCESS_BLOCK_LEARN_MORE_URL)],
+            &[(
+                "Learn more",
+                "https://help.openai.com/en/articles/20001258-openai-daybreak-trusted-access-for-cyber-overview#reduced-refusals-behavior-by-model",
+            )],
         ),
         Notice::Enabled => (
             "Some cybersecurity requests are still limited, even when Daybreak is on.",
@@ -193,8 +198,19 @@ pub(crate) fn new_cyber_policy_error_event(
     };
     SafetyAccessBlockCell {
         title: "This content can’t be shown",
+        explanation: (notice == Notice::Apply)
+            .then(|| "We take extra care with some cybersecurity requests.".into()),
         body,
         actions,
+    }
+}
+
+impl SafetyAccessBlockCell {
+    fn message(&self) -> String {
+        match &self.explanation {
+            Some(explanation) => format!("{explanation} {}", self.body),
+            None => self.body.to_owned(),
+        }
     }
 }
 
@@ -207,7 +223,7 @@ impl HistoryCell for SafetyAccessBlockCell {
         let mut lines = vec![HyperlinkLine::new(
             vec!["ⓘ ".fg(accent_color()), self.title.bold()].into(),
         )];
-        let body = Line::from(vec!["  ".into(), self.body.dim()]);
+        let body = Line::from(vec!["  ".into(), self.message().dim()]);
         let wrap_width = width.saturating_sub(2).max(1) as usize;
         let wrapped = adaptive_wrap_line(
             &body,
@@ -240,7 +256,7 @@ impl HistoryCell for SafetyAccessBlockCell {
     }
 
     fn raw_lines(&self) -> Vec<Line<'static>> {
-        let mut lines = vec![Line::from(self.title), Line::from(self.body)];
+        let mut lines = vec![Line::from(self.title), Line::from(self.message())];
         lines.extend(
             self.actions
                 .iter()
@@ -324,6 +340,22 @@ pub(crate) fn new_info_event(message: String, hint: Option<String>) -> PlainHist
     }
     let lines: Vec<Line<'static>> = vec![line.into()];
     PlainHistoryCell { lines }
+}
+
+#[derive(Debug)]
+pub(crate) struct InterruptionNotice(pub(crate) Option<String>);
+
+impl HistoryCell for InterruptionNotice {
+    fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+        vec![
+            Line::from("■ Conversation interrupted - tell the model what to do differently")
+                .style(crate::style::secondary_text_style()),
+        ]
+    }
+
+    fn raw_lines(&self) -> Vec<Line<'static>> {
+        plain_lines(self.display_lines(/*width*/ u16::MAX))
+    }
 }
 
 pub(crate) fn new_error_event(message: String) -> PlainHistoryCell {

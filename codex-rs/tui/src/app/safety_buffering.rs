@@ -10,6 +10,7 @@ use crate::chatwidget::ThreadInputState;
 use crate::chatwidget::ThreadInputStateRestoreMode;
 use crate::chatwidget::UserMessage;
 use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::UserInput;
 
@@ -58,10 +59,10 @@ impl App {
 
         let AppCommand::UserTurn {
             items,
+            cloud_submission,
             cwd,
             active_permission_profile,
             approval_policy,
-            approvals_reviewer,
             model: turn_model,
             effort,
             collaboration_mode,
@@ -73,6 +74,7 @@ impl App {
             );
             return;
         };
+        *cloud_submission = crate::app_command::CloudSubmissionIntent::UseKnownTurn;
         let permissions_override = Self::turn_permissions_override_from_config(
             &retry_config,
             active_permission_profile.as_ref(),
@@ -88,7 +90,7 @@ impl App {
         let daybreak_enabled = self.chat_widget.daybreak_enabled
             && !self.chat_widget.side_conversation_active()
             && !self.side_threads.contains_key(&thread_id);
-        let eligible_account = self.chat_widget.daybreak_turn_eligible(daybreak_enabled);
+        let eligible_account = self.chat_widget.daybreak_account_eligible();
         if let Err(message) = crate::daybreak::program_for_turn(
             &self.chat_widget.model_catalog().models,
             &model,
@@ -153,8 +155,8 @@ impl App {
                         .data
                         .into_iter()
                         .rev()
-                        .map(|entry| entry.item)
-                        .collect();
+                        .map(ThreadItem::try_from)
+                        .collect::<Result<_, _>>()?;
                     turn.items_view = TurnItemsView::Full;
                 }
             }
@@ -178,9 +180,9 @@ impl App {
                 .iter()
                 .find(|turn| turn.id == turn_id)
                 .into_iter()
-                .flat_map(|turn| &turn.items)
+                .flat_map(Turn::item_payloads)
                 .filter_map(|item| match item {
-                    ThreadItem::UserMessage { content, .. } => Some(content),
+                    ThreadItemPayload::UserMessage { content, .. } => Some(content),
                     _ => None,
                 })
                 .skip(/*n*/ 1)
@@ -200,6 +202,7 @@ impl App {
             .fork_thread_at(
                 &self.local_settings,
                 retry_config,
+                Some(self.chat_widget.session_workspace_roots()),
                 thread_id,
                 /*last_turn_id*/ None,
                 /*before_turn_id*/ Some(turn_id),
@@ -216,7 +219,6 @@ impl App {
         };
         let retry_thread_id = started.session.thread_id;
         *approval_policy = started.session.approval_policy;
-        *approvals_reviewer = Some(started.session.approvals_reviewer);
         *active_permission_profile = started.session.active_permission_profile.clone();
 
         self.detach_current_thread_for_navigation(app_server, Some(retry_thread_id))

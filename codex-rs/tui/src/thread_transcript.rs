@@ -8,21 +8,20 @@ use crate::app_server_session::AppServerSession;
 use crate::app_server_session::HistoryHydrationScope;
 use crate::git_action_directives::parse_assistant_markdown;
 use crate::history_cell::AgentMarkdownCell;
+use crate::history_cell::DelegatedMessageCell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::PlainHistoryCell;
-use crate::history_cell::PrefixedWrappedHistoryCell;
 use crate::history_cell::ReasoningSummaryCell;
-use crate::history_cell::UserHistoryCell;
 use crate::history_cell::split_reasoning_summary_parts;
 use crate::inline_visualization::InlineVisualizationContext;
 use crate::legacy_core::config::Config;
 use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
 use codex_protocol::items::UserMessageItem;
-use codex_utils_absolute_path::AbsolutePathBuf;
 use ratatui::style::Stylize as _;
+use std::path::Path;
 
 mod activity_pages;
 mod computer_groups;
@@ -82,7 +81,7 @@ pub(crate) async fn load_session_transcript(
             /*item_cursor*/ None,
             /*config*/ None,
             /*local_settings*/ None,
-            HistoryHydrationScope::Complete,
+            HistoryHydrationScope::FullTranscript,
         )
         .await
         .map_err(std::io::Error::other)?;
@@ -104,13 +103,19 @@ pub(crate) fn thread_to_transcript_cells(
         .turns
         .into_iter()
         .flat_map(|turn| {
-            thread_items_to_transcript_cells(
+            let mut cells = thread_items_to_transcript_cells(
                 thread_id,
-                &cwd,
-                turn.items,
+                cwd.as_path(),
+                turn.items.into_iter().map(|entry| entry.payload),
                 raw_reasoning_visibility,
                 config,
-            )
+            );
+            if let Some(error) = turn.error {
+                cells.push(Arc::new(crate::history_cell::new_error_event(
+                    error.message,
+                )));
+            }
+            cells
         })
         .collect::<TranscriptCells>();
     if cells.is_empty() {
@@ -123,8 +128,8 @@ pub(crate) fn thread_to_transcript_cells(
 
 pub(crate) fn thread_items_to_transcript_cells(
     thread_id: Option<ThreadId>,
-    cwd: &AbsolutePathBuf,
-    items: impl IntoIterator<Item = ThreadItem>,
+    cwd: &Path,
+    items: impl IntoIterator<Item = ThreadItemPayload>,
     raw_reasoning_visibility: RawReasoningVisibility,
     config: Option<&Config>,
 ) -> TranscriptCells {
@@ -134,13 +139,13 @@ pub(crate) fn thread_items_to_transcript_cells(
     let mut cells: TranscriptCells = Vec::new();
     let mut pending = None;
     for item in items {
-        if let ThreadItem::SmartPrune { prune, .. } = &item {
+        if let ThreadItemPayload::SmartPrune { prune, .. } = &item {
             PendingActivity::flush(&mut pending, &mut cells);
             if crate::chatwidget::smart_prune_log::attach_to_tool(&mut cells, prune) {
                 continue;
             }
         }
-        if matches!(item, ThreadItem::Reasoning { .. })
+        if matches!(item, ThreadItemPayload::Reasoning { .. })
             && let Some(group) = &mut pending
         {
             for cell in item_to_cells(
@@ -162,7 +167,7 @@ pub(crate) fn thread_items_to_transcript_cells(
             continue;
         }
         match item {
-            item @ ThreadItem::McpToolCall { .. } => {
+            item @ ThreadItemPayload::McpToolCall { .. } => {
                 let Some(call) = tools::McpHistory::from_item(item) else {
                     PendingActivity::flush(&mut pending, &mut cells);
                     continue;
@@ -185,7 +190,7 @@ pub(crate) fn thread_items_to_transcript_cells(
                     cells.push(Arc::new(cell));
                 }
             }
-            item @ ThreadItem::CommandExecution { .. } => {
+            item @ ThreadItemPayload::CommandExecution { .. } => {
                 if matches!(pending, Some(PendingActivity::Computer(_))) {
                     PendingActivity::flush(&mut pending, &mut cells);
                 }
@@ -226,14 +231,14 @@ pub(crate) fn thread_items_to_transcript_cells(
 
 /// Project one item without changing the active widget or its turn lifecycle.
 fn item_to_cells(
-    item: ThreadItem,
-    cwd: &AbsolutePathBuf,
+    item: ThreadItemPayload,
+    cwd: &Path,
     raw_reasoning_visibility: RawReasoningVisibility,
     inline_visualization_context: Option<InlineVisualizationContext>,
 ) -> TranscriptCells {
     let mut cells: TranscriptCells = Vec::new();
     match item {
-        ThreadItem::UserMessage {
+        ThreadItemPayload::UserMessage {
             id,
             client_id,
             content,
@@ -258,31 +263,43 @@ fn item_to_cells(
                     .collect(),
             };
             let message = item.message();
-            let reply_text = crate::async_question_reply::display_text(&message);
-            let text_elements = if reply_text.is_some() {
-                Vec::new()
+            let replies = crate::async_question_reply::parse(&message).unwrap_or_default();
+            let (message, elements) = if replies.is_empty() {
+                (message, item.text_elements())
             } else {
-                item.text_elements()
+                (
+                    crate::async_question_reply::display_replies(&replies),
+                    Vec::new(),
+                )
             };
-            cells.push(Arc::new(UserHistoryCell {
-                spoken: false,
-                message: reply_text.unwrap_or(message),
-                text_elements,
-                local_image_paths: item.local_image_paths(),
-                remote_image_urls: item.image_urls(),
-            }));
+            let cell = crate::history_cell::new_user_prompt(
+                message,
+                elements,
+                item.local_image_paths(),
+                item.image_urls(),
+            );
+            cells.push(Arc::new(cell.with_async_replies(replies, cwd)));
         }
-        ThreadItem::AgentMessage { text, .. } => {
-            let parsed = parse_assistant_markdown(&text, cwd.as_path());
+        ThreadItemPayload::AgentMessage {
+            text,
+            questions,
+            phase,
+            ..
+        } => {
+            let parsed = parse_assistant_markdown(&text, cwd);
             if !parsed.visible_markdown.trim().is_empty() {
-                cells.push(Arc::new(AgentMarkdownCell::new_with_inline_visualizations(
-                    parsed.visible_markdown,
-                    cwd.as_path(),
-                    inline_visualization_context,
-                )));
+                cells.push(Arc::new(
+                    AgentMarkdownCell::new_with_inline_visualizations(
+                        parsed.visible_markdown,
+                        cwd,
+                        inline_visualization_context,
+                    )
+                    .with_phase(phase)
+                    .with_questions(questions.as_deref().unwrap_or_default()),
+                ));
             }
         }
-        ThreadItem::FunctionCallOutput {
+        ThreadItemPayload::FunctionCallOutput {
             name,
             namespace,
             output,
@@ -295,22 +312,18 @@ fn item_to_cells(
                     &output,
                 )
             {
-                cells.push(Arc::new(PrefixedWrappedHistoryCell::new(
-                    format!("Sent by Elpis from task {source_thread_id}\n{prompt}"),
-                    "• ".dim(),
-                    "  ",
+                cells.push(Arc::new(DelegatedMessageCell::new(
+                    &source_thread_id,
+                    prompt,
                 )));
             }
         }
-        ThreadItem::Plan { text, .. } => {
+        ThreadItemPayload::Plan { text, .. } => {
             if !text.trim().is_empty() {
-                cells.push(Arc::new(crate::history_cell::new_proposed_plan(
-                    text,
-                    cwd.as_path(),
-                )));
+                cells.push(Arc::new(crate::history_cell::new_proposed_plan(text, cwd)));
             }
         }
-        ThreadItem::Reasoning {
+        ThreadItemPayload::Reasoning {
             id,
             summary,
             content,
@@ -325,17 +338,13 @@ fn item_to_cells(
                 text.push_str(&content.join("\n\n"));
             }
             if !text.trim().is_empty() {
-                let mut cell = ReasoningSummaryCell::new(
-                    header,
-                    text,
-                    cwd.as_path(),
-                    /*transcript_only*/ true,
-                );
+                let mut cell =
+                    ReasoningSummaryCell::new(header, text, cwd, /*transcript_only*/ true);
                 cell.set_source_item_id(id);
                 cells.push(Arc::new(cell));
             }
         }
-        item @ ThreadItem::CommandExecution { .. } => {
+        item @ ThreadItemPayload::CommandExecution { .. } => {
             if let Some(command) = tools::CommandHistory::from_item(item) {
                 cells.push(Arc::new(command.into_cell()));
             }

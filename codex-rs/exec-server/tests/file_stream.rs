@@ -18,6 +18,7 @@ use codex_exec_server::RemoteExecServerConnectArgs;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 use codex_utils_path_uri::PathUri;
+use futures::StreamExt;
 use futures::TryStreamExt;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
@@ -34,6 +35,140 @@ use crate::common::exec_server::exec_server;
 
 const BLOCK_SIZE: usize = 1024 * 1024;
 const OPEN_FILE_LIMIT: usize = 128;
+
+/// The writer must finish a block before asking its source for more data.
+#[tokio::test]
+async fn streaming_replacement_writes_before_reading_the_next_block() -> Result<()> {
+    let server = exec_server().await?;
+    let local = Environment::create_for_tests(/*exec_server_url*/ None)?.get_filesystem();
+    let remote = connect_file_system(server.websocket_url())?;
+    let tmp = TempDir::new()?;
+    let target = tmp.path().join("sequential.bin");
+    let target_uri = PathUri::from_host_native_path(&target)?;
+    for fs in [&local, &remote] {
+        // This stream borrows the target path rather than requiring an owned filesystem stream.
+        let contents = futures::stream::iter(0..3_u8).map(|block| {
+            assert_eq!(
+                std::fs::metadata(&target).unwrap().len(),
+                u64::from(block) * BLOCK_SIZE as u64
+            );
+            Ok(bytes::Bytes::from(vec![block; BLOCK_SIZE]))
+        });
+        assert_eq!(
+            fs.write_file_stream(&target_uri, contents.boxed(), /*sandbox*/ None)
+                .await?,
+            3 * BLOCK_SIZE as u64
+        );
+    }
+    Ok(())
+}
+
+/// Streaming replacement preserves binary data across local and remote filesystem combinations.
+#[tokio::test]
+async fn streaming_replacement_copies_binary_and_empty_files() -> Result<()> {
+    let server = exec_server().await?;
+    let local = Environment::create_for_tests(/*exec_server_url*/ None)?.get_filesystem();
+    let remote = connect_file_system(server.websocket_url())?;
+    let tmp = TempDir::new()?;
+    let source = tmp.path().join("source.bin");
+    let target = tmp.path().join("target.bin");
+    let source_uri = PathUri::from_host_native_path(&source)?;
+    let target_uri = PathUri::from_host_native_path(&target)?;
+    for source_fs in [&local, &remote] {
+        for target_fs in [&local, &remote] {
+            for bytes in [[0, 255, 13, 10].repeat(BLOCK_SIZE), Vec::new()] {
+                std::fs::write(&source, &bytes)?;
+                std::fs::write(&target, vec![42; bytes.len() + 10])?;
+                let contents = source_fs
+                    .read_file_stream(&source_uri, /*sandbox*/ None)
+                    .await?;
+                let written = target_fs
+                    .write_file_stream(&target_uri, contents.boxed(), /*sandbox*/ None)
+                    .await?;
+                assert_eq!(
+                    (written, std::fs::read(&target)?),
+                    (bytes.len() as u64, bytes)
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A failed source leaves only confirmed blocks at the target and releases remote handle capacity.
+#[tokio::test]
+async fn streaming_replacement_preserves_partial_failure_and_releases_handles() -> Result<()> {
+    let server = exec_server().await?;
+    let fs = connect_file_system(server.websocket_url())?;
+    let tmp = TempDir::new()?;
+    let target = tmp.path().join("partial.bin");
+    let target_uri = PathUri::from_host_native_path(&target)?;
+    for _ in 0..=OPEN_FILE_LIMIT {
+        std::fs::write(&target, b"original target contents")?;
+        let contents = futures::stream::iter([
+            Ok(bytes::Bytes::from_static(b"partial")),
+            Err(std::io::Error::other("source failed")),
+        ]);
+        let error = fs
+            .write_file_stream(&target_uri, contents.boxed(), /*sandbox*/ None)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            (error.to_string(), std::fs::read(&target)?),
+            ("source failed".to_string(), b"partial".to_vec())
+        );
+    }
+    Ok(())
+}
+
+/// Cancelling a partial replacement must not let later metadata lookups reuse an older response.
+#[tokio::test]
+async fn cancelled_streaming_replacement_invalidates_metadata() -> Result<()> {
+    let server = exec_server().await?;
+    let fs = connect_file_system(server.websocket_url())?;
+    let tmp = TempDir::new()?;
+    let target = tmp.path().join("metadata.bin");
+    let path = PathUri::from_host_native_path(&target)?;
+    let original = b"original target contents";
+    std::fs::write(&target, original)?;
+    // Connect before polling metadata so its first poll sends the request.
+    fs.read_file(&path, Default::default(), /*sandbox*/ None)
+        .await?;
+    let stale = fs.get_metadata(&path, Default::default(), /*sandbox*/ None);
+    tokio::pin!(stale);
+    assert!(futures::poll!(stale.as_mut()).is_pending());
+    // The fixture dispatches requests in order. This read confirms the old stat finished,
+    // while leaving its caller unpolled so that another lookup could still join it.
+    assert_eq!(
+        fs.read_file(&path, Default::default(), /*sandbox*/ None)
+            .await?,
+        original
+    );
+
+    let (polled_tx, polled_rx) = tokio::sync::oneshot::channel();
+    let contents = futures::stream::iter([Ok(bytes::Bytes::from_static(b"partial"))]).chain(
+        futures::stream::once(async move {
+            let _ = polled_tx.send(());
+            futures::future::pending::<std::io::Result<bytes::Bytes>>().await
+        }),
+    );
+    let mut write = fs.write_file_stream(&path, contents.boxed(), /*sandbox*/ None);
+    tokio::select! {
+        result = &mut write => panic!("copy should await its source: {result:?}"),
+        _ = polled_rx => {},
+    }
+    drop(write);
+
+    let (refreshed, stale) = tokio::join!(
+        fs.get_metadata(&path, Default::default(), /*sandbox*/ None),
+        stale.as_mut(),
+    );
+    assert_eq!(
+        (stale?.size, refreshed?.size, std::fs::read(&target)?),
+        (original.len() as u64, 7, b"partial".to_vec())
+    );
+    Ok(())
+}
 
 #[tokio::test]
 async fn stream_stops_after_an_exact_block_boundary() -> Result<()> {

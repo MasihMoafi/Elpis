@@ -8,6 +8,7 @@ use crate::app::tests::make_test_app_with_channels;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStartedNotification;
@@ -93,15 +94,16 @@ async fn queued_follow_up_during_the_first_turn_leaves_the_header_and_messages_o
             ServerNotification::ItemCompleted(ItemCompletedNotification {
                 thread_id: thread_id.to_string(),
                 turn_id: "turn-1".into(),
+                content_token_count: None,
                 completed_at_ms: 0,
-                item: ThreadItem::UserMessage {
+                item: ThreadItem::untimed(ThreadItemPayload::UserMessage {
                     id: "user-1".into(),
                     client_id: None,
                     content: vec![UserInput::Text {
                         text: "how do generators work?".into(),
                         text_elements: Vec::new(),
                     }],
-                },
+                }),
             }),
             /*replay_kind*/ None,
         );

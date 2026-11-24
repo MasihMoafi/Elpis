@@ -1,7 +1,14 @@
 use super::*;
+use crate::sandboxing::ExecRequest;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
+use codex_protocol::permissions::FileSystemAccessMode;
+use codex_protocol::permissions::FileSystemPath;
+use codex_protocol::permissions::FileSystemSandboxEntry;
 use codex_protocol::permissions::FileSystemSandboxPolicy;
+use codex_protocol::sandbox::SandboxOverride;
+use codex_sandboxing::FileContentsChecker;
+use codex_sandboxing::SandboxExecRequest;
 use codex_sandboxing::SandboxType;
 use core_test_support::PathBufExt;
 use core_test_support::PathExt;
@@ -281,6 +288,7 @@ async fn exec_full_buffer_capture_ignores_expiration() -> Result<()> {
             justification: None,
             arg0: None,
         },
+        /*native_program*/ None,
         NetworkSandboxPolicy::Enabled,
         /*stdout_stream*/ None,
         /*after_spawn*/ None,
@@ -317,6 +325,7 @@ async fn exec_full_buffer_capture_keeps_io_drain_timeout_when_descendant_holds_p
                 justification: None,
                 arg0: None,
             },
+            /*native_program*/ None,
             NetworkSandboxPolicy::Enabled,
             /*stdout_stream*/ None,
             /*after_spawn*/ None,
@@ -548,6 +557,22 @@ fn windows_sandbox_backend_honors_unelevated_configuration() {
     assert!(windows_sandbox_uses_elevated_backend(
         WindowsSandboxLevel::Elevated
     ));
+}
+
+fn unsupported_windows_restricted_token_sandbox_reason(
+    sandbox: SandboxType,
+    permission_profile: &PermissionProfile,
+    sandbox_policy_cwd: &AbsolutePathBuf,
+    windows_sandbox_level: WindowsSandboxLevel,
+) -> Option<String> {
+    WindowsSandboxFilesystemOverrides::resolve(
+        sandbox,
+        permission_profile,
+        sandbox_policy_cwd,
+        windows_sandbox_level,
+        &HashMap::new(),
+    )
+    .err()
 }
 
 #[test]
@@ -1179,29 +1204,59 @@ fn windows_elevated_rejects_reopened_writable_descendants() {
     );
 }
 
-#[test]
-fn process_exec_tool_call_uses_platform_sandbox_for_network_only_restrictions() {
-    let expected = codex_sandboxing::get_platform_sandbox(/*windows_sandbox_enabled*/ false)
-        .unwrap_or(SandboxType::None);
-
-    assert_eq!(
-        select_process_exec_tool_sandbox_type(
-            &PermissionProfile::from_runtime_permissions(
-                &FileSystemSandboxPolicy::unrestricted(),
-                NetworkSandboxPolicy::Restricted,
-            ),
-            SandboxType::None,
-            /*enforce_managed_network*/ false,
-        ),
-        expected
-    );
+fn local_exec_params(
+    cwd: &AbsolutePathBuf,
+    windows_sandbox_level: WindowsSandboxLevel,
+) -> ExecParams {
+    ExecParams {
+        command: vec!["echo".to_string(), "ok".to_string()],
+        cwd: cwd.clone(),
+        expiration: ExecExpiration::DefaultTimeout,
+        capture_policy: ExecCapturePolicy::ShellTool,
+        env: HashMap::new(),
+        network: None,
+        network_environment_id: None,
+        sandbox_permissions: SandboxPermissions::UseDefault,
+        windows_sandbox_level,
+        justification: None,
+        arg0: None,
+    }
 }
 
-#[test]
-fn build_exec_request_projects_workspace_roots_only_for_windows_sandbox() -> Result<()> {
+#[tokio::test]
+async fn process_exec_tool_call_uses_platform_sandbox_for_network_only_restrictions() -> Result<()>
+{
+    let dir = tempfile::tempdir()?;
+    let cwd = dir.path().abs();
+    let profile = PermissionProfile::from_runtime_permissions(
+        &FileSystemSandboxPolicy::unrestricted(),
+        NetworkSandboxPolicy::Restricted,
+    );
+    let params = local_exec_params(&cwd, WindowsSandboxLevel::Disabled);
+    let expected = codex_sandboxing::get_platform_sandbox(/*windows_sandbox_enabled*/ false);
+    let request = build_exec_request(
+        params,
+        &profile,
+        &cwd,
+        &[],
+        &Some(dir.path().join("codex-linux-sandbox")),
+        /*codex_self_exe*/ &None,
+        SandboxType::None,
+        /*use_legacy_landlock*/ false,
+    )
+    .await?;
+    assert_eq!(
+        request.as_ref().sandbox(),
+        expected.unwrap_or(SandboxType::None)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn build_exec_request_projects_workspace_roots_only_for_windows_sandbox() -> Result<()> {
     let temp_dir = tempfile::TempDir::new()?;
     let cwd = temp_dir.path().abs();
-    let build_request = |profile: &PermissionProfile, roots: &[PathUri]| {
+    let build_request = async |profile: &PermissionProfile, roots: &[PathUri]| {
         build_exec_request(
             ExecParams {
                 command: vec!["echo".to_string(), "ok".to_string()],
@@ -1224,6 +1279,8 @@ fn build_exec_request_projects_workspace_roots_only_for_windows_sandbox() -> Res
             SandboxType::WindowsRestrictedToken,
             /*use_legacy_landlock*/ false,
         )
+        .await
+        .map(PreparedLocalExecRequest::into_exec_request)
     };
     let native_roots = vec![cwd.clone(), temp_dir.path().join("additional").abs()];
     let request = build_request(
@@ -1232,11 +1289,22 @@ fn build_exec_request_projects_workspace_roots_only_for_windows_sandbox() -> Res
             .iter()
             .map(PathUri::from_abs_path)
             .collect::<Vec<_>>(),
-    )?;
+    )
+    .await?;
     assert_eq!(
         request.windows_sandbox_workspace_roots,
         if cfg!(windows) {
             native_roots
+        } else {
+            Vec::new()
+        },
+    );
+    assert_eq!(
+        build_request(&PermissionProfile::read_only(), &[])
+            .await?
+            .windows_sandbox_workspace_roots,
+        if cfg!(windows) {
+            vec![cwd.clone()]
         } else {
             Vec::new()
         },
@@ -1250,10 +1318,12 @@ fn build_exec_request_projects_workspace_roots_only_for_windows_sandbox() -> Res
     .expect("foreign workspace URI");
     let roots = [PathUri::from_abs_path(&cwd), foreign_root];
     assert_eq!(
-        build_request(&PermissionProfile::Disabled, &roots)?.windows_sandbox_workspace_roots,
+        build_request(&PermissionProfile::Disabled, &roots)
+            .await?
+            .windows_sandbox_workspace_roots,
         Vec::new(),
     );
-    let request = build_request(&PermissionProfile::read_only(), &roots);
+    let request = build_request(&PermissionProfile::read_only(), &roots).await;
     if cfg!(windows) {
         let error = request.expect_err("native Windows sandbox must reject foreign roots");
         assert!(matches!(
@@ -1265,6 +1335,102 @@ fn build_exec_request_projects_workspace_roots_only_for_windows_sandbox() -> Res
         assert_eq!(request?.windows_sandbox_workspace_roots, Vec::new());
     }
     Ok(())
+}
+
+#[test_case(false; "checker_error")]
+#[test_case(true; "checker_timeout")]
+#[ignore = "sandbox integrity checks are paused"]
+fn command_runs_after_integrity_check_failure(time_out: bool) -> anyhow::Result<()> {
+    let directory = tempfile::tempdir()?;
+    let cwd = directory.path().abs();
+    let mut policy = FileSystemSandboxPolicy::read_only();
+    policy.entries.push(FileSystemSandboxEntry::new(
+        FileSystemPath::GlobPattern {
+            pattern: format!("{}/[z-a]", cwd.display()),
+        },
+        FileSystemAccessMode::Deny,
+    ));
+    assert!(FileContentsChecker::new(&policy, &cwd).is_err());
+    let permission_profile =
+        PermissionProfile::from_runtime_permissions(&policy, NetworkSandboxPolicy::Restricted);
+    // This boundary receives prepared argv. Exercise a real child without requiring
+    // a native sandbox installation to test the checker's failure isolation.
+    let request = SandboxExecRequest {
+        native_program: None,
+        command: if cfg!(windows) {
+            vec![
+                "cmd.exe".into(),
+                "/D".into(),
+                "/C".into(),
+                "echo integrity-ok".into(),
+            ]
+        } else {
+            vec!["/bin/echo".into(), "integrity-ok".into()]
+        },
+        cwd: PathUri::from_abs_path(&cwd),
+        sandbox_policy_cwd: PathUri::from_abs_path(&cwd),
+        env: std::env::vars().collect(),
+        network: None,
+        network_environment_id: None,
+        sandbox: SandboxManager::new().select_initial(
+            &permission_profile,
+            SandboxablePreference::Auto,
+            SandboxType::WindowsMxc,
+            /*has_managed_network_requirements*/ false,
+        ),
+        sandbox_override: SandboxOverride::NoOverride,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+        permission_profile,
+        arg0: None,
+    };
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(/*val*/ 1)
+        .build()?
+        .block_on(async {
+            let mut prepared = Box::pin(ExecRequest::from_sandbox_exec_request(
+                request,
+                ExecOptions {
+                    expiration: ExecExpiration::DefaultTimeout,
+                    capture_policy: ExecCapturePolicy::ShellTool,
+                },
+                &[],
+            ));
+            let request = if time_out {
+                tokio::time::pause();
+                // Keep checker work queued past the caller's deadline. Dropping
+                // release unblocks the worker even if an assertion fails.
+                let (release, wait) = std::sync::mpsc::channel::<()>();
+                let (started, ready) = tokio::sync::oneshot::channel();
+                let blocker = tokio::task::spawn_blocking(move || {
+                    let _ = started.send(());
+                    let _ = wait.recv();
+                });
+                ready.await?;
+                assert!(futures::poll!(&mut prepared).is_pending());
+                tokio::time::advance(Duration::from_secs(/*secs*/ 6)).await;
+                let result = futures::poll!(&mut prepared);
+                drop(release);
+                blocker.await?;
+                tokio::time::resume();
+                let std::task::Poll::Ready(result) = result else {
+                    panic!("command preparation must stop waiting for the checker");
+                };
+                result?
+            } else {
+                prepared.await?
+            };
+            let output = crate::sandboxing::execute_env(request, /*stdout_stream*/ None).await?;
+            assert_eq!(
+                (
+                    output.exit_code,
+                    output.stdout.text.trim(),
+                    output.timed_out
+                ),
+                (0, "integrity-ok", false),
+            );
+            Ok(())
+        })
 }
 
 #[cfg(unix)]
@@ -1310,6 +1476,7 @@ async fn kill_child_process_group_kills_grandchildren_on_timeout() -> Result<()>
 
     let output = exec(
         params,
+        /*native_program*/ None,
         NetworkSandboxPolicy::Restricted,
         /*stdout_stream*/ None,
         /*after_spawn*/ None,
@@ -1423,16 +1590,26 @@ while :; do sleep 1; done"#
     );
     let cancel_token = CancellationToken::new();
     let cancel_tx = cancel_token.clone();
-    tokio::spawn(async move {
-        for _ in 0..50 {
-            if ready_marker.exists() {
-                cancel_tx.cancel();
-                return;
-            }
+    let clock_paused = std::cell::Cell::new(false);
+    let cancel_when_ready = async {
+        while !ready_marker.exists() {
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
+        // Exercise the TERM trap without requiring the OS to schedule the shell
+        // within the production grace period. Keep this future runnable so the
+        // paused clock cannot auto-advance while the real process handles TERM.
+        tokio::time::pause();
+        clock_paused.set(true);
         cancel_tx.cancel();
-    });
+        let cleanup_deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !matches!(
+            std::fs::read_to_string(&cleanup_marker).as_deref(),
+            Ok("cleaned")
+        ) && std::time::Instant::now() < cleanup_deadline
+        {
+            tokio::task::yield_now().await;
+        }
+    };
     let params = ExecParams {
         command,
         cwd: cwd.clone(),
@@ -1447,8 +1624,7 @@ while :; do sleep 1; done"#
         arg0: None,
     };
 
-    let result = timeout(
-        Duration::from_secs(5),
+    let execution = async {
         process_exec_tool_call(
             params,
             &PermissionProfile::Disabled,
@@ -1458,10 +1634,25 @@ while :; do sleep 1; done"#
             /*codex_self_exe*/ &None,
             /*use_legacy_landlock*/ false,
             /*stdout_stream*/ None,
-        ),
-    )
-    .await
-    .expect("cancellation should stop the process promptly");
+        )
+        .await
+    };
+    tokio::pin!(execution);
+    let result = timeout(Duration::from_secs(5), async {
+        tokio::select! {
+            result = &mut execution => result,
+            () = cancel_when_ready => (&mut execution).await,
+        }
+    })
+    .await;
+    if clock_paused.get() {
+        tokio::time::resume();
+    }
+    if result.is_err() {
+        cancel_tx.cancel();
+        let _ = execution.await;
+    }
+    let result = result.expect("cancellation should stop the process promptly");
     let output = result.expect("cancellation should return a non-timeout exec result");
     assert!(!output.timed_out);
     assert_eq!(

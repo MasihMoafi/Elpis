@@ -8,7 +8,7 @@ use super::ThreadEventSnapshot;
 use crate::chatwidget::ChatWidget;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::TurnStatus;
 
 pub(super) struct ReasoningReplay {
@@ -25,10 +25,10 @@ impl ReasoningReplay {
                 .iter_mut()
                 .find(|turn| turn.id == started.turn_id && turn.status == TurnStatus::InProgress)?;
             let index = turn.items.iter().position(
-                |item| matches!(item, ThreadItem::Reasoning { id, .. } if id == started.item.id()),
+                |item| matches!(&item.payload, ThreadItemPayload::Reasoning { id, .. } if id == started.item.id()),
             )?;
-            match turn.items.remove(index) {
-                ThreadItem::Reasoning {
+            match turn.items.remove(index).payload {
+                ThreadItemPayload::Reasoning {
                     summary, content, ..
                 } => Some((summary, content)),
                 _ => unreachable!("matched a reasoning item"),
@@ -38,6 +38,14 @@ impl ReasoningReplay {
     }
 
     pub(super) fn before_event(&mut self, event: &ThreadBufferedEvent, chat: &mut ChatWidget) {
+        // The store retains only typed reasoning starts. Restore their origin even if a
+        // later handoff has already marked the whole turn as delegated in the new widget.
+        if let ThreadBufferedEvent::Notification(notification) = event
+            && let ServerNotification::ItemStarted(started) = notification.as_ref()
+            && let ThreadItemPayload::Reasoning { id, .. } = &started.item.payload
+        {
+            chat.remember_typed_reasoning_item(started.turn_id.clone(), id);
+        }
         if self.started.as_ref().is_some_and(|started| {
             matches!(event, ThreadBufferedEvent::Notification(notification) if match notification.as_ref() {
                 ServerNotification::ItemStarted(item) => {

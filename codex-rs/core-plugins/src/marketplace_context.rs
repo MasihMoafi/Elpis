@@ -50,8 +50,7 @@ impl PluginMarketplaceContext {
             errors: self.load_errors.clone(),
             ..Default::default()
         };
-        let mut seen_marketplace_paths = HashSet::new();
-        let mut seen_plugin_ids = HashSet::new();
+        let mut selection = MarketplaceSelection::default();
         let mut seen_error_paths = combined
             .errors
             .iter()
@@ -68,18 +67,9 @@ impl PluginMarketplaceContext {
                 scope.cwd.as_slice(),
                 include_openai_curated,
                 &plugin_states,
+                Some(&mut selection),
             )?;
-            for mut marketplace in outcome.marketplaces {
-                if !seen_marketplace_paths.insert(marketplace.path.clone()) {
-                    continue;
-                }
-                marketplace
-                    .plugins
-                    .retain(|plugin| seen_plugin_ids.insert(plugin.id.clone()));
-                if !marketplace.plugins.is_empty() {
-                    combined.marketplaces.push(marketplace);
-                }
-            }
+            combined.marketplaces.extend(outcome.marketplaces);
             combined.errors.extend(
                 outcome
                     .errors
@@ -112,7 +102,6 @@ impl PluginMarketplaceContext {
             .collect::<HashSet<_>>();
 
         let mut roots = Vec::new();
-        let mut configured_plugin_keys = Vec::new();
         let mut configured_plugin_sources = Vec::new();
 
         for marketplace in marketplaces {
@@ -133,7 +122,6 @@ impl PluginMarketplaceContext {
                 } else {
                     plugin.local_version.clone()
                 };
-                configured_plugin_keys.push(plugin.id.clone());
                 configured_plugin_sources.push(NonCuratedPluginSource {
                     marketplace_path: marketplace.path.clone(),
                     plugin_key: plugin.id.clone(),
@@ -144,12 +132,11 @@ impl PluginMarketplaceContext {
             roots.push(marketplace.path.clone());
         }
 
-        if roots.is_empty() || configured_plugin_keys.is_empty() {
+        if configured_plugin_sources.is_empty() {
             return None;
         }
 
         // Refresh rediscovers sources in root order; retain listing's precedence.
-        configured_plugin_keys.sort_unstable();
         configured_plugin_sources.sort_by(|left, right| {
             left.marketplace_path
                 .cmp(&right.marketplace_path)
@@ -158,7 +145,6 @@ impl PluginMarketplaceContext {
 
         Some(NonCuratedCacheRefreshRequest {
             roots,
-            configured_plugin_keys,
             configured_plugin_sources,
             mode,
             git_mode,

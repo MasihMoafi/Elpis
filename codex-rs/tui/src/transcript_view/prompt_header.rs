@@ -118,10 +118,30 @@ pub(super) fn line(
     cells: &[Arc<dyn HistoryCell>],
     first: usize,
     width: u16,
-) -> Option<Line<'static>> {
-    let prompt = cells[index(cells, first, width)?]
-        .as_any()
-        .downcast_ref::<UserHistoryCell>()?;
+    detailed: bool,
+) -> Option<(Line<'static>, usize)> {
+    // A prompt that is still visible supplies its own context. Only pin a preceding prompt.
+    if width < 16
+        || cells
+            .get(first)
+            .and_then(|cell| cell.as_any().downcast_ref::<UserHistoryCell>())
+            .is_some_and(UserHistoryCell::has_visible_content)
+    {
+        return None;
+    }
+    let (index, prompt) = cells[..first.saturating_add(1).min(cells.len())]
+        .iter()
+        .enumerate()
+        .rev()
+        .take_while(|(_, cell)| {
+            detailed || !cell.as_any().is::<crate::history_cell::ClearScreenHeader>()
+        })
+        .find_map(|(index, cell)| {
+            cell.as_any()
+                .downcast_ref::<UserHistoryCell>()
+                .filter(|prompt| prompt.has_visible_content())
+                .map(|prompt| (index, prompt))
+        })?;
     // Bound work even for pasted multi-megabyte prompts; sanitize before painting controls.
     let prefix: String = prompt.message.chars().take(/*n*/ 512).collect();
     let message = sanitize_user_text(prefix.into())
@@ -133,35 +153,21 @@ pub(super) fn line(
     } else {
         message
     };
-    Some(truncate_line_with_ellipsis_if_overflow(
-        Line::from(vec![
-            if prompt.spoken {
-                "› ".red().bold()
-            } else {
-                "› ".bold().dim()
-            },
-            message.into(),
-        ])
-        .style(crate::style::history_prompt_style()),
-        usize::from(width.saturating_sub(1)),
+    Some((
+        truncate_line_with_ellipsis_if_overflow(
+            Line::from(vec![
+                if prompt.is_spoken() {
+                    "› ".red().bold()
+                } else {
+                    "› ".bold().dim()
+                },
+                message.into(),
+            ])
+            .style(crate::style::history_prompt_style()),
+            usize::from(width.saturating_sub(1)),
+        ),
+        index,
     ))
-}
-
-pub(super) fn index(cells: &[Arc<dyn HistoryCell>], first: usize, width: u16) -> Option<usize> {
-    // A prompt that is still visible supplies its own context. Only pin a preceding prompt.
-    if width < 16
-        || cells
-            .get(first)
-            .and_then(|cell| cell.as_any().downcast_ref::<UserHistoryCell>())
-            .is_some_and(UserHistoryCell::has_visible_content)
-    {
-        return None;
-    }
-    cells[..first.min(cells.len())].iter().rposition(|cell| {
-        cell.as_any()
-            .downcast_ref::<UserHistoryCell>()
-            .is_some_and(UserHistoryCell::has_visible_content)
-    })
 }
 
 #[cfg(test)]

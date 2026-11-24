@@ -1,11 +1,14 @@
 use anyhow::Context;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use codex_attachment_store::AttachmentMetadata;
 use codex_attachment_store::AttachmentStore;
 use codex_attachment_store::AttachmentStoreError;
 use codex_attachment_store::AttachmentStoreErrorKind;
+use codex_attachment_store::IsResolvableFuture;
 use codex_attachment_store::ResolveFuture;
 use codex_attachment_store::ResolveRequest;
+use codex_attachment_store::UploadContent;
 use codex_attachment_store::UploadFuture;
 use codex_attachment_store::UploadRequest;
 use codex_attachment_store::UploadResult;
@@ -53,6 +56,7 @@ use image::ImageBuffer;
 use image::Rgba;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
@@ -64,9 +68,28 @@ const UPLOADED_FILE_ID: &str = "file_uploaded_image";
 #[derive(Default)]
 pub(super) struct RecordingFileAttachmentStore {
     pub(super) uploads: Mutex<Vec<UploadRequest>>,
+    pub(super) resolve_errors: Mutex<HashMap<String, AttachmentStoreErrorKind>>,
+    pub(super) resolves: Mutex<HashMap<String, usize>>,
+    pub(super) resolve_barrier: Option<Arc<tokio::sync::Barrier>>,
 }
 
 impl AttachmentStore for RecordingFileAttachmentStore {
+    fn is_resolvable<'a>(&'a self, file_id: &'a str) -> IsResolvableFuture<'a> {
+        Box::pin(async move {
+            match self
+                .resolve(ResolveRequest {
+                    file_id,
+                    tags: HashMap::new(),
+                    download_url_ttl: None,
+                })
+                .await
+            {
+                Ok(_) => true,
+                Err(error) => error.kind() != AttachmentStoreErrorKind::NotFound,
+            }
+        })
+    }
+
     fn upload(&self, request: UploadRequest) -> UploadFuture<'_> {
         self.uploads.lock().expect("uploads lock").push(request);
         Box::pin(async {
@@ -77,12 +100,27 @@ impl AttachmentStore for RecordingFileAttachmentStore {
     }
 
     fn resolve<'a>(&'a self, request: ResolveRequest<'a>) -> ResolveFuture<'a> {
-        let file_id = request.file_id;
+        *self
+            .resolves
+            .lock()
+            .expect("resolves lock")
+            .entry(request.file_id.to_string())
+            .or_default() += 1;
+        let error_kind = self
+            .resolve_errors
+            .lock()
+            .expect("resolve errors lock")
+            .get(request.file_id)
+            .copied();
+        let barrier = self.resolve_barrier.clone();
         Box::pin(async move {
-            Err(AttachmentStoreError::new(
-                AttachmentStoreErrorKind::NotFound,
-                format!("attachment `{file_id}` was not found"),
-            ))
+            if let Some(barrier) = barrier {
+                barrier.wait().await;
+            }
+            match error_kind {
+                Some(kind) => Err(AttachmentStoreError::new(kind, "attachment unavailable")),
+                None => Ok(AttachmentMetadata::default()),
+            }
         })
     }
 }
@@ -216,6 +254,8 @@ async fn copy_paste_local_image_persists_rollout_request_shape() -> anyhow::Resu
 
     let image_url = extract_image_url(&actual).expect("expected image url in rollout");
     let expected = ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "user".to_string(),
         content: vec![
@@ -226,7 +266,7 @@ async fn copy_paste_local_image_persists_rollout_request_shape() -> anyhow::Resu
             },
             ContentItem::InputImage {
                 image: ImageReference::Inline { image_url },
-                detail: Some(DEFAULT_IMAGE_DETAIL),
+                detail: Some(ImageDetail::Original),
             },
             ContentItem::InputText {
                 text: codex_protocol::models::image_close_tag_text(),
@@ -314,12 +354,14 @@ async fn drag_drop_image_persists_rollout_request_shape() -> anyhow::Result<()> 
 
     let image_url = extract_image_url(&actual).expect("expected image url in rollout");
     let expected = ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: "user".to_string(),
         content: vec![
             ContentItem::InputImage {
                 image: ImageReference::Inline { image_url },
-                detail: Some(DEFAULT_IMAGE_DETAIL),
+                detail: Some(ImageDetail::Original),
             },
             ContentItem::InputText {
                 text: "dropped image".to_string(),
@@ -390,6 +432,8 @@ async fn file_image_passes_through_request_and_rollout() -> anyhow::Result<()> {
     assert_eq!(
         strip_response_item_id(strip_metadata(actual)),
         ResponseItem::Message {
+            status: None,
+            encrypted_content: None,
             id: None,
             role: "user".to_string(),
             content: vec![
@@ -597,8 +641,8 @@ async fn resumed_history_only_emits_resize_notices_for_new_images() -> anyhow::R
 
     let image_path = initial.cwd.path().join("large-image.png");
     ImageBuffer::from_pixel(
-        /*width*/ 2304,
-        /*height*/ 864,
+        /*width*/ 6400,
+        /*height*/ 256,
         Rgba([12u8, 34, 56, 255]),
     )
     .save(&image_path)?;
@@ -683,10 +727,17 @@ async fn resumed_history_only_emits_resize_notices_for_new_images() -> anyhow::R
             upload.thread_id,
             resumed.session_configured.thread_id.to_string(),
         );
-        assert_eq!(
-            image::load_from_memory(&upload.data)?.dimensions(),
-            (2048, 768)
-        );
+        let UploadContent::Image {
+            file_name,
+            tags,
+            data,
+        } = &upload.content
+        else {
+            panic!("expected image upload");
+        };
+        assert!(file_name.is_none());
+        assert!(tags.is_empty());
+        assert_eq!(image::load_from_memory(data)?.dimensions(), (6000, 240));
     }
 
     let request = resumed_mock.single_request();
@@ -726,7 +777,8 @@ async fn resumed_history_only_emits_resize_notices_for_new_images() -> anyhow::R
         .split_once(',')
         .context("historical image data URL")?;
     let historical_image = image::load_from_memory(&BASE64_STANDARD.decode(encoded_image)?)?;
-    assert_eq!(historical_image.dimensions(), (2048, 768));
+    // Replay honors the high detail recorded with the historical image.
+    assert_eq!(historical_image.dimensions(), (2048, 82));
     assert_eq!(
         input[image_message_indices[1]]
             .get("content")
@@ -739,7 +791,7 @@ async fn resumed_history_only_emits_resize_notices_for_new_images() -> anyhow::R
 
     let expected_notice = concat!(
         "<image_resize_notice>\n",
-        "Image 1 of 1 in the preceding user message was resized from 2304x864 to 2048x768 pixels.\n",
+        "Image 1 of 1 in the preceding user message was resized from 6400x256 to 6000x240 pixels.\n",
         "</image_resize_notice>"
     );
     let resize_notices = request
@@ -833,11 +885,11 @@ async fn resumed_history_only_emits_resize_notices_for_new_images() -> anyhow::R
             else {
                 return None;
             };
-            matches!(envelope.item, ResponseItem::Message { role, .. } if role == "developer")
-                .then(|| envelope.metadata.map(|metadata| metadata.client_authored))
+            matches!(&envelope.item, ResponseItem::Message { role, .. } if role == "developer")
+                .then(|| envelope.is_always_retained())
         })
         .collect::<Vec<_>>();
-    assert_eq!(persisted_developer_metadata, vec![None, Some(true)]);
+    assert_eq!(persisted_developer_metadata, vec![false, true]);
 
     Ok(())
 }

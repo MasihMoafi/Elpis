@@ -1,17 +1,23 @@
 //! Resolve executor-local state and launch the decoded MXC helper request.
 
 use std::collections::HashMap;
+use std::os::windows::ffi::OsStrExt;
+use std::path::Path;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::Result;
 use anyhow::ensure;
+use codex_utils_path_uri::PathUri;
 use windows_sys::Win32::Foundation::RPC_E_CHANGED_MODE;
+use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
 use windows_sys::Win32::Storage::FileSystem::GetLogicalDrives;
 use windows_sys::Win32::System::Com::COINIT_MULTITHREADED;
 use windows_sys::Win32::System::Com::CoInitializeEx;
 use windows_sys::Win32::System::Com::CoTaskMemFree;
 use windows_sys::Win32::System::Com::CoUninitialize;
 use windows_sys::Win32::System::SystemInformation::GetWindowsDirectoryW;
+use windows_sys::Win32::System::WindowsProgramming::DRIVE_REMOTE;
 use windows_sys::Win32::UI::Shell::FOLDERID_ProgramData;
 use windows_sys::Win32::UI::Shell::FOLDERID_ProgramFiles;
 use windows_sys::Win32::UI::Shell::FOLDERID_ProgramFilesX86;
@@ -25,7 +31,17 @@ impl Drop for ComUninitializeGuard {
     }
 }
 
+pub(super) fn log_launch(event: impl std::fmt::Display) {
+    let pid = std::process::id();
+    codex_windows_sandbox::log_runtime_note(&format!("MXC pid={pid} {event}"));
+}
+
 pub(super) fn run() -> Result<i32> {
+    if let Some(codex_home) = std::env::args_os().nth(2) {
+        codex_windows_sandbox::init_runtime_log(Path::new(&codex_home));
+    }
+    log_launch("phase=prepare_request");
+    let preparing = Instant::now();
     ensure!(
         crate::is_available(),
         "native MXC is unavailable on this Windows build"
@@ -46,8 +62,38 @@ pub(super) fn run() -> Result<i32> {
     // Serde errors can quote arbitrary payload values; do not print them to stderr.
     let command = crate::transport::decode(&mut env)
         .map_err(|_| anyhow::anyhow!("invalid MXC launcher request"))?;
+    let kind = match command.command.as_slice() {
+        [_, arg] if arg == "--codex-run-as-fs-helper" => "fs_helper",
+        _ => "command",
+    };
+    log_launch(format_args!("phase=prepare_volumes kind={kind}"));
+    let command_cwd = std::env::current_dir()?;
+    let volumes = volume_roots(&command.sandbox_policy_cwd, &command_cwd)?;
+    let volume_count = volumes.len();
+    log_launch(format_args!(
+        "phase=prepare_known_folders volumes={volume_count}"
+    ));
+    let platform_roots = platform_read_roots()?;
     // The transport itself proves this is an explicit child environment; it
     // may intentionally contain no variables once launcher state is removed.
+    let request = crate::policy::build_request(
+        &command,
+        &command_cwd,
+        env.into_iter()
+            .map(|(key, value)| format!("{key}={value}"))
+            .collect(),
+        &volumes,
+        &platform_roots,
+    )?;
+    let prep_ms = preparing.elapsed().as_millis();
+    log_launch(format_args!("phase=spawn prep_ms={prep_ms}"));
+    crate::native::launch(request)
+}
+
+pub(super) fn volume_roots(
+    policy_cwd: &std::path::Path,
+    command_cwd: &std::path::Path,
+) -> Result<Vec<PathBuf>> {
     let mask = unsafe { GetLogicalDrives() };
     ensure!(
         mask != 0,
@@ -58,23 +104,37 @@ pub(super) fn run() -> Result<i32> {
         .filter(|index| mask & (1 << index) != 0)
         .map(|index| PathBuf::from(format!("{}:\\", (b'A' + index as u8) as char)))
         .collect();
-    let command_cwd = std::env::current_dir()?;
     // An explicit UNC cwd has no drive letter and is absent from GetLogicalDrives.
-    for cwd in [&command.sandbox_policy_cwd, &command_cwd] {
+    for cwd in [policy_cwd, command_cwd] {
         if let Some(root) = cwd.ancestors().last() {
             volumes.push(root.to_path_buf());
         }
     }
-    let request = crate::policy::build_request(
-        &command,
-        &command_cwd,
-        env.into_iter()
-            .map(|(key, value)| format!("{key}={value}"))
-            .collect(),
-        &volumes,
-        &platform_read_roots()?,
-    )?;
-    crate::native::launch(&request)
+    Ok(volumes)
+}
+
+// Default reads cover local volumes and cwd shares, not unrelated network shares.
+// Explicit grants follow the normal policy path.
+pub(super) fn implicit_read_roots(
+    volume_roots: &[PathBuf],
+    policy_cwd: &Path,
+    command_cwd: &Path,
+) -> std::io::Result<Vec<PathUri>> {
+    volume_roots
+        .iter()
+        .filter(|root| {
+            let wide = root
+                .as_os_str()
+                .encode_wide()
+                .chain([0])
+                .collect::<Vec<_>>();
+            let drive_type = unsafe { GetDriveTypeW(wide.as_ptr()) };
+            drive_type != DRIVE_REMOTE
+                || policy_cwd.starts_with(root)
+                || command_cwd.starts_with(root)
+        })
+        .map(PathUri::from_host_native_path)
+        .collect()
 }
 
 fn platform_read_roots() -> Result<Vec<PathBuf>> {

@@ -70,11 +70,21 @@ pub fn is_structured_feature_path<S: AsRef<str>>(path: &[S]) -> bool {
     features.as_ref() == "features"
         && matches!(
             feature.as_ref(),
-            "code_mode" | "multi_agent_v2" | "network_proxy" | "sleep_tool"
+            "code_mode"
+                | "guardianv3"
+                | "multi_agent_v2"
+                | "network_proxy"
+                | "sleep_tool"
+                | "runtime_agent_instances"
         )
 }
 
 fn merge_toml_values_at_path(base: &mut TomlValue, overlay: TomlValue, path: &mut Vec<String>) {
+    // A server and tool identify one provider. A partial override cannot inherit half an identity.
+    if matches!(path.as_slice(), [tui, key] if tui == "tui" && key == "status_line_provider") {
+        *base = overlay;
+        return;
+    }
     replace_shell_environment_policy_filter_representation(base, &overlay, path);
 
     if is_structured_feature_path(path) {

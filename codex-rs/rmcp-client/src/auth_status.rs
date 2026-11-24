@@ -246,7 +246,7 @@ async fn discover_streamable_http_oauth_with_headers_and_http_client(
     let mut authorization_manager =
         AuthorizationManager::new_with_oauth_http_client(url, Arc::new(oauth_http_client)).await?;
     authorization_manager.set_allow_missing_issuer(true);
-    discover_streamable_http_oauth_with_manager(&authorization_manager).await
+    discover_streamable_http_oauth_with_manager(&mut authorization_manager).await
 }
 
 fn has_configured_headers(
@@ -262,16 +262,21 @@ fn has_configured_headers(
 }
 
 async fn discover_streamable_http_oauth_with_manager(
-    authorization_manager: &AuthorizationManager,
+    authorization_manager: &mut AuthorizationManager,
 ) -> Result<Option<StreamableHttpOAuthDiscovery>> {
     match authorization_manager.resolve_metadata().boxed().await {
         Ok(resolution) if !resolution.source.is_discovered() => Ok(None),
         Ok(resolution) => {
             let metadata = resolution.metadata;
+            let callback_mode =
+                callback_mode(&metadata).unwrap_or(McpOAuthCallbackMode::CallbackSpecific);
+            authorization_manager.set_metadata(metadata);
             Ok(Some(StreamableHttpOAuthDiscovery {
-                callback_mode: callback_mode(&metadata)
-                    .unwrap_or(McpOAuthCallbackMode::CallbackSpecific),
-                scopes_supported: normalize_scopes(metadata.scopes_supported),
+                callback_mode,
+                // Prefer the initial challenge's scopes, falling back to resource metadata.
+                scopes_supported: normalize_scopes(
+                    authorization_manager.select_initial_scopes(&[]).await,
+                ),
             }))
         }
         Err(AuthError::NoAuthorizationSupport) => Ok(None),
@@ -279,9 +284,7 @@ async fn discover_streamable_http_oauth_with_manager(
     }
 }
 
-fn normalize_scopes(scopes_supported: Option<Vec<String>>) -> Option<Vec<String>> {
-    let scopes_supported = scopes_supported?;
-
+fn normalize_scopes(scopes_supported: Vec<String>) -> Option<Vec<String>> {
     let mut normalized = Vec::new();
     for scope in scopes_supported {
         let scope = scope.trim();
@@ -677,7 +680,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discover_streamable_http_oauth_returns_normalized_scopes() {
+    async fn discover_streamable_http_oauth_does_not_use_authorization_server_scopes() {
         let server = spawn_oauth_discovery_server(serde_json::json!({
             "authorization_endpoint": "https://example.com/authorize",
             "token_endpoint": "https://example.com/token",
@@ -701,7 +704,7 @@ mod tests {
         assert_eq!(
             discovery,
             StreamableHttpOAuthDiscovery {
-                scopes_supported: Some(vec!["profile".to_string(), "email".to_string()]),
+                scopes_supported: None,
                 callback_mode: McpOAuthCallbackMode::IssuerBound,
             }
         );
@@ -834,85 +837,68 @@ mod tests {
         let authorization_server = spawn_oauth_discovery_server(serde_json::json!({
             "authorization_endpoint": "https://example.com/authorize",
             "token_endpoint": "https://example.com/token",
-            "scopes_supported": ["read", " write ", "read"],
+            "scopes_supported": ["unrelated:admin", "offline_access"],
         }))
         .await;
 
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("listener should bind");
-        let address = listener.local_addr().expect("listener should have address");
-        let resource_metadata_url = format!("http://{address}/oauth-resource");
-        let challenge = format!("Bearer resource_metadata=\"{resource_metadata_url}\"");
-        let authorization_server_url = authorization_server.url.clone();
-        let app = Router::new()
-            .route(
-                "/mcp",
-                get(move || {
-                    let challenge = challenge.clone();
-                    async move { (StatusCode::UNAUTHORIZED, [(WWW_AUTHENTICATE, challenge)]) }
-                }),
+        for (challenge_scope, expected_scopes) in [
+            ("", vec!["read", "write", "offline_access"]),
+            (", scope=\"read\"", vec!["read", "offline_access"]),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("listener should bind");
+            let address = listener.local_addr().expect("listener should have address");
+            let resource_metadata_url = format!("http://{address}/oauth-resource");
+            let challenge =
+                format!("Bearer resource_metadata=\"{resource_metadata_url}\"{challenge_scope}");
+            let authorization_server_url = authorization_server.url.clone();
+            let app = Router::new()
+                .route(
+                    "/mcp",
+                    get(move || {
+                        let challenge = challenge.clone();
+                        async move { (StatusCode::UNAUTHORIZED, [(WWW_AUTHENTICATE, challenge)]) }
+                    }),
+                )
+                .route(
+                    "/oauth-resource",
+                    get(move || {
+                        let authorization_server_url = authorization_server_url.clone();
+                        async move {
+                            Json(serde_json::json!({
+                                "resource": format!("http://{address}/mcp"),
+                                "authorization_servers": [authorization_server_url],
+                                "scopes_supported": ["read", " write ", "read", "", "   "],
+                            }))
+                        }
+                    }),
+                );
+            let handle = tokio::spawn(async move {
+                axum::serve(listener, app).await.expect("server should run");
+            });
+            let resource_server = TestServer {
+                url: format!("http://{address}/mcp"),
+                handle,
+            };
+
+            let discovery = discover_streamable_http_oauth(
+                &resource_server.url,
+                /*http_headers*/ None,
+                /*env_http_headers*/ None,
+                test_http_client().await,
+                OAuthDiscoveryTimeout::LOCAL,
+                StreamableHttpRedirectMode::Legacy,
             )
-            .route(
-                "/oauth-resource",
-                get(move || {
-                    let authorization_server_url = authorization_server_url.clone();
-                    async move {
-                        Json(serde_json::json!({
-                            "resource": format!("http://{address}/mcp"),
-                            "authorization_servers": [authorization_server_url],
-                        }))
-                    }
-                }),
+            .await
+            .expect("discovery should succeed")
+            .expect("oauth support should be detected");
+
+            assert_eq!(
+                discovery.scopes_supported,
+                Some(expected_scopes.into_iter().map(str::to_string).collect())
             );
-        let handle = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("server should run");
-        });
-        let resource_server = TestServer {
-            url: format!("http://{address}/mcp"),
-            handle,
-        };
-
-        let discovery = discover_streamable_http_oauth(
-            &resource_server.url,
-            /*http_headers*/ None,
-            /*env_http_headers*/ None,
-            test_http_client().await,
-            OAuthDiscoveryTimeout::LOCAL,
-            StreamableHttpRedirectMode::Legacy,
-        )
-        .await
-        .expect("discovery should succeed")
-        .expect("oauth support should be detected");
-
-        assert_eq!(
-            discovery.scopes_supported,
-            Some(vec!["read".to_string(), "write".to_string()])
-        );
-    }
-
-    #[tokio::test]
-    async fn discover_streamable_http_oauth_ignores_empty_scopes() {
-        let server = spawn_oauth_discovery_server(serde_json::json!({
-            "authorization_endpoint": "https://example.com/authorize",
-            "token_endpoint": "https://example.com/token",
-            "scopes_supported": ["", "   "],
-        }))
-        .await;
-
-        let discovery = discover_streamable_http_oauth(
-            &server.url,
-            /*http_headers*/ None,
-            /*env_http_headers*/ None,
-            test_http_client().await,
-            OAuthDiscoveryTimeout::LOCAL,
-            StreamableHttpRedirectMode::Legacy,
-        )
-        .await
-        .expect("discovery should succeed")
-        .expect("oauth support should be detected");
-
-        assert_eq!(discovery.scopes_supported, None);
+        }
     }
 
     #[tokio::test]

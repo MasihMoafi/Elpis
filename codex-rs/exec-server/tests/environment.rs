@@ -135,7 +135,7 @@ async fn capability_discovery_without_sandbox_support_only_sends_full_disk_reads
                     if let Message::Text(text) = &message {
                         let request: serde_json::Value = serde_json::from_str(text.as_ref())?;
                         if request.get("method").and_then(serde_json::Value::as_str)
-                            == Some(CAPABILITY_ROOTS_DISCOVER_METHOD)
+                            .is_some_and(|method| method == CAPABILITY_ROOTS_DISCOVER_METHOD || method.starts_with("fs/"))
                         {
                             requests_tx.send(request)?;
                         }
@@ -149,6 +149,8 @@ async fn capability_discovery_without_sandbox_support_only_sends_full_disk_reads
                         for pointer in [
                             "/result/environmentInfo/capabilities/capabilityDiscoverySandbox",
                             "/result/capabilities/capabilityDiscoverySandbox",
+                            "/result/environmentInfo/capabilities/windowsMxc",
+                            "/result/capabilities/windowsMxc",
                         ] {
                             if let Some(capability) = response.pointer_mut(pointer) {
                                 *capability = false.into();
@@ -228,8 +230,8 @@ async fn capability_discovery_without_sandbox_support_only_sends_full_disk_reads
             roots: vec![
                 request.clone(),
                 CapabilityRootDiscoverRequest {
-                    sandbox: Some(restricted),
-                    ..request
+                    sandbox: Some(restricted.clone()),
+                    ..request.clone()
                 },
             ],
         })
@@ -239,6 +241,38 @@ async fn capability_discovery_without_sandbox_support_only_sends_full_disk_reads
         error
             .to_string()
             .contains("exec-server does not support sandboxed capability discovery")
+    );
+    assert_eq!(
+        requests_rx.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    );
+
+    let mut unsupported = restricted;
+    unsupported.windows_sandbox_selection = codex_exec_server::WindowsSandboxSelection::Mxc;
+    let error = environment
+        .discover_capability_roots(CapabilityRootsDiscoverParams {
+            roots: vec![CapabilityRootDiscoverRequest {
+                sandbox: Some(unsupported.clone()),
+                ..request.clone()
+            }],
+        })
+        .await
+        .expect_err("unsupported MXC must not reach an older decoder");
+    assert!(
+        error
+            .to_string()
+            .contains("does not support the requested MXC Windows sandbox")
+    );
+    let error = environment
+        .get_filesystem()
+        .get_metadata(&request.path, Default::default(), Some(&unsupported))
+        .await
+        .expect_err("host discovery must fail closed too");
+    assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+    assert!(
+        error
+            .to_string()
+            .contains("does not support the requested MXC Windows sandbox")
     );
     assert_eq!(
         requests_rx.try_recv(),
@@ -375,7 +409,7 @@ async fn capability_discovery_retries_executor_disconnect_within_same_request() 
         .info()
         .await?;
 
-    let cache = Arc::new(ExecutorCapabilityDiscoveryCache::new(Arc::clone(&manager)));
+    let cache = Arc::new(ExecutorCapabilityDiscoveryCache::default());
     let skill_root = tempfile::tempdir()?;
     let selected_roots = vec![SelectedCapabilityRoot {
         id: "recovering-skill".to_string(),
@@ -385,9 +419,18 @@ async fn capability_discovery_retries_executor_disconnect_within_same_request() 
         },
     }];
 
+    let resolved_roots = manager
+        .resolve_selected_capability_roots(
+            &selected_roots,
+            &HashMap::from([(
+                REMOTE_ENVIRONMENT_ID.to_string(),
+                manager.get_environment(REMOTE_ENVIRONMENT_ID),
+            )]),
+        )
+        .await;
     let snapshot = timeout(
         Duration::from_secs(12),
-        cache.snapshot(&selected_roots, &HashMap::new()),
+        cache.snapshot(&resolved_roots, &HashMap::new()),
     )
     .await
     .context("capability discovery did not retry within the same request")?;
@@ -409,7 +452,7 @@ async fn capability_discovery_retries_executor_disconnect_within_same_request() 
 async fn capability_discovery_retries_after_executor_reconnects() -> anyhow::Result<()> {
     let server = exec_server().await?;
     let manager = Arc::new(EnvironmentManager::default_for_tests());
-    let cache = ExecutorCapabilityDiscoveryCache::new(Arc::clone(&manager));
+    let cache = ExecutorCapabilityDiscoveryCache::default();
     let skill_root = tempfile::tempdir()?;
     let refused_listener = TcpListener::bind("127.0.0.1:0").await?;
     let refused_address = refused_listener.local_addr()?;
@@ -427,7 +470,16 @@ async fn capability_discovery_retries_after_executor_reconnects() -> anyhow::Res
         },
     }];
 
-    let failed_snapshot = cache.snapshot(&selected_roots, &HashMap::new()).await;
+    let resolved_roots = manager
+        .resolve_selected_capability_roots(
+            &selected_roots,
+            &HashMap::from([(
+                "recovering".to_string(),
+                manager.get_environment("recovering"),
+            )]),
+        )
+        .await;
+    let failed_snapshot = cache.snapshot(&resolved_roots, &HashMap::new()).await;
     assert!(failed_snapshot.roots()[0].result.is_err());
     assert!(!cache.take_recovered_discovery());
 
@@ -442,7 +494,16 @@ async fn capability_discovery_retries_after_executor_reconnects() -> anyhow::Res
         .wait_until_ready()
         .await?;
 
-    let recovered_snapshot = cache.snapshot(&selected_roots, &HashMap::new()).await;
+    let resolved_roots = manager
+        .resolve_selected_capability_roots(
+            &selected_roots,
+            &HashMap::from([(
+                "recovering".to_string(),
+                manager.get_environment("recovering"),
+            )]),
+        )
+        .await;
+    let recovered_snapshot = cache.snapshot(&resolved_roots, &HashMap::new()).await;
     let discovery = recovered_snapshot.roots()[0]
         .result
         .as_ref()
@@ -469,7 +530,7 @@ async fn capability_discovery_retries_after_application_network_policy_recovers(
         server.websocket_url().to_string(),
         /*connect_timeout*/ None,
     )?;
-    let cache = ExecutorCapabilityDiscoveryCache::new(manager);
+    let cache = ExecutorCapabilityDiscoveryCache::default();
     let skill_root = tempfile::tempdir()?;
     let selected_roots = vec![SelectedCapabilityRoot {
         id: "recovering-skill".to_string(),
@@ -479,7 +540,16 @@ async fn capability_discovery_retries_after_application_network_policy_recovers(
         },
     }];
 
-    let failed = cache.snapshot(&selected_roots, &HashMap::new()).await;
+    let resolved_roots = manager
+        .resolve_selected_capability_roots(
+            &selected_roots,
+            &HashMap::from([(
+                "recovering".to_string(),
+                manager.get_environment("recovering"),
+            )]),
+        )
+        .await;
+    let failed = cache.snapshot(&resolved_roots, &HashMap::new()).await;
     let error = failed.roots()[0].result.as_ref().unwrap_err();
     assert!(error.contains("application network policy"), "{error}");
     assert!(!cache.take_recovered_discovery());
@@ -490,7 +560,7 @@ async fn capability_discovery_retries_after_application_network_policy_recovers(
     );
     let recovered = timeout(
         Duration::from_secs(/*secs*/ 10),
-        cache.snapshot(&selected_roots, &HashMap::new()),
+        cache.snapshot(&resolved_roots, &HashMap::new()),
     )
     .await?;
     let discovery = recovered.roots()[0]
@@ -500,5 +570,58 @@ async fn capability_discovery_retries_after_application_network_policy_recovers(
     assert_eq!(discovery.id, "recovering-skill");
     assert!(cache.take_recovered_discovery());
     assert!(!cache.take_recovered_discovery());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn capability_discovery_does_not_replace_an_unavailable_captured_executor()
+-> anyhow::Result<()> {
+    let server = exec_server().await?;
+    let manager = Arc::new(EnvironmentManager::default_for_tests());
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    drop(listener);
+    manager.upsert_environment(
+        "captured".into(),
+        format!("ws://{address}"),
+        Some(Duration::from_millis(100)),
+    )?;
+    let original = manager.get_environment("captured").context("original")?;
+    let root_dir = tempfile::tempdir()?;
+    let roots = vec![SelectedCapabilityRoot {
+        id: "root".into(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: "captured".into(),
+            path: PathUri::from_host_native_path(root_dir.path())?,
+        },
+    }];
+    // Model a handle retained by a step whose connection is no longer available.
+    let resolved = manager
+        .resolve_selected_capability_roots(
+            &roots,
+            &HashMap::from([("captured".into(), Some(original))]),
+        )
+        .await;
+    manager.upsert_environment(
+        "captured".into(),
+        server.websocket_url().to_string(),
+        /*connect_timeout*/ None,
+    )?;
+    let replacement = manager.get_environment("captured").context("replacement")?;
+    replacement.wait_until_ready().await?;
+    let cache = ExecutorCapabilityDiscoveryCache::default();
+    let unavailable = cache.snapshot(&resolved, &HashMap::new()).await;
+    assert!(unavailable.roots()[0].result.is_err());
+    let newer = manager
+        .resolve_selected_capability_roots(
+            &roots,
+            &HashMap::from([("captured".into(), Some(replacement))]),
+        )
+        .await;
+    let available = cache.snapshot(&newer, &HashMap::new()).await;
+    assert!(available.roots()[0].result.is_ok());
+    assert!(cache.take_recovered_discovery());
+    let unavailable = cache.snapshot(&resolved, &HashMap::new()).await;
+    assert!(unavailable.roots()[0].result.is_err());
     Ok(())
 }

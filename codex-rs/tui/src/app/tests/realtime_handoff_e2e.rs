@@ -127,13 +127,19 @@ async fn delegated_core_events_keep_private_output_hidden_and_deliver_final_spee
     crate::chatwidget::activate_voice_for_thread(&mut app.chat_widget, thread_id);
     while ops.try_recv().is_ok() {}
     let mut tui = crate::tui::test_support::make_test_tui()?;
+    let thread = app_server
+        .thread_read(thread_id, /*include_turns*/ false)
+        .await?;
+    let call = crate::realtime_call::create(
+        &app.config,
+        &thread,
+        "v=offer\r\n".to_string(),
+        /*voice*/ None,
+    )
+    .await?;
+    assert_eq!(String::from(call.answer_sdp), "v=answer\r\n");
     app_server
-        .thread_realtime_start(
-            thread_id,
-            "v=offer\r\n".to_string(),
-            /*model*/ None,
-            /*voice*/ None,
-        )
+        .thread_realtime_start(thread_id, call.call_id, call.voice_session_id)
         .await?;
     // The sideband fixture sends its delegation after the first outbound request.
     app_server
@@ -158,7 +164,7 @@ async fn delegated_core_events_keep_private_output_hidden_and_deliver_final_spee
         loop {
             tokio::select! {
                 event = app_server.next_event() => {
-                    app.handle_app_server_event(
+                    app.handle_backend_event(
                         &app_server,
                         event.expect("embedded app-server should stay connected"),
                     ).await;
@@ -268,9 +274,9 @@ async fn delegated_core_events_keep_private_output_hidden_and_deliver_final_spee
             tokio::select! {
                 event = app_server.next_event() => {
                     let event = event.expect("embedded app-server should stay connected");
-                    let completed = matches!(&event, AppServerEvent::ServerNotification(notification)
+                    let completed = matches!(&event.event, AppServerEvent::ServerNotification(notification)
                         if matches!(notification.as_ref(), ServerNotification::TurnCompleted(_)));
-                    app.handle_app_server_event(&app_server, event).await;
+                    app.handle_backend_event(&app_server, event).await;
                     app.drain_active_thread_events(&mut tui).await?;
                     if completed {
                         break Ok::<_, color_eyre::Report>(());

@@ -25,6 +25,7 @@ pub(super) fn clean_up(
     prepared: &PreparedWindowsSandboxCleanup,
     runtime: Option<&InstallationRecord>,
     uninstalling: &AtomicBool,
+    preinstalled: bool,
 ) -> Result<()> {
     crate::service::log_information(
         crate::service::EVENT_CLEANUP_STARTED,
@@ -73,7 +74,9 @@ pub(super) fn clean_up(
                 }
             };
             if let Some(home) = &codex_home {
-                if desktop.created_codex_home {
+                if desktop.created_codex_home
+                    && crate::uninstall_policy::clean_uninstall_enabled(home, preinstalled)
+                {
                     // Release the home itself so it can be deleted; keep its ancestors pinned.
                     if installation.directory_guard.take().is_some() {
                         installation.directory_handles.pop();
@@ -84,8 +87,8 @@ pub(super) fn clean_up(
                     );
                 } else {
                     prune_codex_home = true;
-                    log_cleanup("skipping recursive codex home removal: existing CLI home");
-                    // Preserve CLI data without leaving inherited permissions for the deleted group.
+                    log_cleanup("preserving codex home");
+                    // Retained data must not keep permissions for the deleted sandbox group.
                     record_result(
                         "remove codex home sandbox permissions",
                         resolve_sid("CodexSandboxUsers")

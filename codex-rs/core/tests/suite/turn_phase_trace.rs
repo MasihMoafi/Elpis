@@ -63,19 +63,27 @@ enum Finish {
     Interrupt,
 }
 
-#[test_case(Finish::Reply; "reply")]
-#[test_case(Finish::Interrupt; "interrupt")]
+#[test_case(Finish::Reply, false; "reply_disabled")]
+#[test_case(Finish::Interrupt, false; "interrupt_disabled")]
+#[test_case(Finish::Reply, true; "reply_enabled")]
+#[test_case(Finish::Interrupt, true; "interrupt_enabled")]
 #[tokio::test(flavor = "current_thread")]
 async fn steer_joins_existing_turn_without_extending_sampling(
     finish: Finish,
+    critical_path_timing: bool,
 ) -> anyhow::Result<()> {
     if std::env::var_os(SUBPROCESS_ENV_VAR).is_none() {
         let case = match finish {
             Finish::Reply => "reply",
             Finish::Interrupt => "interrupt",
         };
+        let capture = if critical_path_timing {
+            "enabled"
+        } else {
+            "disabled"
+        };
         let test_name = format!(
-            "suite::turn_phase_trace::steer_joins_existing_turn_without_extending_sampling::{case}"
+            "suite::turn_phase_trace::steer_joins_existing_turn_without_extending_sampling::{case}_{capture}"
         );
         let output = Command::new(std::env::current_exe()?)
             .arg("--exact")
@@ -117,7 +125,22 @@ async fn steer_joins_existing_turn_without_extending_sampling(
         ]),
     )
     .await;
-    let mut test = test_codex().build_with_auto_env(&server).await?;
+    let mut test = test_codex()
+        .with_config(move |config| {
+            config
+                .features
+                .enable(codex_features::Feature::RuntimeMetrics)
+                .expect("runtime metrics feature can be configured");
+            config
+                .features
+                .set_enabled(
+                    codex_features::Feature::CriticalPathTiming,
+                    critical_path_timing,
+                )
+                .expect("critical path capture can be configured independently");
+        })
+        .build_with_auto_env(&server)
+        .await?;
     let thread = test
         .thread_manager
         .start_thread(StartThreadOptions {
@@ -152,6 +175,10 @@ async fn steer_joins_existing_turn_without_extending_sampling(
         unreachable!();
     };
     first.single_request();
+    let timing_start = std::time::Instant::now();
+    let observe_timing = codex_core::test_support::observe_turn_timing(&test.codex)
+        .await
+        .expect("active turn");
     // The tool is still blocked. Sampling must already be exportable, even though
     // the dispatch future and its trace remain alive until the host responds.
     let sampling = wait_for_span(&exported, |span| span.name == "codex.sampling").await?;
@@ -167,6 +194,7 @@ async fn steer_joins_existing_turn_without_extending_sampling(
             turn_id: call.turn_id.clone()
         }
     );
+    let mut interrupted_capture = None;
     match finish {
         Finish::Reply => {
             let reply = mount_sse_once(
@@ -204,6 +232,8 @@ async fn steer_joins_existing_turn_without_extending_sampling(
                 matches!(event, EventMsg::TurnAborted(_))
             })
             .await;
+            let closed_at = std::time::Instant::now();
+            interrupted_capture = Some((closed_at, observe_timing(timing_start, closed_at)));
             let reply = mount_sse_once(
                 &server,
                 sse(vec![
@@ -220,6 +250,7 @@ async fn steer_joins_existing_turn_without_extending_sampling(
                         turn_id: call.turn_id.clone(),
                         thread_settings: Default::default(),
                         trace: codex_otel::span_w3c_trace_context(&recovery),
+                        prompt_cache_ttl: None,
                         cyber_access_program: None,
                     })
                     .await?,
@@ -253,6 +284,19 @@ async fn steer_joins_existing_turn_without_extending_sampling(
             );
         }
     }
+    if let Some((closed_at, captured)) = interrupted_capture {
+        // Recovery reuses a turn ID, but must not mutate the closed capture.
+        assert_eq!(observe_timing(timing_start, closed_at), captured);
+    }
+    let timing_end = std::time::Instant::now();
+    let totals = observe_timing(timing_start, timing_end);
+    if critical_path_timing {
+        let [_, review, tools, _, unknown] = totals.expect("captured direct-tool path");
+        assert!(tools > Duration::ZERO);
+        assert_eq!((review, unknown), (Duration::ZERO, Duration::ZERO));
+    } else {
+        assert_eq!(totals, None);
+    }
     test.codex.submit(Op::Shutdown).await?;
     wait_for_event(&test.codex, |event| {
         matches!(event, EventMsg::ShutdownComplete)
@@ -269,7 +313,22 @@ async fn steer_joins_existing_turn_without_extending_sampling(
         })
     })
     .await?;
+    let run_turn = wait_for_span(&exported, |span| span.name == "run_turn").await?;
     let spans = exported.get_finished_spans()?;
+    let dispatch = spans
+        .iter()
+        .find(|span| {
+            attribute(&span.attributes, "call_id").as_deref() == Some(call.call_id.as_str())
+                && attribute(&span.attributes, "tool_source").as_deref() == Some("direct")
+        })
+        .expect("tool dispatch can be joined without following parent spans");
+    assert_eq!(
+        [&run_turn.attributes, &dispatch.attributes].map(|attributes| (
+            attribute(attributes, "conversation.id"),
+            attribute(attributes, "turn.id"),
+        )),
+        std::array::from_fn::<_, 2, _>(|_| (Some(thread_id.clone()), Some(call.turn_id.clone())))
+    );
     let steer = spans
         .iter()
         .find(|span| span.name == "steer_request")
@@ -315,7 +374,56 @@ async fn steer_joins_existing_turn_without_extending_sampling(
                 && attribute(&event.attributes, "call_id").as_deref() == Some(call.call_id.as_str())
         })
         .expect("gated tool result-ready event exported");
+    let dispatch_to_ready_ms = attribute(&ready.attributes, "dispatch_to_result_ready_ms")
+        .expect("completion carries its own timing")
+        .parse::<f64>()?;
+    assert!(dispatch_to_ready_ms.is_finite() && dispatch_to_ready_ms >= 0.0);
     assert!(accepted.end_time <= ready.timestamp);
     assert!(ready.timestamp <= blocking.end_time);
+    let expected_counts = match finish {
+        Finish::Reply => vec!["2"],
+        Finish::Interrupt => vec!["1", "1"],
+    };
+    // Profiles are recorded during task finalization, after run_turn ends, and
+    // exported when their enclosing spans close. ShutdownComplete does not join
+    // detached task cleanup, so wait for every completion before reading counts.
+    let mut profiles = tokio::time::timeout(Duration::from_secs(/* secs */ 10), async {
+        loop {
+            let profiles: Vec<_> = exported
+                .get_finished_spans()?
+                .iter()
+                .flat_map(|span| span.events.events.iter())
+                .filter(|event| {
+                    event.name == "codex.turn_profile"
+                        && attribute(&event.attributes, "turn_id").as_deref()
+                            == Some(call.turn_id.as_str())
+                })
+                .map(|event| {
+                    (
+                        attribute(&event.attributes, "conversation.id"),
+                        attribute(&event.attributes, "sampling_request_count"),
+                        attribute(&event.attributes, "sampling_retry_count"),
+                    )
+                })
+                .collect();
+            if profiles.len() >= expected_counts.len() {
+                break anyhow::Ok(profiles);
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await??;
+    profiles.sort();
+    assert_eq!(
+        profiles,
+        expected_counts
+            .into_iter()
+            .map(|count| (
+                Some(thread_id.clone()),
+                Some(count.to_string()),
+                Some("0".to_string())
+            ))
+            .collect::<Vec<_>>()
+    );
     Ok(())
 }

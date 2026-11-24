@@ -1,15 +1,10 @@
 //! Availability of the empty-prompt agents shortcut and its footer hint.
 //!
-//! Only local-daemon sessions enable this shortcut. Draft contents, transient input surfaces,
-//! and explicit editor remaps take precedence over navigation.
+//! Draft contents, transient input surfaces, and explicit editor remaps take precedence.
 
 use super::*;
 
 impl ChatComposer {
-    pub(crate) fn set_agents_navigation_enabled(&mut self, enabled: bool) {
-        self.agents_navigation_enabled = enabled;
-    }
-
     pub(crate) fn agents_navigation_key_available(&self) -> bool {
         let move_left = if self.draft.textarea.is_vim_normal_mode() {
             &self.vim_normal_keymap.move_left
@@ -20,7 +15,7 @@ impl ChatComposer {
     }
 
     pub(super) fn agents_navigation_available(&self) -> bool {
-        self.agents_navigation_enabled
+        self.command_center_enabled
             && self.agents_navigation_key_available()
             && self.has_focus
             && self.draft.input_enabled
@@ -29,5 +24,16 @@ impl ChatComposer {
             && !self.is_in_paste_burst()
             && !self.popup_active()
             && !self.draft.textarea.is_vim_operator_pending()
+    }
+
+    pub(super) fn handle_agents_navigation(&mut self, key: KeyEvent) -> bool {
+        if key.kind == KeyEventKind::Press
+            && key_hint::plain(KeyCode::Left).is_press(key)
+            && self.agents_navigation_available()
+        {
+            self.app_event_tx.send(AppEvent::OpenAgentsOverview);
+            return true;
+        }
+        false
     }
 }

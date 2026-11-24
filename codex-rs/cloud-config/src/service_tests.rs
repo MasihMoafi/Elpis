@@ -19,10 +19,12 @@ use codex_config::CloudRequirementsTomlBundle;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_core::config::ConfigBuilder;
 use codex_login::AuthKeyringBackendKind;
+use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuth;
 use codex_login::auth::AgentIdentityAuthRecord;
 use codex_login::auth::ExternalAuth;
 use codex_login::auth::ExternalAuthRefreshContext;
+use codex_protocol::account::PlanType;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::VecDeque;
@@ -332,6 +334,7 @@ async fn retired_policy_discards_staged_cache_and_retains_previous_payload() {
     let loader = codex_config::CloudConfigBundleLoader::new(async { Ok(None) })
         .with_ema_policy_snapshots(service.policy.clone(), || async {
             CloudConfigBundleSnapshot {
+                config_server: None,
                 bundle: Ok(None),
                 binding: None,
             }
@@ -585,6 +588,8 @@ async fn get_bundle_allows_eligible_workspace_plans_and_writes_cache() {
         "education",
         "edu_plus",
         "edu_pro",
+        "sci",
+        "sci_plus",
     ] {
         let bundle = test_bundle();
         let fetcher = Arc::new(StaticBundleClient::new(bundle.clone()));
@@ -661,7 +666,10 @@ async fn get_bundle_skips_team_like_business_plans() {
 #[tokio::test]
 async fn get_bundle_rejects_invalid_remote_bundle_before_cache_write() {
     let codex_home = tempdir().expect("tempdir");
-    let fetcher = Arc::new(StaticBundleClient::new(invalid_config_bundle()));
+    let mut invalid = invalid_config_bundle();
+    invalid.config_toml.enterprise_managed[0].contents =
+        "secret_credential = [secret-token".to_string();
+    let fetcher = Arc::new(StaticBundleClient::new(invalid));
     let service = CloudConfigBundleService::new(
         auth_manager_with_plan("business").await,
         fetcher.clone(),
@@ -676,6 +684,8 @@ async fn get_bundle_rejects_invalid_remote_bundle_before_cache_write() {
 
     assert_eq!(err.code(), CloudConfigBundleLoadErrorCode::InvalidBundle);
     assert!(err.to_string().contains("invalid cloud config bundle"));
+    assert!(!err.to_string().contains("secret"));
+    assert!(!format!("{err:?}").contains("secret"));
     assert_eq!(fetcher.request_count.load(Ordering::SeqCst), 1);
     assert!(
         !codex_home
@@ -686,15 +696,16 @@ async fn get_bundle_rejects_invalid_remote_bundle_before_cache_write() {
 }
 
 #[tokio::test]
-async fn invalid_cloud_provider_does_not_replace_cached_bundle() {
+async fn invalid_requirements_do_not_replace_cached_bundle() {
     let codex_home = tempdir().expect("tempdir");
     let cache = create_test_cache(codex_home.path());
     let previous = test_bundle();
     write_test_cache(&cache, previous.clone()).await;
 
     for contents in [
+        "allowed_approval_policies = ['secret-policy']",
         "[model_providers.openai]\nname = 'Reserved'",
-        "[model_providers.gateway]\nname = '   '",
+        "[model_providers.secret-provider]\nname = '   '",
         "[model_providers.gateway]\nbase_url = 'https://gateway.example/v1'",
         "[model_providers.amazon-bedrock]\nname = 'Managed Bedrock'",
         "[model_providers.amazon-bedrock-runtime]\nname = 'Managed Bedrock Runtime'",
@@ -714,8 +725,10 @@ async fn invalid_cloud_provider_does_not_replace_cached_bundle() {
         let error = service
             .validate_and_cache_remote_bundle(&auth, "refresh", /*attempt*/ 1, invalid)
             .await
-            .expect_err("invalid provider must fail before cache write");
+            .expect_err("invalid requirements must fail before cache write");
         assert_eq!(error.code(), CloudConfigBundleLoadErrorCode::InvalidBundle);
+        assert!(!error.to_string().contains("secret"));
+        assert!(!format!("{error:?}").contains("secret"));
         assert_eq!(
             cache
                 .load(Some("user-12345"), Some("account-12345"))
@@ -1128,7 +1141,7 @@ async fn get_bundle_surfaces_auth_recovery_message() {
 }
 
 #[tokio::test]
-async fn get_bundle_refreshes_external_auth_after_unauthorized() {
+async fn external_auth_recovers_once_per_bundle_fetch() {
     let auth_home = tempdir().expect("tempdir");
     let auth_manager = Arc::new(
         AuthManager::new(
@@ -1172,7 +1185,7 @@ async fn get_bundle_refreshes_external_auth_after_unauthorized() {
     });
     let codex_home = tempdir().expect("tempdir");
     let service = CloudConfigBundleService::new(
-        auth_manager,
+        Arc::clone(&auth_manager),
         fetcher.clone(),
         codex_home.path().to_path_buf(),
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
@@ -1181,6 +1194,31 @@ async fn get_bundle_refreshes_external_auth_after_unauthorized() {
     assert_eq!(service.load_startup_bundle().await, Ok(Some(test_bundle())));
     assert_eq!(fetcher.request_count.load(Ordering::SeqCst), 2);
     assert_eq!(external_auth.refresh_count.load(Ordering::SeqCst), 1);
+    let retried_fetcher = Arc::new(SequenceBundleClient::new(vec![
+        Err(BundleRequestError::Unauthorized {
+            status_code: Some(401),
+            message: "rejected".into(),
+        }),
+        Err(request_error()),
+        Err(BundleRequestError::Unauthorized {
+            status_code: Some(401),
+            message: "still rejected".into(),
+        }),
+        Ok(test_bundle()),
+    ]));
+    let retrying = CloudConfigBundleService::new(
+        Arc::clone(&auth_manager),
+        retried_fetcher.clone(),
+        codex_home.path().to_path_buf(),
+        CLOUD_CONFIG_BUNDLE_TIMEOUT,
+    )
+    .without_cache();
+    assert_eq!(
+        retrying.get_latest().await.unwrap_err().code(),
+        CloudConfigBundleLoadErrorCode::Auth
+    );
+    assert_eq!(retried_fetcher.request_count.load(Ordering::SeqCst), 3);
+    assert_eq!(external_auth.refresh_count.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]
@@ -1309,7 +1347,7 @@ async fn production_loader_recovers_startup_timeouts_in_background() {
         codex_home.path().to_path_buf(),
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
-    let (loader, _) = crate::bundle_loader::cloud_config_bundle_loader_for_service(service);
+    let (loader, _) = crate::bundle_loader::managed_config_bundle_loader_for_service(service);
     let (initial, ()) = tokio::join!(loader.get(), async {
         fetcher.request_started.notified().await;
         tokio::time::advance(CLOUD_CONFIG_BUNDLE_TIMEOUT + Duration::from_millis(1)).await;
@@ -1389,7 +1427,7 @@ async fn production_loader_restores_normal_refresh_interval_after_non_timeout_er
         codex_home.path().to_path_buf(),
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
-    let (loader, _) = crate::bundle_loader::cloud_config_bundle_loader_for_service(service);
+    let (loader, _) = crate::bundle_loader::managed_config_bundle_loader_for_service(service);
     let (initial, ()) = tokio::join!(loader.get(), async {
         fetcher.request_started.notified().await;
         tokio::time::advance(CLOUD_CONFIG_BUNDLE_TIMEOUT + Duration::from_millis(1)).await;
@@ -1461,7 +1499,7 @@ async fn production_loader_refreshes_later_configs_and_preserves_failed_refreshe
         codex_home.path().to_path_buf(),
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
-    let (loader, _) = crate::bundle_loader::cloud_config_bundle_loader_for_service(service);
+    let (loader, _) = crate::bundle_loader::managed_config_bundle_loader_for_service(service);
 
     let (first, second) = tokio::join!(loader.get(), loader.get());
     assert_eq!(first, Ok(Some(initial_bundle.clone())));
@@ -1518,7 +1556,7 @@ async fn each_loader_owns_refresh_until_its_last_clone_is_dropped() {
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
     let (loader, original_task) =
-        crate::bundle_loader::cloud_config_bundle_loader_for_service(service);
+        crate::bundle_loader::managed_config_bundle_loader_for_service(service);
     let cloned_loader = loader.clone();
     assert_eq!(loader.get().await, Ok(Some(test_bundle())));
     fetcher.request_started.notified().await;
@@ -1544,7 +1582,7 @@ async fn each_loader_owns_refresh_until_its_last_clone_is_dropped() {
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
     let (replacement_loader, replacement_task) =
-        crate::bundle_loader::cloud_config_bundle_loader_for_service(replacement_service);
+        crate::bundle_loader::managed_config_bundle_loader_for_service(replacement_service);
     assert_eq!(replacement_loader.get().await, Ok(Some(test_bundle())));
     replacement_fetcher.request_started.notified().await;
 
@@ -1561,14 +1599,13 @@ async fn each_loader_owns_refresh_until_its_last_clone_is_dropped() {
     .expect("both loader owners should keep refreshing");
     assert_eq!(fetcher.request_count.load(Ordering::SeqCst), 3);
 
+    // Aborting is asynchronous; joining waits for cancellation to finish.
     drop(cloned_loader);
-    tokio::task::yield_now().await;
-    assert!(original_task.is_finished());
+    assert!(original_task.await.unwrap_err().is_cancelled());
     assert!(!replacement_task.is_finished());
 
     drop(replacement_loader);
-    tokio::task::yield_now().await;
-    assert!(replacement_task.is_finished());
+    assert!(replacement_task.await.unwrap_err().is_cancelled());
     tokio::time::advance(CLOUD_CONFIG_BUNDLE_CACHE_REFRESH_INTERVAL + Duration::from_secs(1)).await;
     tokio::task::yield_now().await;
     assert_eq!(replacement_fetcher.request_count.load(Ordering::SeqCst), 2);
@@ -1592,7 +1629,7 @@ async fn dropping_loader_cancels_in_flight_startup_and_refresh() {
             codex_home.path().to_path_buf(),
             CLOUD_CONFIG_BUNDLE_TIMEOUT,
         );
-        let (loader, _) = crate::bundle_loader::cloud_config_bundle_loader_for_service(service);
+        let (loader, _) = crate::bundle_loader::managed_config_bundle_loader_for_service(service);
         if starts_from_cache {
             assert_eq!(loader.get().await, Ok(Some(test_bundle())));
             tokio::task::yield_now().await;

@@ -1,5 +1,7 @@
 //! Request-scoped interception of model response streams.
+use crate::ExtensionFuture;
 pub use codex_api::ApiError as ModelResponseError;
+pub use codex_api::GuardianAssessment;
 pub use codex_api::ResponseEvent;
 use futures::stream::BoxStream;
 use std::collections::HashMap;
@@ -28,9 +30,16 @@ pub struct ModelRequestInput<'a> {
     pub model: &'a str,
 }
 
-/// Creates request-scoped interceptors without delaying inference.
-/// Return None for requests this host does not manage.
+/// Checks model requests and creates request-scoped response interceptors.
 pub trait ModelRequestContributor: Send + Sync + std::fmt::Debug {
+    /// Core awaits this check before submitting generation to the transport.
+    /// Return true to fail with `SessionBudgetExceeded`. Requests already handed to the
+    /// transport can still complete or retry. WebSocket warmup skips this check.
+    fn budget_exhausted<'a>(&'a self, _thread_id: &'a str) -> ExtensionFuture<'a, bool> {
+        Box::pin(async { false })
+    }
+
+    /// Return None for requests this contributor does not intercept.
     fn request(&self, input: ModelRequestInput<'_>) -> Option<Box<dyn ModelResponseInterceptor>>;
 }
 

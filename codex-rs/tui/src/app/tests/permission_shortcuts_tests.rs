@@ -146,6 +146,7 @@ async fn permission_shortcut_rejections_leave_state_unchanged() -> Result<()> {
         )
         .await?;
         let mut app_server = AppServerSession::new(
+            crate::backend_id::BackendId::new(),
             codex_app_server_client::AppServerClient::InProcess(client),
             crate::app_server_session::ThreadParamsMode::Embedded,
         );

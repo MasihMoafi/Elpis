@@ -32,6 +32,7 @@ pub use core_test_support::test_path_buf_with_windows;
 pub use core_test_support::test_tmp_path;
 pub use core_test_support::test_tmp_path_buf;
 pub use json_logging::app_server_json_shutdown_event;
+pub use local_websocket_exec_server::LocalWebsocketExecServer;
 pub use mock_model_server::create_mock_responses_server_repeating_assistant;
 pub use mock_model_server::create_mock_responses_server_sequence;
 pub use mock_model_server::create_mock_responses_server_sequence_unchecked;
@@ -53,10 +54,40 @@ pub use rollout::create_fake_rollout_with_text_elements;
 pub use rollout::create_fake_rollout_with_token_usage;
 pub use rollout::rollout_path;
 use serde::de::DeserializeOwned;
+pub use test_app_server::DEFAULT_APP_SERVER_TEST_ARGS;
 pub use test_app_server::DEFAULT_CLIENT_NAME;
-pub use test_app_server::DISABLE_PLUGIN_STARTUP_TASKS_ARG;
 pub use test_app_server::TestAppServer;
 pub use test_app_server::TestAppServerBuilder;
+
+pub const CLEARED_OPENAI_AUTH_ENV: &[(&str, Option<&str>)] = &[
+    (codex_login::OPENAI_API_KEY_ENV_VAR, None),
+    (codex_login::CODEX_API_KEY_ENV_VAR, None),
+    (codex_login::CODEX_ACCESS_TOKEN_ENV_VAR, None),
+    (
+        codex_protocol::shell_environment::OPENAI_FEDERATION_RULE_ID_ENV_VAR,
+        None,
+    ),
+    (
+        codex_protocol::shell_environment::OPENAI_IDENTITY_TOKEN_FILE_ENV_VAR,
+        None,
+    ),
+    (
+        codex_protocol::shell_environment::OPENAI_IDENTITY_TOKEN_SOURCE_ENV_VAR,
+        None,
+    ),
+    (
+        codex_protocol::shell_environment::OPENAI_SPIFFE_AUDIENCE_ENV_VAR,
+        None,
+    ),
+    (
+        codex_protocol::shell_environment::OPENAI_SPIFFE_ID_ENV_VAR,
+        None,
+    ),
+    (
+        codex_protocol::shell_environment::OPENAI_WORKLOAD_IDENTITY_CONTEXT_ENV_VAR,
+        None,
+    ),
+];
 
 pub fn to_response<T: DeserializeOwned>(response: JSONRPCResponse) -> anyhow::Result<T> {
     let value = serde_json::to_value(response.result)?;

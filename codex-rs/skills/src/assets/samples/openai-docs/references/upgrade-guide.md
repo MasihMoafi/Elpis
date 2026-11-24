@@ -4,19 +4,22 @@ Use this file only as a bundled routing fallback when the live migration guide c
 
 For latest, current, default, or unspecified-model upgrades:
 
-1. Run `scripts/resolve-latest-model-info`.
-2. Fetch the returned `migrationGuideUrl` and `promptingGuideUrl` exactly.
+1. Follow the platform-specific resolver instructions in `references/model-migration.md`.
+2. Fetch the returned `migrationGuideUrl` exactly; fetch `promptingGuideUrl` only when prompting guidance or prompt changes are needed.
 3. Treat the live guides as canonical.
 4. If remote retrieval fails, disclose that bundled fallback guidance is being used.
 
-For an explicit GPT-6 Astra migration:
+For an explicit GPT-6.2 Astra or Sol target, use the [GPT-6.2 migration quickstart](https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6.2-astra#gpt-6.2-astra-migration-quickstart). Both models support Responses and Chat Completions. Tool calling requires Responses.
+
+For another explicitly requested GPT-6 model with guidance in the GPT-6 Astra guide:
 
 1. Preserve the user's explicit target; do not run the latest-model resolver.
 2. Fetch the live GPT-6 model guidance:
 
    https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra.md
 
-3. Read `references/upgrading-to-gpt-6-astra.md` for skill-specific migration judgment.
-4. Read `references/prompting-guide.md` only when prompt changes are needed.
+3. Verify the exact target's current official model page and compatibility rules; family examples do not establish support for every sibling. If availability or compatibility cannot be verified, preserve the requested target and report the blocker instead of substituting a model or implementing an unverified migration.
+4. Read `references/upgrading-to-gpt-6-astra.md` only for unresolved skill-specific migration judgment.
+5. Read `references/prompting-guide.md` only when prompt changes are needed.
 
-For another explicit model target, preserve that target and fetch its current official guidance. Do not reuse GPT-6-specific defaults, API shapes, or compatibility rules for a different model.
+For another explicit model target, preserve that target and fetch its current official guidance. Do not reuse another model's defaults, API shapes, or compatibility rules, including Astra-only restrictions for Sol or Luna.

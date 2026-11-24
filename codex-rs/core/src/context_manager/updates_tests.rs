@@ -2,10 +2,14 @@
 
 use super::*;
 use crate::context::ContextualUserFragment;
+use crate::context::world_state::WorldStateUpdateContent;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::InternalChatMessageMetadataPassthrough;
+use codex_protocol::models::input_text;
 use pretty_assertions::assert_eq;
 use serde_json::json;
+use std::sync::Arc;
 
 struct TestFragment {
     role: &'static str,
@@ -30,8 +34,8 @@ impl ContextualUserFragment for TestFragment {
         ("", "")
     }
 
-    fn body(&self) -> String {
-        self.text.to_string()
+    fn body(&self) -> ContentItem {
+        input_text(self.text.to_string())
     }
 }
 
@@ -44,7 +48,10 @@ fn fragment(role: &'static str, text: &'static str) -> TestFragment {
 }
 
 fn message(role: &str, texts: &[&str]) -> ResponseItem {
+    let provenance = serde_json::from_value(json!({"harness_injected": true})).unwrap();
     ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: None,
         role: role.to_string(),
         content: texts
@@ -55,6 +62,7 @@ fn message(role: &str, texts: &[&str]) -> ResponseItem {
             .collect(),
         phase: None,
         internal_chat_message_metadata_passthrough: Some(InternalChatMessageMetadataPassthrough {
+            content_item_metadata: Some(vec![provenance; texts.len()]),
             content_item_kinds: Some(
                 texts
                     .iter()
@@ -70,7 +78,7 @@ fn additional_tools() -> ResponseItem {
     ResponseItem::AdditionalTools {
         id: None,
         role: "developer".to_string(),
-        tools: vec![json!({"type": "function", "name": "lookup", "parameters": {}})],
+        tools: Arc::from([json!({"type": "function", "name": "lookup", "parameters": {}})]),
     }
 }
 

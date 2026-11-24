@@ -153,6 +153,10 @@ wire_api = "responses"
 }
 
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "Windows doctor fixture does not discover the synthetic Git executable"
+)]
 fn startup_and_doctor_do_not_execute_path_helpers() -> Result<()> {
     let fixture = Fixture::new()?;
     // Non-TTY dumb-terminal startup exits immediately after terminal detection.
@@ -217,13 +221,13 @@ fn doctor_reports_failed_database_paths() -> Result<()> {
     let fixture = Fixture::new()?;
     let sqlite_home = fixture.root.path().join("sqlite");
     std::fs::create_dir(&sqlite_home)?;
-    let sqlite = SqliteConfig::from_sqlite_home(AbsolutePathBuf::try_from(sqlite_home.clone())?);
+    let sqlite = SqliteConfig::new_for_testing(AbsolutePathBuf::try_from(sqlite_home.clone())?);
     let config_file = fixture.home.join("config.toml");
     let config = std::fs::read_to_string(&config_file)?;
     let sqlite_home = toml::Value::String(sqlite_home.display().to_string());
     std::fs::write(
         &config_file,
-        format!("sqlite_home = {sqlite_home}\n{config}"),
+        format!("sqlite_home = {sqlite_home}\nlog_dir = {sqlite_home}\n{config}"),
     )?;
 
     for (snapshot_name, failed_paths) in [
@@ -311,13 +315,13 @@ fn doctor_redacts_failed_database_paths_in_json() -> Result<()> {
     let fixture = Fixture::new()?;
     let sqlite_home = fixture.root.path().join("doctor-secret-sqlite");
     std::fs::create_dir(&sqlite_home)?;
-    let sqlite = SqliteConfig::from_sqlite_home(AbsolutePathBuf::try_from(sqlite_home.clone())?);
+    let sqlite = SqliteConfig::new_for_testing(AbsolutePathBuf::try_from(sqlite_home.clone())?);
     let config_file = fixture.home.join("config.toml");
     let config = std::fs::read_to_string(&config_file)?;
     let sqlite_home = toml::Value::String(sqlite_home.display().to_string());
     std::fs::write(
         &config_file,
-        format!("sqlite_home = {sqlite_home}\n{config}"),
+        format!("sqlite_home = {sqlite_home}\nlog_dir = {sqlite_home}\n{config}"),
     )?;
     std::fs::write(sqlite.logs_db_path(), "not a SQLite database")?;
 
@@ -579,8 +583,8 @@ async fn interactive_tmux_startup_does_not_execute_workspace_helpers() -> Result
             output.chars().take(/*n*/ 4000).collect::<String>()
         )
     })??;
-    // The trust screen discards pending input after its first draw. Retry the quit key
-    // until that drain has finished, and keep consuming output during normal shutdown.
+    // The first Ctrl+C leaves the untrusted workspace for the command center.
+    // Keep sending Ctrl+C so the TUI exits even if the first draw discarded input.
     let mut quit_retry = tokio::time::interval(Duration::from_millis(/*millis*/ 250));
     let mut exit_rx = spawned.exit_rx;
     timeout(Duration::from_secs(/*secs*/ 10), async {
@@ -588,7 +592,7 @@ async fn interactive_tmux_startup_does_not_execute_workspace_helpers() -> Result
             tokio::select! {
                 result = &mut exit_rx => return result,
                 _ = quit_retry.tick() => {
-                    let _ = writer.send(b"2".to_vec()).await;
+                    let _ = writer.send(b"\x03".to_vec()).await;
                 }
                 Some(_) = output_rx.recv() => {}
             }

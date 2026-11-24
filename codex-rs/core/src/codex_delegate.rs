@@ -12,7 +12,7 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnEnvironmentSelection;
-use codex_protocol::user_input::UserInput;
+use codex_user_input::ResolvedUserInput;
 use serde_json::Value;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -31,6 +31,7 @@ use crate::session::session::Session;
 use crate::session::startup::SessionStartup;
 use crate::session::startup::SessionStartupGuard;
 use crate::session::turn_context::TurnContext;
+use codex_history::HistoryInitialization;
 use codex_history::InitialHistory;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
@@ -80,6 +81,13 @@ pub(crate) async fn run_codex_thread_interactive(
 
     let conversation_history = initial_history.unwrap_or(InitialHistory::New);
     let forked_from_thread_id = conversation_history.forked_from_id();
+    let history_initialization = if matches!(&conversation_history, InitialHistory::Forked(_))
+        && forked_from_thread_id == Some(parent_session.thread_id)
+    {
+        HistoryInitialization::WarmFork
+    } else {
+        HistoryInitialization::from_history(&conversation_history)
+    };
     let runtime = parent_session.services.local_agent_runtime.clone();
     let startup = Arc::new(SessionStartup::default());
     startup.hold_membership(runtime.admit_start()?);
@@ -95,12 +103,19 @@ pub(crate) async fn run_codex_thread_interactive(
     let mut thread_extension_init = codex_extension_api::ExtensionDataInit::default();
     thread_extension_init.insert(isolation);
     let spawn_result = Session::spawn(SessionSpawnArgs {
+        attached_thread: false,
         startup: Some(Arc::clone(&startup)),
         config,
+        request_country: parent_ctx.request_country().clone(),
+        prompt_cache_key: parent_session
+            .services
+            .model_client
+            .prompt_cache_key_policy(),
         allow_provider_model_fallback: false,
         instructions,
         installation_id: parent_session.installation_id.clone(),
         auth_manager,
+        runtime_auth: parent_session.services.runtime_auth.clone(),
         models_manager,
         git_root_discovery: Arc::clone(&parent_session.services.git_root_discovery),
         environment_manager: parent_session
@@ -113,7 +128,10 @@ pub(crate) async fn run_codex_thread_interactive(
         code_mode_session_provider: parent_session.services.code_mode_service.session_provider(),
         extensions,
         conversation_history,
-        disabled_plugin_ids: None,
+        resume_preparation: None,
+        history_initialization,
+        disabled_plugin_ids: (isolation == codex_extension_api::SessionIsolation::Inherit)
+            .then(|| parent_ctx.disabled_plugin_ids.clone()),
         requested_history_mode: None,
         fork_persistence: ForkPersistence::Copied,
         session_source,
@@ -221,7 +239,7 @@ pub(crate) async fn run_codex_thread_one_shot(
     config: Config,
     auth_manager: Arc<AuthManager>,
     models_manager: SharedModelsManager,
-    input: Vec<UserInput>,
+    input: Vec<ResolvedUserInput>,
     parent_session: Arc<Session>,
     parent_ctx: Arc<TurnContext>,
     cancel_token: CancellationToken,
@@ -288,15 +306,16 @@ pub(crate) async fn run_codex_thread_one_shot(
             let _ = tx_bridge.send(event).await;
             if should_shutdown {
                 let _ = ops_tx
-                    .send(Submission {
+                    .send(Box::new(Submission {
                         id: "shutdown".to_string(),
-                        op: Op::Shutdown {},
+                        op: Op::Shutdown.into(),
                         turn_extension_init: None,
                         trace: None,
                         parent_turn_id: None,
                         root_turn_id: None,
                         residency_guard: None,
-                    })
+                        message_delivery: None,
+                    }))
                     .await;
                 child_cancel.cancel();
                 break;
@@ -397,7 +416,7 @@ async fn forward_event_or_shutdown(
 /// Forward ops from a caller to a sub-agent, respecting cancellation.
 async fn forward_ops(
     io: Arc<SessionIo>,
-    rx_ops: Receiver<Submission>,
+    rx_ops: Receiver<Box<Submission>>,
     cancel_token_ops: CancellationToken,
 ) {
     loop {

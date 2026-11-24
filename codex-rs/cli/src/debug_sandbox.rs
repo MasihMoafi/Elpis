@@ -20,24 +20,28 @@ use codex_core::exec_env::create_env;
 use codex_core::spawn::CODEX_SANDBOX_ENV_VAR;
 use codex_core::spawn::CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR;
 use codex_core::windows_sandbox::local_binding_policy_for_sandbox;
-use codex_core::windows_sandbox::managed_proxy_routing_for_windows_sandbox;
 use codex_protocol::config_types::SandboxMode;
+use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::SandboxEnforcement;
 use codex_protocol::permissions::NetworkSandboxPolicy;
-use codex_sandboxing::landlock::create_linux_sandbox_command_args_for_permission_profile;
-#[cfg(target_os = "macos")]
-use codex_sandboxing::seatbelt::CreateSeatbeltCommandArgsParams;
-#[cfg(target_os = "macos")]
-use codex_sandboxing::seatbelt::create_seatbelt_command_args;
-use codex_sandboxing::with_managed_mitm_ca_readable_root;
+use codex_sandboxing::SandboxCommand;
+use codex_sandboxing::SandboxExecutables;
+use codex_sandboxing::SandboxManager;
+use codex_sandboxing::SandboxNetwork;
+use codex_sandboxing::SandboxSelection;
+use codex_sandboxing::SandboxTransformRequest;
+use codex_sandboxing::SandboxType as SandboxBackend;
+use codex_sandboxing::SandboxType::WindowsMxc;
+use codex_sandboxing::managed_proxy_routing_for_windows_sandbox;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_cli::CliConfigOverrides;
+use codex_utils_path_uri::PathUri;
 use tokio::process::Child;
 use tokio::process::Command as TokioCommand;
 use toml::Value as TomlValue;
 
-use crate::LandlockCommand;
+use crate::LinuxSandboxCommand;
 use crate::SeatbeltCommand;
 use crate::WindowsCommand;
 use crate::exit_status::handle_exit_status;
@@ -51,6 +55,24 @@ pub async fn run_command_under_seatbelt(
     codex_linux_sandbox_exe: Option<PathBuf>,
     loader_overrides: LoaderOverrides,
 ) -> anyhow::Result<()> {
+    let mut launch = start_command_under_seatbelt(
+        command,
+        codex_linux_sandbox_exe,
+        loader_overrides,
+        /*piped*/ false,
+    )
+    .await?;
+    launch.wait_and_exit().await
+}
+
+/// Starts a local Seatbelt command while retaining its private network proxy until exit.
+#[cfg(target_os = "macos")]
+pub async fn start_command_under_seatbelt(
+    command: SeatbeltCommand,
+    codex_linux_sandbox_exe: Option<PathBuf>,
+    loader_overrides: LoaderOverrides,
+    piped: bool,
+) -> anyhow::Result<StartedSandboxChild> {
     let SeatbeltCommand {
         sandbox_state,
         permissions_profile,
@@ -66,7 +88,7 @@ pub async fn run_command_under_seatbelt(
         &permissions_profile,
         include_managed_config,
     );
-    run_command_under_sandbox(
+    start_command_under_sandbox(
         DebugSandboxConfigOptions {
             sandbox_state,
             permissions_profile,
@@ -80,6 +102,7 @@ pub async fn run_command_under_seatbelt(
         SandboxType::Seatbelt,
         log_denials,
         &allow_unix_sockets,
+        piped,
     )
     .await
 }
@@ -93,12 +116,30 @@ pub async fn run_command_under_seatbelt(
     anyhow::bail!("Seatbelt sandbox is only available on macOS");
 }
 
-pub async fn run_command_under_landlock(
-    command: LandlockCommand,
+pub async fn run_command_under_linux_sandbox(
+    command: LinuxSandboxCommand,
     codex_linux_sandbox_exe: Option<PathBuf>,
     loader_overrides: LoaderOverrides,
 ) -> anyhow::Result<()> {
-    let LandlockCommand {
+    let mut launch = start_command_under_linux_sandbox(
+        command,
+        codex_linux_sandbox_exe,
+        loader_overrides,
+        /*piped*/ false,
+    )
+    .await?;
+    launch.wait_and_exit().await
+}
+
+/// Start a Linux sandbox child while retaining the resources required for its lifetime.
+pub async fn start_command_under_linux_sandbox(
+    command: LinuxSandboxCommand,
+    codex_linux_sandbox_exe: Option<PathBuf>,
+    loader_overrides: LoaderOverrides,
+    piped: bool,
+) -> anyhow::Result<StartedSandboxChild> {
+    let LinuxSandboxCommand {
+        transparent_tcp,
         sandbox_state,
         permissions_profile,
         config_profile: _,
@@ -111,7 +152,7 @@ pub async fn run_command_under_landlock(
         &permissions_profile,
         include_managed_config,
     );
-    run_command_under_sandbox(
+    start_command_under_sandbox(
         DebugSandboxConfigOptions {
             sandbox_state,
             permissions_profile,
@@ -122,9 +163,10 @@ pub async fn run_command_under_landlock(
         command,
         config_overrides,
         codex_linux_sandbox_exe,
-        SandboxType::Landlock,
+        SandboxType::Linux { transparent_tcp },
         /*log_denials*/ false,
         &[],
+        piped,
     )
     .await
 }
@@ -168,7 +210,9 @@ pub async fn run_command_under_windows_sandbox(
 enum SandboxType {
     #[cfg(target_os = "macos")]
     Seatbelt,
-    Landlock,
+    Linux {
+        transparent_tcp: bool,
+    },
     Windows,
 }
 
@@ -201,15 +245,80 @@ impl ManagedRequirementsMode {
 }
 
 async fn run_command_under_sandbox(
+    config_options: DebugSandboxConfigOptions,
+    command: Vec<String>,
+    config_overrides: CliConfigOverrides,
+    codex_linux_sandbox_exe: Option<PathBuf>,
+    sandbox_type: SandboxType,
+    log_denials: bool,
+    allow_unix_sockets: &[AbsolutePathBuf],
+) -> anyhow::Result<()> {
+    let mut launch = start_command_under_sandbox(
+        config_options,
+        command,
+        config_overrides,
+        codex_linux_sandbox_exe,
+        sandbox_type,
+        log_denials,
+        allow_unix_sockets,
+        /*piped*/ false,
+    )
+    .await?;
+    launch.wait_and_exit().await
+}
+
+/// A child and the resources that must be released when that child exits.
+pub struct StartedSandboxChild {
+    child: Child,
+    _network_proxy: Option<codex_core::config::StartedNetworkProxy>,
+    #[cfg(target_os = "macos")]
+    denial_logger: Option<DenialLogger>,
+}
+
+impl StartedSandboxChild {
+    /// Borrow the child without separating it from the proxy that must outlive it.
+    pub(crate) fn child_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+
+    /// Preserve the ordinary CLI's exit status and optional denial report.
+    async fn wait_and_exit(&mut self) -> anyhow::Result<()> {
+        let status = self.child_mut().wait().await?;
+        #[cfg(target_os = "macos")]
+        if let Some(denial_logger) = self.denial_logger.take() {
+            let denials = denial_logger.finish().await;
+            eprintln!("\n=== Sandbox denials ===");
+            if denials.is_empty() {
+                eprintln!("None found.");
+            } else {
+                for seatbelt::SandboxDenial { name, capability } in denials {
+                    eprintln!("({name}) {capability}");
+                }
+            }
+        }
+        handle_exit_status(status);
+    }
+}
+
+/// Resolve and enforce the original CLI policy before starting a child with its private proxy.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "preserve the existing sandbox invocation inputs"
+)]
+async fn start_command_under_sandbox(
     mut config_options: DebugSandboxConfigOptions,
     command: Vec<String>,
     config_overrides: CliConfigOverrides,
     codex_linux_sandbox_exe: Option<PathBuf>,
     sandbox_type: SandboxType,
     log_denials: bool,
-    #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+    #[cfg_attr(
+        not(any(target_os = "linux", target_os = "macos")),
+        allow(unused_variables)
+    )]
     allow_unix_sockets: &[AbsolutePathBuf],
-) -> anyhow::Result<()> {
+    piped: bool,
+) -> anyhow::Result<StartedSandboxChild> {
     let sandbox_state = config_options
         .sandbox_state
         .sandbox_state_json
@@ -248,18 +357,12 @@ async fn run_command_under_sandbox(
     )
     .await?;
 
-    // In practice, this should be `std::env::current_dir()` because this CLI
-    // does not support `--cwd`, but let's use the config value for consistency.
-    let cwd = config.cwd.clone();
-    // Non-Windows sandbox launchers still use `sandbox_policy_cwd` for any
-    // remaining cwd-dependent policy resolution. `:workspace_roots` entries in
-    // the effective profile have already been materialized from config roots.
-    let sandbox_policy_cwd = cwd.clone();
+    let cwd = &config.cwd;
     let env = create_env(
         &config.permissions.shell_environment_policy,
         /*thread_id*/ None,
     );
-    let mut permission_profile = match sandbox_state.as_ref() {
+    let base_profile = match sandbox_state.as_ref() {
         Some(state) => match &state.permission_profile {
             PermissionProfile::External { .. } => {
                 // `External` only says that the producer relies on an outer sandbox; it does not
@@ -270,278 +373,200 @@ async fn run_command_under_sandbox(
             }
             permission_profile => permission_profile.clone(),
         },
-        None => config.permissions.effective_permission_profile(),
+        None => config.permissions.permission_profile().clone(),
     };
-    if matches!(permission_profile, PermissionProfile::Disabled) && sandbox_state_disable_network {
+    if matches!(base_profile, PermissionProfile::Disabled) && sandbox_state_disable_network {
         anyhow::bail!(
             "--sandbox-state-disable-network cannot be applied to a disabled permission profile"
         );
     }
-    if !matches!(permission_profile, PermissionProfile::Disabled)
+    let permission_profile = if !matches!(base_profile, PermissionProfile::Disabled)
         && (!sandbox_state_readable_root.is_empty() || sandbox_state_disable_network)
     {
-        let file_system = permission_profile
+        let file_system = base_profile
             .file_system_sandbox_policy()
-            .with_additional_readable_roots(&cwd, &sandbox_state_readable_root);
+            .with_additional_readable_roots(cwd, &sandbox_state_readable_root);
         let network = if sandbox_state_disable_network {
             NetworkSandboxPolicy::Restricted
         } else {
-            permission_profile.network_sandbox_policy()
+            base_profile.network_sandbox_policy()
         };
-        permission_profile = PermissionProfile::from_runtime_permissions(&file_system, network);
-    }
+        PermissionProfile::from_runtime_permissions(&file_system, network)
+    } else {
+        base_profile
+    };
     let use_legacy_landlock = sandbox_state.as_ref().map_or_else(
         || config.features.use_legacy_landlock(),
         |state| state.use_legacy_landlock,
     );
+    // The parent can select MXC through a CLI override absent from the child's
+    // disk config. Preserve that backend rather than weakening enforcement.
+    // An explicit MXC launch fails closed if the native implementation is unavailable.
+    let windows_sandbox_type = if sandbox_state.as_ref().is_some_and(|state| state.use_mxc) {
+        WindowsMxc
+    } else {
+        config.effective_local_windows_sandbox_type()
+    };
 
-    match permission_profile.enforcement() {
-        SandboxEnforcement::Managed => {}
-        SandboxEnforcement::Disabled | SandboxEnforcement::External => {
-            let (program, args) = command
-                .split_first()
-                .context("sandbox command must not be empty")?;
-            let mut child = spawn_debug_sandbox_child(
-                PathBuf::from(program),
-                args.to_vec(),
-                /*arg0*/ None,
-                cwd.to_path_buf(),
-                permission_profile.network_sandbox_policy(),
-                env,
-                |_| {},
-            )
-            .await?;
-            handle_exit_status(child.wait().await?);
+    let transparent_tcp = match sandbox_type {
+        SandboxType::Linux { transparent_tcp } => {
+            transparent_tcp
+                || config
+                    .permissions
+                    .network
+                    .as_ref()
+                    .is_some_and(codex_core::config::NetworkProxySpec::transparent_tcp)
         }
-    }
-
-    // Legacy Windows sandbox sessions emulate inherited stdio and exit the process.
-    if let SandboxType::Windows = sandbox_type {
-        #[cfg(target_os = "windows")]
-        {
-            if config.effective_local_windows_sandbox_type()
-                != codex_sandboxing::SandboxType::WindowsMxc
-            {
+        #[cfg(target_os = "macos")]
+        SandboxType::Seatbelt => false,
+        SandboxType::Windows => false,
+    };
+    let sandbox = match permission_profile.enforcement() {
+        SandboxEnforcement::Disabled | SandboxEnforcement::External if transparent_tcp => {
+            anyhow::bail!("--transparent-tcp requires a managed Linux sandbox");
+        }
+        SandboxEnforcement::Disabled | SandboxEnforcement::External => SandboxBackend::None,
+        SandboxEnforcement::Managed => match sandbox_type {
+            #[cfg(target_os = "macos")]
+            SandboxType::Seatbelt => SandboxBackend::MacosSeatbelt,
+            SandboxType::Linux { .. } => SandboxBackend::LinuxSeccomp,
+            #[cfg(windows)]
+            SandboxType::Windows if windows_sandbox_type == WindowsMxc => WindowsMxc,
+            #[cfg(windows)]
+            SandboxType::Windows => {
+                let session_profile = if sandbox_state.is_none() {
+                    config.permissions.effective_permission_profile()
+                } else {
+                    permission_profile
+                };
                 let workspace_roots = config
                     .effective_workspace_roots()
                     .iter()
-                    .map(codex_utils_path_uri::PathUri::to_abs_path)
+                    .map(PathUri::to_abs_path)
                     .collect::<std::io::Result<Vec<_>>>()
                     .context("invalid Windows sandbox workspace roots")?;
                 run_command_under_windows_session(
                     &config,
-                    &permission_profile,
+                    &session_profile,
                     command,
-                    cwd,
+                    cwd.clone(),
                     workspace_roots,
                     env,
                 )
                 .await;
             }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            anyhow::bail!("Windows sandbox is only available on Windows");
-        }
-    }
+            #[cfg(not(windows))]
+            SandboxType::Windows => anyhow::bail!("Windows sandbox is only available on Windows"),
+        },
+    };
 
     #[cfg(target_os = "macos")]
-    let mut denial_logger = log_denials.then(DenialLogger::new).flatten();
+    let mut denial_logger = (log_denials && sandbox == SandboxBackend::MacosSeatbelt)
+        .then(DenialLogger::new)
+        .flatten();
     #[cfg(not(target_os = "macos"))]
     let _ = log_denials;
 
-    let managed_network_requirements_enabled = config.managed_network_requirements_enabled();
-
-    // This proxy should only live for the lifetime of the child process.
-    let network_proxy = match config.permissions.network.as_ref() {
-        Some(spec) => Some(
+    // Keep the proxy alive until the child exits.
+    let network_proxy = if sandbox != SandboxBackend::None
+        && let Some(spec) = &config.permissions.network
+    {
+        Some(
             spec.start_proxy(
                 &permission_profile,
-                managed_proxy_routing_for_windows_sandbox(
-                    config.effective_local_windows_sandbox_type(),
-                ),
-                local_binding_policy_for_sandbox(
-                    config.effective_local_windows_sandbox_type(),
-                    Some(std::env::consts::OS),
-                ),
+                managed_proxy_routing_for_windows_sandbox(windows_sandbox_type),
+                local_binding_policy_for_sandbox(windows_sandbox_type, Some(std::env::consts::OS)),
                 /*policy_decider*/ None,
                 /*blocked_request_observer*/ None,
-                managed_network_requirements_enabled,
+                config.managed_network_requirements_enabled(),
                 NetworkProxyAuditMetadata::default(),
             )
             .await
             .map_err(|err| anyhow::anyhow!("failed to start managed network proxy: {err}"))?,
-        ),
-        None => None,
+        )
+    } else {
+        None
     };
     let network = network_proxy
         .as_ref()
         .map(codex_core::config::StartedNetworkProxy::proxy);
-    // Proxy containment depends on whether a proxy is active, not whether its
-    // policy came from managed requirements.
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    let enforce_managed_network = network.is_some();
-    let managed_mitm_ca_trust_bundle_path = match network.as_ref() {
-        Some(network) => network.managed_mitm_ca_trust_bundle_path(),
-        None => None,
+    let sandbox_exe = match sandbox {
+        SandboxBackend::LinuxSeccomp => config.codex_linux_sandbox_exe.clone(),
+        WindowsMxc => Some(std::env::current_exe()?),
+        SandboxBackend::None
+        | SandboxBackend::MacosSeatbelt
+        | SandboxBackend::WindowsRestrictedToken => None,
     };
-    let runtime_permission_profile = with_managed_mitm_ca_readable_root(
-        permission_profile,
-        managed_mitm_ca_trust_bundle_path.as_ref(),
-        sandbox_policy_cwd.as_path(),
-    );
-
-    let mut child = match sandbox_type {
-        #[cfg(target_os = "macos")]
-        SandboxType::Seatbelt => {
-            let (file_system_sandbox_policy, network_sandbox_policy) =
-                runtime_permission_profile.to_runtime_permissions();
-            let mut args = create_seatbelt_command_args(CreateSeatbeltCommandArgsParams {
-                command,
-                file_system_sandbox_policy: &file_system_sandbox_policy,
-                network_sandbox_policy,
-                sandbox_policy_cwd: sandbox_policy_cwd.as_path(),
-                enforce_managed_network,
-                managed_network: None,
-                environment_id: None,
-                network: network.as_ref(),
-                extra_allow_unix_sockets: allow_unix_sockets,
-            })
-            .map_err(|err| anyhow::anyhow!(err))?;
-            // This CLI inherits the user's controlling terminal. Keep this deny
-            // after every shared policy allowance so the child cannot queue input
-            // for the unsandboxed shell that resumes when Codex exits.
-            match args.as_mut_slice() {
-                [flag, policy, ..] if flag.as_str() == "-p" => {
-                    // Older macOS policy compilers do not define the TIOCSTI symbol.
-                    policy.push_str(&format!(
-                        "\n(deny file-ioctl (ioctl-command {}))",
-                        libc::TIOCSTI
-                    ));
-                }
-                _ => anyhow::bail!("Seatbelt command is missing its generated policy"),
-            }
-            spawn_debug_sandbox_child(
-                PathBuf::from("/usr/bin/sandbox-exec"),
-                args,
-                /*arg0*/ None,
-                cwd.to_path_buf(),
-                network_sandbox_policy,
-                env,
-                |env_map| {
-                    env_map.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
-                    if let Some(network) = network.as_ref() {
-                        network.apply_to_env(env_map);
-                    }
-                },
-            )
-            .await?
+    let mut command = command.into_iter();
+    let program = command
+        .next()
+        .context("sandbox command must not be empty")?;
+    let cwd = PathUri::from_abs_path(cwd);
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    let manager = SandboxManager::for_inherited_terminal(allow_unix_sockets);
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    let manager = SandboxManager::new();
+    if transparent_tcp && network.is_none() {
+        anyhow::bail!("--transparent-tcp requires a managed network proxy");
+    }
+    let manager = manager.with_linux_sandbox_transparent_tcp(transparent_tcp);
+    let workspace_roots = sandbox_state.is_none().then(|| {
+        config
+            .permissions
+            .workspace_roots()
+            .iter()
+            .map(PathUri::from_abs_path)
+            .collect::<Vec<_>>()
+    });
+    #[cfg(target_os = "macos")]
+    let env = {
+        let mut env_map = env;
+        if sandbox == SandboxBackend::MacosSeatbelt {
+            env_map.insert(CODEX_SANDBOX_ENV_VAR.to_string(), "seatbelt".to_string());
         }
-        SandboxType::Landlock => {
-            #[expect(clippy::expect_used)]
-            let codex_linux_sandbox_exe = config
-                .codex_linux_sandbox_exe
-                .expect("codex-linux-sandbox executable not found");
-            let network_sandbox_policy = runtime_permission_profile.network_sandbox_policy();
-            let (env, managed_network) = if let Some(network) = network.as_ref() {
-                let prepared =
-                    network.prepare_for_optional_environment(env, /*environment_id*/ None)?;
-                (prepared.env, Some(prepared.sandbox_context))
-            } else {
-                (env, None)
-            };
-            let args = create_linux_sandbox_command_args_for_permission_profile(
-                command,
-                cwd.as_path(),
-                &runtime_permission_profile,
-                sandbox_policy_cwd.as_path(),
-                use_legacy_landlock,
-                managed_network.as_ref(),
-            );
-            spawn_debug_sandbox_child(
-                codex_linux_sandbox_exe,
-                args,
-                Some("codex-linux-sandbox"),
-                cwd.to_path_buf(),
-                network_sandbox_policy,
-                env,
-                |_| {},
-            )
-            .await?
-        }
-        #[cfg(not(target_os = "windows"))]
-        SandboxType::Windows => {
-            unreachable!("Windows sandbox should have been handled above");
-        }
-        #[cfg(target_os = "windows")]
-        SandboxType::Windows => {
-            use codex_sandboxing::SandboxCommand;
-            use codex_sandboxing::SandboxManager;
-            use codex_sandboxing::SandboxTransformRequest;
-            use codex_utils_path_uri::PathUri;
-
-            let (program, args) = command
-                .split_first()
-                .context("sandbox command must not be empty")?;
-            let sandbox_policy_cwd = PathUri::from_abs_path(&sandbox_policy_cwd);
-            let codex_self_exe = std::env::current_exe()?;
-            let request = SandboxManager::new().transform(SandboxTransformRequest {
-                command: SandboxCommand {
-                    program: program.into(),
-                    args: args.to_vec(),
-                    cwd: PathUri::from_abs_path(&cwd),
-                    env,
-                    managed_network: None,
-                    additional_permissions: None,
-                },
-                permissions: &runtime_permission_profile,
-                sandbox: codex_sandboxing::SandboxType::WindowsMxc,
-                enforce_managed_network,
-                environment_id: None,
-                network: network.as_ref(),
-                sandbox_policy_cwd: &sandbox_policy_cwd,
-                sandbox_exe: Some(codex_self_exe.as_path()),
-                use_legacy_landlock: false,
-                windows_sandbox_level: codex_protocol::config_types::WindowsSandboxLevel::Disabled,
-            })?;
-            let (program, args) = request
-                .command
-                .split_first()
-                .context("missing MXC wrapper")?;
-            spawn_debug_sandbox_child(
-                PathBuf::from(program),
-                args.to_vec(),
-                /*arg0*/ None,
-                cwd.to_path_buf(),
-                runtime_permission_profile.network_sandbox_policy(),
-                request.env,
-                |_| {},
-            )
-            .await?
-        }
+        env_map
     };
+    let wrapped = manager.transform(SandboxTransformRequest {
+        command: SandboxCommand {
+            program: program.into(),
+            args: command.collect(),
+            cwd: cwd.clone(),
+            env,
+            managed_network: None,
+            additional_permissions: None,
+        },
+        permissions: &permission_profile,
+        workspace_roots: workspace_roots.as_deref(),
+        selection: SandboxSelection::Explicit(sandbox),
+        network: SandboxNetwork::new(
+            network.is_some(),
+            network.as_ref(),
+            /*environment_id*/ None,
+        ),
+        sandbox_policy_cwd: &cwd,
+        executables: SandboxExecutables::Launcher(sandbox_exe.as_deref()),
+        use_legacy_landlock,
+        windows_sandbox_level: WindowsSandboxLevel::Disabled,
+    })?;
+
+    let child = spawn_debug_sandbox_child(
+        wrapped.into_direct_command()?,
+        permission_profile.network_sandbox_policy(),
+        piped,
+    )
+    .await?;
 
     #[cfg(target_os = "macos")]
     if let Some(denial_logger) = &mut denial_logger {
         denial_logger.on_child_spawn(&child);
     }
 
-    let status = child.wait().await?;
-
-    #[cfg(target_os = "macos")]
-    if let Some(denial_logger) = denial_logger {
-        let denials = denial_logger.finish().await;
-        eprintln!("\n=== Sandbox denials ===");
-        if denials.is_empty() {
-            eprintln!("None found.");
-        } else {
-            for seatbelt::SandboxDenial { name, capability } in denials {
-                eprintln!("({name}) {capability}");
-            }
-        }
-    }
-
-    handle_exit_status(status);
+    Ok(StartedSandboxChild {
+        child,
+        _network_proxy: network_proxy,
+        #[cfg(target_os = "macos")]
+        denial_logger,
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -609,34 +634,32 @@ async fn run_command_under_windows_session(
 }
 
 async fn spawn_debug_sandbox_child(
-    program: PathBuf,
-    args: Vec<String>,
-    arg0: Option<&str>,
-    cwd: PathBuf,
+    command: std::process::Command,
     network_sandbox_policy: NetworkSandboxPolicy,
-    mut env: std::collections::HashMap<String, String>,
-    apply_env: impl FnOnce(&mut std::collections::HashMap<String, String>),
+    piped: bool,
 ) -> std::io::Result<Child> {
-    let mut cmd = TokioCommand::new(&program);
-    #[cfg(unix)]
-    cmd.arg0(arg0.map_or_else(|| program.to_string_lossy().to_string(), String::from));
-    #[cfg(not(unix))]
-    let _ = arg0;
-    cmd.args(args);
-    cmd.current_dir(cwd);
-    apply_env(&mut env);
-    cmd.env_clear();
-    cmd.envs(env);
-
+    let mut cmd = TokioCommand::from(command);
     if !network_sandbox_policy.is_enabled() {
         cmd.env(CODEX_SANDBOX_NETWORK_DISABLED_ENV_VAR, "1");
     }
 
-    cmd.stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true)
-        .spawn()
+    cmd.stdin(if piped {
+        Stdio::piped()
+    } else {
+        Stdio::inherit()
+    })
+    .stdout(if piped {
+        Stdio::piped()
+    } else {
+        Stdio::inherit()
+    })
+    .stderr(if piped {
+        Stdio::piped()
+    } else {
+        Stdio::inherit()
+    })
+    .kill_on_drop(true)
+    .spawn()
 }
 
 async fn load_debug_sandbox_config(
@@ -753,7 +776,9 @@ async fn build_debug_sandbox_config_with_loader_overrides(
             .codex_home(codex_home.clone())
             .fallback_cwd(Some(codex_home));
     }
-    builder.build().await
+    let config = builder.build().await?;
+    config.validate_windows_mxc_requirement()?;
+    Ok(config)
 }
 
 fn config_uses_permission_profiles(config: &Config) -> bool {

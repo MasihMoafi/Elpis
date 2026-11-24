@@ -6,13 +6,13 @@ production dependency is needed.
 
 ## Supported subsets
 
-| Family | Supported syntax |
-| --- | --- |
-| `flowchart`, `graph` | TD/TB (default), BT, LR, RL; rectangle `[label]`, decision `{label}`, and stadium `([label])` nodes; solid `-->`/`---`/`<-->` and dashed `-.->`/`-.-`/`<-.->` edges; pipe labels and spaced directed infix labels (`-- text -->`, `-. text .->`); `&` fan-out/fan-in, chains, branches, merges, loops |
-| `sequenceDiagram` | Implicit participants, `participant`/`actor`, aliases, `->`, `->>`, `-->`, `-->>`, `-x`, `--x`, self-messages, `Note over A[,B]`, nested `loop`/`alt`/`opt`/`critical`/`break`, one labeled `else` per `alt` |
-| `stateDiagram-v2`, `stateDiagram` | Flat states, `state "label" as ID`, descriptions, directed transitions with optional labels, initial/final `[*]`, direction declarations |
-| `classDiagram` | `class ID`, multiline member bodies, `ID : member`, solid/dashed links, association, inheritance, composition, aggregation, dependency, realization, quoted endpoint cardinalities, relationship labels, direction declarations |
-| `erDiagram` | Entities, multiline attribute bodies, `type name [PK, FK, UK] ["comment"]`, all four endpoint cardinalities, identifying/non-identifying relationships, relationship labels, direction declarations |
+| Family                            | Supported syntax                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `flowchart`, `graph`              | TD/TB (default), BT, LR, RL; rectangle `[label]`, decision `{label}`, and stadium `([label])` nodes; solid `-->`/`---`/`<-->` and dashed `-.->`/`-.-`/`<-.->` edges; pipe labels and spaced directed infix labels (`-- text -->`, `-. text .->`); `&` fan-out/fan-in, chains, branches, merges, loops; flat named `subgraph title` or `subgraph ID[title]` blocks closed by `end`, including edges between nodes in different groups |
+| `sequenceDiagram`                 | Implicit participants, `participant`/`actor`, aliases, `->`, `->>`, `-->`, `-->>`, `-x`, `--x`, self-messages, `Note over A[,B]`, nested `loop`/`alt`/`opt`/`critical`/`break`, one labeled `else` per `alt`                                                                                                                                                                                                                         |
+| `stateDiagram-v2`, `stateDiagram` | Flat states, `state "label" as ID`, descriptions, directed transitions with optional labels, initial/final `[*]`, direction declarations                                                                                                                                                                                                                                                                                             |
+| `classDiagram`                    | `class ID`, multiline member bodies, `ID : member`, solid/dashed links, association, inheritance, composition, aggregation, dependency, realization, quoted endpoint cardinalities, relationship labels, direction declarations                                                                                                                                                                                                      |
+| `erDiagram`                       | Entities, multiline attribute bodies, `type name [PK, FK, UK] ["comment"]`, all four endpoint cardinalities, identifying/non-identifying relationships, relationship labels, direction declarations                                                                                                                                                                                                                                  |
 
 Identifiers are ASCII letters followed by letters, digits, or underscores. Text
 supports ordinary Unicode and CJK. Full-line `%%` comments and
@@ -27,12 +27,13 @@ return types. ER attribute types and names use the identifier grammar above.
 Flowchart node and edge labels may be enclosed in double quotes. Literal
 ampersands are supported in labels, as is printable punctuation after parsing.
 Quotes protect flowchart label delimiters such as brackets, pipes, and
-semicolons. HTML and entity escapes remain unsupported and return an error
-before statement splitting.
+semicolons. Flowchart node labels support `<br>`, `<br/>`, and `<br />` as
+line breaks. Other HTML and entity escapes remain unsupported.
 
 These are explicit subsets, not complete Mermaid compatibility. Compound states,
-flowchart subgraphs, other shapes, sequence activation and parallel fragments,
-styling, front matter, directives, HTML, escapes, combining/zero-width characters,
+nested flowchart subgraphs, edges to subgraph IDs, subgraph-local directions,
+other shapes, sequence activation and parallel fragments,
+styling, front matter, directives, other HTML, escapes, combining/zero-width characters,
 and ligatures with non-additive widths return errors. Callers should retain source
 on any error; the library never returns a partial diagram.
 
@@ -61,8 +62,8 @@ named participants. States use separate `● initial` and `◎ final` nodes.
 
 All inputs are limited to 16 KiB. Graphs allow 16 nodes, 24 edges (after expanding
 `&` groups), and 16 members per node. Each `&` group allows at most 24 node references. Sequences allow 8 participants, 64 events (including fragment boundaries),
-and 4 fragment levels. Source labels and identifiers are limited to 40 display
-cells/ASCII bytes respectively. Rendered canvases are capped at 65,536 cells,
+and 4 fragment levels. Labels are limited to 40 display cells per line; identifiers
+are limited to 40 ASCII bytes. Rendered canvases are capped at 65,536 cells,
 independent of the caller's maximum width. The library performs no I/O.
 
 From `codex-rs`, preview a file, optionally specifying the available width:
@@ -75,7 +76,6 @@ Run `just test -p codex-mermaid --lib`. Coverage includes complex snapshots for 
 family, relationship endpoints, all ER cardinalities, width/error bounds,
 truncated input, and reconstruction of every edge in all 512 directed three-node
 graphs in each of the four layout directions.
-
 
 `render_spans` returns the same layout as lines of semantic `Node`, `Edge`, and
 `Text` spans. Callers apply their own theme; the crate never emits ANSI escapes.

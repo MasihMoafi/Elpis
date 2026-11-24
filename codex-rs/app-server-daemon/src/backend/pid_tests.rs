@@ -67,6 +67,17 @@ async fn locked_empty_pid_file_is_treated_as_active_reservation() {
         PidFileState::Starting
     );
     assert!(pid_file.exists());
+
+    tokio::fs::remove_file(&pid_file)
+        .await
+        .expect("remove pid file");
+    assert_eq!(
+        backend
+            .read_pid_file_state()
+            .await
+            .expect("read missing pid"),
+        PidFileState::Starting
+    );
 }
 
 #[tokio::test]
@@ -87,6 +98,115 @@ async fn unlocked_empty_pid_file_is_treated_as_stale_reservation() {
         PidFileState::Missing
     );
     assert!(!pid_file.exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn reservation_probe_releases_lock_with_duplicated_handle() {
+    #[derive(Debug, Clone, Copy)]
+    enum Probe {
+        Missing,
+        Empty,
+        ReadError,
+        Cancelled,
+    }
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(/*val*/ 1)
+        .build()
+        .expect("runtime");
+    runtime.block_on(async {
+        for case in [
+            Probe::Missing,
+            Probe::Empty,
+            Probe::ReadError,
+            Probe::Cancelled,
+        ] {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let backend = PidBackend::new(
+                temp_dir.path().join("codex"),
+                temp_dir.path().join("app-server.pid"),
+                /*remote_control_enabled*/ false,
+            );
+            match case {
+                Probe::Missing => {}
+                Probe::Empty | Probe::Cancelled => {
+                    std::fs::write(&backend.pid_file, "").expect("empty pid file");
+                }
+                Probe::ReadError => {
+                    std::fs::create_dir(&backend.pid_file).expect("unreadable pid file");
+                }
+            }
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(&backend.lock_file)
+                .expect("open pid lock file");
+            // Share the open file description as fork would, without inheriting
+            // unrelated descriptors from other tests.
+            let inherited = file.try_clone().expect("clone pid lock file");
+
+            let file = tokio::fs::File::from_std(file);
+            let mut cancellation = None;
+            let probe = match case {
+                Probe::Missing => super::probe_reservation_lock(file),
+                Probe::Empty | Probe::ReadError => {
+                    super::inspect_empty_pid_reservation_with_file(&backend.pid_file, file)
+                        .await
+                        .map(|state| state != super::EmptyPidReservation::Stale)
+                }
+                Probe::Cancelled => {
+                    // Occupy the sole blocking worker so the PID read cannot finish
+                    // before cancellation. No timing assumptions or sleeps are needed.
+                    let (started_tx, started_rx) = std::sync::mpsc::channel();
+                    let (release_tx, release_rx) = std::sync::mpsc::channel();
+                    let blocker = tokio::task::spawn_blocking(move || {
+                        started_tx.send(()).expect("worker started");
+                        release_rx.recv().expect("release worker");
+                    });
+                    started_rx.recv().expect("wait for worker");
+                    let mut inspection = Box::pin(super::inspect_empty_pid_reservation_with_file(
+                        &backend.pid_file,
+                        file,
+                    ));
+                    let pending = futures::poll!(&mut inspection).is_pending();
+                    let contender = tokio::fs::File::from_std(
+                        std::fs::OpenOptions::new()
+                            .write(true)
+                            .open(&backend.lock_file)
+                            .expect("open competing reservation"),
+                    );
+                    cancellation = Some((pending, try_lock_file(&contender)));
+                    drop(contender);
+                    drop(inspection);
+                    release_tx.send(()).expect("unblock PID read");
+                    blocker.await.expect("blocking worker");
+                    Ok(false)
+                }
+            };
+            if matches!(case, Probe::ReadError) {
+                std::fs::remove_dir(&backend.pid_file).expect("remove unreadable pid file");
+            }
+            let running = backend.is_starting_or_running().await;
+
+            drop(inherited);
+            match case {
+                Probe::ReadError => assert!(probe.is_err(), "{case:?}"),
+                Probe::Missing | Probe::Empty | Probe::Cancelled => {
+                    assert!(!probe.expect("probe reservation"), "{case:?}");
+                }
+            }
+            if let Some((pending, acquired)) = cancellation {
+                assert_eq!(
+                    (pending, acquired.expect("competing reservation")),
+                    (true, false)
+                );
+            }
+            assert!(!running.expect("read daemon status"), "{case:?}");
+        }
+    });
 }
 
 #[tokio::test]
@@ -152,6 +272,10 @@ async fn start_retries_stale_empty_pid_file_under_its_own_lock() {
     assert!(
         err.to_string()
             .starts_with("failed to spawn detached app-server process using ")
+    );
+    assert_eq!(
+        crate::telemetry::StartError::from(err).failure_reason(),
+        "spawn"
     );
 }
 
@@ -357,7 +481,8 @@ async fn shutdown_grace_child() {
     let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("install shutdown handler");
     tokio::fs::write(&ready, "").await.expect("ready marker");
-    let _ = tokio::time::timeout(Duration::from_secs(8), async {
+    // Outlive the parent's stop deadline so this watchdog cannot look like a forced stop.
+    let _ = tokio::time::timeout(Duration::from_secs(/*secs*/ 30), async {
         #[cfg(unix)]
         terminate.recv().await;
         #[cfg(windows)]
@@ -433,11 +558,11 @@ async fn shutdown_grace_handles_process_exit() {
             pid_file,
             /*restore_release*/ None,
         );
-        let result = tokio::time::timeout(
-            Duration::from_secs(3),
-            backend.stop_with_grace(grace_seconds),
-        )
-        .await;
+        // Cover the backend's full stop budget, plus scheduling headroom on busy runners.
+        let stop_timeout =
+            super::STOP_FORCE_TIMEOUT + Duration::from_secs(u64::from(grace_seconds) + 5);
+        let result =
+            tokio::time::timeout(stop_timeout, backend.stop_with_grace(grace_seconds)).await;
         let still_running = backend
             .record_is_active(&record)
             .await

@@ -232,8 +232,8 @@ async fn assert_user_turn_local_image_resizes_to(
             }),
     };
     let mut builder = builder.with_config(move |config| {
-        if image_budget_policy != ImageBudgetPolicy::DetailBased {
-            let _ = config.features.enable(Feature::UnifiedImageBudget);
+        if image_budget_policy == ImageBudgetPolicy::DetailBased {
+            let _ = config.features.disable(Feature::UnifiedImageBudget);
         }
         if matches!(resize_notice_expectation, ResizeNoticeExpectation::Enabled) {
             let _ = config.features.enable(Feature::ImageResizeNotice);
@@ -423,6 +423,7 @@ async fn view_image_tool_attaches_local_image() -> anyhow::Result<()> {
     let server = start_mock_server().await;
     let mut builder = test_codex().with_config(|config| {
         let _ = config.features.enable(Feature::ImageResizeNotice);
+        let _ = config.features.disable(Feature::UnifiedImageBudget);
     });
     let test = builder.build_with_auto_env(&server).await?;
     let TestCodex {
@@ -936,9 +937,7 @@ async fn view_image_unified_budget_hides_detail_but_accepts_legacy_hints() -> an
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.5").with_config(|config| {
-        let _ = config.features.enable(Feature::UnifiedImageBudget);
-    });
+    let mut builder = test_codex().with_model("gpt-5.5");
     let test = builder.build_with_auto_env(&server).await?;
     let rel_path = "assets/unified-example.png";
     write_workspace_png(
@@ -1012,7 +1011,9 @@ async fn view_image_tool_errors_clearly_for_unsupported_detail_values() -> anyho
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.5");
+    let mut builder = test_codex().with_model("gpt-5.5").with_config(|config| {
+        let _ = config.features.disable(Feature::UnifiedImageBudget);
+    });
     let test = builder.build_with_auto_env(&server).await?;
     let TestCodex {
         codex,
@@ -1090,7 +1091,9 @@ async fn view_image_tool_treats_null_detail_as_omitted() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.5");
+    let mut builder = test_codex().with_model("gpt-5.5").with_config(|config| {
+        let _ = config.features.disable(Feature::UnifiedImageBudget);
+    });
     let test = builder.build_with_auto_env(&server).await?;
     let TestCodex {
         codex,
@@ -1196,8 +1199,8 @@ async fn assert_view_image_tool_resizes_without_original_support(
     let mut builder = test_codex()
         .with_model("gpt-5.2")
         .with_config(move |config| {
-            if image_budget_policy == ImageBudgetPolicy::Unified {
-                let _ = config.features.enable(Feature::UnifiedImageBudget);
+            if image_budget_policy == ImageBudgetPolicy::DetailBased {
+                let _ = config.features.disable(Feature::UnifiedImageBudget);
             }
         });
     let test = builder.build_with_auto_env(&server).await?;
@@ -1293,7 +1296,9 @@ async fn view_image_tool_does_not_force_original_resolution_with_capability_only
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let mut builder = test_codex().with_model("gpt-5.5");
+    let mut builder = test_codex().with_model("gpt-5.5").with_config(|config| {
+        let _ = config.features.disable(Feature::UnifiedImageBudget);
+    });
     let test = builder.build_with_auto_env(&server).await?;
     let TestCodex {
         codex,
@@ -1621,7 +1626,6 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
         visibility: ModelVisibility::List,
         supported_in_api: true,
         input_modalities: vec![InputModality::Text],
-        used_fallback_model_metadata: false,
         supports_search_tool: false,
         supports_experimental_context: false,
         use_responses_lite: false,
@@ -1634,6 +1638,7 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
         tool_mode: None,
         multi_agent_version: None,
         multi_agent_reasoning_effort: None,
+        multi_agent_tools_in_code_mode: None,
         priority: 1,
         additional_speed_tiers: Vec::new(),
         service_tiers: Vec::new(),
@@ -1651,6 +1656,7 @@ async fn view_image_tool_returns_unsupported_message_for_text_only_model() -> an
         availability_nux: None,
         apply_patch_tool_type: None,
         web_search_tool_type: Default::default(),
+        web_search_provider: None,
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_image_detail_original: false,
         context_window: Some(272_000),

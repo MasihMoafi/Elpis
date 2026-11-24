@@ -1,5 +1,6 @@
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnStatus;
 use codex_core::config::ConfigBuilder;
@@ -39,6 +40,109 @@ fn header_names_elpis_with_the_release_elpis_version_prints() {
     );
     // Negative: not the vendored Codex version this crate is built with.
     assert_ne!(version, env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn turn_diff_notifications_render_only_changes() -> anyhow::Result<()> {
+    const CHILD: &str = "CODEX_EXEC_TURN_DIFF_TEST_CHILD";
+    if std::env::var_os(CHILD).is_none() {
+        // Capture stderr in a child so other tests cannot interfere with rendering.
+        let output = std::process::Command::new(std::env::current_exe()?)
+            .args([
+                "--exact",
+                "event_processor_with_human_output::tests::turn_diff_notifications_render_only_changes",
+                "--nocapture",
+            ])
+            .env(CHILD, "1")
+            .output()?;
+        assert!(output.status.success(), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        insta::assert_snapshot!(String::from_utf8(output.stderr)?, @r"
+        turn-1
+        @@ -1 +1 @@
+        -value=1
+        +value=2
+        @@ -1 +1 @@
+        -value=1
+        +value=3
+        @@ -1 +1 @@
+        -value=1
+        +value=2
+        @@ -1 +1 @@
+        -value=1
+        +value=2
+        @@ -1 +1 @@
+        -value=1
+        +value=2
+        turn-2
+        @@ -1 +1 @@
+        -value=1
+        +value=2
+        ");
+        return Ok(());
+    }
+
+    let mut processor = EventProcessorWithHumanOutput {
+        bold: Style::new(),
+        cyan: Style::new(),
+        dimmed: Style::new(),
+        green: Style::new(),
+        italic: Style::new(),
+        magenta: Style::new(),
+        red: Style::new(),
+        yellow: Style::new(),
+        show_agent_reasoning: true,
+        show_raw_agent_reasoning: false,
+        last_message_path: None,
+        final_message: None,
+        final_message_rendered: false,
+        emit_final_message_on_shutdown: false,
+        last_total_token_usage: None,
+        last_turn_diff: String::new(),
+    };
+    let first = "@@ -1 +1 @@\n-value=1\n+value=2";
+    let changed = "@@ -1 +1 @@\n-value=1\n+value=3";
+    for (turn_id, diffs) in [
+        // Repeated updates are quiet, but changed and restored diffs still print.
+        (
+            "turn-1",
+            vec![
+                "", " \n", first, first, changed, changed, first, "", first, " \n", first,
+            ],
+        ),
+        ("turn-2", vec![first, first]),
+    ] {
+        processor.process_server_notification(ServerNotification::TurnStarted(
+            codex_app_server_protocol::TurnStartedNotification {
+                thread_id: "thread-1".to_string(),
+                turn: Turn {
+                    id: turn_id.to_string(),
+                    root_turn_id: None,
+                    items_view: codex_app_server_protocol::TurnItemsView::Full,
+                    items: Vec::new(),
+                    status: TurnStatus::InProgress,
+                    error: None,
+                    started_at: None,
+                    completed_at: None,
+                    duration_ms: None,
+                },
+            },
+        ));
+        eprintln!("{turn_id}");
+        for diff in diffs {
+            assert_eq!(
+                processor.process_server_notification(ServerNotification::TurnDiffUpdated(
+                    codex_app_server_protocol::TurnDiffUpdatedNotification {
+                        thread_id: "thread-1".to_string(),
+                        turn_id: turn_id.to_string(),
+                        diff: diff.to_string(),
+                    },
+                )),
+                crate::event_processor::CodexStatus::Running
+            );
+        }
+    }
+    Ok(())
 }
 
 #[test]
@@ -195,10 +299,11 @@ fn summarizes_managed_read_only_permission_profile() {
 }
 
 #[tokio::test]
-async fn config_summary_entries_include_runtime_workspace_roots() {
+async fn config_summary_entries_include_only_writable_workspace_roots() {
     let codex_home = tempfile::tempdir().expect("create codex home");
     let cwd = tempfile::tempdir().expect("create cwd");
     let extra_root = tempfile::tempdir().expect("create extra root");
+    let read_only_root = tempfile::tempdir().expect("create read-only root");
     let mut config = ConfigBuilder::default()
         .codex_home(codex_home.path().to_path_buf())
         .fallback_cwd(Some(cwd.path().to_path_buf()))
@@ -207,23 +312,21 @@ async fn config_summary_entries_include_runtime_workspace_roots() {
         .expect("build default config");
     let cwd = cwd.path().to_path_buf().abs();
     let extra_root = extra_root.path().to_path_buf().abs();
-    let expected_extra_root_name = extra_root
-        .file_name()
-        .expect("extra root should have file name")
-        .to_string_lossy()
-        .to_string();
+    let read_only_root = read_only_root.path().to_path_buf().abs();
     config.cwd = cwd.clone();
-    config.workspace_roots = vec![cwd.clone(), extra_root];
+    config.workspace_roots = vec![cwd.clone(), read_only_root.clone(), extra_root.clone()];
     config
         .permissions
         .set_workspace_roots(config.workspace_roots.clone());
     config
         .permissions
-        .set_permission_profile(PermissionProfile::workspace_write_with(
-            &[],
+        .set_permission_profile(PermissionProfile::from_runtime_permissions(
+            &FileSystemSandboxPolicy::restricted(vec![
+                FileSystemSandboxEntry::new(cwd.clone().into(), FileSystemAccessMode::Write),
+                FileSystemSandboxEntry::new(read_only_root.into(), FileSystemAccessMode::Read),
+                FileSystemSandboxEntry::new(extra_root.clone().into(), FileSystemAccessMode::Write),
+            ]),
             NetworkSandboxPolicy::Restricted,
-            /*exclude_tmpdir_env_var*/ true,
-            /*exclude_slash_tmp*/ true,
         ))
         .expect("set permission profile");
 
@@ -247,22 +350,25 @@ async fn config_summary_entries_include_runtime_workspace_roots() {
         rollout_path: None,
     };
 
-    let summary_entries = config_summary_entries(&config, &session_configured_event);
+    let summary_entries = config_summary_entries(
+        &config,
+        &session_configured_event,
+        &config.effective_workspace_roots(),
+    );
     let sandbox_summary = summary_entries
         .iter()
         .find_map(|(key, value)| (*key == "sandbox").then_some(value))
         .expect("sandbox summary entry");
-    assert!(
-        sandbox_summary.starts_with("workspace-write [workdir, ")
-            && sandbox_summary.contains(&expected_extra_root_name),
-        "expected runtime workspace root in sandbox summary: {summary_entries:?}"
-    );
+    let sandbox_summary =
+        sandbox_summary.replace(extra_root.to_string_lossy().as_ref(), "<extra root>");
+    insta::assert_snapshot!(sandbox_summary, @"workspace-write [workdir, <extra root>]");
 }
 
 #[test]
 fn final_message_from_turn_items_uses_latest_agent_message() {
     let message = final_message_from_turn_items(&[
-        ThreadItem::AgentMessage {
+        ThreadItemPayload::AgentMessage {
+            moderation: None,
             id: "msg-1".to_string(),
             text: "first".to_string(),
             phase: None,
@@ -270,11 +376,12 @@ fn final_message_from_turn_items_uses_latest_agent_message() {
             delivery: None,
             questions: None,
         },
-        ThreadItem::Plan {
+        ThreadItemPayload::Plan {
             id: "plan-1".to_string(),
             text: "plan".to_string(),
         },
-        ThreadItem::AgentMessage {
+        ThreadItemPayload::AgentMessage {
+            moderation: None,
             id: "msg-2".to_string(),
             text: "second".to_string(),
             phase: None,
@@ -290,16 +397,16 @@ fn final_message_from_turn_items_uses_latest_agent_message() {
 #[test]
 fn final_message_from_turn_items_falls_back_to_latest_plan() {
     let message = final_message_from_turn_items(&[
-        ThreadItem::Reasoning {
+        ThreadItemPayload::Reasoning {
             id: "reasoning-1".to_string(),
             summary: vec!["inspect".to_string()],
             content: Vec::new(),
         },
-        ThreadItem::Plan {
+        ThreadItemPayload::Plan {
             id: "plan-1".to_string(),
             text: "first plan".to_string(),
         },
-        ThreadItem::Plan {
+        ThreadItemPayload::Plan {
             id: "plan-2".to_string(),
             text: "final plan".to_string(),
         },
@@ -326,6 +433,7 @@ fn turn_completed_recovers_final_message_from_turn_items() {
         final_message_rendered: false,
         emit_final_message_on_shutdown: false,
         last_total_token_usage: None,
+        last_turn_diff: String::new(),
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
@@ -335,14 +443,15 @@ fn turn_completed_recovers_final_message_from_turn_items() {
                 id: "turn-1".to_string(),
                 root_turn_id: None,
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
-                items: vec![ThreadItem::AgentMessage {
+                items: vec![ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                    moderation: None,
                     id: "msg-1".to_string(),
                     text: "final answer".to_string(),
                     phase: None,
                     memory_citation: None,
                     delivery: None,
                     questions: None,
-                }],
+                })],
                 status: TurnStatus::Completed,
                 error: None,
                 started_at: None,
@@ -377,6 +486,7 @@ fn turn_completed_overwrites_stale_final_message_from_turn_items() {
         final_message_rendered: true,
         emit_final_message_on_shutdown: false,
         last_total_token_usage: None,
+        last_turn_diff: String::new(),
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
@@ -386,14 +496,15 @@ fn turn_completed_overwrites_stale_final_message_from_turn_items() {
                 id: "turn-1".to_string(),
                 root_turn_id: None,
                 items_view: codex_app_server_protocol::TurnItemsView::Full,
-                items: vec![ThreadItem::AgentMessage {
+                items: vec![ThreadItem::untimed(ThreadItemPayload::AgentMessage {
+                    moderation: None,
                     id: "msg-1".to_string(),
                     text: "final answer".to_string(),
                     phase: None,
                     memory_citation: None,
                     delivery: None,
                     questions: None,
-                }],
+                })],
                 status: TurnStatus::Completed,
                 error: None,
                 started_at: None,
@@ -429,6 +540,7 @@ fn turn_completed_preserves_streamed_final_message_when_turn_items_are_empty() {
         final_message_rendered: false,
         emit_final_message_on_shutdown: false,
         last_total_token_usage: None,
+        last_turn_diff: String::new(),
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
@@ -474,6 +586,7 @@ fn turn_failed_clears_stale_final_message() {
         final_message_rendered: true,
         emit_final_message_on_shutdown: true,
         last_total_token_usage: None,
+        last_turn_diff: String::new(),
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(
@@ -520,6 +633,7 @@ fn turn_interrupted_clears_stale_final_message() {
         final_message_rendered: true,
         emit_final_message_on_shutdown: true,
         last_total_token_usage: None,
+        last_turn_diff: String::new(),
     };
 
     let status = processor.process_server_notification(ServerNotification::TurnCompleted(

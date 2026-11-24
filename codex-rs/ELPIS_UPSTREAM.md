@@ -6,10 +6,9 @@ kept here and in the root [NOTICE](../NOTICE).
 
 | | |
 | --- | --- |
-| Upstream | `openai/codex` tag `rust-v0.162.0`, commit `c1382380de69521303b416720a52f42d51af6248` (tagged 2026-10-08) |
-| Unmodified copy | Elpis commit `8aa35e622`, local branch `vendor/codex-rust-v0.162.0` |
-| Integrated in | Elpis commit `9109c7980` (2026-10-09), which carried the Elpis features onto that tree |
-| Earlier bases | `2e1607ee` (imported 2026-07-15 in `f37fc7742`), then rust-v0.158.0, v0.159.3 and v0.160.0 |
+| Upstream | `openai/codex` tag `rust-v0.172.0`, commit `3d86e43b075adeba2193ec5c22ac92f55afd82e6` |
+| Unmodified copy | Elpis commit `078bd9450` on `vendor/codex-rust-v0.172.0` |
+| Earlier bases | `2e1607ee`, then rust-v0.158.0, v0.159.3, v0.160.0 and v0.162.0 |
 
 A move to a newer release vendors it unmodified on its own branch, integrates it, and updates this table
 ([docs/GUIDE.md](../docs/GUIDE.md) describes the vendor-and-carry strategy).
@@ -20,9 +19,7 @@ A move to a newer release vendors it unmodified on its own branch, integrates it
 - Elpis-owned files inside upstream crates: those with `elpis` in the name,
   mostly in `tui/`, `core/`, `app-server/`, `app-server-protocol/` and `cli/`
   (`git ls-files codex-rs | rg -i elpis`).
-- Some edits to upstream files carry `// Elpis:` comments (185 files); most do not,
-  so the diff below is the complete record.
-- The full Elpis delta is `git diff 8aa35e622 -- codex-rs`.
+- The full Elpis delta is `git diff 078bd9450 -- codex-rs`.
 
 ## Generated files
 

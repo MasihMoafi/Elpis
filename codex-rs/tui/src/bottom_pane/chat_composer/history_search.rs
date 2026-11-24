@@ -35,6 +35,7 @@ use ratatui::layout::Rect;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::super::chat_composer_history::HistorySearchDirection;
 use super::super::chat_composer_history::HistorySearchResult;
@@ -44,7 +45,7 @@ use super::ActivePopup;
 use super::ChatComposer;
 use super::ComposerDraft;
 use super::InputResult;
-use super::vim_history::VimHistory;
+use super::edit_history::EditHistory;
 use crate::app_event::AppEvent;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
@@ -64,11 +65,11 @@ pub(super) struct HistorySearchSession {
     /// Freeze the fallback only when background edits diverge from the saved draft.
     preview_draft: Option<ComposerDraft>,
     /// Same-draft Vim edits to restore when a temporary preview is canceled.
-    original_vim_history: VimHistory,
+    original_edit_history: EditHistory,
     /// Active and completed Vim commands suspended during temporary draft replacement.
     original_vim_state: VimPersistentState,
     /// Footer-owned query text typed or pasted while Ctrl+R search is active.
-    query: String,
+    pub(super) query: String,
     /// User-visible search status used to choose footer hints and composer preview behavior.
     status: HistorySearchStatus,
 }
@@ -138,7 +139,7 @@ impl ChatComposer {
         self.popups.active = ActivePopup::None;
         self.attachments.clear_remote_image_selection();
         let original_draft = self.snapshot_draft();
-        let original_vim_history = std::mem::take(&mut self.vim_history);
+        let original_edit_history = std::mem::take(&mut self.edit_history);
         let mut original_vim_state = VimPersistentState::default();
         self.draft
             .textarea
@@ -146,7 +147,7 @@ impl ChatComposer {
         self.history_search = Some(HistorySearchSession {
             preview_draft: None,
             original_draft,
-            original_vim_history,
+            original_edit_history,
             original_vim_state,
             query: String::new(),
             status: HistorySearchStatus::Idle,
@@ -325,7 +326,7 @@ impl ChatComposer {
         self.history.reset_navigation();
         self.footer.mode = reset_mode_after_activity(self.footer.mode);
         self.with_sparkle_history_preview(|composer| composer.restore_draft(search.original_draft));
-        self.vim_history = search.original_vim_history;
+        self.edit_history = search.original_edit_history;
         self.draft
             .textarea
             .swap_vim_persistent_state(&mut search.original_vim_state);
@@ -431,10 +432,22 @@ impl ChatComposer {
         if !matches!(search.status, HistorySearchStatus::Match) || search.query.is_empty() {
             return Vec::new();
         }
-        Self::case_insensitive_match_ranges(self.draft.textarea.text(), &search.query)
+        let prefix_len = usize::from(self.draft.is_bash_mode);
+        Self::case_insensitive_match_ranges(&self.current_text(), &search.query, prefix_len)
+            .into_iter()
+            .filter_map(|range| {
+                let start = range.start.saturating_sub(prefix_len);
+                let end = range.end.saturating_sub(prefix_len);
+                (start < end).then_some(start..end)
+            })
+            .collect()
     }
 
-    fn case_insensitive_match_ranges(text: &str, query: &str) -> Vec<Range<usize>> {
+    fn case_insensitive_match_ranges(
+        text: &str,
+        query: &str,
+        prefix_len: usize,
+    ) -> Vec<Range<usize>> {
         if query.is_empty() {
             return Vec::new();
         }
@@ -449,9 +462,15 @@ impl ChatComposer {
 
         let mut folded = String::new();
         let mut folded_spans: Vec<(Range<usize>, Range<usize>)> = Vec::new();
-        for (original_start, ch) in text.char_indices() {
-            let original_range = original_start..original_start + ch.len_utf8();
-            for lower in ch.to_lowercase() {
+        // The bash prompt is rendered separately and cannot share a grapheme with the textarea.
+        let graphemes = text[..prefix_len].grapheme_indices(true).chain(
+            text[prefix_len..]
+                .grapheme_indices(true)
+                .map(|(start, grapheme)| (prefix_len + start, grapheme)),
+        );
+        for (original_start, grapheme) in graphemes {
+            let original_range = original_start..original_start + grapheme.len();
+            for lower in grapheme.chars().flat_map(char::to_lowercase) {
                 let folded_start = folded.len();
                 folded.push(lower);
                 folded_spans.push((folded_start..folded.len(), original_range.clone()));
@@ -474,7 +493,10 @@ impl ChatComposer {
             while folded_spans[end_span].0.end < folded_end {
                 end_span += 1;
             }
-            ranges.push(folded_spans[start_span].1.start..folded_spans[end_span].1.end);
+            let range = folded_spans[start_span].1.start..folded_spans[end_span].1.end;
+            if ranges.last() != Some(&range) {
+                ranges.push(range);
+            }
             search_from = folded_end;
         }
         ranges
@@ -736,14 +758,20 @@ mod tests {
     #[test]
     fn history_search_match_ranges_are_case_insensitive() {
         assert_eq!(
-            ChatComposer::case_insensitive_match_ranges("git status git", "GIT"),
+            ChatComposer::case_insensitive_match_ranges(
+                "git status git",
+                "GIT",
+                /*prefix_len*/ 0
+            ),
             vec![0..3, 11..14]
         );
         assert_eq!(
-            ChatComposer::case_insensitive_match_ranges("aİ i", "i"),
+            ChatComposer::case_insensitive_match_ranges("aİ i", "i", /*prefix_len*/ 0),
             vec![1..3, 4..5]
         );
-        assert!(ChatComposer::case_insensitive_match_ranges("git", "").is_empty());
+        assert!(
+            ChatComposer::case_insensitive_match_ranges("git", "", /*prefix_len*/ 0).is_empty()
+        );
     }
 
     #[test]
@@ -753,12 +781,17 @@ mod tests {
             ("İİ", "\u{307}", vec![0..2, 2..4]),
             ("İİİ", "\u{307}i", vec![0..4, 2..6]),
             ("éÉ é", "É", vec![0..2, 2..4, 5..7]),
+            (
+                "a\u{301}\u{301}b\u{301}\u{301}",
+                "\u{301}",
+                vec![0..5, 5..10],
+            ),
             ("aaaaa", "aa", vec![0..2, 2..4]),
             ("", "x", vec![]),
             ("abc", "z", vec![]),
         ] {
             assert_eq!(
-                ChatComposer::case_insensitive_match_ranges(text, query),
+                ChatComposer::case_insensitive_match_ranges(text, query, /*prefix_len*/ 0),
                 expected,
                 "text: {text:?}, query: {query:?}"
             );
@@ -1022,6 +1055,54 @@ mod tests {
             assert!(!modifier.contains(Modifier::REVERSED));
             assert!(!modifier.contains(Modifier::BOLD));
         }
+
+        composer
+            .history
+            .record_local_submission(HistoryEntry::new("!git status".to_string()));
+        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        for ch in ['!', 'g', 'i', 't'] {
+            let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE));
+        }
+        assert_eq!(composer.current_text(), "!git status");
+        assert_eq!(composer.history_search_highlight_ranges(), vec![0..3]);
+
+        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        composer
+            .history
+            .record_local_submission(HistoryEntry::new("!🏽echo".to_string()));
+        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::NONE));
+        assert!(composer.history_search_highlight_ranges().is_empty());
+        let mut prompt_buf = Buffer::empty(area);
+        composer.render(area, &mut prompt_buf);
+        let prompt_highlighted = prompt_buf[(x, y)]
+            .style()
+            .add_modifier
+            .contains(Modifier::REVERSED);
+
+        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        composer
+            .history
+            .record_local_submission(HistoryEntry::new("a\u{301}".to_string()));
+        let _ = composer.handle_key_event(KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        let _ =
+            composer.handle_key_event(KeyEvent::new(KeyCode::Char('\u{301}'), KeyModifiers::NONE));
+        let mut buf = Buffer::empty(area);
+        composer.render(area, &mut buf);
+        let cell = &buf[(x, y)];
+        let modifiers = cell.style().add_modifier;
+        insta::assert_snapshot!(
+            format!(
+                "prompt-only match highlights body: {prompt_highlighted}\n{}: bold={}, reversed={}",
+                cell.symbol(),
+                modifiers.contains(Modifier::BOLD),
+                modifiers.contains(Modifier::REVERSED)
+            ),
+            @"
+            prompt-only match highlights body: false
+            á: bold=true, reversed=true
+            "
+        );
     }
 
     #[test]

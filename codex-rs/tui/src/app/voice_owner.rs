@@ -125,11 +125,21 @@ impl App {
         app_server: &mut AppServerSession,
         destination: Option<ThreadId>,
     ) {
-        self.shutdown_side_threads(app_server).await;
-        let thread_ids: Vec<_> = self.thread_event_channels.keys().copied().collect();
+        app_server.task_search.cancel();
+        let thread_ids: Vec<_> = self
+            .thread_event_channels
+            .iter()
+            .filter(|(_, channel)| {
+                channel
+                    .backend_id
+                    .is_none_or(|owner| owner == app_server.backend_id())
+            })
+            .map(|(id, _)| *id)
+            .collect();
         for thread_id in thread_ids {
             if self.voice_owner_thread_id() == Some(thread_id)
                 || destination == Some(thread_id)
+                || self.side_threads.contains_key(&thread_id)
                 || self
                     .agents_overview
                     .dispatched_requests
@@ -138,6 +148,7 @@ impl App {
             {
                 continue;
             }
+            self.cancel_cloud_inventory_refresh(app_server).await;
             if let Err(err) = app_server.thread_unsubscribe(thread_id).await {
                 tracing::warn!("failed to unsubscribe thread {thread_id}: {err}");
             }

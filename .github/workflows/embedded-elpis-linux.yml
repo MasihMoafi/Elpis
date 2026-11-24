@@ -9,6 +9,10 @@ on:
         default: full
         type: choice
         options: [check, follow-check, ui, full, build]
+      bootstrap_lock:
+        description: Resolve the provisional integration lock before checking
+        type: boolean
+        default: false
   push:
     tags: ['v*']
     branches: [next]
@@ -39,7 +43,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
       - id: schema_cache
         uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7
         with:
@@ -49,6 +53,17 @@ jobs:
             codex-rs/target
           key: elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
           restore-keys: elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+      - name: Resolve provisional Cargo lock
+        if: inputs.bootstrap_lock
+        working-directory: codex-rs
+        run: cargo update --workspace
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: inputs.bootstrap_lock
+        with:
+          name: candidate-cargo-lock
+          path: codex-rs/Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
       - name: Regenerate protocol and configuration schemas from the candidate
         working-directory: codex-rs
         run: |
@@ -100,7 +115,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
       - name: Download and verify the pinned sandbox V8
         shell: bash
         env:
@@ -111,9 +126,9 @@ jobs:
           mkdir -p "$directory"
           archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
           binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
-          gh release download rusty-v8-v150.4.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
-          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
-            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          gh release download rusty-v8-v152.2.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
+          printf '%s  %s\n' b3b490f2aa809eda7f6ac727f851fb00ce8355be72827577cfaac28c7137dbcd "$archive" \
+            3e4d5fecdbe0f98a6017e69d7ca82519a77fb032c5eb5e4cdbecdd3e2ec519d5 "$binding" > "$directory/SHA256SUMS"
           (cd "$directory" && sha256sum -c SHA256SUMS)
           echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
           echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
@@ -131,6 +146,10 @@ jobs:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
         run: |
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
+      - name: Resolve provisional Cargo lock
+        if: inputs.bootstrap_lock
+        working-directory: codex-rs
+        run: cargo update --workspace
       - name: Check core, UI, CLI and their tests
         if: inputs.verification == 'check'
         working-directory: codex-rs
@@ -191,7 +210,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux ripgrep
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
           # This disposable runner must permit the namespaces that the sandbox tests create.
           # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
@@ -212,9 +231,9 @@ jobs:
           mkdir -p "$directory"
           archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
           binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
-          gh release download rusty-v8-v150.4.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
-          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
-            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          gh release download rusty-v8-v152.2.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
+          printf '%s  %s\n' b3b490f2aa809eda7f6ac727f851fb00ce8355be72827577cfaac28c7137dbcd "$archive" \
+            3e4d5fecdbe0f98a6017e69d7ca82519a77fb032c5eb5e4cdbecdd3e2ec519d5 "$binding" > "$directory/SHA256SUMS"
           (cd "$directory" && sha256sum -c SHA256SUMS)
           echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
           echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"
@@ -520,7 +539,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libcap-dev libssl-dev pkg-config strace iproute2 tmux ripgrep
-          rustup toolchain install 1.95.0 --profile minimal --no-self-update
+          rustup toolchain install 1.99.1 --profile minimal --no-self-update
           # This disposable runner must permit the namespaces that the sandbox tests create.
           # https://github.com/ubuntu/ubuntu-release-notes/blob/main/docs/24.04/index.md
           if [[ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]]; then
@@ -541,9 +560,9 @@ jobs:
           mkdir -p "$directory"
           archive=librusty_v8_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.a.gz
           binding=src_binding_ptrcomp_sandbox_release_x86_64-unknown-linux-gnu.rs
-          gh release download rusty-v8-v150.4.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
-          printf '%s  %s\n' a35c75d1f26e6a983885a45b33490a4ebe54f05050568b32b89cfb421b30b583 "$archive" \
-            7727826ae479bdb645e807239fb12d1f8e2e23de7a6cf16f5ee592690d1d8506 "$binding" > "$directory/SHA256SUMS"
+          gh release download rusty-v8-v152.2.0 -R openai/codex -D "$directory" -p "$archive" -p "$binding"
+          printf '%s  %s\n' b3b490f2aa809eda7f6ac727f851fb00ce8355be72827577cfaac28c7137dbcd "$archive" \
+            3e4d5fecdbe0f98a6017e69d7ca82519a77fb032c5eb5e4cdbecdd3e2ec519d5 "$binding" > "$directory/SHA256SUMS"
           (cd "$directory" && sha256sum -c SHA256SUMS)
           echo "RUSTY_V8_ARCHIVE=$directory/$archive" >> "$GITHUB_ENV"
           echo "RUSTY_V8_SRC_BINDING_PATH=$directory/$binding" >> "$GITHUB_ENV"

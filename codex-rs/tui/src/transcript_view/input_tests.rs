@@ -175,6 +175,112 @@ fn hover_links_match_wrapped_click_targets_and_refresh_after_scrolling() {
 }
 
 #[test]
+fn agent_activity_underlines_the_full_wrapped_label() {
+    use codex_app_server_protocol::SubAgentActivityKind;
+    use codex_app_server_protocol::ThreadItemPayload;
+    use ratatui::style::Modifier;
+
+    let cell = crate::multi_agents::sub_agent_activity_history_cell(
+        &ThreadItemPayload::SubAgentActivity {
+            id: "spawn".into(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: codex_protocol::ThreadId::new().to_string(),
+            agent_path: "/root/reviewer/verify_the_sidebar_layout".into(),
+            model: None,
+            reasoning_effort: None,
+        },
+    )
+    .expect("agent activity");
+    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(cell)];
+    let mut view = TranscriptView {
+        agent_links: Some(crate::backend_id::BackendId::new()),
+        ..Default::default()
+    };
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 22, /*height*/ 5,
+    );
+    let mut buffer = Buffer::empty(area);
+    view.render(area, &mut buffer, &cells);
+    let picture = buffer
+        .content
+        .chunks(usize::from(area.width))
+        .filter_map(|row| {
+            let text: String = row.iter().map(ratatui::buffer::Cell::symbol).collect();
+            let marks: String = row
+                .iter()
+                .map(|cell| {
+                    if cell.modifier.contains(Modifier::UNDERLINED) {
+                        '^'
+                    } else {
+                        ' '
+                    }
+                })
+                .collect();
+            (!text.trim().is_empty()).then(|| format!("{}\n{}", text.trim_end(), marks.trim_end()))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!(picture);
+}
+
+#[test]
+fn workspace_file_links_show_the_title_with_subtle_hover_and_open_the_same_location() {
+    use crate::markdown_render::FileLink;
+    use crate::markdown_render::SourceLocation;
+    use ratatui::style::Modifier;
+
+    crate::markdown_render::preferences::set_document_links(/*enabled*/ true);
+    let (mut view, cells) = transcript(
+        "[Guide](./guide.md#L3C2) and [](./guide.md#L3C2)",
+        /*width*/ 32,
+    );
+    view.document_links = true;
+    let area = view.area;
+    let mut idle = Buffer::empty(area);
+    view.render(area, &mut idle, &cells);
+    let title = ScreenPosition::new(area.x + 3, area.y);
+    let path = ScreenPosition::new(area.x + 13, area.y);
+    let mut observations = vec![
+        crate::transcript_view::tests::text(&idle)
+            .trim()
+            .to_string(),
+    ];
+
+    for (name, point) in [("title", title), ("filename", path)] {
+        let mut hovered = idle.clone();
+        view.paint_document_links(&mut hovered, Some(point));
+        observations.push(format!(
+            "{name}: underline={}, hover bold={}, background unchanged={}",
+            hovered[point].modifier.contains(Modifier::UNDERLINED),
+            hovered[point].modifier.contains(Modifier::BOLD),
+            hovered[point].bg == idle[point].bg,
+        ));
+        view.handle_mouse(
+            mouse(MouseEventKind::Down(MouseButton::Left), point.x, point.y),
+            &cells,
+        );
+        let Some(ViewAction::OpenDocument(link)) = view.handle_mouse(
+            mouse(MouseEventKind::Up(MouseButton::Left), point.x, point.y),
+            &cells,
+        ) else {
+            panic!("{name} click should open a document");
+        };
+        assert_eq!(
+            link,
+            FileLink {
+                path: "./guide.md".to_string(),
+                location: Some(SourceLocation { line: 3, column: 2 }),
+            },
+        );
+    }
+    insta::assert_snapshot!(observations.join("\n"), @"
+    • Guide and ./guide.md:3:2
+    title: underline=true, hover bold=true, background unchanged=true
+    filename: underline=false, hover bold=true, background unchanged=true
+    ");
+}
+
+#[test]
 fn shift_click_extends_a_double_clicked_word_in_both_directions() {
     let (mut view, cells) = transcript("alpha beta gamma", /*width*/ 24);
     let area = view.area;
@@ -268,9 +374,16 @@ fn shift_click_preserves_selection_units_and_allows_dragging() {
 
 #[test]
 fn ordinary_click_opens_bare_and_markdown_links_on_release() {
-    for markdown in [
-        "https://example.com/docs",
-        "[docs](https://example.com/docs)",
+    for (markdown, destination) in [
+        ("https://example.com/docs", "https://example.com/docs"),
+        (
+            "[docs](https://example.com/docs)",
+            "https://example.com/docs",
+        ),
+        (
+            "[other thread](codex://threads/019e60fc-0518-7c21-9596-980fe97225ba)",
+            "codex://threads/019e60fc-0518-7c21-9596-980fe97225ba",
+        ),
     ] {
         for width in [12, 60] {
             let (mut view, cells) = transcript(markdown, width);
@@ -299,7 +412,7 @@ fn ordinary_click_opens_bare_and_markdown_links_on_release() {
                     view.selected_text(&cells),
                     view.is_following()
                 ),
-                ("https://example.com/docs", None, true)
+                (destination, None, true)
             );
             assert!(view.handle_mouse(up, &cells).is_none());
         }
@@ -319,7 +432,7 @@ fn selection_mouse_does_not_open_links() {
             )
         };
         assert!(matches!(
-            view.handle_selection_mouse(down, &cells),
+            view.handle_selection_mouse(down, &cells, /*patch_approval*/ None),
             Some(ViewAction::Changed)
         ));
         let area = view.area;
@@ -331,6 +444,7 @@ fn selection_mouse_does_not_open_links() {
                     ..down
                 },
                 &cells,
+                /*patch_approval*/ None,
             ),
             Some(ViewAction::Changed)
         ));

@@ -12,6 +12,7 @@ use codex_protocol::config_types::Settings;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::CollaborationModeMessages;
 use codex_protocol::openai_models::ModelMessages;
+use codex_protocol_test_support::ContentItemTestExt;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -129,7 +130,8 @@ fn empty_catalog_collaboration_message_suppresses_legacy_instructions() {
             .render_fragment_diff(PreviousSectionState::Absent)
             .1
             .expect("explicit empty collaboration message")
-            .render(),
+            .render()
+            .expect_text(),
         format!("{COLLABORATION_MODE_OPEN_TAG}{COLLABORATION_MODE_CLOSE_TAG}")
     );
 }
@@ -177,7 +179,8 @@ fn legacy_collaboration_mode_snapshots_refresh_catalog_messages_once() {
                     .render_fragment_diff(PreviousSectionState::Known(&previous))
                     .1
                     .expect("legacy snapshot should refresh collaboration instructions")
-                    .render(),
+                    .render()
+                    .expect_text(),
                 format!(
                     "{COLLABORATION_MODE_OPEN_TAG}{instructions}{COLLABORATION_MODE_CLOSE_TAG}"
                 )

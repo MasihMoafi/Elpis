@@ -64,11 +64,7 @@ impl App {
         mode: crate::app_event::ManagedWorktreeMode,
         name: Option<String>,
     ) {
-        if !self.config.features.enabled(Feature::Worktrees) {
-            self.chat_widget.add_error_message(
-                "Enable worktrees in your Elpis configuration to create a worktree.".to_string(),
-            );
-        } else if self.config.active_project.is_untrusted() {
+        if self.config.active_project.is_untrusted() {
             self.chat_widget.add_error_message(
                 "Cannot create a worktree from an explicitly untrusted source.".to_string(),
             );
@@ -230,7 +226,6 @@ impl App {
         };
         let can_continue = !self.reconnect.offline
             && !self.chat_widget.has_misalignment_policy_violation()
-            && self.config.features.enabled(Feature::Worktrees)
             && !crate::uses_remote_workspace_or_environment(
                 &self.app_server_target,
                 self.environment_manager.as_ref(),

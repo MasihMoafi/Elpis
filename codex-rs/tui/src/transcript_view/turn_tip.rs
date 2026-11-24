@@ -17,13 +17,15 @@ impl TranscriptView {
             cells
                 .last()
                 .filter(|cell| {
-                    cell.as_any()
-                        .is::<crate::history_cell::FinalMessageSeparator>()
+                    self.turn_row(cells, cells.len() - 1).is_none()
+                        && cell
+                            .as_any()
+                            .is::<crate::history_cell::FinalMessageSeparator>()
                         && !cell.display_lines(area.width).is_empty()
                 })
                 .map(EntryKey::cell)
         });
-        self.render(
+        self.paint_rows(
             Rect {
                 height: area.height - u16::from(tip.is_some() && self.turn_tip_key.is_none()),
                 ..area
@@ -37,7 +39,7 @@ impl TranscriptView {
             && self.visible.first().is_none_or(|row| row.key == key)
         {
             self.turn_tip_key = None;
-            self.render(area, buf, cells);
+            self.paint_rows(area, buf, cells);
             return None;
         }
         tip?;

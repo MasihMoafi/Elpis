@@ -11,6 +11,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
+use std::time::SystemTime;
 
 use strum_macros::EnumIter;
 
@@ -19,6 +20,7 @@ use crate::ResponseItemId;
 use crate::SanitizedGitUrl;
 use crate::SessionId;
 use crate::ThreadId;
+use crate::approvals::ElicitationAbandonedEvent;
 use crate::approvals::ElicitationRequestEvent;
 use crate::capabilities::SelectedCapabilityRoot;
 use crate::config_types::ApprovalsReviewer;
@@ -40,6 +42,7 @@ use crate::mcp::RequestId;
 use crate::memory_citation::MemoryCitation;
 use crate::models::ActivePermissionProfile;
 use crate::models::AgentMessageInputContent;
+use crate::models::AudioReference;
 use crate::models::BaseInstructions;
 use crate::models::ContentItem;
 use crate::models::ImageDetail;
@@ -58,14 +61,16 @@ use crate::plan_tool::UpdatePlanArgs;
 use crate::request_permissions::RequestPermissionsEvent;
 use crate::request_permissions::RequestPermissionsResponse;
 use crate::request_user_input::RequestUserInputResponse;
+use crate::response_item_id::OptionalWireItemId;
 use crate::turn_input::CyberAccessProgram;
 use crate::turn_input::SuspendTurnOutcome;
-use crate::turn_input::TurnInputMode;
-use crate::turn_input::TurnInputRequest;
 use crate::turn_input::TurnInputSubmission;
 use crate::turn_input::TurnStartOptions;
+use codex_extension_items::image_generation::GeneratedImageRef;
 use codex_extension_items::image_generation::ImageGenerationFailure;
+use codex_extension_items::image_generation::ImageGenerationInputImage;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::LegacyAppPathString;
 use codex_utils_path_uri::PathUri;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -77,6 +82,7 @@ use serde_json::Value;
 use serde_with::serde_as;
 use strum_macros::Display;
 use tokio::sync::oneshot;
+use tokio::sync::watch;
 use tracing::error;
 use ts_rs::TS;
 
@@ -126,6 +132,8 @@ pub const ENVIRONMENTS_INSTRUCTIONS_OPEN_TAG: &str = "<environments_instructions
 pub const ENVIRONMENTS_INSTRUCTIONS_CLOSE_TAG: &str = "</environments_instructions>";
 pub const APPS_INSTRUCTIONS_OPEN_TAG: &str = "<apps_instructions>";
 pub const APPS_INSTRUCTIONS_CLOSE_TAG: &str = "</apps_instructions>";
+pub const CATALOG_APPS_INSTRUCTIONS_OPEN_TAG: &str = "<catalog_apps_instructions>";
+pub const CATALOG_APPS_INSTRUCTIONS_CLOSE_TAG: &str = "</catalog_apps_instructions>";
 pub const SKILLS_INSTRUCTIONS_OPEN_TAG: &str = "<skills_instructions>";
 pub const SKILLS_INSTRUCTIONS_CLOSE_TAG: &str = "</skills_instructions>";
 pub const PLUGINS_INSTRUCTIONS_OPEN_TAG: &str = "<plugins_instructions>";
@@ -173,7 +181,7 @@ pub struct W3cTraceContext {
     pub tracestate: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct ConversationStartParams {
     /// Whether Codex response handoffs are managed through explicit client append calls.
     pub client_managed_handoffs: bool,
@@ -208,10 +216,58 @@ pub struct ConversationStartParams {
     pub realtime_end_instructions: Option<String>,
     pub prompt: Option<Option<String>>,
     pub realtime_session_id: Option<String>,
+    /// Client-generated identifier for the product voice session. This is distinct from the
+    /// Realtime API session identifier.
+    pub voice_session_id: Option<String>,
     pub transport: Option<ConversationStartTransport>,
     /// Overrides the configured realtime protocol version for this session only.
     pub version: Option<RealtimeConversationVersion>,
-    pub voice: Option<RealtimeVoice>,
+    /// None inherits the thread setting; Some(None) selects the provider default.
+    pub voice: Option<Option<RealtimeVoice>>,
+}
+
+/// Authentication selected by the embedding host for an existing call.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum RealtimeExistingCallAuth {
+    /// Use the model provider's authentication and runtime destination checks.
+    #[default]
+    ModelProvider,
+    /// Use the selected auth manager's external headers and the host's transport.
+    /// The trusted host must authorize the destination, call owner, and calling
+    /// workload before selecting this mode. Never derive it from a client URL.
+    ExternalHeaders,
+}
+
+/// Controls connection admission and authentication for an in-process attachment.
+#[derive(Debug, Clone, Default)]
+pub struct RealtimeAttachmentOptions {
+    /// Set the watch to `true` to cancel a pending connection.
+    /// Dropping the sender while its value is `false` lets the attempt continue.
+    pub cancel: Option<watch::Receiver<bool>>,
+    /// Optional caller deadline for publishing the connection. Cleanup can finish later.
+    pub start_before: Option<SystemTime>,
+    /// Applies only to existing calls; external headers require an explicit host-selected URL.
+    pub existing_call_auth: RealtimeExistingCallAuth,
+}
+
+/// A caller-owned realtime sideband. Dropping either direction seals input and ends
+/// the attachment after accepted messages drain. The caller supplies bounded channels
+/// and one complete JSON message per item.
+#[derive(Debug)]
+pub struct RealtimeSidebandTransport {
+    pub incoming: tokio::sync::mpsc::Receiver<String>,
+    pub outgoing: tokio::sync::mpsc::Sender<String>,
+}
+
+impl fmt::Debug for ConversationStartParams {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Text, instructions, and transport endpoints can contain credentials.
+        f.debug_struct("ConversationStartParams")
+            .field("output_modality", &self.output_modality)
+            .field("initial_items_count", &self.initial_items.len())
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -245,22 +301,38 @@ pub enum RealtimeVoice {
     Alloy,
     Arbor,
     Ash,
+    Aube,
     Ballad,
     Breeze,
+    Bubbie,
     Cedar,
     Coral,
     Cove,
     Echo,
     Ember,
+    Haetsal,
+    Hanul,
+    Himari,
     Juniper,
+    Leher,
     Maple,
     Marin,
+    Miko,
+    Neer,
+    Porto,
+    Rindo,
+    Rio,
+    Rivage,
     Sage,
+    Selva,
     Shimmer,
     Sol,
+    Sonna,
     Spruce,
+    Tinta,
     Vale,
     Verse,
+    Viola,
 }
 
 impl RealtimeVoice {
@@ -269,22 +341,38 @@ impl RealtimeVoice {
             Self::Alloy => "alloy",
             Self::Arbor => "arbor",
             Self::Ash => "ash",
+            Self::Aube => "aube",
             Self::Ballad => "ballad",
             Self::Breeze => "breeze",
+            Self::Bubbie => "bubbie",
             Self::Cedar => "cedar",
             Self::Coral => "coral",
             Self::Cove => "cove",
             Self::Echo => "echo",
             Self::Ember => "ember",
+            Self::Haetsal => "haetsal",
+            Self::Hanul => "hanul",
+            Self::Himari => "himari",
             Self::Juniper => "juniper",
+            Self::Leher => "leher",
             Self::Maple => "maple",
             Self::Marin => "marin",
+            Self::Miko => "miko",
+            Self::Neer => "neer",
+            Self::Porto => "porto",
+            Self::Rindo => "rindo",
+            Self::Rio => "rio",
+            Self::Rivage => "rivage",
             Self::Sage => "sage",
+            Self::Selva => "selva",
             Self::Shimmer => "shimmer",
             Self::Sol => "sol",
+            Self::Sonna => "sonna",
             Self::Spruce => "spruce",
+            Self::Tinta => "tinta",
             Self::Vale => "vale",
             Self::Verse => "verse",
+            Self::Viola => "viola",
         }
     }
 }
@@ -295,6 +383,9 @@ impl RealtimeVoice {
 pub struct RealtimeVoicesList {
     pub v1: Vec<RealtimeVoice>,
     pub v2: Vec<RealtimeVoice>,
+    #[serde(default)]
+    #[ts(as = "Option<_>", optional)]
+    pub v3: Vec<RealtimeVoice>,
     pub default_v1: RealtimeVoice,
     pub default_v2: RealtimeVoice,
 }
@@ -324,6 +415,34 @@ impl RealtimeVoicesList {
                 RealtimeVoice::Verse,
                 RealtimeVoice::Marin,
                 RealtimeVoice::Cedar,
+            ],
+            v3: vec![
+                RealtimeVoice::Juniper,
+                RealtimeVoice::Maple,
+                RealtimeVoice::Spruce,
+                RealtimeVoice::Ember,
+                RealtimeVoice::Vale,
+                RealtimeVoice::Breeze,
+                RealtimeVoice::Arbor,
+                RealtimeVoice::Sol,
+                RealtimeVoice::Cove,
+                RealtimeVoice::Marin,
+                RealtimeVoice::Aube,
+                RealtimeVoice::Bubbie,
+                RealtimeVoice::Haetsal,
+                RealtimeVoice::Hanul,
+                RealtimeVoice::Himari,
+                RealtimeVoice::Leher,
+                RealtimeVoice::Miko,
+                RealtimeVoice::Neer,
+                RealtimeVoice::Porto,
+                RealtimeVoice::Rindo,
+                RealtimeVoice::Rio,
+                RealtimeVoice::Rivage,
+                RealtimeVoice::Selva,
+                RealtimeVoice::Sonna,
+                RealtimeVoice::Tinta,
+                RealtimeVoice::Viola,
             ],
             default_v1: RealtimeVoice::Cove,
             default_v2: RealtimeVoice::Marin,
@@ -453,6 +572,8 @@ pub struct ConversationSpeechParams {
 /// task kind. Child sessions and consumers of frozen initial settings are unchanged.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct TurnSettingsUpdate {
+    /// Trusted host country. `None` preserves the current setting. Published for the named live turn's subsequent steps.
+    pub request_country: Option<crate::RequestCountry>,
     /// Changes the reviewer for subsequent approval requests, not pending reviews.
     pub approvals_reviewer: Option<ApprovalsReviewer>,
     /// Replaces the selection for subsequent steps, without changing future turns.
@@ -494,6 +615,8 @@ pub enum TurnSettingsUpdateOutcome {
     }),
 )]
 pub struct ThreadSettingsOverrides {
+    /// Trusted host country. `None` preserves the current setting. Inherited by future turns on acceptance.
+    pub request_country: Option<crate::RequestCountry>,
     /// Updated fallback `cwd` and environments supplied together as a complete pair.
     pub environments: Option<TurnEnvironmentRequests>,
 
@@ -566,6 +689,45 @@ pub enum AdditionalContextKind {
 pub struct AdditionalContextEntry {
     pub value: String,
     pub kind: AdditionalContextKind,
+    /// Optional name for untrusted context, used to label its tool output.
+    pub name: Option<String>,
+}
+
+impl AdditionalContextEntry {
+    /// Creates an unnamed context entry.
+    pub fn new(value: String, kind: AdditionalContextKind) -> Self {
+        Self {
+            value,
+            kind,
+            name: None,
+        }
+    }
+
+    /// Sets the name for untrusted context.
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Validates the optional untrusted-context name before input admission.
+    pub fn validate(&self) -> Result<(), &'static str> {
+        let Some(name) = &self.name else {
+            return Ok(());
+        };
+        if self.kind == AdditionalContextKind::Application {
+            return Err("additional context name is only supported for untrusted context");
+        }
+        if name.is_empty()
+            || name.len() > 64
+            || !name.as_bytes()[0].is_ascii_lowercase()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        {
+            return Err("additional context name must match [a-z][a-z0-9_]{0,63}");
+        }
+        Ok(())
+    }
 }
 
 /// Result of an explicitly requested deterministic work graph turn.
@@ -598,6 +760,9 @@ pub enum Op {
     /// This server sends [`EventMsg::TurnAborted`] in response.
     Interrupt,
 
+    /// Interrupt a spawned agent, respecting its configured sampling boundary.
+    InterruptAgent,
+
     /// Interrupt the named turn only if no input is queued for it.
     /// The decision is acknowledged before cancellation finishes.
     #[debug("InterruptIfNoPendingInput {{ turn_id: {turn_id:?} }}")]
@@ -614,6 +779,21 @@ pub enum Op {
     #[debug("RealtimeConversationStart {{ session_id: {:?}, version: {:?}, output_modality: {:?} }}", _0.realtime_session_id, _0.version, _0.output_modality)]
     RealtimeConversationStart(ConversationStartParams),
 
+    /// Start a realtime conversation and report completion of the connection attempt.
+    /// If cancellation wins, completion acknowledges connection cleanup.
+    RealtimeConversationAttach {
+        params: ConversationStartParams,
+        options: RealtimeAttachmentOptions,
+        reply: oneshot::Sender<CodexResult<()>>,
+    },
+
+    /// Attach an existing call using caller-provided I/O without opening a socket.
+    RealtimeConversationAttachStream {
+        params: ConversationStartParams,
+        transport: RealtimeSidebandTransport,
+        reply: oneshot::Sender<CodexResult<()>>,
+    },
+
     /// Send audio input to the running realtime conversation stream.
     #[debug("RealtimeConversationAudio {{ item_id: {:?}, sample_rate: {}, num_channels: {}, samples_per_channel: {:?} }}", _0.frame.item_id, _0.frame.sample_rate, _0.frame.num_channels, _0.frame.samples_per_channel)]
     RealtimeConversationAudio(ConversationAudioParams),
@@ -629,16 +809,20 @@ pub enum Op {
     /// Close the running realtime conversation stream.
     RealtimeConversationClose,
 
+    /// End the identified logical call, including after its transport owner is lost.
+    RealtimeConversationEnd {
+        realtime_session_id: String,
+        reply: oneshot::Sender<CodexResult<()>>,
+    },
+
+    /// Disconnect only the matching transport after earlier start operations finish.
+    RealtimeConversationDetach {
+        realtime_session_id: String,
+        reply: oneshot::Sender<CodexResult<()>>,
+    },
+
     /// Request the list of voices supported by realtime conversation streams.
     RealtimeConversationListVoices,
-
-    /// Submit turn input using the requested routing behavior.
-    #[debug("TurnInput {{ requested_settings: {:?} }}", request.thread_settings)]
-    TurnInput {
-        request: Box<TurnInputRequest>,
-        mode: TurnInputMode,
-        reply: oneshot::Sender<CodexResult<TurnInputSubmission>>,
-    },
 
     /// Resume an interrupted regular turn.
     #[debug("RecoverTurn {{ requested_settings: {thread_settings:?} }}")]
@@ -665,6 +849,13 @@ pub enum Op {
         /// When present, report validation errors here instead of emitting an error event.
         /// Successful updates still emit `ThreadSettingsApplied` for all callers.
         reply: Option<oneshot::Sender<CodexResult<()>>>,
+    },
+
+    /// Replace the dynamic tool catalog without starting a turn.
+    #[debug("ReplaceDynamicTools")]
+    ReplaceDynamicTools {
+        tools: Vec<DynamicToolSpec>,
+        reply: oneshot::Sender<CodexResult<()>>,
     },
 
     /// Update only the named running turn, without changing future settings.
@@ -703,6 +894,10 @@ pub enum Op {
         /// The user's decision in response to the request.
         decision: ReviewDecision,
     },
+
+    /// Cancel the file change approval issued by the named turn.
+    #[debug("CancelPatchApproval {{ id: {id:?}, turn_id: {turn_id:?} }}")]
+    CancelPatchApproval { id: String, turn_id: String },
 
     /// Resolve an MCP elicitation request.
     #[debug("ResolveElicitation {{ request_id: {request_id:?}, decision: {decision:?} }}")]
@@ -844,7 +1039,8 @@ impl FromStr for ThreadHistoryMode {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct InterAgentCommunication {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
+    #[serde(with = "OptionalWireItemId")]
+    #[ts(optional, as = "Option<ResponseItemId>")]
     pub id: Option<ResponseItemId>,
     pub author: AgentPath,
     pub recipient: AgentPath,
@@ -913,6 +1109,8 @@ impl InterAgentCommunication {
         ResponseInputItem::Message {
             role: "assistant".to_string(),
             content: vec![ContentItem::OutputText {
+                annotations: None,
+                logprobs: None,
                 text: serde_json::to_string(&communication).unwrap_or_default(),
             }],
             phase: Some(MessagePhase::Commentary),
@@ -960,7 +1158,7 @@ impl InterAgentCommunication {
 
     pub fn from_message_content(content: &[ContentItem]) -> Option<Self> {
         match content {
-            [ContentItem::InputText { text }] | [ContentItem::OutputText { text }] => {
+            [ContentItem::InputText { text }] | [ContentItem::OutputText { text, .. }] => {
                 serde_json::from_str(text).ok()
             }
             _ => None,
@@ -973,22 +1171,27 @@ impl Op {
         match self {
             Self::RunWorkGraph { .. } => "run_work_graph",
             Self::Interrupt => "interrupt",
+            Self::InterruptAgent => "interrupt_agent",
             Self::InterruptIfNoPendingInput { .. } => "interrupt_if_no_pending_input",
             Self::CleanBackgroundTerminals => "clean_background_terminals",
             Self::RealtimeConversationStart(_) => "realtime_conversation_start",
+            Self::RealtimeConversationAttach { .. } => "realtime_conversation_attach",
+            Self::RealtimeConversationAttachStream { .. } => "realtime_conversation_attach_stream",
             Self::RealtimeConversationAudio(_) => "realtime_conversation_audio",
             Self::RealtimeConversationText(_) => "realtime_conversation_text",
             Self::RealtimeConversationSpeech(_) => "realtime_conversation_speech",
             Self::RealtimeConversationClose => "realtime_conversation_close",
+            Self::RealtimeConversationEnd { .. } => "realtime_conversation_end",
+            Self::RealtimeConversationDetach { .. } => "realtime_conversation_detach",
             Self::RealtimeConversationListVoices => "realtime_conversation_list_voices",
-            Self::TurnInput { .. } => "turn_input",
             Self::RecoverTurn { .. } => "recover_turn",
             Self::SuspendTurnAndShutdown { .. } => "suspend_turn_and_shutdown",
             Self::ThreadSettings { .. } => "thread_settings",
+            Self::ReplaceDynamicTools { .. } => "replace_dynamic_tools",
             Self::TurnSettings { .. } => "turn_settings",
             Self::InterAgentCommunication { .. } => "inter_agent_communication",
             Self::ExecApproval { .. } => "exec_approval",
-            Self::PatchApproval { .. } => "patch_approval",
+            Self::PatchApproval { .. } | Self::CancelPatchApproval { .. } => "patch_approval",
             Self::ResolveElicitation { .. } => "resolve_elicitation",
             Self::UserInputAnswer { .. } => "user_input_answer",
             Self::RequestPermissionsResponse { .. } => "request_permissions_response",
@@ -1051,8 +1254,9 @@ pub enum AskForApproval {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema, TS)]
 pub struct GranularApprovalConfig {
-    /// Whether to allow shell command approval requests, including inline
+    /// Whether to allow sandbox escalation approval requests, including inline
     /// `with_additional_permissions` and `require_escalated` requests.
+    /// Dangerous commands can still request approval within existing permissions.
     pub sandbox_approval: bool,
     /// Whether to allow prompts triggered by execpolicy `prompt` rules.
     pub rules: bool,
@@ -1192,11 +1396,7 @@ impl WritableRoot {
             }
         }
 
-        if self.path_contains_protected_metadata_name(path) {
-            return false;
-        }
-
-        true
+        !self.path_contains_protected_metadata_name(path)
     }
 
     fn path_contains_protected_metadata_name(&self, path: &Path) -> bool {
@@ -1529,6 +1729,14 @@ pub enum EventMsg {
 
     ExecApprovalRequest(ExecApprovalRequestEvent),
 
+    /// Ends an in-process network prompt, including when its proxy request is dropped.
+    #[serde(skip)]
+    #[schemars(skip)]
+    #[ts(skip)]
+    NetworkApprovalResolved {
+        approval_id: String,
+    },
+
     RequestPermissions(RequestPermissionsEvent),
 
     RequestUserInput(RequestUserInputEvent),
@@ -1538,6 +1746,9 @@ pub enum EventMsg {
     DynamicToolCallResponse(DynamicToolCallResponseEvent),
 
     ElicitationRequest(ElicitationRequestEvent),
+
+    /// An unanswered MCP responder was abandoned at its original unbounded source.
+    ElicitationAbandoned(ElicitationAbandonedEvent),
 
     ApplyPatchApprovalRequest(ApplyPatchApprovalRequestEvent),
 
@@ -1583,6 +1794,12 @@ pub enum EventMsg {
     RawResponseItem(RawResponseItemEvent),
     RawResponseCompleted(RawResponseCompletedEvent),
 
+    /// In-process delivery from a private reviewer through its parent's subscription.
+    #[serde(skip)]
+    #[schemars(skip)]
+    #[ts(skip)]
+    PrivateSessionEvent(PrivateSessionEvent),
+
     ItemStarted(ItemStartedEvent),
     ItemCompleted(ItemCompletedEvent),
     HookStarted(HookStartedEvent),
@@ -1618,6 +1835,36 @@ pub enum EventMsg {
     SubAgentActivity(SubAgentActivityEvent),
 }
 
+impl EventMsg {
+    /// Returns the ID and start time of the command this approval opens.
+    /// Stdin and network reviews have their own prompts for an existing operation.
+    pub fn command_approval_start(&self) -> Option<(&str, i64)> {
+        match self {
+            Self::ExecApprovalRequest(request)
+                if request.kind == crate::approvals::ExecApprovalKind::Command
+                    && request.approval_id.is_none()
+                    && request.network_approval_context.is_none() =>
+            {
+                Some((&request.call_id, request.started_at_ms))
+            }
+            Self::GuardianAssessment(assessment)
+                if assessment.status == GuardianAssessmentStatus::InProgress
+                    && matches!(
+                        assessment.action,
+                        GuardianAssessmentAction::Command { .. }
+                            | GuardianAssessmentAction::Execve { .. }
+                    ) =>
+            {
+                Some((
+                    assessment.target_item_id.as_deref()?,
+                    assessment.started_at_ms,
+                ))
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS, EnumIter)]
 #[serde(rename_all = "snake_case")]
 pub enum HookEventName {
@@ -1633,6 +1880,8 @@ pub enum HookEventName {
     SubagentStop,
     Stop,
     Interrupt,
+    PreModelRequest,
+    PostModelRequest,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -1724,7 +1973,7 @@ pub struct HookRunSummary {
     pub handler_type: HookHandlerType,
     pub execution_mode: HookExecutionMode,
     pub scope: HookScope,
-    pub source_path: AbsolutePathBuf,
+    pub source_path: LegacyAppPathString,
     #[serde(default)]
     pub source: HookSource,
     pub display_order: i64,
@@ -1900,9 +2149,17 @@ pub enum CodexErrorInfo {
     ContextWindowExceeded,
     SessionBudgetExceeded,
     UsageLimitExceeded,
+    ApiKeySpendLimitExceeded,
+    ProjectSpendLimitExceeded,
+    OrganizationSpendLimitExceeded,
     RateLimitExceeded,
     FlexUnavailable,
     ServerOverloaded,
+    ModelNotFound,
+    /// Capacity is unavailable on a route restricted by server policy.
+    PolicyCapacityUnavailable,
+    /// The workspace's inference hook explicitly denied this request.
+    InferenceHookDenied,
     CyberPolicy,
     BioPolicy,
     MisalignmentPolicyViolation,
@@ -1938,6 +2195,16 @@ pub enum CodexErrorInfo {
 }
 
 impl CodexErrorInfo {
+    pub fn is_usage_limit(&self) -> bool {
+        matches!(
+            self,
+            Self::UsageLimitExceeded
+                | Self::ApiKeySpendLimitExceeded
+                | Self::ProjectSpendLimitExceeded
+                | Self::OrganizationSpendLimitExceeded
+        )
+    }
+
     /// Whether this error should mark the current turn as failed when replaying history.
     pub fn affects_turn_status(&self) -> bool {
         match self {
@@ -1945,9 +2212,15 @@ impl CodexErrorInfo {
             Self::ContextWindowExceeded
             | Self::SessionBudgetExceeded
             | Self::UsageLimitExceeded
+            | Self::ApiKeySpendLimitExceeded
+            | Self::ProjectSpendLimitExceeded
+            | Self::OrganizationSpendLimitExceeded
             | Self::RateLimitExceeded
             | Self::FlexUnavailable
             | Self::ServerOverloaded
+            | Self::ModelNotFound
+            | Self::PolicyCapacityUnavailable
+            | Self::InferenceHookDenied
             | Self::CyberPolicy
             | Self::BioPolicy
             | Self::MisalignmentPolicyViolation
@@ -1969,6 +2242,20 @@ impl CodexErrorInfo {
 #[derive(Debug, Clone, Deserialize, Serialize, TS, JsonSchema)]
 pub struct RawResponseItemEvent {
     pub item: ResponseItem,
+}
+
+/// Observer events that a private session forwards without modifying its parent's history.
+#[derive(Debug, Clone)]
+pub struct PrivateSessionEvent {
+    pub thread_id: ThreadId,
+    pub event: PrivateSessionEventPayload,
+}
+
+/// Recorded state and cancellation needed by observers awaiting response acceptance.
+#[derive(Debug, Clone)]
+pub enum PrivateSessionEventPayload {
+    RecordedItem(RawResponseItemEvent),
+    TurnAborted(TurnAbortedEvent),
 }
 
 /// Exact usage and metadata reported by one upstream Responses API completion.
@@ -1994,6 +2281,11 @@ pub struct ItemCompletedEvent {
     pub thread_id: ThreadId,
     pub turn_id: String,
     pub item: TurnItem,
+    /// Native tokens in the completed assistant message, including any sampled footer.
+    /// Completion telemetry only; absent for items without a producer-supplied count.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub content_token_count: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub started_at_ms: Option<i64>,
@@ -2125,6 +2417,11 @@ pub struct ErrorEvent {
     pub message: String,
     #[serde(default)]
     pub codex_error_info: Option<CodexErrorInfo>,
+    /// Host-only file identities proven rejected against the submitted request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(skip)]
+    #[ts(skip)]
+    pub rejected_audio_file_ids: Vec<String>,
     /// Sensitive explanation and steering are delivered live but never enter rollout storage.
     #[serde(skip)]
     #[schemars(skip)]
@@ -2179,6 +2476,33 @@ pub enum ModelVerification {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct ModelVerificationEvent {
     pub verifications: Vec<ModelVerification>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
+#[serde(from = "StoredTargetedModeration")]
+pub struct TargetedAnswerModeration {
+    pub item_id: String,
+    pub moderated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub display: Option<crate::items::AgentMessageDisplay>,
+}
+
+#[derive(Deserialize)]
+struct StoredTargetedModeration {
+    item_id: String,
+    #[serde(flatten)]
+    decision: crate::items::AgentMessageModeration,
+}
+
+impl From<StoredTargetedModeration> for TargetedAnswerModeration {
+    fn from(value: StoredTargetedModeration) -> Self {
+        Self {
+            item_id: value.item_id,
+            moderated: value.decision.moderated,
+            display: value.decision.display,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, JsonSchema, TS)]
@@ -2272,6 +2596,11 @@ pub struct ThreadSettingsSnapshot {
     pub service_tier: Option<String>,
     pub approval_policy: AskForApproval,
     pub approvals_reviewer: ApprovalsReviewer,
+    /// Original selection before managed policy resolved the effective reviewer.
+    /// Older histories contain only `approvals_reviewer`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub requested_approvals_reviewer: Option<ApprovalsReviewer>,
     pub permission_profile: PermissionProfile,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -2334,6 +2663,10 @@ pub struct TokenUsageRecord {
 pub struct TokenUsageInfo {
     pub total_token_usage: TokenUsage,
     pub last_token_usage: TokenUsage,
+    /// Whether the last context count includes reasoning retained from earlier turns.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_usage_includes_reasoning: Option<bool>,
     // TODO(aibrahim): make this not optional
     #[ts(type = "number | null")]
     pub model_context_window: Option<i64>,
@@ -2342,33 +2675,26 @@ pub struct TokenUsageInfo {
 impl TokenUsageInfo {
     pub fn new_or_append(
         info: &Option<TokenUsageInfo>,
-        last: &Option<TokenUsage>,
+        last: &TokenUsage,
+        includes_reasoning: bool,
         model_context_window: Option<i64>,
-    ) -> Option<Self> {
-        if info.is_none() && last.is_none() {
-            return None;
-        }
-
+    ) -> Self {
         let mut info = match info {
             Some(info) => info.clone(),
             None => Self {
                 total_token_usage: TokenUsage::default(),
+                last_usage_includes_reasoning: None,
                 last_token_usage: TokenUsage::default(),
                 model_context_window,
             },
         };
-        if let Some(last) = last {
-            info.append_last_usage(last);
-        }
+        info.total_token_usage.add_assign(last);
+        info.last_token_usage = last.clone();
+        info.last_usage_includes_reasoning = Some(includes_reasoning);
         if let Some(model_context_window) = model_context_window {
             info.model_context_window = Some(model_context_window);
         }
-        Some(info)
-    }
-
-    pub fn append_last_usage(&mut self, last: &TokenUsage) {
-        self.total_token_usage.add_assign(last);
-        self.last_token_usage = last.clone();
+        info
     }
 
     pub fn fill_to_context_window(&mut self, context_window: i64) {
@@ -2380,6 +2706,7 @@ impl TokenUsageInfo {
             total_tokens: context_window,
             ..TokenUsage::default()
         };
+        self.last_usage_includes_reasoning = None;
         self.last_token_usage = TokenUsage {
             total_tokens: delta,
             ..TokenUsage::default()
@@ -2389,6 +2716,7 @@ impl TokenUsageInfo {
     pub fn full_context_window(context_window: i64) -> Self {
         let mut info = Self {
             total_token_usage: TokenUsage::default(),
+            last_usage_includes_reasoning: None,
             last_token_usage: TokenUsage::default(),
             model_context_window: Some(context_window),
         };
@@ -2448,7 +2776,7 @@ impl FromStr for RateLimitReachedType {
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize, JsonSchema, TS)]
 pub struct RateLimitWindow {
-    /// Percentage (0-100) of the window that has been consumed.
+    /// Percentage of the allowance consumed during the window. Can exceed 100.
     pub used_percent: f64,
     /// Rolling window duration, in minutes.
     #[ts(type = "number | null")]
@@ -2575,6 +2903,10 @@ impl fmt::Display for FinalOutput {
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct AgentMessageEvent {
+    /// Legacy history assigns synthetic item IDs. Preserve the native ID for a moderated answer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub moderation: Option<TargetedAnswerModeration>,
     pub message: String,
     #[serde(default)]
     pub phase: Option<MessagePhase>,
@@ -2592,6 +2924,14 @@ pub struct AgentMessageEvent {
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]
 pub enum UserMessageImageKind {
+    Inline,
+    File,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(rename_all = "snake_case")]
+pub enum UserMessageAudioKind {
     Inline,
     File,
 }
@@ -2637,6 +2977,16 @@ pub struct UserMessageEvent {
     /// legacy UI history events and correspond to audio sent to the model.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio: Option<Vec<String>>,
+    /// File-backed audio references. When `audio_order` is complete, consumers
+    /// combine this with `audio` without duplicating inline payloads. Older
+    /// producers may instead store the complete ordered reference list here.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub audio_references: Option<Vec<AudioReference>>,
+    /// Inline and file-backed audio kinds in their original input order.
+    /// New mixed-input producers populate this alongside the split `audio` and
+    /// `audio_references` fields; when absent, consumers retain the prior shape.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub audio_order: Vec<UserMessageAudioKind>,
     /// Local file paths sourced from `UserInput::LocalAudio`. These are kept so
     /// clients can reattach audio when editing history and should not be
     /// treated as API-ready URLs.
@@ -2666,6 +3016,30 @@ impl UserMessageEvent {
         inline_count == self.images.as_ref().map_or(0, Vec::len)
             && file_count == self.file_ids.as_ref().map_or(0, Vec::len)
     }
+
+    /// Returns whether `audio_order` accounts for every split audio reference exactly once.
+    pub fn has_complete_audio_order(&self) -> bool {
+        if self.audio_order.is_empty() {
+            return false;
+        }
+
+        let mut inline_count = 0;
+        let mut file_count = 0;
+        for audio_kind in &self.audio_order {
+            match audio_kind {
+                UserMessageAudioKind::Inline => inline_count += 1,
+                UserMessageAudioKind::File => file_count += 1,
+            }
+        }
+
+        inline_count == self.audio.as_ref().map_or(0, Vec::len)
+            && file_count == self.audio_references.as_ref().map_or(0, Vec::len)
+            && self.audio_references.as_ref().is_none_or(|references| {
+                references
+                    .iter()
+                    .all(|reference| matches!(reference, AudioReference::File { .. }))
+            })
+    }
 }
 
 /// Returns the user-facing preview text for a user message.
@@ -2686,7 +3060,13 @@ pub fn user_message_preview(user: &UserMessageEvent) -> Option<String> {
     {
         return Some("[Image]".to_string());
     }
-    if user.audio.as_ref().is_some_and(|audio| !audio.is_empty()) || !user.local_audio.is_empty() {
+    if user.audio.as_ref().is_some_and(|audio| !audio.is_empty())
+        || user
+            .audio_references
+            .as_ref()
+            .is_some_and(|audio| !audio.is_empty())
+        || !user.local_audio.is_empty()
+    {
         return Some("[Audio]".to_string());
     }
     None
@@ -2715,6 +3095,10 @@ pub struct AgentReasoningSectionBreakEvent {
 pub struct McpInvocation {
     /// Name of the MCP server as defined in the config.
     pub server: String,
+    /// Registration scope, not necessarily the server's execution environment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub environment_id: Option<String>,
     /// Name of the tool as given by the MCP server.
     pub tool: String,
     /// Arguments to the tool call.
@@ -2857,7 +3241,8 @@ pub struct ImageGenerationEndEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub revised_prompt: Option<String>,
-    pub result: String,
+    #[serde(flatten)]
+    pub image: GeneratedImageRef,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub transparent_background: Option<bool>,
@@ -2867,6 +3252,12 @@ pub struct ImageGenerationEndEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub saved_path: Option<AbsolutePathBuf>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[ts(as = "Option<_>", optional)]
+    pub input_images: Vec<ImageGenerationInputImage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub generation_id: Option<String>,
 }
 
 // Conversation kept for backward compatibility.
@@ -3144,14 +3535,14 @@ pub enum MultiAgentVersion {
     V2,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema)]
 pub struct SessionContextWindow {
-    /// UUIDv7 identity of this context window.
-    pub window_id: String,
+    /// Persisted model-facing window identity.
+    pub window_id: crate::ContextWindowId,
 }
 
 impl SessionContextWindow {
-    pub fn new(window_id: String) -> Self {
+    pub fn new(window_id: crate::ContextWindowId) -> Self {
         Self { window_id }
     }
 }
@@ -3177,8 +3568,11 @@ pub struct HistoryPosition {
 /// NOTE: There used to be an `instructions` field here, which stored user_instructions, but we
 /// now save that on TurnContext. base_instructions stores the base instructions for the session,
 /// and should be used when there is no config override.
-#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
 pub struct SessionMeta {
+    /// Scope discovery to the creator. Absent on threads created before account filtering.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub account_scoped: bool,
     /// ChatGPT user that created this thread; absent when unavailable or for older threads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub creator_user_id: Option<String>,
@@ -3190,6 +3584,9 @@ pub struct SessionMeta {
     pub id: ThreadId,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forked_from_id: Option<ThreadId>,
+    /// Marks a persisted fork as attached to `forked_from_id`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub attached_thread: bool,
     /// Exclusive ordinal inherited from the logical fork parent, independent of `history_base`.
     /// Revert may replace the physical history base while retaining this fork boundary.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3203,7 +3600,6 @@ pub struct SessionMeta {
     /// An absent value means unknown; an empty list means no roots.
     /// Keep native paths parseable across hosts; validate them when restoring settings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
     pub runtime_workspace_roots: Option<Vec<PathBuf>>,
     pub originator: String,
     pub cli_version: String,
@@ -3259,11 +3655,13 @@ impl Default for SessionMeta {
     fn default() -> Self {
         let id = ThreadId::default();
         SessionMeta {
+            account_scoped: false,
             creator_user_id: None,
             creator_account_id: None,
             session_id: id.into(),
             id,
             forked_from_id: None,
+            attached_thread: false,
             forked_from_ordinal_exclusive: None,
             parent_thread_id: None,
             timestamp: String::new(),
@@ -3290,7 +3688,7 @@ impl Default for SessionMeta {
     }
 }
 
-#[derive(Serialize, Debug, Clone, JsonSchema, TS)]
+#[derive(Serialize, Debug, Clone, JsonSchema)]
 pub struct SessionMetaLine {
     #[serde(flatten)]
     pub meta: SessionMeta,
@@ -3349,13 +3747,17 @@ impl WorldStateItem {
 /// context updates, and again after mid-turn compaction when replacement
 /// history re-establishes full context, so resume/fork replay can recover the
 /// latest durable baseline.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
+#[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, TS)]
 pub struct TurnContextItem {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turn_id: Option<String>,
     /// Root turn that owns this turn's attribution, retained across recovery.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_turn_id: Option<String>,
+    /// Explicit routing for this turn. An empty list clears the thread's direct namespaces.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub direct_only_tool_namespaces: Option<Vec<String>>,
     /// Plugin selection captured for this turn. Absent in older histories.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -3364,15 +3766,11 @@ pub struct TurnContextItem {
     pub approval_policy: AskForApproval,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub approvals_reviewer: Option<ApprovalsReviewer>,
-    pub sandbox_policy: SandboxPolicy,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permission_profile: Option<PermissionProfile>,
+    pub permission_profile: PermissionProfile,
     /// Built-in or named profile that produced `permission_profile`, when known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub active_permission_profile: Option<ActivePermissionProfile>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file_system_sandbox_policy: Option<RawFileSystemSandboxPolicy>,
     pub model: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comp_hash: Option<String>,
@@ -3392,28 +3790,94 @@ pub struct TurnContextItem {
     pub summary: Option<ReasoningSummaryConfig>,
 }
 
-impl TurnContextItem {
-    pub fn permission_profile(&self) -> PermissionProfile {
-        self.permission_profile.clone().unwrap_or_else(|| {
-            let file_system_sandbox_policy = self
-                .file_system_sandbox_policy
-                .clone()
-                .map(TryInto::try_into)
-                .transpose()
-                .unwrap_or_else(|_| Some(FileSystemSandboxPolicy::restricted(Vec::new())))
-                .unwrap_or_else(|| {
-                    FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(
-                        &self.sandbox_policy,
-                        self.cwd.as_path(),
-                    )
-                });
-            PermissionProfile::from_runtime_permissions_with_enforcement(
-                SandboxEnforcement::from_legacy_sandbox_policy(&self.sandbox_policy),
-                &file_system_sandbox_policy,
-                NetworkSandboxPolicy::from(&self.sandbox_policy),
-            )
+impl<'de> Deserialize<'de> for TurnContextItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            turn_id: Option<String>,
+            root_turn_id: Option<String>,
+            direct_only_tool_namespaces: Option<Vec<String>>,
+            disabled_plugin_ids: Option<Vec<String>>,
+            cwd: AbsolutePathBuf,
+            approval_policy: AskForApproval,
+            approvals_reviewer: Option<ApprovalsReviewer>,
+            // Older histories are normalized here; decoded items retain only the profile.
+            sandbox_policy: Option<SandboxPolicy>,
+            permission_profile: Option<PermissionProfile>,
+            active_permission_profile: Option<ActivePermissionProfile>,
+            file_system_sandbox_policy: Option<RawFileSystemSandboxPolicy>,
+            model: String,
+            comp_hash: Option<String>,
+            collaboration_mode: Option<CollaborationMode>,
+            multi_agent_version: Option<MultiAgentVersion>,
+            realtime_active: Option<bool>,
+            cyber_access_program: Option<CyberAccessProgram>,
+            effort: Option<ReasoningEffortConfig>,
+            summary: Option<ReasoningSummaryConfig>,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        let permission_profile = match wire.permission_profile {
+            Some(permission_profile) => permission_profile,
+            None => {
+                let sandbox_policy = wire
+                    .sandbox_policy
+                    .ok_or_else(|| serde::de::Error::missing_field("permission_profile"))?;
+                let file_system_sandbox_policy = wire
+                    .file_system_sandbox_policy
+                    .map(TryInto::try_into)
+                    .transpose()
+                    // Malformed historical split rules must not regain legacy grants.
+                    .unwrap_or_else(|_| Some(FileSystemSandboxPolicy::restricted(Vec::new())))
+                    .unwrap_or_else(|| {
+                        FileSystemSandboxPolicy::from_legacy_sandbox_policy_for_cwd(
+                            &sandbox_policy,
+                            wire.cwd.as_path(),
+                        )
+                    });
+                PermissionProfile::from_runtime_permissions_with_enforcement(
+                    SandboxEnforcement::from_legacy_sandbox_policy(&sandbox_policy),
+                    &file_system_sandbox_policy,
+                    NetworkSandboxPolicy::from(&sandbox_policy),
+                )
+            }
+        };
+        Ok(Self {
+            turn_id: wire.turn_id,
+            root_turn_id: wire.root_turn_id,
+            direct_only_tool_namespaces: wire.direct_only_tool_namespaces,
+            disabled_plugin_ids: wire.disabled_plugin_ids,
+            cwd: wire.cwd,
+            approval_policy: wire.approval_policy,
+            approvals_reviewer: wire.approvals_reviewer,
+            permission_profile,
+            active_permission_profile: wire.active_permission_profile,
+            model: wire.model,
+            comp_hash: wire.comp_hash,
+            collaboration_mode: wire.collaboration_mode,
+            multi_agent_version: wire.multi_agent_version,
+            realtime_active: wire.realtime_active,
+            cyber_access_program: wire.cyber_access_program,
+            effort: wire.effort,
+            summary: wire.summary,
         })
     }
+}
+
+/// Estimate the model-visible content length of an encrypted compaction.
+///
+/// The payload can contain summary text, sampled-token replay caches, and
+/// encryption/base64 overhead. Normalize the roughly threefold payload growth
+/// observed with replay caches before applying the usual four-byte text
+/// heuristic: twelve ciphertext bytes per estimated token, rounded up.
+/// This restores the earlier budgeting scale, not exact tokenizer counts, and
+/// can underestimate legacy checkpoints without caches. Callers must enforce
+/// transport-size limits separately.
+pub fn estimate_compaction_content_length(encoded_len: usize) -> usize {
+    encoded_len.div_ceil(3)
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -3484,13 +3948,6 @@ pub struct GitInfo {
     )]
     #[schemars(with = "Option<String>")]
     pub repository_url: Option<SanitizedGitUrl>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
-pub enum ReviewDelivery {
-    Inline,
-    Detached,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
@@ -3807,6 +4264,10 @@ pub struct TurnDiffEvent {
 pub struct McpStartupUpdateEvent {
     /// Server name being started.
     pub server: String,
+    /// Registration scope, not necessarily the server's execution environment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub environment_id: Option<String>,
     /// Current startup status.
     pub status: McpStartupStatus,
 }
@@ -4545,6 +5006,10 @@ pub struct CollabResumeEndEvent {
 }
 
 #[cfg(test)]
+#[path = "conversation_start_params_tests.rs"]
+mod conversation_start_params_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::items::CommandExecutionItem;
@@ -4560,6 +5025,7 @@ mod tests {
     use crate::items::UserMessageItem;
     use crate::items::WebSearchItem;
     use crate::mcp::CallToolResult;
+    use crate::models::AudioReference;
     use crate::permissions::FileSystemAccessMode;
     use crate::permissions::FileSystemPath;
     use crate::permissions::FileSystemSandboxEntry;
@@ -4766,6 +5232,8 @@ mod tests {
             ResponseInputItem::Message {
                 role: "assistant".to_string(),
                 content: vec![ContentItem::OutputText {
+                    annotations: None,
+                    logprobs: None,
                     text: serde_json::to_string(&serialized_communication)
                         .expect("serialize communication"),
                 }],
@@ -5445,6 +5913,7 @@ mod tests {
             item: TurnItem::McpToolCall(McpToolCallItem {
                 id: "mcp-1".into(),
                 server: "server".into(),
+                environment_id: None,
                 tool: "tool".into(),
                 arguments: json!({"arg": "value"}),
                 connector_id: Some("connector".into()),
@@ -5488,6 +5957,7 @@ mod tests {
     #[test]
     fn item_completed_event_from_image_generation_emits_end_event() {
         let event = ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             item: TurnItem::ImageGeneration(ImageGenerationItem {
@@ -5508,7 +5978,12 @@ mod tests {
                 assert_eq!(event.call_id, "ig-1");
                 assert_eq!(event.status, "completed");
                 assert_eq!(event.revised_prompt.as_deref(), Some("A tiny blue square"));
-                assert_eq!(event.result, "Zm9v");
+                assert_eq!(
+                    event.image,
+                    GeneratedImageRef::Inline {
+                        result: "Zm9v".to_string(),
+                    }
+                );
                 assert_eq!(
                     event.saved_path.as_ref().map(AbsolutePathBuf::as_path),
                     Some(test_path_buf("/tmp/ig-1.png").as_path())
@@ -5521,6 +5996,7 @@ mod tests {
     #[test]
     fn item_completed_event_from_file_change_emits_patch_end_event() {
         let event = ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             started_at_ms: Some(0),
@@ -5560,6 +6036,7 @@ mod tests {
     #[test]
     fn item_completed_event_from_mcp_tool_call_emits_end_event() {
         let event = ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             started_at_ms: Some(0),
@@ -5567,6 +6044,7 @@ mod tests {
             item: TurnItem::McpToolCall(McpToolCallItem {
                 id: "mcp-1".into(),
                 server: "server".into(),
+                environment_id: None,
                 tool: "tool".into(),
                 arguments: json!({"arg": "value"}),
                 connector_id: Some("connector".into()),
@@ -5641,6 +6119,7 @@ mod tests {
             }),
         };
         let completed = ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             started_at_ms: Some(10),
@@ -5719,6 +6198,7 @@ mod tests {
             }),
         };
         let completed = ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             started_at_ms: Some(10),
@@ -5764,6 +6244,7 @@ mod tests {
     #[test]
     fn review_mode_item_completion_emits_legacy_events_with_ids() {
         let entered = ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             started_at_ms: Some(0),
@@ -5777,6 +6258,7 @@ mod tests {
             }),
         };
         let exited = ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             started_at_ms: Some(0),
@@ -5837,6 +6319,7 @@ mod tests {
     #[test]
     fn item_completed_event_defaults_missing_completed_at_ms() {
         let mut value = serde_json::to_value(ItemCompletedEvent {
+            content_token_count: None,
             thread_id: ThreadId::new(),
             turn_id: "turn-1".into(),
             item: TurnItem::UserMessage(UserMessageItem::new(&[])),
@@ -5878,6 +6361,7 @@ mod tests {
             misalignment: None,
             message: "rollback failed".into(),
             codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+            rejected_audio_file_ids: Vec::new(),
         };
         assert!(!event.affects_turn_status());
     }
@@ -5890,6 +6374,7 @@ mod tests {
             codex_error_info: Some(CodexErrorInfo::ActiveTurnNotSteerable {
                 turn_kind: NonSteerableTurnKind::Review,
             }),
+            rejected_audio_file_ids: Vec::new(),
         };
         assert!(!event.affects_turn_status());
     }
@@ -5900,6 +6385,7 @@ mod tests {
             misalignment: None,
             message: "generic".into(),
             codex_error_info: Some(CodexErrorInfo::Other),
+            rejected_audio_file_ids: Vec::new(),
         };
         assert!(event.affects_turn_status());
     }
@@ -5909,6 +6395,7 @@ mod tests {
         let event = ErrorEvent {
             message: "This request violated the misalignment policy.".to_string(),
             codex_error_info: Some(CodexErrorInfo::MisalignmentPolicyViolation),
+            rejected_audio_file_ids: Vec::new(),
             misalignment: Some(MisalignmentErrorDetails {
                 error_type: Some("unauthorized_data_transfer".to_string()),
                 detailed_explanation: Some("Sensitive customer explanation".to_string()),
@@ -5935,6 +6422,22 @@ mod tests {
         assert!(!debug.contains("Sensitive customer explanation"));
         assert!(!debug.contains("Sensitive customer steering"));
         assert!(!debug.contains("sensitive-review-target"));
+    }
+
+    #[test]
+    fn rejected_audio_identity_round_trips_for_host_recovery() {
+        let event = ErrorEvent {
+            message: "invalid recording".to_string(),
+            codex_error_info: Some(CodexErrorInfo::BadRequest),
+            rejected_audio_file_ids: vec!["file_audio".to_string()],
+            misalignment: None,
+        };
+
+        let serialized = serde_json::to_value(&event).expect("serialize error event");
+        assert_eq!(serialized["rejected_audio_file_ids"], json!(["file_audio"]));
+        let restored: ErrorEvent =
+            serde_json::from_value(serialized).expect("deserialize error event");
+        assert_eq!(restored.rejected_audio_file_ids, vec!["file_audio"]);
     }
 
     #[test]
@@ -5981,6 +6484,7 @@ mod tests {
                     RealtimeVoice::Marin,
                     RealtimeVoice::Cedar,
                 ],
+                v3: RealtimeVoicesList::builtin().v3,
                 default_v1: RealtimeVoice::Cove,
                 default_v2: RealtimeVoice::Marin,
             }
@@ -6087,7 +6591,14 @@ mod tests {
                 detail: Some(ImageDetail::Original),
             },
             crate::user_input::UserInput::Audio {
-                audio_url: "https://example.com/remote.mp3".to_string(),
+                audio: AudioReference::Inline {
+                    audio_url: "https://example.com/remote.mp3".to_string(),
+                },
+            },
+            crate::user_input::UserInput::Audio {
+                audio: AudioReference::File {
+                    file_id: "file_audio".to_string(),
+                },
             },
             crate::user_input::UserInput::LocalAudio {
                 path: local_audio_path.clone(),
@@ -6132,16 +6643,41 @@ mod tests {
             Some(vec!["https://example.com/remote.mp3".to_string()])
         );
         assert_eq!(event.local_audio, vec![local_audio_path]);
+        assert_eq!(
+            event.audio_references,
+            Some(vec![AudioReference::File {
+                file_id: "file_audio".to_string(),
+            }])
+        );
+        assert_eq!(
+            event.audio_order,
+            vec![UserMessageAudioKind::Inline, UserMessageAudioKind::File]
+        );
+        // Earlier readers ignore the new ordered field and retain inline recordings.
+        #[derive(Deserialize)]
+        struct EarlierUserMessageEvent {
+            audio: Option<Vec<String>>,
+        }
+        let earlier: EarlierUserMessageEvent = serde_json::from_value(event_json).unwrap();
+        assert_eq!(earlier.audio, event.audio);
     }
 
     #[test]
     fn audio_only_user_message_has_placeholder_preview() {
-        let event = UserMessageEvent {
-            audio: Some(vec!["https://example.com/remote.mp3".to_string()]),
-            ..Default::default()
-        };
-
-        assert_eq!(user_message_preview(&event), Some("[Audio]".to_string()));
+        for event in [
+            UserMessageEvent {
+                audio: Some(vec!["https://example.com/remote.mp3".to_string()]),
+                ..Default::default()
+            },
+            UserMessageEvent {
+                audio_references: Some(vec![AudioReference::File {
+                    file_id: "file_audio".into(),
+                }]),
+                ..Default::default()
+            },
+        ] {
+            assert_eq!(user_message_preview(&event), Some("[Audio]".to_string()));
+        }
     }
 
     #[test]
@@ -6212,7 +6748,7 @@ mod tests {
         }))?;
 
         assert_eq!(item.summary, None);
-        assert_eq!(item.file_system_sandbox_policy, None);
+        assert_eq!(item.permission_profile, PermissionProfile::Disabled);
         assert_eq!(item.comp_hash, None);
         assert_eq!(serde_json::to_value(item)?.get("summary"), None);
         Ok(())
@@ -6233,55 +6769,63 @@ mod tests {
     }
 
     #[test]
-    fn turn_context_item_serializes_split_policy_and_summary() -> Result<()> {
-        let item = TurnContextItem {
-            turn_id: None,
-            root_turn_id: None,
-            disabled_plugin_ids: None,
-            cwd: test_path_buf("/tmp").abs(),
-            approval_policy: AskForApproval::Never,
-            approvals_reviewer: None,
-            sandbox_policy: SandboxPolicy::DangerFullAccess,
-            permission_profile: None,
-            active_permission_profile: None,
-            file_system_sandbox_policy: Some(
-                FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
-                    path: FileSystemPath::GlobPattern {
-                        pattern: "/tmp/private/**/*.txt".to_string(),
-                    },
-                    access: FileSystemAccessMode::Deny,
-                    missing_path_behavior: None,
-                }])
-                .try_into()
+    fn turn_context_item_normalizes_legacy_permissions_and_writes_profile_only() -> Result<()> {
+        let cwd = test_path_buf("/tmp").abs();
+        let file_system = FileSystemSandboxPolicy::restricted(vec![FileSystemSandboxEntry {
+            path: FileSystemPath::GlobPattern {
+                pattern: "/tmp/private/**/*.txt".to_string(),
+            },
+            access: FileSystemAccessMode::Deny,
+            missing_path_behavior: None,
+        }]);
+        let mut legacy = json!({
+            "cwd": cwd,
+            "approval_policy": "never",
+            "sandbox_policy": { "type": "danger-full-access" },
+            "file_system_sandbox_policy": RawFileSystemSandboxPolicy::try_from(file_system.clone())
                 .expect("serializable split policy"),
-            ),
-            model: "gpt-5".to_string(),
-            comp_hash: None,
-            collaboration_mode: None,
-            multi_agent_version: None,
-            realtime_active: None,
-            cyber_access_program: None,
-            effort: None,
-            summary: Some(ReasoningSummaryConfig::None),
-        };
-
-        let value = serde_json::to_value(item)?;
+            "model": "gpt-5",
+            "summary": "none",
+        });
+        let item: TurnContextItem = serde_json::from_value(legacy.clone())?;
+        let profile = PermissionProfile::from_runtime_permissions(
+            &file_system,
+            NetworkSandboxPolicy::Enabled,
+        );
+        assert_eq!(item.permission_profile, profile);
+        let canonical = serde_json::to_value(&item)?;
         assert_eq!(
-            value["file_system_sandbox_policy"],
+            canonical,
             json!({
-                "kind": "restricted",
-                "entries": [{
-                    "path": {
-                        "type": "glob_pattern",
-                        "pattern": "/tmp/private/**/*.txt"
-                    },
-                    "access": "deny"
-                }]
+                "cwd": cwd,
+                "approval_policy": "never",
+                "permission_profile": profile,
+                "model": "gpt-5",
+                "summary": "none",
             })
         );
-        let legacy_summary: ReasoningSummaryConfig =
-            serde_json::from_value(value["summary"].clone())?;
-        assert_eq!(legacy_summary, ReasoningSummaryConfig::None);
+        assert_eq!(
+            serde_json::from_value::<TurnContextItem>(canonical.clone())?,
+            item
+        );
+
+        legacy["file_system_sandbox_policy"]["entries"][0]["path"] =
+            json!({ "type": "path", "path": "://" });
+        assert_eq!(
+            serde_json::from_value::<TurnContextItem>(legacy.clone())?.permission_profile,
+            PermissionProfile::from_runtime_permissions(
+                &FileSystemSandboxPolicy::restricted(Vec::new()),
+                NetworkSandboxPolicy::Enabled,
+            ),
+        );
+        legacy["permission_profile"] = serde_json::to_value(&profile)?;
+        assert_eq!(serde_json::from_value::<TurnContextItem>(legacy)?, item);
+        let mut missing_permissions = canonical;
+        missing_permissions
+            .as_object_mut()
+            .expect("context object")
+            .remove("permission_profile");
+        assert!(serde_json::from_value::<TurnContextItem>(missing_permissions).is_err());
         Ok(())
     }
 
@@ -6380,6 +6924,7 @@ mod tests {
             id: "init".to_string(),
             msg: EventMsg::McpStartupUpdate(McpStartupUpdateEvent {
                 server: "srv".to_string(),
+                environment_id: None,
                 status: McpStartupStatus::Failed {
                     error: "boom".to_string(),
                     reason: Some(McpStartupFailureReason::ReauthenticationRequired),
@@ -6426,10 +6971,11 @@ mod tests {
     fn token_usage_info_new_or_append_updates_context_window_when_provided() {
         let initial = Some(TokenUsageInfo {
             total_token_usage: TokenUsage::default(),
+            last_usage_includes_reasoning: None,
             last_token_usage: TokenUsage::default(),
             model_context_window: Some(258_400),
         });
-        let last = Some(TokenUsage {
+        let last = TokenUsage {
             input_tokens: 10,
             cached_input_tokens: 0,
             cache_write_input_tokens: 0,
@@ -6437,10 +6983,14 @@ mod tests {
             reasoning_output_tokens: 0,
             total_tokens: 10,
             codex_rollout_budget_units: None,
-        });
+        };
 
-        let info = TokenUsageInfo::new_or_append(&initial, &last, Some(128_000))
-            .expect("new_or_append should return info");
+        let info = TokenUsageInfo::new_or_append(
+            &initial,
+            &last,
+            /*includes_reasoning*/ true,
+            Some(128_000),
+        );
 
         assert_eq!(info.model_context_window, Some(128_000));
     }
@@ -6449,10 +6999,11 @@ mod tests {
     fn token_usage_info_new_or_append_preserves_context_window_when_not_provided() {
         let initial = Some(TokenUsageInfo {
             total_token_usage: TokenUsage::default(),
+            last_usage_includes_reasoning: None,
             last_token_usage: TokenUsage::default(),
             model_context_window: Some(258_400),
         });
-        let last = Some(TokenUsage {
+        let last = TokenUsage {
             input_tokens: 10,
             cached_input_tokens: 0,
             cache_write_input_tokens: 0,
@@ -6460,11 +7011,11 @@ mod tests {
             reasoning_output_tokens: 0,
             total_tokens: 10,
             codex_rollout_budget_units: None,
-        });
+        };
 
-        let info =
-            TokenUsageInfo::new_or_append(&initial, &last, /*model_context_window*/ None)
-                .expect("new_or_append should return info");
+        let info = TokenUsageInfo::new_or_append(
+            &initial, &last, /*includes_reasoning*/ true, /*model_context_window*/ None,
+        );
 
         assert_eq!(info.model_context_window, Some(258_400));
     }

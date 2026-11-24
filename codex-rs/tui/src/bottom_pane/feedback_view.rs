@@ -6,6 +6,8 @@ use codex_feedback::FeedbackDiagnostics;
 use codex_feedback::WINDOWS_SANDBOX_LOG_ATTACHMENT_FILENAME;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use ratatui::widgets::Paragraph;
+use ratatui::widgets::Wrap;
 
 use crate::app_event::AppEvent;
 use crate::app_event::FeedbackCategory;
@@ -182,21 +184,6 @@ pub(crate) fn feedback_selection_params(
     }
 }
 
-/// Build the selection popup params shown when feedback is disabled.
-pub(crate) fn feedback_disabled_params() -> super::SelectionViewParams {
-    super::SelectionViewParams {
-        title: Some("Sending feedback is disabled".to_string()),
-        subtitle: Some("This action is disabled by configuration.".to_string()),
-        footer_hint: Some(standard_popup_hint_line()),
-        items: vec![super::SelectionItem {
-            name: "Close".to_string(),
-            dismiss_on_select: true,
-            ..Default::default()
-        }],
-        ..super::SelectionViewParams::picker()
-    }
-}
-
 fn make_feedback_item(
     app_event_tx: AppEventSender,
     name: &str,
@@ -215,16 +202,16 @@ fn make_feedback_item(
     }
 }
 
-/// Build the upload consent popup params for a given feedback category.
-pub(crate) fn feedback_upload_consent_params(
+/// Choose optional attachments before saving or sending the report.
+pub(crate) fn feedback_consent_params(
     app_event_tx: AppEventSender,
     category: FeedbackCategory,
     rollout_path: Option<std::path::PathBuf>,
     auto_review_rollout_filename: Option<String>,
     include_windows_sandbox_log: bool,
+    can_save: bool,
     feedback_diagnostics: &FeedbackDiagnostics,
 ) -> super::SelectionViewParams {
-    use super::popup_consts::standard_popup_hint_line;
     let yes_action: super::SelectionAction = Box::new({
         let tx = app_event_tx.clone();
         move |sender: &AppEventSender| {
@@ -247,11 +234,18 @@ pub(crate) fn feedback_upload_consent_params(
         }
     });
 
-    // Build header listing files that would be sent if user consents.
+    let disclosure = if can_save {
+        "Saving a ZIP does not submit feedback to OpenAI.\nFiles may contain prompts, commands, and tool output:"
+    } else {
+        "Files may contain prompts, commands, and tool output:"
+    };
     let mut header_lines: Vec<Box<dyn crate::render::renderable::Renderable>> = vec![
-        Line::from("Upload logs?".bold()).into(),
+        Line::from("Include logs and session history?".bold()).into(),
         Line::from("").into(),
-        Line::from("The following files will be sent:".dim()).into(),
+        Paragraph::new(disclosure)
+            .dim()
+            .wrap(Wrap { trim: false })
+            .into(),
         Line::from(vec!["  • ".into(), "codex-logs.log".into()]).into(),
         Line::from(vec!["  • ".into(), "client-logs.txt (if available)".into()]).into(),
         Line::from(vec![
@@ -313,16 +307,14 @@ pub(crate) fn feedback_upload_consent_params(
         items: vec![
             super::SelectionItem {
                 name: "Yes".to_string(),
-                description: Some(
-                    "Share the current Elpis session logs and diagnostics with the team for troubleshooting"
-                        .to_string(),
-                ),
+                description: Some("Include session logs and diagnostics in the report".to_string()),
                 actions: vec![yes_action],
                 dismiss_on_select: true,
                 ..Default::default()
             },
             super::SelectionItem {
                 name: "No".to_string(),
+                description: Some("Keep only your note and report metadata".to_string()),
                 actions: vec![no_action],
                 dismiss_on_select: true,
                 ..Default::default()
@@ -332,5 +324,245 @@ pub(crate) fn feedback_upload_consent_params(
             header_lines,
         )),
         ..super::SelectionViewParams::confirmation()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_event::AppEvent;
+    use crate::app_event_sender::AppEventSender;
+    use crate::render::renderable::Renderable;
+    use codex_feedback::FeedbackDiagnostic;
+    use pretty_assertions::assert_eq;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+
+    fn render_renderable(renderable: &dyn Renderable, width: u16) -> String {
+        let height = renderable.desired_height(width);
+        let area = Rect::new(0, 0, width, height);
+        let mut buf = Buffer::empty(area);
+        renderable.render(area, &mut buf);
+        render_buffer(area, &buf)
+    }
+
+    fn render_buffer(area: Rect, buf: &Buffer) -> String {
+        let mut lines: Vec<String> = (0..area.height)
+            .map(|row| {
+                let mut line = String::new();
+                for col in 0..area.width {
+                    let symbol = buf[(area.x + col, area.y + row)].symbol();
+                    if symbol.is_empty() {
+                        line.push(' ');
+                    } else {
+                        line.push_str(&crate::terminal_hyperlinks::strip_osc8(symbol));
+                    }
+                }
+                line.trim_end().to_string()
+            })
+            .collect();
+
+        while lines.first().is_some_and(|l| l.trim().is_empty()) {
+            lines.remove(0);
+        }
+        while lines.last().is_some_and(|l| l.trim().is_empty()) {
+            lines.pop();
+        }
+        lines.join("\n")
+    }
+
+    fn render_cell(cell: &impl history_cell::HistoryCell, width: u16) -> String {
+        cell.display_lines(width)
+            .into_iter()
+            .map(|line| {
+                line.spans
+                    .into_iter()
+                    .map(|span| span.content.into_owned())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn feedback_upload_consent_lists_doctor_report() {
+        let (tx_raw, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let params = feedback_consent_params(
+            tx,
+            FeedbackCategory::Bug,
+            Some(std::path::PathBuf::from("rollout.jsonl")),
+            Some("auto-review-rollout.jsonl".to_string()),
+            /*include_windows_sandbox_log*/ false,
+            /*can_save*/ true,
+            &FeedbackDiagnostics::default(),
+        );
+
+        let rendered = render_renderable(params.header.as_ref(), /*width*/ 60);
+
+        insta::assert_snapshot!("feedback_upload_consent_lists_doctor_report", rendered);
+    }
+
+    #[test]
+    fn feedback_upload_consent_lists_windows_sandbox_log_when_included() {
+        let (tx_raw, _rx) = tokio::sync::mpsc::unbounded_channel::<AppEvent>();
+        let tx = AppEventSender::new(tx_raw);
+        let params = feedback_consent_params(
+            tx,
+            FeedbackCategory::Bug,
+            Some(std::path::PathBuf::from("rollout.jsonl")),
+            Some("auto-review-rollout.jsonl".to_string()),
+            /*include_windows_sandbox_log*/ true,
+            /*can_save*/ true,
+            &FeedbackDiagnostics::default(),
+        );
+
+        let rendered = render_renderable(params.header.as_ref(), /*width*/ 60);
+
+        insta::assert_snapshot!(
+            "feedback_upload_consent_lists_windows_sandbox_log_when_included",
+            rendered
+        );
+    }
+
+    #[test]
+    fn should_show_feedback_connectivity_details_only_for_non_good_result_with_diagnostics() {
+        let diagnostics = FeedbackDiagnostics::new(vec![FeedbackDiagnostic {
+            headline: "Proxy environment variables are set and may affect connectivity."
+                .to_string(),
+            details: vec!["HTTP_PROXY = http://proxy.example.com:8080".to_string()],
+        }]);
+
+        assert_eq!(
+            should_show_feedback_connectivity_details(FeedbackCategory::Bug, &diagnostics),
+            true
+        );
+        assert_eq!(
+            should_show_feedback_connectivity_details(FeedbackCategory::GoodResult, &diagnostics),
+            false
+        );
+        assert_eq!(
+            should_show_feedback_connectivity_details(
+                FeedbackCategory::BadResult,
+                &FeedbackDiagnostics::default()
+            ),
+            false
+        );
+    }
+
+    #[test]
+    fn issue_url_available_for_bug_bad_result_safety_check_and_other() {
+        let bug_url = issue_url_for_category(
+            FeedbackCategory::Bug,
+            "thread-1",
+            FeedbackAudience::OpenAiEmployee,
+        );
+        let expected_slack_url = "http://go/codex-feedback-internal".to_string();
+        assert_eq!(bug_url.as_deref(), Some(expected_slack_url.as_str()));
+
+        let bad_result_url = issue_url_for_category(
+            FeedbackCategory::BadResult,
+            "thread-2",
+            FeedbackAudience::OpenAiEmployee,
+        );
+        assert!(bad_result_url.is_some());
+
+        let other_url = issue_url_for_category(
+            FeedbackCategory::Other,
+            "thread-3",
+            FeedbackAudience::OpenAiEmployee,
+        );
+        assert!(other_url.is_some());
+
+        let safety_check_url = issue_url_for_category(
+            FeedbackCategory::SafetyCheck,
+            "thread-4",
+            FeedbackAudience::OpenAiEmployee,
+        );
+        assert!(safety_check_url.is_some());
+
+        assert!(
+            issue_url_for_category(
+                FeedbackCategory::GoodResult,
+                "t",
+                FeedbackAudience::OpenAiEmployee
+            )
+            .is_none()
+        );
+        let bug_url_non_employee =
+            issue_url_for_category(FeedbackCategory::Bug, "t", FeedbackAudience::External);
+        let expected_external_url = "https://github.com/openai/codex/issues/new?template=3-cli.yml&steps=Uploaded%20thread:%20t";
+        assert_eq!(bug_url_non_employee.as_deref(), Some(expected_external_url));
+    }
+
+    #[test]
+    fn feedback_success_cell_matches_external_bug_copy() {
+        let rendered = render_cell(
+            &feedback_success_cell(
+                FeedbackCategory::Bug,
+                /*include_logs*/ true,
+                "thread-1",
+                FeedbackAudience::External,
+            ),
+            /*width*/ 120,
+        );
+        assert_eq!(
+            rendered,
+            "• Feedback uploaded. Please open an issue using the following URL:\n\n  https://github.com/openai/codex/issues/new?template=3-cli.yml&steps=Uploaded%20thread:%20thread-1\n\n  Or mention your thread ID thread-1 in an existing issue."
+        );
+    }
+
+    #[test]
+    fn feedback_success_cell_matches_employee_bug_copy() {
+        let rendered = render_cell(
+            &feedback_success_cell(
+                FeedbackCategory::Bug,
+                /*include_logs*/ true,
+                "thread-2",
+                FeedbackAudience::OpenAiEmployee,
+            ),
+            /*width*/ 120,
+        );
+        insta::assert_snapshot!("feedback_success_employee", rendered);
+    }
+
+    #[test]
+    fn feedback_success_cell_matches_good_result_copy() {
+        let rendered = render_cell(
+            &feedback_success_cell(
+                FeedbackCategory::GoodResult,
+                /*include_logs*/ false,
+                "thread-3",
+                FeedbackAudience::External,
+            ),
+            /*width*/ 120,
+        );
+        assert_eq!(
+            rendered,
+            "• Feedback recorded (no logs). Thanks for the feedback!\n\n  Thread ID: thread-3"
+        );
+    }
+
+    #[test]
+    fn feedback_success_cell_uses_issue_links_for_remaining_categories() {
+        for category in [
+            FeedbackCategory::BadResult,
+            FeedbackCategory::SafetyCheck,
+            FeedbackCategory::Other,
+        ] {
+            let rendered = render_cell(
+                &feedback_success_cell(
+                    category,
+                    /*include_logs*/ false,
+                    "thread-4",
+                    FeedbackAudience::External,
+                ),
+                /*width*/ 120,
+            );
+            assert!(rendered.contains("Please open an issue using the following URL:"));
+            assert!(rendered.contains("thread-4"));
+        }
     }
 }

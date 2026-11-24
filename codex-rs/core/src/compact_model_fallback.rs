@@ -12,13 +12,16 @@ pub(crate) fn should_retry_with_current_model(
     previous: &TurnContext,
     current: &TurnContext,
 ) -> bool {
-    if matches!(
-        error.details(),
-        CodexErrorDetails::TurnAborted
-            | CodexErrorDetails::Interrupted
-            | CodexErrorDetails::SessionBudgetExceeded
-    ) || (previous.model_info().slug == current.model_info().slug
-        && previous.cyber_access_program == current.cyber_access_program)
+    if crate::responses_retry::is_terminal_sampling_outcome(error)
+        || matches!(
+            error.details(),
+            CodexErrorDetails::TurnAborted
+                | CodexErrorDetails::Interrupted
+                | CodexErrorDetails::WorkspaceAccessDenied(_)
+                | CodexErrorDetails::ContentPolicyViolation { .. }
+        )
+        || (previous.model_info().slug == current.model_info().slug
+            && previous.cyber_access_program == current.cyber_access_program)
     {
         return false;
     }

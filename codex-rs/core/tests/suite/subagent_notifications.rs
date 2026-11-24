@@ -1,10 +1,20 @@
 use anyhow::Result;
+use assert_matches::assert_matches;
+use codex_agent_graph_store::AgentGraphStore;
+use codex_agent_graph_store::AgentGraphStoreError;
+use codex_agent_graph_store::AgentGraphStoreFuture;
+use codex_agent_graph_store::ThreadSpawnEdgeStatus;
+use codex_config::ConfigLayerEntry;
+use codex_config::ConfigLayerSource;
+use codex_config::ConfigLayerStack;
 use codex_core::StartThreadOptions;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::TurnInputRequest;
 use codex_core::TurnStartOptions;
 use codex_core::config::AgentRoleConfig;
+use codex_core::config::Config;
 use codex_core::config::CurrentTimeReminderConfig;
+use codex_extension_api::ExtensionRegistryBuilder;
 use codex_features::Feature;
 use codex_history::RolloutItem;
 use codex_models_manager::bundled_models_response;
@@ -22,13 +32,19 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::MULTI_AGENT_MODE_OPEN_TAG;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentActivityKind;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::user_input::UserInput;
+use codex_skills_extension::SkillsExtensionConfig;
+use codex_thread_store::DeleteThreadsParams;
 use codex_thread_store::LoadThreadHistoryParams;
+use codex_thread_store::LocalThreadStore;
+use codex_thread_store::LocalThreadStoreConfig;
+use codex_thread_store::ThreadStoreError;
 use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses::ResponsesRequest;
 use core_test_support::responses::assert_parent_turn;
@@ -51,6 +67,7 @@ use core_test_support::responses::strip_metadata_from_json;
 use core_test_support::responses::strip_response_item_ids_from_json;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::TestCodex;
+use core_test_support::test_codex::TestCodexBuilder;
 use core_test_support::test_codex::local_requests;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::turn_permission_fields;
@@ -61,6 +78,7 @@ use serde_json::Value;
 use serde_json::json;
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 use test_case::test_case;
@@ -82,6 +100,9 @@ mod spawn_settings_tests;
 
 #[path = "guardian_subagent_notification_tests.rs"]
 mod guardian_subagent_notification_tests;
+
+#[path = "code_mode_agent_message_tests.rs"]
+mod code_mode_agent_message_tests;
 
 const SPAWN_CALL_ID: &str = "spawn-call-1";
 const MULTI_AGENT_V1_NAMESPACE: &str = "multi_agent_v1";
@@ -1110,7 +1131,8 @@ async fn spawned_child_receives_forked_parent_context(
             .expect("legacy child thread id"),
     )?;
     // Read the acknowledged fork from storage without flushing the live child first.
-    let reopened_store = codex_core::thread_store_from_config(&test.config, /*state_db*/ None);
+    let reopened_store =
+        codex_core::ThreadStoreBuilder::from_config(&test.config, /*state_db*/ None).build();
     let persisted = reopened_store
         .load_latest_model_context(LoadThreadHistoryParams {
             thread_id: child_thread_id,
@@ -1268,7 +1290,7 @@ async fn grandchild_full_fork_preserves_context_baseline(
             &server,
             |req: &wiremock::Request| {
                 body_contains(req, CHILD_TASK)
-                    && !body_contains(req, ROOT_CALL)
+                    && body_contains(req, r#"\"agent_name\":\"/root/child\""#)
                     && !body_contains(req, PRELUDE_CALL)
                     && !body_contains(req, COMPACT_SUMMARY)
             },
@@ -1305,7 +1327,7 @@ async fn grandchild_full_fork_preserves_context_baseline(
                     CHILD_TASK
                 },
             ) && !body_contains(req, GRANDCHILD_TASK)
-                && !body_contains(req, ROOT_CALL)
+                && body_contains(req, r#"\"agent_name\":\"/root/child\""#)
                 && !body_contains(req, CHILD_CALL)
                 && !body_contains(req, COMPACT_PROMPT)
         },
@@ -1324,7 +1346,8 @@ async fn grandchild_full_fork_preserves_context_baseline(
     let grandchild_log = mount_sse_once_match(
         &server,
         |req: &wiremock::Request| {
-            body_contains(req, GRANDCHILD_TASK) && !body_contains(req, CHILD_CALL)
+            body_contains(req, GRANDCHILD_TASK)
+                && body_contains(req, r#"\"agent_name\":\"/root/child/grandchild\""#)
         },
         sse(vec![
             ev_response_created("baseline-grandchild"),
@@ -1446,7 +1469,22 @@ async fn grandchild_full_fork_preserves_context_baseline(
         [(1, 1); 3],
         "Initial context should appear once per agent: {parent_context:?}, {history_mode:?}"
     );
-    assert!(!descendant_requests[1].body_contains_text(CHILD_TASK));
+    if matches!(parent_context, GrandchildParentContext::FullHistory) {
+        let parent_input = root_request.input();
+        assert_eq!(
+            strip_response_item_ids_from_json(json!(
+                &descendant_requests[0].input()[..parent_input.len()]
+            )),
+            strip_response_item_ids_from_json(json!(parent_input))
+        );
+    }
+    let child_input = descendant_requests[0].input();
+    assert_eq!(
+        strip_response_item_ids_from_json(json!(
+            &descendant_requests[1].input()[..child_input.len()]
+        )),
+        strip_response_item_ids_from_json(json!(child_input))
+    );
     Ok(())
 }
 
@@ -1465,9 +1503,9 @@ enum FullHistoryV2ModelSelection {
 #[test_case(FullHistoryV2ModelSelection::ExplicitOverride("1"); "legacy one turn forks full history with explicit override")]
 #[test_case(FullHistoryV2ModelSelection::ExplicitOverride("3"); "legacy three turns forks full history with explicit override")]
 #[test_case(FullHistoryV2ModelSelection::WorldStateIdentity; "world state appends context window when agent identity changes")]
-#[test_case(FullHistoryV2ModelSelection::CurrentTimeReminders; "full fork drops inherited current-time reminders")]
-#[test_case(FullHistoryV2ModelSelection::MultiAgentModeInstructions; "full fork drops inherited multi-agent mode instructions")]
-#[test_case(FullHistoryV2ModelSelection::MultiAgentModeTransitions; "full fork restores explicit policy after proactive transition")]
+#[test_case(FullHistoryV2ModelSelection::CurrentTimeReminders; "full fork appends current-time reminders after inherited notices")]
+#[test_case(FullHistoryV2ModelSelection::MultiAgentModeInstructions; "full fork appends child multi-agent mode instructions")]
+#[test_case(FullHistoryV2ModelSelection::MultiAgentModeTransitions; "full fork retains explicit policy after proactive transition")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_context(
     selection: FullHistoryV2ModelSelection,
@@ -1558,7 +1596,8 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
     let child_request_log = mount_sse_once_match(
         &server,
         |req: &wiremock::Request| {
-            body_contains(req, CHILD_PROMPT) && !body_contains(req, SPAWN_CALL_ID)
+            body_contains(req, CHILD_PROMPT)
+                && body_contains(req, r#"\"agent_name\":\"/root/worker\""#)
         },
         sse(vec![
             ev_response_created("resp-child-1"),
@@ -1569,7 +1608,9 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
     .await;
     let _turn1_followup = mount_sse_once_match(
         &server,
-        |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
+        |req: &wiremock::Request| {
+            body_contains(req, SPAWN_CALL_ID) && body_contains(req, r#"\"agent_name\":\"/root\""#)
+        },
         sse(vec![
             ev_response_created("resp-turn1-2"),
             ev_assistant_message("msg-turn1-2", "parent done"),
@@ -1678,12 +1719,14 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
         struct FailFirstClockRead(std::sync::atomic::AtomicBool);
 
         impl codex_core::TimeProvider for FailFirstClockRead {
-            fn current_time(&self, _thread_id: ThreadId) -> codex_core::TimeFuture<'_> {
+            fn current_time(
+                &self,
+                _thread_id: ThreadId,
+            ) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
                 let already_read = self.0.swap(true, std::sync::atomic::Ordering::Relaxed);
-                Box::pin(async move {
-                    anyhow::ensure!(already_read, "parent clock unavailable");
-                    Ok(chrono::Utc::now())
-                })
+
+                anyhow::ensure!(already_read, "parent clock unavailable");
+                Ok(chrono::Utc::now())
             }
 
             fn sleep(
@@ -1761,6 +1804,15 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
 
     let child_request = wait_for_request_with_model(&child_request_log, expected_model).await?;
     assert!(child_request.body_contains_text(TURN_0_FORK_PROMPT));
+    // Models encode tool declarations and provenance differently; compare inherited messages.
+    let parent_input = parent_request.inputs_of_type("message");
+    let child_input = child_request.inputs_of_type("message");
+    assert_eq!(
+        strip_metadata_from_json(strip_response_item_ids_from_json(json!(
+            &child_input[..parent_input.len()]
+        ))),
+        strip_metadata_from_json(strip_response_item_ids_from_json(json!(parent_input)))
+    );
     let misaligned_child_messages = child_request
         .inputs_of_type("message")
         .into_iter()
@@ -1775,7 +1827,14 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
         })
         .collect::<Vec<_>>();
     assert_eq!(misaligned_child_messages, Vec::<Value>::new());
-    let child_developer_messages = child_request.message_input_texts("developer");
+    // Inherited instructions stay in the prefix; child-specific guidance is appended after it.
+    let child_developer_messages = child_input[parent_input.len()..]
+        .iter()
+        .filter(|item| item["role"] == "developer")
+        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+        .filter(|part| part["type"] == "input_text")
+        .filter_map(|part| part["text"].as_str().map(str::to_owned))
+        .collect::<Vec<_>>();
     if matches!(selection, FullHistoryV2ModelSelection::ConfiguredDefault) {
         assert_eq!(
             (
@@ -1810,17 +1869,16 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
         selection,
         FullHistoryV2ModelSelection::MultiAgentModeInstructions
     ) {
-        let mode_instruction_count = |request: &ResponsesRequest| {
-            request
-                .message_input_texts("developer")
-                .into_iter()
+        let mode_instruction_count = |messages: &[String]| {
+            messages
+                .iter()
                 .filter(|text| text.starts_with(MULTI_AGENT_MODE_OPEN_TAG))
                 .count()
         };
         assert_eq!(
             (
-                mode_instruction_count(&parent_request),
-                mode_instruction_count(&child_request),
+                mode_instruction_count(&parent_request.message_input_texts("developer")),
+                mode_instruction_count(&child_developer_messages),
             ),
             (1, 1)
         );
@@ -1829,6 +1887,14 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
         selection,
         FullHistoryV2ModelSelection::MultiAgentModeTransitions
     ) {
+        let latest_child_policy = child_request
+            .message_input_texts("developer")
+            .into_iter()
+            .rfind(|message| message.starts_with(MULTI_AGENT_MODE_OPEN_TAG))
+            .expect("inherited delegation policy");
+        assert!(latest_child_policy.contains(FULL_HISTORY_EXPLICIT_POLICY));
+        assert!(!latest_child_policy.contains(FULL_HISTORY_PROACTIVE_POLICY));
+        // The current policy is already inherited, so only the child's usage hint is appended.
         assert_eq!(
             (
                 child_developer_messages
@@ -1848,27 +1914,33 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
                     .filter(|message| message.contains(FULL_HISTORY_SHARED_USAGE_HINT))
                     .count(),
             ),
-            (1, 1, 0, 1)
+            (0, 0, 0, 1)
         );
     }
     if matches!(selection, FullHistoryV2ModelSelection::CurrentTimeReminders) {
-        let notice_count = |request: &ResponsesRequest, marker: &str| {
-            request
-                .message_input_texts("developer")
-                .into_iter()
+        let notice_count = |messages: &[String], marker: &str| {
+            messages
+                .iter()
                 .filter(|text| text.starts_with(marker))
                 .count()
         };
+        let parent_developer_messages = parent_request.message_input_texts("developer");
         assert_eq!(
-            notice_count(&parent_request, "<current_time_unavailable>"),
+            notice_count(&parent_developer_messages, "<current_time_unavailable>"),
             1
         );
-        assert_eq!(notice_count(&parent_request, "<current_time_reminder>"), 1);
         assert_eq!(
-            notice_count(&child_request, "<current_time_unavailable>"),
+            notice_count(&parent_developer_messages, "<current_time_reminder>"),
+            1
+        );
+        assert_eq!(
+            notice_count(&child_developer_messages, "<current_time_unavailable>"),
             0
         );
-        assert_eq!(notice_count(&child_request, "<current_time_reminder>"), 1);
+        assert_eq!(
+            notice_count(&child_developer_messages, "<current_time_reminder>"),
+            1
+        );
     }
     let child_body = child_request.body_json();
     if matches!(selection, FullHistoryV2ModelSelection::WorldStateIdentity) {
@@ -1900,8 +1972,9 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
             vec![json!("/root"), json!("/root/worker")]
         );
         let context_windows = child_request
-            .message_input_texts("developer")
+            .message_input_text_groups("developer")
             .into_iter()
+            .map(|parts| parts.concat())
             .filter(|text| text.starts_with("<context_window>\n"))
             .collect::<Vec<_>>();
         let identities = context_windows
@@ -1935,21 +2008,27 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
                 .as_ref()
                 .is_some_and(|history| !history.is_empty())
         );
+        let expected_window =
+            codex_protocol::ContextWindowId::parse(window_ids[1]).expect("UUIDv7 child window");
         assert_eq!(
             (
                 checkpoint.window_number,
-                checkpoint.first_window_id.as_deref(),
-                checkpoint.previous_window_id.as_deref(),
-                checkpoint.window_id.as_deref(),
+                checkpoint.first_window_id.as_ref(),
+                checkpoint.previous_window_id.as_ref(),
+                checkpoint.window_id.as_ref(),
             ),
-            (Some(0), Some(window_ids[1]), None, Some(window_ids[1]))
+            (
+                Some(0),
+                Some(&expected_window),
+                None,
+                Some(&expected_window)
+            )
         );
         assert!(
             child_request.has_message_with_input_texts("developer", |message| {
-                matches!(
-                    message,
-                    [text] if text.starts_with("<context_window>\nAgent name: /root/worker\n")
-                )
+                message
+                    .concat()
+                    .starts_with("<context_window>\nAgent name: /root/worker\n")
             })
         );
     }
@@ -2138,75 +2217,96 @@ async fn spawned_agent_uses_summary_support_for_final_model(
     Ok(())
 }
 
+async fn spawn_v2_child_and_capture_requests(
+    builder: TestCodexBuilder,
+) -> Result<(ResponsesRequest, ResponsesRequest)> {
+    let server = start_mock_server().await;
+    let test = builder
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("enable collab");
+            config
+                .features
+                .enable(Feature::MultiAgentV2)
+                .expect("enable V2 spawn");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    let mut spawn = ev_function_call_with_namespace(
+        SPAWN_CALL_ID,
+        MULTI_AGENT_V2_NAMESPACE,
+        "spawn_agent",
+        &json!({ "message": CHILD_PROMPT, "task_name": "worker" }).to_string(),
+    );
+    spawn["item"]["encrypted_function_args"] = json!([]);
+    // The parent and child may request their final answers in either order.
+    let finish_turn = |id| {
+        sse(vec![
+            ev_response_created(id),
+            ev_assistant_message(id, "Done."),
+            ev_completed(id),
+        ])
+    };
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("spawn"),
+                spawn,
+                ev_completed("spawn"),
+            ]),
+            finish_turn("done-1"),
+            finish_turn("done-2"),
+        ],
+    )
+    .await;
+
+    let mut created_threads = test.thread_manager.subscribe_thread_created();
+    test.submit_turn(TURN_1_PROMPT).await?;
+    let child_id = created_threads.try_recv().expect("spawn created a child");
+    let child = test.thread_manager.get_thread(child_id).await?;
+    wait_for_event(child.as_ref(), |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let mut requests = responses.requests().into_iter();
+    let parent_request = requests.next().expect("parent's initial request");
+    let child_request = requests
+        .find(|request| request.header("thread-id") == Some(child_id.to_string()))
+        .expect("request from the spawned child");
+    Ok((parent_request, child_request))
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn spawned_multi_agent_v2_child_inherits_parent_developer_context() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let server = start_mock_server().await;
-    let spawn_args = serde_json::to_string(&json!({
-        "message": CHILD_PROMPT,
-        "task_name": "worker",
-    }))?;
-    mount_sse_once_match(
-        &server,
-        |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
-        sse(vec![
-            ev_response_created("resp-turn1-1"),
-            ev_function_call_with_namespace(
-                SPAWN_CALL_ID,
-                MULTI_AGENT_V1_NAMESPACE,
-                "spawn_agent",
-                &spawn_args,
-            ),
-            ev_completed("resp-turn1-1"),
-        ]),
-    )
-    .await;
-
-    let child_request_log = mount_sse_once_match(
-        &server,
-        |req: &wiremock::Request| {
-            body_contains(req, CHILD_PROMPT) && !body_contains(req, SPAWN_CALL_ID)
-        },
-        sse(vec![
-            ev_response_created("resp-child-1"),
-            ev_completed("resp-child-1"),
-        ]),
-    )
-    .await;
-
-    let _turn1_followup = mount_sse_once_match(
-        &server,
-        |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
-        sse(vec![
-            ev_response_created("resp-turn1-2"),
-            ev_assistant_message("msg-turn1-2", "parent done"),
-            ev_completed("resp-turn1-2"),
-        ]),
-    )
-    .await;
-
-    let mut builder = test_codex().with_config(|config| {
-        config
-            .features
-            .enable(Feature::Collab)
-            .expect("test config should allow feature update");
-        config
-            .features
-            .enable(Feature::MultiAgentV2)
-            .expect("test config should allow feature update");
-        config.developer_instructions = Some("Parent developer instructions.".to_string());
+    const INSTRUCTIONS: &str = "Parent developer instructions.";
+    let builder = test_codex().with_config(|config| {
+        config.developer_instructions = Some(INSTRUCTIONS.to_string());
     });
-    let test = builder.build(&server).await?;
-
-    test.submit_turn(TURN_1_PROMPT).await?;
-
-    let child_requests = wait_for_requests(&child_request_log).await?;
-    let child_request = child_requests
-        .last()
-        .expect("child request log should capture at least one request");
-    assert!(child_request.body_contains_text("Parent developer instructions."));
-    assert!(child_request.body_contains_text(CHILD_PROMPT));
+    let (_, child_request) = spawn_v2_child_and_capture_requests(builder).await?;
+    assert!(
+        child_request
+            .message_input_texts("developer")
+            .iter()
+            .any(|text| text.contains(INSTRUCTIONS))
+    );
+    let task = child_request
+        .inputs_of_type("agent_message")
+        .into_iter()
+        .find(|item| item["recipient"] == "/root/worker")
+        .expect("task addressed to the child");
+    let content = task["content"].as_array().expect("task content");
+    assert!(content.iter().any(|part| {
+        part["type"] == "input_text"
+            && part["text"]
+                .as_str()
+                .is_some_and(|text| text.contains(CHILD_PROMPT))
+    }));
 
     Ok(())
 }
@@ -2419,13 +2519,40 @@ async fn multi_agent_v2_spawn_sends_agent_message_to_child(
         })])
     );
     if model.is_some() {
+        let declares_collaboration = |tools: &Value| {
+            tools.as_array().is_some_and(|tools| {
+                tools
+                    .iter()
+                    .any(|tool| tool["name"] == MULTI_AGENT_V2_NAMESPACE)
+            })
+        };
         assert!(
-            !child_request
-                .body_json()
-                .to_string()
-                .contains("\"name\":\"collaboration\""),
-            "leaf workers must not receive collaboration tools",
+            !declares_collaboration(&child_body["tools"]),
+            "leaf workers must not receive top-level collaboration tools",
         );
+        let input = child_request.input();
+        if let Some(last_declaration) = input.iter().rposition(|item| {
+            item["type"] == "additional_tools" && declares_collaboration(&item["tools"])
+        }) {
+            let removed_namespace = format!("- {MULTI_AGENT_V2_NAMESPACE}");
+            let collaboration_removed = input[last_declaration + 1..]
+                .iter()
+                .filter(|item| item["role"] == "developer")
+                .filter_map(|item| {
+                    let kinds =
+                        item["internal_chat_message_metadata_passthrough"]["content_item_kinds"]
+                            .as_array()?;
+                    let index = kinds
+                        .iter()
+                        .position(|kind| kind == "tools.removed_definition")?;
+                    item["content"][index]["text"].as_str()
+                })
+                .any(|text| text.lines().any(|line| line == removed_namespace));
+            assert!(
+                collaboration_removed,
+                "leaf workers must mark inherited collaboration tools unavailable",
+            );
+        }
     }
     if plaintext {
         let parent_request = parent_request_log
@@ -3209,82 +3336,54 @@ async fn multi_agent_v2_peer_followup_completion_notifies_initiating_turn(
     Ok(())
 }
 
+#[test_case(true; "enabled")]
+#[test_case(false; "disabled")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn skills_toggle_skips_instructions_for_parent_and_spawned_child() -> Result<()> {
+async fn skill_instructions_in_parent_and_spawned_child(include_instructions: bool) -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let server = start_mock_server().await;
-    let spawn_args = serde_json::to_string(&json!({
-        "message": CHILD_PROMPT,
-        "task_name": "worker",
-    }))?;
-    let spawn_turn = mount_sse_once_match(
-        &server,
-        |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
-        sse(vec![
-            ev_response_created("resp-turn1-1"),
-            ev_function_call_with_namespace(
-                SPAWN_CALL_ID,
-                MULTI_AGENT_V1_NAMESPACE,
-                "spawn_agent",
-                &spawn_args,
-            ),
-            ev_completed("resp-turn1-1"),
-        ]),
-    )
-    .await;
-
-    let child_request_log = mount_sse_once_match(
-        &server,
-        |req: &wiremock::Request| {
-            body_contains(req, CHILD_PROMPT) && !body_contains(req, SPAWN_CALL_ID)
-        },
-        sse(vec![
-            ev_response_created("resp-child-1"),
-            ev_completed("resp-child-1"),
-        ]),
-    )
-    .await;
-
-    let _turn1_followup = mount_sse_once_match(
-        &server,
-        |req: &wiremock::Request| body_contains(req, SPAWN_CALL_ID),
-        sse(vec![
-            ev_response_created("resp-turn1-2"),
-            ev_assistant_message("msg-turn1-2", "parent done"),
-            ev_completed("resp-turn1-2"),
-        ]),
-    )
-    .await;
-
-    let mut builder = test_codex()
+    let mut extensions = ExtensionRegistryBuilder::new();
+    codex_skills_extension::install(&mut extensions, |config: &Config| SkillsExtensionConfig {
+        include_instructions: config.include_skill_instructions,
+        catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+        omit_descriptions: false,
+        max_context_tokens: config.skill_max_context_tokens,
+        bundled_skills_enabled: false,
+        cloud_skill_enabled: false,
+        shadow_selection_enabled: false,
+    });
+    let builder = test_codex()
+        .with_extensions(Arc::new(extensions.build()))
         .with_pre_build_hook(|home| {
             write_home_skill(home, "demo", "demo-skill", "demo skill").expect("write home skill");
         })
-        .with_config(|config| {
-            config
-                .features
-                .enable(Feature::Collab)
-                .expect("test config should allow feature update");
-            config
-                .features
-                .enable(Feature::MultiAgentV2)
-                .expect("test config should allow feature update");
-            config.include_skill_instructions = false;
+        .with_config(move |config| {
+            config.include_skill_instructions = include_instructions;
+            // Discover only the fixture's skill, independently of the user's ~/.agents/skills.
+            config.config_layer_stack = ConfigLayerStack::new(
+                vec![ConfigLayerEntry::new(
+                    ConfigLayerSource::System {
+                        file: config.codex_home.join("config.toml"),
+                    },
+                    toml::Table::new().into(),
+                )],
+                Default::default(),
+                Default::default(),
+            )
+            .expect("valid test config layer");
         });
-    let test = builder.build(&server).await?;
-
-    test.submit_turn(TURN_1_PROMPT).await?;
-    let parent_request = spawn_turn.single_request();
-    assert!(!parent_request.body_contains_text("<skills_instructions>"));
-    assert!(!parent_request.body_contains_text("demo-skill"));
-
-    let child_requests = wait_for_requests(&child_request_log).await?;
-    let child_request = child_requests
-        .last()
-        .expect("child request log should capture at least one request");
-    assert!(!child_request.body_contains_text("<skills_instructions>"));
-    assert!(!child_request.body_contains_text("demo-skill"));
+    let (parent_request, child_request) = spawn_v2_child_and_capture_requests(builder).await?;
+    for request in [parent_request, child_request] {
+        if include_instructions {
+            assert!(request.message_input_texts("developer").iter().any(|text| {
+                text.contains(SKILLS_INSTRUCTIONS_OPEN_TAG)
+                    && text.contains("- demo-skill: demo skill")
+            }));
+        } else {
+            assert!(!request.body_contains_text(SKILLS_INSTRUCTIONS_OPEN_TAG));
+            assert!(!request.body_contains_text("demo-skill"));
+        }
+    }
 
     Ok(())
 }
@@ -3368,6 +3467,188 @@ async fn spawn_agent_preserves_configured_defaults_through_unrelated_role() -> R
             REQUESTED_MODEL.to_string(),
             Some(REQUESTED_REASONING_EFFORT)
         )
+    );
+    Ok(())
+}
+
+#[derive(Default)]
+struct FailingSpawnEdgeStore {
+    child: Mutex<Option<ThreadId>>,
+}
+
+impl AgentGraphStore for FailingSpawnEdgeStore {
+    fn upsert_thread_spawn_edge(
+        &self,
+        _parent: ThreadId,
+        child: ThreadId,
+        _status: ThreadSpawnEdgeStatus,
+    ) -> AgentGraphStoreFuture<'_, ()> {
+        *self.child.lock().expect("lock attempted child ID") = Some(child);
+        Box::pin(async {
+            Err(AgentGraphStoreError::Internal {
+                message: "injected edge publication failure".to_string(),
+            })
+        })
+    }
+
+    fn set_thread_spawn_edge_status(
+        &self,
+        _child: ThreadId,
+        _status: ThreadSpawnEdgeStatus,
+    ) -> AgentGraphStoreFuture<'_, ()> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn list_thread_spawn_children(
+        &self,
+        _parent: ThreadId,
+        _status: Option<ThreadSpawnEdgeStatus>,
+    ) -> AgentGraphStoreFuture<'_, Vec<ThreadId>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+
+    fn list_thread_spawn_descendants(
+        &self,
+        _root: ThreadId,
+        _status: Option<ThreadSpawnEdgeStatus>,
+    ) -> AgentGraphStoreFuture<'_, Vec<ThreadId>> {
+        Box::pin(async { Ok(Vec::new()) })
+    }
+}
+
+#[test_case(false; "fresh child")]
+#[test_case(true; "full-history fork")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failed_spawn_edge_leaves_no_child_history(fork_context: bool) -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let spawn_args = json!({ "message": CHILD_PROMPT, "fork_context": fork_context }).to_string();
+    mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| body_contains(request, TURN_1_PROMPT),
+        sse(vec![
+            ev_response_created("spawn"),
+            ev_function_call_with_namespace(
+                SPAWN_CALL_ID,
+                MULTI_AGENT_V1_NAMESPACE,
+                "spawn_agent",
+                &spawn_args,
+            ),
+            ev_completed("spawn"),
+        ]),
+    )
+    .await;
+    let tool_output = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| body_contains(request, SPAWN_CALL_ID),
+        sse(vec![
+            ev_response_created("parent-done"),
+            ev_completed("parent-done"),
+        ]),
+    )
+    .await;
+    let child_requests = mount_sse_once_match(
+        &server,
+        |request: &wiremock::Request| {
+            body_contains(request, CHILD_PROMPT) && !body_contains(request, SPAWN_CALL_ID)
+        },
+        sse(vec![
+            ev_response_created("child-done"),
+            ev_completed("child-done"),
+        ]),
+    )
+    .await;
+
+    let home = Arc::new(tempfile::tempdir()?);
+    // Keep history independent of topology; SQLite metadata can repair missing edges.
+    let store = Arc::new(LocalThreadStore::new(
+        LocalThreadStoreConfig {
+            codex_home: home.path().to_path_buf(),
+            sqlite: codex_state::SqliteConfig::new_for_testing(home.path().try_into()?),
+            default_model_provider_id: "openai".to_string(),
+        },
+        /*state_db*/ None,
+    ));
+    let graph = Arc::new(FailingSpawnEdgeStore::default());
+    let test = test_codex()
+        .with_home(home)
+        .with_thread_store(store)
+        .with_agent_graph_store(graph.clone())
+        .with_history_mode(ThreadHistoryMode::Paginated)
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::Collab)
+                .expect("enable native spawn");
+        })
+        .build_with_auto_env(&server)
+        .await?;
+    let unrelated = test
+        .thread_manager
+        .start_thread(test.start_thread_options().await)
+        .await?;
+    unrelated.thread.ensure_rollout_materialized().await;
+    unrelated.thread.flush_rollout().await?;
+    let mut created = test.thread_manager.subscribe_thread_created();
+    test.submit_turn(TURN_1_PROMPT).await?;
+    let child_id = graph
+        .child
+        .lock()
+        .expect("lock attempted child ID")
+        .expect("edge was attempted");
+    test.thread_manager
+        .shutdown_all_threads_bounded(Duration::from_secs(10))
+        .await;
+
+    let child_before_delete = test
+        .thread_store
+        .load_latest_model_context(LoadThreadHistoryParams {
+            thread_id: child_id,
+            include_archived: true,
+        })
+        .await;
+    let parent_id = test.session_configured.thread_id;
+    let deletion_ids = test
+        .thread_manager
+        .list_agent_subtree_thread_ids(parent_id)
+        .await?;
+    assert_eq!(deletion_ids, vec![parent_id]);
+    test.thread_store
+        .delete_threads(DeleteThreadsParams {
+            thread_ids: deletion_ids,
+        })
+        .await?;
+    test.thread_store
+        .load_latest_model_context(LoadThreadHistoryParams {
+            thread_id: unrelated.thread_id,
+            include_archived: true,
+        })
+        .await
+        .expect("unrelated history survives parent deletion");
+    for thread_id in [parent_id, child_id] {
+        assert_matches!(test.thread_store.load_latest_model_context(LoadThreadHistoryParams {
+            thread_id,
+            include_archived: true,
+        }).await, Err(ThreadStoreError::InvalidRequest { message })
+            if message == format!("no rollout found for thread id {thread_id}"));
+    }
+    assert_matches!(child_before_delete, Err(ThreadStoreError::InvalidRequest { message })
+        if message == format!("no rollout found for thread id {child_id}"),
+        "rejected child must not leave durable history");
+    assert_eq!(
+        tool_output
+            .function_call_output_text(SPAWN_CALL_ID)
+            .as_deref(),
+        Some("collab spawn failed: Fatal error: failed to persist spawned agent relationship")
+    );
+    assert!(
+        child_requests.requests().is_empty(),
+        "rejected child must not execute"
+    );
+    assert!(
+        created.try_recv().is_err(),
+        "rejected child must not be published"
     );
     Ok(())
 }

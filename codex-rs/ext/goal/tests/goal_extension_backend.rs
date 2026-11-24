@@ -1852,6 +1852,7 @@ impl GoalExtensionHarness {
         let turn_store = ExtensionData::new(turn_id);
         let token_usage = TokenUsageInfo {
             total_token_usage: usage.clone(),
+            last_usage_includes_reasoning: None,
             last_token_usage: last_usage.clone(),
             model_context_window: None,
         };
@@ -1968,6 +1969,8 @@ fn tool_call(tool_name: &str, call_id: &str, arguments: serde_json::Value) -> To
         source: ToolCallSource::Direct,
         conversation_history: codex_extension_api::ConversationHistory::default(),
         turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+        attachment_store: codex_core::passthrough_image_store(),
+        ephemeral: false,
         environments: Vec::new(),
         payload: ToolPayload::Function {
             arguments: arguments.to_string(),

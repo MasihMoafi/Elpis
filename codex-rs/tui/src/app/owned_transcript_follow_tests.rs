@@ -61,7 +61,37 @@ async fn follow_control_click_preserves_draft_caret_and_composer_geometry() -> R
             .scroll(&app.transcript_cells, /*rows*/ -10);
         tui.screen_size_for_event(&TuiEvent::Resize(size))?;
         app.render_owned_transcript(&mut tui, size)?;
-        assert_eq!(tui.terminal.last_known_cursor_pos, cursor);
+        let scrolled_cursor = tui.terminal.last_known_cursor_pos;
+        assert_eq!(scrolled_cursor, cursor);
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let scrolled = super::tests::buffer_text(buffer);
+        let first_row = scrolled.lines().next().expect("visible transcript row");
+        assert!(first_row.contains("transcript row"));
+        let area = Rect::new(
+            /*x*/ 4, /*y*/ 1, /*width*/ 30, /*height*/ 10,
+        );
+        let frames = tui.frame_requester();
+        let mut painted = Default::default();
+        tui.draw(size.height, |frame| {
+            let prepared = app.prepare_conversation(frame.area(), Some(area), &frames);
+            painted = app.paint_conversation(frame, &prepared);
+        })?;
+        app.finish_conversation(&mut tui, painted)?;
+        let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+        let resized = super::tests::buffer_text(buffer);
+        assert_eq!(
+            resized.lines().nth(usize::from(area.y)).map(str::trim),
+            Some(first_row.trim())
+        );
+        assert!(resized.contains("draft stays here"));
+        tui.screen_size_for_event(&TuiEvent::Resize(size))?;
+        let mut painted = Default::default();
+        tui.draw(size.height, |frame| {
+            let prepared =
+                app.prepare_conversation(frame.area(), /*conversation_inset*/ None, &frames);
+            painted = app.paint_conversation(frame, &prepared);
+        })?;
+        app.finish_conversation(&mut tui, painted)?;
         for height in [24, 9, 8, 12] {
             let resized = Size::new(width, height);
             tui.screen_size_for_event(&TuiEvent::Resize(resized))?;
@@ -77,7 +107,7 @@ async fn follow_control_click_preserves_draft_caret_and_composer_geometry() -> R
                 (
                     "draft stays here".to_string(),
                     cursor.x,
-                    size.height - cursor.y,
+                    size.height - scrolled_cursor.y,
                     false
                 )
             );
@@ -159,9 +189,47 @@ async fn follow_control_click_preserves_draft_caret_and_composer_geometry() -> R
                     super::tests::buffer_text(buffer)
                 ));
             }
+
+            app.local_settings.tui.collapse_turn_details = true;
+            for id in 1..=6 {
+                app.transcript_cells
+                    .push(Arc::new(crate::history_cell::new_web_search_call(
+                        format!("lookup-{id}"),
+                        format!("field note {id}"),
+                        codex_app_server_protocol::WebSearchAction::Other,
+                    )));
+            }
+            let size = Size::new(/*width*/ 80, /*height*/ 16);
+            tui.screen_size_for_event(&TuiEvent::Resize(size))?;
+            app.render_owned_transcript(&mut tui, size)?;
+            for key in [KeyCode::F(4), KeyCode::Enter] {
+                app.transcript_view
+                    .handle_key(key.into(), &app.transcript_cells);
+            }
+            app.render_owned_transcript(&mut tui, size)?;
+            app.transcript_view
+                .scroll(&app.transcript_cells, /*rows*/ 2);
+            app.render_owned_transcript(&mut tui, size)?;
+            app.transcript_view
+                .handle_key(KeyCode::Enter.into(), &app.transcript_cells);
+            app.transcript_view.show_copy_feedback(
+                &Ok(crate::clipboard_copy::CopyStatus::Confirmed),
+                /*characters*/ 24,
+            );
+            app.render_owned_transcript(&mut tui, size)?;
+            let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);
+            let collapsed = super::tests::buffer_text(buffer);
+            assert!(collapsed.contains("6 tool calls"), "{collapsed}");
+            assert!(app.transcript_view.is_activity_focused());
+            snapshots.push(format!(
+                "Collapsed tool group with copy feedback\n{collapsed}"
+            ));
+
             insta::assert_snapshot!(
                 "running_copy_feedback_spacing",
-                crate::chatwidget::tests::helpers::normalize_snapshot_paths(snapshots.join("\n\n")),
+                crate::chatwidget::tests::helpers::normalize_working_snapshot(
+                    snapshots.join("\n\n")
+                ),
             );
         }
     }

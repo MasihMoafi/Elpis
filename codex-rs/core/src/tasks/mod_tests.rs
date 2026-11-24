@@ -12,6 +12,9 @@ use crate::state::TaskKind;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
 use codex_otel::SessionTelemetry;
+use codex_otel::TURN_CRITICAL_PATH_CAPTURE_METRIC;
+use codex_otel::TURN_CRITICAL_PATH_COMPONENT_METRIC;
+use codex_otel::TURN_CRITICAL_PATH_DURATION_METRIC;
 use codex_otel::TURN_MEMORY_METRIC;
 use codex_otel::TURN_NETWORK_PROXY_METRIC;
 use codex_otel::TURN_TOKEN_USAGE_METRIC;
@@ -19,8 +22,14 @@ use codex_otel::TURN_TOOL_CALL_METRIC;
 use codex_otel::TURN_UNIFIED_EXEC_RUNNING_PROCESSES_METRIC;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
+use codex_protocol::models::AudioReference;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::CodexErrorInfo;
+use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::TokenUsage;
+use codex_protocol::user_input::UserInput;
 use opentelemetry::KeyValue;
 use opentelemetry_sdk::metrics::InMemoryMetricExporter;
 use opentelemetry_sdk::metrics::data::AggregatedMetrics;
@@ -52,6 +61,91 @@ impl SessionTask for PendingTask {
     ) -> SessionTaskResult {
         std::future::pending().await
     }
+}
+
+#[tokio::test]
+async fn task_finish_rejects_uploaded_audio_without_losing_other_pending_input() {
+    let (session, turn_context, receiver) = make_session_and_context_with_rx().await;
+    session
+        .spawn_task(Arc::clone(&turn_context), Vec::new(), PendingTask)
+        .await;
+    while receiver.try_recv().is_ok() {}
+
+    let turn_state = {
+        let active_turn = session.active_turn.lock().await;
+        Arc::clone(
+            &active_turn
+                .as_ref()
+                .expect("active pending task")
+                .turn_state,
+        )
+    };
+    session
+        .input_queue
+        .extend_pending_input_for_turn_state(
+            turn_state.as_ref(),
+            vec![TurnInput::UserInput {
+                content: vec![
+                    UserInput::Text {
+                        text: "preserve pending text".to_string(),
+                        text_elements: Vec::new(),
+                    },
+                    UserInput::Audio {
+                        audio: AudioReference::File {
+                            file_id: "file_disabled_at_finish".to_string(),
+                        },
+                    },
+                ]
+                .into_iter()
+                .map(codex_user_input::ResolvedUserInput::from_client)
+                .collect(),
+                client_id: None,
+                metadata: Default::default(),
+            }],
+        )
+        .await;
+
+    session
+        .on_task_finished(Arc::clone(&turn_context), /*task_result*/ Ok(None))
+        .await;
+
+    let history = session.clone_history().await;
+    assert!(history.raw_items().any(|item| {
+        matches!(item, ResponseItem::Message { content, .. } if content.iter().any(|part| {
+            matches!(part, ContentItem::InputText { text } if text == "preserve pending text")
+        }))
+    }));
+    assert!(history.raw_items().all(|item| {
+        !matches!(item, ResponseItem::Message { content, .. } if content.iter().any(|part| {
+            matches!(part, ContentItem::InputAudio {
+                audio: AudioReference::File { file_id, .. },
+            } if file_id == "file_disabled_at_finish")
+        }))
+    }));
+
+    let (saw_error, completed) = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        let mut saw_error = false;
+        loop {
+            match receiver.recv().await.expect("event channel open").msg {
+                EventMsg::Error(error) => {
+                    saw_error = true;
+                    assert_eq!(error.codex_error_info, Some(CodexErrorInfo::BadRequest));
+                }
+                EventMsg::TurnComplete(completed) => break (saw_error, completed),
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("task finish events");
+    assert!(saw_error, "the rejected drain should emit an error event");
+    assert_eq!(
+        completed
+            .error
+            .as_ref()
+            .and_then(|error| error.codex_error_info.clone()),
+        Some(CodexErrorInfo::BadRequest)
+    );
 }
 
 fn test_session_telemetry() -> SessionTelemetry {
@@ -166,11 +260,13 @@ async fn turn_completion_metrics_follow_model_switch(scenario: UsageScenario) {
     session
         .update_token_usage_info(
             &previous_context,
-            Some(&TokenUsage {
+            TokenUsage {
                 input_tokens: 1_000,
                 total_tokens: 1_000,
                 ..TokenUsage::default()
-            }),
+            }
+            .into(),
+            /*includes_reasoning*/ false,
         )
         .await
         .expect("earlier session usage should be recorded");
@@ -193,7 +289,11 @@ async fn turn_completion_metrics_follow_model_switch(scenario: UsageScenario) {
         };
         // Local pre-turn compaction records usage with the previous model's context.
         session
-            .update_token_usage_info(&previous_context, Some(&compaction_usage))
+            .update_token_usage_info(
+                &previous_context,
+                compaction_usage.clone().into(),
+                /*includes_reasoning*/ false,
+            )
             .await
             .expect("compaction usage should be recorded");
         expected_usage.push((previous_context.model_info().slug.clone(), compaction_usage));
@@ -224,7 +324,11 @@ async fn turn_completion_metrics_follow_model_switch(scenario: UsageScenario) {
                 .record_token_usage_info(
                     &turn_context,
                     &response_context.initial_settings,
-                    Some(&response_usage),
+                    response_usage.clone().into(),
+                    crate::session::TokenUsageContext::Sampling {
+                        includes_reasoning: false,
+                        input_item_count: 0,
+                    },
                 )
                 .await
                 .expect("response usage should be recorded");
@@ -492,4 +596,245 @@ fn emit_compact_metric_records_auto_local() {
             ("type".to_string(), "local".to_string()),
         ])
     );
+}
+
+struct UncooperativeTimedTask {
+    entered: Arc<tokio::sync::Notify>,
+    finish: Arc<tokio::sync::Notify>,
+}
+
+impl SessionTask for UncooperativeTimedTask {
+    fn kind(&self) -> TaskKind {
+        TaskKind::Regular
+    }
+    fn span_name(&self) -> &'static str {
+        "session_task.uncooperative_timing"
+    }
+    async fn run(
+        self: Arc<Self>,
+        _session: Arc<Session>,
+        context: Arc<TurnContext>,
+        _input: Vec<TurnInput>,
+        _cancellation_token: CancellationToken,
+    ) -> SessionTaskResult {
+        let timing = &context.turn_timing_state;
+        timing.enable_critical_path();
+        let batch = codex_direct_tool_timing::ToolBatchTiming::default();
+        let now = std::time::Instant::now();
+        let _blocking;
+        let _work = timing.direct_tool_timings.start_turn_direct_call(
+            "uncooperative",
+            &context.sub_id,
+            batch.clone(),
+            now,
+            timing.snapshot_path(now),
+        );
+        _blocking = timing.begin_tool_blocking(Some(batch));
+        let _review = _work.start_review();
+        self.entered.notify_one();
+        self.finish.notified().await;
+        Ok(None)
+    }
+}
+
+#[test_case::test_case(false; "forced teardown")]
+#[test_case::test_case(true; "finished before wait")]
+#[tokio::test(flavor = "current_thread")]
+async fn abort_drops_timing_guards_before_profile_completion(finished_before_wait: bool) {
+    use codex_analytics::IncompleteReason::ForcedTeardown;
+    use codex_analytics::TurnCriticalPath;
+    use codex_protocol::protocol::TurnAbortReason;
+
+    let (session, context, _receiver) = make_session_and_context_with_rx().await;
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let finish = Arc::new(tokio::sync::Notify::new());
+    session
+        .spawn_task(
+            Arc::clone(&context),
+            Vec::new(),
+            UncooperativeTimedTask {
+                entered: Arc::clone(&entered),
+                finish: Arc::clone(&finish),
+            },
+        )
+        .await;
+    entered.notified().await;
+    let turn = session
+        .active_turn
+        .lock()
+        .await
+        .take()
+        .expect("active turn");
+    if finished_before_wait {
+        // The task exits after the abort claims the turn but before it waits.
+        let done = turn.task.as_ref().expect("running task").done.notified();
+        finish.notify_one();
+        done.await;
+    }
+    session
+        .abort_taken_tasks(Some(turn), TurnAbortReason::Interrupted)
+        .await;
+
+    let timing = &context.turn_timing_state;
+    assert!(
+        timing
+            .direct_tool_timings
+            .owner_for_turn("uncooperative", &context.sub_id)
+            .is_none()
+    );
+    let (_, _, profile) = timing.complete_profile_and_duration_ms().await;
+    if finished_before_wait {
+        assert!(matches!(
+            profile.critical_path,
+            TurnCriticalPath::Complete(_)
+        ));
+    } else {
+        assert_eq!(
+            profile.critical_path,
+            TurnCriticalPath::Incomplete(vec![ForcedTeardown])
+        );
+    }
+}
+
+#[tokio::test]
+async fn turn_critical_path_metrics_count_each_capture_once() {
+    use codex_analytics::IncompleteReason::Unclassified;
+    use codex_analytics::TurnCriticalPath;
+    use codex_analytics::TurnCriticalPathDurations;
+
+    let (session, mut context, _rx) = make_session_and_context_with_rx().await;
+    let context = Arc::get_mut(&mut context).unwrap();
+    context.session_telemetry = test_session_telemetry();
+    let complete = TurnCriticalPath::Complete(TurnCriticalPathDurations {
+        duration_ms: 60,
+        inference_ms: 31,
+        sampling_ms: 31,
+        compaction_ms: 0,
+        auto_review_ms: 2,
+        auto_review_overhead_ms: None,
+        tools_ms: 10,
+        user_wait_ms: 0,
+        overhead_ms: 14,
+        unknown_ms: 3,
+    });
+    let _interest_cache_guard =
+        tracing::Dispatch::new(tracing::subscriber::NoSubscriber::default());
+    let incomplete = TurnCriticalPath::Incomplete(vec![Unclassified]);
+    for (sku, path) in [
+        (Some("codex"), complete),
+        (Some("codex"), TurnCriticalPath::Disabled),
+        (None, incomplete.clone()),
+        (Some("unrecognized-sku"), incomplete),
+    ] {
+        Arc::make_mut(&mut context.config).apps_mcp_product_sku = sku.map(str::to_owned);
+        context.turn_timing_state = Arc::default();
+        let (_, _, mut profile) = context
+            .turn_timing_state
+            .complete_profile_and_duration_ms()
+            .await;
+        profile.critical_path = path;
+        let buffer: &std::sync::Mutex<Vec<u8>> =
+            Box::leak(Box::new(std::sync::Mutex::new(Vec::new())));
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(tracing_test::internal::MockWriter::new(buffer))
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            for _ in 0..2 {
+                crate::turn_timing::record_terminal_turn_profile(
+                    session.thread_id,
+                    context,
+                    &profile,
+                );
+            }
+        });
+        let trace = String::from_utf8(buffer.lock().unwrap().clone()).unwrap();
+        match &profile.critical_path {
+            TurnCriticalPath::Complete(_) => {
+                assert!(trace.contains("critical_path_status=\"complete\""));
+                assert!(trace.contains("critical_path_inference_ms=31"));
+                assert!(trace.contains("critical_path_user_wait_ms=0"));
+            }
+            TurnCriticalPath::Disabled | TurnCriticalPath::Incomplete(_) => {
+                assert!(!trace.contains("critical_path_duration_ms="));
+                let status = if matches!(profile.critical_path, TurnCriticalPath::Disabled) {
+                    "disabled"
+                } else {
+                    "incomplete"
+                };
+                assert!(trace.contains(&format!("critical_path_status=\"{status}\"")));
+            }
+        }
+    }
+
+    let snapshot = context.session_telemetry.snapshot_metrics().unwrap();
+    let AggregatedMetrics::U64(MetricData::Sum(captures)) =
+        find_metric(&snapshot, TURN_CRITICAL_PATH_CAPTURE_METRIC).data()
+    else {
+        panic!("expected capture counter");
+    };
+    let counts = captures
+        .data_points()
+        .map(|point| {
+            let tags = attributes_to_map(point.attributes());
+            (
+                (tags["product_sku"].clone(), tags["capture_status"].clone()),
+                point.value(),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    assert_eq!(
+        counts,
+        BTreeMap::from([
+            (("codex".into(), "complete".into()), 1),
+            (("unknown".into(), "incomplete".into()), 1),
+            (("other".into(), "incomplete".into()), 1),
+        ])
+    );
+
+    for (name, expected) in [
+        (
+            TURN_CRITICAL_PATH_DURATION_METRIC,
+            BTreeMap::from([("total", 60.0)]),
+        ),
+        (
+            TURN_CRITICAL_PATH_COMPONENT_METRIC,
+            BTreeMap::from([
+                ("inference", 31.0),
+                ("auto_review", 2.0),
+                ("tools", 10.0),
+                ("user_wait", 0.0),
+                ("overhead", 14.0),
+                ("unknown", 3.0),
+            ]),
+        ),
+    ] {
+        let AggregatedMetrics::F64(MetricData::Histogram(histogram)) =
+            find_metric(&snapshot, name).data()
+        else {
+            panic!("expected duration histogram");
+        };
+        assert_eq!(histogram.data_points().count(), expected.len());
+        for point in histogram.data_points() {
+            let tags = attributes_to_map(point.attributes());
+            assert_eq!(tags["product_sku"], "codex");
+            assert_eq!(
+                point
+                    .bounds()
+                    .filter(|bound| *bound > 120_000.0)
+                    .collect::<Vec<_>>(),
+                vec![
+                    180_000.0,
+                    300_000.0,
+                    600_000.0,
+                    900_000.0,
+                    1_800_000.0,
+                    3_600_000.0,
+                    7_200_000.0
+                ]
+            );
+            let component = tags.get("component").map_or("total", String::as_str);
+            assert_eq!((point.count(), point.sum()), (1, expected[component]));
+        }
+    }
 }

@@ -13,6 +13,7 @@ use super::*;
 use crate::transport::remote_control::protocol::normalize_remote_control_url;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
 use tokio::time::Duration;
 use tokio::time::Instant;
@@ -51,7 +52,7 @@ async fn assert_conflict_recovery(subscribe_cursor: Option<&str>) {
             server_name: "test-server".to_string(),
         },
         Some(state_db),
-        RemoteControlAuth::capture(remote_control_auth_manager()).0,
+        RemoteControlAuth::capture(remote_control_auth_manager(), /*runtime_auth*/ None).0,
         RemoteControlChannels {
             transport_event_tx,
             status_publisher,
@@ -62,8 +63,8 @@ async fn assert_conflict_recovery(subscribe_cursor: Option<&str>) {
         shutdown_token.clone(),
         Arc::new(enabled_desired_state_sender()),
     );
-    // Start at the cap to exercise two consecutive capped waits without spending
-    // another minute reaching it. Use the real handshake and reconnect loop.
+    // Start at the cap and advance the retry waits below. Keep socket I/O on
+    // real time so a pending handshake cannot auto-advance its own timeout.
     websocket.reconnect_attempt = 9;
     websocket.state.lock().await.subscribe_cursor = subscribe_cursor.map(str::to_string);
     let connect_task = tokio::spawn(async move {
@@ -75,7 +76,7 @@ async fn assert_conflict_recovery(subscribe_cursor: Option<&str>) {
 
     let mut rejected_at = None;
     for attempt in 0..3 {
-        let (stream, _) = timeout(Duration::from_secs(40), listener.accept())
+        let (mut stream, _) = timeout(Duration::from_secs(40), listener.accept())
             .await
             .expect("connection should retry within the capped delay")
             .unwrap();
@@ -86,7 +87,7 @@ async fn assert_conflict_recovery(subscribe_cursor: Option<&str>) {
             );
         }
         rejected_at = Some(Instant::now());
-        let result = accept_hdr_async(stream, |request: &Request, response: Response| {
+        let result = accept_hdr_async(&mut stream, |request: &Request, response: Response| {
             assert_eq!(
                 request.uri().path(),
                 "/backend-api/wham/remote/control/server"
@@ -104,7 +105,7 @@ async fn assert_conflict_recovery(subscribe_cursor: Option<&str>) {
             if attempt < 2 {
                 Err(tungstenite::http::Response::builder()
                     .status(/*status*/ 409)
-                    .body(Some("Remote app server already online".to_string()))
+                    .body(/*body*/ None)
                     .unwrap())
             } else {
                 Ok(response)
@@ -113,23 +114,28 @@ async fn assert_conflict_recovery(subscribe_cursor: Option<&str>) {
         .await;
         if attempt < 2 {
             assert!(result.is_err());
-            if attempt == 1 {
-                assert!(
-                    timeout(Duration::from_secs(1), listener.accept())
-                        .await
-                        .is_err(),
-                    "sustained HTTP 409 responses must not restart fast retries"
-                );
-                // The real loop is sleeping after the second rejection. Skip the
-                // middle of this wait, retaining its boundary assertion below.
-                tokio::time::pause();
-                tokio::time::advance(Duration::from_secs(13)).await;
-                tokio::time::resume();
-            }
+            drop(result);
+            // The peer closes the rejected socket while processing the 409.
+            // On this current-thread runtime it then enters the retry sleep
+            // before we can observe EOF, so the clock advance cannot race it.
+            assert_eq!(stream.read(&mut [0]).await.unwrap(), 0);
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(13)).await;
+            tokio::time::resume();
+            assert!(
+                timeout(Duration::from_secs(1), listener.accept())
+                    .await
+                    .is_err(),
+                "sustained HTTP 409 responses must not restart fast retries"
+            );
+            tokio::time::pause();
+            tokio::time::advance(Duration::from_secs(17)).await;
+            tokio::time::resume();
         } else {
             let _server_connection = result.expect("available ownership should allow recovery");
             let (mut websocket, outcome) = connect_task.await.unwrap();
             assert!(matches!(outcome, ConnectOutcome::Connected(_)));
+            assert_eq!(websocket.reconnect_attempt, 11);
             assert!(
                 next_reconnect_delay(&mut websocket.reconnect_attempt) >= Duration::from_secs(15),
                 "a successful handshake must not reset backoff before the connection stays healthy"

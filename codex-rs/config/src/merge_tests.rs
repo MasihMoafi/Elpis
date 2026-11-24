@@ -295,33 +295,46 @@ fn code_mode_overrides_preserve_enabled_state_and_cell_overhead() {
 }
 
 #[test]
-fn sleep_tool_overrides_preserve_disabled_state_and_mode() {
-    for feature_path in ["features", "profiles.work.features"] {
-        let disabled = (
-            format!("{feature_path}.sleep_tool"),
-            TomlValue::Boolean(false),
-        );
-        let mode = (
-            format!("{feature_path}.sleep_tool.mode"),
-            TomlValue::String("always_on".to_string()),
-        );
-        let expected = parse_toml(&format!(
-            "[{feature_path}.sleep_tool]\nenabled = false\nmode = \"always_on\"\n",
-        ));
-        for overrides in [vec![disabled.clone(), mode.clone()], vec![mode, disabled]] {
-            assert_eq!(crate::build_cli_overrides_layer(&overrides), expected);
-        }
+fn structured_feature_overrides_preserve_disabled_state_and_settings() {
+    for (feature, key, value) in [
+        ("sleep_tool", "mode", "always_on"),
+        ("runtime_agent_instances", "mode", "assertion_only"),
+        (
+            "guardianv3",
+            "reviewer.retrieval_instructions",
+            "Check revocations.",
+        ),
+    ] {
+        for feature_path in ["features", "profiles.work.features"] {
+            let disabled = (
+                format!("{feature_path}.{feature}"),
+                TomlValue::Boolean(false),
+            );
+            let setting = (
+                format!("{feature_path}.{feature}.{key}"),
+                TomlValue::String(value.to_string()),
+            );
+            let expected = parse_toml(&format!(
+                "[{feature_path}.{feature}]\nenabled = false\n{key} = \"{value}\"\n",
+            ));
+            for overrides in [
+                vec![disabled.clone(), setting.clone()],
+                vec![setting, disabled],
+            ] {
+                assert_eq!(crate::build_cli_overrides_layer(&overrides), expected);
+            }
 
-        let boolean_layer = parse_toml(&format!("[{feature_path}]\nsleep_tool = false\n"));
-        let table_layer = parse_toml(&format!(
-            "[{feature_path}.sleep_tool]\nmode = \"always_on\"\n",
-        ));
-        for (mut base, overlay) in [
-            (boolean_layer.clone(), table_layer.clone()),
-            (table_layer, boolean_layer),
-        ] {
-            merge_toml_values(&mut base, &overlay);
-            assert_eq!(base, expected);
+            let boolean_layer = parse_toml(&format!("[{feature_path}]\n{feature} = false\n"));
+            let table_layer = parse_toml(&format!(
+                "[{feature_path}.{feature}]\n{key} = \"{value}\"\n",
+            ));
+            for (mut base, overlay) in [
+                (boolean_layer.clone(), table_layer.clone()),
+                (table_layer, boolean_layer),
+            ] {
+                merge_toml_values(&mut base, &overlay);
+                assert_eq!(base, expected);
+            }
         }
     }
 }

@@ -143,10 +143,11 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
         cli_auth_credentials_store_mode: AuthCredentialsStoreMode::File,
         auth_route_config: routes,
         client_id: codex_login::CLIENT_ID.to_string(),
-        issuer,
+        issuer: issuer.clone(),
         port: 0,
         open_browser: false,
         force_state: Some(state),
+        workspace_login: None,
         forced_chatgpt_workspace_id: Some(vec![chatgpt_account_id.to_string()]),
         codex_streamlined_login: false,
         auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
@@ -230,6 +231,12 @@ async fn end_to_end_login_flow_persists_auth_json() -> Result<()> {
     assert_eq!(json["tokens"]["access_token"], "access-123");
     assert_eq!(json["tokens"]["refresh_token"], "refresh-123");
     assert_eq!(json["tokens"]["account_id"], chatgpt_account_id);
+    let login_owner_id = json["tokens"]["login_owner_id"].as_str().unwrap();
+    assert!(!login_owner_id.is_empty());
+    assert_eq!(
+        json["tokens"]["oauth_provenance"],
+        serde_json::json!({ "issuer": issuer, "client_id": codex_login::CLIENT_ID })
+    );
 
     // Stop mock issuer
     drop(issuer_handle);
@@ -252,6 +259,7 @@ async fn hosted_login_redirects_to_configured_open_app_url() -> Result<()> {
         port: 0,
         open_browser: false,
         force_state: Some("streamlined_state".to_string()),
+        workspace_login: None,
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
         login_success_page: LoginSuccessPage::Hosted {
@@ -305,6 +313,7 @@ async fn creates_missing_codex_home_dir() -> Result<()> {
         port: 0,
         open_browser: false,
         force_state: Some(state),
+        workspace_login: None,
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
         auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
@@ -348,6 +357,7 @@ async fn login_server_includes_forced_workspaces_as_one_query_param() -> Result<
         port: 0,
         open_browser: false,
         force_state: Some(state),
+        workspace_login: None,
         forced_chatgpt_workspace_id: Some(vec![
             WORKSPACE_ID_ALLOWED.to_string(),
             WORKSPACE_ID_SECOND_ALLOWED.to_string(),
@@ -392,6 +402,7 @@ async fn forced_chatgpt_workspace_id_mismatch_blocks_login() -> Result<()> {
         port: 0,
         open_browser: false,
         force_state: Some(state.clone()),
+        workspace_login: None,
         forced_chatgpt_workspace_id: Some(vec![WORKSPACE_ID_ALLOWED.to_string()]),
         codex_streamlined_login: false,
         auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
@@ -455,6 +466,7 @@ async fn oauth_access_denied_missing_entitlement_blocks_login_with_clear_error()
         port: 0,
         open_browser: false,
         force_state: Some(state.clone()),
+        workspace_login: None,
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
         auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
@@ -526,6 +538,7 @@ async fn oauth_access_denied_unknown_reason_uses_generic_error_page() -> Result<
         port: 0,
         open_browser: false,
         force_state: Some(state.clone()),
+        workspace_login: None,
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
         auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
@@ -645,9 +658,10 @@ async fn falls_back_to_registered_fallback_port_when_default_port_is_in_use() ->
     let actual_port = server.actual_port;
     let auth_url = server.auth_url.clone();
     server.cancel();
-    let _ = tokio::time::timeout(Duration::from_secs(2), server.block_until_done())
+    server
+        .block_until_done()
         .await
-        .expect("login server should shut down after cancel");
+        .expect_err("cancelling the fallback login should not report success");
 
     assert_eq!(actual_port, FALLBACK_LOGIN_PORT);
     assert!(auth_url.contains(&format!(
@@ -676,6 +690,7 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
         port: 0,
         open_browser: false,
         force_state: Some("cancel_state".to_string()),
+        workspace_login: None,
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
         auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,
@@ -700,6 +715,7 @@ async fn cancels_previous_login_server_when_port_is_in_use() -> Result<()> {
         port: login_port,
         open_browser: false,
         force_state: Some("cancel_state_2".to_string()),
+        workspace_login: None,
         forced_chatgpt_workspace_id: None,
         codex_streamlined_login: false,
         auth_keyring_backend_kind: AuthKeyringBackendKind::Direct,

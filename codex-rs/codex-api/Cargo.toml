@@ -13,9 +13,11 @@ codex-client = { workspace = true }
 codex-http-client = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-rustls-provider = { workspace = true }
+codex-utils-string = { workspace = true }
 codex-websocket-client = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
+rustls = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["raw_value"] }
@@ -33,9 +35,9 @@ uuid = { workspace = true }
 [dev-dependencies]
 anyhow = { workspace = true }
 assert_matches = { workspace = true }
+log = { workspace = true }
 pretty_assertions = { workspace = true }
 rcgen = { workspace = true }
-rustls = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 tokio-test = { workspace = true }

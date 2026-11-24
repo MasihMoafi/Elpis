@@ -5,7 +5,9 @@ use codex_context_fragments::ContextualUserFragment;
 use codex_guardian_context::TRANSCRIPT_JSON_INSTRUCTIONS;
 use codex_guardian_context::TranscriptFormat;
 use codex_guardian_context::truncate_text;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::input_text;
 
 const TENANT_POLICY_CONFIG_PLACEHOLDER: &str = "{{ tenant_policy_config }}";
 const EXTRA_POLICY_PLACEHOLDER: &str = "{{ extra_policy }}";
@@ -55,7 +57,7 @@ impl ContextualUserFragment for GuardianPolicyInstructions<'_> {
         ("", "")
     }
 
-    fn body(&self) -> String {
+    fn body(&self) -> ContentItem {
         let Self {
             transcript_format,
             tenant_policy_config,
@@ -71,10 +73,12 @@ impl ContextualUserFragment for GuardianPolicyInstructions<'_> {
             .collect::<Vec<_>>()
             .join(tenant_policy_config.trim());
         let instructions = format!("{prompt}\n\n{output_contract}\n");
-        match transcript_format {
+        input_text(match transcript_format {
             TranscriptFormat::Line => instructions,
-            TranscriptFormat::Json => format!("{TRANSCRIPT_JSON_INSTRUCTIONS}\n\n{instructions}"),
-        }
+            TranscriptFormat::Json => {
+                format!("{instructions}\n\n{TRANSCRIPT_JSON_INSTRUCTIONS}")
+            }
+        })
     }
 }
 
@@ -124,7 +128,7 @@ impl ContextualUserFragment for GuardianClassifierInstructions<'_> {
         ("", "")
     }
 
-    fn body(&self) -> String {
+    fn body(&self) -> ContentItem {
         let Self {
             transcript_format,
             classifier_instructions,
@@ -147,10 +151,12 @@ impl ContextualUserFragment for GuardianClassifierInstructions<'_> {
             None => instructions,
         };
         // Fixed host provenance must survive even the smallest configured prompt cap.
-        match transcript_format {
+        input_text(match transcript_format {
             TranscriptFormat::Line => instructions,
-            TranscriptFormat::Json => format!("{TRANSCRIPT_JSON_INSTRUCTIONS}\n\n{instructions}"),
-        }
+            TranscriptFormat::Json => {
+                format!("{instructions}\n\n{TRANSCRIPT_JSON_INSTRUCTIONS}")
+            }
+        })
     }
 }
 

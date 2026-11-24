@@ -3,19 +3,20 @@
 //! require a compatible shared server and a successful connection, except when
 //! the Windows launcher forbids detaching a missing server. Elevated local
 //! Windows sessions use explicit embedded behavior before discovery or startup.
+//! Explicit feature overrides are compared with the daemon's reported
+//! configuration; removed features are inert, and unreported features are assumed disabled.
 
 use super::*;
+use crate::app_server_session::is_method_not_found;
+use codex_app_server_protocol::ClientRequest;
+use codex_app_server_protocol::ConfigRequirementsReadResponse;
+use codex_app_server_protocol::ExperimentalFeatureStage;
+use codex_app_server_protocol::RequestId;
 use std::collections::BTreeMap;
-
-const SERVER_FEATURES: [Feature; 4] = [
-    Feature::ApiKeyModelDiscovery,
-    Feature::CodeModeHost,
-    Feature::AuthElicitation,
-    Feature::McpOAuthRefreshCoordination,
-];
 
 pub(super) const FAILURE_HINT: &str = "To work without the background server, rerun the same command with --no-daemon (including resume or fork and its arguments).";
 pub(super) const WSL_DRVFS_EXCLUSION: &str = "a Windows-mounted WSL CODEX_HOME (DrvFS/9p)";
+pub(super) const GATEWAY_SIGN_IN_EXCLUSION: &str = "custom provider or gateway sign-in";
 
 /// Returns whether `codex_home` is on a Windows-mounted WSL filesystem.
 pub fn uses_wsl_drvfs(codex_home: &std::path::Path) -> bool {
@@ -39,7 +40,7 @@ pub fn uses_wsl_drvfs(codex_home: &std::path::Path) -> bool {
         if unsafe { libc::fstatfs(directory.as_raw_fd(), stats.as_mut_ptr()) } != 0 {
             return false;
         }
-        unsafe { stats.assume_init() }.f_type as u64 == 0x0102_1997
+        unsafe { stats.assume_init() }.f_type == 0x0102_1997
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -73,8 +74,6 @@ pub(super) fn exclusion(
         Some("workload identity")
     } else if exec_server_url.is_some() {
         Some("executor selection (CODEX_EXEC_SERVER_URL)")
-    } else if cli.agents_overview {
-        None
     } else if cli.config_profile_v2.is_some() {
         Some("--profile")
     } else {
@@ -104,12 +103,13 @@ pub(super) fn config_exclusion(
                         .is_some_and(toml::Value::is_bool)
             }),
             "features" => value.as_table().is_some_and(|features| {
-                !features.is_empty()
-                    && features
-                        .iter()
-                        .all(|(name, value)| allowed_feature(name) && value.is_bool())
+                !features.is_empty() && features.values().all(toml::Value::is_bool)
             }),
-            _ => key.strip_prefix("features.").is_some_and(allowed_feature) && value.is_bool(),
+            _ => {
+                key.strip_prefix("features.")
+                    .is_some_and(|name| !name.contains('.'))
+                    && value.is_bool()
+            }
         })
     {
         Some("command-line configuration overrides (-c, --enable, --disable, or --search)")
@@ -124,37 +124,11 @@ pub(super) fn config_exclusion(
     }
 }
 
-fn allowed_feature(name: &str) -> bool {
-    matches!(
-        name,
-        // Client gates and per-thread settings already forwarded in thread requests.
-        "daemon_auto_start" | "worktrees" | "transcript_v2" | "realtime_conversation" | "standalone_web_search"
-        // Shared services and threadless MCP operations need daemon compatibility checks.
-        | "api_key_model_discovery" | "code_mode_host" | "auth_elicitation"
-        | "mcp_oauth_refresh_coordination"
-        // Removed flags still passed by older launch scripts.
-        | "remote_models" | "request_rule" | "responses_websockets_v2"
-        | "workspace_owner_usage_nudge" | "tool_search_always_defer_mcp_tools"
-        | "remote_compaction_v2" | "multi_agent_mode"
-    )
-}
-
-pub(super) fn server_features(overrides: &[(String, toml::Value)]) -> BTreeMap<String, bool> {
-    let layer = codex_config::build_cli_overrides_layer(overrides);
-    SERVER_FEATURES
-        .into_iter()
-        .filter_map(|feature| {
-            let name = feature.key();
-            let enabled = layer.get("features")?.get(name)?.as_bool()?;
-            Some((name.to_string(), enabled))
-        })
-        .collect()
-}
-
 /// Best-effort configured readback, not a guarantee about startup-captured service state.
 pub(super) async fn compatibility_warning(
     target: &AppServerTarget,
     config: &Config,
+    cli_kv_overrides: &[(String, toml::Value)],
 ) -> Result<Option<String>, CompatibilityError> {
     let AppServerTarget::LocalDaemon {
         allow_embedded_fallback,
@@ -163,17 +137,72 @@ pub(super) async fn compatibility_warning(
     else {
         return Ok(None);
     };
+    // File settings and defaults belong to the daemon until it restarts.
+    // Only explicit invocation flags can request a shared-service restart.
+    let mut requested: BTreeMap<_, _> = codex_config::build_cli_overrides_layer(cli_kv_overrides)
+        .get("features")
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, value)| {
+            let name = match codex_features::feature_for_key(name) {
+                Some(feature) if feature.stage() == codex_features::Stage::Removed => return None,
+                Some(feature) => feature.key(),
+                None => name,
+            };
+            Some((name.to_string(), value.as_bool()?))
+        })
+        .collect();
     let mut restart_features = None;
     let check = async {
-        // The feature-list RPC cannot report this process-scoped structured setting.
-        if !config.features.enabled(Feature::CodeModeHost)
-            && config.code_mode.disable_in_process_fallback
-        {
-            return Err("code-mode host fallback policy requires embedded mode".to_string());
-        }
+        // Connect even without overrides so startup can recover from an unreachable daemon.
         let client = app_server_connection::connect(target)
             .await
             .map_err(|_| "could not connect to check daemon feature settings".to_string())?;
+        if requested.is_empty() {
+            let _ = client.shutdown().await;
+            return Ok(());
+        }
+        // Both legacy managed config and current requirements override CLI flags.
+        let layers = crate::config_update::read_effective_config_if_supported(
+            client.request_handle(),
+            config.cwd.as_path(),
+        )
+        .await
+        .map_err(|_| "could not read daemon configuration".to_string())?
+        .and_then(|config| config.layers)
+        .unwrap_or_default();
+        for layer in layers.iter().filter(|layer| {
+            layer["disabledReason"].is_null()
+                && matches!(
+                    layer["name"]["type"].as_str(),
+                    Some("legacyManagedConfigTomlFromFile" | "legacyManagedConfigTomlFromMdm")
+                )
+        }) {
+            requested.retain(|name, _| layer["config"]["features"].get(name).is_none());
+        }
+        match client
+            .request_handle()
+            .request_typed::<ConfigRequirementsReadResponse>(
+                ClientRequest::ConfigRequirementsRead {
+                    request_id: RequestId::String("tui-daemon-requirements".to_string()),
+                    params: None,
+                },
+            )
+            .await
+        {
+            Ok(response) => {
+                if let Some(required) = response.requirements.and_then(|r| r.feature_requirements) {
+                    requested.retain(|name, _| !required.contains_key(name));
+                }
+            }
+            Err(err) if is_method_not_found(&err) => {}
+            Err(_) => return Err("could not check daemon configuration requirements".to_string()),
+        }
+        if requested.is_empty() {
+            let _ = client.shutdown().await;
+            return Ok(());
+        }
         let (tx, rx) = tokio::sync::oneshot::channel();
         crate::experimental_features::fetch(
             client.request_handle(),
@@ -184,35 +213,27 @@ pub(super) async fn compatibility_warning(
         let result = rx.await;
         let _ = client.shutdown().await;
         let features = result.map_err(|_| "daemon feature check was interrupted".to_string())??;
-        // A previous client may have launched this daemon with overrides, even if
-        // this client has none. Check effective values, including defaults.
-        for feature in SERVER_FEATURES {
-            let name = feature.key();
-            let enabled = config.features.enabled(feature);
-            if features
-                .iter()
-                .find(|feature| feature.name == name)
-                .is_some_and(|feature| feature.enabled)
-                != enabled
-            {
-                restart_features = Some(
-                    SERVER_FEATURES
-                        .into_iter()
-                        .map(|feature| {
-                            (feature.key().to_string(), config.features.enabled(feature))
-                        })
-                        .collect(),
-                );
-                let state = if enabled { "enabled" } else { "disabled" };
-                return Err(format!("This session requires {name} to be {state}"));
+        requested.retain(|name, enabled| {
+            match features.iter().find(|feature| feature.name == *name) {
+                Some(feature) => {
+                    feature.stage != ExperimentalFeatureStage::Removed
+                        && feature.enabled != *enabled
+                }
+                None => *enabled,
             }
+        });
+        if let Some((name, enabled)) = requested.first_key_value() {
+            let state = if *enabled { "enabled" } else { "disabled" };
+            let reason = format!("This session requires {name} to be {state}");
+            restart_features = Some(requested);
+            return Err(reason);
         }
         Ok::<(), String>(())
     }
     .await;
     match check {
         Ok(()) => Ok(None),
-        Err(reason) if *allow_embedded_fallback => Ok(Some(format!(
+        Err(reason) if *allow_embedded_fallback && restart_features.is_none() => Ok(Some(format!(
             "Running without the shared background server: {reason}."
         ))),
         Err(reason) => Err(CompatibilityError {

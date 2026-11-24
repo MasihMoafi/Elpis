@@ -1,4 +1,5 @@
 use super::MarkdownStyles;
+use crate::render::highlight::set_syntax_theme;
 use crate::style::accent_color;
 use pretty_assertions::assert_eq;
 use ratatui::style::Modifier;
@@ -80,6 +81,31 @@ fn table_url_with_tilde_keeps_complete_hyperlink() {
 }
 
 #[test]
+fn links_keep_their_columns_after_styled_fragments() {
+    let input = "**界** [a](https://example.com/a) _b_ [`c`](https://example.com/c) [d](https://example.com/d)\n\n[e](https://example.com/e)";
+    let lines = super::render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+        input,
+        /*width*/ None,
+        /*cwd*/ None,
+        &|_| true,
+    );
+    let links = lines
+        .iter()
+        .flat_map(|line| line.hyperlinks.iter())
+        .map(|link| (link.columns.clone(), link.destination.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        links,
+        vec![
+            (3..4, "https://example.com/a"),
+            (7..8, "https://example.com/c"),
+            (9..10, "https://example.com/d"),
+            (0..1, "https://example.com/e"),
+        ],
+    );
+}
+
+#[test]
 fn merged_text_events_preserve_entity_decoding() {
     let source = "https://example.com/a&amp;b~c";
     let destination = "https://example.com/a&b~c";
@@ -146,6 +172,7 @@ fn paragraph_multiple() {
 
 #[test]
 fn headings() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "# Heading 1\n## Heading 2\n### Heading 3\n#### Heading 4\n##### Heading 5\n###### Heading 6\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -166,6 +193,7 @@ fn headings() {
 
 #[test]
 fn blockquote_single() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("> Blockquote");
     let expected = Text::from(Line::from_iter(["> ", "Blockquote"]).green());
     assert_eq!(text, expected);
@@ -196,6 +224,7 @@ fn blockquote_soft_break() {
 
 #[test]
 fn blockquote_multiple_with_break() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("> Blockquote 1\n\n> Blockquote 2\n");
     let expected = Text::from_iter([
         Line::from_iter(["> ", "Blockquote 1"]).green(),
@@ -207,6 +236,7 @@ fn blockquote_multiple_with_break() {
 
 #[test]
 fn blockquote_three_paragraphs_short_lines() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "> one\n>\n> two\n>\n> three\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -221,6 +251,7 @@ fn blockquote_three_paragraphs_short_lines() {
 
 #[test]
 fn blockquote_nested_two_levels() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "> Level 1\n>> Level 2\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -233,6 +264,7 @@ fn blockquote_nested_two_levels() {
 
 #[test]
 fn blockquote_with_list_items() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "> - item 1\n> - item 2\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -244,6 +276,7 @@ fn blockquote_with_list_items() {
 
 #[test]
 fn blockquote_with_ordered_list() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "> 1. first\n> 2. second\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -265,6 +298,7 @@ fn blockquote_with_ordered_list() {
 
 #[test]
 fn blockquote_list_then_nested_blockquote() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "> - parent\n>   > child\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -470,6 +504,7 @@ fn blockquote_with_heading_and_paragraph() {
 
 #[test]
 fn blockquote_heading_inherits_heading_style() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("> # test header\n> in blockquote\n");
     assert_eq!(
         text.lines,
@@ -565,6 +600,7 @@ fn nested_blockquote_with_inline_and_fenced_code() {
 
 #[test]
 fn list_unordered_single() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("- List item 1\n");
     let expected = Text::from_iter([Line::from_iter(["• ", "List item 1"])]);
     assert_eq!(text, expected);
@@ -572,6 +608,7 @@ fn list_unordered_single() {
 
 #[test]
 fn list_unordered_multiple() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("- List item 1\n- List item 2\n");
     let expected = Text::from_iter([
         Line::from_iter(["• ", "List item 1"]),
@@ -599,6 +636,7 @@ fn empty_list_items_keep_their_markers() {
 
 #[test]
 fn list_nested() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("- List item 1\n  - Nested list item 1\n");
     let expected = Text::from_iter([
         Line::from_iter(["• ", "List item 1"]),
@@ -627,6 +665,7 @@ fn list_ordered_custom_start() {
 
 #[test]
 fn nested_unordered_in_ordered() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "1. Outer\n    - Inner A\n    - Inner B\n2. Next\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -641,6 +680,7 @@ fn nested_unordered_in_ordered() {
 
 #[test]
 fn nested_ordered_in_unordered() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "- Outer\n    1. One\n    2. Two\n- Last\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -669,6 +709,7 @@ fn loose_list_item_multiple_paragraphs() {
 
 #[test]
 fn tight_item_with_soft_break() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "- item line1\n  item line2\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -680,6 +721,7 @@ fn tight_item_with_soft_break() {
 
 #[test]
 fn deeply_nested_mixed_three_levels() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "1. A\n    - B\n        1. C\n2. D\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -738,13 +780,15 @@ fn inline_code() {
 
 #[test]
 fn inline_code_and_file_paths_follow_syntax_theme() {
-    let markdown = "Use `src/main.rs` and [](./src/lib.rs).";
+    let markdown = "# Heading\n\n**Bold** *Italic* [Link](https://example.com)\n\n> Quote\n\n1. Ordered\n\n- Unordered\n\nUse `src/main.rs` and [](./src/lib.rs).";
     let mut rendered = Vec::new();
-    for name in [
-        "catppuccin-mocha",
-        "catppuccin-latte",
-        "ansi",
-        "no-markup-color",
+    for (name, background) in [
+        ("catppuccin-mocha", "dark"),
+        ("catppuccin-mocha", "light"),
+        ("catppuccin-latte", "light"),
+        ("nord", "dark"),
+        ("ansi", "dark"),
+        ("no-markup-color", "dark"),
     ] {
         let theme = if name == "no-markup-color" {
             syntect::highlighting::Theme::default()
@@ -752,7 +796,7 @@ fn inline_code_and_file_paths_follow_syntax_theme() {
             crate::render::highlight::resolve_theme_by_name(name, /*codex_home*/ None)
                 .expect("bundled theme")
         };
-        let colors = if name == "catppuccin-latte" {
+        let colors = if background == "light" {
             crate::terminal_probe::DefaultColors {
                 fg: (30, 30, 30),
                 bg: (255, 255, 255),
@@ -793,7 +837,7 @@ fn inline_code_and_file_paths_follow_syntax_theme() {
             if name == "no-markup-color" {
                 assert_eq!(code_style, ratatui::style::Style::new().fg(accent_color()));
             } else {
-                rendered.push((name, lines));
+                rendered.push((name, background, lines));
             }
         });
     }
@@ -802,6 +846,7 @@ fn inline_code_and_file_paths_follow_syntax_theme() {
 
 #[test]
 fn strong() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     assert_eq!(
         render_markdown_text("**Strong**"),
         Text::from(Line::from("Strong".bold()))
@@ -810,6 +855,7 @@ fn strong() {
 
 #[test]
 fn emphasis() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     assert_eq!(
         render_markdown_text("*Emphasis*"),
         Text::from(Line::from("Emphasis".italic()))
@@ -826,6 +872,7 @@ fn strikethrough() {
 
 #[test]
 fn strong_emphasis() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("**Strong *emphasis***");
     let expected = Text::from(Line::from_iter([
         "Strong ".bold(),
@@ -836,6 +883,7 @@ fn strong_emphasis() {
 
 #[test]
 fn link() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("[Link](https://example.com)");
     let expected = Text::from(Line::from_iter([
         "Link".fg(accent_color()).underlined(),
@@ -848,6 +896,7 @@ fn link() {
 
 #[test]
 fn web_link_labels_use_link_style_and_preserve_inline_formatting() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     for (label, expected_label) in [
         ("plain", "plain".fg(accent_color()).underlined()),
         ("`code`", "code".fg(accent_color()).underlined()),
@@ -875,6 +924,7 @@ fn web_link_labels_use_link_style_and_preserve_inline_formatting() {
 
 #[test]
 fn web_link_labels_keep_link_style_in_wrapped_prose_and_tables() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let links =
         "[plain](https://example.com) [`code`](https://example.com) [<b>](https://example.com)";
     for markdown in [
@@ -905,7 +955,7 @@ fn web_link_labels_keep_link_style_in_wrapped_prose_and_tables() {
 #[test]
 fn web_link_labels_have_a_visible_underline_snapshot() {
     let text = render_markdown_text(
-        "plain [plain](https://example.com) `code` [`code`](https://example.com)",
+        "plain [plain](https://example.com) `code` [`code`](https://example.com) [thread](codex://threads/019e60fc-0518-7c21-9596-980fe97225ba)",
     );
     assert_debug_snapshot!(text);
 }
@@ -1210,6 +1260,7 @@ fn file_link_appends_hash_range_when_label_lacks_it() {
 
 #[test]
 fn multiline_file_link_label_after_styled_prefix_does_not_panic() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text_for_cwd(
         "**bold** plain [foo\nbar](file:///Users/example/code/codex/codex-rs/tui/src/markdown_render.rs#L74C3)",
         Path::new("/Users/example/code/codex"),
@@ -1250,6 +1301,7 @@ fn file_link_uses_target_path_for_hash_range() {
 
 #[test]
 fn url_link_shows_destination() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let text = render_markdown_text("[docs](https://example.com/docs)");
     let expected = Text::from(Line::from_iter([
         "docs".fg(accent_color()).underlined(),
@@ -1739,6 +1791,7 @@ fn ordered_item_with_code_block_and_nested_bullet() {
 
 #[test]
 fn nested_five_levels_mixed_lists() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "1. First\n   - Second level\n     1. Third level (ordered)\n        - Fourth level (bullet)\n          - Fifth level to test indent consistency\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -1787,6 +1840,7 @@ fn html_in_tight_ordered_item_soft_breaks_with_space() {
 
 #[test]
 fn html_continuation_paragraph_in_unordered_item_indented() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "- Item\n\n  <em>continued</em>\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -1836,6 +1890,7 @@ fn ordered_item_continuation_paragraph_is_indented() {
 
 #[test]
 fn nested_item_continuation_paragraph_is_indented() {
+    set_syntax_theme(syntect::highlighting::Theme::default());
     let md = "1. A\n    - B\n\n      Continuation for B\n2. C\n";
     let text = render_markdown_text(md);
     let expected = Text::from_iter([
@@ -2130,4 +2185,89 @@ fn table_key_value_fallback_preserves_rich_values_and_themed_labels() {
             .iter()
             .any(|span| span.style.add_modifier.contains(Modifier::UNDERLINED))
     }));
+}
+
+#[test]
+fn narrow_header_only_table_retains_local_file_target() {
+    let rendered = render_markdown_lines_with_width_and_cwd(
+        "| 👩‍💻 [Guide](./guide.md) | A | B | C | D | E |\n| --- | --- | --- | --- | --- | --- |",
+        Some(32),
+        /*cwd*/ None,
+    );
+    let first = &rendered[0];
+    let text = first.line.to_string();
+    assert!(text.starts_with("| 👩‍💻"), "{text}");
+    let (before, _) = text.split_once("./guide.md").expect("visible file path");
+    let column = crate::width::display_width(before);
+    let links = first
+        .hyperlinks
+        .iter()
+        .map(|link| {
+            (
+                link.columns.clone(),
+                link.destination.as_str(),
+                link.terminal_destination(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        links,
+        vec![(column..column + "./guide.md".len(), "./guide.md", None)]
+    );
+}
+
+#[test]
+fn narrow_header_only_table_preserves_link_columns_and_escaped_pipes() {
+    let rendered = super::render_markdown_lines_with_width_cwd_and_hidden_link_destinations(
+        "| 👩**‍💻** [Docs](https://example.com) | x\\|́y | B | C | D | E |\n| --- | --- | --- | --- | --- | --- |",
+        Some(/*width*/ 32),
+        /*cwd*/ None,
+        &|_| true,
+    );
+    let first = &rendered[0];
+    assert!(first.line.to_string().contains("x\\|́y"));
+    assert_eq!(
+        first
+            .hyperlinks
+            .iter()
+            .map(|link| (link.columns.clone(), link.destination.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(5..9, "https://example.com")]
+    );
+}
+
+#[test]
+fn narrow_table_record_labels_keep_local_file_targets() {
+    let markdown = "| [Guide](./guide.md) | A | B | C | D | E | F | G |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |";
+    for width in [20, 50] {
+        let rendered =
+            render_markdown_lines_with_width_and_cwd(markdown, Some(width), /*cwd*/ None);
+        let first = &rendered[0];
+        let text = first.line.to_string();
+        assert!(text.starts_with(" Guide"), "{text}");
+        let (before, _) = text.split_once("./guide.md").expect("visible file path");
+        let column = crate::width::display_width(before);
+        assert_eq!(
+            first
+                .hyperlinks
+                .iter()
+                .map(|link| (link.columns.clone(), link.destination.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(column..column + "./guide.md".len(), "./guide.md")],
+        );
+    }
+}
+
+#[test]
+fn posix_file_uri_keeps_literal_backslash_in_preview_target() {
+    let rendered = render_markdown_lines_with_width_and_cwd(
+        "[Guide](file:///tmp/Guide%5Cnotes.md)",
+        /*width*/ None,
+        /*cwd*/ None,
+    );
+    assert!(rendered[0].line.to_string().contains("/tmp/Guide/notes.md"));
+    assert_eq!(
+        rendered[0].hyperlinks[0].destination,
+        r"/tmp/Guide\notes.md"
+    );
 }

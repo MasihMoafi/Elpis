@@ -1,10 +1,13 @@
-//! MCP server elicitations reach subagents and preserve automatic approval and review.
+//! MCP server elicitations preserve approval policy and signal abandonment before shutdown.
 
 use anyhow::Result;
+use codex_core::RestrictRootCapabilities;
 use codex_core::StartThreadOptions;
 use codex_core::TurnInputRequest;
 use codex_protocol::approvals::ElicitationAction;
 use codex_protocol::config_types::ApprovalsReviewer;
+use codex_protocol::mcp::ClientMcpExtensions;
+use codex_protocol::mcp::OPENAI_STANDARD_FORM_INPUT_EXTENSION_ID;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
@@ -12,6 +15,7 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadSettingsOverrides;
+use codex_protocol::protocol::ThreadSource;
 use codex_protocol::user_input::UserInput;
 use core_test_support::responses;
 use core_test_support::responses::ResponsesRequest;
@@ -69,19 +73,24 @@ pub(super) enum Caller {
     Root,
     Subagent,
     FullAccessSubagent,
+    FullAccessHost(Option<RestrictRootCapabilities>),
 }
 
 #[derive(Clone, Copy)]
 pub(super) enum RequestKind {
     BrowserAuth,
     FormInput,
+    ShutdownFormInput,
     Permission,
     StrictReview,
 }
 
 #[test_case(Caller::FullAccessSubagent, RequestKind::BrowserAuth; "full_access_subagent_preserves_automatic_approval")]
 #[test_case(Caller::Root, RequestKind::BrowserAuth; "root_browser_auth_remains_interactive")]
+#[test_case(Caller::Root, RequestKind::ShutdownFormInput; "pending_root_form_is_abandoned_before_shutdown")]
 #[test_case(Caller::Subagent, RequestKind::FormInput; "subagent_receives_form_input")]
+#[test_case(Caller::FullAccessHost(None), RequestKind::FormInput; "full_access_host_receives_form_input")]
+#[test_case(Caller::FullAccessHost(Some(RestrictRootCapabilities)), RequestKind::FormInput; "restricted_full_access_host_declines_form_input")]
 #[test_case(Caller::Subagent, RequestKind::Permission; "subagent_permission_remains_interactive")]
 #[test_case(Caller::FullAccessSubagent, RequestKind::Permission; "full_access_subagent_automatically_approves_permission")]
 #[test_case(Caller::Subagent, RequestKind::StrictReview; "subagent_keeps_strict_automatic_safety_review")]
@@ -118,7 +127,7 @@ pub(super) async fn mcp_server_elicitation_scenario(
                 "fields": [{"id": "password", "label": "Password", "type": "password", "required": true}]
             });
         }
-        RequestKind::FormInput => {
+        RequestKind::FormInput | RequestKind::ShutdownFormInput => {
             elicitation["requestedSchema"]["properties"] = json!({"answer": {"type": "string"}});
         }
         RequestKind::Permission | RequestKind::StrictReview => {
@@ -141,28 +150,43 @@ pub(super) async fn mcp_server_elicitation_scenario(
             "default_tools_approval_mode": "approve"
         }
     }))?)?;
-    let full_access = matches!(caller, Caller::FullAccessSubagent);
-    let expects_prompt = !full_access && !matches!(request_kind, RequestKind::StrictReview);
-    let session_source = if matches!(caller, Caller::Root) {
-        SessionSource::Exec
-    } else {
-        SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-            parent_thread_id: test.session_configured.thread_id,
-            depth: 1,
-            agent_path: None,
-            agent_nickname: None,
-            agent_role: None,
-        })
+    let full_access = matches!(
+        caller,
+        Caller::FullAccessSubagent | Caller::FullAccessHost(_)
+    );
+    let expects_prompt = match caller {
+        Caller::FullAccessHost(restriction) => restriction.is_none(),
+        Caller::FullAccessSubagent => false,
+        Caller::Root | Caller::Subagent => !matches!(request_kind, RequestKind::StrictReview),
     };
-    let thread = test
-        .thread_manager
-        .start_thread(StartThreadOptions {
-            session_source: Some(session_source),
-            environments: Some(vec![test.executor_environment().request()]),
-            ..StartThreadOptions::new(config)
-        })
-        .await?
-        .thread;
+    let mut options = StartThreadOptions {
+        environments: Some(vec![test.executor_environment().request()]),
+        ..StartThreadOptions::new(config)
+    };
+    options.session_source = Some(match caller {
+        Caller::Root => SessionSource::Exec,
+        Caller::Subagent | Caller::FullAccessSubagent => {
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: test.session_configured.thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })
+        }
+        Caller::FullAccessHost(restriction) => {
+            options.thread_source = Some(ThreadSource::User);
+            options.client_mcp_extensions = ClientMcpExtensions::new([(
+                OPENAI_STANDARD_FORM_INPUT_EXTENSION_ID.to_string(),
+                json!({}),
+            )]);
+            if let Some(restriction) = restriction {
+                options.thread_extension_init.insert(restriction);
+            }
+            SessionSource::Custom("host".to_string())
+        }
+    });
+    let thread = test.thread_manager.start_thread(options).await?.thread;
     wait_for_mcp_server(&thread, "elicitation").await?;
     let tool_call = responses::mount_sse_once(
         &server,
@@ -255,6 +279,39 @@ pub(super) async fn mcp_server_elicitation_scenario(
             follow_up.requests().is_empty(),
             "the tool must wait for input"
         );
+        if matches!(request_kind, RequestKind::ShutdownFormInput) {
+            thread.submit(Op::Shutdown).await?;
+            let EventMsg::ElicitationAbandoned(abandoned) = wait_for_event(&thread, |event| {
+                matches!(
+                    event,
+                    EventMsg::ElicitationAbandoned(_) | EventMsg::ShutdownComplete
+                )
+            })
+            .await
+            else {
+                panic!("abandonment must precede shutdown completion");
+            };
+            assert_eq!(
+                abandoned,
+                codex_protocol::approvals::ElicitationAbandonedEvent {
+                    server_name: request.server_name,
+                    id: request.id,
+                }
+            );
+            assert!(matches!(
+                wait_for_event(&thread, |event| {
+                    matches!(
+                        event,
+                        EventMsg::ElicitationAbandoned(_) | EventMsg::ShutdownComplete
+                    )
+                })
+                .await,
+                EventMsg::ShutdownComplete
+            ));
+            assert!(follow_up.requests().is_empty());
+            test.codex.shutdown_and_wait().await?;
+            return Ok(tool_call.requests());
+        }
         thread
             .submit(Op::ResolveElicitation {
                 server_name: request.server_name,
@@ -279,6 +336,8 @@ pub(super) async fn mcp_server_elicitation_scenario(
             "action": "accept", "content": {},
             "_meta": {"approvals_reviewer": "auto_review"}
         })
+    } else if matches!(caller, Caller::FullAccessHost(Some(_))) {
+        json!({"action": "decline"})
     } else {
         json!({"action": "accept", "content": response_content})
     };

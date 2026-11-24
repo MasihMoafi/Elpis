@@ -3,7 +3,6 @@
 //! This wraps the raw channel so call sites can submit typed `AppCommand`s
 //! without duplicating event construction or session logging behavior.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -52,6 +51,7 @@ impl AppEventSender {
                 ) | AppEvent::RealtimeWebrtcOfferCreated { .. }
                     | AppEvent::RealtimeWebrtcConnected { .. }
                     | AppEvent::StopRealtimeConversation { .. }
+                    | AppEvent::RealtimeSessionLockStopped { .. }
                     | AppEvent::RealtimeConversationStateChanged
                     | AppEvent::BackgroundVoiceError { .. }
                     | AppEvent::SyncThreadGitBranch { .. }
@@ -86,17 +86,16 @@ impl AppEventSender {
         self.send(AppEvent::CodexOp(AppCommand::review(target)));
     }
 
-    pub(crate) fn list_skills(&self, cwds: Vec<PathBuf>, force_reload: bool) {
-        self.send(AppEvent::CodexOp(AppCommand::list_skills(
-            cwds,
-            force_reload,
-        )));
-    }
-
-    pub(crate) fn user_input_answer(&self, id: String, response: ToolRequestUserInputResponse) {
-        self.send(AppEvent::CodexOp(AppCommand::user_input_answer(
-            id, response,
-        )));
+    pub(crate) fn user_input_answer(
+        &self,
+        thread_id: ThreadId,
+        id: String,
+        response: ToolRequestUserInputResponse,
+    ) {
+        self.send(AppEvent::SubmitThreadOp {
+            thread_id,
+            op: AppCommand::user_input_answer(id, response),
+        });
     }
 
     pub(crate) fn exec_approval(

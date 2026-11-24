@@ -101,7 +101,7 @@ pub fn collect_code_mode_tool_definitions<'a>(
                 if !namespace_description.is_empty() {
                     for definition in &mut definitions {
                         definition.description =
-                            format!("{namespace_description}\n\n{}", definition.description);
+                            format!("{}\n\n{namespace_description}", definition.description);
                     }
                 }
             }

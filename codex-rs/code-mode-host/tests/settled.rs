@@ -12,12 +12,12 @@ use codex_code_mode::ExecuteRequest;
 use codex_code_mode::FunctionCallOutputContentItem;
 use codex_code_mode::GrpcCodeModeSessionProvider;
 use codex_code_mode::NotificationFuture;
-use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
 use codex_code_mode::RuntimeResponse;
 use codex_code_mode::ToolDefinition;
 use codex_code_mode::ToolInvocationFuture;
 use codex_code_mode::WaitOutcome;
 use codex_code_mode::WaitRequest;
+use codex_core::ProcessOwnedGrpcCodeModeSessionProvider;
 use codex_protocol::ToolName;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -109,6 +109,7 @@ async fn assert_partial_results(provider: &dyn CodeModeSessionProvider) {
                     WaitRequest {
                         cell_id: cell_id.clone(),
                         yield_time_ms: 10,
+                        max_output_tokens: None,
                     },
                     /*preempt*/ None,
                 )
@@ -133,6 +134,7 @@ async fn assert_partial_results(provider: &dyn CodeModeSessionProvider) {
                 WaitRequest {
                     cell_id: cell_id.clone(),
                     yield_time_ms: 5_000,
+                    max_output_tokens: None,
                 },
                 /*preempt*/ None,
             )
@@ -146,6 +148,9 @@ async fn assert_partial_results(provider: &dyn CodeModeSessionProvider) {
                 content_items: vec![FunctionCallOutputContentItem::InputText {
                     text: json!({"index": 0, "status": "fulfilled", "value": "slow"}).to_string(),
                 }],
+                result_buffered_for: completed
+                    .result_buffered_for()
+                    .expect("completed result includes buffering duration"),
                 error_text: None,
             })
         );
@@ -155,7 +160,7 @@ async fn assert_partial_results(provider: &dyn CodeModeSessionProvider) {
 
 #[tokio::test]
 async fn settled_results_stream_over_stdio() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     tokio::time::timeout(

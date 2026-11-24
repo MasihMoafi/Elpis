@@ -1,18 +1,24 @@
 use std::collections::HashSet;
 
+use codex_utils_string::to_json_string_bounded;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
+use serde::Serializer;
+use serde_json::Value;
 use ts_rs::TS;
+use uuid::Uuid;
 
 use super::InternalChatMessageMetadataPassthrough;
 use super::ResponseItem;
+use crate::mcp::CallToolResult;
 
-const MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES: usize = 8 * 1024;
 /// Maximum distinct result sources retained for one tool invocation.
 const MAX_TOOL_RESULT_SOURCES: usize = 32;
 /// Maximum UTF-8 bytes for each source's `type` and `id` separately, not the source list.
 pub const MAX_TOOL_RESULT_SOURCE_FIELD_BYTES: usize = 128;
+const MAX_TOOL_RESULT_BYTES: usize = 1024 * 1024;
+const MAX_TOOL_RESULT_DEPTH: usize = 64;
 const RESOURCE_ACCESS_METADATA_KEY: &str = "openai/resource_access";
 const EXECUTED_TOOL_CALL_METADATA_FIELD_BYTES: usize = b"\"executed_tool_calls\":".len();
 const INTERNAL_CHAT_MESSAGE_METADATA_PASSTHROUGH_FIELD_BYTES: usize =
@@ -38,6 +44,7 @@ fn executed_tool_call_metadata_field_bytes(
     } else if metadata.turn_id.is_some()
         || metadata.create_time.is_some()
         || metadata.content_item_kinds.is_some()
+        || metadata.content_item_metadata.is_some()
     {
         bytes + 1
     } else {
@@ -71,14 +78,24 @@ impl InternalChatMessageMetadataPassthrough {
                 })
         })
     }
+
+    /// Compares the complete ordered call inventory, independently of recorded arguments.
+    pub fn has_same_tool_call_inventory(&self, calls: &[ExecutedToolCall]) -> bool {
+        self.executed_tool_calls.as_ref().is_some_and(|recorded| {
+            recorded.len() == calls.len()
+                && recorded.iter().zip(calls).all(|(recorded, call)| {
+                    recorded.name == call.name
+                        && recorded.has_complete_inventory()
+                        && call.has_complete_inventory()
+                })
+        })
+    }
 }
 
-/// Bounds recorded arguments and clears completion when any call in a cell is truncated.
-/// Returns cells whose arguments were newly truncated. Ordinary tool-call arguments and
-/// outputs are not changed.
-pub fn normalize_executed_tool_call_arguments(items: &mut [ResponseItem]) -> HashSet<String> {
+/// Clears completion across a cell when recorded calls or tool names were lost.
+/// Argument truncation preserves inventory completeness; arguments and outputs are unchanged.
+pub fn normalize_executed_tool_call_completeness(items: &mut [ResponseItem]) {
     let mut damaged_cells = HashSet::new();
-    let mut newly_truncated_cells = HashSet::new();
     for item in items.iter_mut() {
         let Some(metadata) = item
             .internal_chat_message_metadata_passthrough_mut()
@@ -86,33 +103,17 @@ pub fn normalize_executed_tool_call_arguments(items: &mut [ResponseItem]) -> Has
         else {
             continue;
         };
-        let mut truncated = false;
-        let mut newly_truncated = false;
-        for call in metadata.executed_tool_calls.iter_mut().flatten() {
-            let argument_bytes = serde_json::to_vec(&call.arguments)
-                .map(|bytes| bytes.len())
-                .unwrap_or(usize::MAX);
-            if call.truncation().is_none() && argument_bytes > MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES
-            {
-                call.set_truncation(
-                    argument_bytes,
-                    MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES,
-                    /*omitted_calls*/ None,
-                );
-                newly_truncated = true;
-            }
-            truncated |= call.truncation().is_some();
-        }
-        if truncated {
+        if metadata
+            .executed_tool_calls
+            .iter()
+            .flatten()
+            .any(|call| !call.has_complete_inventory())
+        {
             metadata.tool_calls_complete = None;
             damaged_cells.extend(metadata.cell_id.clone());
         }
-        if newly_truncated {
-            newly_truncated_cells.extend(metadata.cell_id.clone());
-        }
     }
     clear_damaged_cell_completeness(items, &damaged_cells);
-    newly_truncated_cells
 }
 
 /// Bounds optional observations to the space left in the actual outgoing message.
@@ -134,12 +135,7 @@ pub fn bound_executed_tool_calls_for_message(
     if metadata_bytes(items) > max_metadata_bytes {
         let overage_bytes = shed_result_sources(items, max_metadata_bytes);
         if overage_bytes > 0 {
-            truncate_call_arguments_to_fit(
-                items,
-                max_metadata_bytes,
-                overage_bytes,
-                &mut damaged_cells,
-            );
+            truncate_call_arguments_to_fit(items, max_metadata_bytes, overage_bytes);
         }
         remaining_bytes = metadata_bytes(items);
     }
@@ -234,7 +230,7 @@ fn shed_generic_result_metadata(
         if metadata.retain_resource_access() {
             continue;
         }
-        **metadata = ToolResultMetadata::default();
+        metadata.clear_value();
         total_metadata_bytes = total_metadata_bytes
             .saturating_sub(bytes.saturating_add(b",\"tool_result_metadata\":".len()));
         *bytes = 0;
@@ -275,7 +271,7 @@ fn shed_remaining_result_metadata(
         if metadata.is_none() {
             continue;
         }
-        *metadata = ToolResultMetadata::default();
+        metadata.clear_value();
         // The required name and arguments always precede this optional serialized field.
         total_metadata_bytes = total_metadata_bytes
             .saturating_sub(bytes.saturating_add(b",\"tool_result_metadata\":".len()));
@@ -310,7 +306,6 @@ fn truncate_call_arguments_to_fit(
     items: &mut [ResponseItem],
     max_metadata_bytes: usize,
     mut overage_bytes: usize,
-    damaged_cells: &mut HashSet<String>,
 ) {
     // A large outgoing message should not lose the other tool names in a
     // cell when replacing one call's arguments is enough to make it fit.
@@ -332,9 +327,7 @@ fn truncate_call_arguments_to_fit(
                 let truncated = ExecutedToolCallArguments::Truncated {
                     truncation: ExecutedToolCallTruncation {
                         original_bytes,
-                        max_bytes: original_bytes
-                            .saturating_sub(overage_bytes)
-                            .min(MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES),
+                        max_bytes: original_bytes.saturating_sub(overage_bytes),
                         omitted_calls: None,
                         original_name_bytes: None,
                     },
@@ -344,17 +337,12 @@ fn truncate_call_arguments_to_fit(
                 if truncated_bytes < original_bytes {
                     call.arguments = truncated;
                     arguments_changed = true;
-                    metadata.tool_calls_complete = None;
-                    damaged_cells.extend(metadata.cell_id.clone());
                     break;
                 }
             }
             if !arguments_changed {
                 break;
             }
-            // Losing one call's arguments invalidates every output in that
-            // cell. Count those removed fields before trimming another call.
-            clear_damaged_cell_completeness(items, damaged_cells);
             overage_bytes = metadata_bytes(items).saturating_sub(max_metadata_bytes);
         }
     }
@@ -378,12 +366,19 @@ fn distribute_remaining_budget(
         let item_budget = remaining_bytes / remaining_items;
         if item_bytes > item_budget {
             // Remember the cell before a too-small share removes its metadata entirely.
-            damaged_cells.extend(
-                item.executed_tool_call_metadata()
-                    .and_then(|metadata| metadata.cell_id.clone()),
-            );
-            item.clear_tool_calls_complete();
+            let cell_id = item
+                .executed_tool_call_metadata()
+                .and_then(|metadata| metadata.cell_id.clone());
             item.bound_executed_tool_calls_with_budget(item_budget);
+            if item.executed_tool_call_metadata().is_none_or(|metadata| {
+                metadata
+                    .executed_tool_calls
+                    .as_ref()
+                    .is_none_or(|calls| !calls.iter().all(ExecutedToolCall::has_complete_inventory))
+            }) {
+                item.clear_tool_calls_complete();
+                damaged_cells.extend(cell_id);
+            }
         }
         remaining_bytes = remaining_bytes.saturating_sub(executed_tool_call_metadata_bytes(item));
         remaining_items -= 1;
@@ -440,9 +435,27 @@ pub struct ExecutedToolCall {
 }
 
 /// MCP result metadata, optionally reduced to resource evidence, or a size-omission marker.
-#[derive(Clone, Default, Serialize, PartialEq, Eq)]
-#[serde(transparent)]
-pub struct ToolResultMetadata(Option<serde_json::Value>);
+#[derive(Clone, PartialEq, Eq)]
+pub struct ToolResultMetadata(ResultObservation);
+
+// Keep ordinary metadata inline. Only a result carrying both a body ID and metadata needs a box.
+#[derive(Clone, PartialEq, Eq)]
+enum ResultObservation {
+    Plain(Option<Value>),
+    Bound { id: Uuid, value: Option<Box<Value>> },
+}
+
+impl Default for ToolResultMetadata {
+    fn default() -> Self {
+        Self(ResultObservation::Plain(None))
+    }
+}
+
+impl Serialize for ToolResultMetadata {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.value().serialize(serializer)
+    }
+}
 
 impl std::fmt::Debug for ToolResultMetadata {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -453,12 +466,61 @@ impl std::fmt::Debug for ToolResultMetadata {
 impl ToolResultMetadata {
     /// Captures the complete result; retention and outgoing-request budgets apply later.
     pub fn new(metadata: &serde_json::Value) -> Self {
-        Self(Some(metadata.clone()))
+        Self(ResultObservation::Plain(Some(metadata.clone())))
+    }
+
+    pub fn with_result_id(mut self, id: Option<Uuid>) -> Self {
+        self.set_result_id(id);
+        self
+    }
+
+    fn set_result_id(&mut self, id: Option<Uuid>) {
+        match (&mut self.0, id) {
+            (ResultObservation::Plain(value), Some(id)) => {
+                self.0 = ResultObservation::Bound {
+                    id,
+                    value: value.take().map(Box::new),
+                };
+            }
+            (ResultObservation::Bound { id: current, .. }, Some(id)) => *current = id,
+            (ResultObservation::Bound { value, .. }, None) => {
+                self.0 = ResultObservation::Plain(value.take().map(|value| *value));
+            }
+            (ResultObservation::Plain(_), None) => {}
+        }
+    }
+
+    pub fn result_id(&self) -> Option<Uuid> {
+        match &self.0 {
+            ResultObservation::Plain(_) => None,
+            ResultObservation::Bound { id, .. } => Some(*id),
+        }
+    }
+
+    fn value(&self) -> Option<&Value> {
+        match &self.0 {
+            ResultObservation::Plain(value) => value.as_ref(),
+            ResultObservation::Bound { value, .. } => value.as_deref(),
+        }
+    }
+
+    /// A body-only observation can be recorded even when the provider supplied no `_meta`.
+    pub fn has_observation(&self) -> bool {
+        !matches!(self.0, ResultObservation::Plain(None))
+    }
+
+    // Shedding the provider's serialized _meta leaves the host's per-call binding intact.
+    fn clear_value(&mut self) {
+        *self = Self::default().with_result_id(self.result_id());
     }
 
     /// Leaves generic metadata unchanged when it has no resource-access field.
     fn retain_resource_access(&mut self) -> bool {
-        let Some(serde_json::Value::Object(metadata)) = self.0.as_mut() else {
+        let value = match &mut self.0 {
+            ResultObservation::Plain(value) => value.as_mut(),
+            ResultObservation::Bound { value, .. } => value.as_deref_mut(),
+        };
+        let Some(Value::Object(metadata)) = value else {
             return false;
         };
         if !metadata.contains_key(RESOURCE_ACCESS_METADATA_KEY) {
@@ -470,13 +532,12 @@ impl ToolResultMetadata {
 
     fn omitted_due_to_size_limit(overage_bytes: usize) -> Self {
         // MCP `_meta` is an object; this string is a harness omission status, not provider data.
-        Self(Some(serde_json::Value::String(format!(
-            "omitted_due_to_size_limit (overage_bytes={overage_bytes})"
-        ))))
+        let marker = format!("omitted_due_to_size_limit (overage_bytes={overage_bytes})");
+        Self(ResultObservation::Plain(Some(marker.into())))
     }
 
     fn is_omitted_due_to_size_limit(&self) -> bool {
-        let Some(serde_json::Value::String(value)) = self.0.as_ref() else {
+        let Some(Value::String(value)) = self.value() else {
             return false;
         };
         value == "omitted_due_to_size_limit"
@@ -493,7 +554,7 @@ impl ToolResultMetadata {
         let omitted = Self::omitted_due_to_size_limit(overage_bytes);
         let omitted_bytes = serde_json::to_vec(&omitted).map_or(usize::MAX, |value| value.len());
         if omitted_bytes < original_bytes {
-            *self = omitted;
+            *self = omitted.with_result_id(self.result_id());
             omitted_bytes
         } else {
             original_bytes
@@ -502,12 +563,100 @@ impl ToolResultMetadata {
 
     /// Whether there is no captured result metadata.
     fn is_none(&self) -> bool {
-        self.0.is_none()
+        self.value().is_none()
     }
 
     /// Whether the captured snapshot contains metadata or an omission marker.
     pub fn is_some(&self) -> bool {
-        self.0.is_some()
+        self.value().is_some()
+    }
+}
+
+/// Projected successful Apps result, kept separately from the ordinary tool output and history.
+#[derive(derive_more::Debug)]
+#[debug("ToolResultBody([redacted])")]
+pub struct ToolResultBody {
+    json: Box<str>,
+    nested_call_id_json: Option<Box<str>>,
+}
+
+impl ToolResultBody {
+    /// Projects only plaintext and structured content that fits the receiver's limits.
+    pub fn from_mcp_result(result: &CallToolResult) -> Option<Self> {
+        #[derive(Serialize)]
+        #[serde(tag = "type", rename = "text")]
+        struct Text<'a> {
+            text: &'a str,
+        }
+        #[derive(Serialize)]
+        struct Body<'a> {
+            content: Vec<Text<'a>>,
+            #[serde(rename = "structuredContent", skip_serializing_if = "Option::is_none")]
+            structured: Option<&'a serde_json::Value>,
+        }
+
+        // Even empty text blocks cost this many bytes. Bound the borrowed views before collecting.
+        if !result.success()
+            || result.content.len() > MAX_TOOL_RESULT_BYTES / br#"{"type":"text","text":""}"#.len()
+        {
+            return None;
+        }
+        let mut content = Vec::with_capacity(result.content.len());
+        for block in &result.content {
+            if block["type"] != "text" || block["_meta"]["codex/encryptedContent"] == true {
+                return None;
+            }
+            let text = block["text"]
+                .as_str()
+                .filter(|text| text.len() <= MAX_TOOL_RESULT_BYTES)?;
+            content.push(Text { text });
+        }
+        let structured = result.structured_content.as_ref();
+        if structured
+            .is_some_and(|v| !v.is_object() || !within_tool_result_depth(v, MAX_TOOL_RESULT_DEPTH))
+        {
+            return None;
+        }
+        let body = Body {
+            content,
+            structured,
+        };
+        let json = to_json_string_bounded(&body, MAX_TOOL_RESULT_BYTES).ok()?;
+        Some(Self {
+            json: json.into_boxed_str(),
+            nested_call_id_json: None,
+        })
+    }
+
+    /// Keep the execution ID with the private body so both fit or are omitted together.
+    pub fn set_nested_call_id(&mut self, call_id: &str) {
+        let id = Value::String(call_id.to_owned()).to_string();
+        self.nested_call_id_json = Some(id.into_boxed_str());
+    }
+
+    pub fn nested_call_id_json(&self) -> Option<&str> {
+        self.nested_call_id_json.as_deref()
+    }
+
+    pub fn compact_bytes(&self) -> usize {
+        self.json.len() + self.nested_call_id_json().map_or(0, str::len)
+    }
+
+    pub fn as_json(&self) -> &str {
+        &self.json
+    }
+}
+
+// The receiver counts the body at depth zero and structuredContent at depth one.
+fn within_tool_result_depth(value: &Value, remaining: usize) -> bool {
+    let Some(remaining) = remaining.checked_sub(1) else {
+        return false;
+    };
+    let child_fits = |child| within_tool_result_depth(child, remaining);
+    match value {
+        Value::Array(items) => items.iter().all(child_fits),
+        Value::Object(fields) => fields.values().all(child_fits),
+        _ => true,
     }
 }
 
@@ -583,6 +732,14 @@ impl ExecutedToolCall {
         }
     }
 
+    pub fn tool_result_id(&self) -> Option<Uuid> {
+        self.tool_result_metadata.result_id()
+    }
+
+    pub fn clear_tool_result_id(&mut self) {
+        self.tool_result_metadata.set_result_id(/*id*/ None);
+    }
+
     /// Replaces oversized arguments with internally generated truncation metadata.
     pub fn truncated(name: String, original_bytes: usize, max_bytes: usize) -> Self {
         let mut call = Self::new(name, serde_json::Value::Null);
@@ -595,9 +752,9 @@ impl ExecutedToolCall {
         &self.arguments
     }
 
-    /// Whether this call has result metadata or an omission marker.
+    /// Whether this call already has a host-recorded result observation.
     pub fn has_tool_result_metadata(&self) -> bool {
-        self.tool_result_metadata.is_some()
+        self.tool_result_metadata.has_observation()
     }
 
     /// Replaces this invocation's capture outcome, including clearing omitted evidence.
@@ -616,6 +773,14 @@ impl ExecutedToolCall {
             ExecutedToolCallArguments::Raw(_) => None,
             ExecutedToolCallArguments::Truncated { truncation } => Some(truncation),
         }
+    }
+
+    /// Whether this entry retains its invocation and full tool name, regardless of arguments.
+    pub fn has_complete_inventory(&self) -> bool {
+        self.truncation().is_none_or(|truncation| {
+            truncation.omitted_calls.unwrap_or_default() == 0
+                && truncation.original_name_bytes.is_none()
+        })
     }
 
     fn set_truncation(
@@ -686,7 +851,7 @@ impl ResponseItem {
         }
     }
 
-    /// Discards a completion claim when the host cannot retain its full evidence.
+    /// Discards a completion claim when the host cannot retain the full call inventory.
     pub fn clear_tool_calls_complete(&mut self) {
         if let Some(metadata) = self
             .internal_chat_message_metadata_passthrough_mut()
@@ -712,7 +877,7 @@ impl ResponseItem {
                 .into_iter()
                 .flatten()
                 .enumerate()
-                .filter(|(_, call)| call.tool_result_metadata.is_some())
+                .filter(|(_, call)| call.tool_result_metadata.has_observation())
                 .map(|(index, call)| {
                     (
                         index,
@@ -737,14 +902,27 @@ impl ResponseItem {
         })
     }
 
-    /// Omits raw tool results without changing existing call, source or completion metadata.
+    /// Removes local body bindings while retaining recorded arguments and provider metadata.
+    pub fn clear_tool_result_ids(&mut self) {
+        if let Some(calls) = self
+            .internal_chat_message_metadata_passthrough_mut()
+            .and_then(Option::as_mut)
+            .and_then(|metadata| metadata.executed_tool_calls.as_mut())
+        {
+            for call in calls {
+                call.clear_tool_result_id();
+            }
+        }
+    }
+
+    /// Clears provider metadata while retaining local body bindings and the call inventory.
     pub fn clear_tool_result_metadata(&mut self) {
         if let Some(metadata) = self
             .internal_chat_message_metadata_passthrough_mut()
             .and_then(Option::as_mut)
         {
             for call in metadata.executed_tool_calls.iter_mut().flatten() {
-                call.tool_result_metadata = ToolResultMetadata::default();
+                call.tool_result_metadata.clear_value();
             }
         }
     }
@@ -787,7 +965,7 @@ impl ResponseItem {
         {
             for call in metadata.executed_tool_calls.iter_mut().flatten() {
                 if !call.tool_result_metadata.retain_resource_access() {
-                    call.tool_result_metadata = ToolResultMetadata::default();
+                    call.tool_result_metadata.clear_value();
                 }
             }
         }
@@ -832,7 +1010,7 @@ impl ResponseItem {
         let omitted_calls = (represented_calls > 1).then_some(represented_calls - 1);
         call.set_truncation_with_name(
             original_bytes,
-            max_call_bytes.min(MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES),
+            max_call_bytes,
             omitted_calls,
             original_name_bytes,
         );
@@ -845,7 +1023,7 @@ impl ResponseItem {
             let call = &mut calls[0];
             call.set_truncation_with_name(
                 original_bytes,
-                max_call_bytes.min(MAX_EXECUTED_TOOL_CALL_ARGUMENT_BYTES),
+                max_call_bytes,
                 omitted_calls,
                 Some(original_name_bytes.unwrap_or(call.name.len())),
             );

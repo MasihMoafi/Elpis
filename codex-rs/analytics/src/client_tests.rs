@@ -76,7 +76,9 @@ use codex_app_server_protocol::ThreadArchiveParams;
 use codex_app_server_protocol::ThreadArchiveResponse;
 use codex_app_server_protocol::ThreadArchivedNotification;
 use codex_app_server_protocol::ThreadForkResponse;
+use codex_app_server_protocol::ThreadRealtimeClosedNotification;
 use codex_app_server_protocol::ThreadRealtimeItemAddedNotification;
+use codex_app_server_protocol::ThreadRealtimeStartedNotification;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ThreadStatus as AppServerThreadStatus;
@@ -93,6 +95,8 @@ use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 #[cfg(debug_assertions)]
 use codex_login::AuthManager;
+use codex_model_provider::ChatgptBaseUrl;
+use codex_protocol::protocol::RealtimeConversationVersion;
 use codex_utils_absolute_path::test_support::PathBufExt;
 use codex_utils_absolute_path::test_support::test_path_buf;
 use pretty_assertions::assert_eq;
@@ -119,6 +123,7 @@ impl AnalyticsEventsClient {
             queue: Some(AnalyticsEventsQueue::new(
                 auth_manager,
                 AnalyticsEventsDestination::CaptureFile { path },
+                /*runtime_auth*/ None,
             )),
         }
     }
@@ -150,6 +155,7 @@ fn sample_skill_track_event(thread_id: &str, plugin_id: Option<&str>) -> TrackEv
         skill_id: format!("skill-{thread_id}"),
         skill_name: "doc".to_string(),
         event_params: SkillInvocationEventParams {
+            turn_trigger: None,
             product_client_id: None,
             skill_scope: None,
             plugin_id: plugin_id.map(str::to_string),
@@ -200,6 +206,7 @@ fn sample_mcp_tool_call_event(thread_id: &str, plugin_id: Option<&str>) -> Track
         event_type: "codex_mcp_tool_call_event",
         event_params: CodexMcpToolCallEventParams {
             base: CodexToolItemEventBase {
+                turn_trigger: None,
                 thread_id: thread_id.to_string(),
                 session_id: format!("session-{thread_id}"),
                 turn_id: "turn-1".to_string(),
@@ -256,6 +263,7 @@ fn sample_plugin_used_track_event(thread_id: &str, plugin_id: Option<&str>) -> T
     TrackEventRequest::PluginUsed(CodexPluginUsedEventRequest {
         event_type: "codex_plugin_used",
         event_params: CodexPluginUsedMetadata {
+            turn_trigger: None,
             plugin: CodexPluginMetadata {
                 plugin_id: plugin_id.map(str::to_string),
                 remote_plugin_id: None,
@@ -305,7 +313,7 @@ fn client_with_receiver() -> (
 fn analytics_destination_uses_explicit_capture_file() {
     let capture_path = unique_capture_path("destination");
     let destination = AnalyticsEventsDestination::from_base_url_and_capture_file(
-        "https://chatgpt.com/backend-api/".to_string(),
+        "https://chatgpt.com/backend-api/".into(),
         Some(capture_path.clone()),
     );
 
@@ -334,31 +342,60 @@ fn analytics_destination_uses_explicit_capture_file() {
 
 #[test]
 fn analytics_destination_uses_http_without_capture_file() {
-    let destination = AnalyticsEventsDestination::from_base_url_and_capture_file(
-        "https://chatgpt.com/backend-api/".to_string(),
-        /*capture_file*/ None,
-    );
+    let commercial_url = "https://chatgpt.com/backend-api/codex/analytics-events/events";
+    let gov_url = "https://gov.chatgpt.com/backend-api/codex/analytics-events/events";
+    for (base_url, expected_urls) in [
+        (
+            ChatgptBaseUrl::Default,
+            [commercial_url, gov_url, commercial_url],
+        ),
+        (
+            ChatgptBaseUrl::from("https://chatgpt.com/backend-api/"),
+            [commercial_url; 3],
+        ),
+        (
+            ChatgptBaseUrl::from("https://proxy.example/backend-api/"),
+            ["https://proxy.example/backend-api/codex/analytics-events/events"; 3],
+        ),
+    ] {
+        let destination = AnalyticsEventsDestination::from_base_url_and_capture_file(
+            base_url.clone(),
+            /*capture_file*/ None,
+        );
+        assert_eq!(
+            destination,
+            AnalyticsEventsDestination::Http {
+                base_url,
+                api_key_headers: Default::default()
+            }
+        );
 
-    assert_eq!(
-        destination,
-        AnalyticsEventsDestination::Http {
-            url: "https://chatgpt.com/backend-api/codex/analytics-events/events".to_string()
+        for (api_key, expected_url) in ["sk-test", "sk-proj-fedramp-test", "sk-test"]
+            .into_iter()
+            .zip(expected_urls)
+        {
+            let auth = codex_login::CodexAuth::from_api_key(api_key);
+            assert_eq!(
+                destination.url_for_auth(&auth).as_deref(),
+                Some(expected_url)
+            );
         }
-    );
+    }
 }
 
 #[test]
 #[cfg(not(debug_assertions))]
 fn analytics_destination_ignores_capture_file_in_release() {
     let destination = AnalyticsEventsDestination::from_base_url_and_capture_file(
-        "https://chatgpt.com/backend-api/".to_string(),
+        "https://chatgpt.com/backend-api/".into(),
         Some(std::path::PathBuf::from("ignored.jsonl")),
     );
 
     assert_eq!(
         destination,
         AnalyticsEventsDestination::Http {
-            url: "https://chatgpt.com/backend-api/codex/analytics-events/events".to_string()
+            base_url: "https://chatgpt.com/backend-api/".into(),
+            api_key_headers: Default::default(),
         }
     );
 }
@@ -375,12 +412,15 @@ async fn capture_file_writes_exact_serialized_request() {
     let auth = codex_login::CodexAuth::create_dummy_chatgpt_auth_for_testing();
 
     let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
+    // Capture-only delivery must not initialize or depend on runtime authentication.
+    let runtime = (Default::default(), Default::default());
     send_track_events_request(
         &auth,
         &destination,
         vec![event],
         &factory,
         /*product_sku*/ None,
+        Some(&runtime),
     )
     .await;
 
@@ -416,6 +456,7 @@ async fn capture_file_writes_final_batches_as_separate_lines() {
             batch,
             &factory,
             /*product_sku*/ None,
+            /*runtime_auth*/ None,
         )
         .await;
     }
@@ -494,6 +535,7 @@ async fn api_key_auth_sends_only_plugin_events_to_codex_backend() {
             plugin_measurement("plugin-measurement", "sample@test"),
         ],
         &ThreadProducts::default(),
+        /*runtime_auth*/ None,
     )
     .await;
 
@@ -591,6 +633,7 @@ fn sample_turn_steer_request() -> ClientRequest {
             client_user_message_id: None,
             input: Vec::new(),
             responsesapi_client_metadata: None,
+            responsesapi_client_metadata_patch: None,
             additional_context: None,
         },
     }
@@ -627,6 +670,7 @@ fn sample_thread(thread_id: &str) -> Thread {
         extra: None,
         session_id: format!("session-{thread_id}"),
         forked_from_id: None,
+        attached_to_thread_id: None,
         parent_thread_id: None,
         preview: "first prompt".to_string(),
         ephemeral: false,
@@ -634,6 +678,7 @@ fn sample_thread(thread_id: &str) -> Thread {
         section_entered_at: None,
         project_id: None,
         daybreak_enabled: None,
+        daybreak_program_propagation_enrolled: None,
         history_mode: Default::default(),
         model_provider: "openai".to_string(),
         model: None,
@@ -643,7 +688,7 @@ fn sample_thread(thread_id: &str) -> Thread {
         recency_at: Some(2),
         status: AppServerThreadStatus::Idle,
         path: None,
-        cwd: test_path_buf("/tmp").abs(),
+        cwd: test_path_buf("/tmp").abs().into(),
         cli_version: "0.0.0".to_string(),
         source: AppServerSessionSource::Exec,
         can_accept_direct_input: None,
@@ -663,7 +708,7 @@ fn sample_thread_start_response() -> ClientResponsePayload {
         model: "gpt-5".to_string(),
         model_provider: "openai".to_string(),
         service_tier: None,
-        cwd: test_path_buf("/tmp").abs(),
+        cwd: test_path_buf("/tmp").abs().into(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
         approval_policy: AppServerAskForApproval::OnRequest,
@@ -682,7 +727,7 @@ fn sample_thread_resume_response() -> ClientResponsePayload {
         model: "gpt-5".to_string(),
         model_provider: "openai".to_string(),
         service_tier: None,
-        cwd: test_path_buf("/tmp").abs(),
+        cwd: test_path_buf("/tmp").abs().into(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
         approval_policy: AppServerAskForApproval::OnRequest,
@@ -705,7 +750,7 @@ fn sample_thread_fork_response() -> ClientResponsePayload {
         model: "gpt-5".to_string(),
         model_provider: "openai".to_string(),
         service_tier: None,
-        cwd: test_path_buf("/tmp").abs(),
+        cwd: test_path_buf("/tmp").abs().into(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
         approval_policy: AppServerAskForApproval::OnRequest,
@@ -891,10 +936,7 @@ fn track_response_ignores_unserializable_thread_responses() {
     let ClientResponsePayload::ThreadStart(thread_start) = &mut response else {
         panic!("expected thread/start response");
     };
-    thread_start.cwd = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
-        std::path::PathBuf::from(OsString::from_vec(vec![b'/', b'b', b'a', b'd', 0xff])),
-    )
-    .expect("non-UTF-8 Unix paths are valid absolute paths");
+    thread_start.thread.path = Some(OsString::from_vec(b"/bad\xff".to_vec()).into());
 
     client.track_response(/*connection_id*/ 7, RequestId::Integer(1), &response);
 
@@ -1030,6 +1072,54 @@ fn track_notification_only_enqueues_analytics_relevant_notifications() {
 }
 
 #[test]
+fn track_notification_records_realtime_session_boundaries() {
+    let (client, mut receiver) = client_with_receiver();
+
+    client.track_notification(&ServerNotification::ThreadRealtimeStarted(
+        ThreadRealtimeStartedNotification {
+            thread_id: "thread-1".to_string(),
+            realtime_session_id: Some("voice-session-1".to_string()),
+            version: RealtimeConversationVersion::V2,
+        },
+    ));
+
+    let Ok(AnalyticsEventsQueueMessage::Fact(input)) = receiver.try_recv() else {
+        panic!("expected realtime session started fact");
+    };
+    let AnalyticsFact::RealtimeSessionStarted {
+        thread_id,
+        realtime_session_id,
+        started_at,
+    } = *input
+    else {
+        panic!("expected realtime session started fact");
+    };
+    assert_eq!(thread_id, "thread-1");
+    assert_eq!(realtime_session_id.as_deref(), Some("voice-session-1"));
+    assert!(started_at > 0);
+
+    client.track_notification(&ServerNotification::ThreadRealtimeClosed(
+        ThreadRealtimeClosedNotification {
+            thread_id: "thread-1".to_string(),
+            reason: Some("completed".to_string()),
+        },
+    ));
+
+    let Ok(AnalyticsEventsQueueMessage::Fact(input)) = receiver.try_recv() else {
+        panic!("expected realtime session closed fact");
+    };
+    let AnalyticsFact::RealtimeSessionClosed {
+        thread_id,
+        closed_at,
+    } = *input
+    else {
+        panic!("expected realtime session closed fact");
+    };
+    assert_eq!(thread_id, "thread-1");
+    assert!(closed_at >= started_at);
+}
+
+#[test]
 fn realtime_handoff_tracks_only_marker_without_transcript() {
     let (client, mut receiver) = client_with_receiver();
     client.track_notification(&ServerNotification::ThreadRealtimeItemAdded(
@@ -1120,7 +1210,8 @@ async fn account_switch_between_batches_does_not_send_old_credentials() {
     assert!(controller.publish(policy.revision(), DestinationPolicy::Unrestricted));
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let destination = AnalyticsEventsDestination::Http {
-        url: format!("http://{}/events", listener.local_addr().unwrap()),
+        base_url: format!("http://{}", listener.local_addr().unwrap()).into(),
+        api_key_headers: Default::default(),
     };
     let requests = Arc::new(Mutex::new(Vec::new()));
     let captured = Arc::clone(&requests);
@@ -1171,7 +1262,14 @@ async fn account_switch_between_batches_does_not_send_old_credentials() {
         sample_accepted_line_fingerprint_event("one"),
         sample_accepted_line_fingerprint_event("two"),
     ];
-    send_track_events(&manager, &destination, events, &ThreadProducts::default()).await;
+    send_track_events(
+        &manager,
+        &destination,
+        events,
+        &ThreadProducts::default(),
+        /*runtime_auth*/ None,
+    )
+    .await;
     server.abort();
     let _ = server.await;
     let requests = requests.lock().unwrap();

@@ -253,6 +253,7 @@ impl Write for CountingWriter {
 
 fn rollout_item_type(item: &RolloutItem) -> String {
     match item {
+        RolloutItem::DynamicToolsUpdated { .. } => "dynamic_tools_updated".to_string(),
         RolloutItem::SessionMeta(_) => "session_meta".to_string(),
         RolloutItem::ResponseItem(item) => response_item_type(item).to_string(),
         RolloutItem::InterAgentCommunication(_) => "inter_agent_communication".to_string(),
@@ -269,6 +270,9 @@ fn rollout_item_type(item: &RolloutItem) -> String {
             codex_protocol::realtime::RealtimeItemContent::RealtimeSessionStarted => {
                 "realtime.session_started".to_string()
             }
+            codex_protocol::realtime::RealtimeItemContent::Frame { .. } => {
+                "realtime.frame".to_string()
+            }
             codex_protocol::realtime::RealtimeItemContent::TranscriptSegment { .. } => {
                 "realtime.transcript_segment".to_string()
             }
@@ -277,6 +281,12 @@ fn rollout_item_type(item: &RolloutItem) -> String {
             }
             codex_protocol::realtime::RealtimeItemContent::RealtimeSessionClosed { .. } => {
                 "realtime.session_closed".to_string()
+            }
+            codex_protocol::realtime::RealtimeItemContent::TurnInputAccepted { .. } => {
+                "realtime.turn_input_accepted".to_string()
+            }
+            codex_protocol::realtime::RealtimeItemContent::SessionInputSaved { .. } => {
+                "realtime.session_input_saved".to_string()
             }
         },
         RolloutItem::EventMsg(EventMsg::ItemCompleted(event)) => {

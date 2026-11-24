@@ -21,34 +21,52 @@ fn started_thread(output: std::process::Output) -> anyhow::Result<String> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn exec_rejects_daybreak_for_api_keys_and_allows_an_override() -> anyhow::Result<()> {
+async fn exec_resolves_daybreak_for_api_keys_and_allows_an_off_override() -> anyhow::Result<()> {
     let (test, server) = configured_daybreak_exec().await?;
     std::fs::remove_file(test.home_path().join("auth.json"))?;
-    let response = responses::mount_sse_once(&server, responses::sse_completed("response")).await;
-
+    for (args, expected) in [
+        (vec![], Some("daybreak_blue")),
+        (vec!["-c", "daybreak=false"], Some("standard")),
+        (vec!["-m", "unlisted-model"], None),
+        (
+            vec![
+                "-c",
+                "daybreak=false",
+                "-c",
+                "features.api_key_cyber_access_programs=false",
+            ],
+            None,
+        ),
+    ] {
+        let response =
+            responses::mount_sse_once(&server, responses::sse_completed("response")).await;
+        test.cmd_with_server(&server)
+            .env_remove("CODEX_ACCESS_TOKEN")
+            .arg("--skip-git-repo-check")
+            .args(args)
+            .arg("hello")
+            .assert()
+            .success();
+        assert_eq!(
+            response.single_request().body_json().get("access_programs"),
+            expected.map(|program| json!({"cyber": program})).as_ref()
+        );
+    }
+    let response = responses::mount_sse_once(&server, responses::sse_completed("unexpected")).await;
     test.cmd_with_server(&server)
         .env_remove("CODEX_ACCESS_TOKEN")
-        .arg("--skip-git-repo-check")
-        .arg("hello")
+        .args([
+            "--skip-git-repo-check",
+            "-c",
+            "features.api_key_cyber_access_programs=false",
+            "hello",
+        ])
         .assert()
         .failure()
         .stderr(predicate::str::contains(
-            "Daybreak requires a signed-in ChatGPT account",
+            "Cyber access programs are disabled for this API-key session.",
         ));
     assert!(response.requests().is_empty());
-
-    test.cmd_with_server(&server)
-        .env_remove("CODEX_ACCESS_TOKEN")
-        .arg("--skip-git-repo-check")
-        .arg("-c")
-        .arg("daybreak=false")
-        .arg("hello")
-        .assert()
-        .success();
-    assert_eq!(
-        response.single_request().body_json().get("access_programs"),
-        None
-    );
     Ok(())
 }
 
@@ -77,6 +95,67 @@ async fn exec_rejects_daybreak_for_non_openai_provider() -> anyhow::Result<()> {
             "Daybreak requires the OpenAI model provider",
         ));
     assert!(response.requests().is_empty());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_custom_provider_daybreak_uses_capability() -> anyhow::Result<()> {
+    let (test, server) = configured_daybreak_exec().await?;
+    std::fs::remove_file(test.home_path().join("auth.json"))?;
+    let config_path = test.home_path().join("config.toml");
+    let config = std::fs::read_to_string(&config_path)?;
+    for capability in [None, Some(false), Some(true)] {
+        let capability_config = capability
+            .map(|value| format!("capabilities.cyber_access_programs = {value}\n"))
+            .unwrap_or_default();
+        std::fs::write(
+            &config_path,
+            format!(
+                "{config}model_provider = 'proxy'\n[model_providers.proxy]\nname = 'Proxy'\nbase_url = '{}'\nwire_api = 'responses'\nrequires_openai_auth = true\n{capability_config}",
+                server.uri()
+            ),
+        )?;
+        for (enabled, expected) in [(true, "daybreak_blue"), (false, "standard")] {
+            let rejected = enabled && capability != Some(true);
+            let previous_requests = responses::received_responses_requests(&server).await.len();
+            let response = if rejected {
+                None
+            } else {
+                Some(responses::mount_sse_once(&server, responses::sse_completed("response")).await)
+            };
+            let assertion = test
+                .cmd_with_server(&server)
+                .env_remove("CODEX_ACCESS_TOKEN")
+                .args([
+                    "--skip-git-repo-check",
+                    "-c",
+                    &format!("daybreak={enabled}"),
+                    "hello",
+                ])
+                .assert();
+            if rejected {
+                assertion.failure().stderr(predicate::str::contains(
+                    "Daybreak requires a model provider with Cyber access program support",
+                ));
+                assert_eq!(
+                    responses::received_responses_requests(&server).await.len(),
+                    previous_requests
+                );
+            } else {
+                assertion.success();
+                assert_eq!(
+                    response
+                        .expect("successful turn response")
+                        .single_request()
+                        .body_json()
+                        .get("access_programs"),
+                    (capability == Some(true))
+                        .then(|| json!({"cyber": expected}))
+                        .as_ref()
+                );
+            }
+        }
+    }
     Ok(())
 }
 

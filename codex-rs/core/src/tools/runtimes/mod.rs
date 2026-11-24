@@ -7,6 +7,7 @@ small and focused and reuses the orchestrator for approvals + sandbox + retry.
 use crate::exec_env::CODEX_PERMISSION_PROFILE_ENV_VAR;
 use crate::exec_env::CODEX_SESSION_ID_ENV_VAR;
 use crate::exec_env::CODEX_THREAD_ID_ENV_VAR;
+use crate::exec_env::CODEX_TOOL_CALL_ID_ENV_VAR;
 use crate::exec_env::CODEX_VERSION_ENV_VAR;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::Shell;
@@ -27,6 +28,9 @@ use codex_network_proxy::PROXY_GIT_SSH_COMMAND_ENV_KEY;
 pub(crate) use codex_network_proxy::is_managed_proxy_env_var;
 pub(crate) use codex_network_proxy::strip_managed_proxy_env;
 use codex_protocol::shell_environment::is_non_inheritable_env_var;
+use codex_shell_command::shell_snapshot::SNAPSHOT_BROKERED_UNSET_ENV_PREFIX;
+use codex_shell_command::shell_snapshot::SNAPSHOT_BROKERED_VALUE_ENV_PREFIX;
+use codex_shell_command::shell_snapshot::build_brokered_credential_exports;
 use codex_shell_command::shell_snapshot::posix_env_path_expansion_function;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashMap;
@@ -34,13 +38,10 @@ use std::path::Path;
 
 pub(crate) mod apply_patch;
 pub(crate) mod unified_exec;
-pub(crate) mod zsh_fork;
 
 const SNAPSHOT_ORIGINAL_BASH_ENV_ENV_KEY: &str = "CODEX_NETWORK_PROXY_SNAPSHOT_ORIGINAL_BASH_ENV";
 const SNAPSHOT_ORIGINAL_POSIX_ENV_ENV_KEY: &str = "CODEX_NETWORK_PROXY_SNAPSHOT_ORIGINAL_POSIX_ENV";
 const SNAPSHOT_ORIGINAL_ZDOTDIR_ENV_KEY: &str = "CODEX_NETWORK_PROXY_SNAPSHOT_ORIGINAL_ZDOTDIR";
-const SNAPSHOT_BROKERED_VALUE_ENV_PREFIX: &str = "CODEX_NETWORK_PROXY_SNAPSHOT_BROKERED_VALUE_";
-const SNAPSHOT_BROKERED_UNSET_ENV_PREFIX: &str = "CODEX_NETWORK_PROXY_SNAPSHOT_BROKERED_UNSET_";
 
 pub(crate) fn exec_env_for_sandbox_permissions(
     env: &HashMap<String, String>,
@@ -138,18 +139,6 @@ pub(crate) fn apply_package_path_prepend(
     };
 
     runtime_path_prepends.prepend(env, path_dir.as_path());
-}
-
-#[cfg(unix)]
-pub(crate) fn apply_zsh_fork_path_prepend(
-    env: &mut HashMap<String, String>,
-    runtime_path_prepends: &mut RuntimePathPrepends,
-    shell_zsh_path: &Path,
-) {
-    let Some(zsh_bin_dir) = shell_zsh_path.parent() else {
-        return;
-    };
-    runtime_path_prepends.prepend(env, zsh_bin_dir);
 }
 
 pub(crate) fn prepare_powershell_command_for_windows_sandbox(
@@ -352,6 +341,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
     for key in [
         CODEX_SESSION_ID_ENV_VAR,
         CODEX_THREAD_ID_ENV_VAR,
+        CODEX_TOOL_CALL_ID_ENV_VAR,
         CODEX_VERSION_ENV_VAR,
         CODEX_PERMISSION_PROFILE_ENV_VAR,
         CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS_ENV_VAR,
@@ -368,6 +358,7 @@ pub(crate) fn maybe_wrap_shell_lc_with_snapshot(
             CODEX_PERMISSION_PROFILE_ENV_VAR,
             CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS_ENV_VAR,
             PLUGIN_METRICS_OUTPUT_ENV_VAR,
+            CODEX_TOOL_CALL_ID_ENV_VAR,
         ],
     );
     let (proxy_captures, proxy_exports) = build_proxy_env_exports(env);
@@ -525,60 +516,6 @@ unset __CODEX_SNAPSHOT_ORIGINAL_ENV_SET __CODEX_SNAPSHOT_ORIGINAL_ENV \
         rewritten.extend_from_slice(&command[3..]);
     }
     rewritten
-}
-
-fn build_brokered_credential_exports(env: &HashMap<String, String>, remove_copies: bool) -> String {
-    let mut value_copies = env
-        .keys()
-        .filter_map(|copy_key| {
-            let key = copy_key.strip_prefix(SNAPSHOT_BROKERED_VALUE_ENV_PREFIX)?;
-            is_valid_shell_variable_name(key).then_some((key, copy_key))
-        })
-        .collect::<Vec<_>>();
-    value_copies.sort_unstable();
-    let value_exports = value_copies
-        .into_iter()
-        .map(|(key, copy_key)| {
-            let restore = format!(
-                "if [ -z \"${{{copy_key}+x}}\" ]; then exit 1; fi\nif [ -n \"${{{key}+x}}\" ] && [ -n \"${{{key}}}\" ] && [ \"${{{key}}}\" != \"${{{copy_key}}}\" ]; then export {key}=\"${{{copy_key}}}\" || exit 1; fi\nif [ -n \"${{{key}+x}}\" ] && [ -n \"${{{key}}}\" ] && [ \"${{{key}}}\" != \"${{{copy_key}}}\" ]; then exit 1; fi"
-            );
-            if remove_copies {
-                format!("{restore}\nunset {copy_key} || exit 1")
-            } else {
-                restore
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let mut unset_markers = env
-        .keys()
-        .filter_map(|marker_key| {
-            let key = marker_key.strip_prefix(SNAPSHOT_BROKERED_UNSET_ENV_PREFIX)?;
-            is_valid_shell_variable_name(key).then_some((key, marker_key))
-        })
-        .collect::<Vec<_>>();
-    unset_markers.sort_unstable();
-    let unset_exports = unset_markers
-        .into_iter()
-        .map(|(key, marker_key)| {
-            let restore = format!(
-                "if [ -z \"${{{marker_key}+x}}\" ]; then exit 1; fi\nif [ -n \"${{{key}+x}}\" ] && [ -n \"${{{key}}}\" ]; then unset {key} || exit 1; fi\nif [ -n \"${{{key}+x}}\" ] && [ -n \"${{{key}}}\" ]; then exit 1; fi"
-            );
-            if remove_copies {
-                format!("{restore}\nunset {marker_key} || exit 1")
-            } else {
-                restore
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let exports = join_shell_blocks([value_exports, unset_exports]);
-    if exports.is_empty() {
-        return exports;
-    }
-    format!(
-        "case $- in\n  *x*) __CODEX_SNAPSHOT_BROKER_XTRACE=1; set +x ;;\n  *) __CODEX_SNAPSHOT_BROKER_XTRACE= ;;\nesac\n{exports}\nif [ -n \"$__CODEX_SNAPSHOT_BROKER_XTRACE\" ]; then\n  unset __CODEX_SNAPSHOT_BROKER_XTRACE\n  set -x\nelse\n  unset __CODEX_SNAPSHOT_BROKER_XTRACE\nfi"
-    )
 }
 
 fn build_override_exports(

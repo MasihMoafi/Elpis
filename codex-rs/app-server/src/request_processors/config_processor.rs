@@ -1,9 +1,12 @@
+use codex_app_server_protocol::ApplicationStorageRequirements;
 use std::sync::Arc;
 
 use crate::config_manager::ConfigManager;
 use crate::config_manager_service::ConfigManagerError;
 use crate::error_code::internal_error;
 use crate::error_code::invalid_request;
+use crate::model_catalog::ModelCatalog;
+use crate::otel_config::map_otel_requirements_to_api;
 use crate::outgoing_message::ConnectionRequestId;
 use crate::outgoing_message::OutgoingMessageSender;
 use codex_analytics::AnalyticsEventsClient;
@@ -69,9 +72,14 @@ const SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT: &[&str] = &[
     "auth_elicitation",
     BACKGROUND_PAGINATED_ROLLOUT_MIGRATION_FEATURE,
     "codex_apps_mcp_2026_07_28",
+    "daybreak_program_propagation",
     "mcp_2026_07_28",
+    "mcp_connection_sharing",
+    "mcp_lazy_stdio_startup",
+    "mcp_shared_repl_cwd",
     "memories",
     "mentions_v2",
+    "realtime_frames_local",
     "remote_control",
     "remote_plugin",
     "tool_suggest",
@@ -83,6 +91,7 @@ pub(crate) struct ConfigRequestProcessor {
     outgoing: Arc<OutgoingMessageSender>,
     config_manager: ConfigManager,
     thread_manager: Arc<ThreadManager>,
+    model_catalog: Arc<ModelCatalog>,
     analytics_events_client: AnalyticsEventsClient,
 }
 
@@ -91,12 +100,14 @@ impl ConfigRequestProcessor {
         outgoing: Arc<OutgoingMessageSender>,
         config_manager: ConfigManager,
         thread_manager: Arc<ThreadManager>,
+        model_catalog: Arc<ModelCatalog>,
         analytics_events_client: AnalyticsEventsClient,
     ) -> Self {
         Self {
             outgoing,
             config_manager,
             thread_manager,
+            model_catalog,
             analytics_events_client,
         }
     }
@@ -105,9 +116,18 @@ impl ConfigRequestProcessor {
         &self,
         params: ConfigReadParams,
     ) -> Result<ConfigReadResponse, JSONRPCErrorError> {
-        let fallback_cwd = params.cwd.as_ref().map(PathBuf::from);
-        let mut response = self.config_manager.read(params).await.map_err(map_error)?;
-        let config = self.load_latest_config(fallback_cwd).await?;
+        let cwd = params.cwd.as_ref().map(PathBuf::from);
+        let config = match self.load_latest_config(cwd).await {
+            Ok(config) => config,
+            Err(err) => {
+                // Report layer read/decoding errors before full-config validation errors, as before.
+                self.config_manager.read(params).await.map_err(map_error)?;
+                return Err(err);
+            }
+        };
+        let mut response =
+            ConfigManager::config_read_response(&config.config_layer_stack, params.include_layers)
+                .map_err(map_error)?;
         for feature_key in SUPPORTED_EXPERIMENTAL_FEATURE_ENABLEMENT {
             let Some(feature) = feature_for_key(feature_key) else {
                 continue;
@@ -214,6 +234,52 @@ impl ConfigRequestProcessor {
             )
             .await;
         Ok(None)
+    }
+
+    pub(crate) async fn model_provider_list(
+        &self,
+        params: codex_app_server_protocol::ModelProviderListParams,
+    ) -> Result<codex_app_server_protocol::ModelProviderListResponse, JSONRPCErrorError> {
+        self.config_manager
+            .model_provider_list(params)
+            .await
+            .map_err(map_error)
+    }
+
+    pub(crate) async fn model_provider_config_write(
+        &self,
+        params: codex_app_server_protocol::ModelProviderConfigWriteParams,
+    ) -> Result<codex_app_server_protocol::ModelProviderConfigWriteResponse, JSONRPCErrorError>
+    {
+        let result = self
+            .config_manager
+            .model_provider_config_write(params)
+            .await
+            .map_err(map_error);
+        let response = self.handle_config_mutation_result(result).await?;
+        self.model_catalog
+            .invalidate_if_current_provider(&response.provider.id)
+            .await;
+        Ok(response)
+    }
+
+    pub(crate) fn model_provider_default_set(
+        &self,
+        params: codex_app_server_protocol::ModelProviderDefaultSetParams,
+    ) -> futures::future::BoxFuture<'_, Result<ClientResponsePayload, JSONRPCErrorError>> {
+        // Keep provider config resolution off the shared request dispatcher stack.
+        Box::pin(async move {
+            let result = self
+                .config_manager
+                .model_provider_default_set(params)
+                .await
+                .map_err(map_error);
+            let response = self.handle_config_mutation_result(result).await?;
+            if response.status == codex_app_server_protocol::WriteStatus::Ok {
+                self.model_catalog.invalidate().await;
+            }
+            Ok(ClientResponsePayload::ModelProviderDefaultSet(response))
+        })
     }
 
     pub(crate) async fn model_provider_capabilities_read(
@@ -335,11 +401,12 @@ impl ConfigRequestProcessor {
             .map_err(|_| internal_error("failed to update feature enablement"))?;
 
         let config = self.load_latest_config(/*fallback_cwd*/ None).await?;
-        self.thread_manager
-            .get_models_manager()
-            .set_api_key_model_discovery_enabled(
-                config.features.enabled(Feature::ApiKeyModelDiscovery),
-            );
+        self.thread_manager.set_api_key_model_discovery_enabled(
+            config.features.enabled(Feature::ApiKeyModelDiscovery),
+        );
+        self.thread_manager.set_realtime_frames_local_enabled(
+            config.features.enabled(Feature::RealtimeFramesLocal),
+        );
         if should_start_background_rollout_migration && config.features.enabled(feature) {
             self.thread_manager.start_background_rollout_migration();
         }
@@ -377,6 +444,7 @@ pub(super) async fn reload_user_config(
 }
 
 async fn reload_user_config_inner(config_manager: &ConfigManager, thread_manager: &ThreadManager) {
+    config_manager.revoke_mcp_ema_startups();
     if let Err(err) = config_manager.load_config_layers(/*cwd*/ None).await {
         tracing::warn!("failed to rebuild user config for runtime refresh: {err}");
         for thread_id in thread_manager.list_thread_ids().await {
@@ -441,7 +509,7 @@ async fn reload_user_config_inner(config_manager: &ConfigManager, thread_manager
     }
 }
 
-fn map_requirements_to_api(
+pub(crate) fn map_requirements_to_api(
     requirements: Option<ConfigRequirementsToml>,
     allowed_login_methods: Vec<ForcedLoginMethod>,
 ) -> Option<ConfigRequirements> {
@@ -452,6 +520,12 @@ fn map_requirements_to_api(
         }
         None => ConfigRequirementsToml::default(),
     };
+    let network = requirements
+        .permissions
+        .as_ref()
+        .and_then(|permissions| permissions.network.as_deref())
+        .cloned()
+        .or_else(|| requirements.network.clone());
 
     Some(ConfigRequirements {
         model_provider: requirements.model_provider,
@@ -464,6 +538,14 @@ fn map_requirements_to_api(
         allowed_login_methods: Some(allowed_login_methods),
         application: requirements.application.map(|application| {
             codex_app_server_protocol::ApplicationRequirements {
+                storage: application
+                    .storage
+                    .map(|storage| ApplicationStorageRequirements {
+                        default_project_parent: storage.default_project_parent.map(Into::into),
+                        projectless_workspace_root: storage
+                            .projectless_workspace_root
+                            .map(Into::into),
+                    }),
                 network: application.network.map(|network| {
                     codex_app_server_protocol::ApplicationNetworkRequirements {
                         enabled: network.enabled,
@@ -562,11 +644,14 @@ fn map_requirements_to_api(
         feature_requirements: requirements
             .feature_requirements
             .map(|requirements| requirements.entries),
-        hooks: requirements.hooks.map(map_hooks_requirements_to_api),
+        hooks: requirements
+            .hooks
+            .map(map_hooks_requirements_to_api)
+            .map(Box::new),
         enforce_residency: requirements
             .enforce_residency
             .map(map_residency_requirement_to_api),
-        network: requirements.network.map(map_network_requirements_to_api),
+        network: network.map(map_network_requirements_to_api),
         auto_review: requirements
             .auto_review
             .map(|auto_review| AutoReviewRequirements {
@@ -580,6 +665,9 @@ fn map_requirements_to_api(
                 service_tier: new_thread.service_tier,
             }),
         }),
+        otel: requirements
+            .otel
+            .map(|otel| map_otel_requirements_to_api(*otel)),
         sqlite_home: requirements.sqlite_home.map(Into::into),
         log_dir: requirements.log_dir.map(Into::into),
         model_catalog_json: requirements.model_catalog_json.map(Into::into),
@@ -717,6 +805,8 @@ fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> Managed
         hooks,
     } = hooks;
     let HookEventsToml {
+        pre_model_request,
+        post_model_request,
         pre_tool_use,
         permission_request,
         post_tool_use,
@@ -729,11 +819,13 @@ fn map_hooks_requirements_to_api(hooks: ManagedHooksRequirementsToml) -> Managed
         subagent_stop,
         stop,
         interrupt,
-    } = hooks;
+    } = *hooks;
 
     ManagedHooksRequirements {
         managed_dir,
         windows_managed_dir,
+        pre_model_request: map_hook_matcher_groups_to_api(pre_model_request),
+        post_model_request: map_hook_matcher_groups_to_api(post_model_request),
         pre_tool_use: map_hook_matcher_groups_to_api(pre_tool_use),
         permission_request: map_hook_matcher_groups_to_api(permission_request),
         post_tool_use: map_hook_matcher_groups_to_api(post_tool_use),
@@ -854,6 +946,7 @@ fn map_network_requirements_to_api(
                 })
                 .collect()
         }),
+        review_domains: network.review_domains,
         managed_allowed_domains_only: network.managed_allowed_domains_only,
         allowed_domains,
         denied_domains,
@@ -1258,6 +1351,7 @@ client_id = "mcp-client"
                     codex_config::WindowsSandboxImplementationToml::Unelevated,
                 ]),
                 allow_mxc: None,
+                require_mxc: None,
             }),
             ..ConfigRequirementsToml::default()
         });

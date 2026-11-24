@@ -13,6 +13,8 @@ use crate::model_catalog::LUNA_RESERVE_MODEL;
 use crate::status::format_credit_micros;
 use crate::status::format_estimated_usd_micros;
 use crate::status::format_tokens_compact;
+use crate::terminal_program_status::ProgramStatus;
+use crate::thread_label::ThreadLabelStyle;
 use codex_app_server_protocol::AskForApproval;
 use codex_config::ConfigLayerSource;
 use codex_config::os_host_name;
@@ -21,10 +23,8 @@ use codex_protocol::config_types::ServiceTier;
 use codex_protocol::models::PermissionProfile;
 use codex_utils_sandbox_summary::summarize_permission_profile;
 
-use super::status_state::TerminalTitleStatusKind;
-
 /// Items shown in the terminal title when the user has not configured a
-/// custom selection. Unnamed threads omit the name until generation starts.
+/// custom selection. Unnamed threads omit the name until one is available.
 pub(super) const DEFAULT_TERMINAL_TITLE_ITEMS: [&str; 3] =
     ["activity", "thread-name", "project-name"];
 
@@ -70,25 +70,6 @@ impl StatusSurfaceSelections {
             || self
                 .status_line_items
                 .contains(&StatusLineItem::BranchChanges)
-    }
-
-    fn uses_workspace_headline(&self) -> bool {
-        self.status_line_items
-            .contains(&StatusLineItem::WorkspaceHeadline)
-    }
-
-    fn uses_thread_usage(&self) -> bool {
-        self.status_line_items.iter().any(|item| {
-            matches!(
-                item,
-                StatusLineItem::ThreadCredits | StatusLineItem::EstimatedThreadCost
-            )
-        }) || self.terminal_title_items.iter().any(|item| {
-            matches!(
-                item,
-                TerminalTitleItem::ThreadCredits | TerminalTitleItem::EstimatedThreadCost
-            )
-        })
     }
 }
 
@@ -164,7 +145,7 @@ impl ChatWidget {
             self.status_line_branch_pending = false;
             self.status_line_branch_lookup_complete = false;
         } else {
-            let cwd = self.status_line_cwd().to_path_buf();
+            let cwd = self.session_cwd().to_path_buf();
             self.sync_status_line_branch_state(&cwd);
             if !self.status_line_branch_lookup_complete {
                 self.request_status_line_branch(cwd);
@@ -176,14 +157,14 @@ impl ChatWidget {
             self.status_line_git_summary_pending = false;
             self.status_line_git_summary_lookup_complete = false;
         } else {
-            let cwd = self.status_line_cwd().to_path_buf();
+            let cwd = self.session_cwd().to_path_buf();
             self.sync_status_line_git_summary_state(&cwd);
             if !self.status_line_git_summary_lookup_complete {
                 self.request_status_line_git_summary(cwd);
             }
         }
 
-        if !selections.uses_workspace_headline() {
+        if !self.uses_workspace_headline(&selections.status_line_items) {
             self.status_line_workspace_headline = None;
             self.status_line_workspace_headline_pending_request_id = None;
             self.status_line_workspace_headline_last_requested_at = None;
@@ -192,7 +173,7 @@ impl ChatWidget {
             self.request_status_line_workspace_headline_if_due(Instant::now());
         }
 
-        if selections.uses_thread_usage() {
+        if self.thread_usage_is_selected() {
             self.ensure_thread_usage_requested();
         } else {
             self.cancel_thread_usage_polling();
@@ -200,11 +181,13 @@ impl ChatWidget {
     }
 
     fn refresh_status_line_from_selections(&mut self, selections: &StatusSurfaceSelections) {
+        if self.refresh_provider_footer() {
+            return;
+        }
         let enabled = !selections.status_line_items.is_empty();
         self.bottom_pane.set_status_line_enabled(enabled);
         if !enabled {
             self.set_status_line(/*status_line*/ None);
-            self.set_status_line_hyperlink(/*url*/ None);
             return;
         }
 
@@ -215,17 +198,13 @@ impl ChatWidget {
             }
         }
 
-        self.set_status_line(status_line_from_segments(
+        let line = status_line_from_segments(
             segments,
             self.local_settings.tui.status_line_use_colors,
             self.thread_id,
-        ));
-        let hyperlink_url = selections
-            .status_line_items
-            .contains(&StatusLineItem::PullRequestNumber)
-            .then(|| self.status_line_pull_request_url())
-            .flatten();
-        self.set_status_line_hyperlink(hyperlink_url);
+            self.status_line_pull_request_url(),
+        );
+        self.set_status_line(line.map(Into::into));
     }
 
     /// Clears the terminal title Codex most recently wrote, if any.
@@ -321,6 +300,41 @@ impl ChatWidget {
         self.bottom_pane.terminal_title_requires_action()
     }
 
+    /// Reports the displayed thread's actual state independently of terminal
+    /// title/notification settings. Replays never produce an unseen result.
+    pub(crate) fn desired_program_status(&self) -> ProgramStatus {
+        if let Some(kind) = self.bottom_pane.program_status_blocked_kind() {
+            ProgramStatus::Blocked(kind)
+        } else if self.bottom_pane.is_task_running()
+            || self.is_user_turn_pending_or_running()
+            || (self.status_state.program_status_after_turn == ProgramStatus::Done
+                && self
+                    .current_goal_status
+                    .as_ref()
+                    .is_some_and(GoalStatusState::is_active))
+        {
+            ProgramStatus::Working
+        } else {
+            self.status_state.program_status_after_turn
+        }
+    }
+
+    pub(crate) fn acknowledge_program_status(&mut self) {
+        if matches!(
+            self.desired_program_status(),
+            ProgramStatus::Done | ProgramStatus::Error
+        ) {
+            self.status_state.program_status_after_turn = ProgramStatus::Idle;
+            self.request_redraw();
+        }
+    }
+
+    pub(super) fn iterm_session_detail(&self, status: ProgramStatus) -> Option<&str> {
+        (status == ProgramStatus::Working && self.bottom_pane.is_task_running())
+            .then_some(self.status_state.current_status.header.as_str())
+            .filter(|detail| *detail != "Working")
+    }
+
     pub(super) fn terminal_title_shows_action_required(&self) -> bool {
         self.terminal_title_requires_action() && self.terminal_title_uses_activity()
     }
@@ -399,27 +413,6 @@ impl ChatWidget {
         selections: &StatusSurfaceSelections,
     ) -> Option<Duration> {
         if self.local_settings.tui.animations
-            && self.local_settings.tui.effects.progress
-            && self.status_state.thread_title_generation_pending
-            && (selections.status_line_items.iter().any(|item| {
-                matches!(
-                    item,
-                    StatusLineItem::ThreadName
-                        | StatusLineItem::ThreadTitle
-                        | StatusLineItem::SessionId
-                )
-            }) || selections.terminal_title_items.iter().any(|item| {
-                matches!(
-                    item,
-                    TerminalTitleItem::ThreadName
-                        | TerminalTitleItem::Thread
-                        | TerminalTitleItem::SessionId
-                )
-            }))
-        {
-            return Some(TERMINAL_TITLE_SPINNER_INTERVAL);
-        }
-        if self.local_settings.tui.animations
             && self.local_settings.tui.effects.title
             && self.terminal_title_shows_action_required_with_selections(selections)
         {
@@ -435,7 +428,7 @@ impl ChatWidget {
         if !selections.uses_git_branch() {
             return;
         }
-        let cwd = self.status_line_cwd().to_path_buf();
+        let cwd = self.session_cwd().to_path_buf();
         self.sync_status_line_branch_state(&cwd);
         self.request_status_line_branch(cwd);
     }
@@ -445,7 +438,7 @@ impl ChatWidget {
         if !selections.uses_git_summary() {
             return;
         }
-        let cwd = self.status_line_cwd().to_path_buf();
+        let cwd = self.session_cwd().to_path_buf();
         self.sync_status_line_git_summary_state(&cwd);
         self.request_status_line_git_summary(cwd);
     }
@@ -453,7 +446,10 @@ impl ChatWidget {
     /// Parses configured status-line ids into known items and collects unknown ids.
     ///
     /// Unknown ids are deduplicated in insertion order for warning messages.
-    fn status_line_items_with_invalids(&self) -> (Vec<StatusLineItem>, Vec<String>) {
+    pub(super) fn status_line_items_with_invalids(&self) -> (Vec<StatusLineItem>, Vec<String>) {
+        if self.read_only_history {
+            return Default::default();
+        }
         parse_items_with_invalids(self.configured_status_line_items())
     }
 
@@ -491,10 +487,38 @@ impl ChatWidget {
             })
     }
 
-    fn status_line_cwd(&self) -> &Path {
-        self.current_cwd
-            .as_deref()
-            .unwrap_or(self.config.cwd.as_path())
+    /// Working directory reported by the server, falling back to config during startup.
+    pub(crate) fn session_cwd(&self) -> &PathUri {
+        &self.current_cwd
+    }
+
+    pub(crate) fn session_workspace_roots(&self) -> &[PathUri] {
+        &self.current_workspace_roots
+    }
+
+    pub(super) fn status_line_workspace_cwd(&self) -> PathBuf {
+        self.primary_environment_cwd
+            .as_ref()
+            .map(|cwd| cwd.path.to_path_buf())
+            .unwrap_or_else(|| self.session_cwd().to_path_buf())
+    }
+
+    fn workspace_directory_display(&self) -> String {
+        let cwd = self.status_line_workspace_cwd();
+        // Only a server-local path on a local connection shares the TUI's home.
+        if self
+            .remote_connection
+            .as_ref()
+            .is_none_or(|connection| connection.is_local_daemon)
+            && self
+                .primary_environment_cwd
+                .as_ref()
+                .is_none_or(|cwd| cwd.is_server_local)
+        {
+            format_directory_display(&cwd, /*max_width*/ None)
+        } else {
+            cwd.display().to_string()
+        }
     }
 
     /// Resolves the project root associated with `cwd`.
@@ -528,7 +552,14 @@ impl ChatWidget {
 
     /// Returns a cached project-root display name for the active cwd.
     fn status_line_project_root_name(&mut self) -> Option<String> {
-        let cwd = self.status_line_cwd().to_path_buf();
+        if self
+            .remote_connection
+            .as_ref()
+            .is_some_and(|connection| !connection.is_local_daemon)
+        {
+            return None;
+        }
+        let cwd = self.session_cwd().to_abs_path().ok()?.into_path_buf();
         if let Some(cache) = &self.status_line_project_root_name_cache
             && cache.cwd == cwd
         {
@@ -548,14 +579,11 @@ impl ChatWidget {
     /// This prefers the cached project-root name and falls back to the current
     /// directory name when no project root can be inferred.
     fn terminal_title_project_name(&mut self) -> Option<String> {
-        let project = self.status_line_project_root_name().or_else(|| {
-            let cwd = self.status_line_cwd();
-            Some(
-                cwd.file_name()
-                    .map(|name| name.to_string_lossy().to_string())
-                    .unwrap_or_else(|| format_directory_display(cwd, /*max_width*/ None)),
-            )
-        })?;
+        let project = self.status_line_project_root_name().unwrap_or_else(|| {
+            self.session_cwd()
+                .basename()
+                .unwrap_or_else(|| self.session_cwd().inferred_native_path_string())
+        });
         Some(Self::truncate_terminal_title_part(
             project, /*max_chars*/ 24,
         ))
@@ -625,14 +653,16 @@ impl ChatWidget {
         });
     }
 
+    fn uses_workspace_headline(&self, status_line_items: &[StatusLineItem]) -> bool {
+        self.provider_needs_snapshot()
+            || status_line_items.contains(&StatusLineItem::WorkspaceHeadline)
+    }
+
     fn request_status_line_workspace_headline_if_due(&mut self, now: Instant) {
         if !self.status_line_workspace_headline_should_fetch(now) {
             return;
         }
-        let request_id = self.next_status_line_workspace_headline_request_id;
-        self.next_status_line_workspace_headline_request_id = self
-            .next_status_line_workspace_headline_request_id
-            .wrapping_add(/*rhs*/ 1);
+        let request_id = uuid::Uuid::new_v4();
         self.status_line_workspace_headline_pending_request_id = Some(request_id);
         self.status_line_workspace_headline_last_requested_at = Some(now);
         self.app_event_tx
@@ -659,21 +689,22 @@ impl ChatWidget {
     pub(super) fn refresh_status_line_if_workspace_headline_due(&mut self) {
         let now = Instant::now();
         if self.status_line_workspace_headline_should_fetch(now)
-            && self
-                .status_line_items_with_invalids()
-                .0
-                .contains(&StatusLineItem::WorkspaceHeadline)
+            && self.uses_workspace_headline(&self.status_line_items_with_invalids().0)
         {
             self.refresh_status_line();
         }
     }
 
+    pub(crate) fn is_pending_workspace_headline(&self, request_id: uuid::Uuid) -> bool {
+        self.status_line_workspace_headline_pending_request_id == Some(request_id)
+    }
+
     pub(crate) fn set_status_line_workspace_headline(
         &mut self,
-        request_id: u64,
+        request_id: uuid::Uuid,
         result: Result<crate::workspace_messages::WorkspaceHeadlineFetchResult, String>,
     ) -> bool {
-        if self.status_line_workspace_headline_pending_request_id != Some(request_id) {
+        if !self.is_pending_workspace_headline(request_id) {
             return false;
         }
         self.status_line_workspace_headline_pending_request_id = None;
@@ -692,10 +723,7 @@ impl ChatWidget {
         }
 
         if !self.status_line_workspace_messages_disabled
-            && self
-                .status_line_items_with_invalids()
-                .0
-                .contains(&StatusLineItem::WorkspaceHeadline)
+            && self.uses_workspace_headline(&self.status_line_items_with_invalids().0)
         {
             self.frame_requester
                 .schedule_frame_in(crate::workspace_messages::WORKSPACE_HEADLINE_REFRESH_INTERVAL);
@@ -709,17 +737,21 @@ impl ChatWidget {
     /// Returning `None` means "omit this item for now", not "configuration error". Callers rely on
     /// this to keep partially available status lines readable while waiting for session, token, or
     /// git metadata.
-    pub(super) fn status_line_value(&mut self, item: StatusLineItem) -> Option<String> {
+    pub(super) fn status_line_value_for_item(&mut self, item: StatusLineItem) -> Option<String> {
         match item {
-            StatusLineItem::ModelName => Some(self.model_display_name().to_string()),
-            StatusLineItem::ModelWithReasoning => Some(self.model_with_reasoning_display_name()),
-            StatusLineItem::Reasoning => Some(self.reasoning_display_name()),
-            StatusLineItem::CurrentDir => {
-                Some(format_directory_display(
-                    self.status_line_cwd(),
-                    /*max_width*/ None,
-                ))
+            StatusLineItem::ModelName => Some(self.status_model_display_name().to_string()),
+            StatusLineItem::ModelWithReasoning => {
+                let service_tier = self.processing_tier_display_name().map(str::to_lowercase);
+                Some(self.model_with_reasoning_display_name(service_tier.as_deref()))
             }
+            StatusLineItem::Reasoning => Some(self.reasoning_display_name()),
+            StatusLineItem::Profile => self
+                .status_line_config_profile()
+                .map(|name| format!("profile: {name}")),
+            StatusLineItem::Provider => self
+                .thread_id
+                .map(|_| format!("provider: {}", self.config.model_provider_id)),
+            StatusLineItem::CurrentDir => Some(self.workspace_directory_display()),
             StatusLineItem::ProjectRoot => self.status_line_project_root_name(),
             StatusLineItem::Hostname => os_host_name(),
             StatusLineItem::GitBranch => self.status_line_branch.clone(),
@@ -790,31 +822,17 @@ impl ChatWidget {
                 )
             }),
             StatusLineItem::ThreadCredits => self
-                .estimated_thread_usage()
-                .map(|usage| usage.estimated_usage_credits_micros)
+                .status_line_thread_credits_micros()
                 .map(|credits| format!("{} credits", format_credit_micros(credits))),
             StatusLineItem::EstimatedThreadCost => self
-                .estimated_thread_usage()
-                .and_then(|usage| usage.estimated_usage_usd_micros)
+                .status_line_thread_cost_micros()
                 .and_then(format_estimated_usd_micros),
             StatusLineItem::SessionId => self.thread_id.map(|id| id.to_string()),
-            StatusLineItem::FastMode => self
-                .model_catalog
-                .try_list_models()
-                .ok()
-                .and_then(|models| {
-                    models
-                        .into_iter()
-                        .find(|preset| preset.model == self.current_model())
-                })
-                .is_none_or(|preset| preset.supports_fast_mode())
-                .then(|| {
-                    if self.current_service_tier() == Some(ServiceTier::Fast.request_value()) {
-                        "Fast on".to_string()
-                    } else {
-                        "Fast off".to_string()
-                    }
-                }),
+            StatusLineItem::FastMode => Some(
+                self.processing_tier_display_name()
+                    .unwrap_or("Standard")
+                    .to_string(),
+            ),
             StatusLineItem::Daybreak => Some(
                 if self.daybreak_enabled && !self.side_conversation_active() {
                     "Daybreak on".to_string()
@@ -824,23 +842,21 @@ impl ChatWidget {
             ),
             StatusLineItem::RawOutput => self.raw_output_mode().then(|| "raw output".to_string()),
             StatusLineItem::ThreadName => {
-                self.thread_name.as_deref().and_then(normalize_thread_name)
+                self.status_surface_thread_label(/*fallback*/ None, /*max_chars*/ None)
             }
-            StatusLineItem::ThreadTitle => self
-                .thread_name
-                .as_deref()
-                .and_then(normalize_thread_name)
-                .or_else(|| self.thread_id.map(|id| id.to_string())),
+            StatusLineItem::ThreadTitle => {
+                self.status_surface_thread_label(self.thread_id, /*max_chars*/ None)
+            }
             StatusLineItem::WorkspaceHeadline => self.status_line_workspace_headline.clone(),
             StatusLineItem::TaskProgress => self.terminal_title_task_progress(),
         }
     }
 
-    fn status_line_pull_request_url(&self) -> Option<String> {
+    pub(super) fn status_line_pull_request_url(&self) -> Option<&str> {
         self.status_line_git_summary
             .as_ref()
             .and_then(|summary| summary.pull_request.as_ref())
-            .map(|pull_request| pull_request.url.clone())
+            .map(|pull_request| pull_request.url.as_str())
     }
 
     pub(super) fn status_surface_preview_value_for_item(
@@ -881,6 +897,8 @@ impl ChatWidget {
             StatusSurfacePreviewItem::Model => StatusLineItem::ModelName,
             StatusSurfacePreviewItem::ModelWithReasoning => StatusLineItem::ModelWithReasoning,
             StatusSurfacePreviewItem::Reasoning => StatusLineItem::Reasoning,
+            StatusSurfacePreviewItem::Profile => StatusLineItem::Profile,
+            StatusSurfacePreviewItem::Provider => StatusLineItem::Provider,
         };
         self.status_line_value_for_item(status_line_item)
     }
@@ -897,21 +915,14 @@ impl ChatWidget {
             TerminalTitleItem::AppName => Some("codex".to_string()),
             TerminalTitleItem::Project => self.terminal_title_project_name(),
             TerminalTitleItem::CurrentDir => Some(Self::truncate_terminal_title_part(
-                format_directory_display(self.status_line_cwd(), /*max_width*/ None),
+                self.workspace_directory_display(),
                 /*max_chars*/ 32,
             )),
             TerminalTitleItem::Spinner => self.terminal_title_spinner_text_at(now),
             TerminalTitleItem::Status => Some(self.run_state_status_text()),
-            TerminalTitleItem::Thread | TerminalTitleItem::ThreadName => {
-                let item = if item == TerminalTitleItem::ThreadName {
-                    StatusLineItem::ThreadName
-                } else {
-                    StatusLineItem::ThreadTitle
-                };
-                let value = self
-                    .status_line_value(item)
-                    .map(|value| Self::truncate_terminal_title_part(value, /*max_chars*/ 48));
-                self.with_thread_title_progress(value, now)
+            TerminalTitleItem::Thread => self.status_surface_thread_label(self.thread_id, Some(48)),
+            TerminalTitleItem::ThreadName => {
+                self.status_surface_thread_label(/*fallback*/ None, Some(48))
             }
             TerminalTitleItem::GitBranch => self.status_line_branch.as_ref().map(|branch| {
                 Self::truncate_terminal_title_part(branch.clone(), /*max_chars*/ 32)
@@ -946,12 +957,9 @@ impl ChatWidget {
             TerminalTitleItem::EstimatedThreadCost => self
                 .status_line_value_for_item(StatusLineItem::EstimatedThreadCost)
                 .map(|value| Self::truncate_terminal_title_part(value, /*max_chars*/ 32)),
-            TerminalTitleItem::SessionId => {
-                let value = self
-                    .status_line_value(StatusLineItem::SessionId)
-                    .map(|value| Self::truncate_terminal_title_part(value, /*max_chars*/ 32));
-                self.with_thread_title_progress(value, now)
-            }
+            TerminalTitleItem::SessionId => self
+                .status_line_value_for_item(StatusLineItem::SessionId)
+                .map(|value| Self::truncate_terminal_title_part(value, /*max_chars*/ 32)),
             TerminalTitleItem::FastMode => self
                 .status_line_value_for_item(StatusLineItem::FastMode)
                 .map(|value| Self::truncate_terminal_title_part(value, /*max_chars*/ 32)),
@@ -959,11 +967,11 @@ impl ChatWidget {
                 self.status_line_value_for_item(StatusLineItem::Daybreak)
             }
             TerminalTitleItem::Model => Some(Self::truncate_terminal_title_part(
-                self.model_display_name().to_string(),
+                self.status_model_display_name().to_string(),
                 /*max_chars*/ 32,
             )),
             TerminalTitleItem::ModelWithReasoning => Some(Self::truncate_terminal_title_part(
-                self.model_with_reasoning_display_name(),
+                self.model_with_reasoning_display_name(self.processing_tier_display_name()),
                 /*max_chars*/ 32,
             )),
             TerminalTitleItem::Reasoning => Some(Self::truncate_terminal_title_part(
@@ -974,25 +982,51 @@ impl ChatWidget {
         }
     }
 
+    pub(super) fn status_model_display_name(&self) -> &str {
+        self.cloud_picker_selection.as_ref().map_or_else(
+            || self.model_display_name(),
+            |selection| self.model_catalog.display_name(&selection.model),
+        )
+    }
+
+    pub(super) fn status_reasoning_effort(&self) -> Option<ReasoningEffortConfig> {
+        self.cloud_picker_selection.as_ref().map_or_else(
+            || self.effective_reasoning_effort(),
+            |selection| selection.effort.clone(),
+        )
+    }
+
     fn reasoning_display_name(&self) -> String {
-        let effort = self.effective_reasoning_effort();
+        let effort = self.status_reasoning_effort();
         Self::status_line_reasoning_effort_label(effort.as_ref())
     }
 
-    fn model_with_reasoning_display_name(&self) -> String {
+    fn model_with_reasoning_display_name(&self, service_tier: Option<&str>) -> String {
+        let model = self.status_model_display_name();
         let label = self.reasoning_display_name();
-        let service_tier_label = self
-            .current_service_tier()
-            .and_then(|service_tier| {
-                self.current_model_service_tier_commands()
-                    .into_iter()
-                    .find(|tier| tier.id == service_tier)
-                    .map(|tier| tier.name)
-            })
-            .filter(|_| self.has_chatgpt_account)
+        let service_tier_label = service_tier
             .map(|tier| format!(" {tier}"))
             .unwrap_or_default();
-        format!("{} {label}{service_tier_label}", self.model_display_name())
+        format!("{model} {label}{service_tier_label}")
+    }
+
+    pub(super) fn processing_tier_display_name(&self) -> Option<&str> {
+        let id = self.current_service_tier()?;
+        self.model_catalog
+            .models
+            .iter()
+            .find(|preset| preset.model == self.selected_model())
+            .and_then(|preset| preset.service_tiers.iter().find(|tier| tier.id == id))
+            .map(|tier| tier.name.as_str())
+            .or_else(|| {
+                (id == ServiceTier::Flex.request_value()
+                    && self
+                        .config
+                        .model_providers
+                        .get(&self.config.model_provider_id)
+                        .is_some_and(|provider| !provider.is_amazon_bedrock()))
+                .then_some("Flex")
+            })
     }
 
     /// Computes the compact runtime status label used by word-based status items.
@@ -1000,26 +1034,23 @@ impl ChatWidget {
     /// Startup takes precedence over normal task states, and idle state renders
     /// as `Ready` regardless of the last active status bucket.
     pub(super) fn run_state_status_text(&self) -> String {
-        if self.mcp_startup_status.is_some() {
-            return "Starting".to_string();
+        let state = self.status_line_run_state();
+        if matches!(
+            state,
+            super::statusline_state::StatuslineStateRunState::Working
+        ) {
+            crate::branding::WORKING_LABEL.to_string()
+        } else {
+            state.to_string()
         }
+    }
 
-        match self.status_state.terminal_title_status_kind {
-            TerminalTitleStatusKind::Working if !self.bottom_pane.is_task_running() => {
-                "Ready".to_string()
-            }
-            TerminalTitleStatusKind::WaitingForBackgroundTerminal
-                if !self.bottom_pane.is_task_running() =>
-            {
-                "Ready".to_string()
-            }
-            TerminalTitleStatusKind::Thinking if !self.bottom_pane.is_task_running() => {
-                "Ready".to_string()
-            }
-            TerminalTitleStatusKind::Working => crate::branding::WORKING_LABEL.to_string(),
-            TerminalTitleStatusKind::WaitingForBackgroundTerminal => "Waiting".to_string(),
-            TerminalTitleStatusKind::Thinking => "Thinking".to_string(),
-        }
+    pub(super) fn status_line_config_profile(&self) -> Option<String> {
+        let layer = self.config.config_layer_stack.get_active_user_layer()?;
+        let ConfigLayerSource::User { profile, .. } = &layer.name else {
+            return None;
+        };
+        profile.clone()
     }
 
     pub(super) fn terminal_title_spinner_text_at(&self, now: Instant) -> Option<String> {
@@ -1101,6 +1132,23 @@ impl ChatWidget {
             return None;
         }
         Some(format!("Tasks {completed}/{total}"))
+    }
+
+    fn status_surface_thread_label(
+        &self,
+        fallback: Option<ThreadId>,
+        max_chars: Option<usize>,
+    ) -> Option<String> {
+        let name = self.thread_name.as_deref().and_then(normalize_thread_name);
+        let label = name.or_else(|| fallback.map(|id| id.to_string()))?;
+        let style = ThreadLabelStyle::from_is_cloud(
+            self.thread_params_mode == crate::ThreadParamsMode::Cloud,
+        );
+        let label = style.decorate(label);
+        Some(match max_chars {
+            Some(limit) => Self::truncate_terminal_title_part(label, limit),
+            None => label,
+        })
     }
 
     /// Truncates a title segment by grapheme cluster and appends `...` when needed.
@@ -1217,7 +1265,7 @@ fn matches_window_label(window: &RateLimitWindowDisplay, label: &str) -> bool {
         == Some(label)
 }
 
-fn permissions_display(config: &Config) -> String {
+pub(super) fn permissions_display(config: &Config) -> String {
     let active_permission_profile = config.permissions.active_permission_profile();
     if let Some(active_permission_profile) = active_permission_profile.as_ref()
         && !active_permission_profile.id.starts_with(':')

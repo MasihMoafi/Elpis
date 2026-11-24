@@ -1,10 +1,15 @@
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::ThreadHistoryMode;
+use codex_protocol::realtime::RealtimeItem;
+use codex_rollout::ResponseItemEnvelope;
 use codex_rollout::RolloutItem;
+use futures::future::BoxFuture;
 use std::any::Any;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::mpsc;
 
 use crate::AddThreadAttachmentOutcome;
 use crate::AddThreadAttachmentParams;
@@ -47,6 +52,7 @@ use crate::StoredProject;
 use crate::StoredProjectsPage;
 use crate::StoredThread;
 use crate::StoredThreadHistory;
+use crate::StoredThreadSearchResult;
 use crate::StoredThreadSection;
 use crate::StoredThreadSectionsPage;
 use crate::ThreadAttachmentOwnerPage;
@@ -64,6 +70,45 @@ use crate::UpdatedProject;
 
 /// Future returned by [`ThreadStore`] operations.
 pub type ThreadStoreFuture<'a, T> = Pin<Box<dyn Future<Output = ThreadStoreResult<T>> + Send + 'a>>;
+
+/// Request lifetime and optional progress sink for a thread search.
+pub struct ThreadSearchObserver {
+    /// Verified matches discovered before the authoritative page is complete.
+    pub progress: Option<mpsc::Sender<Vec<StoredThreadSearchResult>>>,
+    /// Resolves when the requester no longer needs the result.
+    pub cancelled: BoxFuture<'static, ()>,
+}
+
+/// Data a [`ThreadStore`] has already loaded while preparing a thread for resume.
+///
+/// Core does not inspect this value. It gives the value back to the store when reopening the
+/// thread, allowing the store to reuse the loaded history and writer state instead of loading them
+/// again. The value can only be used once because it may own resources that cannot be copied.
+pub struct ThreadStoreResumePreparation {
+    state: Box<dyn Any + Send>,
+}
+
+impl ThreadStoreResumePreparation {
+    pub fn new<T: Any + Send>(state: T) -> Self {
+        Self {
+            state: Box::new(state),
+        }
+    }
+
+    pub fn downcast<T: Any + Send>(self) -> Result<T, Self> {
+        match self.state.downcast::<T>() {
+            Ok(state) => Ok(*state),
+            Err(state) => Err(Self { state }),
+        }
+    }
+}
+
+impl fmt::Debug for ThreadStoreResumePreparation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ThreadStoreResumePreparation")
+            .finish_non_exhaustive()
+    }
+}
 
 /// Why thread persistence is being requested.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,10 +138,31 @@ impl PersistContext {
     }
 }
 
+/// A saved Daybreak choice staged for a thread before its stored row is materialized.
+pub struct PendingDaybreakPreference(Option<bool>);
+
+impl PendingDaybreakPreference {
+    /// Read staging before the stored row: materialization can consume the staged metadata.
+    pub async fn read(store: &dyn ThreadStore, thread_id: ThreadId) -> ThreadStoreResult<Self> {
+        let pending = store.read_pending_thread_metadata(thread_id).await?;
+        Ok(Self(pending.and_then(|patch| patch.daybreak_enabled)))
+    }
+
+    /// A stored choice, including explicit Off, takes precedence over the staged snapshot.
+    pub fn resolve(&self, stored: Option<bool>) -> Option<bool> {
+        stored.or(self.0)
+    }
+}
+
 /// Storage-neutral thread persistence boundary.
 pub trait ThreadStore: Any + Send + Sync {
     /// Return this store as [`Any`] for implementation-owned escape hatches.
     fn as_any(&self) -> &dyn Any;
+
+    /// Returns the authority for session aliases when this backend supports them.
+    fn model_ids(&self) -> Option<std::sync::Arc<dyn codex_state::SessionModelIdStore>> {
+        None
+    }
 
     /// Returns the history mode to use when history does not carry a persisted mode.
     ///
@@ -155,6 +221,22 @@ pub trait ThreadStore: Any + Send + Sync {
         params: ResumeThreadParams,
     ) -> ThreadStoreFuture<'_, Arc<Vec<RolloutItem>>>;
 
+    /// Reopens a thread using implementation-owned state prepared before Core startup.
+    ///
+    /// Stores should only override this when they also produce the preparation. The returned
+    /// history and failure cleanup guarantees are the same as [`Self::resume_thread`].
+    fn resume_thread_with_preparation(
+        &self,
+        _params: ResumeThreadParams,
+        _preparation: ThreadStoreResumePreparation,
+    ) -> ThreadStoreFuture<'_, Arc<Vec<RolloutItem>>> {
+        Box::pin(async {
+            Err(ThreadStoreError::Unsupported {
+                operation: "resume_thread_with_preparation",
+            })
+        })
+    }
+
     /// Appends raw rollout items to a live thread.
     ///
     /// Implementations should apply the shared rollout persistence policy before writing durable
@@ -206,6 +288,84 @@ pub trait ThreadStore: Any + Send + Sync {
         params: LoadThreadHistoryParams,
     ) -> ThreadStoreFuture<'_, StoredThreadHistory>;
 
+    /// Loads one logical call from authoritative persisted history. Separated-frame stores
+    /// must override this method to include their frame table; a lagging projection must fail
+    /// rather than report that the session is absent.
+    fn load_realtime_session(
+        &self,
+        thread_id: ThreadId,
+        realtime_session_id: String,
+    ) -> ThreadStoreFuture<'_, Option<Vec<codex_protocol::realtime::RealtimeItem>>> {
+        Box::pin(async move {
+            let history = self
+                .load_history(LoadThreadHistoryParams {
+                    thread_id,
+                    include_archived: true,
+                })
+                .await?;
+            let items: Vec<_> = history
+                .items
+                .iter()
+                .filter_map(|item| item.realtime_item().map(std::borrow::Cow::into_owned))
+                .filter(|item| item.realtime_session_id == realtime_session_id)
+                .collect();
+            Ok(items
+                .iter()
+                .any(|item| {
+                    matches!(
+                        item.content,
+                        codex_protocol::realtime::RealtimeItemContent::RealtimeSessionStarted
+                    )
+                })
+                .then_some(items))
+        })
+    }
+
+    /// Returns the latest logical session ID from authoritative start records, including a
+    /// closed session. Used only when a newly requested ID has no persisted session yet.
+    fn load_realtime_session_head(
+        &self,
+        thread_id: ThreadId,
+    ) -> ThreadStoreFuture<'_, Option<String>> {
+        Box::pin(async move {
+            let history = self
+                .load_history(LoadThreadHistoryParams {
+                    thread_id,
+                    include_archived: true,
+                })
+                .await?;
+            Ok(history
+                .items
+                .iter()
+                .rev()
+                .filter_map(RolloutItem::realtime_item)
+                .find_map(|item| {
+                    matches!(
+                        item.content,
+                        codex_protocol::realtime::RealtimeItemContent::RealtimeSessionStarted
+                    )
+                    .then(|| item.realtime_session_id.clone())
+                }))
+        })
+    }
+
+    /// Captures a complete tail, optionally reading originals after a saved position.
+    /// Local storage uses one reader for the cutoff and records; compressed rollouts
+    /// are decoded once per call. It supports append-only paginated roots;
+    /// other histories and backends must fail explicitly rather than omit originals.
+    /// Callers flush pending writes before capturing a boundary and own progress.
+    fn read_original_history(
+        &self,
+        _thread_id: ThreadId,
+        _request: crate::OriginalHistoryRequest,
+    ) -> ThreadStoreFuture<'_, crate::OriginalHistoryRead> {
+        Box::pin(async {
+            Err(ThreadStoreError::Unsupported {
+                operation: "read_original_history",
+            })
+        })
+    }
+
     /// Loads the persisted rollout items needed to reconstruct the latest model-visible context.
     ///
     /// Implementations that cannot perform a targeted read may return the full persisted history.
@@ -218,6 +378,19 @@ pub trait ThreadStore: Any + Send + Sync {
                 operation: "load_latest_model_context",
             })
         })
+    }
+
+    /// Checks whether a previously loaded model context still represents the stored history.
+    ///
+    /// Stores that cannot validate the opaque revision must return false. A false result or an
+    /// error requires a fresh read. This does not acquire writer ownership;
+    /// [`Self::resume_thread`] must still validate the snapshot after acquisition.
+    fn is_model_context_current(
+        &self,
+        _params: LoadThreadHistoryParams,
+        _revision: String,
+    ) -> ThreadStoreFuture<'_, bool> {
+        Box::pin(async { Ok(false) })
     }
 
     /// Freezes source history and model context used to initialize a referenced fork.
@@ -448,6 +621,55 @@ pub trait ThreadStore: Any + Send + Sync {
         })
     }
 
+    /// Hosted frame stores can acknowledge a seal independently of ordinary rollout writes.
+    fn uses_separate_realtime_frame_store(&self) -> bool {
+        false
+    }
+
+    /// Seal in input order. A durable receipt implies that every preceding source
+    /// frame is durable. Hosted stores may commit frames outside the rollout.
+    fn seal_realtime_items(
+        &self,
+        thread_id: ThreadId,
+        items: Vec<RealtimeItem>,
+    ) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let items = items.into_iter().map(RolloutItem::RealtimeItem).collect();
+            self.append_items(AppendThreadItemsParams { thread_id, items })
+                .await?;
+            self.flush_thread(thread_id).await
+        })
+    }
+
+    /// Commit an accepted model input after its realtime source frames are durable.
+    /// Implementations must safely accept retries of the same input after an uncertain
+    /// append or flush outcome without appending the model input more than once.
+    fn seal_realtime_input(
+        &self,
+        _thread_id: ThreadId,
+        _frames: Vec<RealtimeItem>,
+        _input: ResponseItemEnvelope,
+    ) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async {
+            Err(ThreadStoreError::Unsupported {
+                operation: "thread/realtime/sealInput",
+            })
+        })
+    }
+
+    /// Highest durable observation time outside the rollout, if the store has one.
+    fn realtime_frame_clock_floor(
+        &self,
+        _thread_id: ThreadId,
+    ) -> ThreadStoreFuture<'_, Option<i64>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    /// Whether this live thread writes canonical realtime frames and handoff receipts.
+    fn realtime_frames_enabled(&self, _thread_id: ThreadId) -> ThreadStoreFuture<'_, bool> {
+        Box::pin(async { Ok(false) })
+    }
+
     /// Whether paginated threads can hydrate durable history through turn and item lists.
     fn supports_paginated_history_lists(&self) -> bool {
         false
@@ -462,6 +684,23 @@ pub trait ThreadStore: Any + Send + Sync {
             Err(ThreadStoreError::Unsupported {
                 operation: "thread/search",
             })
+        })
+    }
+
+    /// Searches threads with cancellation and optional progress where supported.
+    fn search_threads_observed(
+        &self,
+        params: SearchThreadsParams,
+        observer: ThreadSearchObserver,
+    ) -> ThreadStoreFuture<'_, ThreadSearchPage> {
+        Box::pin(async move {
+            tokio::select! {
+                biased;
+                () = observer.cancelled => Err(ThreadStoreError::Internal {
+                    message: "thread search cancelled".to_string(),
+                }),
+                result = self.search_threads(params) => result,
+            }
         })
     }
 
@@ -491,6 +730,22 @@ pub trait ThreadStore: Any + Send + Sync {
         Box::pin(async {
             Err(ThreadStoreError::Unsupported {
                 operation: "list_items",
+            })
+        })
+    }
+
+    /// Reads a bounded immutable snapshot of the independent realtime stream.
+    fn list_realtime(
+        &self,
+        _params: crate::ListRealtimeParams,
+    ) -> ThreadStoreFuture<'_, crate::RealtimePage> {
+        Box::pin(async {
+            Ok(crate::RealtimePage {
+                data: Vec::new(),
+                next_cursor: None,
+                snapshot_end: 0,
+                projected_through_item_index: 0,
+                coverage: codex_app_server_protocol::ThreadRealtimeCoverage::Unsupported,
             })
         })
     }
@@ -557,6 +812,44 @@ pub trait ThreadStore: Any + Send + Sync {
 
     /// Unarchives a thread and returns its updated metadata.
     fn unarchive_thread(&self, params: ArchiveThreadParams) -> ThreadStoreFuture<'_, StoredThread>;
+
+    /// Restores threads in order, returning the first thread's metadata and restored ids.
+    ///
+    /// The requested thread must restore successfully; active descendants are skipped and
+    /// descendant failures are best effort. Stores can share rollout discovery work.
+    fn unarchive_threads(
+        &self,
+        params: ArchiveThreadParams,
+        descendant_thread_ids: Vec<ThreadId>,
+    ) -> ThreadStoreFuture<'_, (StoredThread, Vec<ThreadId>)> {
+        Box::pin(async move {
+            let thread_id = params.thread_id;
+            let root = self.unarchive_thread(params).await?;
+            let mut restored = vec![thread_id];
+            for thread_id in descendant_thread_ids {
+                let result = async {
+                    let thread = self
+                        .read_thread(ReadThreadParams {
+                            thread_id,
+                            include_archived: true,
+                            include_history: false,
+                        })
+                        .await?;
+                    if thread.archived_at.is_some() {
+                        self.unarchive_thread(ArchiveThreadParams { thread_id })
+                            .await?;
+                        restored.push(thread_id);
+                    }
+                    Ok::<_, ThreadStoreError>(())
+                }
+                .await;
+                if let Err(err) = result {
+                    tracing::warn!("failed to unarchive thread {thread_id}: {err}");
+                }
+            }
+            Ok((root, restored))
+        })
+    }
 
     /// Deletes a thread's persisted rollout data and associated metadata.
     /// Success includes cleanup of associated persisted state; callers must not repeat it.

@@ -4,6 +4,7 @@ use codex_history::RetainedInputSource;
 use codex_history::RetainedUserMessage;
 use codex_history::VerifiedAnswer;
 use codex_history::VerifiedQuestionAnswer;
+use codex_protocol_test_support::uuid_v7_item_id_generator_for_test;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -11,17 +12,20 @@ fn instructions_preserve_source_order_and_whole_records() {
     let mut context = RetainedContext::default();
     // An answer at the existing 900-token byte limit still fits with order framing.
     let answer = "x".repeat(3_600 - "assistant: Publish?\nuser: \n".len());
-    context.record(&RetainedContextEvent::VerifiedAnswer {
-        answer: VerifiedAnswer {
-            turn_id: "grant".to_owned(),
-            call_id: "ask".to_owned(),
-            questions: vec![VerifiedQuestionAnswer {
-                question: "Publish?".to_owned(),
-                answer: answer.clone(),
-            }],
+    context.record(
+        &RetainedContextEvent::VerifiedAnswer {
+            answer: VerifiedAnswer {
+                turn_id: "grant".to_owned(),
+                call_id: "ask".to_owned(),
+                questions: vec![VerifiedQuestionAnswer {
+                    question: "Publish?".to_owned(),
+                    answer: answer.clone(),
+                }],
+            },
+            acceptance_order: None,
         },
-        acceptance_order: None,
-    });
+        &uuid_v7_item_id_generator_for_test(),
+    );
     context.record_user_message(
         RetainedUserMessage {
             phase: None,
@@ -32,6 +36,7 @@ fn instructions_preserve_source_order_and_whole_records() {
             complete: true,
         },
         RetainedInputSource::Local(None),
+        &uuid_v7_item_id_generator_for_test(),
     );
     let rendered = render_retained_instructions(&context, retained_assistant_message);
     assert_eq!(
@@ -61,15 +66,45 @@ fn instructions_preserve_source_order_and_whole_records() {
             complete: true,
         },
         RetainedInputSource::Local(None),
+        &uuid_v7_item_id_generator_for_test(),
     );
     let rendered = render_retained_instructions(&context, retained_assistant_message);
-    assert_eq!(rendered.len(), 2);
-    assert!(rendered[0].content.starts_with("Host notice:"));
-    assert!(
-        !rendered
-            .iter()
-            .any(|fragment| fragment.content.contains("Permission is conditional"))
+    let history = RetainedTranscript {
+        retained: context,
+        messages: Vec::new(),
+    };
+    assert_eq!(
+        transcript_context(&history, &crate::ContextProfile::synchronous())
+            .retained_instructions()
+            .into_messages(),
+        transcript_context(&history, &crate::ContextProfile::asynchronous())
+            .retained_instructions()
+            .into_messages(),
     );
+    assert_eq!(rendered.len(), 2);
+    assert!(
+        rendered
+            .iter()
+            .any(|item| item.content.contains("Permission is conditional"))
+    );
+    for profile in [
+        crate::ContextProfile::synchronous(),
+        crate::ContextProfile::asynchronous(),
+    ] {
+        let [fixed, elastic] = [
+            crate::ContextBudgeting::Fixed,
+            crate::ContextBudgeting::Elastic,
+        ]
+        .map(|budgeting| {
+            serde_json::to_string(
+                &transcript_context_with_budgeting(&history, &profile, budgeting).into_messages(),
+            )
+            .unwrap()
+        });
+        assert!(!fixed.contains("Permission is conditional"));
+        assert!(fixed.contains("Host notice:"));
+        assert!(elastic.contains("Permission is conditional"));
+    }
 }
 
 #[test]
@@ -88,6 +123,7 @@ fn ordinary_exchanges_keep_roles_and_drop_assistant_context_before_restrictions(
             complete: true,
         },
         RetainedInputSource::Local(Some(0)),
+        &uuid_v7_item_id_generator_for_test(),
     );
     context.record_user_message(
         RetainedUserMessage {
@@ -99,6 +135,7 @@ fn ordinary_exchanges_keep_roles_and_drop_assistant_context_before_restrictions(
             complete: true,
         },
         RetainedInputSource::Local(Some(1)),
+        &uuid_v7_item_id_generator_for_test(),
     );
     for presentation in [
         crate::ContextPresentation::SyncFull { session_id: "test" },
@@ -109,7 +146,7 @@ fn ordinary_exchanges_keep_roles_and_drop_assistant_context_before_restrictions(
                 items: render_retained_instructions(&context, retained_assistant_message),
             }],
         }
-        .compose(
+        .compose_prepared(
             presentation,
             crate::PreparedTranscript {
                 items: vec![],
@@ -148,41 +185,78 @@ fn ordinary_exchanges_keep_roles_and_drop_assistant_context_before_restrictions(
     checkpoint["assistant_messages"][0]["text"] = "".into();
     let restored = serde_json::from_value(checkpoint.clone()).unwrap();
     assert_eq!(
-        render_retained_instructions(&restored, retained_assistant_message),
+        render_retained_instructions(&restored, retained_assistant_message,),
         vec![user_instruction]
     );
     checkpoint["assistant_messages"][0]["complete"] = false.into();
     let restored = serde_json::from_value(checkpoint).unwrap();
     assert_eq!(
-        render_retained_instructions(&restored, retained_assistant_message)[0],
-        Budgeted::required(GuardianRootMessage::IncompleteAssistantContext.render())
+        render_retained_instructions(&restored, retained_assistant_message,)[0],
+        RetainedInstructionItem {
+            original_assistant_bytes: 0,
+            content: GuardianRootMessage::IncompleteAssistantContext.render(),
+            kind: RetainedInstructionKind::HostNotice,
+            source: None,
+        }
     );
+    const ASSISTANT_BOUNDARY_BYTES: usize = 3_570;
+    let large_assistant = "x".repeat(ASSISTANT_BOUNDARY_BYTES - "assistant: \n".len());
     context.record_assistant_message(
         RetainedUserMessage {
             phase: None,
             origin: codex_history::UserInputOrigin::User,
             turn_id: "large".to_owned(),
             message_id: Some("large".to_owned()),
-            text: "x".repeat(4_000),
+            text: large_assistant.clone(),
             complete: true,
         },
         RetainedInputSource::Local(Some(2)),
+        &uuid_v7_item_id_generator_for_test(),
     );
     let rendered = render_retained_instructions(&context, retained_assistant_message);
+    let history = RetainedTranscript {
+        retained: context,
+        messages: Vec::new(),
+    };
+    assert_eq!(
+        transcript_context(&history, &crate::ContextProfile::synchronous())
+            .retained_instructions()
+            .into_messages(),
+        transcript_context(&history, &crate::ContextProfile::asynchronous())
+            .retained_instructions()
+            .into_messages(),
+    );
     assert_eq!(
         rendered[0],
-        Budgeted::required(GuardianRootMessage::IncompleteAssistantContext.render())
+        RetainedInstructionItem {
+            original_assistant_bytes: 0,
+            content: GuardianRootMessage::IncompleteAssistantContext.render(),
+            kind: RetainedInstructionKind::HostNotice,
+            source: None,
+        }
     );
     assert!(
         rendered
             .iter()
             .any(|fragment| fragment.content.contains("Yes, staging only."))
     );
+    for profile in [
+        crate::ContextProfile::synchronous(),
+        crate::ContextProfile::asynchronous(),
+    ] {
+        let elastic =
+            transcript_context_with_budgeting(&history, &profile, crate::ContextBudgeting::Elastic);
+        assert!(
+            serde_json::to_string(&elastic.into_messages())
+                .unwrap()
+                .contains(&large_assistant)
+        );
+    }
 }
 
 #[test]
 fn legacy_verified_answers_keep_distinct_source_order() {
-    let context: RetainedContext = serde_json::from_value(serde_json::json!({
+    let mut context: RetainedContext = serde_json::from_value(serde_json::json!({
         "verified_answers": [
             {"turn_id": "old", "call_id": "grant", "questions": [{"question": "Publish?", "answer": "Yes."}]},
             {"turn_id": "old", "call_id": "revoke", "questions": [{"question": "Still publish?", "answer": "No."}]}
@@ -196,17 +270,76 @@ fn legacy_verified_answers_keep_distinct_source_order() {
             "Retained source order: 1\nassistant: Still publish?\nuser: No.\n".to_owned(),
         ]
     );
+    const ANSWER_REPETITIONS: usize = 200;
+    let large_answer = "Only if conditions hold. ".repeat(ANSWER_REPETITIONS);
+    context.record(
+        &RetainedContextEvent::VerifiedAnswer {
+            answer: VerifiedAnswer {
+                turn_id: "large".into(),
+                call_id: "large".into(),
+                questions: vec![VerifiedQuestionAnswer {
+                    question: "Publish?".into(),
+                    answer: large_answer.clone(),
+                }],
+            },
+            acceptance_order: None,
+        },
+        &uuid_v7_item_id_generator_for_test(),
+    );
+    let raw = crate::collect_verified_answer_candidates(&context);
+    let old = crate::render_verified_answers(&context);
+    assert!(!old.complete);
+    for profile in [
+        crate::ContextProfile::synchronous(),
+        crate::ContextProfile::asynchronous(),
+    ] {
+        let [actual, expected, elastic] = [
+            (raw.clone(), crate::ContextBudgeting::Fixed),
+            (
+                old.fragments.iter().cloned().map(Into::into).collect(),
+                crate::ContextBudgeting::Fixed,
+            ),
+            (raw.clone(), crate::ContextBudgeting::Elastic),
+        ]
+        .map(|(items, budgeting)| {
+            crate::prepare_context(
+                std::borrow::Cow::Owned(crate::CollectedContext {
+                    sections: vec![ContextSection::TrustedUserAnswers { items }],
+                }),
+                &profile,
+                /*entry_number_offset*/ 0,
+                match profile.target {
+                    crate::ContextTarget::Sync => crate::ContextPresentation::SyncFull {
+                        session_id: "worker",
+                    },
+                    crate::ContextTarget::Async => crate::ContextPresentation::Async,
+                },
+                budgeting,
+                &[],
+            )
+            .unwrap()
+            .into_messages()
+        });
+        assert_eq!(actual, expected);
+        assert!(
+            serde_json::to_string(&elastic)
+                .unwrap()
+                .contains(&large_answer)
+        );
+    }
 }
 
 #[test]
 fn delivery_uses_source_revision_and_complete_host_metadata() {
+    const REPEATS: usize = 64;
+    const ENTRY_TOKENS: usize = 128;
     let mut retained = RetainedContext::default();
     retained.mark_user_messages_incomplete();
     let mut message = RetainedUserMessage {
         phase: None,
         turn_id: "turn".to_owned(),
         message_id: Some("source".to_owned()),
-        text: "Draft only.".to_owned(),
+        text: "Draft only. ".repeat(REPEATS),
         complete: true,
         origin: codex_history::UserInputOrigin::User,
     };
@@ -216,16 +349,47 @@ fn delivery_uses_source_revision_and_complete_host_metadata() {
                 retained: retained.clone(),
                 messages: Vec::new(),
             },
-            crate::ContextProfile::asynchronous(),
+            &crate::ContextProfile::asynchronous(),
         )
         .retained_instructions()
     };
-    retained.record_user_message(message.clone(), RetainedInputSource::Local(Some(4)));
+    retained.record_user_message(
+        message.clone(),
+        RetainedInputSource::Local(Some(4)),
+        &uuid_v7_item_id_generator_for_test(),
+    );
     let original = compose(&retained);
     let delivered = original.clone().into_annotated_messages();
     let mut next = original.clone();
     next.retain_new_instructions(&delivered);
     assert!(next.into_messages().is_empty());
+
+    // A complete admitted revision also covers a newly capped duplicate.
+    let config = crate::budget::tests::complete_minimum_budget(crate::ElasticBudgetConfig {
+        sections: std::collections::BTreeMap::from([(
+            crate::ElasticSection::RetainedUserInstructions,
+            crate::ElasticSectionLimits::new(ENTRY_TOKENS, ENTRY_TOKENS).unwrap(),
+        )]),
+        ..Default::default()
+    });
+    let capped = original.clone().prepare_elastic_entries(&config).unwrap();
+    assert!(!capped.context.truncations.is_empty());
+    let history_tokens = original.estimated_tokens();
+    assert!(
+        capped
+            .prepare_delivery(&delivered)
+            .unwrap()
+            .enforce_budget(
+                crate::RequestBudget {
+                    max_input_tokens: history_tokens,
+                    existing_context_tokens: history_tokens,
+                },
+                "omitted".to_owned()
+            )
+            .unwrap()
+            .into_messages()
+            .is_empty()
+    );
 
     // Identical prompt text alone, or a shortened copy with the same source ID, is not proof.
     for metadata in [
@@ -245,7 +409,11 @@ fn delivery_uses_source_revision_and_complete_host_metadata() {
 
     // A correction keeps its source ID and acceptance order but gets a new revision.
     message.text = "Do not draft or send.".to_owned();
-    retained.record_user_message(message, RetainedInputSource::Local(Some(4)));
+    retained.record_user_message(
+        message,
+        RetainedInputSource::Local(Some(4)),
+        &uuid_v7_item_id_generator_for_test(),
+    );
     let retained: RetainedContext =
         serde_json::from_value(serde_json::to_value(retained).unwrap()).unwrap();
     let mut corrected = compose(&retained);
@@ -258,12 +426,6 @@ fn delivery_uses_source_revision_and_complete_host_metadata() {
     let mut omitted = RetainedContext::default();
     omitted.mark_user_messages_incomplete();
     let original = compose(&omitted);
-    let mut independent = original.clone();
-    independent.deduplicate_transcript_instructions();
-    assert_eq!(
-        independent.into_annotated_messages(),
-        original.clone().into_annotated_messages()
-    );
     let mut next = original.clone();
     next.retain_new_instructions(&delivered);
     assert!(next.into_messages().is_empty());
@@ -333,16 +495,26 @@ impl crate::SectionHistory for RetainedTranscript {
 
 fn transcript_context(
     history: &RetainedTranscript,
-    profile: crate::ContextProfile,
+    profile: &crate::ContextProfile,
 ) -> ComposedContext {
-    let answers = crate::render_verified_answers(&history.retained);
+    transcript_context_with_budgeting(history, profile, crate::ContextBudgeting::Fixed)
+}
+
+fn transcript_context_with_budgeting(
+    history: &RetainedTranscript,
+    profile: &crate::ContextProfile,
+    budgeting: crate::ContextBudgeting,
+) -> ComposedContext {
+    let answers = crate::collect_verified_answer_candidates(&history.retained);
     let collected = crate::default_registry()
         .prepare(&SectionInput {
             target: profile.target,
             history,
             transcript: &profile.transcript,
+            is_selected_exec_output: None,
             root_conversation: &[],
-            trusted_user_answers: &answers.fragments,
+            root_conversation_candidates: None,
+            trusted_user_answers: &answers,
             planned_action: None,
             permissions: None,
             previous_reviews: None,
@@ -352,21 +524,30 @@ fn transcript_context(
             node_repl: None,
         })
         .unwrap();
-    let transcript = profile.prepare_transcript(
-        collected.transcript_entries(),
-        /*entry_number_offset*/ 0,
-    );
     let presentation = match profile.target {
         crate::ContextTarget::Sync => crate::ContextPresentation::SyncFull {
             session_id: "parent",
         },
         crate::ContextTarget::Async => crate::ContextPresentation::Async,
     };
-    collected.compose(presentation, transcript).unwrap()
+    crate::prepare_context(
+        std::borrow::Cow::Owned(collected),
+        profile,
+        /*entry_number_offset*/ 0,
+        presentation,
+        budgeting,
+        &[],
+    )
+    .unwrap()
 }
 
 #[test]
 fn transcript_original_requires_complete_source_proof_and_survives_budgeting() {
+    const EARLIER_SOURCE_ORDER: u64 = 5;
+    const NEWEST_SOURCE_ORDER: u64 = 8;
+    const NEWEST_INSTRUCTION_REPEATS: usize = 48;
+    const ENTRY_TOKENS: usize = 256;
+    const NOTICE: &str = "Evidence omitted.";
     let text = format!(
         "Draft only.\n{}Do not send.",
         "Keep this private. ".repeat(/*n*/ 32)
@@ -382,6 +563,7 @@ fn transcript_original_requires_complete_source_proof_and_survives_budgeting() {
             phase: None,
         },
         RetainedInputSource::Local(Some(6)),
+        &uuid_v7_item_id_generator_for_test(),
     );
     let source = retained
         .source(retained.ordered_entries().next().unwrap().1)
@@ -391,17 +573,20 @@ fn transcript_original_requires_complete_source_proof_and_survives_budgeting() {
         "original".to_owned(),
     )));
     // The later verified grant renders before the earlier transcript restriction.
-    retained.record(&RetainedContextEvent::VerifiedAnswer {
-        answer: VerifiedAnswer {
-            turn_id: "grant".to_owned(),
-            call_id: "approve-send".to_owned(),
-            questions: vec![VerifiedQuestionAnswer {
-                question: "May I send now?".to_owned(),
-                answer: "Yes.".to_owned(),
-            }],
+    retained.record(
+        &RetainedContextEvent::VerifiedAnswer {
+            answer: VerifiedAnswer {
+                turn_id: "grant".to_owned(),
+                call_id: "approve-send".to_owned(),
+                questions: vec![VerifiedQuestionAnswer {
+                    question: "May I send now?".to_owned(),
+                    answer: "Yes.".to_owned(),
+                }],
+            },
+            acceptance_order: Some(7),
         },
-        acceptance_order: Some(7),
-    });
+        &uuid_v7_item_id_generator_for_test(),
+    );
     let mut history = RetainedTranscript {
         retained,
         messages: vec![ResponseItemEnvelope {
@@ -416,12 +601,8 @@ fn transcript_original_requires_complete_source_proof_and_survives_budgeting() {
         crate::ContextProfile::synchronous(),
         crate::ContextProfile::asynchronous(),
     ] {
-        let deduplicate = |context: &mut ComposedContext| match profile.target {
-            crate::ContextTarget::Sync => context.retain_new_instructions(&[]),
-            crate::ContextTarget::Async => context.deduplicate_transcript_instructions(),
-        };
-        let mut context = transcript_context(&history, profile);
-        deduplicate(&mut context);
+        let mut context = transcript_context(&history, &profile);
+        context.retain_new_instructions(&[]);
         let guidance = vec![crate::composition::user_message(vec![
             ContentItem::InputText {
                 text: format!("{START}\n"),
@@ -431,20 +612,18 @@ fn transcript_original_requires_complete_source_proof_and_survives_budgeting() {
             },
         ])];
         assert_eq!(context.retained_instructions().into_messages(), guidance);
-        if profile.target == crate::ContextTarget::Sync {
-            let mut delivered = context.clone().into_annotated_messages();
-            let mut next = transcript_context(&history, profile);
-            next.retain_new_instructions(&delivered);
-            assert!(next.retained_instructions().into_messages().is_empty());
-            for envelope in &mut delivered {
-                if let Some(metadata) = &mut envelope.metadata {
-                    metadata.mark_retained_sources_incomplete();
-                }
+        let mut delivered = context.clone().into_annotated_messages();
+        let mut next = transcript_context(&history, &profile);
+        next.retain_new_instructions(&delivered);
+        assert!(next.retained_instructions().into_messages().is_empty());
+        for envelope in &mut delivered {
+            if let Some(metadata) = &mut envelope.metadata {
+                metadata.mark_retained_sources_incomplete();
             }
-            let mut next = transcript_context(&history, profile);
-            next.retain_new_instructions(&delivered);
-            assert_eq!(next.retained_instructions().into_messages(), guidance);
         }
+        let mut next = transcript_context(&history, &profile);
+        next.retain_new_instructions(&delivered);
+        assert_eq!(next.retained_instructions().into_messages(), guidance);
         let budget = crate::RequestBudget {
             max_input_tokens: context.estimated_tokens() - 1,
             existing_context_tokens: 0,
@@ -464,15 +643,197 @@ fn transcript_original_requires_complete_source_proof_and_survives_budgeting() {
             .mark_retained_sources_incomplete();
         for metadata in [history.messages[0].metadata.take(), None] {
             history.messages[0].metadata = metadata;
-            let mut context = transcript_context(&history, profile);
+            let mut context = transcript_context(&history, &profile);
             let originals = context.retained_instructions().into_annotated_messages();
-            deduplicate(&mut context);
+            context.retain_new_instructions(&[]);
             assert_eq!(
                 context.retained_instructions().into_annotated_messages(),
                 originals
             );
         }
         history.messages[0].metadata = original_metadata;
+    }
+    let profile = crate::ContextProfile::synchronous();
+    // One complete transcript copy fits, but reserving both copies does not.
+    let mut expected = transcript_context(&history, &profile);
+    expected.retain_new_instructions(&[]);
+    let notice_tokens = crate::estimate_input_tokens(&crate::composition::user_message(vec![
+        ContentItem::InputText {
+            text: NOTICE.to_owned(),
+        },
+    ]));
+    let expected_tokens = expected.estimated_tokens();
+    let mut budget = crate::RequestBudget {
+        max_input_tokens: expected_tokens + notice_tokens,
+        existing_context_tokens: 0,
+    };
+    let limits = crate::ElasticSectionLimits::new(ENTRY_TOKENS, ENTRY_TOKENS).unwrap();
+    let config = crate::budget::tests::complete_minimum_budget(crate::ElasticBudgetConfig {
+        sections: [
+            (crate::ElasticSection::TranscriptMessages, limits),
+            (crate::ElasticSection::RetainedUserInstructions, limits),
+        ]
+        .into(),
+        ..Default::default()
+    });
+    let prepared = transcript_context(&history, &profile)
+        .prepare_elastic_entries(&config)
+        .unwrap()
+        .prepare_delivery(&[])
+        .unwrap();
+    let admitted = prepared
+        .clone()
+        .enforce_budget(budget, NOTICE.to_owned())
+        .unwrap();
+    assert_eq!(admitted.into_messages(), expected.into_messages());
+    // Duplicate credit does not waive the remaining minimum reservations.
+    budget.max_input_tokens = expected_tokens - 1;
+    assert!(matches!(
+        prepared.enforce_budget(budget, NOTICE.to_owned()),
+        Err(crate::SectionError::EvidenceLimitExceeded {
+            section: "request_budget"
+        })
+    ));
+
+    // A complete pending source can still be omitted by its section maximum.
+    // It cannot establish delivery proof until Required selection has kept it.
+    let grant = RetainedUserMessage {
+        turn_id: String::new(),
+        message_id: Some("earlier-grant".to_owned()),
+        text: "Proceed.".to_owned(),
+        complete: true,
+        origin: codex_history::UserInputOrigin::User,
+        phase: None,
+    };
+    let source = history
+        .retained
+        .record_user_message(
+            grant.clone(),
+            RetainedInputSource::Local(Some(EARLIER_SOURCE_ORDER)),
+            &uuid_v7_item_id_generator_for_test(),
+        )
+        .unwrap();
+    let mut item =
+        crate::composition::user_message(vec![ContentItem::InputText { text: grant.text }]);
+    item.set_id(Some(codex_protocol::ResponseItemId::from_server(
+        "earlier-grant".to_owned(),
+    )));
+    history.messages.insert(
+        /*index*/ 0,
+        ResponseItemEnvelope {
+            item,
+            metadata: Some(codex_history::CodexHarnessMetadata {
+                retained_source: Some(source),
+                ..Default::default()
+            }),
+        },
+    );
+    let expected = transcript_context(&history, &profile)
+        .retained_instructions()
+        .into_messages();
+    let newer = RetainedUserMessage {
+        turn_id: String::new(),
+        message_id: Some("newer".to_owned()),
+        text: "Do not publish. ".repeat(NEWEST_INSTRUCTION_REPEATS),
+        complete: true,
+        origin: codex_history::UserInputOrigin::User,
+        phase: None,
+    };
+    let source = history
+        .retained
+        .record_user_message(
+            newer.clone(),
+            RetainedInputSource::Local(Some(NEWEST_SOURCE_ORDER)),
+            &uuid_v7_item_id_generator_for_test(),
+        )
+        .unwrap();
+    let newest_id = source.id.clone();
+    let mut item =
+        crate::composition::user_message(vec![ContentItem::InputText { text: newer.text }]);
+    item.set_id(Some(codex_protocol::ResponseItemId::from_server(
+        "newer".to_owned(),
+    )));
+    history.messages.push(ResponseItemEnvelope {
+        item,
+        metadata: Some(codex_history::CodexHarnessMetadata {
+            retained_source: Some(source),
+            ..Default::default()
+        }),
+    });
+    const MINIMUM_TOKENS: usize = 320;
+    let mut full_proof = transcript_context(&history, &profile);
+    full_proof.retain_new_instructions(&[]);
+    let deduplicated_expected = full_proof.retained_instructions().into_messages();
+    for maximum in [Some(MINIMUM_TOKENS), None] {
+        let mut limits = crate::ElasticSectionLimits::new(MINIMUM_TOKENS, ENTRY_TOKENS).unwrap();
+        if let Some(maximum) = maximum {
+            limits = limits.with_max_total_section_tokens(maximum).unwrap();
+        }
+        let config = crate::budget::tests::complete_minimum_budget(crate::ElasticBudgetConfig {
+            sections: [
+                (crate::ElasticSection::TranscriptMessages, limits),
+                (
+                    crate::ElasticSection::RetainedUserInstructions,
+                    crate::ElasticSectionLimits::new(ENTRY_TOKENS, ENTRY_TOKENS).unwrap(),
+                ),
+            ]
+            .into(),
+            ..Default::default()
+        });
+        let prepared = transcript_context(&history, &profile)
+            .prepare_elastic_entries(&config)
+            .unwrap();
+        assert!(prepared.context.truncations.is_empty());
+        if maximum.is_none() {
+            assert!(prepared.estimated_tokens() > full_proof.estimated_tokens() + MINIMUM_TOKENS);
+        }
+        let admitted = prepared
+            .prepare_delivery(&[])
+            .unwrap()
+            .enforce_budget(
+                crate::RequestBudget {
+                    // The smaller budget requires duplicate credit to admit older proof.
+                    max_input_tokens: if maximum.is_some() {
+                        crate::DEFAULT_MAX_INPUT_TOKENS
+                    } else {
+                        full_proof.estimated_tokens() + MINIMUM_TOKENS
+                    },
+                    existing_context_tokens: 0,
+                },
+                NOTICE.to_owned(),
+            )
+            .unwrap();
+        let sources = admitted
+            .sections
+            .iter()
+            .filter(|section| section.id == "conversation_transcript")
+            .flat_map(|section| match &section.delivery {
+                SectionDelivery::UserContent(items) => items.as_slice(),
+                SectionDelivery::Message(_) => &[],
+            })
+            .filter_map(|item| item.source.as_ref().map(|source| &source.id))
+            .collect::<Vec<_>>();
+        if maximum.is_some() {
+            assert_eq!(sources, vec![&newest_id]);
+            assert_eq!(admitted.retained_instructions().into_messages(), expected);
+        } else {
+            let expected_sources = history
+                .messages
+                .iter()
+                .filter_map(|item| {
+                    item.metadata
+                        .as_ref()?
+                        .retained_source
+                        .as_ref()
+                        .map(|source| &source.id)
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(sources, expected_sources);
+            assert_eq!(
+                admitted.retained_instructions().into_messages(),
+                deduplicated_expected
+            );
+        }
     }
 }
 
@@ -492,9 +853,10 @@ fn coalesced_repl_text_cannot_attest_to_host_omission_delivery() {
             complete: true,
         },
         RetainedInputSource::Local(Some(0)),
+        &uuid_v7_item_id_generator_for_test(),
     );
     let profile = crate::ContextProfile::synchronous();
-    let mut previous = transcript_context(&history, profile);
+    let mut previous = transcript_context(&history, &profile);
     // Multimodal REPL results preserve raw text parts, coalesced with host guidance.
     previous.sections.push(crate::composition::SectionOutput {
         id: "node_repl_evidence",
@@ -514,7 +876,7 @@ fn coalesced_repl_text_cannot_attest_to_host_omission_delivery() {
     let (_, sync_metadata) = previous.into_annotated_user_inputs().unwrap();
     assert_eq!(sync_metadata, delivered[0].metadata);
     history.retained.mark_user_messages_incomplete();
-    let current = transcript_context(&history, profile).retained_instructions();
+    let current = transcript_context(&history, &profile).retained_instructions();
     let expected = vec![crate::composition::user_message(
         [START, USER_OMISSION, END]
             .map(|text| ContentItem::InputText {

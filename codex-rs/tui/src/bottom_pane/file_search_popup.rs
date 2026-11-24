@@ -168,11 +168,7 @@ impl WidgetRef for &FileSearchPopup {
                             .into(),
                         ],
                         match_indices,
-                        display_shortcut: None,
-                        description: None,
-                        wrap_indent: None,
-                        is_disabled: false,
-                        disabled_reason: None,
+                        ..Default::default()
                     }
                 })
                 .collect()

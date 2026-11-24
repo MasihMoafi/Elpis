@@ -97,6 +97,7 @@ fn hooks_to_info(hooks: &[codex_hooks::HookListEntry]) -> Vec<HookMetadata> {
                 source_path: hook.source_path.clone(),
                 source: hook.source.into(),
                 plugin_id: hook.plugin_id.clone(),
+                environment_id: hook.environment_id.clone(),
                 display_order: hook.display_order,
                 enabled: hook.enabled,
                 is_managed: hook.is_managed,
@@ -178,46 +179,77 @@ impl CatalogRequestProcessor {
         &self,
         params: ModelListParams,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
+        let (active_config, active_models_manager) = self
+            .model_catalog
+            .current()
+            .await
+            .map_err(|err| config_load_error(&err))?;
+        let (config, models_manager) = match params.model_provider.as_deref() {
+            None => (active_config, active_models_manager),
+            Some(provider_id) => {
+                if provider_id == active_config.model_provider_id {
+                    (active_config, active_models_manager)
+                } else {
+                    let config = config_for_provider(&active_config, provider_id)?;
+                    // Temporary catalogs must not replace the active provider's disk cache.
+                    let manager = self.thread_manager.temporary_models_manager_for_config(
+                        &config,
+                        &codex_models_manager::manager::ModelCatalogSettings::default(),
+                    );
+                    (config, manager)
+                }
+            }
+        };
+        let (config, models_manager) = if params.refresh.unwrap_or(false) {
+            let latest = self.load_latest_config(/*fallback_cwd*/ None).await?;
+            if latest.model_catalog != config.model_catalog {
+                let mut target = (*config).clone();
+                target.model_catalog = latest.model_catalog;
+                let manager = self.thread_manager.temporary_models_manager_for_config(
+                    &target,
+                    &codex_models_manager::manager::ModelCatalogSettings::default(),
+                );
+                (Arc::new(target), manager)
+            } else {
+                (config, models_manager)
+            }
+        } else {
+            (config, models_manager)
+        };
         // Gate the same provider used by the catalog, including when its model cache is warm.
         // Resolving credentials may refresh them, but explicit host policy prevents browser login.
-        // Another provider's listing is gated in `list_models_live`.
-        let lists_startup_provider = params
-            .model_provider
-            .as_deref()
-            .is_none_or(|provider_id| provider_id == self.config.model_provider_id);
-        if lists_startup_provider
-            && let Some(gateway) = codex_model_provider::create_model_provider(
-                self.config.model_provider.clone(),
-                Some(self.thread_manager.auth_manager()),
-            )
-            .gateway_auth_manager()
-            .map_err(|error| internal_error(error.to_string()))?
+        if let Some(gateway) = codex_model_provider::create_model_provider(
+            config.model_provider.clone(),
+            Some(self.thread_manager.auth_manager()),
+        )
+        .gateway_auth_manager()
+        .map_err(|error| internal_error(error.to_string()))?
         {
             // Refreshing credentials can contact the gateway before the catalog's own check.
             self.config_manager
-                .check_thread_model_provider(&self.config)
+                .check_thread_model_provider(&config)
                 .await
                 .map_err(|err| config_load_error(&err))?;
-            if gateway.resolve_access_token().await.is_err() {
+            if let Err(error) = gateway.resolve_access_token().await {
                 let current = self
                     .config_manager
                     .load_latest_config(/*fallback_cwd*/ None)
                     .await
                     .map_err(|err| config_load_error(&err))?;
-                // Login RPCs use current config, while the catalog retains its startup provider.
-                if current.model_provider_id != self.config.model_provider_id
-                    || current.model_provider != self.config.model_provider
+                // An explicit selection need not match the current default.
+                if current.model_providers.get(&config.model_provider_id)
+                    != Some(&config.model_provider)
+                    || (params.model_provider.is_none()
+                        && current.model_provider_id != config.model_provider_id)
                 {
                     return Err(invalid_request(
                         "Model provider settings changed. Restart Elpis to apply them, then retry fetching the model list",
                     ));
                 }
-                return Err(invalid_request(
-                    "Gateway sign-in required or unavailable. Complete gateway sign-in and retry fetching the model list",
-                ));
+                return Err(invalid_request(error.to_string()));
             }
         }
-        self.list_models(params)
+        self.list_models(params, config, models_manager)
             .await
             .map(|response| Some(response.into()))
     }
@@ -286,24 +318,41 @@ impl CatalogRequestProcessor {
     async fn list_models(
         &self,
         params: ModelListParams,
+        config: Arc<Config>,
+        models_manager: codex_models_manager::manager::SharedModelsManager,
     ) -> Result<ModelListResponse, JSONRPCErrorError> {
         let ModelListParams {
             limit,
             cursor,
             include_hidden,
             refresh,
-            model_provider,
+            model_provider: _,
         } = params;
-        let refresh = refresh.unwrap_or(false);
-        let other_provider = model_provider.filter(|id| *id != self.config.model_provider_id);
-        let presets = if refresh || other_provider.is_some() {
-            self.list_models_live(other_provider, refresh).await?
-        } else {
-            self.model_catalog
-                .list_models(codex_models_manager::manager::RefreshStrategy::OnlineIfUncached)
+        use codex_models_manager::manager::RefreshStrategy;
+        let refresh_strategy = if refresh.unwrap_or(false) {
+            // Check policy before an explicit fetch, even when a cached listing exists.
+            self.config_manager
+                .check_thread_model_provider(&config)
                 .await
-                .map_err(|err| config_load_error(&err))?
+                .map_err(|err| config_load_error(&err))?;
+            models_manager
+                .refresh_now(config.http_client_factory())
+                .await
+                .map_err(|error| {
+                    internal_error(format!(
+                        "Could not fetch the model list from `{}`: {error}",
+                        config.model_provider_id
+                    ))
+                })?;
+            RefreshStrategy::Offline
+        } else {
+            RefreshStrategy::OnlineIfUncached
         };
+        let presets = self
+            .model_catalog
+            .list_models_from_snapshot(config, models_manager, refresh_strategy)
+            .await
+            .map_err(|err| config_load_error(&err))?;
         let models = supported_models(presets, include_hidden.unwrap_or(false));
         let total = models.len();
 
@@ -340,59 +389,6 @@ impl CatalogRequestProcessor {
             data: items,
             next_cursor,
         })
-    }
-
-    /// Elpis: a model picker that just opened lists `provider_id` (default: the startup provider)
-    /// from its source. `refresh` fetches now and reports a failed fetch as an error, and rereads
-    /// `model_catalog_json`, so a model added while Elpis runs appears without a restart.
-    async fn list_models_live(
-        &self,
-        provider_id: Option<String>,
-        refresh: bool,
-    ) -> Result<Vec<codex_protocol::openai_models::ModelPreset>, JSONRPCErrorError> {
-        use codex_models_manager::manager::RefreshStrategy;
-        let latest = self.load_latest_config(/*fallback_cwd*/ None).await?;
-        // The startup provider keeps its startup settings, as the shared catalog does.
-        let mut target = (*self.config).clone();
-        if let Some(provider_id) = provider_id {
-            let Some(provider) = latest.model_providers.get(&provider_id) else {
-                return Err(invalid_request(format!(
-                    "Model provider `{provider_id}` is not configured"
-                )));
-            };
-            target.model_provider = provider.clone();
-            target.model_provider_id = provider_id;
-        }
-        if refresh {
-            target.model_catalog = latest.model_catalog.clone();
-        }
-        self.config_manager
-            .check_thread_model_provider(&target)
-            .await
-            .map_err(|err| config_load_error(&err))?;
-        let auth_manager = self.thread_manager.auth_manager();
-        // An explicit catalog file is authoritative and cheap: build it from the file just read.
-        let manager = if target.model_catalog.is_some() {
-            codex_core::build_models_manager(&target, auth_manager)
-        } else {
-            self.thread_manager.models_manager_for_config(&target)
-        };
-        let http_client_factory = target.http_client_factory();
-        let strategy = if refresh {
-            manager
-                .refresh_now(http_client_factory.clone())
-                .await
-                .map_err(|error| {
-                    internal_error(format!(
-                        "Could not fetch the model list from `{}`: {error}",
-                        target.model_provider_id
-                    ))
-                })?;
-            RefreshStrategy::Offline
-        } else {
-            RefreshStrategy::OnlineIfUncached
-        };
-        Ok(manager.list_models(strategy, http_client_factory).await)
     }
 
     async fn list_collaboration_modes(
@@ -634,6 +630,14 @@ impl CatalogRequestProcessor {
                         config.config_layer_stack,
                     )
                     .with_plugin_skill_snapshots(plugin_skill_snapshots);
+                    let skills_input = match self
+                        .thread_manager
+                        .environment_manager()
+                        .default_environment_id()
+                    {
+                        Some(environment_id) => skills_input.with_environment_id(environment_id),
+                        None => skills_input,
+                    };
                     let snapshot = skills_request
                         .snapshot_for_cwd(&skills_input, force_reload, fs)
                         .await;
@@ -676,12 +680,35 @@ impl CatalogRequestProcessor {
         Ok(SkillsExtraRootsSetResponse {})
     }
 
-    /// Handle `hooks/list` by resolving hooks for each requested cwd.
+    /// Resolve a loaded thread's hook inventory, or inspect configuration for each requested cwd.
     async fn hooks_list_response(
         &self,
         params: HooksListParams,
     ) -> Result<HooksListResponse, JSONRPCErrorError> {
-        let HooksListParams { cwds } = params;
+        let HooksListParams { cwds, thread_id } = params;
+        if let Some(thread_id) = thread_id {
+            if !cwds.is_empty() {
+                return Err(invalid_request("specify either threadId or cwds"));
+            }
+            let thread_id = ThreadId::from_string(&thread_id)
+                .map_err(|err| invalid_request(format!("invalid thread id: {err}")))?;
+            let thread = self
+                .thread_manager
+                .get_thread(thread_id)
+                .await
+                .map_err(|_| invalid_request(format!("thread not found: {thread_id}")))?;
+            let cwd = thread.config_snapshot().await.cwd().to_path_buf();
+            let hooks = thread.list_hooks();
+            return Ok(HooksListResponse {
+                data: vec![codex_app_server_protocol::HooksListEntry {
+                    cwd,
+                    hooks: hooks_to_info(&hooks.hooks),
+                    warnings: hooks.warnings,
+                    errors: Vec::new(),
+                }],
+            });
+        }
+
         let cwds = if cwds.is_empty() {
             vec![self.config.cwd.to_path_buf()]
         } else {
@@ -726,14 +753,17 @@ impl CatalogRequestProcessor {
             } else {
                 codex_core_plugins::PluginHookLoadOutcome::default()
             };
-            let hooks = codex_hooks::list_hooks(codex_hooks::HooksConfig {
+            let hooks_config = codex_hooks::HooksConfig {
                 feature_enabled: hooks_enabled,
                 bypass_hook_trust: config.bypass_hook_trust,
                 config_layer_stack: Some(config.config_layer_stack),
                 plugin_hook_sources: plugin_hooks.hook_sources,
                 plugin_hook_load_warnings: plugin_hooks.hook_load_warnings,
                 ..Default::default()
-            });
+            };
+            let hooks = tokio::task::spawn_blocking(move || codex_hooks::list_hooks(hooks_config))
+                .await
+                .map_err(|err| internal_error(format!("hook discovery task failed: {err}")))?;
             data.push(codex_app_server_protocol::HooksListEntry {
                 cwd,
                 hooks: hooks_to_info(&hooks.hooks),

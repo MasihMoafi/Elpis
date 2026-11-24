@@ -36,6 +36,8 @@ use hyperlinks::wrap_two_column_row;
 #[derive(Default)]
 pub(crate) struct GenericDisplayRow {
     pub name: String,
+    /// Rich label already laid out at the picker width, including its gutter and links.
+    pub wrapped_name: Vec<crate::terminal_hyperlinks::HyperlinkLine>,
     /// Optional full-width selection treatment; other rows use the shared text accent.
     pub selection_style: Option<Style>,
     /// Elpis: optional colour for the name, kept when the row is selected (e.g. red for a
@@ -179,12 +181,30 @@ fn compute_desc_col(
         .min(max_auto_desc_col);
     if column_width
         .description_layout
-        .should_hide(content_width, desc_col)
+        .should_hide_column(content_width, desc_col)
     {
         0
     } else {
         desc_col
     }
+}
+
+pub(super) fn should_show_selected_description_below(
+    rows_all: &[GenericDisplayRow],
+    state: &ScrollState,
+    max_results: usize,
+    width: u16,
+    column_width: ColumnWidthConfig,
+) -> bool {
+    if rows_all.is_empty() {
+        return false;
+    }
+    let visible_items = max_results.min(rows_all.len());
+    let start_idx = compute_item_window_start(rows_all, state, visible_items);
+    let desc_col = compute_desc_col(rows_all, start_idx, visible_items, width, column_width);
+    column_width
+        .description_layout
+        .should_show_selected_below(width, desc_col)
 }
 
 /// Determine how many spaces to indent wrapped lines for a row.
@@ -431,17 +451,14 @@ fn render_rows_inner(
             break;
         }
 
-        let mut wrapped =
-            wrap_row_lines(row, desc_col, area.width, column_width.description_layout);
+        let wrapped = styled_row_lines(
+            row,
+            Some(i) == state.selected_idx,
+            desc_col,
+            area.width,
+            column_width.description_layout,
+        );
         clipped |= wrapped.len() > usize::from(area.bottom().saturating_sub(cur_y));
-        for line in &mut wrapped {
-            apply_row_state_style(
-                std::slice::from_mut(&mut line.line),
-                Some(i) == state.selected_idx && !row.is_disabled,
-                row.is_disabled,
-                row.selection_style,
-            );
-        }
 
         // Render the wrapped lines.
         let mut rendered_item = false;
@@ -473,6 +490,26 @@ fn render_rows_inner(
         has_above: start_idx > 0,
         has_below: clipped || start_idx + rendered_items < rows_all.len(),
     }
+}
+
+/// Wrap one row with the same selection styling used by the shared picker renderer.
+pub(crate) fn styled_row_lines(
+    row: &GenericDisplayRow,
+    selected: bool,
+    desc_col: usize,
+    width: u16,
+    description_layout: SelectionDescriptionLayout,
+) -> Vec<crate::terminal_hyperlinks::HyperlinkLine> {
+    let mut lines = wrap_row_lines(row, desc_col, width, description_layout);
+    for line in &mut lines {
+        apply_row_state_style(
+            std::slice::from_mut(&mut line.line),
+            selected && !row.is_disabled,
+            row.is_disabled,
+            row.selection_style,
+        );
+    }
+    lines
 }
 
 /// Render a list of rows using the provided ScrollState, with shared styling

@@ -1,7 +1,12 @@
 //! Owns review reporting and the per-thread denial window. The host publishes
 //! events and enforces interruption only on the still-active owning turn.
+//! Internal accounting runs even when no client event is available. Review
+//! completion captures one monotonic duration for latency reporting while retaining
+//! the actual wall-clock completion timestamp for event ordering.
 
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::GuardianApprovalRequestSource;
@@ -29,26 +34,48 @@ use crate::ReviewCompletion;
 pub struct ReviewMetadata {
     pub thread_id: String,
     pub turn_id: String,
+    /// Origin of the issuing turn, inherited by delegated turns at admission.
+    pub turn_trigger: Option<String>,
     pub review_id: String,
     pub target_item_id: Option<String>,
     pub plugin_id: Option<String>,
     pub script_path: Option<String>,
     pub approval_request_source: GuardianApprovalRequestSource,
     pub reviewed_action: GuardianReviewedAction,
-    pub action: GuardianAssessmentAction,
+    /// Absent when the action has no client-facing representation.
+    pub action: Option<GuardianAssessmentAction>,
     pub review_reason: GuardianReviewReason,
     pub model_context: ModelInvocationContext,
+    /// Configured review budget; None is reported as zero (unlimited).
+    pub timeout: Option<Duration>,
 }
 
 pub struct ReviewReport {
-    started: GuardianAssessmentEvent,
+    started: Option<GuardianAssessmentEvent>,
+    started_instant: Instant,
     tracking: GuardianReviewTrackContext,
     approval_request_source: GuardianApprovalRequestSource,
     reviewed_action: GuardianReviewedAction,
+    turn_origin: &'static str,
 }
 
 impl ReviewReport {
     pub fn new(metadata: ReviewMetadata) -> Self {
+        let started_instant = Instant::now();
+        // Keep client-supplied trigger strings out of metric labels. This describes
+        // the turn's origin, not later input steered into an already-running turn.
+        let turn_origin = match metadata.turn_trigger.as_deref() {
+            Some(
+                "automation"
+                | "mcp_event"
+                | "automation_cron_scheduled"
+                | "automation_cron_run_now"
+                | "automation_heartbeat_scheduled"
+                | "automation_heartbeat_run_now",
+            ) => "automation",
+            None | Some("") => "unknown",
+            Some(_) => "other",
+        };
         let tracking = GuardianReviewTrackContext::new(
             metadata.thread_id,
             metadata.turn_id.clone(),
@@ -56,9 +83,11 @@ impl ReviewReport {
             metadata.target_item_id.clone(),
             metadata.approval_request_source,
             metadata.reviewed_action.clone(),
-            crate::REVIEW_TIMEOUT.as_millis() as u64,
+            metadata
+                .timeout
+                .map_or(0, |timeout| timeout.as_millis() as u64),
         );
-        let started = GuardianAssessmentEvent {
+        let started = metadata.action.map(|action| GuardianAssessmentEvent {
             review_reason: Some(metadata.review_reason),
             model_context: Some(metadata.model_context),
             id: metadata.review_id,
@@ -73,24 +102,23 @@ impl ReviewReport {
             user_authorization: None,
             rationale: None,
             decision_source: None,
-            action: metadata.action,
-        };
+            action,
+        });
         Self {
             started,
+            started_instant,
             tracking,
             approval_request_source: metadata.approval_request_source,
             reviewed_action: metadata.reviewed_action,
+            turn_origin,
         }
     }
 
-    pub fn turn_id(&self) -> &str {
-        &self.started.turn_id
-    }
-
-    pub fn started_event(&self) -> GuardianAssessmentEvent {
+    pub fn started_event(&self) -> Option<GuardianAssessmentEvent> {
         self.started.clone()
     }
 
+    /// Completes the report and captures the elapsed duration to use when tracking it.
     pub fn complete(
         &self,
         outcome: GuardianReviewOutcome,
@@ -98,11 +126,17 @@ impl ReviewReport {
         require_guardian: bool,
         analytics: GuardianReviewAnalyticsResult,
         completed_at_ms: i64,
-    ) -> ReviewCompletion {
+    ) -> (ReviewCompletion, Duration) {
+        let elapsed = self.started_instant.elapsed();
         let mut event = self.started.clone();
-        event.completed_at_ms = Some(completed_at_ms);
-        event.decision_source = Some(GuardianAssessmentDecisionSource::Agent);
-        crate::complete_review(outcome, model, require_guardian, event, analytics)
+        if let Some(event) = &mut event {
+            event.completed_at_ms = Some(completed_at_ms);
+            event.decision_source = Some(GuardianAssessmentDecisionSource::Agent);
+        }
+        (
+            crate::complete_review(outcome, model, require_guardian, event, analytics),
+            elapsed,
+        )
     }
 
     pub fn track(
@@ -111,15 +145,17 @@ impl ReviewReport {
         analytics: &AnalyticsEventsClient,
         result: GuardianReviewAnalyticsResult,
         completed_at_ms: u64,
+        elapsed: Duration,
     ) {
         crate::metrics::emit_guardian_review_metrics(
             telemetry,
             &result,
             self.approval_request_source,
             &self.reviewed_action,
-            completed_at_ms.saturating_sub(self.tracking.started_at_ms),
+            self.turn_origin,
+            elapsed,
         );
-        analytics.track_guardian_review(&self.tracking, result, completed_at_ms);
+        analytics.track_guardian_review(&self.tracking, result, completed_at_ms, elapsed);
     }
 }
 
@@ -163,3 +199,7 @@ impl ReviewDenials {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "reporting_tests.rs"]
+mod tests;

@@ -14,7 +14,8 @@ async fn daybreak_status_surfaces_follow_the_thread_preference() {
         chat.refresh_terminal_title();
         values.push(format!(
             "{} | {}",
-            chat.status_line_value(StatusLineItem::Daybreak).unwrap(),
+            chat.status_line_value_for_item(StatusLineItem::Daybreak)
+                .unwrap(),
             chat.last_terminal_title.as_deref().unwrap()
         ));
     }
@@ -22,7 +23,8 @@ async fn daybreak_status_surfaces_follow_the_thread_preference() {
     chat.refresh_terminal_title();
     values.push(format!(
         "{} | {}",
-        chat.status_line_value(StatusLineItem::Daybreak).unwrap(),
+        chat.status_line_value_for_item(StatusLineItem::Daybreak)
+            .unwrap(),
         chat.last_terminal_title.as_deref().unwrap()
     ));
     insta::assert_snapshot!(values.join("\n"), @r"
@@ -281,19 +283,23 @@ async fn terminal_title_activity_indicators_do_not_animate_when_animations_are_d
 }
 
 #[tokio::test]
-async fn thread_title_progress_renders_names_and_fallbacks_on_both_surfaces() {
+async fn thread_identity_renders_names_and_fallbacks_on_both_surfaces() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
     chat.thread_id = Some(ThreadId::from_string("550e8400-e29b-41d4-a716-446655440000").unwrap());
     chat.local_settings.tui.animations = false;
     let mut rendered = Vec::new();
-    for (name, pending) in [
-        (None, false),
-        (None, true),
-        (Some("Fix login timeout"), true),
-        (Some("Fix login timeout"), false),
+    for (mode, name) in [
+        (crate::ThreadParamsMode::Embedded, None),
+        (crate::ThreadParamsMode::Embedded, Some("Fix login timeout")),
+        (crate::ThreadParamsMode::Cloud, None),
+        (crate::ThreadParamsMode::Cloud, Some("Fix login timeout")),
+        (
+            crate::ThreadParamsMode::Cloud,
+            Some("A long thread name that must leave room for the cloud icon"),
+        ),
     ] {
+        chat.thread_params_mode = mode;
         chat.thread_name = name.map(str::to_owned);
-        chat.set_thread_title_generation_pending(pending);
         chat.refresh_status_surfaces();
         let status = [
             StatusLineItem::ThreadName,
@@ -317,14 +323,11 @@ async fn thread_title_progress_renders_names_and_fallbacks_on_both_surfaces() {
         .collect::<Vec<_>>()
         .join(" | ");
         rendered.push(format!(
-            "name={name:?}, pending={pending}\nstatus: {status}\ntitle: {title}\ndefault title: {}",
+            "{mode:?} name={name:?}\nstatus: {status}\ntitle: {title}\ndefault title: {}",
             chat.last_terminal_title.as_deref().unwrap()
         ));
     }
-    insta::assert_snapshot!(
-        "thread_title_generation_status_surfaces",
-        rendered.join("\n\n")
-    );
+    insta::assert_snapshot!("thread_identity_status_surfaces", rendered.join("\n\n"));
     chat.thread_name = Some("  ".to_string());
     assert_eq!(
         chat.status_line_value_for_item(StatusLineItem::ThreadName),

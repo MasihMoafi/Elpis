@@ -1,5 +1,7 @@
-//! Publishes resolved MCP configuration while preserving session-static settings.
+//! Publishes independent Guardian policy, MCP configuration, and host rollouts.
+//! Preserves unrelated session settings.
 
+use crate::McpRefreshReason;
 use std::sync::Arc;
 
 use crate::ConfigRefreshOutcome;
@@ -14,18 +16,91 @@ use tracing::warn;
 
 impl Session {
     pub(crate) async fn disable_mcp_enterprise_auth(&self) {
-        let mut state = self.state.lock().await;
-        let mut config = state
-            .session_configuration
-            .original_config_do_not_use
-            .as_ref()
-            .clone();
-        config.disable_mcp_enterprise_auth();
-        state.session_configuration.original_config_do_not_use = Arc::new(config);
-        self.services.mcp_runtime.invalidate_resource_caches();
-        self.mark_mcp_runtime_dirty();
-        drop(state);
+        {
+            let mut state = self.state.lock().await;
+            let mut config = state
+                .session_configuration
+                .original_config_do_not_use
+                .as_ref()
+                .clone();
+            config.config_layer_stack.mcp_ema_cancellation().cancel();
+            config.disable_mcp_enterprise_auth();
+            state.session_configuration.original_config_do_not_use = Arc::new(config);
+            self.services.mcp_runtime.invalidate_resource_caches();
+            self.mark_mcp_runtime_dirty(McpRefreshReason::EnterpriseAuthDisabled);
+        }
+        self.services.mcp_runtime.quiesce_ema().await;
         self.schedule_mcp_prewarm();
+    }
+
+    /// Publishes managed Guardian requirements without validating or restarting MCP.
+    /// User and session fallbacks remain pinned until their own reload.
+    pub(crate) async fn refresh_guardian_policy(
+        &self,
+        snapshot: &codex_config::GuardianPolicySnapshot,
+    ) -> ConfigRefreshOutcome {
+        let mut state = self.state.lock().await;
+        let current = &state.session_configuration.original_config_do_not_use;
+        if snapshot.revision <= current.guardian_policy_revision {
+            return ConfigRefreshOutcome::Stale;
+        }
+        let binding = snapshot
+            .binding
+            .as_ref()
+            .map(codex_config::CloudConfigBundleBinding::read);
+        match binding
+            .as_ref()
+            .map(|guard| guard.status)
+            .unwrap_or(CloudConfigBundleBindingStatus::Current)
+        {
+            CloudConfigBundleBindingStatus::Stale => return ConfigRefreshOutcome::Stale,
+            CloudConfigBundleBindingStatus::Suspended => return ConfigRefreshOutcome::Rejected,
+            CloudConfigBundleBindingStatus::Current => {}
+        }
+        let mut config = current.as_ref().clone();
+        config.config_layer_stack.apply_guardian_policy(snapshot);
+        let Ok(fallback) = config.config_layer_stack.guardian_config() else {
+            return ConfigRefreshOutcome::Rejected;
+        };
+        (config.guardian_policy_config, config.guardian_extra_policy) =
+            crate::config::resolve_guardian_policy_text(
+                config.config_layer_stack.requirements_toml(),
+                Some(&fallback),
+            );
+        let configuration = &state.session_configuration;
+        let model = (!configuration.trusted_guardian_reviewer)
+            .then_some(configuration.step_settings.collaboration_mode.model());
+        let requested = config
+            .requested_approvals_reviewer
+            .unwrap_or(configuration.step_settings.approvals_reviewer);
+        let Ok(reviewer) = crate::config::resolve_guardian_reviewer(
+            requested,
+            model,
+            config.config_layer_stack.requirements(),
+        ) else {
+            return ConfigRefreshOutcome::Rejected;
+        };
+        config.requested_approvals_reviewer = Some(requested);
+        config.approvals_reviewer = reviewer;
+        config.guardian_policy_revision = snapshot.revision;
+        let previous = Arc::downgrade(current);
+        let config = Arc::new(config);
+        let snapshots = &mut state.guardian_config_snapshots;
+        if snapshots
+            .last()
+            .is_none_or(|latest| !latest.ptr_eq(&previous))
+        {
+            snapshots.clear();
+            snapshots.push(previous);
+        }
+        snapshots.retain(|owner| owner.strong_count() != 0);
+        snapshots.push(Arc::downgrade(&config));
+        let settings = &mut state.session_configuration.step_settings;
+        if settings.approvals_reviewer != reviewer {
+            Arc::make_mut(settings).approvals_reviewer = reviewer;
+        }
+        state.session_configuration.original_config_do_not_use = config;
+        ConfigRefreshOutcome::Published
     }
 
     pub(crate) async fn refresh_runtime_config(
@@ -94,6 +169,10 @@ impl Session {
         if !matches!(scope, RuntimeConfigRefresh::UserFiles) {
             for (feature, description) in [
                 (Feature::Mcp20260728, "MCP protocol"),
+                (
+                    Feature::DaybreakProgramPropagation,
+                    "Daybreak helper propagation",
+                ),
                 (Feature::CodexAppsMcp20260728, "Codex Apps MCP protocol"),
                 // Elpis: Smart Prune is switched during a session; later turns follow the switch.
                 (Feature::AutomaticContextPruning, "Smart Prune"),
@@ -114,24 +193,44 @@ impl Session {
         {
             warn!("failed to refresh Subagents config: {err}");
         }
+        // Publish host rollout changes only to future turn snapshots. Active turns
+        // must retain one capture policy across tool dispatch and Guardian review.
+        if matches!(scope, RuntimeConfigRefresh::User)
+            && let Err(err) = config.features.set_enabled(
+                Feature::CriticalPathTiming,
+                next_config.features.enabled(Feature::CriticalPathTiming),
+            )
+        {
+            warn!("failed to refresh critical path timing config: {err}");
+        }
         let mut config = Arc::new(config);
         let notify_contributors = !matches!(scope, RuntimeConfigRefresh::Mcp)
             && !self.services.extensions.config_contributors().is_empty();
         let (previous_config, new_config) = {
             let mut state = self.state.lock().await;
-            // Loaded snapshots can publish only while their captured owner is current.
-            if !Arc::ptr_eq(
-                &state.session_configuration.original_config_do_not_use,
-                &expected_config,
-            ) {
-                return ConfigRefreshOutcome::Stale;
+            let current = &state.session_configuration.original_config_do_not_use;
+            if !Arc::ptr_eq(current, &expected_config) {
+                let snapshots = &state.guardian_config_snapshots;
+                if !matches!(scope, RuntimeConfigRefresh::Mcp)
+                    || snapshots
+                        .last()
+                        .is_none_or(|latest| !std::ptr::eq(latest.as_ptr(), Arc::as_ptr(current)))
+                    || !snapshots
+                        .iter()
+                        .any(|owner| std::ptr::eq(owner.as_ptr(), Arc::as_ptr(&expected_config)))
+                {
+                    return ConfigRefreshOutcome::Stale;
+                }
+                // All MCP inputs still belong to the captured owner. Carry forward
+                // the Guardian policy that was published while we loaded them.
+                Arc::make_mut(&mut config).retain_guardian_policy_from(current);
             }
             // User-only refreshes retain the current managed inputs and their
-            // admission binding. Only MCP refreshes can publish a new policy.
+            // admission binding. Guardian policy has a separate publication path.
             let policy_guard = matches!(scope, RuntimeConfigRefresh::Mcp)
                 .then(|| next_config.config_layer_stack.cloud_config_binding())
                 .flatten()
-                .map(|binding| binding.read());
+                .map(codex_config::CloudConfigBundleBinding::read);
             let policy_status = policy_guard
                 .as_ref()
                 .map(|guard| guard.status)
@@ -170,21 +269,42 @@ impl Session {
             }
             let previous_config = notify_contributors
                 .then(|| self.build_effective_session_config(&state.session_configuration));
-            state.session_configuration.original_config_do_not_use = Arc::clone(&config);
-            drop(policy_guard);
-            if matches!(scope, RuntimeConfigRefresh::Mcp) {
-                self.services.mcp_runtime.invalidate_resource_caches();
+            if config.mcp_enterprise_managed_auth.is_none() {
+                config.config_layer_stack.mcp_ema_cancellation().cancel();
             }
-            self.mark_mcp_runtime_dirty();
+            if !matches!(scope, RuntimeConfigRefresh::UserFiles) {
+                let cancellation = config
+                    .config_layer_stack
+                    .mcp_ema_cancellation()
+                    .refreshed(next_config.config_layer_stack.mcp_ema_cancellation());
+                let config = Arc::make_mut(&mut config);
+                config.config_layer_stack = config
+                    .config_layer_stack
+                    .clone()
+                    .with_mcp_ema_cancellation(cancellation);
+            }
+            state.session_configuration.original_config_do_not_use = Arc::clone(&config);
+            state.guardian_config_snapshots.clear();
+            drop(policy_guard);
+            self.mark_mcp_runtime_dirty(match scope {
+                RuntimeConfigRefresh::User => McpRefreshReason::UserConfigReloaded,
+                RuntimeConfigRefresh::Mcp => McpRefreshReason::McpConfigReloaded,
+                RuntimeConfigRefresh::UserFiles => McpRefreshReason::UserConfigFilesReloaded,
+            });
             let new_config = notify_contributors
                 .then(|| self.build_effective_session_config(&state.session_configuration));
             (previous_config, new_config)
         };
+        if config
+            .config_layer_stack
+            .mcp_ema_cancellation()
+            .is_cancelled()
+        {
+            self.services.mcp_runtime.quiesce_ema().await;
+        }
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
         self.schedule_mcp_prewarm();
-        if !matches!(scope, RuntimeConfigRefresh::Mcp) {
-            self.refresh_hooks(config).await;
-        }
+        self.refresh_hooks(config).await;
         outcome
     }
 }

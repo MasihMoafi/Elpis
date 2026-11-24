@@ -1,6 +1,10 @@
+pub mod cloud_config;
 pub(crate) mod debug_sandbox;
 mod exit_status;
+mod git_credential;
 pub(crate) mod login;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub mod shared_sandbox_launcher;
 
 use clap::Args;
 use clap::Parser;
@@ -9,22 +13,24 @@ use codex_utils_cli::CliConfigOverrides;
 use codex_utils_cli::ProfileV2Name;
 use std::path::PathBuf;
 
-pub use debug_sandbox::run_command_under_landlock;
+pub use debug_sandbox::run_command_under_linux_sandbox;
 pub use debug_sandbox::run_command_under_seatbelt;
 pub use debug_sandbox::run_command_under_windows_sandbox;
+pub use git_credential::GitCredentialArgs;
+pub use git_credential::run_git_credential;
 pub use login::read_access_token_from_stdin;
 pub use login::read_api_key_from_stdin;
 pub use login::run_login_status;
 pub use login::run_login_with_access_token;
 pub use login::run_login_with_api_key;
-pub use login::run_login_with_chatgpt;
+pub use login::run_login_with_browser;
 pub use login::run_login_with_device_code;
 pub use login::run_login_with_device_code_fallback_to_browser;
 pub use login::run_logout;
 
 #[derive(Debug, Default, Args)]
 pub struct SandboxStateArgs {
-    /// JSON value from `codex/sandbox-state-meta` to apply directly.
+    /// Opaque JSON value from `codex/sandbox-state` to apply directly.
     #[arg(
         long = "sandbox-state-json",
         value_name = "JSON",
@@ -104,7 +110,11 @@ fn parse_absolute_path(raw: &str) -> Result<AbsolutePathBuf, String> {
 }
 
 #[derive(Debug, Parser)]
-pub struct LandlockCommand {
+pub struct LinuxSandboxCommand {
+    /// Route outbound TCP through the managed SOCKS proxy.
+    #[arg(long)]
+    pub transparent_tcp: bool,
+
     #[command(flatten)]
     pub sandbox_state: SandboxStateArgs,
 

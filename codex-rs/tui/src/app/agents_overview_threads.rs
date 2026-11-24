@@ -1,25 +1,30 @@
 //! Retains overview membership for this TUI, independently of server subscriptions.
-//! A bounded recent seed runs at startup, after reconnect, and after event lag.
+//! Each backend owns its initialization and discovery cursor. A bounded recent seed runs
+//! at startup, after reconnect, and after event lag. Reopening also checks the
+//! newest rows on parked backends.
 //! Discovery merges into retained membership without evicting rows.
 
 use super::App;
 use super::agents_overview::AGENTS_OVERVIEW_VIEW_ID;
 use super::agents_overview_details::preview_agent_message;
+use super::agents_overview_discovery::AgentsOverviewDiscovery;
+use super::agents_overview_discovery::is_overview_root;
 use super::agents_overview_discovery::list_pinned_threads;
 use super::app_server_event_targets::ServerNotificationThreadTarget;
 use super::app_server_event_targets::server_notification_thread_target;
-use crate::AppServerTarget;
 use crate::app_event::AgentsOverviewThreadRefresh;
 use crate::app_event::AppEvent;
 use crate::app_server_session::AppServerSession;
+use crate::backend_id::BackendId;
 use crate::chatwidget::ChatWidget;
+use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
-use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadLoadedListParams;
@@ -30,8 +35,9 @@ use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadTurnsListParams;
 use codex_app_server_protocol::ThreadTurnsListResponse;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::SubAgentSource;
+use futures::StreamExt;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 const RECENT_DETAIL_LIMIT: usize = 10;
@@ -50,6 +56,11 @@ async fn overview_descendants(
             .request_typed::<ThreadListResponse>(ClientRequest::ThreadList {
                 request_id: RequestId::String(Uuid::new_v4().to_string()),
                 params: ThreadListParams {
+                    include_attached_threads: false,
+                    current_account_only: false,
+                    included_thread_ids: None,
+                    excluded_thread_ids: None,
+                    attached_to_thread_id: None,
                     ancestor_thread_id: Some(root.to_string()),
                     // Ancestry, rather than executor kind, identifies delegated workers.
                     source_kinds: None,
@@ -113,26 +124,39 @@ impl App {
             self.agents_overview.conversation_preview_thread_id = None;
         }
         self.prepare_agents_overview_removal(&std::collections::HashSet::from([thread_id]));
+        self.agents_overview.search_matches.remove(&thread_id);
         self.agents_overview.removed_threads.insert(thread_id);
+        self.agents_overview
+            .refresh_notifications
+            .remove(&thread_id);
+        self.agents_overview.unread.remove(&thread_id);
         if let Some(Some(thread)) = self.agents_overview.threads.remove(&thread_id)
-            && !thread.ephemeral
-            && thread.parent_thread_id.is_none()
-            && !matches!(
-                thread.source,
-                SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
-            )
+            && is_overview_root(&thread)
             && !self.agents_overview.hidden_threads.contains(&thread_id)
+            && let Some(owner) = self.backend_registry.owner(thread_id)
         {
-            self.agents_overview.refill_count += 1;
+            *self
+                .agents_overview
+                .refill_by_backend
+                .entry(owner)
+                .or_default() += 1;
         }
     }
 
     pub(super) fn show_more_agents_overview(&mut self, app_server: &AppServerSession) {
-        if !self.agents_overview.discovery.has_more() {
-            return;
+        let owner = app_server.backend_id();
+        if self
+            .agents_overview
+            .discovery
+            .get(&owner)
+            .is_some_and(AgentsOverviewDiscovery::has_more)
+            && let Some(handle) = self.backend_registry.request_handle(owner)
+        {
+            if self.agents_overview.refill_count(owner) == 0 {
+                self.agents_overview.show_more_backends.insert(owner);
+            }
+            self.start_agents_overview_refresh_for_backend(owner, handle);
         }
-        self.agents_overview.show_more_requested |= self.agents_overview.refill_count == 0;
-        self.start_agents_overview_refresh(app_server);
     }
 
     pub(super) fn track_agents_overview_notification(&mut self, notification: &ServerNotification) {
@@ -166,6 +190,9 @@ impl App {
                 | ServerNotification::ThreadDeleted(_)
         ) {
             self.agents_overview.blank_sessions.remove(&thread_id);
+            self.agents_overview
+                .draft_cloud_environments
+                .remove(&thread_id);
         }
         self.track_agents_overview_conversation(thread_id, notification);
         self.track_agents_overview_activity(thread_id, notification);
@@ -173,8 +200,17 @@ impl App {
             .agents_overview
             .threads
             .get_mut(&thread_id)
-            .and_then(Option::as_mut);
+            .and_then(Option::as_mut)
+            .or_else(|| self.agents_overview.search_matches.get_mut(&thread_id));
         match notification {
+            ServerNotification::ThreadReadStateChanged(change) => {
+                if change.read_state.first_unread.is_some() {
+                    self.agents_overview.unread.insert(thread_id);
+                } else {
+                    self.agents_overview.unread.remove(&thread_id);
+                }
+                self.repaint_agents_overview();
+            }
             ServerNotification::ThreadTokenUsageUpdated(usage) => {
                 if self.agents_overview.threads.contains_key(&thread_id) {
                     self.agents_overview
@@ -198,6 +234,7 @@ impl App {
                 {
                     let mut thread = started.thread.clone();
                     thread.turns.clear();
+                    self.agents_overview.search_matches.remove(&thread_id);
                     self.agents_overview.threads.insert(thread_id, Some(thread));
                 }
                 self.agents_overview.refresh_thread_ids.insert(thread_id);
@@ -226,7 +263,16 @@ impl App {
                 self.agents_overview
                     .requested_permission_profiles
                     .remove(&thread_id);
-                self.agents_overview.activity.remove(&thread_id);
+                if let Some(message) = self
+                    .agents_overview
+                    .activity
+                    .remove(&thread_id)
+                    .and_then(|activity| activity.last_message)
+                {
+                    self.agents_overview
+                        .last_messages
+                        .insert(thread_id, message);
+                }
                 if let Some(usage) = self.agents_overview.usage.get_mut(&thread_id) {
                     usage.tokens = None;
                 }
@@ -294,12 +340,14 @@ impl App {
         }
         if !matches!(
             notification,
-            ServerNotification::ThreadReverted(_) | ServerNotification::ThreadTokenUsageUpdated(_)
+            ServerNotification::ThreadReverted(_)
+                | ServerNotification::ThreadTokenUsageUpdated(_)
+                | ServerNotification::ThreadReadStateChanged(_)
         ) && self.agents_overview.threads.contains_key(&thread_id)
         {
             self.agents_overview.refresh_thread_ids.insert(thread_id);
         }
-        if self.agents_overview.request_id.is_some() {
+        if self.agents_overview.active_refresh.is_some() {
             // Replay the latest notification of each kind after the read, in arrival order.
             // This also protects sessions whose metadata has not arrived in the initial seed.
             let pending = self
@@ -338,61 +386,125 @@ impl App {
             .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_none()
-            || (!self.agents_overview.initialized && self.agents_overview.request_id.is_none())
         {
             return;
         }
+        self.agents_overview.pin_refresh_requested = true;
         self.start_agents_overview_refresh(app_server);
     }
 
     fn start_agents_overview_refresh(&mut self, app_server: &AppServerSession) {
+        let backend_id = app_server.backend_id();
+        if self.reconnect.offline
+            || self
+                .app_server_backend_id
+                .is_some_and(|owner| owner != backend_id)
+        {
+            return;
+        }
+        self.backend_registry.connect(app_server);
+        self.start_agents_overview_refresh_for_backend(backend_id, app_server.request_handle());
+    }
+
+    pub(super) fn start_agents_overview_refresh_for_backend(
+        &mut self,
+        backend_id: BackendId,
+        request_handle: AppServerRequestHandle,
+    ) {
+        if self.reconnect.offline
+            && self
+                .app_server_backend_id
+                .is_none_or(|owner| owner == backend_id)
+        {
+            return;
+        }
+        let overview = &mut self.agents_overview;
+        let initialized = overview.initialized.contains(&backend_id);
+        let source_has_more = overview
+            .discovery
+            .get(&backend_id)
+            .is_none_or(AgentsOverviewDiscovery::has_more);
         let visible = self
             .chat_widget
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .is_some();
-        if !visible
-            && (self.agents_overview.initialized
-                || matches!(self.app_server_target, AppServerTarget::Embedded))
-        {
+        if !visible && initialized {
             return;
         }
-        if self.agents_overview.request_id.is_some() {
-            self.agents_overview.refresh_pending = true;
+        if overview.active_refresh.is_some() {
+            if !overview.pending_refresh_backends.contains(&backend_id) {
+                overview.pending_refresh_backends.push_back(backend_id);
+            }
             return;
         }
-        if self.agents_overview.initialized
-            && self.agents_overview.refresh_thread_ids.is_empty()
-            && !self.agents_overview.show_more_requested
-            && !(self.agents_overview.refill_count > 0 && self.agents_overview.discovery.has_more())
-            && !self.agents_overview.pin_refresh_requested
-        {
+        let refill = overview.refill_count(backend_id);
+        let queued = overview.pending_refresh_backends.contains(&backend_id);
+        if queued {
+            overview
+                .pending_refresh_backends
+                .retain(|id| *id != backend_id);
+            overview.pin_refresh_requested = true;
+        }
+        let should_refresh = !initialized
+            || overview.refresh_thread_ids.iter().any(|id| {
+                self.backend_registry
+                    .owner(*id)
+                    .is_none_or(|owner| owner == backend_id)
+            })
+            || overview.show_more_backends.contains(&backend_id)
+            || (refill > 0 && source_has_more)
+            || overview.pin_refresh_requested;
+        if !should_refresh {
             return;
         }
 
         let full_refresh = std::mem::take(&mut self.agents_overview.pin_refresh_requested);
+        let mut unread_rows = Vec::new();
+        if full_refresh {
+            unread_rows.extend(
+                self.agents_overview
+                    .visible_thread_ids
+                    .iter()
+                    .copied()
+                    .filter(|id| {
+                        self.agents_overview.unread.contains(id)
+                            && self
+                                .backend_registry
+                                .owner(*id)
+                                .is_none_or(|owner| owner == backend_id)
+                    }),
+            );
+        }
         let request_id = Uuid::new_v4();
-        self.agents_overview.request_id = Some(request_id);
-        let initialized = self.agents_overview.initialized;
-        let refill = self.agents_overview.refill_count;
-        let show_more =
-            refill == 0 && std::mem::take(&mut self.agents_overview.show_more_requested);
+        self.agents_overview.active_refresh = Some((request_id, backend_id));
+        let show_more = refill == 0
+            && source_has_more
+            && self.agents_overview.show_more_backends.remove(&backend_id);
         self.agents_overview.refresh_show_more = show_more;
-        let discover =
-            !initialized || show_more || (refill > 0 && self.agents_overview.discovery.has_more());
+        let discover = !initialized || show_more || (refill > 0 && source_has_more);
         let limit = if initialized && refill > 0 {
             refill.min(10)
         } else {
             10
         };
         let mut discovery = discover.then(|| {
-            if initialized {
-                self.agents_overview.discovery.clone()
-            } else {
-                self.agents_overview.removed_threads.clear();
-                Default::default()
-            }
+            self.agents_overview
+                .discovery
+                .get(&backend_id)
+                .cloned()
+                .unwrap_or_default()
         });
-        let mut thread_ids = std::mem::take(&mut self.agents_overview.refresh_thread_ids);
+        let (mut thread_ids, foreign_thread_ids) =
+            std::mem::take(&mut self.agents_overview.refresh_thread_ids)
+                .into_iter()
+                .partition::<HashSet<_>, _>(|thread_id| {
+                    self.backend_registry
+                        .owner(*thread_id)
+                        .is_none_or(|owner| owner == backend_id)
+                });
+        self.agents_overview
+            .refresh_thread_ids
+            .extend(foreign_thread_ids);
         self.agents_overview.active_refresh_thread_ids = thread_ids.clone();
         let current_root = self
             .primary_thread_id
@@ -410,7 +522,6 @@ impl App {
             .selected_index_for_present_view(AGENTS_OVERVIEW_VIEW_ID)
             .and_then(|index| self.agents_overview.visible_thread_ids.get(index))
             .copied();
-        let request_handle = app_server.request_handle();
         let app_event_tx = self.app_event_tx.clone();
         self.agents_overview
             .view_state
@@ -426,10 +537,10 @@ impl App {
                 let pinned_thread_ids = match list_pinned_threads(&request_handle).await {
                     Ok(Some(pinned_threads)) => {
                         let mut ids = Vec::with_capacity(pinned_threads.len());
-                        for thread in pinned_threads {
+                        for (thread, is_unread) in pinned_threads {
                             if let Ok(thread_id) = ThreadId::from_string(&thread.id) {
                                 ids.push(thread_id);
-                                threads.insert(thread_id, Some(thread));
+                                threads.insert(thread_id, Some((thread, is_unread, None)));
                             }
                         }
                         Some(Some(ids))
@@ -470,16 +581,15 @@ impl App {
                             .into_iter()
                             .filter_map(|id| ThreadId::from_string(&id).ok()),
                     );
-                    thread_ids.extend(detail_thread_ids(recent.iter()));
-                    for thread in recent {
+                    thread_ids.extend(detail_thread_ids(recent.iter().map(|(thread, _)| thread)));
+                    for (thread, is_unread) in recent {
                         for child in overview_descendants(&request_handle, &thread.id).await {
                             if let Ok(id) = ThreadId::from_string(&child.id) {
                                 thread_ids.insert(id);
-                                threads.insert(id, Some(child));
                             }
                         }
                         if let Ok(thread_id) = ThreadId::from_string(&thread.id) {
-                            threads.insert(thread_id, Some(thread));
+                            threads.insert(thread_id, Some((thread, is_unread, None)));
                         }
                     }
                 }
@@ -490,11 +600,30 @@ impl App {
                     for child in overview_descendants(&request_handle, &root).await {
                         if let Ok(id) = ThreadId::from_string(&child.id) {
                             thread_ids.insert(id);
-                            threads.insert(id, Some(child));
                         }
                     }
                 }
 
+                // Recheck dots on older rows without fetching their transcript previews.
+                unread_rows.retain(|id| !threads.contains_key(id) && !thread_ids.contains(id));
+                let cleared_unread = futures::stream::iter(unread_rows)
+                    .map(async |id| {
+                        let response: ThreadReadResponse = request_handle
+                            .request_typed(ClientRequest::ThreadRead {
+                                request_id: RequestId::String(Uuid::new_v4().to_string()),
+                                params: ThreadReadParams {
+                                    thread_id: id.to_string(),
+                                    include_turns: false,
+                                },
+                            })
+                            .await
+                            .ok()?;
+                        response.read_state?.first_unread.is_none().then_some(id)
+                    })
+                    .buffer_unordered(16)
+                    .filter_map(std::future::ready)
+                    .collect()
+                    .await;
                 let mut reads = tokio::task::JoinSet::new();
                 for thread_id in thread_ids {
                     threads.entry(thread_id).or_default();
@@ -510,56 +639,68 @@ impl App {
                             })
                             .await
                         {
-                            Ok(mut response) => {
+                            Ok(response) => {
+                                let mut thread = response.thread;
+                                let unread = response.read_state
+                                    .is_some_and(|state| state.first_unread.is_some());
+                                let mut latest_prompt = None;
                                 let mut last_message = None;
-                                let turns = request_handle
-                                    .request_typed::<ThreadTurnsListResponse>(
-                                        ClientRequest::ThreadTurnsList {
-                                            request_id: RequestId::String(
-                                                Uuid::new_v4().to_string(),
-                                            ),
-                                            params: ThreadTurnsListParams {
-                                                thread_id: thread_id.to_string(),
-                                                cursor: None,
-                                                limit: Some(super::agents_overview_details::CONVERSATION_TURNS as u32),
-                                                sort_direction: Some(codex_app_server_protocol::SortDirection::Desc),
-                                                items_view: Some(if conversation_thread_id == Some(thread_id) { codex_app_server_protocol::TurnItemsView::Full } else { codex_app_server_protocol::TurnItemsView::Summary }),
+                                let mut unmaterialized = false;
+                                // A legacy turn listing may replay the entire rollout. For
+                                // those histories only probe peers that may still be drafts.
+                                if thread.history_mode == ThreadHistoryMode::Paginated
+                                    || (thread.preview.is_empty() && thread.path.is_none())
+                                {
+                                    let full = conversation_thread_id == Some(thread_id);
+                                    match request_handle
+                                        .request_typed::<ThreadTurnsListResponse>(
+                                            ClientRequest::ThreadTurnsList {
+                                                request_id: RequestId::String(Uuid::new_v4().to_string()),
+                                                params: ThreadTurnsListParams {
+                                                    thread_id: thread_id.to_string(),
+                                                    cursor: None,
+                                                    limit: Some(if full {
+                                                        super::agents_overview_details::CONVERSATION_TURNS as u32
+                                                    } else {
+                                                        1
+                                                    }),
+                                                    sort_direction: Some(codex_app_server_protocol::SortDirection::Desc),
+                                                    items_view: Some(if full {
+                                                        codex_app_server_protocol::TurnItemsView::Full
+                                                    } else {
+                                                        codex_app_server_protocol::TurnItemsView::Summary
+                                                    }),
+                                                },
                                             },
-                                        },
-                                    )
-                                    .await;
-                                match turns {
-                                    Err(TypedRequestError::Server { source, .. })
-                                        if source.code == -32600
-                                            && source.message == format!(
-                                                "thread {thread_id} is not materialized yet; thread/turns/list is unavailable before first user message"
-                                            ) =>
+                                        )
+                                        .await
                                     {
-                                        return Some((thread_id, response.thread, None, true));
-                                    }
-                                    Ok(turns) => {
-                                        if let Some(turn) = turns.data.first() {
-                                            if let Some(ThreadItem::UserMessage { content, .. }) =
-                                                turn.items.first()
-                                            {
-                                                response.thread.preview =
-                                                    ChatWidget::user_message_display_from_inputs(content)
-                                                        .message;
-                                            }
-                                            last_message =
-                                                turn.items.iter().rev().find_map(|item| match item {
-                                                    ThreadItem::AgentMessage { text, .. } => {
-                                                        Some(preview_agent_message(text))
-                                                    }
+                                        Err(TypedRequestError::Server { source, .. })
+                                            if source.code == -32600
+                                                && source.message == format!(
+                                                    "thread {thread_id} is not materialized yet; thread/turns/list is unavailable before first user message"
+                                                ) =>
+                                        {
+                                            unmaterialized = true;
+                                        }
+                                        Ok(turns) => {
+                                            if let Some(turn) = turns.data.first() {
+                                                if let Some(ThreadItemPayload::UserMessage { content, .. }) = turn.item_payloads().next() {
+                                                    let prompt = ChatWidget::user_message_display_from_inputs(content).message;
+                                                    latest_prompt = Some(super::agents_overview_details::preview_markdown(&prompt));
+                                                }
+                                                last_message = turn.item_payloads().rev().find_map(|item| match item {
+                                                    ThreadItemPayload::AgentMessage { text, .. } => Some(preview_agent_message(text)),
                                                     _ => None,
                                                 });
+                                            }
+                                            thread.turns = turns.data.into_iter().rev().collect();
+                                            super::agents_overview_details::retain_conversation(&mut thread.turns);
                                         }
-                                        response.thread.turns = turns.data.into_iter().rev().collect();
-                                        super::agents_overview_details::retain_conversation(&mut response.thread.turns);
+                                        Err(_) => {}
                                     }
-                                    Err(_) => {}
                                 }
-                                Some((thread_id, response.thread, last_message, false))
+                                Some((thread_id, (thread, unread, latest_prompt), last_message, unmaterialized))
                             }
                             Err(error) => {
                                 tracing::warn!(%thread_id, %error, "failed to read agent thread");
@@ -592,6 +733,7 @@ impl App {
                     }
                 }
                 Ok(AgentsOverviewThreadRefresh {
+                    cleared_unread,
                     threads,
                     unmaterialized_threads,
                     last_messages,
@@ -603,6 +745,6 @@ impl App {
             .await;
             app_event_tx.send(AppEvent::AgentsOverviewThreadsLoaded { request_id, result });
         });
-        self.agents_overview.refresh_task = Some(refresh_task.abort_handle());
+        self.agents_overview.refresh_task = Some(refresh_task);
     }
 }

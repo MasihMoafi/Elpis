@@ -1,0 +1,2 @@
+# Terminal snapshots record every cell, including padding at the right edge.
+codex-rs/tui/**/*.snap whitespace=-blank-at-eol

@@ -6,14 +6,12 @@ use codex_protocol::protocol::CollabAgentInteractionEndEvent;
 use codex_protocol::protocol::CollabAgentSpawnEndEvent;
 use codex_protocol::protocol::CollabCloseBeginEvent;
 use codex_protocol::protocol::CollabCloseEndEvent;
-use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::SubAgentActivityEvent;
 use codex_protocol::protocol::SubAgentActivityKind;
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::super::TraceReducer;
-use crate::model::ConversationItem;
 use crate::model::ConversationItemKind;
 use crate::model::ConversationPart;
 use crate::model::ConversationRole;
@@ -74,6 +72,9 @@ impl TraceReducer {
         tool_call_id: &str,
         runtime_payload: &RawPayloadRef,
     ) -> Result<()> {
+        if !runtime_payload.is_complete() {
+            return Ok(());
+        }
         let kind = self
             .rollout
             .tool_calls
@@ -84,7 +85,7 @@ impl TraceReducer {
         match kind {
             ToolCallKind::AssignAgentTask => {
                 let payload: CollabAgentInteractionBeginEvent =
-                    serde_json::from_value(self.read_payload_json(runtime_payload)?)?;
+                    serde_json::from_value(self.payload_reader.read_json(runtime_payload)?)?;
                 self.queue_message_agent_interaction(
                     tool_call_id,
                     InteractionEdgeKind::AssignAgentTask,
@@ -95,7 +96,7 @@ impl TraceReducer {
             }
             ToolCallKind::SendMessage => {
                 let payload: CollabAgentInteractionBeginEvent =
-                    serde_json::from_value(self.read_payload_json(runtime_payload)?)?;
+                    serde_json::from_value(self.payload_reader.read_json(runtime_payload)?)?;
                 self.queue_message_agent_interaction(
                     tool_call_id,
                     InteractionEdgeKind::SendMessage,
@@ -106,7 +107,7 @@ impl TraceReducer {
             }
             ToolCallKind::CloseAgent => {
                 let payload: CollabCloseBeginEvent =
-                    serde_json::from_value(self.read_payload_json(runtime_payload)?)?;
+                    serde_json::from_value(self.payload_reader.read_json(runtime_payload)?)?;
                 self.upsert_close_agent_interaction(
                     tool_call_id,
                     payload.receiver_thread_id.to_string(),
@@ -133,7 +134,11 @@ impl TraceReducer {
         runtime_payload: &RawPayloadRef,
     ) -> Result<()> {
         let kind = self.rollout.tool_calls[tool_call_id].kind.clone();
-        let runtime_payload_json = self.read_payload_json(runtime_payload)?;
+        // MCP results are opaque evidence; they cannot describe agent interactions.
+        if !runtime_payload.is_complete() || matches!(kind, ToolCallKind::Mcp { .. }) {
+            return Ok(());
+        }
+        let runtime_payload_json = self.payload_reader.read_json(runtime_payload)?;
         if runtime_payload_json.get("agent_thread_id").is_some() {
             let payload: SubAgentActivityEvent = serde_json::from_value(runtime_payload_json)?;
             return self.end_sub_agent_activity(wall_time_unix_ms, tool_call_id, &kind, &payload);
@@ -257,7 +262,10 @@ impl TraceReducer {
         })?;
         let started_at_unix_ms = tool_call.execution.started_at_unix_ms;
         let message_author = self.agent_path_for_thread(&tool_call.thread_id)?;
-        let message_content = self.agent_message_content_from_invocation(tool_call_id)?;
+        let Some(message_content) = self.agent_message_content_from_invocation(tool_call_id)?
+        else {
+            return Ok(());
+        };
         let carried_raw_payload_ids = self.agent_tool_payload_ids(tool_call_id)?;
         self.queue_or_resolve_agent_interaction_edge(PendingAgentInteractionEdge {
             edge_id,
@@ -275,7 +283,10 @@ impl TraceReducer {
         })
     }
 
-    fn agent_message_content_from_invocation(&self, tool_call_id: &str) -> Result<String> {
+    fn agent_message_content_from_invocation(
+        &mut self,
+        tool_call_id: &str,
+    ) -> Result<Option<String>> {
         let tool_call = self.rollout.tool_calls.get(tool_call_id).with_context(|| {
             format!("agent activity referenced unknown tool call {tool_call_id}")
         })?;
@@ -294,7 +305,10 @@ impl TraceReducer {
                     "agent activity tool call {tool_call_id} referenced missing invocation payload {invocation_payload_id}"
                 )
             })?;
-        let invocation = self.read_payload_json(invocation_payload)?;
+        if !invocation_payload.capture.is_complete() {
+            return Ok(None);
+        }
+        let invocation = self.payload_reader.read_json(invocation_payload)?;
         let arguments = invocation
             .get("payload")
             .and_then(|payload| payload.get("arguments"))
@@ -304,7 +318,7 @@ impl TraceReducer {
             })?;
         let args: AgentMessageInvocationArgs = serde_json::from_str(arguments)
             .with_context(|| format!("parse agent activity tool call {tool_call_id} arguments"))?;
-        Ok(args.message)
+        Ok(Some(args.message))
     }
 
     /// Adds the canonical tool result payload to an already reduced multi-agent edge.
@@ -701,13 +715,25 @@ impl TraceReducer {
 
     fn inter_agent_message_item(&self, item_id: &str) -> Option<(String, String, String)> {
         let item = self.rollout.conversation_items.get(item_id)?;
-        let (author_agent_path, recipient_agent_path, message_content) =
-            inter_agent_message_fields(item)?;
+        let delivery = item.agent_message.as_ref()?;
         let thread = self.rollout.threads.get(&item.thread_id)?;
-        if recipient_agent_path != thread.agent_path {
+        if delivery.recipient != thread.agent_path {
             return None;
         }
-        Some((item.thread_id.clone(), author_agent_path, message_content))
+        let content = match item.body.parts.as_slice() {
+            [ConversationPart::Text { text }] => text,
+            [ConversationPart::Encoded { label, value }] if label == "encrypted_content" => value,
+            [
+                ConversationPart::Text { .. },
+                ConversationPart::Encoded { label, value },
+            ] if label == "encrypted_content" => value,
+            _ => return None,
+        };
+        Some((
+            item.thread_id.clone(),
+            delivery.author.clone(),
+            content.clone(),
+        ))
     }
 
     fn agent_path_for_thread(&self, thread_id: &str) -> Result<String> {
@@ -765,44 +791,6 @@ fn push_unique(items: &mut Vec<String>, item: &str) {
     if !items.iter().any(|existing| existing == item) {
         items.push(item.to_string());
     }
-}
-
-fn inter_agent_message_fields(item: &ConversationItem) -> Option<(String, String, String)> {
-    if item.role != ConversationRole::Assistant || item.kind != ConversationItemKind::Message {
-        return None;
-    }
-    if let Some(agent_message) = &item.agent_message {
-        let message_content = match item.body.parts.as_slice() {
-            [ConversationPart::Text { text }] => text,
-            [ConversationPart::Encoded { label, value }] if label == "encrypted_content" => value,
-            [
-                ConversationPart::Text { .. },
-                ConversationPart::Encoded { label, value },
-            ] if label == "encrypted_content" => value,
-            _ => return None,
-        };
-        return Some((
-            agent_message.author.clone(),
-            agent_message.recipient.clone(),
-            message_content.clone(),
-        ));
-    }
-
-    // Older traces store multi-agent v2 deliveries as assistant messages whose
-    // text is serialized `InterAgentCommunication`. Treat only that exact
-    // transport shape as an edge target; ordinary assistant JSON must not be
-    // mistaken for cross-thread delivery.
-    let [ConversationPart::Text { text }] = item.body.parts.as_slice() else {
-        return None;
-    };
-    let communication = serde_json::from_str::<InterAgentCommunication>(text).ok()?;
-    Some((
-        communication.author.to_string(),
-        communication.recipient.to_string(),
-        communication
-            .encrypted_content
-            .unwrap_or(communication.content),
-    ))
 }
 
 #[cfg(test)]

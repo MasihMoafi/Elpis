@@ -39,17 +39,26 @@ struct Fixture {
 
 impl Fixture {
     async fn new(client_secret: Option<&'static str>) -> Result<Self> {
+        Self::with_scopes(client_secret, &["mcp.read"]).await
+    }
+
+    async fn with_scopes(client_secret: Option<&'static str>, scopes: &[&str]) -> Result<Self> {
         let server = MockServer::start().await;
         let home = TempDir::new()?;
         let issuer = format!("{}/mcp", server.uri());
         let saved_client_secret = client_secret
             .map(|secret| format!("client_secret = \"{secret}\"\n"))
             .unwrap_or_default();
+        let saved_scopes = if scopes.is_empty() {
+            String::new()
+        } else {
+            format!("scopes = {scopes:?}\n")
+        };
         std::fs::write(
             home.path().join("config.toml"),
             format!(
                 "mcp_oauth_credentials_store = \"file\"\n\
-             [mcp_servers.manual]\nurl = \"{issuer}\"\nscopes = [\"mcp.read\"]\n\
+             [mcp_servers.manual]\nurl = \"{issuer}\"\n{saved_scopes}\
              [mcp_servers.manual.oauth]\nclient_id = \"registered-client\"\n\
              {saved_client_secret}"
             ),
@@ -95,6 +104,30 @@ impl Fixture {
                 "token_type": "Bearer",
                 "refresh_token": "mock-refresh-token",
                 "scope": "mcp.read",
+            })))
+            .mount(&self.server)
+            .await;
+    }
+
+    async fn mount_resource_metadata(&self, scopes: &[&str], challenge_scope: Option<&str>) {
+        let mut challenge = format!(
+            "Bearer resource_metadata=\"{}/resource-metadata\"",
+            self.server.uri()
+        );
+        if let Some(scope) = challenge_scope {
+            challenge.push_str(&format!(", scope=\"{scope}\""));
+        }
+        Mock::given(method("GET"))
+            .and(path("/mcp"))
+            .respond_with(ResponseTemplate::new(401).insert_header("www-authenticate", challenge))
+            .mount(&self.server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/resource-metadata"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "resource": self.issuer,
+                "authorization_servers": [self.issuer],
+                "scopes_supported": scopes,
             })))
             .mount(&self.server)
             .await;
@@ -200,6 +233,32 @@ async fn no_browser_exchanges_pasted_callback_and_saves_credentials() -> Result<
 }
 
 #[tokio::test]
+async fn no_browser_prefers_challenge_scopes_for_preregistered_client() -> Result<()> {
+    let fixture = Fixture::with_scopes(/*client_secret*/ None, &[]).await?;
+    fixture
+        .mount_resource_metadata(&["mcp.read", "mcp.write"], Some("mcp.read"))
+        .await;
+    // The authorization server advertises neither scopes nor dynamic registration.
+    Mock::given(method("GET"))
+        .and(path("/.well-known/oauth-authorization-server/mcp"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "issuer": fixture.issuer,
+            "authorization_endpoint": format!("{}/authorize", fixture.server.uri()),
+            "token_endpoint": format!("{}/token", fixture.server.uri()),
+            "response_types_supported": ["code"],
+            "code_challenge_methods_supported": ["S256"],
+        })))
+        .with_priority(/*priority*/ 1)
+        .mount(&fixture.server)
+        .await;
+
+    assert_no_browser_exchanges_pasted_callback_and_saves_credentials(
+        fixture, /*client_secret*/ None,
+    )
+    .await
+}
+
+#[tokio::test]
 async fn no_browser_exchanges_pasted_callback_with_client_secret() -> Result<()> {
     let fixture = Fixture::new(Some("headless-client-secret")).await?;
     assert_no_browser_exchanges_pasted_callback_and_saves_credentials(
@@ -262,6 +321,9 @@ async fn add_persists_client_secret_for_subsequent_login_without_disclosure() ->
     // Reset removes the priority override without relying on wiremock's scoped indices.
     fixture.server.reset().await;
     fixture.mount_oauth(Some(CLIENT_SECRET)).await;
+    fixture
+        .mount_resource_metadata(&["mcp.read"], /*challenge_scope*/ None)
+        .await;
 
     assert_no_browser_exchanges_pasted_callback_and_saves_credentials(fixture, Some(CLIENT_SECRET))
         .await
@@ -274,6 +336,7 @@ async fn assert_no_browser_exchanges_pasted_callback_and_saves_credentials(
     let mut login = fixture.start().await?;
     let authorization_url = login.authorization_url.to_string();
     let params: BTreeMap<_, _> = login.authorization_url.query_pairs().into_owned().collect();
+    assert_eq!(params.get("scope").map(String::as_str), Some("mcp.read"));
     let callback = login.callback(&fixture.issuer)?;
     login
         .child
@@ -438,10 +501,10 @@ async fn no_browser_accepts_http_callback_while_terminal_input_remains_open() ->
 
 #[tokio::test]
 async fn no_browser_retries_rejected_discovered_scopes_with_pasteback() -> Result<()> {
-    let fixture = Fixture::new(/*client_secret*/ None).await?;
-    let config_path = fixture.home.path().join("config.toml");
-    let config = std::fs::read_to_string(&config_path)?;
-    std::fs::write(config_path, config.replace("scopes = [\"mcp.read\"]\n", ""))?;
+    let fixture = Fixture::with_scopes(/*client_secret*/ None, &[]).await?;
+    fixture
+        .mount_resource_metadata(&["mcp.read"], /*challenge_scope*/ None)
+        .await;
     let mut login = fixture.start().await?;
     assert!(
         login

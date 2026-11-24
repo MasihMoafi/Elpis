@@ -56,6 +56,7 @@ use codex_app_server_protocol::RequestPermissionProfile;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ServerResponse;
+use codex_app_server_protocol::ThreadClosedNotification;
 use codex_login::default_client::DEFAULT_ORIGINATOR;
 use codex_protocol::approvals::NetworkApprovalProtocol;
 use codex_protocol::models::AdditionalPermissionProfile;
@@ -257,6 +258,7 @@ async fn guardian_review_event_ingests_custom_fact_with_optional_target_item() {
                         version: "1.0.0".to_string(),
                     },
                     capabilities: Some(InitializeCapabilities {
+                        required_human_approval: false,
                         explicit_gateway_oauth: false,
                         experimental_api: false,
                         request_attestation: false,
@@ -1050,4 +1052,46 @@ fn permission_metadata_preserves_absent_and_empty_requests() {
             expected,
         );
     }
+}
+
+#[tokio::test]
+async fn closing_thread_discards_review_without_turn_lifecycle_facts() {
+    let mut reducer = AnalyticsReducer::default();
+    let mut events = Vec::new();
+    ingest_review_prerequisites(&mut reducer, &mut events).await;
+    reducer
+        .ingest(
+            AnalyticsFact::ServerRequest {
+                connection_id: 1,
+                request: Box::new(sample_command_approval_request(
+                    /*request_id*/ 1, /*approval_id*/ None,
+                )),
+            },
+            &mut events,
+        )
+        .await;
+    reducer
+        .ingest(
+            AnalyticsFact::Notification(Box::new(ServerNotification::ThreadClosed(
+                ThreadClosedNotification {
+                    thread_id: "thread-1".to_string(),
+                },
+            ))),
+            &mut events,
+        )
+        .await;
+    events.clear();
+    reducer
+        .ingest(
+            AnalyticsFact::ServerResponse {
+                completed_at_ms: 2_000,
+                response: Box::new(sample_command_approval_response(
+                    /*request_id*/ 1,
+                    CommandExecutionApprovalDecision::Accept,
+                )),
+            },
+            &mut events,
+        )
+        .await;
+    assert!(events.is_empty());
 }

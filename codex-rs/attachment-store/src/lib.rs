@@ -1,5 +1,6 @@
-//! Storage-neutral attachment persistence interfaces.
+//! Storage-neutral attachment persistence and availability checks.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
@@ -20,6 +21,9 @@ pub type UploadFuture<'a> =
 pub type ResolveFuture<'a> =
     Pin<Box<dyn Future<Output = AttachmentStoreResult<AttachmentMetadata>> + Send + 'a>>;
 
+/// Future returned by [`AttachmentStore::is_resolvable`].
+pub type IsResolvableFuture<'a> = Pin<Box<dyn Future<Output = bool> + Send + 'a>>;
+
 /// Uploads attachments and resolves metadata for stored files.
 ///
 /// Implementations choose whether uploaded attachments remain inline or become file references.
@@ -31,6 +35,58 @@ pub trait AttachmentStore: Send + Sync {
 
     /// Resolves metadata and, when requested, a fresh URL for a stored attachment.
     fn resolve<'a>(&'a self, request: ResolveRequest<'a>) -> ResolveFuture<'a>;
+
+    /// Checks whether a file reference should be retained in a model request.
+    ///
+    /// The default retains all references, including provider-owned IDs this store cannot
+    /// resolve. Authoritative stores may opt in to checking and return `false` only when the
+    /// file is confirmed missing. Backend and access errors must retain the reference.
+    fn is_resolvable<'a>(&'a self, _file_id: &'a str) -> IsResolvableFuture<'a> {
+        Box::pin(async { true })
+    }
+}
+
+/// Typed attachment content supplied to [`AttachmentStore::upload`].
+#[derive(Clone, Eq, PartialEq)]
+pub enum UploadContent {
+    /// An image that may be shown to the model or retained for the UI.
+    Image {
+        /// Optional name associated with the image.
+        file_name: Option<String>,
+        /// Caller-supplied tags used by storage backends for image policy decisions.
+        tags: HashMap<String, String>,
+        /// Encoded image bytes.
+        data: Vec<u8>,
+    },
+    /// Audio produced by a tool.
+    ToolAudio {
+        /// IANA media type a persistent backend must verify against the uploaded bytes.
+        declared_mime_type: String,
+        /// Encoded audio bytes.
+        data: Vec<u8>,
+    },
+}
+
+impl fmt::Debug for UploadContent {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Image {
+                file_name, tags, ..
+            } => formatter
+                .debug_struct("Image")
+                .field("file_name", file_name)
+                .field("tags", tags)
+                .field("data", &"<redacted>")
+                .finish(),
+            Self::ToolAudio {
+                declared_mime_type, ..
+            } => formatter
+                .debug_struct("ToolAudio")
+                .field("declared_mime_type", declared_mime_type)
+                .field("data", &"<redacted>")
+                .finish(),
+        }
+    }
 }
 
 /// Attachment data supplied to [`AttachmentStore::upload`].
@@ -40,10 +96,8 @@ pub struct UploadRequest {
     pub thread_id: String,
     /// Whether the originating thread intentionally skips durable persistence.
     pub ephemeral: bool,
-    /// Optional name associated with the attachment.
-    pub file_name: Option<String>,
-    /// Attachment bytes to persist.
-    pub data: Vec<u8>,
+    /// Type-specific content to upload.
+    pub content: UploadContent,
 }
 
 impl fmt::Debug for UploadRequest {
@@ -52,17 +106,18 @@ impl fmt::Debug for UploadRequest {
             .debug_struct("UploadRequest")
             .field("thread_id", &self.thread_id)
             .field("ephemeral", &self.ephemeral)
-            .field("file_name", &self.file_name)
-            .field("data", &"<redacted>")
+            .field("content", &self.content)
             .finish()
     }
 }
 
 /// Parameters supplied to [`AttachmentStore::resolve`].
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolveRequest<'a> {
     /// Identifier assigned by the attachment store.
     pub file_id: &'a str,
+    /// Caller-supplied tags used by storage backends for policy decisions.
+    pub tags: HashMap<String, String>,
     /// Minimum remaining lifetime required for the returned file URL.
     ///
     /// When absent, implementations must omit the file URL and may return cached metadata. When
@@ -117,6 +172,8 @@ impl fmt::Debug for AttachmentMetadata {
 pub enum FormatSpecificMetadata {
     /// Metadata for an image attachment.
     Image(ImageMetadata),
+    /// Metadata for an audio attachment.
+    Audio(AudioMetadata),
 }
 
 /// Metadata specific to an image attachment.
@@ -128,6 +185,14 @@ pub struct ImageMetadata {
     /// Image height in pixels.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<u32>,
+}
+
+/// Metadata specific to an audio attachment.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AudioMetadata {
+    /// Measured audio duration in milliseconds, when known by the store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 /// Representation callers should retain after uploading an attachment.
@@ -167,9 +232,10 @@ impl AttachmentStore for InlineAttachmentStore {
     #[tracing::instrument(level = "trace", skip_all)]
     fn upload(&self, request: UploadRequest) -> UploadFuture<'_> {
         Box::pin(async move {
-            Ok(UploadResult::Inline {
-                bytes: request.data,
-            })
+            let bytes = match request.content {
+                UploadContent::Image { data, .. } | UploadContent::ToolAudio { data, .. } => data,
+            };
+            Ok(UploadResult::Inline { bytes })
         })
     }
 

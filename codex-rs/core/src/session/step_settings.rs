@@ -8,13 +8,14 @@ use codex_features::Features;
 use codex_models_manager::ModelsManagerConfig;
 use codex_models_manager::manager::ModelsManager;
 use codex_otel::SessionTelemetry;
+use codex_protocol::RequestCountry;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::ServiceTier;
-use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::CatalogModel;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use std::sync::Arc;
@@ -23,11 +24,12 @@ use std::sync::Arc;
 /// a turn. A turn may contain several steps, each using its own captured settings.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct StepSettings {
+    /// Trusted host country captured for requests issued with these settings.
+    pub(crate) request_country: RequestCountry,
     pub(crate) collaboration_mode: CollaborationMode,
     /// `None` follows the pinned model's default.
     pub(crate) reasoning_summary: Option<ReasoningSummary>,
-    /// Normalized requested tier. Startup retains initial-model filtering;
-    /// resolution filters the effective tier against the pinned model.
+    /// Normalized requested tier; resolution filters it against the pinned model.
     pub(crate) service_tier: Option<String>,
     pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: Constrained<AskForApproval>,
@@ -43,7 +45,7 @@ pub(crate) struct ResolvedStepSettings {
     /// Inputs for later sparse patches. Unset defaults and unsupported requested
     /// tiers must not be reconstructed from the effective values below.
     selected: Arc<StepSettings>,
-    pub(crate) model_info: Arc<ModelInfo>,
+    pub(crate) model_info: Arc<CatalogModel>,
     /// Effective request summary: the configured value or the pinned model's default.
     pub(crate) reasoning_summary: ReasoningSummary,
     /// Tier sent on requests, filtered by feature and model support.
@@ -54,10 +56,14 @@ pub(crate) struct ResolvedStepSettings {
 }
 
 impl ResolvedStepSettings {
+    pub(crate) fn request_country(&self) -> &RequestCountry {
+        &self.selected.request_country
+    }
+
     /// Derives request values from selected settings and pinned metadata.
     pub(super) fn new(
         selected: Arc<StepSettings>,
-        model_info: Arc<ModelInfo>,
+        model_info: Arc<CatalogModel>,
         features: &Features,
     ) -> Self {
         let reasoning_summary = selected
@@ -239,6 +245,8 @@ impl ModelInfoOverrides {
 /// that full value for another. Merge the requested edits with each target.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct StepSettingsUpdate {
+    /// Omission preserves the runtime country.
+    pub(crate) request_country: Option<RequestCountry>,
     pub(crate) model: Option<String>,
     pub(crate) effort: Option<Option<ReasoningEffort>>,
     /// A complete collaboration mode takes precedence over model and effort edits.
@@ -265,7 +273,7 @@ impl StepSettings {
         &self,
         models_manager: &dyn ModelsManager,
         overrides: &ModelInfoOverrides,
-    ) -> ModelInfo {
+    ) -> CatalogModel {
         let config = overrides.models_manager_config(self.personality);
         models_manager
             .get_model_info(self.collaboration_mode.model(), &config)
@@ -280,6 +288,9 @@ impl StepSettings {
         constraints: &StepSettingsConstraints<'_>,
     ) -> ConstraintResult<Self> {
         let mut next = self.clone();
+        if let Some(request_country) = &update.request_country {
+            next.request_country.clone_from(request_country);
+        }
         next.collaboration_mode = update.collaboration_mode.clone().unwrap_or_else(|| {
             self.collaboration_mode.with_updates(
                 update.model.clone(),

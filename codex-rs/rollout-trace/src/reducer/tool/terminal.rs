@@ -5,6 +5,10 @@
 //! runtime details. Direct tools without protocol observations, such as
 //! `write_stdin`, can still form a terminal row from the canonical dispatch
 //! invocation/result payloads when those payloads carry the session join key.
+//! Runtime process handles are recyclable and thread-local. Each exec creates a
+//! distinct reduced session. A stdin invocation initially joins by handle. Once
+//! the runtime resolves the target, that event identifies the exact exec. A
+//! partial recording can end between invocation and resolution.
 
 use anyhow::Context;
 use anyhow::Result;
@@ -24,6 +28,7 @@ use crate::model::TerminalRequest;
 use crate::model::TerminalResult;
 use crate::model::TerminalSession;
 use crate::model::ToolCallKind;
+use crate::payload::RawPayloadKind;
 use crate::payload::RawPayloadRef;
 use crate::raw_event::RawEventSeq;
 use crate::reducer::TraceReducer;
@@ -46,20 +51,24 @@ impl TraceReducer {
             return Ok(None);
         }
         let operation_kind = TerminalOperationKind::WriteStdin;
-        let Some(invocation_payload) = invocation_payload else {
+        let Some(invocation_payload) = invocation_payload.filter(|p| p.capture.is_complete())
+        else {
             // Payload writes are best-effort in the live recorder. If the
             // canonical invocation is missing, keep the ToolCall but avoid
             // fabricating a lossy terminal row.
             return Ok(None);
         };
 
-        let payload = self.read_payload_json(invocation_payload)?;
-        let request = parse_dispatch_terminal_request(payload).with_context(|| {
+        let payload = self.payload_reader.read_json(invocation_payload)?;
+        let Some(request) = parse_dispatch_terminal_request(payload).with_context(|| {
             format!(
                 "parse terminal invocation payload {} as dispatch payload",
                 invocation_payload.raw_payload_id
             )
-        })?;
+        })?
+        else {
+            return Ok(None);
+        };
         self.insert_terminal_operation(TerminalOperationStart {
             seq,
             wall_time_unix_ms,
@@ -85,7 +94,10 @@ impl TraceReducer {
             return Ok(None);
         };
 
-        let payload = self.read_payload_json(runtime_payload)?;
+        if !runtime_payload.is_complete() {
+            return Ok(None);
+        }
+        let payload = self.payload_reader.read_json(runtime_payload)?;
         let payload: ExecCommandBeginPayload =
             serde_json::from_value(payload).with_context(|| {
                 format!(
@@ -111,7 +123,7 @@ impl TraceReducer {
     ) -> Result<Option<TerminalOperationId>> {
         let operation_id = self.next_terminal_operation_id();
         let ParsedTerminalRequest {
-            terminal_id,
+            process_id,
             request,
         } = start.request;
 
@@ -119,7 +131,7 @@ impl TraceReducer {
             operation_id.clone(),
             TerminalOperation {
                 operation_id: operation_id.clone(),
-                terminal_id: terminal_id.clone(),
+                terminal_id: None,
                 tool_call_id: start.tool_call_id.to_string(),
                 kind: start.operation_kind,
                 execution: ExecutionWindow {
@@ -136,14 +148,8 @@ impl TraceReducer {
             },
         );
 
-        if let Some(terminal_id) = terminal_id {
-            self.ensure_terminal_session(
-                start.thread_id,
-                &terminal_id,
-                &operation_id,
-                start.wall_time_unix_ms,
-                start.seq,
-            )?;
+        if let Some(process_id) = process_id {
+            self.attach_terminal_session(start.thread_id, &process_id, &operation_id)?;
         }
 
         Ok(Some(operation_id))
@@ -170,19 +176,46 @@ impl TraceReducer {
         else {
             bail!("terminal end referenced unknown operation {operation_id}");
         };
-        let response = response_payload
-            .map(|payload| {
-                let value = self.read_payload_json(payload)?;
-                let response = parse_terminal_response_payload(
+        let response = match response_payload {
+            Some(payload)
+                if payload.capture.is_complete()
+                    && (payload.kind == RawPayloadKind::ToolRuntimeEvent
+                        || payload.is_complete()) =>
+            {
+                // A retained exec-end parent still carries the exit code and process ID.
+                // observed_json maps an unavailable output child to null.
+                let value = self.payload_reader.observed_json(payload)?.value;
+                Some(parse_terminal_response_payload(
                     value,
                     &operation_kind,
                     &payload.raw_payload_id,
-                )?;
-                Ok::<_, anyhow::Error>((payload.raw_payload_id.clone(), response))
-            })
-            .transpose()?;
+                )?)
+            }
+            Some(payload)
+                if payload.capture.is_complete()
+                    && operation_kind == TerminalOperationKind::WriteStdin =>
+            {
+                let observed = self.payload_reader.observed_json(payload)?;
+                // Missing stdout has a child ID at the same path. A literal null does not.
+                let has_exec_output = observed.value["value"]["output"].is_string()
+                    || observed.missing["value"]["output"].is_string();
+                if has_exec_output
+                    && let DispatchedToolTraceResponsePayload::CodeModeResponse { value } =
+                        serde_json::from_value(observed.value)?
+                {
+                    let result: CodeModeExecResult = serde_json::from_value(value)?;
+                    Some(ParsedTerminalResponse {
+                        process_id: None,
+                        result: result.into(),
+                    })
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
 
-        let (terminal_id, started_at_unix_ms, started_seq) = {
+        let process_id = {
             let Some(operation) = self.rollout.terminal_operations.get_mut(operation_id) else {
                 bail!("terminal end referenced unknown operation {operation_id}");
             };
@@ -190,86 +223,132 @@ impl TraceReducer {
             operation.execution.ended_seq = Some(seq);
             operation.execution.status = status;
 
-            if let Some((raw_payload_id, response)) = response {
-                push_unique(&mut operation.raw_payload_ids, &raw_payload_id);
-                // If begin and end both report a process id they must name the
-                // same terminal. If begin omitted it, the end event completes
-                // the session join key for this operation.
-                match (&operation.terminal_id, response.terminal_id.as_deref()) {
-                    (Some(existing), Some(process_id)) if existing != process_id => {
-                        bail!(
-                            "terminal operation {operation_id} changed process id from \
-                             {existing} to {process_id}"
-                        );
-                    }
-                    (None, Some(process_id)) => {
-                        operation.terminal_id = Some(process_id.to_string());
-                    }
-                    (Some(_), Some(_)) | (Some(_), None) | (None, None) => {}
-                }
-                operation.result = Some(response.result);
+            if let Some(payload) = response_payload {
+                push_unique(&mut operation.raw_payload_ids, &payload.raw_payload_id);
             }
-
-            (
-                operation.terminal_id.clone(),
-                operation.execution.started_at_unix_ms,
-                operation.execution.started_seq,
-            )
+            if let Some(response) = response {
+                operation.result = Some(response.result);
+                response.process_id
+            } else {
+                None
+            }
         };
 
-        if let Some(terminal_id) = terminal_id {
-            self.ensure_terminal_session(
-                thread_id,
-                &terminal_id,
-                operation_id,
-                started_at_unix_ms,
-                started_seq,
-            )?;
+        if let Some(process_id) = process_id {
+            self.attach_terminal_session(thread_id, &process_id, operation_id)?;
         }
 
         Ok(())
     }
 
-    fn ensure_terminal_session(
+    fn attach_terminal_session(
         &mut self,
         thread_id: &str,
-        terminal_id: &str,
+        process_id: &str,
         operation_id: &str,
-        started_at_unix_ms: i64,
-        started_seq: RawEventSeq,
     ) -> Result<()> {
-        if !self.rollout.terminal_sessions.contains_key(terminal_id) {
-            self.rollout.terminal_sessions.insert(
-                terminal_id.to_string(),
-                TerminalSession {
-                    terminal_id: terminal_id.to_string(),
-                    thread_id: thread_id.to_string(),
-                    created_by_operation_id: operation_id.to_string(),
-                    operation_ids: Vec::new(),
-                    execution: ExecutionWindow {
-                        started_at_unix_ms,
-                        started_seq,
-                        // Current raw events do not report a terminal/session
-                        // shutdown boundary, so the session remains open even
-                        // after individual operations complete.
-                        ended_at_unix_ms: None,
-                        ended_seq: None,
-                        status: ExecutionStatus::Running,
-                    },
-                },
-            );
+        let Some(operation) = self.rollout.terminal_operations.get_mut(operation_id) else {
+            bail!("terminal session referenced unknown operation {operation_id}");
+        };
+        if let Some(terminal_id) = &operation.terminal_id {
+            let existing = &self.process_ids_by_terminal[terminal_id];
+            if existing != process_id {
+                bail!(
+                    "terminal operation {operation_id} changed process id from {existing} to {process_id}"
+                );
+            }
+            return Ok(());
         }
 
-        let Some(session) = self.rollout.terminal_sessions.get_mut(terminal_id) else {
-            bail!("terminal session {terminal_id} disappeared during reduction");
+        let key = (thread_id.to_string(), process_id.to_string());
+        let existing = match operation.kind {
+            TerminalOperationKind::ExecCommand => None,
+            TerminalOperationKind::WriteStdin => self.terminal_ids_by_process.get(&key).cloned(),
         };
-        if session.thread_id != thread_id {
-            bail!(
-                "terminal session {terminal_id} belongs to thread {}, not {thread_id}",
-                session.thread_id
-            );
-        }
+        let terminal_id = existing.unwrap_or_else(|| format!("terminal_session:{operation_id}"));
+        let session = self
+            .rollout
+            .terminal_sessions
+            .entry(terminal_id.clone())
+            .or_insert_with(|| TerminalSession {
+                terminal_id: terminal_id.clone(),
+                thread_id: thread_id.to_string(),
+                created_by_operation_id: operation_id.to_string(),
+                operation_ids: Vec::new(),
+                execution: ExecutionWindow {
+                    started_at_unix_ms: operation.execution.started_at_unix_ms,
+                    started_seq: operation.execution.started_seq,
+                    // Raw events do not report session release: buffered output
+                    // can still be collected after the process exits.
+                    ended_at_unix_ms: None,
+                    ended_seq: None,
+                    status: ExecutionStatus::Running,
+                },
+            });
         push_unique(&mut session.operation_ids, operation_id);
+        operation.terminal_id = Some(terminal_id.clone());
+        self.process_ids_by_terminal
+            .insert(terminal_id.clone(), process_id.to_string());
+        self.terminal_ids_by_process.insert(key, terminal_id);
+        Ok(())
+    }
+
+    /// Replaces the provisional handle-based join with the runtime's actual target.
+    pub(in crate::reducer) fn resolve_stdin_target(
+        &mut self,
+        tool_call_id: &str,
+        exec_tool_call_id: &str,
+    ) -> Result<()> {
+        let stdin = self
+            .rollout
+            .tool_calls
+            .get(tool_call_id)
+            .with_context(|| format!("stdin target referenced unknown call {tool_call_id}"))?;
+        let exec = self
+            .rollout
+            .tool_calls
+            .get(exec_tool_call_id)
+            .with_context(|| format!("stdin target referenced unknown exec {exec_tool_call_id}"))?;
+        let (Some(operation_id), Some(exec_operation_id)) =
+            (&stdin.terminal_operation_id, &exec.terminal_operation_id)
+        else {
+            // A failed payload write can leave either call without a terminal projection.
+            return Ok(());
+        };
+        let Some(terminal_id) = self.rollout.terminal_operations[exec_operation_id]
+            .terminal_id
+            .clone()
+        else {
+            return Ok(());
+        };
+        let operation = self
+            .rollout
+            .terminal_operations
+            .get_mut(operation_id)
+            .with_context(|| format!("stdin target referenced unknown operation {operation_id}"))?;
+        if operation.terminal_id.as_ref() == Some(&terminal_id) {
+            return Ok(());
+        }
+        // Move this operation without rewinding the handle lookup: a newer exec
+        // may already own that handle by the time resolution is recorded.
+        if let Some(previous) = operation.terminal_id.replace(terminal_id.clone()) {
+            let session = self
+                .rollout
+                .terminal_sessions
+                .get_mut(&previous)
+                .with_context(|| format!("stdin target referenced unknown session {previous}"))?;
+            session.operation_ids.retain(|id| id != operation_id);
+            if session.operation_ids.is_empty() {
+                self.rollout.terminal_sessions.remove(&previous);
+                self.process_ids_by_terminal.remove(&previous);
+            }
+        }
+        self.rollout
+            .terminal_sessions
+            .get_mut(&terminal_id)
+            .with_context(|| format!("stdin target referenced unknown session {terminal_id}"))?
+            .operation_ids
+            .push(operation_id.clone());
         Ok(())
     }
 
@@ -351,12 +430,12 @@ struct TerminalOperationStart<'a> {
 }
 
 struct ParsedTerminalRequest {
-    terminal_id: Option<String>,
+    process_id: Option<String>,
     request: TerminalRequest,
 }
 
 struct ParsedTerminalResponse {
-    terminal_id: Option<String>,
+    process_id: Option<String>,
     result: TerminalResult,
 }
 
@@ -366,7 +445,7 @@ fn parse_protocol_terminal_request(
 ) -> ParsedTerminalRequest {
     // Startup/poll paths usually include a process id at begin time, but plain
     // exec starts may only learn it in the matching end event.
-    let terminal_id = payload.process_id.clone();
+    let process_id = payload.process_id.clone();
     let request = match operation_kind {
         TerminalOperationKind::ExecCommand => TerminalRequest::ExecCommand {
             display_command: payload.command.join(" "),
@@ -382,13 +461,19 @@ fn parse_protocol_terminal_request(
         },
     };
     ParsedTerminalRequest {
-        terminal_id,
+        process_id,
         request,
     }
 }
 
-fn parse_dispatch_terminal_request(value: JsonValue) -> Result<ParsedTerminalRequest> {
+fn parse_dispatch_terminal_request(value: JsonValue) -> Result<Option<ParsedTerminalRequest>> {
     let payload: DispatchedToolTraceRequestPayload = serde_json::from_value(value)?;
+    // Recorded kinds are name-based. Only the built-in write_stdin owns terminal
+    // sessions; core records its default namespace as None. Namespaced aliases
+    // must wait for runtime classification, even if their arguments look native.
+    if payload.tool_namespace.is_some() {
+        return Ok(None);
+    }
     if payload.tool_name != "write_stdin" {
         bail!(
             "dispatch terminal request is for {}, not write_stdin",
@@ -405,19 +490,23 @@ fn parse_dispatch_terminal_request(value: JsonValue) -> Result<ParsedTerminalReq
         .payload
         .arguments
         .context("write_stdin dispatch payload omitted function arguments")?;
-    let args: DispatchedWriteStdinArgs = serde_json::from_str(&arguments)
-        .context("parse write_stdin dispatch function arguments")?;
-    let terminal_id = terminal_id_from_json(&args.session_id)
-        .context("write_stdin dispatch payload omitted session_id")?;
+    // Invalid model arguments are a tool failure, not a corrupt trace. Keep the
+    // generic call and its error without inventing a terminal operation.
+    let Ok(args) = serde_json::from_str::<DispatchedWriteStdinArgs>(&arguments) else {
+        return Ok(None);
+    };
+    let Some(process_id) = process_id_from_json(&args.session_id) else {
+        return Ok(None);
+    };
 
-    Ok(ParsedTerminalRequest {
-        terminal_id: Some(terminal_id),
+    Ok(Some(ParsedTerminalRequest {
+        process_id: Some(process_id),
         request: TerminalRequest::WriteStdin {
             stdin: args.chars,
             yield_time_ms: args.yield_time_ms,
             max_output_tokens: args.max_output_tokens,
         },
-    })
+    }))
 }
 
 fn parse_terminal_response_payload(
@@ -447,10 +536,10 @@ fn parse_terminal_response_payload(
 
 fn parse_protocol_terminal_response(payload: ExecCommandEndPayload) -> ParsedTerminalResponse {
     ParsedTerminalResponse {
-        terminal_id: payload.process_id,
+        process_id: payload.process_id,
         result: TerminalResult {
             exit_code: Some(payload.exit_code),
-            stdout: payload.aggregated_output,
+            stdout: payload.aggregated_output.unwrap_or_default(),
             stderr: String::new(),
             formatted_output: None,
             original_token_count: None,
@@ -493,22 +582,15 @@ fn parse_dispatch_terminal_response(value: JsonValue) -> Result<ParsedTerminalRe
         },
     };
     Ok(ParsedTerminalResponse {
-        terminal_id: None,
+        process_id: None,
         result,
     })
 }
 
 fn parse_code_mode_exec_result(value: JsonValue) -> TerminalResult {
     match serde_json::from_value::<CodeModeExecResult>(value.clone()) {
-        Ok(result) => TerminalResult {
-            exit_code: result.exit_code,
-            stdout: result.output.clone(),
-            stderr: String::new(),
-            formatted_output: Some(result.output),
-            original_token_count: result.original_token_count,
-            chunk_id: result.chunk_id,
-        },
-        Err(_) => {
+        Ok(result) if result.output.is_some() => result.into(),
+        _ => {
             let output = json_text_content(&value).unwrap_or_else(|| value.to_string());
             TerminalResult {
                 exit_code: None,
@@ -538,7 +620,7 @@ fn json_text_content(value: &JsonValue) -> Option<String> {
     }
 }
 
-fn terminal_id_from_json(value: &JsonValue) -> Option<String> {
+fn process_id_from_json(value: &JsonValue) -> Option<String> {
     match value {
         JsonValue::String(value) if !value.is_empty() => Some(value.clone()),
         JsonValue::Number(value) => Some(value.to_string()),
@@ -557,14 +639,14 @@ struct ExecCommandBeginPayload {
 #[derive(Deserialize)]
 struct ExecCommandEndPayload {
     process_id: Option<String>,
-    #[serde(default)]
-    aggregated_output: String,
+    aggregated_output: Option<String>,
     exit_code: i32,
 }
 
 #[derive(Deserialize)]
 struct DispatchedToolTraceRequestPayload {
     tool_name: String,
+    tool_namespace: Option<String>,
     payload: DispatchedToolPayload,
 }
 
@@ -597,7 +679,20 @@ struct CodeModeExecResult {
     chunk_id: Option<String>,
     exit_code: Option<i32>,
     original_token_count: Option<usize>,
-    output: String,
+    output: Option<String>,
+}
+
+impl From<CodeModeExecResult> for TerminalResult {
+    fn from(result: CodeModeExecResult) -> Self {
+        Self {
+            exit_code: result.exit_code,
+            stdout: result.output.clone().unwrap_or_default(),
+            stderr: String::new(),
+            formatted_output: result.output,
+            original_token_count: result.original_token_count,
+            chunk_id: result.chunk_id,
+        }
+    }
 }
 
 #[cfg(test)]

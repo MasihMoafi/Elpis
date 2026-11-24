@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::collections::HashSet;
+use std::ffi::OsStr;
 use std::io;
 use std::path::Path;
-use std::path::PathBuf;
 
 use codex_config::ConfigPathContext;
 use codex_config::permissions_toml::FilesystemPermissionToml;
@@ -51,6 +51,27 @@ pub(crate) const BUILT_IN_DANGER_FULL_ACCESS_PROFILE: &str =
 /// Elpis: no sandbox, like full access; see `bypass_permissions_active` for the rest.
 pub(crate) const BUILT_IN_BYPASS_PERMISSIONS_PROFILE: &str =
     BUILT_IN_PERMISSION_PROFILE_BYPASS_PERMISSIONS;
+
+/// Keep the active apply_patch aliases readable without granting access to other
+/// sessions or the rest of CODEX_HOME. Preserve the alias directory, not its target.
+pub(super) fn active_arg0_helper_dir(
+    codex_home: &Path,
+    path_env: &OsStr,
+) -> Option<AbsolutePathBuf> {
+    let arg0_root = codex_home
+        .join("tmp")
+        .join(format!("arg0-{}", std::env::consts::OS));
+    let legacy_root = codex_home.join("tmp").join("arg0");
+    std::env::split_paths(path_env)
+        .find(|path| {
+            (path.parent() == Some(arg0_root.as_path())
+                || path.parent() == Some(legacy_root.as_path()))
+                && path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("codex-arg0"))
+        })
+        .and_then(|path| AbsolutePathBuf::from_absolute_path(path).ok())
+}
 
 pub(crate) fn default_builtin_permission_profile_name(
     active_project: &ProjectConfig,
@@ -149,6 +170,7 @@ pub(crate) fn apply_network_proxy_feature_config(
         enabled: feature_config.enabled,
         proxy_url: feature_config.proxy_url.clone(),
         enable_socks5: feature_config.enable_socks5,
+        transparent_tcp: feature_config.transparent_tcp,
         socks_url: feature_config.socks_url.clone(),
         enable_socks5_udp: feature_config.enable_socks5_udp,
         allow_upstream_proxy: feature_config.allow_upstream_proxy,
@@ -241,6 +263,7 @@ fn permission_profile_toml_from_file_system_policy(
         insert_filesystem_permission_toml(&mut filesystem.entries, entry);
     }
     PermissionProfileToml {
+        credentials: None,
         description: None,
         extends: None,
         workspace_roots: None,
@@ -513,37 +536,6 @@ pub(crate) fn reject_unknown_builtin_permission_profile(profile_name: &str) -> i
     }
 
     Ok(())
-}
-
-/// Returns a list of paths that must be readable by shell tools in order
-/// for Codex to function. These should always be added to the
-/// `FileSystemSandboxPolicy` for a thread.
-pub(crate) fn get_readable_roots_required_for_codex_runtime(
-    codex_home: &Path,
-    zsh_path: Option<&PathBuf>,
-    main_execve_wrapper_exe: Option<&PathBuf>,
-) -> Vec<AbsolutePathBuf> {
-    let arg0_root = AbsolutePathBuf::from_absolute_path(codex_home.join("tmp").join("arg0")).ok();
-    let zsh_path = zsh_path.and_then(|path| AbsolutePathBuf::from_absolute_path(path).ok());
-    let execve_wrapper_root = main_execve_wrapper_exe.and_then(|path| {
-        let path = AbsolutePathBuf::from_absolute_path(path).ok()?;
-        if let Some(arg0_root) = arg0_root.as_ref()
-            && path.as_path().starts_with(arg0_root.as_path())
-        {
-            path.parent()
-        } else {
-            Some(path)
-        }
-    });
-
-    let mut readable_roots = Vec::new();
-    if let Some(zsh_path) = zsh_path {
-        readable_roots.push(zsh_path);
-    }
-    if let Some(execve_wrapper_root) = execve_wrapper_root {
-        readable_roots.push(execve_wrapper_root);
-    }
-    readable_roots
 }
 
 fn compile_network_sandbox_policy(

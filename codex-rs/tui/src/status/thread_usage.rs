@@ -7,11 +7,11 @@ use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_lines;
 use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::ThreadUsageBreakdownGroup;
+use codex_protocol::account::PlanType;
 use ratatui::prelude::Line;
 use ratatui::style::Stylize;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
-use std::sync::Arc;
 use std::sync::RwLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
@@ -32,11 +32,26 @@ const REASONING_LABEL: &str = "  Reasoning";
 const SPEED_LABEL: &str = "  Speed";
 const BILLED_TOKENS_LABEL: &str = "  Billed tokens";
 
+/// ENT26 is billed directly in dollars; missing native usage is not a zero estimate.
+pub(crate) fn thread_cost_micros(usage: &ThreadUsage, plan_type: Option<PlanType>) -> Option<i64> {
+    if plan_type == Some(PlanType::Ent26) {
+        usage.native_usage_usd_micros
+    } else {
+        usage.estimated_usage_usd_micros
+    }
+}
+
 /// Shared state updates a committed `/status` card when its asynchronous estimate arrives.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub(crate) struct StatusThreadUsage {
-    estimate: Arc<RwLock<Option<ThreadUsage>>>,
-    reserve_label_width: Arc<AtomicBool>,
+    billing: RwLock<CardBilling>,
+    reserve_label_width: AtomicBool,
+}
+
+#[derive(Debug, Default)]
+struct CardBilling {
+    estimate: Option<ThreadUsage>,
+    plan: Option<PlanType>,
 }
 
 impl StatusThreadUsage {
@@ -45,13 +60,13 @@ impl StatusThreadUsage {
             .store(/*val*/ true, Ordering::Relaxed);
     }
 
-    pub(crate) fn set_estimate(&self, estimate: Option<ThreadUsage>) {
+    pub(crate) fn set_estimate(&self, estimate: Option<ThreadUsage>, plan: Option<PlanType>) {
         #[expect(clippy::expect_used)]
-        let mut stored_estimate = self
-            .estimate
+        let mut billing = self
+            .billing
             .write()
             .expect("status history thread-usage state poisoned");
-        *stored_estimate = estimate;
+        *billing = CardBilling { estimate, plan };
     }
 
     pub(crate) fn push_labels(&self, labels: &mut Vec<String>, seen: &mut BTreeSet<String>) {
@@ -61,11 +76,11 @@ impl StatusThreadUsage {
             push_label(labels, seen, BILLED_TOKENS_LABEL);
         }
         #[expect(clippy::expect_used)]
-        let stored_estimate = self
-            .estimate
+        let billing = self
+            .billing
             .read()
             .expect("status history thread-usage state poisoned");
-        let Some(estimate) = stored_estimate.as_ref() else {
+        let Some(estimate) = billing.estimate.as_ref() else {
             return;
         };
         push_label(labels, seen, "Thread usage");
@@ -89,13 +104,21 @@ impl StatusThreadUsage {
         value_width: usize,
     ) -> Vec<Line<'static>> {
         #[expect(clippy::expect_used)]
-        let stored_estimate = self
-            .estimate
+        let billing = self
+            .billing
             .read()
             .expect("status history thread-usage state poisoned");
-        let Some(estimate) = stored_estimate.as_ref() else {
+        let Some(estimate) = billing.estimate.as_ref() else {
             return Vec::new();
         };
+
+        if billing.plan == Some(PlanType::Ent26) {
+            // Credit-weighted breakdowns do not describe native dollar usage.
+            return thread_cost_micros(estimate, billing.plan)
+                .and_then(format_estimated_usd_micros)
+                .map(|cost| vec![formatter.line("Thread usage", vec![cost.into()])])
+                .unwrap_or_default();
+        }
 
         let credits_micros = estimate.estimated_usage_credits_micros;
         let mut usage = vec![format!("{} credits", format_credit_micros(credits_micros)).into()];

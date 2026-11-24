@@ -8,7 +8,6 @@ use std::io;
 
 use crate::LocalFileSystem;
 use crate::protocol::FsOpenMode;
-use codex_config::loader::system_config_toml_file;
 use codex_file_system::ExecutorFileSystem;
 use codex_file_system::WalkEntryKind;
 use codex_file_system::WalkOptions;
@@ -24,11 +23,12 @@ use codex_core_plugin_common::installed::parse_remote_plugin_id;
 use codex_core_plugin_common::plugin_id::PluginId;
 use tokio::io::AsyncReadExt;
 
-/// Home paths are supplied by the executor, not read from the sandbox helper's sanitized env.
+/// Fixed paths are supplied by the executor, not read from the sandbox helper's sanitized env.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CapabilityLocationRequest {
     pub codex_home: PathUri,
     pub user_home: Option<PathUri>,
+    pub system_skills_root: Option<PathUri>,
 }
 
 const MAX_LOCATIONS: usize = 512;
@@ -39,6 +39,7 @@ const AGENTS_SKILLS_SUFFIX: &str = ".agents/skills";
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct CapabilityLocation {
     pub root: PathUri,
+    pub standalone_root_id: Option<String>,
     pub plugin: Option<InstalledPlugin>,
 }
 
@@ -69,19 +70,22 @@ pub(crate) async fn prewarm_locations(
         .map(PathUri::to_abs_path)
         .transpose()?;
     // Fixed standalone roots extend Flora's V1 root; project skill discovery is deferred.
-    let mut skill_roots = vec![codex_home.join("skills")];
+    let mut skill_roots = vec![("codex-home-skills", codex_home.join("skills"))];
     if let Some(home) = user_home {
-        skill_roots.push(home.join(AGENTS_SKILLS_SUFFIX));
+        skill_roots.push(("user-agent-skills", home.join(AGENTS_SKILLS_SUFFIX)));
     }
-    if let Some(system_root) = system_config_toml_file()?.parent() {
-        skill_roots.push(system_root.join("skills"));
+    if let Some(system_root) = &request.system_skills_root {
+        skill_roots.push(("system-skills", system_root.to_abs_path()?));
     }
     CandidateCapabilityLocations::resolve(
         fs,
         Some(PathUri::from_abs_path(&codex_home.join(PLUGINS_CACHE_DIR))),
         skill_roots
             .into_iter()
-            .map(|root| PathUri::from_abs_path(&root))
+            .map(|(id, root)| crate::SkillDiscoveryRoot {
+                id: id.to_string(),
+                path: PathUri::from_abs_path(&root),
+            })
             .collect(),
     )
     .await
@@ -171,6 +175,7 @@ async fn discover_cached_plugins(
         };
         locations.locations.push(CapabilityLocation {
             root: PathUri::from_abs_path(&package_root.join(&version)),
+            standalone_root_id: None,
             plugin: Some(InstalledPlugin {
                 id,
                 version,
@@ -211,4 +216,4 @@ async fn read_remote_plugin_id(path: &std::path::Path) -> io::Result<Option<Stri
 
 #[cfg(test)]
 #[path = "tests/capability_locations_tests.rs"]
-pub(super) mod tests;
+pub(crate) mod tests;

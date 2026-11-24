@@ -1,4 +1,5 @@
 pub mod cache;
+mod catalog;
 pub mod collaboration_mode_presets;
 // Elpis: the model is told it is Elpis.
 pub(crate) mod config;
@@ -6,10 +7,14 @@ mod elpis_identity;
 pub mod manager;
 pub mod model_info;
 pub mod model_presets;
+mod originator;
 pub mod test_support;
 
+pub use catalog::CatalogModel;
+pub use catalog::ModelOrigin;
 pub use codex_protocol::auth::AuthMode;
 pub use config::ModelsManagerConfig;
+pub use originator::ModelCatalogOriginator;
 
 /// Load the bundled model catalog shipped with `codex-models-manager`.
 pub fn bundled_models_response()

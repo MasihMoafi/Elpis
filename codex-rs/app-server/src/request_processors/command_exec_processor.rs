@@ -1,8 +1,8 @@
 use super::*;
 use codex_core::exec_env::inject_apply_patch_env;
 use codex_core::windows_sandbox::local_binding_policy_for_sandbox;
-use codex_core::windows_sandbox::managed_proxy_routing_for_windows_sandbox;
 use codex_protocol::shell_environment::is_non_inheritable_env_var;
+use codex_sandboxing::managed_proxy_routing_for_windows_sandbox;
 
 #[derive(Clone)]
 pub(crate) struct CommandExecRequestProcessor {
@@ -239,7 +239,11 @@ impl CommandExecRequestProcessor {
                 config.managed_network_requirements_enabled(),
                 config.effective_workspace_roots(),
             )
-        } else if let Some(policy) = sandbox_policy.map(|policy| policy.to_core()) {
+        } else if let Some(policy) = sandbox_policy
+            .map(|policy| policy.try_to_core())
+            .transpose()
+            .map_err(|err| invalid_request(format!("invalid sandbox policy: {err}")))?
+        {
             let mut permissions = self.config.permissions.clone();
             permissions
                 .set_legacy_sandbox_policy(policy, &sandbox_cwd)
@@ -324,6 +328,7 @@ impl CommandExecRequestProcessor {
             self.config.effective_local_windows_sandbox_type(),
             use_legacy_landlock,
         )
+        .await
         .map_err(|err| internal_error(format!("exec failed: {err}")))?;
         self.command_exec_manager
             .start(StartCommandExecParams {

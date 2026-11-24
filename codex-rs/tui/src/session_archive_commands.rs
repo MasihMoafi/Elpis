@@ -173,7 +173,7 @@ async fn resolve_session_target(
         &[super::resume_source_kinds(
             /*include_non_interactive*/ false,
         )],
-        /*model_provider*/ None,
+        /*model_providers*/ None,
     )
     .await?
     {
@@ -263,6 +263,7 @@ pub(super) async fn start_app_server_for_session_command(
             .await
             .wrap_err("failed to load config.toml")?;
         return Ok(AppServerSession::new(
+            crate::backend_id::BackendId::new(),
             super::connect_remote_app_server(endpoint).await?,
             ThreadParamsMode::Remote,
         )
@@ -368,7 +369,6 @@ pub(super) async fn start_app_server_for_session_command(
             model_provider,
             codex_self_exe: arg0_paths.codex_self_exe.clone(),
             codex_linux_sandbox_exe: arg0_paths.codex_linux_sandbox_exe.clone(),
-            main_execve_wrapper_exe: arg0_paths.main_execve_wrapper_exe.clone(),
             show_raw_agent_reasoning: cli.oss.then_some(true),
             bypass_hook_trust: cli.bypass_hook_trust.then_some(true),
             ..Default::default()
@@ -406,10 +406,12 @@ pub(super) async fn start_app_server_for_session_command(
         embedded_network_policy,
     )
     .await?;
-    Ok(
-        AppServerSession::new(app_server, app_server_target.thread_params_mode())
-            .with_remote_cwd_override(remote_cwd_override),
+    Ok(AppServerSession::new(
+        crate::backend_id::BackendId::new(),
+        app_server,
+        app_server_target.thread_params_mode(),
     )
+    .with_remote_cwd_override(remote_cwd_override))
 }
 
 #[cfg(test)]

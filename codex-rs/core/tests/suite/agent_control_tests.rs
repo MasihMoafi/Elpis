@@ -3,59 +3,169 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 
-use codex_agent_message_board_extension::PostMetadata;
 use codex_core::AgentConfigUpdate;
 use codex_core::AgentControl;
 use codex_core::AgentExecutionGuard;
 use codex_core::AgentInfo;
+use codex_core::AgentRef;
 use codex_core::AgentTarget;
 use codex_core::AgentTurnOutcome;
+use codex_core::AgentTurnOutcomeReporter;
 use codex_core::DeliveryReceipt;
 use codex_core::ForkSnapshot;
 use codex_core::GuardianRootSnapshot;
+use codex_core::InheritedSessionId;
 use codex_core::LiveAgent;
+use codex_core::PendingAgentMessage;
+use codex_core::RestrictRootCapabilities;
 use codex_core::RolloutBudgetReminder;
 use codex_core::SendRequest;
 use codex_core::SpawnRequest;
 use codex_core::StartThreadOptions;
 use codex_core::ThreadConfigSnapshot;
+use codex_core::TurnInput;
 use codex_core::TurnInputRequest;
+use codex_core::TurnInputSubmission;
+use codex_core::TurnStartOptions;
+use codex_core::compact::content_items_to_text;
+use codex_core::config::Config;
+use codex_extension_api::ExtensionFuture;
+use codex_extension_api::ExtensionRegistryBuilder;
+use codex_extension_api::ThreadLifecycleContributor;
+use codex_extension_api::ThreadStartInput;
+use codex_extension_api::ThreadStopInput;
+use codex_extension_api::TurnLifecycleContributor;
+use codex_extension_api::TurnStopInput;
 use codex_features::Feature;
+use codex_history::CodexHarnessMetadata;
 use codex_history::InitialHistory;
+use codex_history::ResponseItemEnvelope;
 use codex_history::ResumedHistory;
+use codex_history::RetainedContextEntry;
+use codex_history::RetainedContextEvent;
+use codex_history::RetainedContextOrder;
 use codex_history::RolloutItem;
+use codex_history::SenderUserMessages;
+use codex_history::VerifiedAnswer;
+use codex_history::VerifiedQuestionAnswer;
+use codex_message_board::PostMetadata;
 use codex_protocol::AgentPath;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::error::Result as CodexResult;
+use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::AgentStatus;
+use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::MultiAgentVersion;
+use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::ThreadHistoryMode;
+use codex_protocol::protocol::ThreadSettingsOverrides;
+use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::user_input::UserInput;
 use codex_rollout_trace::ThreadTraceContext;
+use codex_thread_store::ForkBoundary;
+use codex_thread_store::LoadThreadHistoryParams;
+use codex_thread_store::PrepareForkParams;
+use core_test_support::ThreadIdle;
 use core_test_support::responses;
 use core_test_support::skip_if_no_network;
+use core_test_support::submit_thread_settings;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::test_codex;
 use core_test_support::wait_for_event;
+use core_test_support::wait_for_event_match;
 use futures::future::BoxFuture;
 use pretty_assertions::assert_eq;
+use serde_json::json;
+use test_case::test_case;
+use tokio::sync::Notify;
+use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use wiremock::MockServer;
 
-struct TestAgentControl {
+pub(super) struct HostRuntime;
+
+impl codex_core::AgentTurnAdmission for HostRuntime {
+    fn admit_turn(
+        &self,
+        _: codex_core::AgentTurnAdmissionRequest,
+    ) -> BoxFuture<'_, CodexResult<AgentExecutionGuard>> {
+        Box::pin(async { Ok(AgentExecutionGuard::new(())) })
+    }
+}
+
+pub(super) struct HostSessionReader {
+    root: ThreadId,
+    pub(super) children: Mutex<Option<Vec<AgentRef>>>,
+    pub(super) children_reads: AtomicUsize,
+}
+
+impl codex_core::AgentSessionReader for HostSessionReader {
+    fn root(&self) -> BoxFuture<'_, CodexResult<AgentRef>> {
+        Box::pin(async {
+            Ok(AgentRef {
+                thread_id: self.root,
+                path: AgentPath::root(),
+            })
+        })
+    }
+
+    fn parent(&self) -> BoxFuture<'_, CodexResult<Option<AgentRef>>> {
+        Box::pin(async { Ok(None) })
+    }
+
+    fn children(&self) -> BoxFuture<'_, CodexResult<Vec<AgentRef>>> {
+        Box::pin(async {
+            self.children_reads.fetch_add(1, Ordering::Relaxed);
+            self.children
+                .lock()
+                .expect("host roster")
+                .clone()
+                .ok_or_else(|| CodexErr::InvalidRequest("host agent session unavailable".into()))
+        })
+    }
+}
+
+pub(super) fn install_host_runtime(data: &codex_extension_api::ExtensionData) {
+    data.insert(codex_core::AgentRuntimeOwnership::Host);
+    let reader = data.get_or_init(|| HostSessionReader {
+        root: ThreadId::from_string(data.level_id()).expect("test thread identity"),
+        children: Mutex::new(Some(Vec::new())),
+        children_reads: AtomicUsize::new(0),
+    });
+    data.get_or_init(|| reader as Arc<dyn codex_core::AgentSessionReader>);
+    data.get_or_init(|| Arc::new(HostRuntime) as Arc<dyn codex_core::AgentTurnAdmission>);
+}
+
+impl codex_extension_api::ThreadLifecycleContributor<codex_core::config::Config> for HostRuntime {
+    fn on_thread_start<'a>(
+        &'a self,
+        input: codex_extension_api::ThreadStartInput<'a, codex_core::config::Config>,
+    ) -> codex_extension_api::ExtensionFuture<'a, ()> {
+        install_host_runtime(input.thread_store);
+        Box::pin(async {})
+    }
+}
+
+pub(super) struct TestAgentControl {
     thread_id: ThreadId,
     service_tier: Mutex<Option<String>>,
-    mail: Mutex<Vec<codex_protocol::protocol::InterAgentCommunication>>,
+    mail: Mutex<Vec<PendingAgentMessage>>,
     mailbox_state: tokio::sync::watch::Sender<bool>,
     agents: Mutex<HashMap<String, ThreadId>>,
 }
 
 impl TestAgentControl {
-    fn new(thread_id: ThreadId) -> Self {
+    pub(super) fn new(thread_id: ThreadId) -> Self {
         Self {
             thread_id,
             service_tier: Mutex::default(),
@@ -100,10 +210,7 @@ impl AgentControl for TestAgentControl {
         Box::pin(async { Err(CodexErr::InvalidRequest("host send rejection".to_string())) })
     }
 
-    fn take_mailbox(
-        &self,
-        _agent: ThreadId,
-    ) -> Vec<codex_protocol::protocol::InterAgentCommunication> {
+    fn take_mailbox(&self, _agent: ThreadId) -> Vec<PendingAgentMessage> {
         let messages = std::mem::take(&mut *self.mail.lock().expect("mail lock"));
         self.mailbox_state.send_if_modified(std::mem::take);
         messages
@@ -166,7 +273,11 @@ impl AgentControl for TestAgentControl {
         None
     }
 
-    fn record_usage(&self, _usage: TokenUsage) -> BoxFuture<'_, CodexResult<()>> {
+    fn record_usage(
+        &self,
+        _usage: Option<TokenUsage>,
+        _hook_charge: codex_core::HookCharge,
+    ) -> BoxFuture<'_, CodexResult<()>> {
         Box::pin(async { Ok(()) })
     }
 
@@ -214,16 +325,21 @@ impl AgentControl for TestAgentControl {
 
 async fn test_with_host_control(
     server: &MockServer,
+    extra_features: &[Feature],
 ) -> anyhow::Result<(TestCodex, Arc<TestAgentControl>)> {
     let thread_id = ThreadId::new();
     let controller = Arc::new(TestAgentControl::new(thread_id));
+    let extra_features = extra_features.to_vec();
     let test = test_codex()
-        .with_config(|config| {
+        .with_config(move |config| {
             for feature in [
                 Feature::Collab,
                 Feature::MultiAgentV2,
                 Feature::AgentMessageBoard,
-            ] {
+            ]
+            .into_iter()
+            .chain(extra_features.iter().copied())
+            {
                 config
                     .features
                     .enable(feature)
@@ -251,7 +367,7 @@ async fn test_with_host_control(
 async fn host_threads_preserve_lineage_settings_and_resume_routing() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
     let server = responses::start_mock_server().await;
-    let (test, controller) = test_with_host_control(&server).await?;
+    let (test, controller) = test_with_host_control(&server, &[]).await?;
     let root_id = test.session_configured.thread_id;
     let mut child_config = test.config.clone();
     child_config.service_tier = None;
@@ -278,6 +394,29 @@ async fn host_threads_preserve_lineage_settings_and_resume_routing() -> anyhow::
         (controller.identity(), Some(root_id))
     );
     assert_eq!(controller.service_tier(), Some("priority".to_string()));
+    let message = codex_protocol::protocol::InterAgentCommunication::new(
+        AgentPath::root(),
+        AgentPath::root().join("worker").expect("valid child path"),
+        Vec::new(),
+        "Retain this in the host mailbox".into(),
+        /*trigger_turn*/ false,
+    );
+    let unread_mail = vec![message.into()];
+    *controller.mail.lock().expect("mail lock") = unread_mail.clone();
+    let error = test
+        .thread_manager
+        .try_evict_v2_thread(Arc::clone(&child.thread))
+        .await
+        .expect_err("local eviction must reject a host-controlled child");
+    assert!(matches!(
+        error.details(),
+        CodexErrorDetails::InvalidRequest(_)
+    ));
+    assert!(Arc::ptr_eq(
+        &test.thread_manager.get_thread(child.thread_id).await?,
+        &child.thread,
+    ));
+    assert_eq!(controller.take_mailbox(child.thread_id), unread_mail);
     child.thread.ensure_rollout_materialized().await;
     child.thread.flush_rollout().await?;
     let saved = test
@@ -400,6 +539,7 @@ async fn host_factory_follows_thread_lifecycle() -> anyhow::Result<()> {
         .build_with_auto_env(&server)
         .await?;
     let root_id = test.session_configured.thread_id;
+    let root_tree_id = test.codex.agent_tree_id();
     let manager = &test.thread_manager;
     let options = || StartThreadOptions {
         environments: Some(vec![test.executor_environment().request()]),
@@ -418,6 +558,7 @@ async fn host_factory_follows_thread_lifecycle() -> anyhow::Result<()> {
         internal.session_configured.session_id,
         test.session_configured.session_id
     );
+    assert_eq!(internal.thread.agent_tree_id(), root_tree_id);
     test.codex.ensure_rollout_materialized().await;
     test.codex.flush_rollout().await?;
     let saved = test.codex.load_history(/*include_archived*/ false).await?;
@@ -427,6 +568,20 @@ async fn host_factory_follows_thread_lifecycle() -> anyhow::Result<()> {
         history: Arc::new(saved.items),
         rollout_path: test.codex.rollout_path(),
     });
+    let mut copied_child_options = options();
+    copied_child_options
+        .thread_extension_init
+        .insert(InheritedSessionId(test.session_configured.session_id));
+    assert!(matches!(
+        manager
+            .fork_thread_from_history(
+                ForkSnapshot::Interrupted,
+                copied_child_options,
+                history.clone(),
+            )
+            .await,
+        Err(error) if matches!(error.details(), CodexErrorDetails::InvalidRequest(_))
+    ));
     let fork = manager
         .fork_thread_from_history(ForkSnapshot::Interrupted, options(), history.clone())
         .await?;
@@ -434,6 +589,7 @@ async fn host_factory_follows_thread_lifecycle() -> anyhow::Result<()> {
         fork.session_configured.session_id,
         SessionId::from(fork.thread_id)
     );
+    assert_ne!(fork.thread.agent_tree_id(), root_tree_id);
     let warm = manager
         .start_thread(StartThreadOptions {
             initial_history: history.clone(),
@@ -441,6 +597,7 @@ async fn host_factory_follows_thread_lifecycle() -> anyhow::Result<()> {
         })
         .await?;
     assert!(Arc::ptr_eq(&warm.thread, &test.codex));
+    assert_eq!(warm.thread.agent_tree_id(), root_tree_id);
     assert_eq!(
         *calls.lock().expect("factory calls lock"),
         vec![root_id, fork.thread_id]
@@ -454,6 +611,7 @@ async fn host_factory_follows_thread_lifecycle() -> anyhow::Result<()> {
         })
         .await?;
     assert!(!Arc::ptr_eq(&cold.thread, &test.codex));
+    assert_ne!(cold.thread.agent_tree_id(), root_tree_id);
     assert_eq!(cold.thread_id, root_id);
     assert_eq!(
         *calls.lock().expect("factory calls lock"),
@@ -464,11 +622,486 @@ async fn host_factory_follows_thread_lifecycle() -> anyhow::Result<()> {
     Ok(())
 }
 
+enum HostedChildHistory {
+    Fresh,
+    PreparedFork,
+}
+
+#[test_case(ThreadHistoryMode::Legacy, HostedChildHistory::Fresh; "fresh_legacy")]
+#[test_case(ThreadHistoryMode::Paginated, HostedChildHistory::Fresh; "fresh_paginated")]
+#[test_case(ThreadHistoryMode::Paginated, HostedChildHistory::PreparedFork; "prepared_fork")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hosted_child_persists_inherited_session_id(
+    history_mode: ThreadHistoryMode,
+    child_history: HostedChildHistory,
+) -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let server = responses::start_mock_server().await;
+    let root = test_codex()
+        .with_history_mode(history_mode)
+        .build_with_auto_env(&server)
+        .await?;
+    let root_session_id = root.session_configured.session_id;
+    let manager = &root.thread_manager;
+    let options = || StartThreadOptions {
+        history_mode: Some(history_mode),
+        session_source: Some(SessionSource::Custom("host".to_string())),
+        environments: Some(vec![root.executor_environment().request()]),
+        ..StartThreadOptions::new(root.config.clone())
+    };
+    let mut native_options = options();
+    native_options.session_source = Some(SessionSource::SubAgent(SubAgentSource::Review));
+    native_options
+        .thread_extension_init
+        .insert(InheritedSessionId(root_session_id));
+    let Err(error) = manager.start_thread(native_options).await else {
+        anyhow::bail!("native children must use their controller's session ID");
+    };
+    assert!(matches!(
+        error.details(),
+        CodexErrorDetails::InvalidRequest(_)
+    ));
+    let mut child_options = options();
+    let prepared_fork = matches!(child_history, HostedChildHistory::PreparedFork);
+    let selected_plugins = vec!["slack@openai".to_string()];
+    child_options
+        .thread_extension_init
+        .insert(InheritedSessionId(root_session_id));
+    if prepared_fork {
+        child_options
+            .thread_extension_init
+            .insert(RestrictRootCapabilities);
+    }
+    let child = match child_history {
+        HostedChildHistory::Fresh => manager.start_thread(child_options).await?,
+        HostedChildHistory::PreparedFork => {
+            responses::mount_sse_once(&server, responses::sse_completed("done")).await;
+            root.submit_text_turn("record the current plugin selection")
+                .await?;
+            submit_thread_settings(
+                &root.codex,
+                ThreadSettingsOverrides {
+                    disabled_plugin_ids: Some(selected_plugins.clone()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+            root.codex.ensure_rollout_materialized().await;
+            root.codex
+                .append_rollout_items(&[
+                    RolloutItem::ResponseItem(ResponseItemEnvelope {
+                        item: responses::user_message_item("ancestor instructions"),
+                        metadata: Some(CodexHarnessMetadata {
+                            user_input_order: Some(42),
+                            sender_user_messages: Some(Box::new(SenderUserMessages {
+                                receiver_turn_id: "ancestor-turn".into(),
+                                receiver_message_id: "ancestor-message".into(),
+                                text: "ancestor sender evidence".into(),
+                            })),
+                            ..Default::default()
+                        }),
+                    }),
+                    RolloutItem::RetainedContext(RetainedContextEvent::VerifiedAnswer {
+                        answer: VerifiedAnswer {
+                            turn_id: "ancestor-turn".into(),
+                            call_id: "ancestor-question".into(),
+                            questions: vec![VerifiedQuestionAnswer {
+                                question: "Publish?".into(),
+                                answer: "Yes".into(),
+                            }],
+                        },
+                        acceptance_order: Some(43),
+                    }),
+                ])
+                .await?;
+            root.codex.flush_rollout().await?;
+            let prepared = root
+                .thread_store
+                .prepare_fork(PrepareForkParams {
+                    thread_id: root.session_configured.thread_id,
+                    boundary: ForkBoundary::Latest,
+                })
+                .await?;
+            manager
+                .fork_prepared_thread(child_options, prepared)
+                .await?
+        }
+    };
+    assert_ne!(SessionId::from(child.thread_id), root_session_id);
+    assert_eq!(
+        (
+            child.session_configured.session_id,
+            child.session_configured.parent_thread_id
+        ),
+        (root_session_id, None)
+    );
+    let mut expected_retained = None;
+    if prepared_fork {
+        assert_eq!(
+            child
+                .thread
+                .thread_settings_snapshot()
+                .await
+                .disabled_plugin_ids,
+            selected_plugins
+        );
+        let snapshot = child.thread.conversation_history_snapshot().await;
+        assert!(snapshot.items().any(|item| matches!(
+            item, ResponseItem::Message { role, content, .. }
+                if role == "user" && content_items_to_text(content).as_deref() == Some("ancestor instructions")
+        )));
+        let retained = snapshot.retained_context().expect("child authorization");
+        assert_eq!(retained.ordered_entries().count(), 0);
+        assert!(retained.sender_user_messages().is_none());
+        child
+            .thread
+            .inject_response_items(vec![responses::user_message_item(
+                "child-local instructions",
+            )])
+            .await?;
+        let snapshot = child.thread.conversation_history_snapshot().await;
+        let retained = snapshot.retained_context().expect("local authorization");
+        assert!(matches!(
+            retained.ordered_entries().next(),
+            Some((RetainedContextOrder::Local(0), RetainedContextEntry::UserMessage(message)))
+                if message.text == "child-local instructions"
+        ));
+        expected_retained = Some(retained.clone());
+    }
+    child.thread.ensure_rollout_materialized().await;
+    child.thread.flush_rollout().await?;
+    let history = root
+        .thread_store
+        .load_latest_model_context(LoadThreadHistoryParams {
+            thread_id: child.thread_id,
+            include_archived: false,
+        })
+        .await?;
+    let Some(RolloutItem::SessionMeta(meta)) = history.items.first() else {
+        anyhow::bail!("expected child metadata as the first rollout item");
+    };
+    assert_eq!(
+        (meta.meta.id, meta.meta.session_id, meta.meta.history_mode),
+        (child.thread_id, root_session_id, history_mode)
+    );
+    child.thread.shutdown_and_wait().await?;
+    let resumed_history = InitialHistory::Resumed(ResumedHistory {
+        history_revision: history.revision,
+        conversation_id: child.thread_id,
+        history: Arc::new(history.items),
+        rollout_path: child.thread.rollout_path(),
+    });
+    let mut invalid_resume = StartThreadOptions {
+        initial_history: resumed_history.clone(),
+        ..options()
+    };
+    invalid_resume
+        .thread_extension_init
+        .insert(InheritedSessionId(root_session_id));
+    let Err(error) = manager.start_thread(invalid_resume).await else {
+        anyhow::bail!("resuming must use the persisted session ID");
+    };
+    assert!(matches!(
+        error.details(),
+        CodexErrorDetails::InvalidRequest(_)
+    ));
+    let mut resume_options = StartThreadOptions {
+        initial_history: resumed_history,
+        ..options()
+    };
+    if prepared_fork {
+        resume_options
+            .thread_extension_init
+            .insert(RestrictRootCapabilities);
+    }
+    let resumed = manager.start_thread(resume_options).await?;
+    assert!(!Arc::ptr_eq(&resumed.thread, &child.thread));
+    assert_eq!(
+        (
+            resumed.thread_id,
+            resumed.session_configured.session_id,
+            resumed.session_configured.parent_thread_id
+        ),
+        (child.thread_id, root_session_id, None)
+    );
+    if let Some(expected_retained) = expected_retained {
+        assert_eq!(
+            resumed
+                .thread
+                .thread_settings_snapshot()
+                .await
+                .disabled_plugin_ids,
+            selected_plugins
+        );
+        let snapshot = resumed.thread.conversation_history_snapshot().await;
+        assert!(snapshot.items().any(|item| matches!(
+            item, ResponseItem::Message { role, content, .. }
+                if role == "user" && content_items_to_text(content).as_deref() == Some("ancestor instructions")
+        )));
+        assert_eq!(snapshot.retained_context(), Some(&expected_retained));
+    }
+    resumed.thread.shutdown_and_wait().await?;
+    root.codex.shutdown_and_wait().await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hosted_child_reports_terminal_turn_outcomes() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    const ANSWER: &str = "The patch looks good.";
+    const FAILURE: &str = "The request was rejected.";
+    const FOLLOWUP: &str = "Try again with the smaller patch.";
+    const ASSIGNING_TURN: &str = "assigner-turn";
+
+    struct Reporter {
+        outcomes: mpsc::UnboundedSender<AgentTurnOutcome>,
+        gate: Mutex<Option<oneshot::Receiver<()>>>,
+    }
+
+    impl AgentTurnOutcomeReporter for Reporter {
+        fn report(&self, outcome: AgentTurnOutcome) -> BoxFuture<'_, ()> {
+            Box::pin(async move {
+                let failed = matches!(outcome.status, AgentStatus::Errored(_));
+                self.outcomes.send(outcome).expect("report receiver");
+                if failed {
+                    let gate = self.gate.lock().expect("report gate").take();
+                    gate.expect("one failure report")
+                        .await
+                        .expect("release failure report");
+                }
+            })
+        }
+    }
+
+    let server = responses::start_mock_server().await;
+    let mut extensions = ExtensionRegistryBuilder::new();
+    extensions.thread_lifecycle_contributor(Arc::new(ThreadIdle));
+    let root = test_codex()
+        .with_extensions(Arc::new(extensions.build()))
+        .build_with_auto_env(&server)
+        .await?;
+    let session_id = root.session_configured.session_id;
+    let (release_report, report_gate) = oneshot::channel();
+    let (outcomes, mut reports) = mpsc::unbounded_channel();
+    let reporter = Arc::new(Reporter {
+        outcomes,
+        gate: Mutex::new(Some(report_gate)),
+    });
+    let source = SessionSource::Custom("host".to_string());
+    let mut options = StartThreadOptions {
+        session_source: Some(source.clone()),
+        thread_source: Some(ThreadSource::Subagent),
+        ..root.start_thread_options().await
+    };
+    options
+        .thread_extension_init
+        .insert(InheritedSessionId(session_id));
+    options
+        .thread_extension_init
+        .insert(reporter as Arc<dyn AgentTurnOutcomeReporter>);
+    let child = root.thread_manager.start_thread(options).await?;
+    let thread = &child.thread;
+
+    responses::mount_sse_sequence(
+        &server,
+        vec![
+            responses::sse(vec![
+                responses::ev_response_created("review"),
+                responses::ev_assistant_message("answer", ANSWER),
+                responses::ev_completed("review"),
+            ]),
+            responses::sse_failed("failed", "invalid_prompt", FAILURE),
+            responses::sse_completed("silent-followup"),
+        ],
+    )
+    .await;
+    let mut expect_report = async |expected_status| {
+        let turn_id = wait_for_event_match(thread, |event| match event {
+            EventMsg::TurnComplete(event) => Some(event.turn_id.clone()),
+            _ => None,
+        })
+        .await;
+        let report = tokio::time::timeout(Duration::from_secs(10), reports.recv())
+            .await
+            .expect("timed out waiting for the terminal turn report")
+            .expect("reporter dropped");
+        assert_eq!(
+            (report.thread_id, &report.turn_id, &report.source),
+            (child.thread_id, &turn_id, &source),
+        );
+        assert_eq!(
+            (&report.status, report.error_info.as_ref()),
+            (&expected_status, None)
+        );
+        report
+    };
+    for (prompt, expected_status) in [
+        (
+            "Review the patch.",
+            AgentStatus::Completed(Some(ANSWER.into())),
+        ),
+        ("Fail this request.", AgentStatus::Errored(FAILURE.into())),
+    ] {
+        thread
+            .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+                text: prompt.into(),
+                text_elements: Vec::new(),
+            }]))
+            .await?;
+        let report = expect_report(expected_status).await;
+        if !matches!(report.status, AgentStatus::Errored(_)) {
+            ThreadIdle::wait(thread).await;
+        }
+    }
+
+    // Queue the next task while the previous turn is still reporting its outcome.
+    let assigner = AgentPath::root().join("assigner").expect("assigner path");
+    let mail = InterAgentCommunication::new(
+        assigner.clone(),
+        AgentPath::root().join("reviewer").expect("child path"),
+        Vec::new(),
+        FOLLOWUP.into(),
+        /*trigger_turn*/ true,
+    );
+    let followup = TurnInputRequest::new(TurnInput::InterAgentCommunication(mail)).on_start(
+        TurnStartOptions {
+            parent_turn_id: Some(ASSIGNING_TURN.into()),
+            ..Default::default()
+        },
+    );
+    assert_eq!(
+        thread.start_or_steer_turn(followup).await?,
+        TurnInputSubmission::Accepted
+    );
+    release_report.send(()).expect("release failure report");
+
+    let report = expect_report(AgentStatus::Completed(None)).await;
+    ThreadIdle::wait(thread).await;
+    assert_eq!(
+        (
+            report.parent_turn_id.as_deref(),
+            report.initiating_agent_path
+        ),
+        (Some(ASSIGNING_TURN), Some(assigner)),
+    );
+    assert_eq!(
+        reports.try_recv().err(),
+        Some(mpsc::error::TryRecvError::Empty)
+    );
+    thread.shutdown_and_wait().await?;
+    let requests = responses::received_responses_requests(&server).await;
+    assert_eq!(requests.len(), 3);
+    assert_eq!(
+        requests[2].body_json()["client_metadata"]["turn_id"],
+        report.turn_id
+    );
+    let messages = requests[2].inputs_of_type("agent_message");
+    assert_eq!(messages.len(), 1);
+    assert!(
+        messages[0]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.ends_with(FOLLOWUP))
+    );
+    root.codex.shutdown_and_wait().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn shutdown_waits_for_host_outcome_handoff() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    #[derive(Default)]
+    struct Handoff {
+        entered: Notify,
+        release: Notify,
+        events: Mutex<Vec<&'static str>>,
+    }
+
+    impl Handoff {
+        async fn pause(&self) {
+            self.entered.notify_one();
+            self.release.notified().await;
+        }
+    }
+
+    impl TurnLifecycleContributor for Handoff {
+        fn on_turn_stop<'a>(&'a self, _input: TurnStopInput<'a>) -> ExtensionFuture<'a, ()> {
+            Box::pin(self.pause())
+        }
+    }
+
+    impl AgentTurnOutcomeReporter for Handoff {
+        fn report(&self, _outcome: AgentTurnOutcome) -> BoxFuture<'_, ()> {
+            Box::pin(async move {
+                self.pause().await;
+                self.events.lock().expect("handoff events").push("reported");
+            })
+        }
+    }
+
+    impl ThreadLifecycleContributor<Config> for Handoff {
+        fn on_thread_stop<'a>(&'a self, _input: ThreadStopInput<'a>) -> ExtensionFuture<'a, ()> {
+            Box::pin(async move { self.events.lock().expect("handoff events").push("stopped") })
+        }
+    }
+
+    let handoff = Arc::new(Handoff::default());
+    let mut extensions = ExtensionRegistryBuilder::new();
+    extensions.turn_lifecycle_contributor(handoff.clone());
+    extensions.thread_lifecycle_contributor(handoff.clone());
+    let server = responses::start_mock_server().await;
+    let root = test_codex()
+        .with_extensions(Arc::new(extensions.build()))
+        .build_with_auto_env(&server)
+        .await?;
+    let mut options = root.start_thread_options().await;
+    options
+        .thread_extension_init
+        .insert(handoff.clone() as Arc<dyn AgentTurnOutcomeReporter>);
+    let child = root.thread_manager.start_thread(options).await?;
+    let thread = &child.thread;
+
+    responses::mount_sse_once(&server, responses::sse_completed("done")).await;
+    thread
+        .start_or_steer_turn(TurnInputRequest::user_input(vec![UserInput::Text {
+            text: "Finish the task.".into(),
+            text_elements: Vec::new(),
+        }]))
+        .await?;
+
+    // The finalizer has detached its task, but has not entered the reporter.
+    let wait_for_gate =
+        async || tokio::time::timeout(Duration::from_secs(10), handoff.entered.notified()).await;
+    wait_for_gate().await?;
+    thread.submit(Op::Shutdown).await?;
+    let assert_pending_then_release = async || {
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), thread.wait_until_terminated())
+                .await
+                .is_err(),
+            "shutdown completed before the local handoff"
+        );
+        handoff.release.notify_one();
+    };
+    assert_pending_then_release().await;
+    // The reporter has now been called, but the host has not accepted the outcome yet.
+    wait_for_gate().await?;
+    assert_pending_then_release().await;
+    tokio::time::timeout(Duration::from_secs(10), thread.wait_until_terminated()).await?;
+    assert_eq!(
+        *handoff.events.lock().expect("handoff events"),
+        ["reported", "stopped"]
+    );
+    root.codex.shutdown_and_wait().await?;
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn collaboration_tools_dispatch_to_the_host_controller() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
     let server = responses::start_mock_server().await;
-    let (test, _controller) = test_with_host_control(&server).await?;
+    let (test, _controller) = test_with_host_control(&server, &[]).await?;
     let mut events = vec![responses::ev_response_created("tools")];
     for (call, name, arguments) in [
         (
@@ -519,7 +1152,7 @@ use codex_protocol::protocol::InternalSessionSource;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn host_mailbox_notifies_waiting_agent_and_delivers_once() -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
-    let (test, controller) = test_with_host_control(&server).await?;
+    let (test, controller) = test_with_host_control(&server, &[]).await?;
     responses::mount_sse_once(
         &server,
         responses::sse(vec![
@@ -560,7 +1193,8 @@ async fn host_mailbox_notifies_waiting_agent_and_delivers_once() -> anyhow::Resu
             Vec::new(),
             "Note from the host mailbox".into(),
             /*trigger_turn*/ false,
-        ),
+        )
+        .into(),
     );
     controller.mailbox_state.send_replace(true);
     wait_for_event(&test.codex, |event| {
@@ -585,5 +1219,128 @@ async fn host_mailbox_notifies_waiting_agent_and_delivers_once() -> anyhow::Resu
     );
     assert!(controller.mail.lock().expect("mail lock").is_empty());
     test.codex.shutdown_and_wait().await?;
+    Ok(())
+}
+
+/// Both delivery paths wake an opted-in completed root exactly once.
+#[test_case(false; "direct_op")]
+#[test_case(true; "host_mailbox")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn agent_mail_wakes_completed_root_when_enabled(
+    via_host_mailbox: bool,
+) -> anyhow::Result<()> {
+    let server = responses::start_mock_server().await;
+    let (test, controller) =
+        test_with_host_control(&server, &[Feature::WakeOnAgentMessages]).await?;
+    let mut final_answer = responses::ev_assistant_message("first-answer", "initial work finished");
+    final_answer["item"]["phase"] = json!("final_answer");
+    let response = responses::mount_sse_sequence(
+        &server,
+        vec![
+            responses::sse(vec![
+                responses::ev_response_created("initial"),
+                final_answer,
+                responses::ev_completed("initial"),
+            ]),
+            responses::sse(vec![
+                responses::ev_response_created("agent-mail"),
+                responses::ev_assistant_message("mail-answer", "received the agent update"),
+                responses::ev_completed("agent-mail"),
+            ]),
+        ],
+    )
+    .await;
+    test.submit_text_turn("Finish the initial work.").await?;
+    assert_eq!(response.requests().len(), 1);
+
+    let message = InterAgentCommunication::new(
+        AgentPath::root().join("worker").expect("valid worker path"),
+        AgentPath::root(),
+        Vec::new(),
+        "Late agent update".into(),
+        /*trigger_turn*/ false,
+    );
+    if via_host_mailbox {
+        controller
+            .mail
+            .lock()
+            .expect("mail lock")
+            .push(message.into());
+        controller.mailbox_state.send_replace(true);
+    } else {
+        test.codex
+            .submit(Op::InterAgentCommunication {
+                communication: message,
+                start_options: Default::default(),
+            })
+            .await?;
+    }
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    test.codex.shutdown_and_wait().await?;
+
+    let requests = response.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        responses::received_responses_requests(&server).await.len(),
+        2
+    );
+    assert_ne!(
+        requests[0].body_json()["client_metadata"]["turn_id"],
+        requests[1].body_json()["client_metadata"]["turn_id"]
+    );
+    let messages = requests[1].inputs_of_type("agent_message");
+    assert_eq!(messages.len(), 1);
+    assert_eq!(messages[0]["author"], "/root/worker");
+    assert_eq!(messages[0]["recipient"], "/root");
+    assert_eq!(
+        messages[0]["content"],
+        json!([{"type": "input_text", "text": "Late agent update"}])
+    );
+    assert!(controller.mail.lock().expect("mail lock").is_empty());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn host_start_requires_turn_admission() -> anyhow::Result<()> {
+    struct HostWithoutAdmission(Mutex<Vec<&'static str>>);
+
+    impl ThreadLifecycleContributor<Config> for HostWithoutAdmission {
+        fn on_thread_start<'a>(
+            &'a self,
+            input: ThreadStartInput<'a, Config>,
+        ) -> ExtensionFuture<'a, ()> {
+            Box::pin(async move {
+                self.0.lock().unwrap().push("start");
+                input
+                    .thread_store
+                    .insert(codex_core::AgentRuntimeOwnership::Host);
+            })
+        }
+
+        fn on_thread_stop<'a>(&'a self, _input: ThreadStopInput<'a>) -> ExtensionFuture<'a, ()> {
+            Box::pin(async move { self.0.lock().unwrap().push("stop") })
+        }
+    }
+
+    skip_if_no_network!(Ok(()));
+    let server = responses::start_mock_server().await;
+    let host = Arc::new(HostWithoutAdmission(Mutex::default()));
+    let mut extensions = ExtensionRegistryBuilder::new();
+    extensions.thread_lifecycle_contributor(host.clone());
+    let error = test_codex()
+        .with_extensions(Arc::new(extensions.build()))
+        .build_with_auto_env(&server)
+        .await
+        .err()
+        .expect("missing admission")
+        .downcast::<CodexErr>()?;
+    assert!(
+        matches!(error.details(), CodexErrorDetails::InvalidRequest(message) if message.contains("AgentTurnAdmission")),
+        "{error:?}"
+    );
+    assert_eq!(*host.0.lock().unwrap(), ["start", "stop"]);
     Ok(())
 }

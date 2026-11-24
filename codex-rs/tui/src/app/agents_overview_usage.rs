@@ -12,6 +12,7 @@ use crate::chatwidget::ThreadUsageOutcome;
 use crate::status::format_credit_micros;
 use crate::status::format_estimated_usd_micros;
 use crate::status::format_tokens_compact;
+use crate::status::thread_cost_micros;
 use crate::tui::FrameRequester;
 use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::ThreadUsageBreakdownGroup;
@@ -34,19 +35,26 @@ pub(super) struct AgentsOverviewUsage {
 }
 
 impl App {
+    pub(super) fn reset_agents_overview_usage_for_backend_switch(&mut self) {
+        self.agents_overview.usage.retain(|_, usage| {
+            usage.estimate = None;
+            usage.fetched_at = None;
+            usage.tokens.is_some()
+        });
+    }
+
     pub(super) fn refresh_agents_overview_usage(
         &mut self,
         app_server: &AppServerSession,
         frame_requester: FrameRequester,
     ) {
-        if self.reconnect.offline
-            || self.agents_overview.usage_disabled
-            || self.agents_overview.pending_usage.is_some()
+        if self.agents_overview.pending_usage.is_some()
             || !self.chat_widget.has_codex_backend_auth()
             || !matches!(
                 self.chat_widget.current_plan_type(),
                 Some(
-                    PlanType::Business
+                    PlanType::Ent26
+                        | PlanType::Business
                         | PlanType::EnterpriseCbpUsageBased
                         | PlanType::EnterpriseCbpAutomation
                 )
@@ -62,6 +70,17 @@ impl App {
         else {
             return;
         };
+        let owner = app_server.backend_id();
+        // The plan used to format usage belongs to the displayed backend.
+        if self
+            .backend_registry
+            .owner(thread_id)
+            .is_some_and(|thread_owner| thread_owner != owner)
+            || self.reconnect.offline
+            || self.agents_overview.usage_disabled
+        {
+            return;
+        }
         if let Some(age) = self
             .agents_overview
             .usage
@@ -103,7 +122,9 @@ impl App {
             return;
         }
         self.agents_overview.pending_usage = None;
-        if self.agents_overview.threads.contains_key(&thread_id) {
+        if self.agents_overview.threads.contains_key(&thread_id)
+            || self.agents_overview.search_matches.contains_key(&thread_id)
+        {
             let usage = self.agents_overview.usage.entry(thread_id).or_default();
             usage.fetched_at = Some(Instant::now());
             match result {
@@ -132,9 +153,12 @@ impl App {
                     usage.estimate = Some(estimate);
                 }
                 Ok(ThreadUsageOutcome::Disabled) => {
+                    let owner = self.app_server_backend_id;
                     self.agents_overview.usage_disabled = true;
-                    for usage in self.agents_overview.usage.values_mut() {
-                        usage.estimate = None;
+                    for (id, usage) in &mut self.agents_overview.usage {
+                        if self.backend_registry.owner(*id).or(owner) == owner {
+                            usage.estimate = None;
+                        }
                     }
                 }
                 Ok(ThreadUsageOutcome::Available(_)) | Err(_) => {}
@@ -144,7 +168,10 @@ impl App {
     }
 }
 
-pub(super) fn usage_lines(usage: &AgentsOverviewUsage) -> Vec<Line<'static>> {
+pub(super) fn usage_lines(
+    usage: &AgentsOverviewUsage,
+    plan_type: Option<PlanType>,
+) -> Vec<Line<'static>> {
     let sum = |count: fn(&ThreadUsageBreakdownGroup) -> Option<i64>| {
         let groups = &usage.estimate.as_ref()?.groups;
         if groups.is_empty() {
@@ -179,15 +206,14 @@ pub(super) fn usage_lines(usage: &AgentsOverviewUsage) -> Vec<Line<'static>> {
     }
     if let Some(estimate) = &usage.estimate {
         let mut values = Vec::new();
-        if estimate.estimated_usage_credits_micros >= 0 {
+        if plan_type != Some(PlanType::Ent26) && estimate.estimated_usage_credits_micros >= 0 {
             values.push(format!(
                 "{} credits",
                 format_credit_micros(estimate.estimated_usage_credits_micros)
             ));
         }
-        if let Some(cost) = estimate
-            .estimated_usage_usd_micros
-            .and_then(format_estimated_usd_micros)
+        if let Some(cost) =
+            thread_cost_micros(estimate, plan_type).and_then(format_estimated_usd_micros)
         {
             values.push(cost);
         }

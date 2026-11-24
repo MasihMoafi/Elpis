@@ -1,4 +1,4 @@
-//! Caller-specific explicit access programs advertised by the model catalog.
+//! Caller-specific access programs and Daybreak availability from the model catalog.
 //!
 //! Discovery metadata does not grant access; inference still enforces authorization.
 
@@ -15,9 +15,52 @@ pub struct ModelAccessPrograms {
     /// Accepted explicit selections. An empty list is distinct from missing metadata.
     #[serde(deserialize_with = "deserialize_known_cyber_access_programs")]
     pub cyber: Vec<CyberAccessProgram>,
+    /// Server-resolved Daybreak availability for this caller and model.
+    #[serde(default)]
+    pub daybreak_availability: DaybreakAvailability,
+}
+
+/// Server-resolved Daybreak availability for this caller and model.
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, TS, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DaybreakAvailability {
+    Available,
+    EnrollmentRequired,
+    UnavailableForModel,
+    #[default]
+    #[serde(other)]
+    Default,
+}
+
+/// Saved preference to resolve against the selected model's advertised programs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SavedDaybreakChoice {
+    Unset,
+    On,
+    Off,
+}
+
+impl From<Option<bool>> for SavedDaybreakChoice {
+    fn from(enabled: Option<bool>) -> Self {
+        match enabled {
+            Some(true) => Self::On,
+            Some(false) => Self::Off,
+            None => Self::Unset,
+        }
+    }
 }
 
 impl ModelAccessPrograms {
+    /// Select only an advertised program for explicit saved intent. Unset and
+    /// unsupported choices remain omitted, including On without Daybreak support.
+    pub fn select_saved(&self, choice: SavedDaybreakChoice) -> Option<CyberAccessProgram> {
+        match choice {
+            SavedDaybreakChoice::On => self.daybreak(),
+            SavedDaybreakChoice::Off => self.standard(),
+            SavedDaybreakChoice::Unset => None,
+        }
+    }
+
     /// Select the preferred Daybreak treatment advertised for this model.
     pub fn daybreak(&self) -> Option<CyberAccessProgram> {
         [

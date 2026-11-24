@@ -4,6 +4,7 @@ use super::HyperlinkLine;
 use super::annotate_web_urls;
 use super::mark_buffer_hyperlinks;
 use super::visible_lines_ref;
+use crate::render::line_utils::line_to_borrowed;
 use crate::render::renderable::Renderable;
 use ratatui::buffer::Buffer;
 use ratatui::buffer::CellWidth;
@@ -101,6 +102,18 @@ impl Renderable for HyperlinkRows {
 impl Widget for &HyperlinkLine {
     fn render(self, area: Rect, buf: &mut Buffer) {
         self.line.clone().render(area, buf);
+        self.mark_cells(area, buf);
+    }
+}
+
+impl HyperlinkLine {
+    /// Paint a fitted, left-aligned row using the terminal cell widths of its graphemes.
+    pub(crate) fn render_fitted(&self, area: Rect, buf: &mut Buffer) {
+        Paragraph::new(line_to_borrowed(&self.line)).render(area, buf);
+        self.mark_cells(area, buf);
+    }
+
+    fn mark_cells(&self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;
         }
@@ -108,25 +121,31 @@ impl Widget for &HyperlinkLine {
             let Some(destination) = link.terminal_destination() else {
                 continue;
             };
-            let mut trailing_columns = 0usize;
-            for column in link.columns.start.min(usize::from(area.width))
-                ..link.columns.end.min(usize::from(area.width))
-            {
-                if trailing_columns > 0 {
-                    trailing_columns -= 1;
-                    continue;
-                }
-                let cell = &mut buf[(area.x + column as u16, area.y)];
-                if cell.diff_option == ratatui::buffer::CellDiffOption::Skip {
-                    continue;
-                }
-                trailing_columns = usize::from(cell.cell_width()).saturating_sub(1);
-                let symbol = format!("\x1b]8;;{destination}\x07{}\x1b]8;;\x07", cell.symbol());
-                let width = std::num::NonZeroU16::new(cell.cell_width())
-                    .unwrap_or(std::num::NonZeroU16::MIN);
-                cell.set_symbol(&symbol)
-                    .set_diff_option(ratatui::buffer::CellDiffOption::ForcedWidth(width));
-            }
+            let start = link.columns.start.min(usize::from(area.width)) as u16;
+            let end = link.columns.end.min(usize::from(area.width)) as u16;
+            mark_hyperlink_cells(
+                buf,
+                Rect::new(area.x + start, area.y, end.saturating_sub(start), 1),
+                &destination,
+            );
         }
+    }
+}
+
+/// Mark the painted graphemes in one row with an already validated terminal destination.
+pub(crate) fn mark_hyperlink_cells(buf: &mut Buffer, row: Rect, destination: &str) {
+    let mut x = row.left();
+    while x < row.right() {
+        let cell = &mut buf[(x, row.y)];
+        if cell.diff_option == ratatui::buffer::CellDiffOption::Skip {
+            x += 1;
+            continue;
+        }
+        let width =
+            std::num::NonZeroU16::new(cell.cell_width()).unwrap_or(std::num::NonZeroU16::MIN);
+        x = x.saturating_add(width.get());
+        let symbol = format!("\x1b]8;;{destination}\x07{}\x1b]8;;\x07", cell.symbol());
+        cell.set_symbol(&symbol)
+            .set_diff_option(ratatui::buffer::CellDiffOption::ForcedWidth(width));
     }
 }

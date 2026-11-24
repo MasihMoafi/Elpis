@@ -20,6 +20,8 @@ chrono = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-stream-parser = { workspace = true }
 codex-utils-string = { workspace = true }
+codex-utils-process = { workspace = true }
+codex-http-headers-helper = { workspace = true }
 codex-api = { workspace = true }
 codex-protocol = { workspace = true }
 eventsource-stream = { workspace = true }
@@ -37,6 +39,7 @@ opentelemetry-otlp = { workspace = true, features = [
     "reqwest-rustls",
     "tls",
     "tls-roots",
+    "zstd-http",
 ]}
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = [
@@ -56,7 +59,6 @@ serde_json = { workspace = true }
 strum_macros = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tokio-tungstenite = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -67,6 +69,8 @@ opentelemetry_sdk = { workspace = true, features = [
     "testing",
 ] }
 pretty_assertions = { workspace = true }
+rcgen = { workspace = true }
+tempfile = { workspace = true }
 
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true }

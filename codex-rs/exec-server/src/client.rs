@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
@@ -46,9 +47,12 @@ use crate::process::ExecProcessEvent;
 use crate::process::ExecProcessEventLog;
 use crate::process::ExecProcessEventReceiver;
 use crate::process_telemetry::trace_process_id;
+use crate::protocol::CAPABILITIES_DISCOVER_V2_METHOD;
 use crate::protocol::CAPABILITY_ROOTS_DISCOVER_METHOD;
 use crate::protocol::CapabilityRootsDiscoverParams;
 use crate::protocol::CapabilityRootsDiscoverResponse;
+use crate::protocol::DiscoverV2CapabilitiesRequest;
+use crate::protocol::DiscoverV2CapabilitiesResponse;
 use crate::protocol::ENVIRONMENT_CONFIG_READ_METHOD;
 use crate::protocol::ENVIRONMENT_INFO_METHOD;
 use crate::protocol::ENVIRONMENT_STATUS_METHOD;
@@ -73,6 +77,7 @@ use crate::protocol::FS_CANONICALIZE_METHOD;
 use crate::protocol::FS_CLOSE_METHOD;
 use crate::protocol::FS_COPY_METHOD;
 use crate::protocol::FS_CREATE_DIRECTORY_METHOD;
+use crate::protocol::FS_GET_METADATA_BATCH_METHOD;
 use crate::protocol::FS_GET_METADATA_METHOD;
 use crate::protocol::FS_OPEN_METHOD;
 use crate::protocol::FS_READ_BLOCK_METHOD;
@@ -90,6 +95,8 @@ use crate::protocol::FsCopyParams;
 use crate::protocol::FsCopyResponse;
 use crate::protocol::FsCreateDirectoryParams;
 use crate::protocol::FsCreateDirectoryResponse;
+use crate::protocol::FsGetMetadataBatchParams;
+use crate::protocol::FsGetMetadataBatchResponse;
 use crate::protocol::FsGetMetadataParams;
 use crate::protocol::FsGetMetadataResponse;
 use crate::protocol::FsOpenMode;
@@ -323,9 +330,10 @@ impl ConnectionState {
             ConnectionStatus::Connected(rpc_client) if !rpc_client.is_disconnected() => {
                 EnvironmentConnectionState::Connected
             }
-            ConnectionStatus::Connected(_)
-            | ConnectionStatus::Recovering
-            | ConnectionStatus::Failed(_) => EnvironmentConnectionState::Disconnected,
+            ConnectionStatus::Connected(_) | ConnectionStatus::Recovering => {
+                EnvironmentConnectionState::Recovering
+            }
+            ConnectionStatus::Failed(_) => EnvironmentConnectionState::Disconnected,
         };
         let _ = self
             .environment_connection_state_tx
@@ -390,6 +398,8 @@ impl Drop for PendingProcessStartSession {
 }
 
 type ConnectionResult = Result<ExecServerClient, Arc<ExecServerError>>;
+pub(super) type ConnectionObserver =
+    Arc<dyn Fn(Duration, crate::ConnectionAttemptOutcome) + Send + Sync>;
 
 #[derive(Clone)]
 pub(crate) struct LazyRemoteExecServerClient {
@@ -402,6 +412,7 @@ pub(crate) struct LazyRemoteExecServerClient {
     current_client: Arc<StdMutex<Option<ExecServerClient>>>,
     reconnect: Arc<StdMutex<Option<Arc<ConnectionAttempt>>>>,
     refresh_lock: Arc<Mutex<()>>,
+    pub(super) connection_observer: Arc<OnceLock<ConnectionObserver>>,
     environment_connection_state_tx: watch::Sender<EnvironmentConnectionState>,
 }
 
@@ -418,6 +429,7 @@ impl LazyRemoteExecServerClient {
             current_client: Arc::new(StdMutex::new(None)),
             reconnect: Arc::new(StdMutex::new(None)),
             refresh_lock: Arc::new(Mutex::new(())),
+            connection_observer: Default::default(),
             environment_connection_state_tx: watch::channel(
                 EnvironmentConnectionState::Disconnected,
             )
@@ -676,6 +688,10 @@ pub enum ExecServerError {
     WebSocketConfiguration(String),
     #[error("timed out waiting for exec-server initialize handshake after {timeout:?}")]
     InitializeTimedOut { timeout: Duration },
+    #[error(
+        "exec-server protocol error: timed out waiting for exec-server `{method}` response after {timeout:?}"
+    )]
+    RpcTimedOut { method: String, timeout: Duration },
     #[error(transparent)]
     ApplicationNetworkPolicy(#[from] codex_http_client::NetworkPolicyDenied),
     #[error("exec-server transport closed")]
@@ -688,6 +704,8 @@ pub enum ExecServerError {
     Json(#[from] serde_json::Error),
     #[error("HTTP request failed: {0}")]
     HttpRequest(String),
+    #[error("request not sent: {0}")]
+    RequestNotSent(String),
     #[error("authentication required: {0}")]
     AuthenticationRequired(String),
     #[error("exec-server protocol error: {0}")]
@@ -830,7 +848,32 @@ impl ExecServerClient {
     }
 
     pub async fn exec(&self, params: ExecParams) -> Result<ExecResponse, ExecServerError> {
+        self.ensure_network_proxy_capabilities(&params).await?;
         self.call(EXEC_METHOD, &params).await
+    }
+
+    async fn ensure_network_proxy_capabilities(
+        &self,
+        params: &ExecParams,
+    ) -> Result<(), ExecServerError> {
+        let proxy = params.network_proxy.as_ref().map(|launch| &launch.proxy);
+        let needs_review = proxy.is_some_and(|proxy| !proxy.review_domains.is_empty());
+        let needs_capture = params.requests_transparent_tcp();
+        if !needs_review && !needs_capture {
+            return Ok(());
+        }
+        let info = self.environment_info().await?;
+        if needs_review && !info.capabilities.network_proxy_review_domains {
+            return Err(ExecServerError::Protocol(
+                "selected exec-server does not support managed network review domains".to_string(),
+            ));
+        }
+        if needs_capture && !info.capabilities.network_proxy_transparent_tcp {
+            return Err(ExecServerError::Protocol(
+                "selected exec-server does not support transparent TCP".to_string(),
+            ));
+        }
+        Ok(())
     }
 
     /// Returns shared cached executor metadata, fetching it lazily if initialization omitted it.
@@ -845,33 +888,27 @@ impl ExecServerClient {
     /// Fetches executor metadata over RPC without reading or updating the cache.
     // TODO: Remove after app-server migrates off this call.
     pub async fn force_environment_info(&self) -> Result<EnvironmentInfo, ExecServerError> {
-        let rpc_client = self.rpc_client().await?;
-        // Bound sending as well as receiving: a stuck transport can fill the outbound queue.
-        let result = timeout(
-            ENVIRONMENT_INFO_TIMEOUT,
-            rpc_client.call(ENVIRONMENT_INFO_METHOD, &()),
-        )
-        .await;
-        match result {
-            Ok(result) => self.map_rpc_call_result(result),
-            Err(_) => {
-                let error = ExecServerError::from(RpcCallError::TimedOut {
-                    method: ENVIRONMENT_INFO_METHOD.to_string(),
-                    timeout: ENVIRONMENT_INFO_TIMEOUT,
-                });
-                // Retire only the connection we probed; recovery ignores a stale client.
-                rpc_client.close_transport().await;
-                self.inner.request_recovery(rpc_client, error.to_string());
-                Err(error)
-            }
-        }
+        self.call_with_timeout_recovery(ENVIRONMENT_INFO_METHOD, &(), ENVIRONMENT_INFO_TIMEOUT)
+            .await
     }
 
+    /// Reads configuration without imposing an additional RPC timeout.
     pub async fn read_environment_config(
         &self,
         params: EnvironmentConfigReadParams,
     ) -> Result<EnvironmentConfigReadResponse, ExecServerError> {
         self.call(ENVIRONMENT_CONFIG_READ_METHOD, &params).await
+    }
+
+    /// Bounds the RPC after connecting, recovering reconnectable transports on timeout.
+    /// Transports without a reconnect strategy remain open after a timeout.
+    pub async fn read_environment_config_with_timeout(
+        &self,
+        params: EnvironmentConfigReadParams,
+        rpc_timeout: Duration,
+    ) -> Result<EnvironmentConfigReadResponse, ExecServerError> {
+        self.call_with_timeout_recovery(ENVIRONMENT_CONFIG_READ_METHOD, &params, rpc_timeout)
+            .await
     }
 
     pub async fn environment_status(&self) -> Result<EnvironmentStatus, ExecServerError> {
@@ -889,6 +926,13 @@ impl ExecServerClient {
         params: CapabilityRootsDiscoverParams,
     ) -> Result<CapabilityRootsDiscoverResponse, ExecServerError> {
         self.call(CAPABILITY_ROOTS_DISCOVER_METHOD, &params).await
+    }
+
+    pub async fn discover_capabilities_v2(
+        &self,
+        params: DiscoverV2CapabilitiesRequest,
+    ) -> Result<DiscoverV2CapabilitiesResponse, ExecServerError> {
+        self.call(CAPABILITIES_DISCOVER_V2_METHOD, &params).await
     }
 
     pub async fn read(&self, params: ReadParams) -> Result<ReadResponse, ExecServerError> {
@@ -957,21 +1001,32 @@ impl ExecServerClient {
             .await
     }
 
-    pub async fn fs_open(&self, params: FsOpenParams) -> Result<FsOpenResponse, ExecServerError> {
-        // Older executors ignore the mode field and could silently return a read-only handle.
-        if params.mode == FsOpenMode::Replace
-            && !self
-                .environment_info()
-                .await?
-                .capabilities
-                .file_write_streaming
-        {
-            return Err(ExecServerError::Protocol(
-                "exec-server does not support writable file streams".to_string(),
-            ));
+    pub(crate) async fn supports_file_write_streaming(&self) -> Result<bool, ExecServerError> {
+        Ok(self
+            .environment_info()
+            .await?
+            .capabilities
+            .file_write_streaming)
+    }
+
+    /// Returns an owned future so callers can finish an open after they stop waiting for it.
+    pub fn fs_open(
+        &self,
+        params: FsOpenParams,
+    ) -> impl Future<Output = Result<FsOpenResponse, ExecServerError>> + Send + 'static {
+        let client = self.clone();
+        async move {
+            // Older executors ignore the mode field and could silently return a read-only handle.
+            if params.mode == FsOpenMode::Replace && !client.supports_file_write_streaming().await?
+            {
+                return Err(ExecServerError::Protocol(
+                    "exec-server does not support writable file streams".to_string(),
+                ));
+            }
+            client
+                .call(FS_OPEN_METHOD, &WireFsOpenParams::from(params))
+                .await
         }
-        self.call(FS_OPEN_METHOD, &WireFsOpenParams::from(params))
-            .await
     }
 
     pub async fn fs_read_block(
@@ -985,12 +1040,7 @@ impl ExecServerClient {
         &self,
         params: FsWriteBlockParams,
     ) -> Result<FsWriteBlockResponse, ExecServerError> {
-        if !self
-            .environment_info()
-            .await?
-            .capabilities
-            .file_write_streaming
-        {
+        if !self.supports_file_write_streaming().await? {
             return Err(ExecServerError::Protocol(
                 "exec-server does not support writable file streams".to_string(),
             ));
@@ -1022,6 +1072,35 @@ impl ExecServerClient {
             &WireFsCreateDirectoryParams::from(params),
         )
         .await
+    }
+
+    pub(crate) async fn fs_watch_missing(
+        &self,
+        missing: Vec<codex_utils_path_uri::PathUri>,
+        present: Option<codex_utils_path_uri::PathUri>,
+    ) -> Result<Option<tokio::sync::oneshot::Receiver<()>>, ExecServerError> {
+        if !self.environment_info().await?.capabilities.fs_watch_missing {
+            return Ok(None);
+        }
+        Ok(self
+            .rpc_client()
+            .await?
+            .watch_missing(missing, present)
+            .await?)
+    }
+
+    pub(crate) fn supports_metadata_batch(&self) -> bool {
+        self.inner
+            .environment_info
+            .get()
+            .is_some_and(|info| info.capabilities.fs_metadata_batch)
+    }
+
+    pub(crate) async fn fs_get_metadata_batch(
+        &self,
+        params: FsGetMetadataBatchParams,
+    ) -> Result<FsGetMetadataBatchResponse, ExecServerError> {
+        self.call(FS_GET_METADATA_BATCH_METHOD, &params).await
     }
 
     pub async fn fs_get_metadata(
@@ -1085,6 +1164,7 @@ impl ExecServerClient {
         params: ExecParams,
         network_policy_decider: Option<Arc<dyn NetworkPolicyDecider>>,
     ) -> Result<Session, ExecServerError> {
+        self.ensure_network_proxy_capabilities(&params).await?;
         let policy_decision_timeout_ms = params
             .network_proxy
             .as_ref()
@@ -1343,6 +1423,35 @@ impl ExecServerClient {
         self.call_rpc(&rpc_client, method, params).await
     }
 
+    async fn call_with_timeout_recovery<P, T>(
+        &self,
+        method: &str,
+        params: &P,
+        call_timeout: Duration,
+    ) -> Result<T, ExecServerError>
+    where
+        P: serde::Serialize,
+        T: serde::de::DeserializeOwned,
+    {
+        let rpc_client = self.rpc_client().await?;
+        // Bound sending as well as receiving: a stuck transport can fill the outbound queue.
+        match timeout(call_timeout, rpc_client.call(method, params)).await {
+            Ok(result) => self.map_rpc_call_result(result),
+            Err(_) => {
+                let error = ExecServerError::RpcTimedOut {
+                    method: method.to_string(),
+                    timeout: call_timeout,
+                };
+                if self.inner.reconnect_strategy.is_some() {
+                    // Retire only the connection we probed; recovery ignores a stale client.
+                    rpc_client.close_transport().await;
+                    self.inner.request_recovery(rpc_client, error.to_string());
+                }
+                Err(error)
+            }
+        }
+    }
+
     async fn call_rpc<P, T>(
         &self,
         rpc_client: &Arc<RpcClient>,
@@ -1413,9 +1522,7 @@ impl From<RpcCallError> for ExecServerError {
                 code: error.code,
                 message: error.message,
             },
-            RpcCallError::TimedOut { method, timeout } => Self::Protocol(format!(
-                "timed out waiting for exec-server `{method}` response after {timeout:?}"
-            )),
+            RpcCallError::TimedOut { method, timeout } => Self::RpcTimedOut { method, timeout },
             RpcCallError::PendingRequestLimitExceeded { limit } => Self::Protocol(format!(
                 "exec-server has reached its limit of {limit} pending requests"
             )),
@@ -1919,6 +2026,7 @@ mod tests {
     use codex_exec_server_protocol::JSONRPCResponse;
     use codex_http_client::HttpClientFactory;
     use codex_http_client::OutboundProxyPolicy;
+    use codex_protocol::models::PermissionProfile;
     use codex_utils_path_uri::PathUri;
     use futures::SinkExt;
     use futures::StreamExt;
@@ -1957,9 +2065,12 @@ mod tests {
     use super::ExecServerClientConnectOptions;
     use super::ExecServerError;
     use super::LazyRemoteExecServerClient;
+    use crate::Environment;
     use crate::EnvironmentObservedStatus;
+    use crate::ExecutorFileSystem;
+    use crate::FileSystemSandboxContext;
     use crate::ProcessId;
-    #[cfg(not(windows))]
+    use crate::client_api::DEFAULT_REMOTE_EXEC_SERVER_CONNECT_TIMEOUT;
     use crate::client_api::DEFAULT_REMOTE_EXEC_SERVER_INITIALIZE_TIMEOUT;
     use crate::client_api::ExecServerTransportParams;
     use crate::client_api::RemoteExecServerConnectArgs;
@@ -1980,19 +2091,24 @@ mod tests {
     use crate::protocol::ExecOutputStream;
     use crate::protocol::ExecParams;
     use crate::protocol::ExecResponse;
+    use crate::protocol::FS_CLOSE_METHOD;
     use crate::protocol::FS_OPEN_METHOD;
+    use crate::protocol::FS_WRITE_FILE_METHOD;
     use crate::protocol::FsOpenMode;
     use crate::protocol::FsOpenParams;
     use crate::protocol::FsWriteBlockParams;
+    use crate::protocol::FsWriteFileParams;
     use crate::protocol::INITIALIZE_METHOD;
     use crate::protocol::INITIALIZED_METHOD;
     use crate::protocol::InitializeResponse;
     use crate::protocol::ProcessOutputChunk;
     use crate::protocol::ProcessSandboxType;
     use crate::protocol::ReadResponse;
+    use crate::protocol::WireFsWriteFileParams;
     use crate::protocol::WriteParams;
     use crate::protocol::WriteResponse;
     use crate::protocol::WriteStatus;
+    use crate::remote_file_system::RemoteFileSystem;
 
     async fn read_jsonrpc_line<R>(lines: &mut tokio::io::Lines<BufReader<R>>) -> JSONRPCMessage
     where
@@ -2273,6 +2389,7 @@ mod tests {
             codex_http_client::HttpClientFactory::new(
                 codex_http_client::OutboundProxyPolicy::ReqwestDefault,
             ),
+            /*started*/ &mut None,
         )
         .await
         .expect("stdio transport should connect");
@@ -2295,7 +2412,7 @@ mod tests {
                 cwd: None,
             },
             client_name: "stdio-test-client".to_string(),
-            initialize_timeout: Duration::from_secs(1),
+            initialize_timeout: DEFAULT_REMOTE_EXEC_SERVER_INITIALIZE_TIMEOUT,
             resume_session_id: None,
         })
         .await
@@ -2661,6 +2778,10 @@ mod tests {
         provider_id: Some("sha256:fb4f62da3e84f6864dcec8ede7bc66f1c96ecaeaf55f8a786b85df994057c8ac".to_string()),
         ..EnvironmentInfo::local()
     }); "with_executor_metadata")]
+    #[test_case::test_case(Some(EnvironmentInfo {
+        capabilities: Default::default(),
+        ..EnvironmentInfo::local()
+    }); "without_optional_methods")]
     #[test_case::test_case(None; "legacy_server")]
     #[tokio::test]
     async fn environment_info_is_cached(
@@ -2715,12 +2836,25 @@ mod tests {
         let cached_info = client.clone().environment_info().await?;
         assert_eq!(cached_info.as_ref(), &expected_info);
         assert!(Arc::ptr_eq(&info, &cached_info));
+        if !info.capabilities.fs_watch_missing {
+            // The old executor has disconnected: probing an unsupported RPC would fail.
+            assert!(
+                client
+                    .fs_watch_missing(
+                        vec![PathUri::parse("file:///workspace/.agents/skills")?],
+                        /*present*/ None
+                    )
+                    .await?
+                    .is_none()
+            );
+        }
         Ok(())
     }
 
-    /// Old executors must never receive writable opens they would silently treat as reads.
+    /// Old executors receive one sandboxed writeFile, never an open they would mistake for a read.
     #[tokio::test]
-    async fn writable_file_streams_require_executor_capability() -> anyhow::Result<()> {
+    async fn old_executor_receives_buffered_replacement_and_keeps_read_only_opens()
+    -> anyhow::Result<()> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let websocket_url = format!("ws://{}", listener.local_addr()?);
         let read_open = FsOpenParams {
@@ -2729,6 +2863,16 @@ mod tests {
             mode: FsOpenMode::Read,
             sandbox: None,
         };
+        let sandbox = FileSystemSandboxContext::from_permission_profile(
+            PermissionProfile::workspace_write(),
+            PathUri::parse("file:///tmp")?,
+        );
+        let expected_write = WireFsWriteFileParams::from(FsWriteFileParams {
+            path: read_open.path.clone(),
+            data_base64: "AP9oaQ==".to_string(),
+            follow_symlinks: None,
+            sandbox: Some(sandbox.clone()),
+        });
         let server = tokio::spawn(async move {
             let mut websocket = accept_websocket(&listener).await;
             let mut info = EnvironmentInfo::local();
@@ -2738,6 +2882,23 @@ mod tests {
                 "session-1",
                 /*expected_resume_session_id*/ None,
                 Some(info),
+            )
+            .await;
+            let JSONRPCMessage::Request(write) = read_jsonrpc_websocket(&mut websocket).await
+            else {
+                panic!("expected buffered write");
+            };
+            assert_eq!(write.method, FS_WRITE_FILE_METHOD);
+            assert_eq!(
+                write.params,
+                Some(serde_json::to_value(expected_write).expect("serialize legacy write"))
+            );
+            write_jsonrpc_websocket(
+                &mut websocket,
+                JSONRPCMessage::Response(JSONRPCResponse {
+                    id: write.id,
+                    result: serde_json::json!({}),
+                }),
             )
             .await;
             let JSONRPCMessage::Request(request) = read_jsonrpc_websocket(&mut websocket).await
@@ -2763,12 +2924,32 @@ mod tests {
             )
             .await;
         });
-        let client = ExecServerClient::connect_websocket(RemoteExecServerConnectArgs::new(
-            websocket_url,
-            "file-stream-test".to_string(),
+        let remote = LazyRemoteExecServerClient::new(
+            ExecServerTransportParams::websocket_url(
+                websocket_url,
+                DEFAULT_REMOTE_EXEC_SERVER_CONNECT_TIMEOUT,
+            ),
             HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-        ))
-        .await?;
+        );
+        let client = remote.get().await?;
+        let fs = RemoteFileSystem::new(remote);
+        // A source error precedes any legacy write, so the server must see only the complete file.
+        let broken = futures::stream::iter([
+            Ok(bytes::Bytes::from_static(b"partial")),
+            Err(std::io::Error::from(std::io::ErrorKind::UnexpectedEof)),
+        ]);
+        let error = fs
+            .write_file_stream(&read_open.path, broken.boxed(), Some(&sandbox))
+            .await
+            .expect_err("source error");
+        assert_eq!(error.kind(), std::io::ErrorKind::UnexpectedEof);
+
+        let contents = futures::stream::iter([b"\x00\xff", b"hi"])
+            .map(|chunk| Ok(bytes::Bytes::from_static(chunk)));
+        let written = fs
+            .write_file_stream(&read_open.path, contents.boxed(), Some(&sandbox))
+            .await?;
+        assert_eq!(written, 4);
         let error = client
             .fs_open(FsOpenParams {
                 mode: FsOpenMode::Replace,
@@ -2786,8 +2967,67 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(error, ExecServerError::Protocol(_)));
+        // This read-only open must be the next request; there is no stream handle to close.
         client.fs_open(read_open).await?;
         server.await?;
+        Ok(())
+    }
+
+    /// An open that completes after cancellation must close that exact handle.
+    #[tokio::test]
+    async fn cancelled_streaming_replacement_closes_pending_open() -> anyhow::Result<()> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let websocket_url = format!("ws://{}", listener.local_addr()?);
+        let fs = Environment::create_for_tests(Some(websocket_url))?.get_filesystem();
+        let path = PathUri::parse("file:///tmp/cancelled.bin")?;
+        let contents = futures::stream::poll_fn(|_| panic!("cancelled write polled its source"));
+        let mut write = fs.write_file_stream(&path, contents.boxed(), /*sandbox*/ None);
+
+        let receive_open = async {
+            let mut ws = accept_websocket(&listener).await;
+            complete_websocket_initialize_with_environment_info(
+                &mut ws,
+                "session-1",
+                /*expected_resume_session_id*/ None,
+                Some(EnvironmentInfo::local()),
+            )
+            .await;
+            let JSONRPCMessage::Request(open) = read_jsonrpc_websocket(&mut ws).await else {
+                panic!("expected fs/open");
+            };
+            assert_eq!(open.method, FS_OPEN_METHOD);
+            (ws, open)
+        };
+        let (mut ws, open) = tokio::select! {
+            open = receive_open => open,
+            result = &mut write => panic!("write must wait for open: {result:?}"),
+        };
+        drop(write);
+
+        let params = open.params.expect("fs/open params");
+        let handle = params["handleId"].as_str().expect("handleId");
+        let handle = serde_json::json!({"handleId": handle});
+        write_jsonrpc_websocket(
+            &mut ws,
+            JSONRPCMessage::Response(JSONRPCResponse {
+                id: open.id,
+                result: handle.clone(),
+            }),
+        )
+        .await;
+        let JSONRPCMessage::Request(close) = read_jsonrpc_websocket(&mut ws).await else {
+            panic!("expected fs/close");
+        };
+        assert_eq!(close.method, FS_CLOSE_METHOD);
+        assert_eq!(close.params, Some(handle));
+        write_jsonrpc_websocket(
+            &mut ws,
+            JSONRPCMessage::Response(JSONRPCResponse {
+                id: close.id,
+                result: serde_json::json!({}),
+            }),
+        )
+        .await;
         Ok(())
     }
 
@@ -3211,6 +3451,17 @@ mod tests {
             HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
         );
 
+        let (observed_tx, mut observed_rx) = tokio::sync::mpsc::unbounded_channel();
+        assert!(
+            client
+                .connection_observer
+                .set(Arc::new(move |_, outcome| {
+                    observed_tx
+                        .send(outcome)
+                        .expect("record connection outcome");
+                }))
+                .is_ok()
+        );
         let failed_startup = match client.get().await {
             Ok(_) => panic!("initial connection should fail"),
             Err(error) => error,
@@ -3235,6 +3486,14 @@ mod tests {
         replacement_initialized_rx
             .await
             .expect("server should observe replacement initialization");
+
+        assert_eq!(
+            std::iter::from_fn(|| observed_rx.try_recv().ok()).collect::<Vec<_>>(),
+            [
+                crate::ConnectionAttemptOutcome::Failure,
+                crate::ConnectionAttemptOutcome::Success
+            ],
+        );
 
         drop(first);
         drop(second);
@@ -3443,5 +3702,6 @@ mod tests {
         server.await.expect("server task should finish");
     }
 
+    mod config_timeout_tests;
     mod network_policy_tests;
 }

@@ -7,6 +7,7 @@ use crate::render::renderable::Renderable;
 use crate::render::renderable::RenderableItem;
 use crossterm::cursor::SetCursorStyle;
 use ratatui::buffer::Buffer;
+use ratatui::buffer::CellDiffOption;
 use ratatui::layout::Rect;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Widget;
@@ -69,25 +70,39 @@ impl Renderable for ViewStack<'_> {
 }
 
 /// A dialog placed within the supplied viewport, without taking over its backdrop.
-pub(crate) struct CenteredView<'a>(pub(super) &'a dyn BottomPaneView);
+pub(crate) struct CenteredView<'a>(pub(crate) &'a dyn BottomPaneView);
+
+impl CenteredView<'_> {
+    pub(crate) fn area(&self, viewport: Rect) -> Rect {
+        dialog_area(self.0, viewport)
+    }
+}
 
 impl Renderable for CenteredView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        let dialog = dialog_area(self.0, area);
+        let dialog = self.area(area);
         Clear.render(dialog, buf);
+        // A dialog can cover cached blank cells whose color the terminal did not retain.
+        // Paint its whole surface; let wide text rendering still reset continuation cells.
+        for y in dialog.top()..dialog.bottom() {
+            for x in dialog.left()..dialog.right() {
+                buf[(x, y)].set_diff_option(CellDiffOption::AlwaysUpdate);
+            }
+        }
         self.0.render(dialog, buf);
     }
 
     fn desired_height(&self, width: u16) -> u16 {
-        dialog_area(self.0, Rect::new(/*x*/ 0, /*y*/ 0, width, u16::MAX)).height
+        self.area(Rect::new(/*x*/ 0, /*y*/ 0, width, u16::MAX))
+            .height
     }
 
     fn cursor_pos(&self, area: Rect) -> Option<(u16, u16)> {
-        self.0.cursor_pos(dialog_area(self.0, area))
+        self.0.cursor_pos(self.area(area))
     }
 
     fn cursor_style(&self, area: Rect) -> SetCursorStyle {
-        self.0.cursor_style(dialog_area(self.0, area))
+        self.0.cursor_style(self.area(area))
     }
 }
 

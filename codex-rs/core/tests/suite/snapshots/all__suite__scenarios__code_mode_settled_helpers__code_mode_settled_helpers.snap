@@ -6,15 +6,15 @@ Scenario: Settlement helpers deliver fulfilled and rejected records with input i
 
 ## Window 1
 -- request 1 (turn) --
-00:additional_tools/developer (3; hash=bf2e30605ff5dc17):
-        - namespace/functions; hash=fada4a476a3754dd
+00:additional_tools/developer (3; hash=a7c46a0959d54866):
+        - namespace/functions; hash=81846de5bc4e7474
           - custom/exec
           - function/wait
           - function/request_user_input
           - function/request_user_input_async
         - namespace/clock: Tools for reading and waiting on time.; hash=f402e8c5e9b5e317
           - function/sleep
-        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=2c8d6295978dbe63
+        - namespace/collaboration: Tools for spawning and managing sub-agents.; hash=a097b9364047b8bb
           - function/followup_task
           - function/interrupt_agent
           - function/list_agents
@@ -34,10 +34,11 @@ Scenario: Settlement helpers deliver fulfilled and rejected records with input i
     <ENVIRONMENT_CONTEXT>
 06:message/user:
     Collect each completed result, including failures, using the settlement helpers.
+07:configuration_update:reasoning={"effort":"low"}
 -- request 2 (turn) --
-07:custom_tool_call/exec:for await (const result of as_settled([Promise.resolve("ready")])) text(result);
+08:custom_tool_call/exec:for await (const result of as_settled([Promise.resolve("ready")])) text(result);
     await stream_settled(new Map([["failed", Promise.reject("unavailable")], ["completed", "done"]]), text);
-08:custom_tool_call_output:Script completed
+09:custom_tool_call_output:Script completed
     Wall time <DURATION> seconds
     Output:
      | {"index":0,"status":"fulfilled","value":"ready"} | {"index":"failed","status":"rejected","reason":"unavailable"} | {"index":"completed","status":"fulfilled","value":"done"}

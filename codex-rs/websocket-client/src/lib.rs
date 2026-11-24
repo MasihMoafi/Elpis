@@ -112,6 +112,20 @@ impl WebSocketConnector {
         self
     }
 
+    /// Reuse the TLS/proxy configuration with a captured credential's account policy.
+    pub fn with_account_binding(&self, policy: &codex_http_client::NetworkPolicy) -> Option<Self> {
+        let policy = self
+            .http_client_factory
+            .network_policy()
+            .clone()
+            .with_account_binding(policy)?;
+        Some(Self {
+            http_client_factory: self.http_client_factory.clone().with_network_policy(policy),
+            tls_config: self.tls_config.clone(),
+            tcp_nodelay: self.tcp_nodelay,
+        })
+    }
+
     /// Connects a WebSocket after resolving the request destination through the configured proxy
     /// policy.
     pub async fn connect(
@@ -194,10 +208,19 @@ impl WebSocketConnector {
                     .store_chatgpt_response_cookies(&uri, response.headers()),
                 Err(_) => {}
             }
-            result
+            result.map(|(inner, response)| {
+                let routing_affinity = codex_http_client::ChatGptRoutingAffinity::from_response(
+                    &uri,
+                    response.headers(),
+                );
+                (inner, response, routing_affinity)
+            })
         };
-        let (inner, response) = permit.run(connect).await.map_err(policy_error)??;
-        Ok((WebSocketConnection::new(inner, permit), response))
+        let (inner, response, routing_affinity) =
+            permit.run(connect).await.map_err(policy_error)??;
+        let mut connection = WebSocketConnection::new(inner, permit);
+        connection.routing_affinity = routing_affinity;
+        Ok((connection, response))
     }
 }
 
@@ -221,6 +244,7 @@ fn is_loopback_destination(uri: &Uri) -> bool {
 /// without knowing which concrete network stream route selection produced. Independent revocation
 /// waits preserve both task wakers when the stream and sink are split.
 pub struct WebSocketConnection {
+    routing_affinity: Option<codex_http_client::ChatGptRoutingAffinity>,
     inner: Option<ConnectionInner>,
     permit: NetworkPermit,
     read_revoked: BoxFuture<'static, ()>,
@@ -245,12 +269,18 @@ impl WebSocketConnection {
         let read_permit = permit.clone();
         let write_permit = permit.clone();
         Self {
+            routing_affinity: None,
             inner: Some(inner),
             permit,
             read_revoked: async move { read_permit.revoked().await }.boxed(),
             write_revoked: async move { write_permit.revoked().await }.boxed(),
             read_terminated: false,
         }
+    }
+
+    /// The scoped routing cookie from this connection's handshake, never account cookies.
+    pub fn routing_affinity(&self) -> Option<&codex_http_client::ChatGptRoutingAffinity> {
+        self.routing_affinity.as_ref()
     }
 
     fn poll_policy(
@@ -365,11 +395,3 @@ impl<T> AsyncIo for T where T: AsyncRead + AsyncWrite + Send + Unpin {}
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
-
-#[cfg(test)]
-#[path = "cookie_tests.rs"]
-mod cookie_tests;
-
-#[cfg(test)]
-#[path = "network_policy_tests.rs"]
-mod network_policy_tests;

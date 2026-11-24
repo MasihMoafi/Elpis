@@ -31,6 +31,9 @@ impl TranscriptView {
             end,
             layout: Arc::clone(&layout),
         });
+        if self.search.is_reading() {
+            self.move_select_cursor_to_search_match(anchor, &layout, current_cells);
+        }
         let row = layout.row_for_offset(anchor.offset);
         let match_rows = layout.row_for_offset(end - 1) - row + 1;
         let context_rows = usize::from(self.area.height / 3)
@@ -103,7 +106,12 @@ impl TranscriptView {
         } else if self.detailed {
             self.layout(cells, anchor.index)?
         } else {
-            self.entry_layout(cells, anchor.index, /*full_content*/ true)?
+            // A candidate replaces the current match when found, so its spacing must not
+            // depend on an expansion that will disappear at that point.
+            let current = self.search.current.take();
+            let layout = self.entry_layout(cells, anchor.index, /*full_content*/ true);
+            self.search.current = current;
+            layout?
         };
         self.search.scanning_layout = Some((anchor.key, Arc::clone(&layout)));
         Some(layout)

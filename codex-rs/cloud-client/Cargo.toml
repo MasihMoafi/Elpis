@@ -12,6 +12,8 @@ doctest = false
 workspace = true
 
 [dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
 async-stream = { workspace = true }
 bytes = { workspace = true }
 codex-http-client = { workspace = true }

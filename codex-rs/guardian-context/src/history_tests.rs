@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use codex_protocol::models::ExecutedToolCall;
 use codex_protocol::models::ImageReference;
 use codex_protocol::models::ReasoningItemContent;
@@ -21,6 +23,23 @@ fn tool(text: &str) -> ResponseItem {
 }
 
 #[test]
+fn compaction_summary_is_excluded_without_dropping_user_messages() {
+    let before = message("Earlier user message");
+    let summary: ResponseItem = serde_json::from_value(json!({
+        "type": "message", "role": "user",
+        "content": [{"type": "input_text", "text": "Summary text"}],
+        "internal_chat_message_metadata_passthrough": {
+            "content_item_kinds": [COMPACTION_SUMMARY_KIND]
+        }
+    }))
+    .unwrap();
+    let after = message("Summary text");
+    let mut history = TranscriptHistory::default();
+    history.reset([before.clone().into(), summary.into(), after.clone().into()].iter());
+    assert_eq!(history.items().collect::<Vec<_>>(), vec![&before, &after]);
+}
+
+#[test]
 fn rollback_keeps_the_earlier_prefix_or_clears_an_evicted_boundary() {
     let items = [message("keep"), message("roll back"), tool("later")];
     let mut history = TranscriptHistory::default();
@@ -31,6 +50,39 @@ fn rollback_keeps_the_earlier_prefix_or_clears_an_evicted_boundary() {
     assert!(history.generation() > generation);
     history.truncate_before(&items[1].clone().into());
     assert_eq!(history.items().count(), 0);
+}
+
+#[test]
+fn inherited_manual_approvals_stay_out_of_review_after_checkpoint_replay() {
+    for content_type in ["input_text", "output_text"] {
+        let approval: ResponseItem = serde_json::from_value(json!({
+            "type": "message", "role": "developer", "content": [{
+                "type": content_type, "text": format!("{}\nApproved action: original action", crate::MANUAL_APPROVAL_DEVELOPER_PREFIX)
+            }]
+        })).unwrap();
+        let mut inherited = ResponseItemEnvelope::new(approval.clone());
+        inherited
+            .metadata
+            .get_or_insert_default()
+            .inherited_user_message = true;
+        let mut history = TranscriptHistory::default();
+        history.reset([inherited.clone(), approval.clone().into()].iter());
+        assert_eq!(
+            history.items().cloned().collect::<Vec<_>>(),
+            vec![approval.clone()]
+        );
+        let checkpoint = history.checkpoint();
+        assert_eq!(
+            checkpoint.0[0], inherited,
+            "model history keeps the original approval and provenance"
+        );
+        let mut restored = TranscriptHistory::default();
+        restored.reset(checkpoint.0.iter());
+        assert_eq!(
+            restored.items().cloned().collect::<Vec<_>>(),
+            vec![approval]
+        );
+    }
 }
 
 #[test]
@@ -190,4 +242,42 @@ fn rollback_discards_assistant_sources_without_ordering_in_old_backups() {
     history.reset([&original, &assistant, &boundary]);
     history.truncate_before(&boundary);
     assert_eq!(history.items().collect::<Vec<_>>(), vec![&original.item]);
+}
+
+#[test]
+fn elastic_storage_keeps_full_entries_past_the_fixed_count_bound_and_on_replay() {
+    const ENTRY_COUNT: usize = MAX_ITEMS_PER_KIND + 1;
+    let entries: Vec<ResponseItemEnvelope> = (0..ENTRY_COUNT)
+        .flat_map(|index| {
+            let text = index.to_string();
+            [message(&text).into(), tool(&text).into()]
+        })
+        .collect();
+    let mut history = TranscriptHistory::new(/*generation*/ 0, ContextBudgeting::Elastic);
+    history.reset(entries.iter());
+    let expected = GuardianHistoryCheckpoint(entries);
+    assert_eq!(history.checkpoint(), expected);
+
+    let mut restored = TranscriptHistory::new(history.generation(), ContextBudgeting::Elastic);
+    restored.reset(expected.0.iter());
+    assert_eq!(restored.checkpoint(), expected);
+}
+
+#[test]
+fn elastic_byte_overflow_evicts_whole_non_user_entries_to_the_low_watermark() {
+    const SMALL_TOOL_BYTES: usize = MAX_BYTES_PER_KIND / 4;
+    const LARGE_TOOL_BYTES: usize = SMALL_TOOL_BYTES + SMALL_TOOL_BYTES / 2;
+    const EXISTING_TOOL_COUNT: usize = 3;
+    let user = message("Keep the original user instruction complete.");
+    let older = tool(&"x".repeat(SMALL_TOOL_BYTES));
+    let newest = tool(&"y".repeat(LARGE_TOOL_BYTES));
+    let mut history = TranscriptHistory::new(/*generation*/ 0, ContextBudgeting::Elastic);
+    history.record(&user.clone().into());
+    for _ in 0..EXISTING_TOOL_COUNT {
+        history.record(&older.clone().into());
+    }
+    let generation = history.generation();
+    history.record(&newest.clone().into());
+    assert_eq!(history.items().collect::<Vec<_>>(), vec![&user, &newest]);
+    assert!(history.generation() > generation);
 }

@@ -31,7 +31,7 @@ use codex_app_server_protocol::SandboxPolicy as AppServerSandboxPolicy;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::SessionSource as AppServerSessionSource;
 use codex_app_server_protocol::Thread;
-use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadItemPayload;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadSource as AppServerThreadSource;
 use codex_app_server_protocol::ThreadStartResponse;
@@ -64,6 +64,7 @@ pub(super) const TEST_PRODUCT_CLIENT_ID: &str = "codex_work_desktop";
 
 pub(super) struct TestTurnMetadata {
     pub(super) root_turn_id: Mutex<Option<String>>,
+    pub(super) turn_trigger: Option<String>,
 }
 
 impl TurnAnalyticsMetadata for TestTurnMetadata {
@@ -72,7 +73,7 @@ impl TurnAnalyticsMetadata for TestTurnMetadata {
     }
 
     fn turn_trigger(&self) -> Option<String> {
-        None
+        self.turn_trigger.clone()
     }
 
     fn codex_turn_source(&self) -> Option<String> {
@@ -83,6 +84,7 @@ impl TurnAnalyticsMetadata for TestTurnMetadata {
 pub(super) fn test_turn_metadata(root_turn_id: Option<&str>) -> Arc<TestTurnMetadata> {
     Arc::new(TestTurnMetadata {
         root_turn_id: Mutex::new(root_turn_id.map(str::to_string)),
+        turn_trigger: None,
     })
 }
 
@@ -110,6 +112,7 @@ pub(super) fn sample_thread_with_metadata(
         extra: None,
         session_id: format!("session-{thread_id}"),
         forked_from_id: None,
+        attached_to_thread_id: None,
         parent_thread_id,
         preview: "first prompt".to_string(),
         ephemeral,
@@ -117,6 +120,7 @@ pub(super) fn sample_thread_with_metadata(
         section_entered_at: None,
         project_id: None,
         daybreak_enabled: None,
+        daybreak_program_propagation_enrolled: None,
         history_mode: Default::default(),
         model_provider: "openai".to_string(),
         model: None,
@@ -126,7 +130,7 @@ pub(super) fn sample_thread_with_metadata(
         recency_at: Some(2),
         status: AppServerThreadStatus::Idle,
         path: None,
-        cwd: test_path_buf("/tmp").abs(),
+        cwd: test_path_buf("/tmp").abs().into(),
         cli_version: "0.0.0".to_string(),
         source,
         can_accept_direct_input: None,
@@ -156,7 +160,7 @@ pub(super) fn sample_thread_start_response(
         model: model.to_string(),
         model_provider: "openai".to_string(),
         service_tier: None,
-        cwd: test_path_buf("/tmp").abs(),
+        cwd: test_path_buf("/tmp").abs().into(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
         approval_policy: AppServerAskForApproval::OnRequest,
@@ -222,7 +226,7 @@ pub(super) fn sample_thread_resume_response_with_source(
         model: model.to_string(),
         model_provider: "openai".to_string(),
         service_tier: None,
-        cwd: test_path_buf("/tmp").abs(),
+        cwd: test_path_buf("/tmp").abs().into(),
         runtime_workspace_roots: Vec::new(),
         instruction_sources: Vec::new(),
         approval_policy: AppServerAskForApproval::OnRequest,
@@ -374,6 +378,7 @@ pub(super) fn sample_turn_resolved_config(
 
 pub(super) fn sample_turn_profile() -> TurnProfile {
     TurnProfile {
+        critical_path: crate::TurnCriticalPath::Disabled,
         before_first_sampling_ms: 100,
         sampling_ms: 700,
         compaction_ms: 40,
@@ -545,17 +550,17 @@ pub(super) async fn ingest_completed_command_execution_item(
     reducer
         .ingest(
             AnalyticsFact::Notification(Box::new(ServerNotification::ItemStarted(
-                ItemStartedNotification {
-                    thread_id: thread_id.to_string(),
-                    turn_id: "turn-1".to_string(),
-                    started_at_ms: 1_000,
-                    item: sample_command_execution_item_with_id(
+                ItemStartedNotification::new(
+                    thread_id.to_string(),
+                    "turn-1".to_string(),
+                    sample_command_execution_item_with_id(
                         item_id,
                         CommandExecutionStatus::InProgress,
                         /*exit_code*/ None,
                         /*duration_ms*/ None,
                     ),
-                },
+                    /*started_at_ms*/ 1_000,
+                ),
             ))),
             events,
         )
@@ -563,17 +568,18 @@ pub(super) async fn ingest_completed_command_execution_item(
     reducer
         .ingest(
             AnalyticsFact::Notification(Box::new(ServerNotification::ItemCompleted(
-                ItemCompletedNotification {
-                    thread_id: thread_id.to_string(),
-                    turn_id: "turn-1".to_string(),
-                    completed_at_ms: 1_042,
-                    item: sample_command_execution_item_with_id(
+                ItemCompletedNotification::new(
+                    thread_id.to_string(),
+                    "turn-1".to_string(),
+                    sample_command_execution_item_with_id(
                         item_id,
                         CommandExecutionStatus::Completed,
                         Some(0),
                         Some(42),
                     ),
-                },
+                    /*started_at_ms*/ None,
+                    /*completed_at_ms*/ 1_042,
+                ),
             ))),
             events,
         )
@@ -590,6 +596,7 @@ pub(super) fn sample_initialize_fact(connection_id: u64) -> AnalyticsFact {
                 version: "1.0.0".to_string(),
             },
             capabilities: Some(InitializeCapabilities {
+                required_human_approval: false,
                 explicit_gateway_oauth: false,
                 experimental_api: false,
                 request_attestation: false,
@@ -640,7 +647,7 @@ pub(super) fn sample_command_execution_item(
     status: CommandExecutionStatus,
     exit_code: Option<i32>,
     duration_ms: Option<i64>,
-) -> ThreadItem {
+) -> ThreadItemPayload {
     sample_command_execution_item_with_id("item-1", status, exit_code, duration_ms)
 }
 
@@ -649,8 +656,8 @@ pub(super) fn sample_command_execution_item_with_id(
     status: CommandExecutionStatus,
     exit_code: Option<i32>,
     duration_ms: Option<i64>,
-) -> ThreadItem {
-    ThreadItem::CommandExecution {
+) -> ThreadItemPayload {
+    ThreadItemPayload::CommandExecution {
         model_context: None,
         sandbox_type: None,
         id: id.to_string(),

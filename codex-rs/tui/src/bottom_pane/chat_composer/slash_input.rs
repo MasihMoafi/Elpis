@@ -32,6 +32,12 @@ pub(super) enum SlashValidation {
     Deferred,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum SlashPopupInputMode {
+    Normal,
+    UnavailableThread,
+}
+
 pub(super) enum SubmissionValidation {
     Valid,
     UnknownCommand(String),
@@ -223,17 +229,20 @@ impl ChatComposer {
     }
 
     pub fn set_daybreak_command_description(&mut self, description: Option<&'static str>) {
-        self.popups.daybreak_command_description = description;
+        self.update_slash_command_catalog(|composer| {
+            composer.popups.daybreak_command_description = description
+        });
     }
 
     pub fn set_worktrees_enabled(&mut self, enabled: bool) {
-        self.worktrees_enabled = enabled;
+        self.update_slash_command_catalog(|composer| composer.worktrees_enabled = enabled);
     }
 
     /// Handle key event when the slash-command popup is visible.
     pub(super) fn handle_key_event_with_slash_popup(
         &mut self,
         key_event: KeyEvent,
+        mode: SlashPopupInputMode,
     ) -> (InputResult, bool) {
         if self.handle_empty_prompt_shortcut(&key_event) {
             return (InputResult::None, true);
@@ -374,7 +383,7 @@ impl ChatComposer {
                 ..
             } => {
                 if let Some(sel) = popup.selected_item() {
-                    if self.blocks_direct_input {
+                    if self.blocks_direct_input && mode == SlashPopupInputMode::Normal {
                         let command_is_allowed = match &sel {
                             CommandItem::Builtin(cmd) => {
                                 parse_slash_name(self.draft.textarea.text()).is_some_and(
@@ -549,7 +558,9 @@ pub(super) fn selected_command_completion(
     command: &CommandItem,
 ) -> Option<String> {
     let selected_command_text = format!("/{}", command.command());
-    (!first_line.trim_start().starts_with(&selected_command_text))
+    let exact_with_arguments = first_line == selected_command_text
+        && matches!(command, CommandItem::Builtin(cmd) if !super::slash_argument::choices(*cmd).is_empty());
+    (exact_with_arguments || !first_line.trim_start().starts_with(&selected_command_text))
         .then(|| format!("{selected_command_text} "))
 }
 
@@ -764,13 +775,13 @@ mod tests {
     #[test]
     fn slash_completion_does_not_preserve_existing_draft_tail_for_other_commands() {
         let mut composer = composer_with_draft_tail(
-            "/mo",
+            "/sta",
             "preserve this draft only for opted-in slash commands",
         );
 
         assert_eq!(press(&mut composer, KeyCode::Tab), InputResult::None);
-        assert_eq!(composer.draft.textarea.text(), "/model ");
-        assert_eq!(composer.draft.textarea.cursor(), "/model ".len());
+        assert_eq!(composer.draft.textarea.text(), "/status ");
+        assert_eq!(composer.draft.textarea.cursor(), "/status ".len());
     }
 
     #[test]

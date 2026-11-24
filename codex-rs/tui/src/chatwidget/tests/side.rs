@@ -91,6 +91,15 @@ async fn slash_commands_without_side_flag_are_rejected_for_side_threads() {
     }
     assert!(rx.try_recv().is_err(), "expected no follow-up events");
     assert!(op_rx.try_recv().is_err(), "expected no review op");
+
+    chat.bottom_pane
+        .set_composer_text("/fork".into(), Vec::new(), Vec::new());
+    let images = vec!["https://example.com/image.png".to_string()];
+    chat.bottom_pane.set_remote_image_urls(images.clone());
+    chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
+    chat.handle_key_event(KeyEvent::from(KeyCode::Enter));
+    assert_eq!(chat.bottom_pane.composer_text(), "/fork");
+    assert_eq!(chat.bottom_pane.remote_image_urls(), images);
 }
 
 #[tokio::test]
@@ -218,6 +227,7 @@ async fn side_aliases_without_args_start_empty_side_conversations() {
             Ok(AppEvent::StartSide {
                 parent_thread_id: emitted_parent_thread_id,
                 user_message: None,
+                mode: crate::app_event::SideStartMode::Reuse,
             }) if emitted_parent_thread_id == parent_thread_id
         );
         assert!(
@@ -249,6 +259,7 @@ async fn side_aliases_request_forked_questions_while_task_running() {
             Ok(AppEvent::StartSide {
                 parent_thread_id: emitted_parent_thread_id,
                 user_message: Some(user_message),
+                mode: crate::app_event::SideStartMode::New,
             }) if emitted_parent_thread_id == parent_thread_id
                 && user_message
                     == UserMessage {
@@ -318,7 +329,10 @@ async fn side_context_label_shows_parent_status_snapshot() {
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw side conversation footer");
-    assert_chatwidget_snapshot!("side_context_label_shows_parent_status", terminal.backend());
+    assert_chatwidget_snapshot!(
+        "side_context_label_shows_parent_status",
+        normalized_backend_snapshot(terminal.backend())
+    );
 }
 
 #[tokio::test]
@@ -327,7 +341,8 @@ async fn side_context_label_shows_hidden_side_snapshot() {
     chat.show_welcome_banner = false;
     chat.local_settings.tui.status_line = Some(vec!["model-name".to_string()]);
     chat.refresh_status_line();
-    chat.set_side_conversation_context_label(Some("ctrl+/ for side".to_string()));
+    let label = "ctrl+/ for side";
+    chat.set_side_conversation_context_label(Some(label.to_string()));
 
     let width = 80;
     let height = chat.desired_height(width);
@@ -335,21 +350,22 @@ async fn side_context_label_shows_hidden_side_snapshot() {
     terminal
         .draw(|f| chat.render(f.area(), f.buffer_mut()))
         .expect("draw hidden side conversation footer");
-    // The hint sits in the composer's footer, wherever the Context Ledger leaves it.
-    let buffer = terminal.backend().buffer();
-    let (hint_start, hint_row) = (0..height)
-        .find_map(|y| {
-            let row: String = (0..width).map(|x| buffer[(x, y)].symbol()).collect();
-            row.find("ctrl+/ for side")
-                .map(|index| (row[..index].chars().count() as u16, y))
+    let hint = terminal
+        .backend()
+        .buffer()
+        .content()
+        .windows(label.len())
+        .find(|cells| {
+            cells
+                .iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+                == label
         })
-        .expect("the side hint is drawn");
+        .expect("side shortcut");
     let key_style = crate::key_hint::ctrl(KeyCode::Char('/')).spans()[0].style;
     let secondary_style = crate::style::secondary_text_style();
-    let styles = [hint_start, hint_start + 4, hint_start + 5, hint_start + 7].map(|x| {
-        let cell = &buffer[(x, hint_row)];
-        (cell.fg, cell.modifier)
-    });
+    let styles = [0, 4, 5, 7].map(|i| (hint[i].fg, hint[i].modifier));
     assert_eq!(
         styles,
         [key_style, key_style, key_style, secondary_style].map(|style| (

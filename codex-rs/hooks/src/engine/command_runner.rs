@@ -21,6 +21,7 @@ use codex_utils_pty::Command;
 #[cfg(windows)]
 use codex_utils_pty::JobObject;
 use futures::future::try_join;
+use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 #[cfg(not(unix))]
 use tokio::process::Command;
@@ -32,9 +33,9 @@ use tracing::Span;
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+use super::ClaudeHooksEngine;
 use super::CommandShell;
 use super::ConfiguredHandler;
-use super::ConfiguredHandlerKind;
 use super::HandlerRunResult;
 use super::dispatcher::ParsedHandler;
 use super::dispatcher::hook_event_name_label;
@@ -43,7 +44,6 @@ use super::dispatcher::hook_handler_type_label;
 use super::dispatcher::hook_scope_label;
 use super::dispatcher::hook_source_label;
 use super::dispatcher::scope_for_event;
-use crate::output_spill::AdditionalContext;
 use crate::output_spill::HookOutputSpiller;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::HookCompletedEvent;
@@ -56,6 +56,7 @@ const MAX_CONCURRENT_ASYNC_HOOKS: usize = 8;
 /// Owns command execution and bounded asynchronous work for one session.
 #[derive(Clone)]
 pub(crate) struct CommandHookRuntime {
+    pub(crate) environment_executor: Option<Arc<dyn crate::HookEnvironmentExecutor>>,
     shell: CommandShell,
     environment: Arc<Vec<(OsString, OsString)>>,
     result_sender: Sender<HookCompletedEvent>,
@@ -85,6 +86,7 @@ impl CommandHookRuntime {
         result_sender: Sender<HookCompletedEvent>,
     ) -> Self {
         Self {
+            environment_executor: None,
             shell,
             environment,
             result_sender,
@@ -101,6 +103,7 @@ impl CommandHookRuntime {
 
     pub(crate) fn reconfigured(&self, shell: CommandShell) -> Self {
         Self {
+            environment_executor: self.environment_executor.clone(),
             shell,
             environment: Arc::clone(&self.environment),
             result_sender: self.result_sender.clone(),
@@ -115,11 +118,14 @@ impl CommandHookRuntime {
 
     pub(crate) fn schedule_async_hook<T: 'static>(
         &self,
+        engine: ClaudeHooksEngine,
         handler: ConfiguredHandler,
-        input_json: String,
+        event_input: Value,
         cwd: std::path::PathBuf,
         turn_id: Option<String>,
-        parse: fn(&ConfiguredHandler, HandlerRunResult, Option<String>) -> ParsedHandler<T>,
+        parse: impl Fn(&ConfiguredHandler, HandlerRunResult, Option<String>) -> ParsedHandler<T>
+        + Send
+        + 'static,
     ) {
         if self.result_sender.is_closed() {
             return;
@@ -128,12 +134,14 @@ impl CommandHookRuntime {
         let result_sender = self.result_sender.clone();
         let runtime = self.clone();
         self.schedule_async_task(async move {
-            let result = match &handler.kind {
-                ConfiguredHandlerKind::Command { command, env, .. } => {
-                    run_command(&runtime, &handler, command, env, &input_json, &cwd).await
-                }
-                ConfiguredHandlerKind::McpTool { .. } => return,
-            };
+            let result = super::dispatcher::execute_handler(
+                &engine,
+                &handler,
+                &event_input,
+                &cwd,
+                /*metadata*/ None,
+            )
+            .await;
             let mut hook_result = parse(&handler, result, turn_id).completed;
             let mut entries = Vec::new();
             let mut warnings = Vec::new();
@@ -141,21 +149,17 @@ impl CommandHookRuntime {
             for entry in std::mem::take(&mut hook_result.run.entries) {
                 match entry.kind {
                     HookOutputEntryKind::Context => {
-                        if let Some(text) = runtime
+                        let text = runtime
                             .output_spiller
-                            .maybe_spill_additional_contexts(vec![AdditionalContext {
-                                text: entry.text,
-                                limit: handler.additional_context_limit,
-                            }])
-                            .await
-                            .into_iter()
-                            .next()
-                        {
-                            entries.push(HookOutputEntry {
-                                kind: HookOutputEntryKind::Context,
-                                text,
-                            });
-                        }
+                            .maybe_spill_text_with_limit(
+                                entry.text,
+                                handler.additional_context_limit,
+                            )
+                            .await;
+                        entries.push(HookOutputEntry {
+                            kind: HookOutputEntryKind::Context,
+                            text,
+                        });
                     }
                     HookOutputEntryKind::Warning => warnings.push(entry),
                     HookOutputEntryKind::Error => entries.push(entry),
@@ -221,6 +225,60 @@ pub(crate) async fn run_command(
 ) -> HandlerRunResult {
     let started_at = chrono::Utc::now().timestamp();
     let started = Instant::now();
+    let timeout_started = tokio::time::Instant::now();
+    let duration = Duration::from_secs(handler.timeout_sec);
+    if let Some(trust) = &handler.plugin_trust {
+        let error = match timeout(duration, trust.verify()).await {
+            Ok(Ok(())) => None,
+            Ok(Err(err)) => Some(err.to_string()),
+            Err(_) => Some(format!("hook timed out after {}s", handler.timeout_sec)),
+        };
+        if let Some(error) = error {
+            return finish_command_run(
+                started_at,
+                started,
+                CommandRunCompletion {
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error: Some(error),
+                    outcome: "trust_error",
+                },
+            );
+        }
+    }
+
+    if let super::HandlerSourcePath::Environment { environment_id, .. } = &handler.source_path {
+        let result = match &runtime.environment_executor {
+            Some(executor) => {
+                executor
+                    .execute(
+                        environment_id,
+                        command_line,
+                        env,
+                        input_json,
+                        Duration::from_secs(handler.timeout_sec),
+                    )
+                    .await
+            }
+            None => Err(anyhow::anyhow!("environment hook executor is unavailable")),
+        };
+        let (exit_code, stdout, stderr, error) = match result {
+            Ok(output) => (Some(output.exit_code), output.stdout, output.stderr, None),
+            Err(error) => (None, String::new(), String::new(), Some(error.to_string())),
+        };
+        return HandlerRunResult {
+            structured_content: None,
+            context_metadata: codex_protocol::models::ContentItemMetadata::command_hook(),
+            started_at,
+            completed_at: chrono::Utc::now().timestamp(),
+            duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),
+            exit_code,
+            stdout,
+            stderr,
+            error,
+        };
+    }
 
     let mut command = build_command(&runtime.shell, command_line, &runtime.environment, env);
     command.current_dir(cwd);
@@ -273,10 +331,14 @@ pub(crate) async fn run_command(
             .map_err(|err| ("wait_error", err.to_string()))
     };
 
-    let timeout_duration = Duration::from_secs(handler.timeout_sec);
     // Drain output while sending input so neither pipe can block the other, and
     // include stdin writes in the deadline even when the hook never reads them.
-    match timeout(timeout_duration, try_join(write_stdin, wait_with_output)).await {
+    match timeout(
+        duration.saturating_sub(timeout_started.elapsed()),
+        try_join(write_stdin, wait_with_output),
+    )
+    .await
+    {
         Ok(Ok(((), output))) => {
             // Successfully completed hooks may intentionally leave detached helpers running.
             #[cfg(windows)]
@@ -371,6 +433,8 @@ fn finish_command_run(
 ) -> HandlerRunResult {
     Span::current().record("hook.command_outcome", completion.outcome);
     HandlerRunResult {
+        structured_content: None,
+        context_metadata: codex_protocol::models::ContentItemMetadata::command_hook(),
         started_at,
         completed_at: chrono::Utc::now().timestamp(),
         duration_ms: started.elapsed().as_millis().try_into().unwrap_or(i64::MAX),

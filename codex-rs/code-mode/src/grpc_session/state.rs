@@ -9,6 +9,7 @@ use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::grpc;
 use codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
 use codex_protocol::ToolName;
+use codex_protocol::protocol::W3cTraceContext;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -22,13 +23,19 @@ struct ActiveCallback {
 pub(super) type ClosedCell = (CellId, Arc<dyn CodeModeSessionDelegate>);
 
 pub(super) enum CallbackAdmission {
-    Active(CancellationToken, Arc<dyn CodeModeSessionDelegate>),
+    Active(
+        CancellationToken,
+        Arc<dyn CodeModeSessionDelegate>,
+        Option<W3cTraceContext>,
+    ),
     Cancelled,
     Closed,
     Rejected(String),
 }
 
 struct ExecutionRecord {
+    // Keep the caller's context for callbacks without extending its span across a yield.
+    trace: Option<W3cTraceContext>,
     delegate: Arc<dyn CodeModeSessionDelegate>,
     cell_id: Option<CellId>,
     tool_call_id: String,
@@ -86,6 +93,8 @@ impl RecentIds {
 
 #[derive(Default)]
 pub(super) struct SessionState {
+    // Only a live session owns a share of the worker connection.
+    client: Option<Arc<super::GrpcClient>>,
     executions: HashMap<String, ExecutionRecord>,
     invocations: HashMap<String, ActiveCallback>,
     notifications: usize,
@@ -96,12 +105,29 @@ pub(super) struct SessionState {
 }
 
 impl SessionState {
+    pub(super) fn with_client(client: Arc<super::GrpcClient>) -> Self {
+        Self {
+            client: Some(client),
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn client(&self) -> Result<super::GrpcClient, String> {
+        self.client
+            .as_deref()
+            .cloned()
+            .ok_or_else(|| self.closed_error())
+    }
+
+    fn closed_error(&self) -> String {
+        self.failure
+            .clone()
+            .unwrap_or_else(|| "code-mode gRPC session is closed".to_string())
+    }
+
     pub(super) fn require_open(&self) -> Result<(), String> {
         if self.closed {
-            return Err(self
-                .failure
-                .clone()
-                .unwrap_or_else(|| "code-mode gRPC session is closed".to_string()));
+            return Err(self.closed_error());
         }
         Ok(())
     }
@@ -134,6 +160,7 @@ impl SessionState {
         self.executions.insert(
             request.execution_id.clone(),
             ExecutionRecord {
+                trace: codex_otel::current_span_w3c_trace_context(),
                 tool_call_id: request.tool_call_id.clone(),
                 enabled_tools,
                 delegate,
@@ -242,6 +269,7 @@ impl SessionState {
         Ok(CallbackAdmission::Active(
             cancellation,
             Arc::clone(&execution.delegate),
+            execution.trace.clone(),
         ))
     }
 
@@ -274,6 +302,7 @@ impl SessionState {
         Ok(CallbackAdmission::Active(
             execution.cancellation.child_token(),
             Arc::clone(&execution.delegate),
+            execution.trace.clone(),
         ))
     }
 
@@ -341,6 +370,7 @@ impl SessionState {
             return Vec::new();
         }
         self.closed = true;
+        self.client = None;
         self.failure = failure;
         self.notifications = 0;
         for (_, callback) in self.invocations.drain() {

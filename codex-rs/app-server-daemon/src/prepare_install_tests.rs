@@ -1,8 +1,11 @@
 //! Covers complete-package staging, conservative selection, and legacy preservation.
 #![cfg(unix)]
+use std::collections::BTreeMap;
+
 use super::InstallMode;
 use super::prepare_from_package;
 use super::validate_package;
+use crate::release_pruning;
 use crate::settings::DaemonSettings;
 use pretty_assertions::assert_eq;
 use std::path::Path;
@@ -78,7 +81,77 @@ async fn seeds_full_package() {
         std::fs::read_to_string(standalone.join("auto-update-version")).expect("marker"),
         selected.file_name().expect("name").to_string_lossy()
     );
-    assert!(validate_package(&selected).is_ok());
+    assert!(validate_package(&selected, "bin/codex").is_ok());
+
+    let root = standalone;
+    let releases = root.join("releases").canonicalize().unwrap();
+    let target = super::platform_target().unwrap();
+    // Reinstall the seed's exact package after partially deleting an older copy.
+    let original = old;
+    let digest =
+        super::package_tree(&original, /*destination*/ None, &mut BTreeMap::new()).unwrap();
+    let old = releases.join(format!("local-{digest}-{target}"));
+    let previous = releases.join(format!("0.151.0-{target}"));
+    package(&old, "0.152.0");
+    // Match the alias present in actual Unix downloads.
+    std::os::unix::fs::symlink("bin/codex", old.join("codex")).unwrap();
+    package(&previous, "0.151.0");
+    let outside = temp.path().join("outside");
+    package(&outside, "0.149.0");
+    let linked = releases.join(format!("0.148.0-{target}"));
+    package(&linked, "0.148.0");
+    std::os::unix::fs::symlink(&outside, linked.join("codex-resources/other")).unwrap();
+    let _operation_lock = daemon.acquire_operation_lock().await.unwrap();
+    let _install_lock = crate::install_lock::acquire_install_lock(&root)
+        .await
+        .unwrap();
+
+    // An older selector can move away and back without updating history.
+    // The name alone must not authorize deletion.
+    std::fs::remove_file(root.join("current")).unwrap();
+    std::os::unix::fs::symlink(&previous, root.join("current")).unwrap();
+    std::fs::remove_file(root.join("current")).unwrap();
+    std::os::unix::fs::symlink(&selected, root.join("current")).unwrap();
+    let _ = release_pruning::prune(&daemon, &root, &settings).await;
+    assert!(old.join("codex-resources/nested/runtime").is_file());
+
+    release_pruning::record_selection(&root, Some(&previous)).unwrap();
+    // Root can delete read-only files. Other users simulate a real partial failure.
+    use std::os::unix::fs::PermissionsExt;
+    let read_only = old.join("codex-resources/nested");
+    std::fs::set_permissions(&read_only, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let result = release_pruning::prune(&daemon, &root, &settings).await;
+    assert!(!old.exists(), "release was not retired: {result:#?}");
+    for retained in [&selected, &previous, &outside, &linked] {
+        assert!(retained.join("codex-resources/nested/runtime").is_file());
+    }
+
+    // Reinstall after a partial deletion, and verify that leftovers are not retried.
+    drop(_install_lock);
+    drop(_operation_lock);
+    if unsafe { libc::geteuid() } != 0 {
+        let leftover = std::fs::read_dir(&releases)
+            .unwrap()
+            .map(Result::unwrap)
+            .find(|entry| entry.file_name().to_string_lossy().starts_with(".retired."))
+            .unwrap()
+            .path()
+            .join("release/codex-resources/nested");
+        std::fs::set_permissions(&leftover, std::fs::Permissions::from_mode(0o755)).unwrap();
+        prepare_from_package(
+            &daemon,
+            &settings,
+            InstallMode::Replace,
+            Some(&original),
+            &old_bin,
+            |_| Ok(true),
+        )
+        .await
+        .unwrap();
+        assert_eq!(root.join("current").canonicalize().unwrap(), old);
+        // Subsequent pruning does not retry a retirement, even when deletable now.
+        assert_eq!(std::fs::read(leftover.join("runtime")).unwrap(), b"runtime");
+    }
 }
 
 #[tokio::test]
@@ -336,10 +409,37 @@ async fn explicit_selection_requires_unchanged_cli_and_pins_all_versions() {
                 std::fs::read(&bin).unwrap()
             );
             assert_eq!(std::fs::read(previous.join("bin/codex")).unwrap(), before);
+            // Different resources, even at the same version: retain last two selections.
+            for entry in std::fs::read_dir(root.join("releases")).unwrap() {
+                let path = entry.unwrap().path().canonicalize().unwrap();
+                assert!(
+                    [&selected, &previous].contains(&&path),
+                    "unexpected release: {path:?}"
+                );
+            }
             assert!(!root.join("auto-update-version").exists());
             assert!(daemon.running_backend(&settings).await.unwrap().is_none());
             previous = selected;
         }
+
+        // Reusing a release must still validate its current contents from disk.
+        std::fs::write(previous.join("codex-package.json"), b"corrupt manifest").unwrap();
+        let error = prepare_from_package(
+            &daemon(&home),
+            &settings,
+            InstallMode::Replace,
+            Some(&source),
+            &bin,
+            |_| Ok(true),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("existing daemon release has different contents")
+        );
+        assert_eq!(root.join("current").canonicalize().unwrap(), previous);
     }
 }
 
@@ -368,6 +468,8 @@ async fn broken_selection_is_not_a_missing_installation() {
             .to_string()
             .contains("repair the existing installation")
     );
+    let start_error = daemon.start(&BTreeMap::new()).await.unwrap_err();
+    assert_eq!(start_error.failure_reason(), "install");
     assert_eq!(
         std::fs::read_link(current).unwrap(),
         PathBuf::from("missing-release")

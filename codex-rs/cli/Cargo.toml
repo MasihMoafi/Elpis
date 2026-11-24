@@ -16,6 +16,10 @@ path = "src/main.rs"
 name = "logs_client"
 path = "src/bin/logs_client.rs"
 
+[[test]]
+name = "app_server_daemon_package"
+path = "tests/app_server_daemon/package.rs"
+
 [lib]
 name = "codex_cli"
 path = "src/lib.rs"
@@ -25,6 +29,7 @@ doctest = false
 workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 codex-utils-process = { workspace = true }
 anyhow = { workspace = true }
 chrono = { workspace = true }
@@ -37,7 +42,6 @@ codex-app-server-test-client = { workspace = true }
 codex-arg0 = { workspace = true }
 codex-build-info = { workspace = true }
 codex-api = { workspace = true }
-codex-aws-auth = { workspace = true }
 codex-chatgpt = { workspace = true }
 codex-cloud-config = { workspace = true }
 codex-cloud-tasks = { path = "../cloud-tasks" }
@@ -53,9 +57,11 @@ codex-home = { workspace = true }
 codex-http-client = { workspace = true }
 codex-exec = { workspace = true }
 codex-exec-server = { workspace = true }
+codex-exec-server-cli = { workspace = true }
 codex-execpolicy = { workspace = true }
 codex-extension-api = { workspace = true }
 codex-features = { workspace = true }
+codex-multi-env-copy-file = { workspace = true }
 codex-git-attribution = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-install-context = { workspace = true }
@@ -76,10 +82,10 @@ codex-rollout-trace = { workspace = true }
 codex-sandboxing = { workspace = true }
 codex-skills-extension = { workspace = true }
 codex-state = { workspace = true }
-codex-stdio-to-uds = { workspace = true }
 codex-terminal-detection = { workspace = true }
 codex-thread-store = { workspace = true }
 codex-tui = { workspace = true }
+codex-uds = { workspace = true }
 codex-utils-absolute-path = { workspace = true }
 codex-utils-path = { workspace = true }
 codex-utils-path-uri = { workspace = true }
@@ -108,6 +114,7 @@ tokio = { workspace = true, features = [
     "process",
     "rt-multi-thread",
     "signal",
+    "sync",
     "time",
 ] }
 toml = { workspace = true }
@@ -138,6 +145,7 @@ assert_matches = { workspace = true }
 codex-app-server-client = { workspace = true }
 codex-utils-cargo-bin = { workspace = true }
 codex-utils-pty = { workspace = true }
+core_test_support = { workspace = true }
 flate2 = { workspace = true }
 insta = { workspace = true }
 jsonwebtoken = { workspace = true }

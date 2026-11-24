@@ -282,7 +282,7 @@ impl HistoryCell for ExecCell {
         if self.is_exploring_cell() {
             let mut lines = self.exploring_display_lines(width);
             lines.truncate(1 + crate::history_cell::activity_preview::DETAIL_PREVIEW_LINES);
-            let failures = self
+            let nonzero_exits = self
                 .group
                 .calls
                 .iter()
@@ -292,12 +292,17 @@ impl HistoryCell for ExecCell {
                         .is_some_and(|output| output.exit_code != 0)
                 })
                 .count();
-            if failures > 0
+            if nonzero_exits > 0
                 && let Some(header) = lines.first_mut()
             {
+                let exit_label = if nonzero_exits == 1 {
+                    "nonzero exit"
+                } else {
+                    "nonzero exits"
+                };
                 header
                     .line
-                    .push_span(format!(" · {failures} failed").red().bold());
+                    .push_span(format!(" · {nonzero_exits} {exit_label}").bold());
             }
             lines
                 .into_iter()
@@ -326,6 +331,50 @@ impl HistoryCell for ExecCell {
 
     fn transcript_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
         self.detailed_hyperlink_lines(width, HistoryRenderMode::Rich)
+    }
+
+    fn tool_call_labels(&self) -> Vec<String> {
+        self.iter_calls()
+            .filter(|call| !call.is_user_shell_command())
+            .map(|call| {
+                let active = call.duration.is_none();
+                let (running, finished, target) = match call.parsed.as_slice() {
+                    [ParsedCommand::Read { name, .. }] => ("Reading", "Read", name.clone()),
+                    [
+                        ParsedCommand::Search {
+                            query: Some(query),
+                            path,
+                            ..
+                        },
+                    ] => {
+                        let target = match path {
+                            Some(path) => format!("{query} in {path}"),
+                            None => query.clone(),
+                        };
+                        ("Searching for", "Searched for", target)
+                    }
+                    [
+                        ParsedCommand::Search {
+                            path: Some(path), ..
+                        },
+                    ] => ("Searching files in", "Searched files in", path.clone()),
+                    [ParsedCommand::ListFiles { path, .. }] => (
+                        "Listing files in",
+                        "Listed files in",
+                        path.as_deref().unwrap_or(".").to_owned(),
+                    ),
+                    _ => ("Running", "Ran", strip_bash_lc_and_escape(&call.command)),
+                };
+                let verb = if active { running } else { finished };
+                let mut label = format!("{verb} {target}");
+                if let Some(output) = &call.output
+                    && output.exit_code != 0
+                {
+                    label.push_str(&format!(" (exit {})", output.exit_code));
+                }
+                label
+            })
+            .collect()
     }
 
     fn activity_ids(&self) -> Vec<String> {

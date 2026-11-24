@@ -77,9 +77,9 @@ impl ExecCell {
         {
             return Vec::new();
         }
-        let failed = call.output.as_ref().filter(|output| output.exit_code != 0);
-        let marker = if failed.is_some() {
-            "•".red().bold()
+        let nonzero_exit = call.output.as_ref().filter(|output| output.exit_code != 0);
+        let marker = if nonzero_exit.is_some() {
+            "•".bold()
         } else if self.is_active() {
             activity_indicator(
                 call.start_time,
@@ -90,8 +90,8 @@ impl ExecCell {
         } else {
             "•".green().bold()
         };
-        let title = if let Some(output) = failed {
-            format!("Failed (exit {})", output.exit_code)
+        let title = if let Some(output) = nonzero_exit {
+            format!("Exited (status {})", output.exit_code)
         } else if self.is_active() {
             "Running".to_owned()
         } else if call.is_unified_exec_interaction() {

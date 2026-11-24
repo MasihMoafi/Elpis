@@ -10,7 +10,6 @@ use pretty_assertions::assert_eq;
 use serde_json::Value;
 use std::process::Stdio;
 use std::string::ToString;
-use std::time::Duration;
 use tempfile::TempDir;
 use uuid::Uuid;
 use walkdir::WalkDir;
@@ -111,10 +110,6 @@ fn last_user_image_count(path: &std::path::Path) -> usize {
     last_count
 }
 
-fn exec_repo_root() -> anyhow::Result<std::path::PathBuf> {
-    Ok(codex_utils_cargo_bin::repo_root()?)
-}
-
 fn exec_sse_response(index: usize) -> String {
     let response_id = format!("resp-exec-{index}");
     let message_id = format!("msg-exec-{index}");
@@ -138,7 +133,7 @@ async fn exec_falls_back_to_legacy_history_when_thread_store_cannot_paginate() -
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 1).await;
     let store_id = Uuid::new_v4();
 
@@ -160,7 +155,7 @@ async fn exec_resume_last_appends_to_existing_file() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let response_mock = responses::mount_sse_sequence(
         &server,
         vec![
@@ -173,7 +168,6 @@ async fn exec_resume_last_appends_to_existing_file() -> anyhow::Result<()> {
         ],
     )
     .await;
-    let repo_root = exec_repo_root()?;
 
     // 1) First run: create a session with a unique marker in the content.
     let marker = format!("resume-last-{}", Uuid::new_v4());
@@ -181,8 +175,6 @@ async fn exec_resume_last_appends_to_existing_file() -> anyhow::Result<()> {
 
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(&prompt)
         .assert()
         .success();
@@ -209,8 +201,6 @@ async fn exec_resume_last_appends_to_existing_file() -> anyhow::Result<()> {
         .cmd_with_server(&server)
         .env("RUST_LOG", "codex_app_server::outgoing_message=trace")
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(&prompt2)
         .arg("resume")
         .arg("--last")
@@ -261,15 +251,12 @@ async fn exec_resume_last_repairs_rollout_missing_from_state_db() -> anyhow::Res
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 2).await;
-    let repo_root = exec_repo_root()?;
 
     let marker = format!("resume-last-repair-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(format!("echo {marker}"))
         .assert()
         .success();
@@ -293,8 +280,6 @@ async fn exec_resume_last_repairs_rollout_missing_from_state_db() -> anyhow::Res
     let resumed_marker = format!("resume-last-repaired-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg("resume")
         .arg("--last")
         .arg(format!("echo {resumed_marker}"))
@@ -313,16 +298,13 @@ async fn exec_resume_last_trusts_usable_state_db_candidate() -> anyhow::Result<(
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 3).await;
-    let repo_root = exec_repo_root()?;
     let sessions_dir = test.home_path().join("sessions");
 
     let older_marker = format!("resume-last-indexed-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(format!("echo {older_marker}"))
         .assert()
         .success();
@@ -332,8 +314,6 @@ async fn exec_resume_last_trusts_usable_state_db_candidate() -> anyhow::Result<(
     let newer_marker = format!("resume-last-unindexed-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(format!("echo {newer_marker}"))
         .assert()
         .success();
@@ -356,8 +336,6 @@ async fn exec_resume_last_trusts_usable_state_db_candidate() -> anyhow::Result<(
     let resumed_marker = format!("resume-last-authoritative-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg("resume")
         .arg("--last")
         .arg(format!("echo {resumed_marker}"))
@@ -384,16 +362,13 @@ async fn exec_resume_last_skips_mismatched_state_db_candidate() -> anyhow::Resul
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 3).await;
-    let repo_root = exec_repo_root()?;
     let sessions_dir = test.home_path().join("sessions");
 
     let older_marker = format!("resume-last-valid-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(format!("echo {older_marker}"))
         .assert()
         .success();
@@ -403,8 +378,6 @@ async fn exec_resume_last_skips_mismatched_state_db_candidate() -> anyhow::Resul
     let newer_marker = format!("resume-last-mismatched-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(format!("echo {newer_marker}"))
         .assert()
         .success();
@@ -429,8 +402,6 @@ async fn exec_resume_last_skips_mismatched_state_db_candidate() -> anyhow::Resul
     let resumed_marker = format!("resume-last-valid-resumed-{}", Uuid::new_v4());
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg("resume")
         .arg("--last")
         .arg(format!("echo {resumed_marker}"))
@@ -448,9 +419,8 @@ async fn exec_resume_last_accepts_prompt_after_flag_in_json_mode() -> anyhow::Re
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 2).await;
-    let repo_root = exec_repo_root()?;
 
     // 1) First run: create a session with a unique marker in the content.
     let marker = format!("resume-last-json-{}", Uuid::new_v4());
@@ -458,8 +428,6 @@ async fn exec_resume_last_accepts_prompt_after_flag_in_json_mode() -> anyhow::Re
 
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(&prompt)
         .assert()
         .success();
@@ -475,8 +443,6 @@ async fn exec_resume_last_accepts_prompt_after_flag_in_json_mode() -> anyhow::Re
 
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg("--json")
         .arg("resume")
         .arg("--last")
@@ -501,7 +467,7 @@ async fn exec_resume_last_respects_cwd_filter_and_all_flag() -> anyhow::Result<(
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 5).await;
 
     let dir_a = TempDir::new()?;
@@ -614,7 +580,7 @@ async fn exec_resume_accepts_global_flags_after_subcommand() -> anyhow::Result<(
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 2).await;
 
     // Seed a session.
@@ -651,7 +617,7 @@ async fn exec_resume_includes_output_schema_in_request() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let response_mock = mount_exec_responses(&server, /*count*/ 2).await;
 
     let schema_contents = serde_json::json!({
@@ -707,18 +673,20 @@ async fn exec_resume_by_id_appends_to_existing_file() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 2).await;
-    let repo_root = exec_repo_root()?;
 
-    // 1) First run: create a session
+    std::fs::write(
+        test.home_path().join("config.toml"),
+        "default_permissions = ':workspace'",
+    )?;
+    // Start read-only despite the writable process default.
     let marker = format!("resume-by-id-{}", Uuid::new_v4());
     let prompt = format!("echo {marker}");
 
     test.cmd_with_server(&server)
+        .args(["-c", "default_permissions=':read-only'"])
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(&prompt)
         .assert()
         .success();
@@ -736,15 +704,21 @@ async fn exec_resume_by_id_appends_to_existing_file() -> anyhow::Result<()> {
     let marker2 = format!("resume-by-id-2-{}", Uuid::new_v4());
     let prompt2 = format!("echo {marker2}");
 
-    test.cmd_with_server(&server)
+    let output = test
+        .cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
+        .args(["--color", "never"])
         .arg(&prompt2)
         .arg("resume")
         .arg(&session_id)
-        .assert()
-        .success();
+        .output()?;
+    assert!(output.status.success(), "resume failed: {output:?}");
+    let stderr = String::from_utf8(output.stderr)?;
+    let sandbox_summary = stderr
+        .lines()
+        .find(|line| line.starts_with("sandbox: "))
+        .context("missing sandbox startup summary")?;
+    insta::assert_snapshot!(sandbox_summary, @"sandbox: read-only");
 
     let resumed_path = find_session_file_containing_marker(&sessions_dir, &marker2)
         .expect("no resumed session file containing marker2");
@@ -755,6 +729,324 @@ async fn exec_resume_by_id_appends_to_existing_file() -> anyhow::Result<()> {
     let content = std::fs::read_to_string(&resumed_path)?;
     assert!(content.contains(&marker));
     assert!(content.contains(&marker2));
+    let turn_profiles = content
+        .lines()
+        .map(serde_json::from_str::<Value>)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter(|item| item["type"] == "turn_context")
+        .map(|item| item["payload"]["active_permission_profile"]["id"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(turn_profiles, [":read-only", ":read-only"]);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_resume_enforces_read_only_on_first_shell_call() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    core_test_support::skip_if_sandbox!(Ok(()));
+    #[cfg(target_os = "linux")]
+    if super::sandbox::linux_sandbox_test_env().await.is_none() {
+        return Ok(());
+    }
+
+    let test = test_codex_exec();
+    let server = responses::start_sse_server().await;
+    std::fs::write(
+        test.home_path().join("config.toml"),
+        "default_permissions = ':workspace'",
+    )?;
+    let shell_args = serde_json::json!({
+        "cmd": "printf 'shell reached\\n'; printf probe > resume-write.txt",
+        "shell": "/bin/sh",
+        "login": false,
+    });
+    let mock = responses::mount_sse_sequence(
+        &server,
+        vec![
+            exec_sse_response(/*index*/ 0),
+            responses::sse(vec![
+                responses::ev_function_call("write-probe", "exec_command", &shell_args.to_string()),
+                responses::ev_completed("response-with-probe"),
+            ]),
+            exec_sse_response(/*index*/ 2),
+        ],
+    )
+    .await;
+
+    let marker = format!("resume-enforcement-{}", Uuid::new_v4());
+    test.cmd_with_server(&server)
+        .args([
+            "--skip-git-repo-check",
+            "-c",
+            "default_permissions=':read-only'",
+        ])
+        .arg(&marker)
+        .assert()
+        .success();
+    let path = find_session_file_containing_marker(&test.home_path().join("sessions"), &marker)
+        .context("missing initial session")?;
+    let session_id = extract_conversation_id(&path);
+
+    test.cmd_with_server(&server)
+        .args([
+            "--skip-git-repo-check",
+            "resume",
+            &session_id,
+            "check workspace write access",
+        ])
+        .assert()
+        .success();
+
+    let tool_output = mock
+        .last_request()
+        .and_then(|request| request.function_call_output_text("write-probe"))
+        .context("missing first-turn shell output")?;
+    assert!(
+        tool_output.lines().any(|line| line == "shell reached"),
+        "the shell did not start: {tool_output}",
+    );
+    let tool_output_lower = tool_output.to_ascii_lowercase();
+    assert!(
+        [
+            "permission denied",
+            "operation not permitted",
+            "read-only file system"
+        ]
+        .iter()
+        .any(|denial| tool_output_lower.contains(denial)),
+        "expected the shell write to be denied: {tool_output}",
+    );
+    assert!(!test.cwd_path().join("resume-write.txt").try_exists()?);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_resume_adds_only_requested_roots_to_saved_workspace() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+    let test = test_codex_exec();
+    let server = responses::start_sse_server().await;
+    let _mock = mount_exec_responses(&server, /*count*/ 3).await;
+    let cwd =
+        codex_utils_absolute_path::canonicalize_existing_preserving_symlinks(test.cwd_path())?;
+    let scratch = cwd.join("scratch");
+    let extra = cwd.join("extra");
+    std::fs::create_dir(&scratch)?;
+    std::fs::create_dir(&extra)?;
+    let marker = "start with only scratch writable";
+    test.cmd_with_server(&server)
+        .args([
+            "--skip-git-repo-check",
+            "-c",
+            "default_permissions=':workspace'",
+            "-C",
+        ])
+        .arg(&scratch)
+        .arg(marker)
+        .assert()
+        .success();
+    let rollout = find_session_file_containing_marker(&test.home_path().join("sessions"), marker)
+        .context("missing initial session")?;
+    let id = extract_conversation_id(&rollout);
+    for (args, expected_roots) in [
+        (vec![], vec![&scratch]),
+        (vec!["--add-dir", "extra"], vec![&scratch, &extra]),
+    ] {
+        let output = test
+            .cmd_with_server(&server)
+            .arg("--skip-git-repo-check")
+            .args(args)
+            .args(["resume", &id, "continue"])
+            .output()?;
+        assert!(output.status.success(), "resume failed: {output:?}");
+        if expected_roots.contains(&&extra) {
+            let stderr = String::from_utf8(output.stderr)?;
+            let summary = stderr
+                .lines()
+                .find(|line| line.starts_with("sandbox: "))
+                .context("missing sandbox summary")?;
+            assert!(summary.contains(&*extra.to_string_lossy()), "{summary}");
+        }
+        let settings = std::fs::read_to_string(&rollout)?
+            .lines()
+            .rev()
+            .map(serde_json::from_str::<Value>)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .find(|item| item["payload"]["type"] == "thread_settings_applied")
+            .context("missing resumed settings")?;
+        let snapshot = &settings["payload"]["thread_settings"];
+        assert_eq!(snapshot["cwd"], serde_json::json!(scratch));
+        assert_eq!(
+            snapshot["runtime_workspace_roots"],
+            serde_json::json!(expected_roots)
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_resume_restores_unnamed_read_only_from_legacy_history() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let test = test_codex_exec();
+    let server = responses::start_sse_server().await;
+    let _mock = mount_exec_responses(&server, /*count*/ 2).await;
+    std::fs::write(
+        test.home_path().join("config.toml"),
+        "default_permissions = ':workspace'",
+    )?;
+    let marker = format!("resume-legacy-{}", Uuid::new_v4());
+    test.cmd_with_server(&server)
+        .args(["--skip-git-repo-check", "--sandbox", "read-only"])
+        .arg(&marker)
+        .assert()
+        .success();
+    let path = find_session_file_containing_marker(&test.home_path().join("sessions"), &marker)
+        .context("missing initial session")?;
+    let session_id = extract_conversation_id(&path);
+    let history = std::fs::read_to_string(&path)?;
+    let mut legacy_history = String::new();
+    for line in history.lines() {
+        let item: Value = serde_json::from_str(line)?;
+        if item["type"] == "event_msg" && item["payload"]["type"] == "thread_settings_applied" {
+            continue;
+        }
+        if item["type"] == "turn_context" {
+            assert!(item["payload"]["active_permission_profile"].is_null());
+        }
+        legacy_history.push_str(line);
+        legacy_history.push('\n');
+    }
+    std::fs::write(&path, legacy_history)?;
+
+    let output = test
+        .cmd_with_server(&server)
+        .args([
+            "--skip-git-repo-check",
+            "--color",
+            "never",
+            "resume",
+            &session_id,
+            "resume an older read-only session",
+        ])
+        .output()?;
+    assert!(output.status.success(), "resume failed: {output:?}");
+    let stderr = String::from_utf8(output.stderr)?;
+    let summary = stderr
+        .lines()
+        .find(|line| line.starts_with("sandbox: "))
+        .context("missing startup permission summary")?;
+    insta::assert_snapshot!(summary, @"sandbox: read-only");
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_resume_preserves_explicit_legacy_workspace_settings() -> anyhow::Result<()> {
+    use codex_protocol::permissions::FileSystemPath;
+    use codex_protocol::permissions::FileSystemSpecialPath;
+
+    skip_if_no_network!(Ok(()));
+
+    let test = test_codex_exec();
+    let server = responses::start_sse_server().await;
+    let _mock = mount_exec_responses(&server, /*count*/ 3).await;
+    std::fs::create_dir(test.cwd_path().join("scratch"))?;
+    std::fs::write(
+        test.home_path().join("config.toml"),
+        r#"
+sandbox_mode = "workspace-write"
+
+[permissions.partial]
+extends = ":read-only"
+
+[permissions.partial.filesystem.":workspace_roots"]
+scratch = "write"
+"#,
+    )?;
+    let marker = format!("resume-legacy-{}", Uuid::new_v4());
+    test.cmd_with_server(&server)
+        .args([
+            "--skip-git-repo-check",
+            "-c",
+            "default_permissions='partial'",
+        ])
+        .arg(&marker)
+        .assert()
+        .success();
+    let path = find_session_file_containing_marker(&test.home_path().join("sessions"), &marker)
+        .context("missing initial session")?;
+    let session_id = extract_conversation_id(&path);
+
+    let output = test
+        .cmd_with_server(&server)
+        .args([
+            "--skip-git-repo-check",
+            "--color",
+            "never",
+            "resume",
+            &session_id,
+            "resume with the saved profile",
+        ])
+        .output()?;
+    assert!(output.status.success(), "resume failed: {output:?}");
+    let stderr = String::from_utf8(output.stderr)?;
+    let sandbox_summary = stderr
+        .lines()
+        .find(|line| line.starts_with("sandbox: "))
+        .context("missing sandbox startup summary")?;
+    insta::assert_snapshot!(sandbox_summary, @"sandbox: custom permissions");
+
+    test.cmd_with_server(&server)
+        .args([
+            "--skip-git-repo-check",
+            "-c",
+            "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+        ])
+        .args([
+            "resume",
+            &session_id,
+            "resume with explicit legacy settings",
+        ])
+        .assert()
+        .success();
+
+    let turns = std::fs::read_to_string(path)?
+        .lines()
+        .map(serde_json::from_str::<codex_rollout::RolloutItem>)
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .filter_map(|item| match item {
+            codex_rollout::RolloutItem::TurnContext(turn) => Some(turn),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [started, restored, overridden] = turns.as_slice() else {
+        anyhow::bail!("expected three turns, got {}", turns.len());
+    };
+    assert_eq!(
+        [started, restored, overridden].map(|turn| turn
+            .active_permission_profile
+            .as_ref()
+            .map(|profile| profile.id.as_str())),
+        [Some("partial"), Some("partial"), None],
+    );
+    let (file_system, _) = overridden.permission_profile.to_runtime_permissions();
+    assert!(
+        file_system
+            .can_write_local_path_with_cwd(overridden.cwd.as_path(), overridden.cwd.as_path())
+    );
+    assert!(!file_system.entries.iter().any(|entry| {
+        entry.access.can_write()
+            && matches!(
+                entry.path,
+                FileSystemPath::Special {
+                    value: FileSystemSpecialPath::Tmpdir
+                }
+            )
+    }));
     Ok(())
 }
 
@@ -763,9 +1055,8 @@ async fn exec_resume_preserves_cli_configuration_overrides() -> anyhow::Result<(
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 2).await;
-    let repo_root = exec_repo_root()?;
 
     let marker = format!("resume-config-{}", Uuid::new_v4());
     let prompt = format!("echo {marker}");
@@ -776,8 +1067,6 @@ async fn exec_resume_preserves_cli_configuration_overrides() -> anyhow::Result<(
         .arg("workspace-write")
         .arg("--model")
         .arg("gpt-5.1")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(&prompt)
         .assert()
         .success();
@@ -796,8 +1085,6 @@ async fn exec_resume_preserves_cli_configuration_overrides() -> anyhow::Result<(
         .arg("workspace-write")
         .arg("--model")
         .arg("gpt-5.1-high")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(&prompt2)
         .arg("resume")
         .arg("--last")
@@ -838,17 +1125,14 @@ async fn exec_resume_accepts_images_after_subcommand() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let _response_mock = mount_exec_responses(&server, /*count*/ 2).await;
-    let repo_root = exec_repo_root()?;
 
     let marker = format!("resume-image-{}", Uuid::new_v4());
     let prompt = format!("echo {marker}");
 
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg(&prompt)
         .assert()
         .success();
@@ -869,8 +1153,6 @@ async fn exec_resume_accepts_images_after_subcommand() -> anyhow::Result<()> {
     let prompt2 = format!("echo {marker2}");
     test.cmd_with_server(&server)
         .arg("--skip-git-repo-check")
-        .arg("-C")
-        .arg(&repo_root)
         .arg("resume")
         .arg("--last")
         .arg("--image")
@@ -894,11 +1176,51 @@ async fn exec_resume_accepts_images_after_subcommand() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_fork_rejects_turn_options_without_a_prompt() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let test = test_codex_exec();
+    let server = responses::start_sse_server().await;
+    // Option validation precedes thread lookup; it does not require a real source turn.
+    let source_id = Uuid::new_v4();
+    for (args, expected_error) in [
+        (
+            vec!["--image", "unused.png"],
+            "Forking with images requires a prompt",
+        ),
+        (
+            vec!["--output-schema", "unused.json"],
+            "Forking with output options requires a prompt",
+        ),
+        (
+            vec!["--output-last-message", "unused.md"],
+            "Forking with output options requires a prompt",
+        ),
+        (vec!["--ephemeral"], "Ephemeral forks require a prompt"),
+    ] {
+        let output = test
+            .cmd_with_server(&server)
+            .arg("--skip-git-repo-check")
+            .arg("fork")
+            .arg(source_id.to_string())
+            .args(args)
+            .output()?;
+        assert!(!output.status.success());
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains(expected_error),
+            "fork failed without the expected error: {output:?}"
+        );
+    }
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_fork_creates_distinct_threads_with_and_without_a_prompt() -> anyhow::Result<()> {
     skip_if_no_network!(Ok(()));
 
     let test = test_codex_exec();
-    let server = MockServer::start().await;
+    let server = responses::start_sse_server().await;
     let response_mock = mount_exec_responses(&server, /*count*/ 2).await;
     let source_marker = format!("fork-source-{}", Uuid::new_v4());
 
@@ -923,35 +1245,6 @@ async fn exec_fork_creates_distinct_threads_with_and_without_a_prompt() -> anyho
     )?;
     assert_eq!(source_meta["payload"]["thread_source"], "source_feature");
 
-    for (args, expected_error) in [
-        (
-            vec!["--image", "unused.png"],
-            "Forking with images requires a prompt",
-        ),
-        (
-            vec!["--output-schema", "unused.json"],
-            "Forking with output options requires a prompt",
-        ),
-        (
-            vec!["--output-last-message", "unused.md"],
-            "Forking with output options requires a prompt",
-        ),
-        (vec!["--ephemeral"], "Ephemeral forks require a prompt"),
-    ] {
-        let output = test
-            .cmd_with_server(&server)
-            .arg("--skip-git-repo-check")
-            .arg("fork")
-            .arg(&source_id)
-            .args(args)
-            .output()?;
-        assert!(!output.status.success());
-        assert!(
-            String::from_utf8_lossy(&output.stderr).contains(expected_error),
-            "fork failed without the expected error: {output:?}"
-        );
-    }
-
     let mut promptless_command = test.cmd_with_server(&server);
     promptless_command
         .arg("--skip-git-repo-check")
@@ -973,10 +1266,9 @@ async fn exec_fork_creates_distinct_threads_with_and_without_a_prompt() -> anyho
         .kill_on_drop(true);
     let mut child = child_command.spawn()?;
     let _open_stdin = child.stdin.take().expect("stdin should be piped");
-    let promptless_output =
-        tokio::time::timeout(Duration::from_secs(/*secs*/ 10), child.wait_with_output())
-            .await
-            .context("promptless fork should not wait for stdin to close")??;
+    // Keep stdin open until exit. Reading it would deadlock and fail the test under
+    // the runner's timeout; process startup and shutdown have no separate latency contract.
+    let promptless_output = child.wait_with_output().await?;
     assert!(
         promptless_output.status.success(),
         "promptless fork failed: {}",

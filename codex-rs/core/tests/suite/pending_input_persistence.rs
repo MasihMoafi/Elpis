@@ -1,4 +1,4 @@
-//! Exercises preparation and execution checkpoints before model requests.
+//! Exercises how transcript checkpoints interact with model requests and turn completion.
 
 use std::any::Any;
 use std::sync::Arc;
@@ -16,10 +16,15 @@ use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
 use codex_protocol::mcp::ClientMcpExtensions;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::Op;
+use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::ThreadHistoryMode;
+use codex_protocol::protocol::ThreadSettingsOverrides;
+use codex_protocol::protocol::TurnSettingsUpdate;
+use codex_protocol::protocol::TurnSettingsUpdateOutcome;
 use codex_protocol::user_input::UserInput;
 use codex_rollout::RolloutItem;
 use codex_rollout::RolloutRecorder;
@@ -49,6 +54,8 @@ use core_test_support::wait_for_event;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use test_case::test_case;
+use tokio::sync::Barrier;
+use tokio::sync::Mutex;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::time::timeout;
@@ -64,6 +71,12 @@ enum CheckpointPolicy {
 enum InputKind {
     User,
     ToolOutput,
+}
+
+#[derive(Clone, Copy)]
+enum InferenceCompletion {
+    Response,
+    Interrupt,
 }
 
 #[derive(Clone, Copy)]
@@ -87,6 +100,7 @@ struct GatedCheckpointStore {
     arm_on: Option<PersistContext>,
     checkpoint_context: Option<PersistContext>,
     checkpoints: mpsc::UnboundedSender<PendingCheckpoint>,
+    next_flush: Mutex<Option<Arc<Barrier>>>,
 }
 
 macro_rules! delegate_store_methods {
@@ -114,8 +128,19 @@ impl ThreadStore for GatedCheckpointStore {
         fn archive_thread(params: ArchiveThreadParams) -> ();
         fn unarchive_thread(params: ArchiveThreadParams) -> StoredThread;
         fn delete_thread(params: DeleteThreadParams) -> ();
-        fn flush_thread(thread_id: ThreadId) -> ();
         fn shutdown_thread(thread_id: ThreadId) -> ();
+    }
+
+    fn flush_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move {
+            let gate = self.next_flush.lock().await.take();
+            if let Some(gate) = gate {
+                // Let the test submit input while this flush is still in progress.
+                gate.wait().await;
+                gate.wait().await;
+            }
+            self.inner.flush_thread(thread_id).await
+        })
     }
 
     fn update_thread_metadata(
@@ -174,13 +199,16 @@ impl ThreadStore for GatedCheckpointStore {
     }
 }
 
-#[test_case(CheckpointPolicy::Background, InputKind::User; "background_user_input")]
-#[test_case(CheckpointPolicy::Synchronous, InputKind::User; "synchronous_store")]
-#[test_case(CheckpointPolicy::Background, InputKind::ToolOutput; "tool_output_stays_synchronous")]
+#[test_case(CheckpointPolicy::Background, InputKind::User, InferenceCompletion::Response; "background_user_input")]
+#[test_case(CheckpointPolicy::Synchronous, InputKind::User, InferenceCompletion::Response; "synchronous_store")]
+#[test_case(CheckpointPolicy::Background, InputKind::ToolOutput, InferenceCompletion::Response; "tool_output_stays_synchronous")]
+#[test_case(CheckpointPolicy::Background, InputKind::User, InferenceCompletion::Interrupt; "background_user_input_interrupts")]
+#[test_case(CheckpointPolicy::Synchronous, InputKind::User, InferenceCompletion::Interrupt; "synchronous_store_interrupts")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn steered_input_checkpoint_controls_next_request(
     policy: CheckpointPolicy,
     input_kind: InputKind,
+    inference_completion: InferenceCompletion,
 ) -> anyhow::Result<()> {
     let (first_completed, first_completion) = oneshot::channel();
     let (second_completed, second_completion) = oneshot::channel();
@@ -219,13 +247,30 @@ async fn steered_input_checkpoint_controls_next_request(
         arm_on: None,
         checkpoint_context: None,
         checkpoints,
+        next_flush: Mutex::default(),
     });
     let base_url = format!("{}/v1", server.uri());
     let config_server = responses::start_mock_server().await;
     let test = test_codex()
         .with_thread_store(store.clone())
         .with_history_mode(ThreadHistoryMode::Legacy)
-        .with_config(move |config| config.model_provider.base_url = Some(base_url))
+        .with_config(move |config| {
+            config.model_provider.base_url = Some(base_url);
+            // Tool outputs must wait for response completion even with interruption enabled.
+            if matches!(inference_completion, InferenceCompletion::Response)
+                && input_kind == InputKind::User
+            {
+                config
+                    .features
+                    .disable(Feature::InstantInterrupt)
+                    .expect("disable interruption for response completion");
+            } else {
+                config
+                    .features
+                    .enable(Feature::InstantInterrupt)
+                    .expect("enable interruption for steered input");
+            }
+        })
         .build_with_auto_env(&config_server)
         .await?;
     let first = test
@@ -264,9 +309,17 @@ async fn steered_input_checkpoint_controls_next_request(
             turn_id
         }
     );
-    // Steering still waits for the existing inference stream to finish.
-    assert!(checkpoint_requests.try_recv().is_err());
-    first_completed.send(()).expect("finish original inference");
+    let first_completed = match inference_completion {
+        InferenceCompletion::Response => {
+            // Without preemption, steering waits for the existing inference stream.
+            assert!(checkpoint_requests.try_recv().is_err());
+            first_completed.send(()).expect("finish original inference");
+            None
+        }
+        // Keep the first response gated until the follow-up request proves that
+        // interruption, rather than server completion, advanced the turn.
+        InferenceCompletion::Interrupt => Some(first_completed),
+    };
     let checkpoint = timeout(Duration::from_secs(10), checkpoint_requests.recv())
         .await?
         .expect("Core should checkpoint the accepted input");
@@ -298,6 +351,11 @@ async fn steered_input_checkpoint_controls_next_request(
     assert_eq!(requests.len(), 2);
     assert!(!String::from_utf8_lossy(&requests[0]).contains("steered input"));
     assert!(String::from_utf8_lossy(&requests[1]).contains("steered input"));
+    if let Some(first_completed) = first_completed {
+        first_completed
+            .send(())
+            .expect("release interrupted response");
+    }
     second_completed
         .send(())
         .expect("finish follow-up inference");
@@ -307,6 +365,183 @@ async fn steered_input_checkpoint_controls_next_request(
     .await;
     test.codex.shutdown_and_wait().await?;
     server.shutdown().await;
+    Ok(())
+}
+
+#[test_case(false; "read_only_steer")]
+#[test_case(true; "steer_with_patch")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn steer_during_final_flush_reaches_the_model_before_turn_completion(
+    patch_after_steer: bool,
+) -> anyhow::Result<()> {
+    let server = responses::start_mock_server().await;
+    let patch_response = |id, patch| {
+        responses::sse(vec![
+            responses::ev_response_created(id),
+            responses::ev_apply_patch_custom_tool_call(id, patch),
+            responses::ev_completed(id),
+        ])
+    };
+    let answer_response = |id, answer| {
+        responses::sse(vec![
+            responses::ev_response_created(id),
+            responses::ev_assistant_message(id, answer),
+            responses::ev_completed(id),
+        ])
+    };
+    let mut sequence = vec![
+        patch_response(
+            "patch-first",
+            "*** Begin Patch\n*** Add File: before.txt\n+root\n*** Add File: nested/before.txt\n+nested\n*** End Patch",
+        ),
+        answer_response("first", "original answer"),
+    ];
+    if patch_after_steer {
+        sequence.push(patch_response(
+            "patch-second",
+            "*** Begin Patch\n*** Add File: later.txt\n+ok\n*** End Patch",
+        ));
+    }
+    sequence.push(answer_response("second", "answer to the steer"));
+    let expected_requests = sequence.len();
+    let responses = responses::mount_sse_sequence(&server, sequence).await;
+    let (checkpoints, _checkpoint_requests) = mpsc::unbounded_channel();
+    let store = Arc::new(GatedCheckpointStore {
+        inner: InMemoryThreadStore::default(),
+        policy: CheckpointPolicy::Synchronous,
+        armed: AtomicBool::new(false),
+        arm_on: None,
+        checkpoint_context: None,
+        checkpoints,
+        next_flush: Mutex::default(),
+    });
+    let test = test_codex()
+        .with_config(|config| {
+            config
+                .features
+                .enable(Feature::CwdRelativeTurnDiffs)
+                .expect("enable cwd-relative turn diffs");
+        })
+        .with_thread_store(store.clone())
+        .with_history_mode(ThreadHistoryMode::Legacy)
+        .build_with_auto_env(&server)
+        .await?;
+    let user_message = |text: &str, client_id| {
+        TurnInputRequest::new(TurnInput::UserInput {
+            content: vec![UserInput::Text {
+                text: text.to_string(),
+                text_elements: Vec::new(),
+            }],
+            client_id,
+        })
+    };
+    let flush = Arc::new(Barrier::new(/*n*/ 2));
+    *store.next_flush.lock().await = Some(flush.clone());
+    let TurnInputSubmission::Started {
+        turn_id,
+        root_turn_id,
+    } = test
+        .codex
+        .start_or_steer_turn(user_message("first prompt", None).with_thread_settings(
+            ThreadSettingsOverrides {
+                approval_policy: Some(AskForApproval::Never),
+                sandbox_policy: Some(SandboxPolicy::DangerFullAccess),
+                ..Default::default()
+            },
+        ))
+        .await?
+    else {
+        panic!("expected a new turn");
+    };
+
+    // The regular task returned its first answer and is flushing before it completes the turn.
+    timeout(Duration::from_secs(10), flush.wait()).await?;
+    assert_eq!(responses.requests().len(), 2);
+    let mut environment = test.executor_environment().request();
+    environment.cwd = environment.cwd.join("nested")?;
+    environment.workspace_roots = vec![environment.cwd.clone()];
+    let (reply, outcome) = oneshot::channel();
+    test.codex
+        .submit(Op::TurnSettings {
+            turn_id: turn_id.clone(),
+            update: TurnSettingsUpdate {
+                environments: Some(vec![environment]),
+                ..Default::default()
+            },
+            reply,
+        })
+        .await?;
+    assert_eq!(outcome.await?, TurnSettingsUpdateOutcome::Applied);
+    let steer = timeout(
+        Duration::from_secs(10),
+        test.codex
+            .start_or_steer_turn(user_message("late steer", Some("steer-id".to_string()))),
+    )
+    .await;
+    flush.wait().await;
+    assert_eq!(
+        steer??,
+        TurnInputSubmission::Steered {
+            turn_id: turn_id.clone(),
+            root_turn_id
+        }
+    );
+
+    let mut saw_steered_answer = false;
+    let mut final_diff = String::new();
+    let mut starts = 0;
+    let mut client_ids = Vec::new();
+    let EventMsg::TurnComplete(completed) = wait_for_event(&test.codex, |event| {
+        match event {
+            EventMsg::TurnStarted(_) => starts += 1,
+            EventMsg::AgentMessage(message) if message.message == "answer to the steer" => {
+                saw_steered_answer = true;
+            }
+            EventMsg::TurnDiff(event) if saw_steered_answer => {
+                final_diff.clone_from(&event.unified_diff);
+            }
+            EventMsg::UserMessage(message) if message.message == "late steer" => {
+                client_ids.push(message.client_id.clone());
+            }
+            _ => {}
+        }
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await
+    else {
+        unreachable!();
+    };
+    assert_eq!(completed.turn_id, turn_id);
+    assert_eq!(
+        completed.last_agent_message.as_deref(),
+        Some("answer to the steer")
+    );
+    let mut expected_headers = vec![
+        "diff --git a/before.txt b/before.txt",
+        "diff --git a/nested/before.txt b/nested/before.txt",
+    ];
+    if patch_after_steer {
+        expected_headers.push("diff --git a/nested/later.txt b/nested/later.txt");
+    }
+    assert_eq!(
+        final_diff
+            .lines()
+            .filter(|line| line.starts_with("diff --git"))
+            .collect::<Vec<_>>(),
+        expected_headers,
+    );
+    assert_eq!(starts, 1);
+    assert_eq!(client_ids, [Some("steer-id".to_string())]);
+    let requests = responses.requests();
+    assert_eq!(requests.len(), expected_requests);
+    assert_eq!(
+        requests[2]
+            .message_input_texts("user")
+            .iter()
+            .filter(|text| *text == "late steer")
+            .count(),
+        1
+    );
     Ok(())
 }
 
@@ -333,6 +568,7 @@ async fn preparation_and_first_sampling_do_not_wait_for_durable_metadata(
         arm_on: None,
         checkpoint_context: None,
         checkpoints,
+        next_flush: Mutex::default(),
     });
     let base_url = format!("{}/v1", server.uri());
     let config_server = responses::start_mock_server().await;
@@ -497,10 +733,11 @@ async fn local_preparation_is_durable_before_first_input_and_survives_restart(
     let thread_id = initial.session_configured.thread_id;
     initial.thread_manager.remove_thread(&thread_id).await;
     // Reopen persisted context by ID, which supports both local history modes.
-    let store = codex_core::thread_store_from_config(
+    let store = codex_core::ThreadStoreBuilder::from_config(
         &initial.config,
         codex_core::init_state_db(&initial.config).await,
-    );
+    )
+    .build();
     let context = store
         .load_latest_model_context(LoadThreadHistoryParams {
             thread_id,
@@ -557,8 +794,16 @@ async fn local_preparation_is_durable_before_first_input_and_survives_restart(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum SpawnCaller {
+    NativeV1,
+    NativeV2,
+}
+
+#[test_case(SpawnCaller::NativeV1; "native_v1")]
+#[test_case(SpawnCaller::NativeV2; "native_v2")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn cancelled_spawn_discards_provisional_child() -> anyhow::Result<()> {
+async fn cancelled_spawn_discards_provisional_child(caller: SpawnCaller) -> anyhow::Result<()> {
     let server = responses::start_mock_server().await;
     let (checkpoints, mut checkpoint_requests) = mpsc::unbounded_channel();
     let store = Arc::new(GatedCheckpointStore {
@@ -568,12 +813,19 @@ async fn cancelled_spawn_discards_provisional_child() -> anyhow::Result<()> {
         arm_on: Some(PersistContext::SubagentSpawn),
         checkpoint_context: Some(PersistContext::Standard),
         checkpoints,
+        next_flush: Mutex::default(),
     });
     let test = test_codex()
         .with_thread_store(store)
         .with_history_mode(ThreadHistoryMode::Legacy)
-        .with_config(|config| {
+        .with_config(move |config| {
             config.agent_max_depth = 1;
+            if matches!(caller, SpawnCaller::NativeV2) {
+                config
+                    .features
+                    .enable(Feature::MultiAgentV2)
+                    .expect("enable V2");
+            }
             config
                 .features
                 .enable(Feature::Collab)
@@ -581,15 +833,24 @@ async fn cancelled_spawn_discards_provisional_child() -> anyhow::Result<()> {
         })
         .build_with_auto_env(&server)
         .await?;
+    let (namespace, arguments) = match caller {
+        SpawnCaller::NativeV1 => (
+            "multi_agent_v1",
+            json!({"message":"child startup task", "task_name":"worker", "fork_context":true}),
+        ),
+        SpawnCaller::NativeV2 => (
+            "collaboration",
+            json!({"message":"child startup task", "task_name":"worker", "fork_turns":"all"}),
+        ),
+    };
     responses::mount_sse_once(
         &server,
         responses::sse(vec![
             responses::ev_function_call_with_namespace(
                 "spawn-checkpoint",
-                "multi_agent_v1",
+                namespace,
                 "spawn_agent",
-                &json!({"message":"child startup task", "task_name":"worker", "fork_context":true})
-                    .to_string(),
+                &arguments.to_string(),
             ),
             responses::ev_completed("parent-spawn"),
         ]),

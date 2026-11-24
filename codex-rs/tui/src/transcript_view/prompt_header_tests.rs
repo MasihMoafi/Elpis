@@ -220,7 +220,18 @@ fn prompt_header_tracks_reading_and_yields_to_visible_prompts_and_short_screens(
             &mut view, &cells, /*width*/ 30, /*height*/ 5
         ))
     ));
-    view.jump_to_entry(&cells, /*index*/ 1);
+    assert!(matches!(
+        view.handle_mouse(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::NONE,
+            },
+            &cells,
+        ),
+        Some(ViewAction::Changed)
+    ));
     snapshots.push(format!(
         "Prompt visible\n{}",
         text(&render(
@@ -242,7 +253,10 @@ fn prompt_header_tracks_reading_and_yields_to_visible_prompts_and_short_screens(
 #[test]
 fn header_sanitizes_controls_and_truncates_by_display_width() {
     let cells = vec![user("\x1b[31m界 café\r\nnext question"), cell("answer")];
-    let line = line(&cells, /*first*/ 1, /*width*/ 18).unwrap();
+    let (line, _) = line(
+        &cells, /*first*/ 1, /*width*/ 18, /*detailed*/ false,
+    )
+    .unwrap();
     assert!(line.width() <= 18);
     insta::assert_snapshot!(line.to_string());
 }

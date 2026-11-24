@@ -36,7 +36,7 @@ impl HostSkillProvider {
 }
 
 impl SkillProvider for HostSkillProvider {
-    fn list(&self, query: SkillListQuery) -> SkillProviderFuture<'_, SkillCatalog> {
+    fn list<'a>(&'a self, query: SkillListQuery<'a>) -> SkillProviderFuture<'a, SkillCatalog> {
         Box::pin(async move {
             let Some(host_snapshot) = query.host_snapshot else {
                 return Err(SkillProviderError::new(
@@ -55,6 +55,7 @@ impl SkillProvider for HostSkillProvider {
         Box::pin(async move {
             let SkillReadContext::Host {
                 host_snapshot: Some(host_snapshot),
+                accessors,
             } = request.context
             else {
                 return Err(SkillProviderError::new(
@@ -78,12 +79,15 @@ impl SkillProvider for HostSkillProvider {
                 )));
             };
 
-            let contents = host_snapshot.read_skill_text(skill).await.map_err(|err| {
-                SkillProviderError::new(format!(
-                    "failed to read host skill resource {}: {err}",
-                    request.resource.as_str()
-                ))
-            })?;
+            let contents = host_snapshot
+                .read_skill_text(skill, &accessors)
+                .await
+                .map_err(|err| {
+                    SkillProviderError::new(format!(
+                        "failed to read host skill resource {}: {err}",
+                        request.resource.as_str()
+                    ))
+                })?;
 
             Ok(SkillReadResult {
                 resource: request.resource,
@@ -104,6 +108,7 @@ fn catalog_from_outcome(outcome: &SkillLoadOutcome) -> SkillCatalog {
         .map(|(index, root)| (root.as_path(), index))
         .collect::<HashMap<_, _>>();
     let mut catalog = SkillCatalog {
+        is_partial: false,
         entries: Vec::new(),
         warnings: outcome
             .errors

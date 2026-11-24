@@ -481,6 +481,22 @@ impl JsonRpcConnection {
         )
     }
 
+    /// Direct mode dials the WebSocket but serves executor requests from the
+    /// harness. Do not apply the harness client's inbound request limit here;
+    /// the WebSocket transport still enforces its message and frame limits.
+    pub(crate) fn from_direct_websocket<T, E>(stream: T, connection_label: String) -> Self
+    where
+        T: Sink<Message, Error = E> + Stream<Item = Result<Message, E>> + Unpin + Send + 'static,
+        E: std::fmt::Display + Send + 'static,
+    {
+        Self::from_websocket_stream(
+            stream,
+            connection_label,
+            /*ping_interval*/ None,
+            /*max_inbound_request_len*/ None,
+        )
+    }
+
     pub(crate) fn from_axum_websocket(stream: AxumWebSocket, connection_label: String) -> Self {
         Self::from_websocket_stream(
             stream,

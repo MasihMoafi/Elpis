@@ -8,10 +8,12 @@ use codex_protocol::protocol::RealtimeOutputModality;
 use codex_protocol::protocol::RealtimeVoice;
 use codex_protocol::protocol::RealtimeVoicesList;
 use codex_protocol::realtime::BemItemPresentation as CoreBemItemPresentation;
+use codex_protocol::realtime::RealtimeHandoffMode as CoreRealtimeHandoffMode;
 use codex_protocol::realtime::RealtimeItem as CoreRealtimeItem;
 use codex_protocol::realtime::RealtimeItemContent as CoreRealtimeItemContent;
 use codex_protocol::realtime::RealtimeSessionOutcome as CoreRealtimeSessionOutcome;
 use codex_protocol::realtime::RealtimeTranscriptRole as CoreRealtimeTranscriptRole;
+use codex_protocol::realtime::SessionInputReason as CoreSessionInputReason;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -24,6 +26,10 @@ use std::collections::BTreeMap;
 pub struct ThreadRealtimeItem {
     pub id: String,
     pub realtime_session_id: String,
+    /// Canonical observation time in Unix milliseconds for eligible voice calls.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(type = "number", optional)]
+    pub observed_at_ms: Option<i64>,
     #[serde(flatten)]
     pub content: ThreadRealtimeItemContent,
 }
@@ -38,6 +44,9 @@ pub struct ThreadRealtimeItem {
 #[ts(tag = "type", rename_all = "camelCase", export_to = "v2/")]
 pub enum ThreadRealtimeItemContent {
     RealtimeSessionStarted,
+    Frame {
+        channels: ThreadRealtimeFrameChannels,
+    },
     TranscriptSegment {
         role: ThreadRealtimeTranscriptRole,
         text: String,
@@ -50,6 +59,36 @@ pub enum ThreadRealtimeItemContent {
     RealtimeSessionClosed {
         outcome: ThreadRealtimeSessionOutcome,
     },
+    TurnInputAccepted {
+        handoff_id: String,
+        turn_id: String,
+        mode: ThreadRealtimeHandoffMode,
+        source_event_ids: Vec<String>,
+        input_item_id: String,
+        input: String,
+    },
+    SessionInputSaved {
+        reason: ThreadRealtimeSessionInputReason,
+        source_event_ids: Vec<String>,
+        input_item_id: String,
+        input: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "v2/")]
+pub enum ThreadRealtimeHandoffMode {
+    Start,
+    Steer,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(rename_all = "camelCase", export_to = "v2/")]
+pub enum ThreadRealtimeSessionInputReason {
+    Chunk,
+    SessionEnd,
 }
 
 /// EXPERIMENTAL - how an existing agent item appears in a realtime conversation.
@@ -82,11 +121,52 @@ pub enum ThreadRealtimeSessionOutcome {
     Failed,
 }
 
+/// A frame holds one or more payloads, at most one per channel. They share one ID,
+/// observation time, and seal. Currently, `voice_transcript` is required.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[ts(export_to = "v2/")]
+pub struct ThreadRealtimeFrameChannels {
+    pub voice_transcript: ThreadRealtimeVoiceTranscript,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
+#[ts(export_to = "v2/")]
+pub struct ThreadRealtimeVoiceTranscript {
+    pub role: ThreadRealtimeTranscriptRole,
+    pub text: String,
+}
+
+impl From<CoreRealtimeTranscriptRole> for ThreadRealtimeTranscriptRole {
+    fn from(role: CoreRealtimeTranscriptRole) -> Self {
+        match role {
+            CoreRealtimeTranscriptRole::User => Self::User,
+            CoreRealtimeTranscriptRole::Assistant => Self::Assistant,
+        }
+    }
+}
+
+// The existing live and mixed timeline APIs present speech as transcriptSegment.
 impl From<CoreRealtimeItem> for ThreadRealtimeItem {
     fn from(item: CoreRealtimeItem) -> Self {
+        let mut item = Self::from_persisted(item);
+        if let ThreadRealtimeItemContent::Frame { channels } = item.content {
+            let transcript = channels.voice_transcript;
+            item.content = ThreadRealtimeItemContent::TranscriptSegment {
+                role: transcript.role,
+                text: transcript.text,
+            };
+        }
+        item
+    }
+}
+
+impl ThreadRealtimeItem {
+    /// Preserve the canonical shape of a sealed record on the independent read API.
+    pub fn from_persisted(item: CoreRealtimeItem) -> Self {
         let CoreRealtimeItem {
             id,
             realtime_session_id,
+            observed_at_ms,
             content,
         } = item;
         let content = match content {
@@ -95,13 +175,19 @@ impl From<CoreRealtimeItem> for ThreadRealtimeItem {
             }
             CoreRealtimeItemContent::TranscriptSegment { role, text } => {
                 ThreadRealtimeItemContent::TranscriptSegment {
-                    role: match role {
-                        CoreRealtimeTranscriptRole::User => ThreadRealtimeTranscriptRole::User,
-                        CoreRealtimeTranscriptRole::Assistant => {
-                            ThreadRealtimeTranscriptRole::Assistant
-                        }
-                    },
+                    role: role.into(),
                     text,
+                }
+            }
+            CoreRealtimeItemContent::Frame { channels } => {
+                let transcript = channels.voice_transcript;
+                ThreadRealtimeItemContent::Frame {
+                    channels: ThreadRealtimeFrameChannels {
+                        voice_transcript: ThreadRealtimeVoiceTranscript {
+                            role: transcript.role.into(),
+                            text: transcript.text,
+                        },
+                    },
                 }
             }
             CoreRealtimeItemContent::BemItemPromoted {
@@ -123,7 +209,7 @@ impl From<CoreRealtimeItem> for ThreadRealtimeItem {
                     }
                 },
             },
-            CoreRealtimeItemContent::RealtimeSessionClosed { outcome } => {
+            CoreRealtimeItemContent::RealtimeSessionClosed { outcome, .. } => {
                 ThreadRealtimeItemContent::RealtimeSessionClosed {
                     outcome: match outcome {
                         CoreRealtimeSessionOutcome::Ended => ThreadRealtimeSessionOutcome::Ended,
@@ -131,10 +217,45 @@ impl From<CoreRealtimeItem> for ThreadRealtimeItem {
                     },
                 }
             }
+            CoreRealtimeItemContent::TurnInputAccepted {
+                handoff_id,
+                turn_id,
+                mode,
+                source_event_ids,
+                input_item_id,
+                input,
+            } => ThreadRealtimeItemContent::TurnInputAccepted {
+                handoff_id,
+                turn_id,
+                mode: match mode {
+                    CoreRealtimeHandoffMode::Start => ThreadRealtimeHandoffMode::Start,
+                    CoreRealtimeHandoffMode::Steer => ThreadRealtimeHandoffMode::Steer,
+                },
+                source_event_ids,
+                input_item_id,
+                input,
+            },
+            CoreRealtimeItemContent::SessionInputSaved {
+                reason,
+                source_event_ids,
+                input_item_id,
+                input,
+            } => ThreadRealtimeItemContent::SessionInputSaved {
+                reason: match reason {
+                    CoreSessionInputReason::Chunk => ThreadRealtimeSessionInputReason::Chunk,
+                    CoreSessionInputReason::SessionEnd => {
+                        ThreadRealtimeSessionInputReason::SessionEnd
+                    }
+                },
+                source_event_ids,
+                input_item_id,
+                input,
+            },
         };
         Self {
             id,
             realtime_session_id,
+            observed_at_ms,
             content,
         }
     }
@@ -257,6 +378,10 @@ pub struct ThreadRealtimeStartParams {
     pub prompt: Option<Option<String>>,
     #[ts(optional = nullable)]
     pub realtime_session_id: Option<String>,
+    /// Client-generated identifier for the product voice session. This is distinct from
+    /// `realtimeSessionId`.
+    #[ts(optional = nullable)]
+    pub voice_session_id: Option<String>,
     #[ts(optional = nullable)]
     pub transport: Option<ThreadRealtimeStartTransport>,
     /// Overrides the configured realtime protocol version for this session only.

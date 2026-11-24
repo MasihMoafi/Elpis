@@ -13,6 +13,8 @@ use crate::keymap::RuntimeKeymap;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
+use crossterm::event::MouseEvent;
+use ratatui::layout::Rect;
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -20,19 +22,22 @@ use std::sync::Arc;
 #[path = "warnings_view_render.rs"]
 mod render;
 
-pub(super) struct WarningsView {
+pub(crate) struct WarningsView {
     entries: Vec<WarningEntry>,
     transcript: Arc<()>,
     current: usize,
     visited: Vec<Cell<bool>>,
     kept: BTreeSet<usize>,
     offset: Cell<usize>,
-    page_size: Cell<usize>,
     max_offset: Cell<usize>,
+    pub(crate) body_area: Cell<Rect>,
+    pub(crate) body_layout: Cell<Option<(crate::transcript_view::TextLayout, usize)>>,
     keymap: RuntimeKeymap,
     tx: AppEventSender,
     pub(super) pending_hint: Option<Vec<(String, String)>>,
     pub(super) flash: Option<(ratatui::text::Line<'static>, std::time::Instant)>,
+    /// Display only: copying or dismissing a warning must use its original diagnostic.
+    pub(super) daemon_restart_hint_at: Option<usize>,
 }
 
 impl WarningsView {
@@ -49,12 +54,14 @@ impl WarningsView {
             current: 0,
             kept: BTreeSet::new(),
             offset: Cell::new(/*value*/ 0),
-            page_size: Cell::new(/*value*/ 1),
             max_offset: Cell::new(/*value*/ 0),
+            body_area: Cell::default(),
+            body_layout: Cell::default(),
             keymap,
             tx,
             pending_hint: None,
             flash: None,
+            daemon_restart_hint_at: None,
         }
     }
 
@@ -83,6 +90,22 @@ impl WarningsView {
                 kept,
             });
         }
+    }
+
+    pub(crate) fn scroll_mouse(&self, event: MouseEvent) -> bool {
+        let Some(rows) = super::scroll_state::wheel_rows_in(event, self.body_area.get()) else {
+            return false;
+        };
+        if self.max_offset.get() == 0 {
+            return false;
+        }
+        self.offset.set(
+            self.offset
+                .get()
+                .saturating_add_signed(isize::from(rows))
+                .min(self.max_offset.get()),
+        );
+        true
     }
 
     /// Returns true when the user closes the viewer. No key is forwarded to the draft.
@@ -115,6 +138,7 @@ impl WarningsView {
             return false;
         }
         let offset = self.offset.get();
+        let page_size = usize::from(self.body_area.get().height.max(/*other*/ 1));
         match action {
             Some(ListAction::MoveLeft | ListAction::MoveRight) => {
                 let previous = self.current;
@@ -129,14 +153,10 @@ impl WarningsView {
             }
             Some(ListAction::MoveUp) => self.offset.set(offset.saturating_sub(/*rhs*/ 1)),
             Some(ListAction::MoveDown) => self.offset.set((offset + 1).min(self.max_offset.get())),
-            Some(ListAction::PageUp) => {
-                self.offset.set(offset.saturating_sub(self.page_size.get()))
-            }
-            Some(ListAction::PageDown) => self.offset.set(
-                offset
-                    .saturating_add(self.page_size.get())
-                    .min(self.max_offset.get()),
-            ),
+            Some(ListAction::PageUp) => self.offset.set(offset.saturating_sub(page_size)),
+            Some(ListAction::PageDown) => self
+                .offset
+                .set(offset.saturating_add(page_size).min(self.max_offset.get())),
             Some(ListAction::JumpTop) => self.offset.set(/*val*/ 0),
             Some(ListAction::JumpBottom) => self.offset.set(self.max_offset.get()),
             Some(ListAction::Cancel) => return true,

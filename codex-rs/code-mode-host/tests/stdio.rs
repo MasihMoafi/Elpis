@@ -1,8 +1,7 @@
 #![allow(clippy::expect_used)]
 
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 #[cfg(unix)]
@@ -10,21 +9,23 @@ use std::os::unix::fs::PermissionsExt;
 
 use codex_code_mode::CellId;
 use codex_code_mode::CodeModeNestedToolCall;
+use codex_code_mode::CodeModeOutputTruncation;
 use codex_code_mode::CodeModeSession;
 use codex_code_mode::CodeModeSessionCellExecutionLimits;
 use codex_code_mode::CodeModeSessionDelegate;
+use codex_code_mode::CodeModeSessionOptions;
 use codex_code_mode::CodeModeSessionProvider;
 use codex_code_mode::CodeModeToolKind;
 use codex_code_mode::ExecuteRequest;
 use codex_code_mode::FunctionCallOutputContentItem;
 use codex_code_mode::NotificationFuture;
-use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
 use codex_code_mode::RuntimeResponse;
 use codex_code_mode::ToolDefinition;
 use codex_code_mode::ToolInvocationFuture;
 use codex_code_mode::WaitOutcome;
 use codex_code_mode::WaitRequest;
 use codex_code_mode::host::MAX_FRAME_BYTES;
+use codex_core::ProcessOwnedGrpcCodeModeSessionProvider;
 use codex_protocol::ToolName;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -41,7 +42,6 @@ use recording_delegate::cell_id;
 #[derive(Debug, Eq, PartialEq)]
 enum CallbackEvent {
     Started(String),
-    Cancelled(String),
     CellClosed(CellId),
 }
 
@@ -49,8 +49,7 @@ struct CancellationDelegate {
     events_tx: mpsc::UnboundedSender<CallbackEvent>,
     fast_tool_release: Semaphore,
     slow_tool_started: Semaphore,
-    hold_slow_cleanup: AtomicBool,
-    slow_cleanup_release: Semaphore,
+    slow_cancellation: OnceLock<CancellationToken>,
 }
 
 struct OversizedResultDelegate;
@@ -85,21 +84,18 @@ impl CancellationDelegate {
                 events_tx,
                 fast_tool_release: Semaphore::new(/*permits*/ 0),
                 slow_tool_started: Semaphore::new(/*permits*/ 0),
-                hold_slow_cleanup: AtomicBool::new(false),
-                slow_cleanup_release: Semaphore::new(/*permits*/ 0),
+                slow_cancellation: OnceLock::new(),
             }),
             events_rx,
         )
     }
 
-    #[cfg(unix)]
-    fn hold_slow_cleanup(&self) {
-        self.hold_slow_cleanup.store(true, Ordering::Release);
-    }
-
-    #[cfg(unix)]
-    fn release_slow_cleanup(&self) {
-        self.slow_cleanup_release.add_permits(1);
+    async fn slow_tool_cancelled(&self) {
+        self.slow_cancellation
+            .get()
+            .expect("slow tool has started")
+            .cancelled()
+            .await;
     }
 }
 
@@ -120,23 +116,19 @@ impl CodeModeSessionDelegate for CancellationDelegate {
                 permit.forget();
                 return Ok(json!({ "tool": tool_name }));
             }
+            if tool_name == "tool_call_slow" {
+                self.slow_cancellation
+                    .set(cancellation_token)
+                    .expect("slow tool runs once");
+                let _ = self.events_tx.send(CallbackEvent::Started(tool_name));
+                self.slow_tool_started.add_permits(1);
+                // The client can drop the callback as soon as it cancels the token.
+                // The test observes the token independently of this future.
+                return std::future::pending().await;
+            }
             let _ = self
                 .events_tx
                 .send(CallbackEvent::Started(tool_name.clone()));
-            if tool_name == "tool_call_slow" {
-                self.slow_tool_started.add_permits(1);
-                cancellation_token.cancelled().await;
-                let _ = self.events_tx.send(CallbackEvent::Cancelled(tool_name));
-                if self.hold_slow_cleanup.load(Ordering::Acquire) {
-                    let permit = self
-                        .slow_cleanup_release
-                        .acquire()
-                        .await
-                        .map_err(|_| "slow tool cleanup release closed".to_string())?;
-                    permit.forget();
-                }
-                return Err("slow tool cancelled".to_string());
-            }
             let permit = self
                 .fast_tool_release
                 .acquire()
@@ -206,6 +198,7 @@ async fn execute_to_terminal(
                         WaitRequest {
                             cell_id,
                             yield_time_ms: 60_000,
+                            max_output_tokens: None,
                         },
                         /*preempt*/ None,
                     )
@@ -233,7 +226,7 @@ async fn next_callback_event(
 
 #[tokio::test]
 async fn interrupt_yields_observations_without_stopping_the_cell() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     let session = provider.create_session().await.expect("create session");
@@ -270,6 +263,7 @@ async fn interrupt_yields_observations_without_stopping_the_cell() {
     let request = WaitRequest {
         cell_id: cell_id.clone(),
         yield_time_ms: 60_000,
+        max_output_tokens: None,
     };
     let response =
         tokio::time::timeout(Duration::from_secs(5), session.wait(request, Some(signal)))
@@ -288,6 +282,7 @@ async fn interrupt_yields_observations_without_stopping_the_cell() {
             WaitRequest {
                 cell_id,
                 yield_time_ms: 60_000,
+                max_output_tokens: None,
             },
             /*preempt*/ None,
         ),
@@ -308,7 +303,7 @@ async fn interrupt_yields_observations_without_stopping_the_cell() {
 #[tokio::test]
 async fn session_execution_limits_are_isolated_on_a_shared_process_host() {
     let provider: Arc<dyn CodeModeSessionProvider> =
-        Arc::new(ProcessOwnedCodeModeSessionProvider::with_host_program(
+        Arc::new(ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
             codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
         ));
     let limited = provider
@@ -350,6 +345,7 @@ async fn session_execution_limits_are_isolated_on_a_shared_process_host() {
             WaitRequest {
                 cell_id: cell_id("1"),
                 yield_time_ms: 60_000,
+                max_output_tokens: None,
             },
             /*preempt*/ None,
         ),
@@ -367,7 +363,7 @@ async fn session_execution_limits_are_isolated_on_a_shared_process_host() {
     );
 
     limited
-        .terminate(cell_id("1"))
+        .terminate(cell_id("1").into())
         .await
         .expect("terminate cell");
     limited.shutdown().await.expect("shutdown limited session");
@@ -379,7 +375,7 @@ async fn session_execution_limits_are_isolated_on_a_shared_process_host() {
 
 #[tokio::test]
 async fn remote_session_persists_values_forwards_delegates_and_controls_cells() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     let delegate = Arc::new(RecordingDelegate::default());
@@ -391,8 +387,8 @@ async fn remote_session_persists_values_forwards_delegates_and_controls_cells() 
 
     let actual = execute(
         &session,
-        execute_request(r#"store("key", "persisted");"#),
-        first_delegate.clone(),
+        execute_request(""),
+        Arc::new(RecordingDelegate::default()),
     )
     .await;
     assert_eq!(
@@ -401,6 +397,30 @@ async fn remote_session_persists_values_forwards_delegates_and_controls_cells() 
             code_mode_host_duration: actual.code_mode_host_duration(),
             cell_id: cell_id("1"),
             content_items: Vec::new(),
+            result_buffered_for: Duration::ZERO,
+            error_text: None,
+        }
+    );
+    session.shutdown().await.expect("shutdown before reload");
+    // Reloading a thread must not reuse cell IDs from its previous session.
+    let session = provider
+        .create_session()
+        .await
+        .expect("create replacement session");
+
+    let actual = execute(
+        &session,
+        execute_request(r#"store("key", "persisted");"#),
+        first_delegate.clone(),
+    )
+    .await;
+    assert_eq!(
+        actual,
+        RuntimeResponse::Result {
+            code_mode_host_duration: actual.code_mode_host_duration(),
+            cell_id: cell_id("g2:1"),
+            content_items: Vec::new(),
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
     );
@@ -427,17 +447,18 @@ text(result.value);
         actual,
         RuntimeResponse::Result {
             code_mode_host_duration: actual.code_mode_host_duration(),
-            cell_id: cell_id("2"),
+            cell_id: cell_id("g2:2"),
             content_items: vec![FunctionCallOutputContentItem::InputText {
                 text: "output".to_string(),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
     );
     assert_eq!(
         *delegate.invocations.lock().expect("invocations lock"),
         vec![CodeModeNestedToolCall {
-            cell_id: cell_id("2"),
+            cell_id: cell_id("g2:2"),
             runtime_tool_call_id: "tool-1".to_string(),
             tool_name: ToolName::plain("echo"),
             tool_kind: CodeModeToolKind::Function,
@@ -446,7 +467,7 @@ text(result.value);
     );
     assert_eq!(
         *delegate.notifications.lock().expect("notifications lock"),
-        vec![("call-2".to_string(), cell_id("2"), "notice".to_string())]
+        vec![("call-2".to_string(), cell_id("g2:2"), "notice".to_string())]
     );
 
     let mut pending_request = execute_request("await new Promise(() => {});");
@@ -457,15 +478,16 @@ text(result.value);
         actual,
         RuntimeResponse::Yielded {
             code_mode_host_duration: actual.code_mode_host_duration(),
-            cell_id: cell_id("3"),
+            cell_id: cell_id("g2:3"),
             content_items: Vec::new(),
         }
     );
     let actual = session
         .wait(
             WaitRequest {
-                cell_id: cell_id("3"),
+                cell_id: cell_id("g2:3"),
                 yield_time_ms: 1,
+                max_output_tokens: None,
             },
             /*preempt*/ None,
         )
@@ -475,19 +497,19 @@ text(result.value);
         actual,
         WaitOutcome::LiveCell(RuntimeResponse::Yielded {
             code_mode_host_duration: actual.code_mode_host_duration(),
-            cell_id: cell_id("3"),
+            cell_id: cell_id("g2:3"),
             content_items: Vec::new(),
         })
     );
     let actual = session
-        .terminate(cell_id("3"))
+        .terminate(cell_id("g2:3").into())
         .await
         .expect("terminate cell");
     assert_eq!(
         actual,
         WaitOutcome::LiveCell(RuntimeResponse::Terminated {
             code_mode_host_duration: actual.code_mode_host_duration(),
-            cell_id: cell_id("3"),
+            cell_id: cell_id("g2:3"),
             content_items: Vec::new(),
         })
     );
@@ -495,20 +517,20 @@ text(result.value);
     session.shutdown().await.expect("shutdown remote session");
     assert_eq!(
         *delegate.closed_cells.lock().expect("closed cells lock"),
-        vec![cell_id("2"), cell_id("3")]
+        vec![cell_id("g2:2"), cell_id("g2:3")]
     );
     assert_eq!(
         *first_delegate
             .closed_cells
             .lock()
             .expect("closed cells lock"),
-        vec![cell_id("1")]
+        vec![cell_id("g2:1")]
     );
 }
 
 #[tokio::test]
 async fn dropping_long_wait_releases_observer_before_next_wait() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     let session = provider
@@ -544,6 +566,7 @@ async fn dropping_long_wait_releases_observer_before_next_wait() {
                 WaitRequest {
                     cell_id: wait_cell_id,
                     yield_time_ms: 60_000,
+                    max_output_tokens: None,
                 },
                 /*preempt*/ None,
             )
@@ -559,6 +582,7 @@ async fn dropping_long_wait_releases_observer_before_next_wait() {
             WaitRequest {
                 cell_id: running_cell_id.clone(),
                 yield_time_ms: 1,
+                max_output_tokens: None,
             },
             /*preempt*/ None,
         ),
@@ -575,7 +599,7 @@ async fn dropping_long_wait_releases_observer_before_next_wait() {
         })
     );
     session
-        .terminate(running_cell_id)
+        .terminate(running_cell_id.into())
         .await
         .expect("terminate cell");
     session.shutdown().await.expect("shutdown remote session");
@@ -583,7 +607,7 @@ async fn dropping_long_wait_releases_observer_before_next_wait() {
 
 #[tokio::test]
 async fn unawaited_slow_tool_is_cancelled_after_parallel_tools_complete() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     let (delegate, mut events_rx) = CancellationDelegate::new();
@@ -650,6 +674,7 @@ return;
                 WaitRequest {
                     cell_id: wait_cell_id,
                     yield_time_ms: 60_000,
+                    max_output_tokens: None,
                 },
                 /*preempt*/ None,
             )
@@ -674,17 +699,10 @@ return;
         next_callback_event(&mut events_rx).await,
         CallbackEvent::Started("tool_call_slow".to_string())
     );
-    let mut closure_events = vec![
-        next_callback_event(&mut events_rx).await,
-        next_callback_event(&mut events_rx).await,
-    ];
-    closure_events.sort_by(|left, right| format!("{left:?}").cmp(&format!("{right:?}")));
+    delegate.slow_tool_cancelled().await;
     assert_eq!(
-        closure_events,
-        vec![
-            CallbackEvent::Cancelled("tool_call_slow".to_string()),
-            CallbackEvent::CellClosed(running_cell_id.clone()),
-        ]
+        next_callback_event(&mut events_rx).await,
+        CallbackEvent::CellClosed(running_cell_id.clone())
     );
     let actual = wait_task
         .await
@@ -698,6 +716,7 @@ return;
             content_items: vec![FunctionCallOutputContentItem::InputText {
                 text: "hello".to_string(),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         })
     );
@@ -706,7 +725,7 @@ return;
 
 #[tokio::test]
 async fn oversized_execute_request_does_not_close_the_shared_host() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     let session = provider
@@ -723,7 +742,7 @@ async fn oversized_execute_request_does_not_close_the_shared_host() {
         .err()
         .expect("oversized execute should fail");
     assert!(
-        error.contains("IPC frame limit"),
+        error.contains("exceeds the gRPC message limit"),
         "unexpected error: {error}"
     );
 
@@ -741,6 +760,7 @@ async fn oversized_execute_request_does_not_close_the_shared_host() {
             content_items: vec![FunctionCallOutputContentItem::InputText {
                 text: "still alive".to_string(),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
     );
@@ -749,7 +769,7 @@ async fn oversized_execute_request_does_not_close_the_shared_host() {
 
 #[tokio::test]
 async fn oversized_delegate_payloads_fail_only_the_tool_call() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     let session = provider
@@ -791,6 +811,7 @@ try {{
             content_items: vec![FunctionCallOutputContentItem::InputText {
                 text: "argument rejected".to_string(),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
     );
@@ -820,6 +841,7 @@ try {
             content_items: vec![FunctionCallOutputContentItem::InputText {
                 text: "result rejected".to_string(),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
     );
@@ -838,6 +860,7 @@ try {
             content_items: vec![FunctionCallOutputContentItem::InputText {
                 text: "still alive".to_string(),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
     );
@@ -846,7 +869,7 @@ try {
 
 #[tokio::test]
 async fn oversized_initial_response_does_not_close_the_shared_host() {
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(
         codex_utils_cargo_bin::cargo_bin("codex-code-mode-host").expect("host binary"),
     );
     let session = provider
@@ -866,13 +889,18 @@ async fn oversized_initial_response_does_not_close_the_shared_host() {
         .await
         .expect_err("oversized initial response should fail");
     assert!(
-        error.contains("IPC frame limit"),
+        error.contains("message length too large"),
         "unexpected error: {error}"
     );
 
+    // The default session still returns raw output after the oversized gRPC message failed.
     let actual = execute(
         &session,
-        execute_request(r#"text("still alive");"#),
+        ExecuteRequest {
+            max_output_tokens: Some(5),
+            yield_time_ms: Some(60_000),
+            ..execute_request("text('x'.repeat(2 * 1024 * 1024));")
+        },
         Arc::new(RecordingDelegate::default()),
     )
     .await;
@@ -882,10 +910,38 @@ async fn oversized_initial_response_does_not_close_the_shared_host() {
             code_mode_host_duration: actual.code_mode_host_duration(),
             cell_id: cell_id("2"),
             content_items: vec![FunctionCallOutputContentItem::InputText {
-                text: "still alive".to_string(),
+                text: "x".repeat(2 * 1024 * 1024),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
+    );
+    session.shutdown().await.expect("shutdown remote session");
+
+    // With Server truncation negotiated, a script error larger than the gRPC message limit still returns.
+    let session = provider
+        .create_session_with_options(CodeModeSessionOptions {
+            output_truncation: CodeModeOutputTruncation::Server,
+            ..Default::default()
+        })
+        .await
+        .expect("open server-truncated session");
+    let mut request = execute_request("throw 'begin:' + 'X'.repeat(65 * 1024 * 1024) + ':end';");
+    request.max_output_tokens = Some(5);
+    request.yield_time_ms = Some(60_000);
+    let response = execute(&session, request, Arc::new(RecordingDelegate::default())).await;
+    let RuntimeResponse::Result {
+        content_items,
+        error_text: Some(error),
+        ..
+    } = response
+    else {
+        panic!("expected completed error within the gRPC message limit");
+    };
+    assert!(error.starts_with("begin:") && error.ends_with(":end"));
+    assert!(error.len() > 20 && error.len() <= 64 * 1024);
+    assert!(
+        matches!(content_items.last(), Some(FunctionCallOutputContentItem::InputText { text }) if text.ends_with(":end"))
     );
     session.shutdown().await.expect("shutdown remote session");
 }
@@ -913,9 +969,8 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
     permissions.set_mode(/*mode*/ 0o700);
     std::fs::set_permissions(&proxy_program, permissions).expect("make host proxy executable");
 
-    let provider = ProcessOwnedCodeModeSessionProvider::with_host_program(proxy_program);
+    let provider = ProcessOwnedGrpcCodeModeSessionProvider::with_host_program(proxy_program);
     let (delegate_a, mut events_a) = CancellationDelegate::new();
-    delegate_a.hold_slow_cleanup();
     let delegate_b = Arc::new(RecordingDelegate::default());
     let session_a = provider
         .create_session()
@@ -987,6 +1042,7 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
                 WaitRequest {
                     cell_id: wait_a_cell,
                     yield_time_ms: 60_000,
+                    max_output_tokens: None,
                 },
                 /*preempt*/ None,
             )
@@ -1000,6 +1056,7 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
                 WaitRequest {
                     cell_id: wait_b_cell,
                     yield_time_ms: 60_000,
+                    max_output_tokens: None,
                 },
                 /*preempt*/ None,
             )
@@ -1039,12 +1096,11 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
             .expect("second wait task")
             .is_err()
     );
-    let closure_events = [
+    delegate_a.slow_tool_cancelled().await;
+    assert_eq!(
         next_callback_event(&mut events_a).await,
-        next_callback_event(&mut events_a).await,
-    ];
-    assert!(closure_events.contains(&CallbackEvent::Cancelled("tool_call_slow".to_string())));
-    assert!(closure_events.contains(&CallbackEvent::CellClosed(cell_a.clone())));
+        CallbackEvent::CellClosed(cell_a)
+    );
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             if delegate_b
@@ -1061,6 +1117,22 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
     .await
     .expect("unrelated session cleanup timeout");
 
+    // The first operation reports the lost generation before a caller can run
+    // new work against the replacement host.
+    let reset = session_b
+        .execute(
+            execute_request("text('must not replay');"),
+            delegate_b.clone(),
+            /*preempt*/ None,
+        )
+        .await
+        .err()
+        .expect("report the lost session");
+    assert!(
+        reset.contains("Stored values and running cells were lost"),
+        "{reset}"
+    );
+
     let actual = execute(
         &session_b,
         execute_request(r#"text("replacement");"#),
@@ -1071,10 +1143,11 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
         actual,
         RuntimeResponse::Result {
             code_mode_host_duration: actual.code_mode_host_duration(),
-            cell_id: cell_id("g2:1"),
+            cell_id: cell_id("g3:1"),
             content_items: vec![FunctionCallOutputContentItem::InputText {
                 text: "replacement".to_string(),
             }],
+            result_buffered_for: Duration::ZERO,
             error_text: None,
         }
     );
@@ -1083,6 +1156,7 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
             WaitRequest {
                 cell_id: cell_b.clone(),
                 yield_time_ms: 1,
+                max_output_tokens: None,
             },
             /*preempt*/ None,
         )
@@ -1099,8 +1173,6 @@ async fn child_process_loss_cleans_up_and_rebuilds_the_shared_host() {
         .expect("unrelated session shutdown timeout")
         .expect("shutdown replacement session");
 
-    delegate_a.release_slow_cleanup();
-    tokio::task::yield_now().await;
     assert!(matches!(
         events_a.try_recv(),
         Err(mpsc::error::TryRecvError::Empty)

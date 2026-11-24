@@ -11,6 +11,7 @@ use codex_app_server_protocol::ApprovalsReviewer as AppServerApprovalsReviewer;
 use codex_app_server_protocol::AskForApproval as AppServerAskForApproval;
 use codex_app_server_protocol::ThreadSettings;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
+use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_config::types::ApprovalsReviewer;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ModeKind;
@@ -29,6 +30,14 @@ impl App {
             return;
         };
         params.effort = effort;
+        self.send_model_settings_update(app_server, params).await;
+    }
+
+    pub(super) async fn send_model_settings_update(
+        &mut self,
+        app_server: &mut AppServerSession,
+        params: ThreadSettingsUpdateParams,
+    ) -> bool {
         let defaulted_to_auto_review = params.approvals_reviewer
             == Some(AppServerApprovalsReviewer::AutoReview)
             && (self.chat_widget.config_ref().approvals_reviewer != ApprovalsReviewer::AutoReview
@@ -61,6 +70,7 @@ impl App {
         if defaulted_to_auto_review && settings_updated {
             self.app_event_tx.send(AppEvent::CyberModelAutoReviewNotice);
         }
+        settings_updated
     }
 
     pub(super) fn active_thread_model_setting_update_params(
@@ -184,24 +194,46 @@ impl App {
         self.send_thread_settings_update(app_server, params).await;
     }
 
+    // Retained blank sessions stay subscribed after their event channels are cleared.
+    pub(super) async fn update_retained_blank_settings(
+        &mut self,
+        thread_id: ThreadId,
+        notification: &ThreadSettingsUpdatedNotification,
+    ) -> bool {
+        if !self.agents_overview.blank_sessions.contains_key(&thread_id)
+            || self.thread_event_channels.contains_key(&thread_id)
+        {
+            return false;
+        }
+        self.apply_thread_settings_to_cached_session(thread_id, &notification.thread_settings)
+            .await;
+        true
+    }
+
     pub(super) async fn apply_thread_settings_to_cached_session(
         &mut self,
         thread_id: ThreadId,
         settings: &ThreadSettings,
     ) {
+        let Ok(cwd) = crate::app_server_session::decode_thread_cwd(
+            &settings.cwd,
+            self.backend_registry.thread_path_convention(thread_id),
+        ) else {
+            return;
+        };
         if let Some(blank) = self.agents_overview.blank_sessions.get_mut(&thread_id) {
-            apply_thread_settings_to_session(&mut blank.session, settings);
+            apply_thread_settings_to_session(&mut blank.session, settings, &cwd);
         }
         if self.primary_thread_id == Some(thread_id)
             && let Some(session) = self.primary_session_configured.as_mut()
         {
-            apply_thread_settings_to_session(session, settings);
+            apply_thread_settings_to_session(session, settings, &cwd);
         }
 
         if let Some(channel) = self.thread_event_channels.get(&thread_id) {
             let mut store = channel.store.lock().await;
             if let Some(session) = store.session.as_mut() {
-                apply_thread_settings_to_session(session, settings);
+                apply_thread_settings_to_session(session, settings, &cwd);
             }
         }
     }
@@ -247,7 +279,18 @@ impl App {
     }
 }
 
-fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: &ThreadSettings) {
+pub(super) fn apply_thread_settings_to_session(
+    session: &mut ThreadSessionState,
+    settings: &ThreadSettings,
+    cwd: &codex_utils_path_uri::PathUri,
+) {
+    let permission_profile = match settings.sandbox_policy.permission_profile_for_cwd(cwd) {
+        Ok(profile) => profile,
+        Err(err) => {
+            tracing::warn!(%err, "Invalid sandbox policy in thread settings");
+            return;
+        }
+    };
     if settings.collaboration_mode.mode == ModeKind::Default {
         session.model = settings.model.clone();
         session.reasoning_effort = settings.effort.clone();
@@ -256,12 +299,13 @@ fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: 
     session.service_tier = settings.service_tier.clone();
     session.approval_policy = settings.approval_policy;
     session.approvals_reviewer = settings.approvals_reviewer.to_core();
-    session.permission_profile = PermissionProfile::from_legacy_sandbox_policy_for_cwd(
-        &settings.sandbox_policy.to_core(),
-        settings.cwd.as_path(),
-    );
+    session.permission_profile = permission_profile;
     session.active_permission_profile = settings.active_permission_profile.clone().map(Into::into);
-    session.set_cwd_retargeting_implicit_runtime_workspace_root(settings.cwd.clone());
+    if let Some(environments) = &settings.environments {
+        session.primary_environment_cwd =
+            crate::session_state::primary_environment_cwd(environments);
+    }
+    session.set_cwd_retargeting_implicit_runtime_workspace_root(cwd.clone());
     let mut collaboration_mode = settings.collaboration_mode.clone();
     collaboration_mode
         .settings
@@ -269,6 +313,7 @@ fn apply_thread_settings_to_session(session: &mut ThreadSessionState, settings: 
         .clone_from(&settings.model);
     collaboration_mode.settings.reasoning_effort = settings.effort.clone();
     session.collaboration_mode = Some(Box::new(collaboration_mode));
+    session.thread_settings_confirmed = true;
 }
 
 fn thread_settings_update_has_changes(params: &ThreadSettingsUpdateParams) -> bool {

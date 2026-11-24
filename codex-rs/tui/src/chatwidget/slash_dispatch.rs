@@ -113,8 +113,17 @@ impl ChatWidget {
         self.request_redraw();
         self.app_event_tx.send(AppEvent::StartSide {
             parent_thread_id,
+            mode: if user_message.is_some() {
+                crate::app_event::SideStartMode::New
+            } else {
+                crate::app_event::SideStartMode::Reuse
+            },
             user_message,
         });
+    }
+
+    pub(crate) fn sidebar_chooser_available(&self) -> bool {
+        !self.review.is_review_mode && !self.is_external_writer_view()
     }
 
     fn request_empty_side_conversation(&mut self, cmd: SlashCommand) {
@@ -139,6 +148,12 @@ impl ChatWidget {
         cmd: SlashCommand,
         source: SlashCommandDispatchSource,
     ) -> bool {
+        if source == SlashCommandDispatchSource::Live && cmd.requires_dispatch_validation() {
+            return self.is_user_turn_pending_or_running()
+                || (cmd == SlashCommand::Review
+                    && self.input_queue.has_queued_follow_up_messages());
+        }
+
         (!cmd.available_during_task()
             && (self.turn_lifecycle.agent_turn_running
                 || self.review.is_review_mode
@@ -149,10 +164,6 @@ impl ChatWidget {
                 && (self.input_queue.user_turn_pending_start
                     || self.turn_lifecycle.agent_turn_running))
             || (cmd == SlashCommand::Export && self.input_queue.suppress_queue_autosend)
-            || (cmd == SlashCommand::Review
-                && source == SlashCommandDispatchSource::Live
-                && (self.is_user_turn_pending_or_running()
-                    || self.input_queue.has_queued_follow_up_messages()))
     }
 
     fn queue_blocked_slash_command_draft(&mut self, cmd: SlashCommand) -> bool {
@@ -166,7 +177,7 @@ impl ChatWidget {
         true
     }
 
-    pub(super) fn dispatch_command(&mut self, cmd: SlashCommand) {
+    pub(crate) fn dispatch_command(&mut self, cmd: SlashCommand) {
         self.dispatch_command_from_source(cmd, SlashCommandDispatchSource::Live);
     }
 
@@ -201,6 +212,12 @@ impl ChatWidget {
             }
             self.request_redraw();
             return;
+        }
+
+        if source == SlashCommandDispatchSource::Live && cmd.requires_dispatch_validation() {
+            self.bottom_pane
+                .set_composer_text(String::new(), Vec::new(), Vec::new());
+            self.bottom_pane.drain_pending_submission_state();
         }
 
         match cmd {
@@ -238,17 +255,7 @@ impl ChatWidget {
                 });
             }
             SlashCommand::Feedback => {
-                if !self.config.feedback_enabled {
-                    let params = crate::bottom_pane::feedback_disabled_params();
-                    self.bottom_pane.show_selection_view(params);
-                    self.request_redraw();
-                    return;
-                }
-                // Step 1: pick a category (UI built in feedback_view)
-                let params =
-                    crate::bottom_pane::feedback_selection_params(self.app_event_tx.clone());
-                self.bottom_pane.show_selection_view(params);
-                self.request_redraw();
+                self.app_event_tx.send(AppEvent::OpenFeedback);
             }
             SlashCommand::New => {
                 self.show_session_checkout_picker(ManagedWorktreeMode::New, /*name*/ None);
@@ -290,7 +297,8 @@ impl ChatWidget {
                 self.bottom_pane.show_selection_view(SelectionViewParams {
                     title: Some("Delete this session?".to_string()),
                     subtitle: Some(
-                        "Cannot be undone. Subagent threads will also be deleted.".to_string(),
+                        "Also deletes subagents and saved side chats. Cannot be undone."
+                            .to_string(),
                     ),
                     footer_hint: Some(standard_popup_hint_line()),
                     items: vec![
@@ -301,12 +309,7 @@ impl ChatWidget {
                             ..Default::default()
                         },
                         SelectionItem {
-                            name: if self.remote_connection.is_some() {
-                                "Yes, delete and return to command center"
-                            } else {
-                                "Yes, delete and exit"
-                            }
-                            .to_string(),
+                            name: "Yes, delete and return to command center".to_string(),
                             description: Some("Permanently delete this session now".to_string()),
                             actions: vec![Box::new(|tx| {
                                 tx.send(AppEvent::DeleteCurrentThread);
@@ -358,11 +361,6 @@ impl ChatWidget {
                     .send(AppEvent::GenerateRecap { thread_id });
             }
             SlashCommand::Review => {
-                if source == SlashCommandDispatchSource::Live {
-                    self.bottom_pane
-                        .set_composer_text(String::new(), Vec::new(), Vec::new());
-                    self.bottom_pane.drain_pending_submission_state();
-                }
                 self.open_review_popup();
                 if self.mcp_startup_status.is_some() {
                     self.defer_input_until_settings_applied();
@@ -379,6 +377,9 @@ impl ChatWidget {
             }
             SlashCommand::Config => {
                 self.app_event_tx.send(AppEvent::OpenConfigPanel(None));
+            }
+            SlashCommand::Presets => {
+                self.open_quick_dial_menu();
             }
             SlashCommand::Plan => {
                 if self.active_mode_kind() == ModeKind::Plan {
@@ -418,16 +419,10 @@ impl ChatWidget {
                 self.app_event_tx.send(AppEvent::OpenAgentPicker);
             }
             SlashCommand::Permissions => {
-                if self.remote_connection.is_some()
-                    || self.windows_sandbox_local_server
-                        && self.windows_sandbox_host != WindowsSandboxHost::Remote
-                        && self.windows_sandbox_config.requirements.is_none()
-                {
-                    self.app_event_tx.send(AppEvent::OpenPermissionsPopup);
-                } else {
-                    self.open_permissions_popup();
-                }
-                self.defer_input_until_settings_applied();
+                // Hold queued prompts while the app checks whether it can open the menu.
+                self.set_queue_autosend_suppressed(/*suppressed*/ true);
+                self.permission_popup_pending = true;
+                self.app_event_tx.send(AppEvent::OpenPermissionsPopup);
             }
             SlashCommand::Vim => {
                 self.toggle_vim_mode_and_notify();
@@ -513,22 +508,21 @@ impl ChatWidget {
                 self.add_diff_in_progress();
                 let tx = self.app_event_tx.clone();
                 let runner = self.workspace_command_runner.clone();
-                let cwd = self
-                    .current_cwd
-                    .clone()
-                    .unwrap_or_else(|| self.config.cwd.to_path_buf());
+                let cwd = self.session_cwd().clone();
                 tokio::spawn(async move {
                     let text = match runner {
-                        Some(runner) => match get_git_diff(runner.as_ref(), &cwd).await {
-                            Ok((is_git_repo, diff_text)) => {
-                                if is_git_repo {
-                                    diff_text
-                                } else {
-                                    "`/diff` — _not inside a git repository_".to_string()
+                        Some(runner) => {
+                            match get_git_diff(runner.as_ref(), &cwd.to_path_buf()).await {
+                                Ok((is_git_repo, diff_text)) => {
+                                    if is_git_repo {
+                                        diff_text
+                                    } else {
+                                        "`/diff` — _not inside a git repository_".to_string()
+                                    }
                                 }
+                                Err(e) => format!("Failed to compute diff: {e}"),
                             }
-                            Err(e) => format!("Failed to compute diff: {e}"),
-                        },
+                        }
                         None => "Failed to compute diff: workspace command runner unavailable"
                             .to_string(),
                     };
@@ -549,6 +543,9 @@ impl ChatWidget {
                 self.add_hooks_output();
             }
             SlashCommand::Daemon => self.app_event_tx.send(AppEvent::OpenDaemonMenu),
+            SlashCommand::Rc => self.app_event_tx.send(AppEvent::RemoteControl(
+                crate::app::remote_control::Action::Menu,
+            )),
             SlashCommand::Warnings => self.app_event_tx.send(AppEvent::OpenWarnings),
             SlashCommand::Status => {
                 if self.should_prefetch_rate_limits() {
@@ -570,7 +567,10 @@ impl ChatWidget {
             }
             SlashCommand::Pwd => {
                 self.add_info_message(
-                    format!("Current working directory: {}", self.config.cwd.display()),
+                    format!(
+                        "Current working directory: {}",
+                        self.session_cwd().inferred_native_path_string()
+                    ),
                     /*hint*/ None,
                 );
             }
@@ -744,7 +744,7 @@ impl ChatWidget {
                     args,
                     text_elements,
                     pending_pastes: self.bottom_pane.composer_pending_pastes(),
-                    local_images: self.bottom_pane.composer_local_images(),
+                    local_images: self.bottom_pane.composer_local_images().to_vec(),
                     remote_image_urls: self.bottom_pane.remote_image_urls(),
                     mention_bindings: Vec::new(),
                     source: SlashCommandDispatchSource::Live,
@@ -838,6 +838,10 @@ impl ChatWidget {
             source,
         } = prepared;
         let trimmed = args.trim();
+        if trimmed.is_empty() {
+            self.dispatch_command_from_source(cmd, source);
+            return;
+        }
         match cmd {
             SlashCommand::Config => {
                 self.app_event_tx
@@ -872,7 +876,32 @@ impl ChatWidget {
                     mention_bindings,
                 });
             }
-            SlashCommand::Export if trimmed.is_empty() => self.show_transcript_export_popup(),
+            SlashCommand::Rc => self.add_error_message(
+                "Open /rc and choose Disable to turn off remote control.".into(),
+            ),
+            SlashCommand::Model if !trimmed.is_empty() => {
+                self.handle_model_command_args(trimmed);
+                self.app_event_tx.send(AppEvent::SettingsSelectionClosed);
+            }
+            SlashCommand::Title => {
+                self.handle_terminal_title_command_args(trimmed);
+                self.app_event_tx.send(AppEvent::SettingsSelectionClosed);
+            }
+            SlashCommand::Statusline => {
+                self.handle_status_line_command_args(trimmed);
+                self.app_event_tx.send(AppEvent::SettingsSelectionClosed);
+            }
+            SlashCommand::Permissions
+                if self.windows_sandbox_local_server
+                    && self.windows_sandbox_host != WindowsSandboxHost::Remote
+                    && self.windows_sandbox_config.requirements.is_none() =>
+            {
+                self.set_queue_autosend_suppressed(/*suppressed*/ true);
+                self.app_event_tx.send(AppEvent::ResolvePermissionProfile {
+                    profile_id: trimmed.to_string(),
+                });
+            }
+            SlashCommand::Permissions => self.select_permission_profile(trimmed),
             SlashCommand::Export => {
                 self.set_queue_autosend_suppressed(/*suppressed*/ true);
                 self.app_event_tx.send(AppEvent::ExportTranscript {
@@ -925,8 +954,38 @@ impl ChatWidget {
                     && !name.trim().is_empty()
                 {
                     if let Some(thread_id) = self.thread_id {
+                        // Keep the old name-only syntax intact, including spaces and quotes.
+                        let (name, environment_id) = if name.split_whitespace().any(|word| {
+                            word == "--environment" || word.starts_with("--environment=")
+                        }) {
+                            let args = match super::slash_command_args::parse(
+                                name,
+                                &["--environment"],
+                                &[],
+                                &[],
+                            ) {
+                                Ok(args) => args,
+                                Err(error) => {
+                                    self.add_error_message(error);
+                                    return;
+                                }
+                            };
+                            if args.positionals.is_empty() {
+                                self.add_error_message(
+                                    "Usage: /mcp login <name> [--environment <id>]".to_string(),
+                                );
+                                return;
+                            }
+                            (
+                                args.positionals.join(" "),
+                                args.value("--environment").map(str::to_owned),
+                            )
+                        } else {
+                            (name.trim().to_string(), None)
+                        };
                         self.app_event_tx.send(AppEvent::StartMcpLogin {
-                            name: name.trim().to_string(),
+                            name,
+                            environment_id,
                             thread_id,
                         });
                     } else {
@@ -935,14 +994,18 @@ impl ChatWidget {
                         );
                     }
                 } else {
-                    self.add_error_message("Usage: /mcp [verbose | login <name>]".to_string());
+                    self.add_error_message(
+                        "Usage: /mcp [verbose | login <name> [--environment <id>]]".to_string(),
+                    );
                 }
             }
             SlashCommand::Keymap => match trimmed.to_ascii_lowercase().as_str() {
                 "" => self.open_keymap_picker(),
                 "debug" => {
-                    match crate::keymap::RuntimeKeymap::from_config(&self.local_settings.tui.keymap)
-                    {
+                    match crate::keymap::RuntimeKeymap::for_session(
+                        &self.local_settings.tui.keymap,
+                        self.local_settings.workspace_enabled(self.config_ref()),
+                    ) {
                         Ok(runtime_keymap) => self.open_keymap_debug(&runtime_keymap),
                         Err(err) => {
                             self.add_error_message(format!(
@@ -1342,8 +1405,7 @@ impl ChatWidget {
             service_tier_commands_enabled: !self.current_model_service_tier_commands().is_empty(),
             daybreak_command_description: self.daybreak_command_description(),
             voice_command_enabled: self.realtime_conversation_available_for_thread,
-            worktrees_enabled: self.config.features.enabled(Feature::Worktrees)
-                && self.local_worktree_operations,
+            worktrees_enabled: self.local_worktree_operations,
             allow_elevate_sandbox,
             side_conversation_active: self.active_side_conversation,
         }
@@ -1365,6 +1427,7 @@ impl ChatWidget {
             SlashCommand::Ide
             | SlashCommand::Status
             | SlashCommand::Daemon
+            | SlashCommand::Rc
             | SlashCommand::Pwd
             | SlashCommand::Usage
             | SlashCommand::DebugConfig
@@ -1410,7 +1473,7 @@ impl ChatWidget {
             | SlashCommand::Compact
             | SlashCommand::Review
             | SlashCommand::Model
-            | SlashCommand::Config
+            | SlashCommand::Presets
             | SlashCommand::Plan
             | SlashCommand::Goal
             | SlashCommand::Side
@@ -1432,6 +1495,7 @@ impl ChatWidget {
             | SlashCommand::Hooks
             | SlashCommand::Title
             | SlashCommand::Statusline
+            | SlashCommand::Config
             | SlashCommand::Theme
             | SlashCommand::Tui
             | SlashCommand::Pets => QueueDrain::Stop,
@@ -1473,7 +1537,9 @@ impl ChatWidget {
             "'/{}' is unavailable in side conversations. {SIDE_SLASH_COMMAND_UNAVAILABLE_HINT}",
             cmd.command()
         ));
-        self.bottom_pane.drain_pending_submission_state();
+        if !cmd.requires_dispatch_validation() {
+            self.bottom_pane.drain_pending_submission_state();
+        }
         false
     }
 

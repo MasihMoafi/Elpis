@@ -6,6 +6,7 @@
 //! rather than reproducing the complete response's source spelling (available through `/copy`).
 
 use std::ops::Range;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use pulldown_cmark::Event;
@@ -113,6 +114,38 @@ pub(crate) struct CopyLine {
     pub(crate) omit: bool,
     runs: Vec<(Range<usize>, Vec<Inline>)>,
     literal_ranges: Vec<Range<usize>>,
+}
+
+/// Keep literal prompt spacing when parsing only changed whitespace, and retain the source
+/// when Markdown renders nothing (for example, a reference definition on its own).
+pub(crate) fn has_visible_markup(
+    lines: &[crate::terminal_hyperlinks::HyperlinkLine],
+    source: &str,
+) -> bool {
+    let mut displayed = lines
+        .iter()
+        .flat_map(|line| &line.line.spans)
+        .flat_map(|span| span.content.chars())
+        .filter(|ch| !ch.is_whitespace())
+        .peekable();
+    displayed.peek().is_some()
+        && (displayed.ne(source.chars().filter(|ch| !ch.is_whitespace()))
+            || lines.iter().any(|line| {
+                line.source
+                    .as_ref()
+                    .and_then(|source| source.copy.as_deref())
+                    .is_some_and(|copy| {
+                        !copy.prefix.is_empty()
+                            || copy.code
+                            || copy.code_source.is_some()
+                            || copy.quote_source.is_some()
+                            || copy.table.is_some()
+                            || copy.rule
+                            || copy.heading != 0
+                            || copy.hard_break
+                            || copy.runs.iter().any(|(_, inline)| !inline.is_empty())
+                    })
+            }))
 }
 
 impl CopyLine {
@@ -292,6 +325,26 @@ impl SelectedLine {
         range: Range<usize>,
         separator: &str,
     ) {
+        if let Some((label_end, body)) = source.labelled_body.as_deref() {
+            let body_start = source.text.len() - body.text.len();
+            let mut separator = separator;
+            if range.start < *label_end {
+                let mut label = LogicalLineSource::new(source.text[..*label_end].to_owned());
+                label.copy_as_prose = true;
+                Self::append(
+                    lines,
+                    label,
+                    range.start..range.end.min(*label_end),
+                    separator,
+                );
+                separator = "";
+            }
+            if range.end > body_start {
+                let body_range = range.start.saturating_sub(body_start)..range.end - body_start;
+                Self::append(lines, body.clone(), body_range, separator);
+            }
+            return;
+        }
         // Streaming can split the same logical line across history cells.
         if let Some(previous) = lines.last_mut()
             && Arc::ptr_eq(&previous.source.text, &source.text)
@@ -330,21 +383,31 @@ impl SelectedLine {
     }
 }
 
-pub(crate) fn selection(lines: &[SelectedLine], plain: &str) -> (String, CopyFormat) {
-    render_selection(lines, plain, SelectionOutput::Markdown)
+pub(crate) fn selection(
+    lines: &[SelectedLine],
+    plain: &str,
+    rectangle_rows: Option<&RangeInclusive<usize>>,
+) -> (String, CopyFormat) {
+    render_selection(lines, plain, rectangle_rows, SelectionOutput::Markdown)
 }
 
-pub(crate) fn literal_selection(lines: &[SelectedLine], plain: &str) -> String {
-    render_selection(lines, plain, SelectionOutput::PlainText).0
+pub(crate) fn literal_selection(
+    lines: &[SelectedLine],
+    plain: &str,
+    rectangle_rows: Option<&RangeInclusive<usize>>,
+) -> String {
+    render_selection(lines, plain, rectangle_rows, SelectionOutput::PlainText).0
 }
 
 fn render_selection(
     lines: &[SelectedLine],
     plain: &str,
+    rectangle_rows: Option<&RangeInclusive<usize>>,
     output: SelectionOutput,
 ) -> (String, CopyFormat) {
     // Soft wraps and streamed fragments of the same logical line are already coalesced.
-    if let [line] = lines
+    if rectangle_rows.is_none()
+        && let [line] = lines
         && line
             .source
             .copy
@@ -402,8 +465,8 @@ fn render_selection(
     } else {
         lines
     };
-    let rich = lines.iter().any(|line| {
-        !line.range.is_empty()
+    let rich = lines.iter().enumerate().any(|(index, line)| {
+        (!line.range.is_empty() || index == 0 && rectangle_rows.is_some())
             && line
                 .source
                 .copy
@@ -439,7 +502,9 @@ fn render_selection(
             indentation = Some(indentation.map_or(spaces, |previous| previous.min(spaces)));
         }
         let prefix = dedent(prefix, indentation.unwrap_or(/*default*/ 0));
-        if line.range.is_empty() {
+        // A rectangle is scoped to the table at the start of the selection.
+        let rectangle = rectangle_rows.filter(|_| first);
+        if line.range.is_empty() && rectangle.is_none() {
             if line.source.text.is_empty() {
                 out.push_str(prefix.trim_end());
             }
@@ -464,7 +529,8 @@ fn render_selection(
                 selected.extend(lines.next());
             }
             let entire_selection = first && lines.peek().is_none();
-            let (mut body, format) = table::render(&selected, table, entire_selection, output);
+            let (mut body, format) =
+                table::render(&selected, table, entire_selection, rectangle, output);
             if format == CopyFormat::PlainText {
                 body.retain(|ch| !ch.is_control() || matches!(ch, '\n' | '\t'));
                 return (body, format);

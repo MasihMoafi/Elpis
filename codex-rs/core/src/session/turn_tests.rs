@@ -1,11 +1,82 @@
 use super::*;
+use crate::realtime_history::RealtimeHistoryState;
+use crate::session::UserInputMetadata;
+use crate::session::tests::make_session_and_context;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::TurnItemContributor;
 use codex_protocol::ResponseItemId;
 use codex_protocol::items::AgentMessageContent;
+use codex_protocol::protocol::ItemCompletedEvent;
+use codex_protocol::protocol::ItemStartedEvent;
+use codex_protocol::protocol::RealtimeConversationStartedEvent;
+use codex_protocol::protocol::RealtimeConversationVersion;
+use codex_protocol::protocol::RealtimeHandoffRequested;
 use pretty_assertions::assert_eq;
 use std::sync::Arc;
 use tracing_subscriber::prelude::*;
+
+#[tokio::test]
+async fn failed_realtime_receipt_preserves_sibling_input_before_sampling() {
+    // The fixture has no live thread, so committing a reserved handoff fails.
+    let (mut session, turn_context) = make_session_and_context().await;
+    let mut history = RealtimeHistoryState::default();
+    history.frame_enrollment = Some(true);
+    history.observe(&EventMsg::RealtimeConversationStarted(
+        RealtimeConversationStartedEvent {
+            realtime_session_id: Some("call".to_string()),
+            version: RealtimeConversationVersion::V2,
+        },
+    ));
+    let handoff = history
+        .prepare_handoff(&RealtimeHandoffRequested {
+            handoff_id: "handoff".to_string(),
+            item_id: "item".to_string(),
+            input_transcript: "voice prompt".to_string(),
+            active_transcript: Vec::new(),
+        })
+        .unwrap();
+    assert!(history.reserve_handoff(handoff.id));
+    session.realtime_history = Some(tokio::sync::Mutex::new(history));
+    let sibling_id = uuid::Uuid::now_v7();
+    let input = |text, id, realtime_handoff_id| TurnInput::UserInput {
+        content: vec![ResolvedUserInput::text(text)],
+        client_id: None,
+        metadata: UserInputMetadata {
+            response_item_uuid: Some(id),
+            realtime_handoff_id,
+            ..Default::default()
+        },
+    };
+    let session = Arc::new(session);
+    let error = run_turn(
+        Arc::clone(&session),
+        Arc::new(turn_context),
+        vec![
+            input(handoff.input, handoff.id, Some(handoff.id)),
+            input(
+                "typed sibling".to_string(),
+                sibling_id,
+                /*realtime_handoff_id*/ None,
+            ),
+        ],
+        &mut McpStartupRequirements::default(),
+        /*prewarmed_client_session*/ None,
+        CancellationToken::new(),
+    )
+    .await
+    .expect_err("a turn with an unconfirmed handoff must fail before sampling");
+    assert!(error.to_string().contains("accept realtime handoff"));
+
+    let sibling = ResponseItemId::for_admitted_user_input(sibling_id);
+    let voice = ResponseItemId::for_admitted_user_input(handoff.id);
+    let history = session.clone_history().await;
+    let recorded: Vec<_> = history
+        .raw_items()
+        .filter_map(ResponseItem::id)
+        .filter(|id| *id == &sibling || *id == &voice)
+        .collect();
+    assert_eq!(recorded, vec![&sibling]);
+}
 
 struct RewriteAgentMessageContributor;
 
@@ -18,6 +89,7 @@ impl TurnItemContributor for RewriteAgentMessageContributor {
     ) -> codex_extension_api::ExtensionFuture<'a, Result<(), String>> {
         Box::pin(async move {
             if let TurnItem::AgentMessage(agent_message) = item {
+                agent_message.phase = Some(codex_protocol::models::MessagePhase::Commentary);
                 agent_message.content = vec![AgentMessageContent::Text {
                     text: "plan contributed assistant text".to_string(),
                 }];
@@ -29,9 +101,13 @@ impl TurnItemContributor for RewriteAgentMessageContributor {
 
 fn assistant_output_text(text: &str) -> ResponseItem {
     ResponseItem::Message {
+        status: None,
+        encrypted_content: None,
         id: Some(ResponseItemId::with_suffix("msg", "1")),
         role: "assistant".to_string(),
         content: vec![ContentItem::OutputText {
+            annotations: None,
+            logprobs: None,
             text: text.to_string(),
         }],
         phase: None,
@@ -67,8 +143,8 @@ async fn plan_mode_uses_contributed_turn_item_for_last_agent_message() {
     builder.turn_item_contributor(Arc::new(RewriteAgentMessageContributor));
     session.services.extensions = Arc::new(builder.build());
     let turn_store = ExtensionData::new(turn_context.sub_id.clone());
-    let mut state = PlanModeStreamState::new(&turn_context.sub_id);
-    let mut last_agent_message = None;
+    let mut state = PlanModeStreamState::new(/*unfinished_plan_id*/ None);
+    let mut last_agent_message = AssistantMessages::default();
     let item = assistant_output_text("original assistant text");
 
     let step_context = StepContext::for_test(Arc::new(turn_context));
@@ -80,13 +156,77 @@ async fn plan_mode_uses_contributed_turn_item_for_last_agent_message() {
         &mut state,
         /*previously_active_item*/ None,
         &mut last_agent_message,
+        /*moderation*/ None,
     )
     .await;
 
     assert!(handled);
     assert_eq!(
-        last_agent_message.as_deref(),
+        last_agent_message.trailing_commentary.as_deref(),
         Some("plan contributed assistant text")
+    );
+    assert_eq!(last_agent_message.final_answer, None);
+}
+
+/// A model retry can reuse an unfinished plan. A later completion must use its own ID.
+#[tokio::test]
+async fn plan_attempts_only_reuse_unfinished_item_ids() {
+    let (session, turn, events) = crate::session::tests::make_session_and_context_with_rx().await;
+    let mut first = PlanModeStreamState::new(/*unfinished_plan_id*/ None).plan_item_state;
+    let first_id = first.item_id.clone();
+    first.start(&session, &turn).await;
+    first.push_delta(&session, &turn, "Partial").await;
+
+    let mut retry = PlanModeStreamState::new(first.unfinished_id()).plan_item_state;
+    retry.start(&session, &turn).await;
+    retry.push_delta(&session, &turn, "Plan A").await;
+    retry
+        .complete_with_text(&session, &turn, "Plan A".into())
+        .await;
+    retry
+        .complete_with_text(&session, &turn, "Repeated A".into())
+        .await;
+
+    let mut next = PlanModeStreamState::new(retry.unfinished_id()).plan_item_state;
+    next.start(&session, &turn).await;
+    next.push_delta(&session, &turn, "Plan B").await;
+    next.complete_with_text(&session, &turn, "Plan B".into())
+        .await;
+
+    let mut observed = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        match event.msg {
+            EventMsg::ItemStarted(ItemStartedEvent {
+                item: TurnItem::Plan(plan),
+                ..
+            }) => {
+                observed.push(("start", plan.id, plan.text));
+            }
+            EventMsg::PlanDelta(event) => observed.push(("delta", event.item_id, event.delta)),
+            EventMsg::ItemCompleted(ItemCompletedEvent {
+                item: TurnItem::Plan(plan),
+                ..
+            }) => {
+                observed.push(("complete", plan.id, plan.text));
+            }
+            _ => {}
+        }
+    }
+    let next_id = next.item_id;
+    assert_eq!(Uuid::parse_str(&first_id).unwrap().get_version_num(), 7);
+    assert_ne!(first_id, next_id);
+    assert_eq!(
+        observed,
+        vec![
+            ("start", first_id.clone(), String::new()),
+            ("delta", first_id.clone(), "Partial".into()),
+            ("start", first_id.clone(), String::new()),
+            ("delta", first_id.clone(), "Plan A".into()),
+            ("complete", first_id, "Plan A".into()),
+            ("start", next_id.clone(), String::new()),
+            ("delta", next_id.clone(), "Plan B".into()),
+            ("complete", next_id, "Plan B".into()),
+        ],
     );
 }
 
@@ -95,6 +235,7 @@ fn realtime_user_verification_notice_excludes_request_payload() {
     let event = EventMsg::ElicitationRequest(codex_protocol::approvals::ElicitationRequestEvent {
         turn_id: None,
         server_name: "private-server-name".to_string(),
+        environment_id: None,
         id: codex_protocol::mcp::RequestId::String("private-request-id".to_string()),
         request: codex_protocol::approvals::ElicitationRequest::UserVerification {
             meta: None,

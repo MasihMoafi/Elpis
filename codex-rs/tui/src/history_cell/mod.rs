@@ -104,7 +104,10 @@ const RAW_DIFF_SUMMARY_WIDTH: usize = 10_000;
 mod activity_details;
 pub(crate) mod activity_preview;
 mod approvals;
+mod async_questions;
+mod async_replies;
 mod base;
+mod delegated_message;
 mod dynamic;
 mod exec;
 mod hook_cell;
@@ -126,6 +129,7 @@ pub(crate) use activity_details::ActivityDetails;
 pub(crate) use activity_preview::ActivityDisclosure;
 pub(crate) use approvals::*;
 pub(crate) use base::*;
+pub(crate) use delegated_message::DelegatedMessageCell;
 pub(crate) use dynamic::DynamicToolCallCell;
 pub(crate) use dynamic::read_attempt_summary;
 pub(crate) use exec::*;
@@ -152,9 +156,16 @@ pub(crate) use warnings::warning_entries;
 #[cfg(test)]
 mod tests;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[cfg_attr(
+    test,
+    derive(ts_rs::TS),
+    ts(export_to = "statusline.d.ts", rename = "DisplayMode")
+)]
 pub(crate) enum HistoryRenderMode {
+    #[serde(rename = "standard")]
     Rich,
+    #[serde(rename = "raw")]
     Raw,
 }
 
@@ -225,6 +236,11 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
     /// Returns copy-friendly plain logical lines for raw scrollback mode.
     fn raw_lines(&self) -> Vec<Line<'static>>;
 
+    /// A local artifact the owned fullscreen viewport may preview. Text surfaces ignore it.
+    fn image_path(&self) -> Option<AbsolutePathBuf> {
+        None
+    }
+
     /// Raw live presentation may omit transcript-only diagnostics without losing their source.
     fn live_raw_lines(&self) -> Vec<Line<'static>> {
         self.raw_lines()
@@ -248,6 +264,11 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
         } else {
             self.compact_hyperlink_lines(width)
         }
+    }
+
+    /// Output-free descriptions of individual tool invocations, in transcript order.
+    fn tool_call_labels(&self) -> Vec<String> {
+        Vec::new()
     }
 
     /// Stable, namespaced member identities used to retain disclosure across grouping and replay.

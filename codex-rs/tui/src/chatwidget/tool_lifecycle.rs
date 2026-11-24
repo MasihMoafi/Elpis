@@ -12,9 +12,9 @@ impl ChatWidget {
         self.add_to_history(history_cell::new_patch_event(changes, &self.config.cwd));
     }
 
-    pub(super) fn on_view_image_tool_call(&mut self, path: LegacyAppPathString) {
+    pub(super) fn on_view_image_tool_call(&mut self, id: String, path: LegacyAppPathString) {
         self.flush_answer_stream_with_separator();
-        self.add_to_history(history_cell::new_view_image_tool_call(path));
+        self.add_to_history(history_cell::new_view_image_tool_call(id, path));
         self.request_redraw();
     }
 
@@ -27,22 +27,40 @@ impl ChatWidget {
 
     pub(super) fn on_image_generation_end(
         &mut self,
-        call_id: String,
-        status: String,
-        revised_prompt: Option<String>,
-        saved_path: Option<AbsolutePathBuf>,
+        turn_id: &str,
+        item: codex_app_server_protocol::ImageGenerationItem,
     ) {
         self.flush_answer_stream_with_separator();
-        self.add_to_history(history_cell::new_image_generation_call(
-            call_id,
-            &status,
-            revised_prompt,
-            saved_path,
-        ));
+        let image = history_cell::new_image_generation_call(
+            item.id,
+            &item.status,
+            item.revised_prompt,
+            item.saved_path,
+        );
+        if self.local_settings.transcript_mode.is_owned()
+            && !turn_id.is_empty()
+            && image.is_turn_output()
+        {
+            self.turn_lifecycle
+                .generated_images
+                .record(turn_id.to_owned(), image);
+        } else {
+            self.add_to_history(image);
+        }
         self.request_redraw();
     }
 
-    pub(super) fn on_file_change_completed(&mut self, item: ThreadItem) {
+    pub(super) fn flush_generated_images(&mut self, turn_id: &str) {
+        let images = self.turn_lifecycle.generated_images.take(turn_id);
+        if !images.is_empty() {
+            self.flush_answer_and_plan_streams();
+            for image in images {
+                self.add_to_history(image);
+            }
+        }
+    }
+
+    pub(super) fn on_file_change_completed(&mut self, item: ThreadItemPayload) {
         self.defer_or_handle(
             item,
             InterruptManager::push_item_completed,
@@ -50,7 +68,7 @@ impl ChatWidget {
         );
     }
 
-    pub(super) fn on_mcp_tool_call_started(&mut self, item: ThreadItem) {
+    pub(super) fn on_mcp_tool_call_started(&mut self, item: ThreadItemPayload) {
         self.defer_or_handle(
             item,
             InterruptManager::push_item_started,
@@ -58,7 +76,7 @@ impl ChatWidget {
         );
     }
 
-    pub(super) fn on_mcp_tool_call_completed(&mut self, item: ThreadItem) {
+    pub(super) fn on_mcp_tool_call_completed(&mut self, item: ThreadItemPayload) {
         self.defer_or_handle(
             item,
             InterruptManager::push_item_completed,
@@ -105,14 +123,14 @@ impl ChatWidget {
         }
     }
 
-    pub(super) fn on_collab_event(&mut self, cell: PlainHistoryCell) {
+    pub(super) fn on_collab_event(&mut self, cell: impl HistoryCell + 'static) {
         self.flush_answer_stream_with_separator();
         self.add_to_history(cell);
         self.request_redraw();
     }
 
-    pub(super) fn on_collab_agent_tool_call(&mut self, item: ThreadItem) {
-        let ThreadItem::CollabAgentToolCall {
+    pub(super) fn on_collab_agent_tool_call(&mut self, item: ThreadItemPayload) {
+        let ThreadItemPayload::CollabAgentToolCall {
             id, tool, status, ..
         } = &item
         else {
@@ -142,7 +160,7 @@ impl ChatWidget {
         }
     }
 
-    pub(super) fn on_sub_agent_activity(&mut self, item: ThreadItem) {
+    pub(super) fn on_sub_agent_activity(&mut self, item: ThreadItemPayload) {
         // Background agents can finish while the parent answer is still streaming.
         // Keep that stream intact until its authoritative message completion.
         // After the turn stops, leftover prompts must not hold up late activity.
@@ -157,14 +175,14 @@ impl ChatWidget {
         }
     }
 
-    fn handle_sub_agent_activity_now(&mut self, item: ThreadItem) {
+    fn handle_sub_agent_activity_now(&mut self, item: ThreadItemPayload) {
         if let Some(cell) = multi_agents::sub_agent_activity_history_cell(&item) {
             self.on_collab_event(cell);
         }
     }
 
-    pub(crate) fn handle_file_change_completed_now(&mut self, item: ThreadItem) {
-        let ThreadItem::FileChange { status, .. } = item else {
+    pub(crate) fn handle_file_change_completed_now(&mut self, item: ThreadItemPayload) {
+        let ThreadItemPayload::FileChange { status, .. } = item else {
             return;
         };
         // If the patch was successful, just let the "Edited" block stand.
@@ -174,10 +192,11 @@ impl ChatWidget {
         }
     }
 
-    pub(crate) fn handle_mcp_tool_call_started_now(&mut self, item: ThreadItem) {
-        let ThreadItem::McpToolCall {
+    pub(crate) fn handle_mcp_tool_call_started_now(&mut self, item: ThreadItemPayload) {
+        let ThreadItemPayload::McpToolCall {
             id,
             server,
+            environment_id,
             tool,
             arguments,
             ..
@@ -188,6 +207,7 @@ impl ChatWidget {
         self.flush_answer_stream_with_separator();
         let invocation = McpInvocation {
             server,
+            environment_id,
             tool,
             arguments: Some(arguments),
         };
@@ -212,7 +232,7 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    pub(crate) fn handle_mcp_tool_call_completed_now(&mut self, item: ThreadItem) {
+    pub(crate) fn handle_mcp_tool_call_completed_now(&mut self, item: ThreadItemPayload) {
         self.flush_answer_stream_with_separator();
 
         let Some(McpHistory {
@@ -294,28 +314,38 @@ impl ChatWidget {
         }
     }
 
-    pub(crate) fn handle_queued_item_started_now(&mut self, item: ThreadItem) {
+    pub(crate) fn handle_queued_item_started_now(&mut self, item: ThreadItemPayload) {
         match item {
-            item @ ThreadItem::CommandExecution { .. } => {
+            item @ ThreadItemPayload::CommandExecution { .. } => {
                 self.handle_command_execution_started_now(item);
             }
-            item @ ThreadItem::McpToolCall { .. } => {
+            item @ ThreadItemPayload::McpToolCall { .. } => {
                 self.handle_mcp_tool_call_started_now(item);
             }
-            item @ ThreadItem::DynamicToolCall { .. } => self.handle_dynamic_tool_item_now(item),
+            item @ ThreadItemPayload::DynamicToolCall { .. } => {
+                self.handle_dynamic_tool_item_now(item)
+            }
             _ => {}
         }
     }
 
-    pub(crate) fn handle_queued_item_completed_now(&mut self, item: ThreadItem) {
+    pub(crate) fn handle_queued_item_completed_now(&mut self, item: ThreadItemPayload) {
         match item {
-            item @ ThreadItem::CommandExecution { .. } => {
+            item @ ThreadItemPayload::CommandExecution { .. } => {
                 self.handle_command_execution_completed_now(item);
             }
-            item @ ThreadItem::FileChange { .. } => self.handle_file_change_completed_now(item),
-            item @ ThreadItem::McpToolCall { .. } => self.handle_mcp_tool_call_completed_now(item),
-            item @ ThreadItem::DynamicToolCall { .. } => self.handle_dynamic_tool_item_now(item),
-            item @ ThreadItem::SubAgentActivity { .. } => self.handle_sub_agent_activity_now(item),
+            item @ ThreadItemPayload::FileChange { .. } => {
+                self.handle_file_change_completed_now(item)
+            }
+            item @ ThreadItemPayload::McpToolCall { .. } => {
+                self.handle_mcp_tool_call_completed_now(item)
+            }
+            item @ ThreadItemPayload::DynamicToolCall { .. } => {
+                self.handle_dynamic_tool_item_now(item)
+            }
+            item @ ThreadItemPayload::SubAgentActivity { .. } => {
+                self.handle_sub_agent_activity_now(item)
+            }
             _ => {}
         }
     }

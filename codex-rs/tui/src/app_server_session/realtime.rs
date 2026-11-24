@@ -12,21 +12,20 @@ use codex_app_server_protocol::ThreadRealtimeStopResponse;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::RealtimeConversationVersion;
 use codex_protocol::protocol::RealtimeOutputModality;
-use codex_protocol::protocol::RealtimeVoice;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
+use uuid::Uuid;
 
 impl AppServerSession {
     pub(crate) async fn thread_realtime_start(
         &mut self,
         thread_id: ThreadId,
-        offer_sdp: String,
-        model: Option<String>,
-        voice: Option<RealtimeVoice>,
+        call_id: String,
+        voice_session_id: Uuid,
     ) -> Result<()> {
         let request_id = self.next_request_id();
         let _: ThreadRealtimeStartResponse = self
-            .client
+            .request_handle
             .request_typed(ClientRequest::ThreadRealtimeStart {
                 request_id,
                 params: ThreadRealtimeStartParams {
@@ -39,17 +38,21 @@ impl AppServerSession {
                     codex_response_handoff_mode: None,
                     backend_reasoning_status: false,
                     codex_response_handoff_channel_prefixes: None,
-                    model,
+                    model: None,
                     output_modality: RealtimeOutputModality::Audio,
                     include_startup_context: Some(false),
                     initial_items: None,
                     realtime_start_instructions: None,
                     realtime_end_instructions: None,
                     prompt: None,
-                    realtime_session_id: None,
-                    transport: Some(ThreadRealtimeStartTransport::Webrtc { sdp: offer_sdp }),
+                    realtime_session_id: Some(call_id.clone()),
+                    voice_session_id: Some(voice_session_id.to_string()),
+                    transport: Some(ThreadRealtimeStartTransport::ExistingCall {
+                        // The TUI owns the peer connection and has already negotiated this call.
+                        call_id,
+                    }),
                     version: Some(RealtimeConversationVersion::V3),
-                    voice,
+                    voice: None,
                 },
             })
             .await
@@ -60,7 +63,7 @@ impl AppServerSession {
     pub(crate) async fn thread_realtime_stop(&mut self, thread_id: ThreadId) -> Result<()> {
         let request_id = self.next_request_id();
         let _: ThreadRealtimeStopResponse = self
-            .client
+            .request_handle
             .request_typed(ClientRequest::ThreadRealtimeStop {
                 request_id,
                 params: ThreadRealtimeStopParams {
@@ -79,7 +82,7 @@ impl AppServerSession {
     ) -> Result<()> {
         let request_id = self.next_request_id();
         let _: ThreadRealtimeAppendSpeechResponse = self
-            .client
+            .request_handle
             .request_typed(ClientRequest::ThreadRealtimeAppendSpeech {
                 request_id,
                 params: ThreadRealtimeAppendSpeechParams {

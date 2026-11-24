@@ -92,15 +92,14 @@ async fn feedback_upload_limits_concurrency_and_releases_failed_uploads() -> Res
 }
 
 #[tokio::test]
-async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()> {
+async fn feedback_upload_recovers_persisted_evidence_and_reports_sqlite_failures() -> Result<()> {
+    use std::collections::HashSet;
     use std::io::Read;
     use std::sync::Arc;
 
     use app_test_support::MockResponsesConfig;
     use codex_app_server_protocol::ClientNotification;
-    use codex_app_server_protocol::ThreadStartParams;
-    use codex_state::SqliteConfig;
-    use codex_utils_absolute_path::test_support::PathExt;
+    use codex_protocol::ThreadId;
     use tokio::io::AsyncReadExt;
     use tokio_rustls::TlsAcceptor;
     use tokio_rustls::rustls;
@@ -190,7 +189,67 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
     }));
 
     let models = wiremock::MockServer::start().await;
-    MockResponsesConfig::new(&models.uri()).write(home.path())?;
+    MockResponsesConfig::new(&models.uri())
+        .with_root_config(&format!("log_dir = {:?}", home.path().join("log")))
+        .write(home.path())?;
+    let thread_id = ThreadId::new();
+    let attached_id = ThreadId::new();
+    let sqlite = core_test_support::load_default_config_for_test(&home)
+        .await
+        .sqlite;
+    let state =
+        codex_state::StateRuntime::init(sqlite.clone(), "mock_provider".to_string()).await?;
+    let review = json!({
+        "reviewed_thread_id": thread_id,
+        "status": "denied",
+        "action": "original reviewed action",
+        "instructions": "original review instructions",
+        "history": [{"role": "user", "content": "original authorization"}],
+        "decision": "original denial",
+        "context_omitted": false,
+    });
+    for (id, parent, record) in [
+        (thread_id, None, Some(review.clone())),
+        (attached_id, Some(thread_id), None),
+        (ThreadId::new(), None, Some(json!({"unrelated": true}))),
+    ] {
+        let rollout_path = home
+            .path()
+            .join(format!("rollout-2026-10-01T12-00-00-{id}.jsonl"));
+        std::fs::write(&rollout_path, serde_json::to_vec(&id)?)?;
+        let mut metadata = codex_state::ThreadMetadataBuilder::new(
+            id,
+            rollout_path,
+            chrono::Utc::now(),
+            codex_protocol::protocol::SessionSource::Cli,
+        )
+        .build("mock_provider");
+        metadata.attached_thread_parent_id = parent;
+        state.upsert_thread(&metadata).await?;
+        if let Some(record) = record {
+            state
+                .record_guardian_review_failure(&codex_feedback::GuardianReviewRecord::new(
+                    id,
+                    serde_json::to_vec(&record)?,
+                ))
+                .await?;
+        }
+    }
+    state.close().await;
+    let legacy_path = home.path().join("logs_2.sqlite");
+    std::fs::copy(sqlite.logs_db_path(), &legacy_path)?;
+    let legacy_pool = sqlite.open_read_write_pool(&legacy_path).await?;
+    let legacy_timestamp = chrono::Utc::now();
+    sqlx::query(
+        "INSERT INTO logs (ts, ts_nanos, level, target, feedback_log_body, thread_id)
+         VALUES (?, 0, 'INFO', 'test', 'legacy history', ?)",
+    )
+    .bind(legacy_timestamp.timestamp())
+    .bind(thread_id.to_string())
+    .execute(&legacy_pool)
+    .await?;
+    legacy_pool.close().await;
+    // This new process can recover review context only from SQLite.
     let mut app_server = TestAppServer::builder()
         .with_codex_home(home.path())
         .with_env_overrides(&[
@@ -202,35 +261,25 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
         ])
         .build_initialized()
         .await?;
-    let request = app_server
-        .send_thread_start_request_with_auto_env(ThreadStartParams {
-            ephemeral: Some(true),
-            ..Default::default()
-        })
-        .await?;
-    let response = app_server
-        .read_stream_until_response_message(RequestId::Integer(request))
-        .await?;
-    let thread_id = response.result["thread"]["id"].as_str().unwrap();
-    let sqlite = SqliteConfig::new_for_testing(home.path().abs());
     let pool = sqlite.open_read_write_pool(&sqlite.logs_db_path()).await?;
     // This old history exists only in SQLite, as if it had already left the memory ring.
-    sqlx::query("INSERT INTO logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) VALUES (1, 0, 'INFO', 'test', 'sqlite-only-history', ?)")
-        .bind(thread_id).execute(&pool).await?;
+    sqlx::query("INSERT INTO logs (ts, ts_nanos, level, target, feedback_log_body, thread_id) VALUES (unixepoch(), 0, 'INFO', 'test', 'sqlite-only-history', ?)")
+        .bind(thread_id.to_string()).execute(&pool).await?;
     sqlx::query("CREATE TRIGGER fail_log_insert BEFORE INSERT ON logs BEGIN SELECT RAISE(ABORT, 'synthetic-secret'); END")
         .execute(&pool).await?;
 
     #[derive(Debug, PartialEq)]
     enum Phase {
+        WithoutLogs,
         WriteFailure,
         Corrupt,
     }
-    for phase in [Phase::WriteFailure, Phase::Corrupt] {
+    for phase in [Phase::WithoutLogs, Phase::WriteFailure, Phase::Corrupt] {
         match phase {
             Phase::Corrupt => {
                 sqlx::raw_sql("PRAGMA writable_schema = ON; UPDATE sqlite_schema SET rootpage = 2147483647 WHERE name = 'logs'; PRAGMA schema_version = 1000000;").execute(&pool).await?;
             }
-            Phase::WriteFailure => {}
+            Phase::WithoutLogs | Phase::WriteFailure => {}
         }
         // Notifications emit an INFO log, ensuring feedback/upload has a batch to flush.
         app_server
@@ -254,7 +303,7 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
             .send_raw_request(
                 "feedback/upload",
                 Some(json!({
-                    "classification": "bug", "includeLogs": true, "threadId": thread_id
+                    "classification": "bug", "includeLogs": phase != Phase::WithoutLogs, "threadId": thread_id
                 })),
             )
             .await?;
@@ -264,6 +313,7 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
         )
         .await??;
         let mut attachments = std::collections::BTreeMap::new();
+        let mut uploaded_rollouts = HashSet::<ThreadId>::new();
         while let Ok(envelope) = uploads_rx.try_recv() {
             let mut bytes = envelope.as_slice();
             // Skip the envelope header, then decode each length-delimited item.
@@ -274,7 +324,13 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
                 let header: serde_json::Value = serde_json::from_slice(&bytes[..header_end])?;
                 let length = header["length"].as_u64().unwrap() as usize;
                 bytes = &bytes[header_end + 1..];
-                if let Some(filename) = header["filename"].as_str() {
+                if header["filename"] == "rollouts.tar.gz" {
+                    let mut archive =
+                        tar::Archive::new(flate2::read::GzDecoder::new(&bytes[..length]));
+                    for entry in archive.entries()? {
+                        uploaded_rollouts.insert(serde_json::from_reader(entry?)?);
+                    }
+                } else if let Some(filename) = header["filename"].as_str() {
                     attachments.insert(
                         filename.to_string(),
                         String::from_utf8_lossy(&bytes[..length]).into_owned(),
@@ -286,6 +342,27 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
                 }
             }
         }
+        if phase == Phase::WithoutLogs {
+            assert!(uploaded_rollouts.is_empty());
+            assert!(!attachments.contains_key("auto-review-failures.jsonl"));
+            assert!(!attachments.contains_key("codex-logs.log"));
+            assert!(!attachments.contains_key("codex-logs-legacy.log"));
+            continue;
+        }
+        assert_eq!(uploaded_rollouts, HashSet::from([thread_id, attached_id]));
+        assert_eq!(
+            attachments.get("codex-logs-legacy.log"),
+            (phase == Phase::Corrupt)
+                .then(|| format!(
+                    "{}  INFO legacy history\n",
+                    legacy_timestamp.format("%Y-%m-%dT%H:%M:%S.000000Z")
+                ))
+                .as_ref(),
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&attachments["auto-review-failures.jsonl"])?,
+            review,
+        );
         assert!(!attachments.contains_key("daemon.stderr.log"));
         assert!(!attachments.contains_key("daemon.stderr.log.previous"));
         assert_eq!(
@@ -313,5 +390,264 @@ async fn feedback_upload_includes_sqlite_flush_and_query_failures() -> Result<()
         }
     }
     pool.close().await;
+    Ok(())
+}
+
+/// Disabling uploads still permits local ZIPs, with invalid paths and collisions leaving existing files intact.
+#[tokio::test]
+async fn feedback_save_is_local_and_never_overwrites() -> Result<()> {
+    let proxy = TcpListener::bind("127.0.0.1:0").await?;
+    let proxy_uri = format!("http://{}", proxy.local_addr()?);
+    let mut app_server = TestAppServer::builder()
+        .with_args(&["-c", "feedback.enabled=false"])
+        .with_env_overrides(&[
+            ("HTTPS_PROXY", Some(proxy_uri.as_str())),
+            ("https_proxy", Some(proxy_uri.as_str())),
+            ("NO_PROXY", Some("")),
+            ("no_proxy", Some("")),
+        ])
+        .build_initialized()
+        .await?;
+    let request = app_server
+        .send_raw_request("feedback/upload", Some(json!({ "classification": "bug" })))
+        .await?;
+    let error = app_server
+        .read_stream_until_error_message(RequestId::Integer(request))
+        .await?;
+    assert_eq!(
+        error.error.message,
+        "sending feedback is disabled by configuration"
+    );
+
+    let directory = tempfile::tempdir()?;
+    let saved = directory.path().join("local.zip");
+    std::fs::write(&saved, b"existing export")?;
+    let foreign = if cfg!(windows) {
+        "/tmp/foreign.zip"
+    } else {
+        r"C:\Users\test\foreign.zip"
+    };
+    for (path, message) in [
+        (json!("relative.zip"), "absolute host path"),
+        (json!("~/feedback.zip"), "absolute host path"),
+        (json!(foreign), "absolute host path"),
+        (json!(&saved), "already exists"),
+        (
+            json!(directory.path().join("missing/feedback.zip")),
+            "failed to save feedback",
+        ),
+    ] {
+        let request = app_server
+            .send_raw_request(
+                "feedback/save",
+                Some(json!({
+                    "classification": "bug", "savePath": path,
+                })),
+            )
+            .await?;
+        let error = app_server
+            .read_stream_until_error_message(RequestId::Integer(request))
+            .await?;
+        assert!(error.error.message.contains(message), "{error:?}");
+    }
+    assert_eq!(std::fs::read(&saved)?, b"existing export");
+    assert_eq!(std::fs::read_dir(directory.path())?.count(), 1);
+    std::fs::remove_file(&saved)?;
+    let request = app_server
+        .send_raw_request(
+            "feedback/save",
+            Some(json!({
+                "classification": "bug", "savePath": saved,
+            })),
+        )
+        .await?;
+    let response = app_server
+        .read_stream_until_response_message(RequestId::Integer(request))
+        .await?;
+    assert_eq!(response.result["savedPath"], json!(saved));
+    let mut archive = zip::ZipArchive::new(std::fs::File::open(&saved)?)?;
+    let report: serde_json::Value = serde_json::from_reader(archive.by_name("report.json")?)?;
+    assert_eq!(report["tags"]["classification"], "bug");
+    assert!(
+        timeout(Duration::from_millis(100), proxy.accept())
+            .await
+            .is_err()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn feedback_save_preserves_selected_rollout_or_fails_without_upload() -> Result<()> {
+    use std::io::Read;
+
+    let proxy = TcpListener::bind("127.0.0.1:0").await?;
+    let proxy_uri = format!("http://{}", proxy.local_addr()?);
+    let mut app_server = TestAppServer::builder()
+        .with_env_overrides(&[
+            ("HTTPS_PROXY", Some(proxy_uri.as_str())),
+            ("https_proxy", Some(proxy_uri.as_str())),
+            ("NO_PROXY", Some("")),
+            ("no_proxy", Some("")),
+        ])
+        .build_initialized()
+        .await?;
+    let directory = tempfile::tempdir()?;
+    let filename = format!(
+        "rollout-2026-10-19T12-00-00-{}.jsonl",
+        codex_protocol::ThreadId::new()
+    );
+    let rollout = directory.path().join(&filename);
+    let bytes = b"{\"synthetic\":true}\n";
+    std::fs::write(&rollout, bytes)?;
+    let saved = directory.path().join("selected.zip");
+    let request = app_server.send_raw_request("feedback/save", Some(json!({
+        "classification": "bug", "includeLogs": true, "extraLogFiles": [rollout], "savePath": saved,
+    }))).await?;
+    let response = app_server
+        .read_stream_until_response_message(RequestId::Integer(request))
+        .await?;
+    assert_eq!(response.result["savedPath"], json!(saved));
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(&saved)?)?;
+    let entry = zip
+        .file_names()
+        .collect::<zip::result::ZipResult<Vec<_>>>()?
+        .into_iter()
+        .find(|name| name.ends_with(&format!("/{filename}")))
+        .expect("selected rollout")
+        .to_string();
+    let mut actual = Vec::new();
+    zip.by_name(&entry)?.read_to_end(&mut actual)?;
+    assert_eq!(actual, bytes);
+    drop(zip);
+    std::fs::remove_file(&rollout)?;
+    let missing = directory.path().join("missing.zip");
+    let request = app_server.send_raw_request("feedback/save", Some(json!({
+        "classification": "bug", "includeLogs": true, "extraLogFiles": [rollout], "savePath": missing,
+    }))).await?;
+    let error = app_server
+        .read_stream_until_error_message(RequestId::Integer(request))
+        .await?;
+    assert_eq!(error.error.code, -32603);
+    assert!(error.error.message.starts_with("failed to save feedback:"));
+    assert!(error.error.message.contains("selected attachment"));
+    assert!(!missing.exists());
+    assert_eq!(std::fs::read_dir(directory.path())?.count(), 1);
+    assert!(
+        timeout(Duration::from_millis(100), proxy.accept())
+            .await
+            .is_err()
+    );
+    Ok(())
+}
+
+/// Automatic untouched rollouts are omitted; explicit missing and deleted persisted files fail.
+#[tokio::test]
+async fn feedback_save_handles_rollout_materialization() -> Result<()> {
+    use codex_app_server_protocol::ThreadStartParams;
+    use std::io::Read;
+    let server = app_test_support::create_mock_responses_server_repeating_assistant("Done").await;
+    let home = tempfile::tempdir()?;
+    app_test_support::MockResponsesConfig::new(&server.uri()).write(home.path())?;
+    let proxy = TcpListener::bind("127.0.0.1:0").await?;
+    let proxy_uri = format!("http://{}", proxy.local_addr()?);
+    let mut app = TestAppServer::builder()
+        .with_codex_home(home.path())
+        .with_args(&["-c", "feedback.enabled=false"])
+        .with_env_overrides(&[
+            ("HTTPS_PROXY", Some(proxy_uri.as_str())),
+            ("https_proxy", Some(proxy_uri.as_str())),
+            ("NO_PROXY", Some("127.0.0.1,localhost")),
+            ("no_proxy", Some("127.0.0.1,localhost")),
+        ])
+        .build_initialized()
+        .await?;
+    let request = app
+        .send_thread_start_request_with_auto_env(ThreadStartParams::default())
+        .await?;
+    let response = app
+        .read_stream_until_response_message(RequestId::Integer(request))
+        .await?;
+    let thread = response.result["thread"]["id"].as_str().unwrap();
+    let rollout = std::path::PathBuf::from(response.result["thread"]["path"].as_str().unwrap());
+    assert!(!rollout.exists());
+    let output = tempfile::tempdir()?;
+    for explicit in [false, true] {
+        let destination = output.path().join(format!("fresh-{explicit}.zip"));
+        let request = app.send_raw_request("feedback/save", Some(json!({"classification":"bug", "includeLogs":true, "threadId":thread, "extraLogFiles": if explicit { vec![&rollout] } else { vec![] }, "savePath":destination}))).await?;
+        if explicit {
+            let error = app
+                .read_stream_until_error_message(RequestId::Integer(request))
+                .await?;
+            assert!(error.error.message.contains("selected attachment"));
+            assert!(!destination.exists());
+        } else {
+            app.read_stream_until_response_message(RequestId::Integer(request))
+                .await?;
+            let mut zip = zip::ZipArchive::new(std::fs::File::open(destination)?)?;
+            let names = zip
+                .file_names()
+                .collect::<zip::result::ZipResult<Vec<_>>>()?
+                .into_iter()
+                .map(std::borrow::Cow::into_owned)
+                .collect::<Vec<_>>();
+            assert!(
+                !names
+                    .iter()
+                    .any(|name| name.ends_with(".jsonl") || name.ends_with("rollouts.tar.gz"))
+            );
+            let index_name = names
+                .iter()
+                .find(|name| name.ends_with("feedback-thread-index.json"))
+                .expect("thread index");
+            let index: serde_json::Value = serde_json::from_reader(zip.by_name(index_name)?)?;
+            assert_eq!(
+                index["threads"][0]["rollout_filename"],
+                serde_json::Value::Null
+            );
+            assert_eq!(index["rollout_archive_filename"], serde_json::Value::Null);
+        }
+    }
+    assert!(!rollout.exists(), "saving must not materialize the rollout");
+    let request = app
+        .send_raw_request(
+            "turn/start",
+            Some(json!({"threadId":thread,"input":[{"type":"text","text":"hello"}]})),
+        )
+        .await?;
+    app.read_stream_until_response_message(RequestId::Integer(request))
+        .await?;
+    app.read_stream_until_notification_message("turn/completed")
+        .await?;
+    assert!(rollout.exists());
+    let expected = std::fs::read(&rollout)?;
+    let saved = output.path().join("materialized.zip");
+    let request = app.send_raw_request("feedback/save", Some(json!({"classification":"bug", "includeLogs":true, "threadId":thread, "savePath":saved}))).await?;
+    app.read_stream_until_response_message(RequestId::Integer(request))
+        .await?;
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(saved)?)?;
+    let suffix = format!("/{}", rollout.file_name().unwrap().to_string_lossy());
+    let entry = zip
+        .file_names()
+        .collect::<zip::result::ZipResult<Vec<_>>>()?
+        .into_iter()
+        .find(|name| name.ends_with(&suffix))
+        .unwrap()
+        .into_owned();
+    let mut actual = Vec::new();
+    zip.by_name(&entry)?.read_to_end(&mut actual)?;
+    assert_eq!(actual, expected);
+    std::fs::remove_file(&rollout)?;
+    let failed = output.path().join("deleted.zip");
+    let request = app.send_raw_request("feedback/save", Some(json!({"classification":"bug", "includeLogs":true, "threadId":thread, "savePath":failed}))).await?;
+    let error = app
+        .read_stream_until_error_message(RequestId::Integer(request))
+        .await?;
+    assert!(error.error.message.contains("selected attachment"));
+    assert!(!failed.exists());
+    assert!(
+        timeout(Duration::from_millis(100), proxy.accept())
+            .await
+            .is_err()
+    );
     Ok(())
 }

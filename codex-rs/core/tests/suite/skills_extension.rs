@@ -15,9 +15,10 @@ use codex_core::WaitForEnvironmentToolConfig;
 use codex_core::config::Config;
 use codex_core::config::Constrained;
 use codex_exec_server::CreateDirectoryOptions;
-use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecParams;
 use codex_exec_server::ExecProcessEvent;
+use codex_exec_server::FileSystemEnvironmentAccessor;
+use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::ProcessId;
 use codex_exec_server::RemoveOptions;
@@ -59,6 +60,7 @@ use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ThreadSettingsOverrides;
+use codex_protocol::protocol::TurnEnvironmentRequests;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnSettingsUpdate;
 use codex_protocol::protocol::TurnSettingsUpdateOutcome;
@@ -68,6 +70,7 @@ use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::user_input::UserInput;
 use codex_skills_extension::ExecutorSkillProvider;
 use codex_skills_extension::HostSkillProvider;
+use codex_skills_extension::HostSkillsLoadInput;
 use codex_skills_extension::SkillProvider;
 use codex_skills_extension::SkillProviderSource;
 use codex_skills_extension::SkillProviders;
@@ -105,6 +108,7 @@ use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_remote;
 use core_test_support::skip_if_target_windows;
 use core_test_support::skip_if_wine_exec;
+use core_test_support::test_codex::TestCodexHarness;
 use core_test_support::test_codex::environment_config_for_selection;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_codex::test_env;
@@ -150,14 +154,14 @@ struct PausedCatalogSkillProvider {
 }
 
 impl SkillProvider for PausedCatalogSkillProvider {
-    fn list(&self, query: SkillListQuery) -> SkillProviderFuture<'_, SkillCatalog> {
+    fn list<'a>(&'a self, query: SkillListQuery<'a>) -> SkillProviderFuture<'a, SkillCatalog> {
         Box::pin(async move {
             if query.host_snapshot.is_none() {
                 return Ok(SkillCatalog::default());
             }
             if self.first_discovery.swap(/*val*/ false, Ordering::SeqCst) {
                 self.started
-                    .send(query.turn_id.clone())
+                    .send(query.turn_id.clone().expect("turn discovery"))
                     .expect("discovery receiver");
                 self.resume
                     .acquire()
@@ -209,7 +213,7 @@ impl ExtensionEventSink for ChannelEventSink {
 }
 
 impl SkillProvider for StaticSkillProvider {
-    fn list(&self, query: SkillListQuery) -> SkillProviderFuture<'_, SkillCatalog> {
+    fn list<'a>(&'a self, query: SkillListQuery<'a>) -> SkillProviderFuture<'a, SkillCatalog> {
         // Keep thread context empty so the catalog is exercised through the
         // production turn-input path, where the host snapshot is available.
         let catalog = if query.host_snapshot.is_some() {
@@ -243,7 +247,7 @@ impl SkillProvider for StaticSkillProvider {
 }
 
 impl SkillProvider for CatalogSkillProvider {
-    fn list(&self, _query: SkillListQuery) -> SkillProviderFuture<'_, SkillCatalog> {
+    fn list<'a>(&'a self, _query: SkillListQuery<'a>) -> SkillProviderFuture<'a, SkillCatalog> {
         Box::pin(async { Ok(self.catalog.clone()) })
     }
 
@@ -316,6 +320,7 @@ const EXECUTOR_CATALOG: [(&str, &str); 6] = [
 
 fn executor_catalog(skills: &[(&str, &str)]) -> SkillCatalog {
     SkillCatalog {
+        is_partial: false,
         entries: skills
             .iter()
             .map(|(name, description)| {
@@ -365,6 +370,8 @@ fn catalog_extensions(
     install_with_providers(&mut extensions, providers, |config: &Config| {
         SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -381,16 +388,7 @@ async fn wait_for_analytics_events(
 ) -> Vec<Value> {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let events = server
-            .received_requests()
-            .await
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|request| request.url.path() == "/codex/analytics-events/events")
-            .filter_map(|request| serde_json::from_slice::<Value>(&request.body).ok())
-            .flat_map(|payload| payload["events"].as_array().cloned().unwrap_or_default())
-            .filter(|event| event["event_type"] == event_type)
-            .collect::<Vec<_>>();
+        let events = responses::received_analytics_events(server, event_type).await;
         if events.len() >= expected_count {
             return events;
         }
@@ -585,13 +583,33 @@ async fn rendered_catalogs_for_turns(
     Ok((developer_texts, client_warning_messages))
 }
 
+#[derive(Clone, Copy)]
+enum RepositoryReadAccess {
+    Full,
+    Repository,
+    OuterMarkerOnly,
+    NoMarkers,
+}
+
+#[test_case(RepositoryReadAccess::Full; "full read access")]
+#[test_case(RepositoryReadAccess::Repository; "repository-only read access")]
+#[test_case(RepositoryReadAccess::OuterMarkerOnly; "inner repository marker hidden")]
+#[test_case(RepositoryReadAccess::NoMarkers; "all repository markers hidden")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn capability_sections_render_in_order_with_host_repo_and_plugin_skills() -> Result<()> {
+async fn capability_sections_render_in_order_with_host_repo_and_plugin_skills(
+    repository_read_access: RepositoryReadAccess,
+) -> Result<()> {
     skip_if_wine_exec!(
         Ok(()),
         "executor-backed repo skills require matching host and executor path conventions"
     );
     skip_if_no_network!(Ok(()));
+    if !matches!(repository_read_access, RepositoryReadAccess::Full) {
+        skip_if_target_windows!(
+            Ok(()),
+            "restricted reads require the elevated Windows sandbox backend"
+        );
+    }
 
     const HOST_SKILL_BODY: &str = "Use the host skill instructions.";
     const REPO_SKILL_BODY: &str = "Use the repository skill instructions.";
@@ -642,6 +660,8 @@ async fn capability_sections_render_in_order_with_host_repo_and_plugin_skills() 
     let mut extensions = ExtensionRegistryBuilder::<Config>::new();
     install(&mut extensions, |config: &Config| SkillsExtensionConfig {
         include_instructions: config.include_skill_instructions,
+        catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+        omit_descriptions: false,
         max_context_tokens: config.skill_max_context_tokens,
         bundled_skills_enabled: config.bundled_skills_enabled(),
         cloud_skill_enabled: config.cloud_skill_enabled,
@@ -652,22 +672,38 @@ async fn capability_sections_render_in_order_with_host_repo_and_plugin_skills() 
         .with_extensions(Arc::new(extensions.build()))
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_workspace_setup(|cwd, fs| async move {
-            let skill_dir = cwd.join(".agents/skills/repo-search");
             fs.create_directory(
-                &PathUri::from_host_native_path(&skill_dir)?,
+                &PathUri::from_abs_path(&cwd),
                 CreateDirectoryOptions { recursive: true, follow_symlinks: true },
                 /*sandbox*/ None,
             )
             .await?;
-            fs.write_file(
-                &PathUri::from_host_native_path(skill_dir.join("SKILL.md"))?,
-                format!(
-                    "---\nname: repo-search\ndescription: inspect repo data\n---\n\n{REPO_SKILL_BODY}\n"
+            let repository = cwd.parent().expect("inner repository");
+            let outer = repository.parent().expect("outer repository");
+            for (root, name) in [(&repository, "repo-search"), (&outer, "outer-search")] {
+                fs.write_file(
+                    &PathUri::from_abs_path(&root.join(".git")),
+                    b"gitdir: fixture\n".to_vec(),
+                    Default::default(), /*sandbox*/ None,
                 )
-                .into_bytes(),
-                Default::default(), /*sandbox*/ None,
-            )
-            .await?;
+                .await?;
+                let skill_dir = PathUri::from_abs_path(&root.join(".agents/skills").join(name));
+                fs.create_directory(
+                    &skill_dir,
+                    CreateDirectoryOptions { recursive: true, follow_symlinks: true },
+                    /*sandbox*/ None,
+                )
+                .await?;
+                fs.write_file(
+                    &skill_dir.join("SKILL.md")?,
+                    format!(
+                        "---\nname: {name}\ndescription: inspect repo data\n---\n\n{REPO_SKILL_BODY}\n"
+                    )
+                    .into_bytes(),
+                    Default::default(), /*sandbox*/ None,
+                )
+                .await?;
+            }
             Ok(())
         })
         .with_config(move |config| {
@@ -676,12 +712,45 @@ async fn capability_sections_render_in_order_with_host_repo_and_plugin_skills() 
                 .enable(Feature::Apps)
                 .expect("test config should allow feature update");
             config.chatgpt_base_url = apps_server.chatgpt_base_url;
+            config.cwd = config.cwd.join("outer/inner/work");
+            let repository = config.cwd.parent().expect("inner repository");
+            let outer = repository.parent().expect("outer repository");
+            let mut readable_paths = match repository_read_access {
+                RepositoryReadAccess::Full => Vec::new(),
+                RepositoryReadAccess::Repository => vec![repository],
+                RepositoryReadAccess::OuterMarkerOnly | RepositoryReadAccess::NoMarkers => vec![
+                    config.cwd.clone(),
+                    repository.join(".agents/skills"),
+                    outer.join(".agents/skills"),
+                ],
+            };
+            if matches!(repository_read_access, RepositoryReadAccess::OuterMarkerOnly) {
+                readable_paths.push(outer.join(".git"));
+            }
+            if !readable_paths.is_empty() {
+                config.permissions.set_permission_profile(PermissionProfile::from_runtime_permissions(
+                    &FileSystemSandboxPolicy::restricted(readable_paths.into_iter().map(|path| {
+                        FileSystemSandboxEntry::new(
+                            FileSystemPath::Path { path: PathUri::from_abs_path(&path) },
+                            FileSystemAccessMode::Read,
+                        )
+                    }).collect()),
+                    NetworkSandboxPolicy::Restricted,
+                )).expect("repository read policy");
+            }
         });
     let test = builder.build_with_auto_env(&server).await?;
     let repo_skill_path = test
         .fs()
         .canonicalize(
-            &PathUri::from_abs_path(&test.config.cwd.join(".agents/skills/repo-search/SKILL.md")),
+            &PathUri::from_abs_path(
+                &test
+                    .config
+                    .cwd
+                    .parent()
+                    .expect("inner repository")
+                    .join(".agents/skills/repo-search/SKILL.md"),
+            ),
             /*sandbox*/ None,
         )
         .await?
@@ -747,6 +816,10 @@ async fn capability_sections_render_in_order_with_host_repo_and_plugin_skills() 
         "expected repo skill summary in developer message: {developer_messages:?}"
     );
     assert!(
+        !developer_text.contains("outer-search:"),
+        "hidden project markers must not expose containing-repository skills: {developer_messages:?}"
+    );
+    assert!(
         developer_text.contains("host-search: inspect host data"),
         "expected host skill summary in developer message: {developer_messages:?}"
     );
@@ -776,6 +849,486 @@ async fn capability_sections_render_in_order_with_host_repo_and_plugin_skills() 
     }
 
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum CachedRepositorySkillChange {
+    ReplaceFileWithSymlink,
+    ReplaceDirectoryWithSymlink,
+}
+
+/// Cached metadata never authorizes a live read after permissions or a skill's target changes.
+#[test_case(CachedRepositorySkillChange::ReplaceFileWithSymlink; "file becomes a symlink")]
+#[test_case(CachedRepositorySkillChange::ReplaceDirectoryWithSymlink; "parent becomes a symlink")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn repository_skill_cache_cannot_read_inaccessible_files(
+    change: CachedRepositorySkillChange,
+) -> Result<()> {
+    skip_if_wine_exec!(
+        Ok(()),
+        "executor-backed repo skills require matching host and executor path conventions"
+    );
+    skip_if_target_windows!(
+        Ok(()),
+        "restricted reads require the elevated Windows sandbox backend, unavailable in this fixture"
+    );
+    skip_if_no_network!(Ok(()));
+
+    const GATED_BODY: &str = "The gated skill's private instructions.";
+    let mut extensions = ExtensionRegistryBuilder::<Config>::new();
+    install(&mut extensions, |config: &Config| SkillsExtensionConfig {
+        include_instructions: config.include_skill_instructions,
+        max_context_tokens: config.skill_max_context_tokens,
+        catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+        omit_descriptions: false,
+        bundled_skills_enabled: false,
+        cloud_skill_enabled: false,
+        shadow_selection_enabled: false,
+    });
+    let builder = test_codex()
+        .with_extensions(Arc::new(extensions.build()))
+        .with_config(configure_catalog_test)
+        .with_workspace_setup(|cwd, file_system| async move {
+            for (name, body) in [
+                ("repo-allowed", "The allowed skill's instructions."),
+                ("repo-gated", GATED_BODY),
+                ("repo-revoked", GATED_BODY),
+            ] {
+                let directory =
+                    PathUri::from_host_native_path(cwd.join(".agents/skills").join(name))?;
+                file_system
+                    .create_directory(
+                        &directory,
+                        CreateDirectoryOptions {
+                            recursive: true,
+                            follow_symlinks: true,
+                        },
+                        /*sandbox*/ None,
+                    )
+                    .await?;
+                file_system
+                    .write_file(
+                        &directory.join("SKILL.md")?,
+                        format!(
+                            "---\nname: {name}\ndescription: Repository skill.\n---\n\n{body}\n"
+                        )
+                        .into_bytes(),
+                        Default::default(),
+                        /*sandbox*/ None,
+                    )
+                    .await?;
+            }
+            Ok(())
+        });
+    let harness = TestCodexHarness::with_auto_env_builder(builder).await?;
+    let test = harness.test();
+    let responses = responses::mount_sse_sequence(
+        harness.server(),
+        vec![
+            sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+            sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]),
+            sse(vec![ev_response_created("resp-3"), ev_completed("resp-3")]),
+        ],
+    )
+    .await;
+    let gated_path = test
+        .fs()
+        .canonicalize(
+            &PathUri::from_abs_path(&test.config.cwd.join(".agents/skills/repo-gated/SKILL.md")),
+            /*sandbox*/ None,
+        )
+        .await?;
+
+    let selection = test.executor_environment().selection();
+    let environment = test
+        .thread_manager
+        .environment_manager()
+        .get_environment(&selection.environment_id)
+        .expect("configured executor environment");
+    let file_system = environment.get_filesystem();
+    let executor_cwd = selection.cwd.clone();
+    let denied_directory = executor_cwd.join("denied")?;
+    harness.write_file("denied/SKILL.md", GATED_BODY).await?;
+    let denied_directory = file_system
+        .canonicalize(&denied_directory, /*sandbox*/ None)
+        .await?;
+    let initial_permissions = PermissionProfile::from_runtime_permissions(
+        &FileSystemSandboxPolicy::restricted(vec![
+            FileSystemSandboxEntry::new(
+                FileSystemPath::Special {
+                    value: FileSystemSpecialPath::Root,
+                },
+                FileSystemAccessMode::Read,
+            ),
+            FileSystemSandboxEntry::new(
+                FileSystemPath::Path {
+                    path: denied_directory.clone(),
+                },
+                FileSystemAccessMode::Deny,
+            ),
+        ]),
+        NetworkSandboxPolicy::Restricted,
+    );
+    let revoked_path = file_system
+        .canonicalize(
+            &executor_cwd.join(".agents/skills/repo-revoked/SKILL.md")?,
+            /*sandbox*/ None,
+        )
+        .await?;
+    let (mut narrowed_policy, network_policy) = initial_permissions.to_runtime_permissions();
+    narrowed_policy.entries.push(FileSystemSandboxEntry::new(
+        FileSystemPath::Path { path: revoked_path },
+        FileSystemAccessMode::Deny,
+    ));
+    let narrowed_permissions =
+        PermissionProfile::from_runtime_permissions(&narrowed_policy, network_policy);
+    test.submit_turn_with_permission_profile("Inspect the repository skills.", initial_permissions)
+        .await?;
+
+    let open = FileSystemEnvironmentAccessor::unrestricted(&file_system);
+    let snapshot = test
+        .thread_manager
+        .skills_service()
+        .snapshot_for_config(
+            &HostSkillsLoadInput::new(
+                test.config.cwd.clone(),
+                Vec::new(),
+                test.config.config_layer_stack.clone(),
+            ),
+            Some(&open),
+        )
+        .await;
+    let [revoked_skill, gated_skill] = ["repo-revoked", "repo-gated"].map(|name| {
+        snapshot
+            .outcome()
+            .skills
+            .iter()
+            .find(|skill| skill.name == name)
+            .expect("first turn discovered the repository skill")
+            .clone()
+    });
+
+    // Revoking access hides the skill and prevents cached metadata from reopening it.
+    let restricted = FileSystemEnvironmentAccessor::new(
+        &file_system,
+        FileSystemSandboxContext::from_permission_profile(
+            narrowed_permissions.clone(),
+            executor_cwd.clone(),
+        ),
+    );
+    test.submit_turn_with_permission_profile(
+        "Use $repo-revoked if it is still available.",
+        narrowed_permissions.clone(),
+    )
+    .await?;
+    snapshot
+        .read_skill_text(&revoked_skill, &[&restricted])
+        .await
+        .expect_err("old metadata cannot reopen a now-denied skill");
+    assert!(
+        snapshot
+            .read_skill_text(&revoked_skill, &[&open])
+            .await?
+            .contains(GATED_BODY)
+    );
+
+    // An allowed skill path must not bypass the denial of its new symlink target.
+    let (link, target) = match change {
+        CachedRepositorySkillChange::ReplaceFileWithSymlink => {
+            (gated_path, denied_directory.join("SKILL.md")?)
+        }
+        CachedRepositorySkillChange::ReplaceDirectoryWithSymlink => (
+            gated_path.parent().expect("skill directory"),
+            denied_directory,
+        ),
+    };
+    file_system
+        .remove(
+            &link,
+            RemoveOptions {
+                recursive: true,
+                force: false,
+                follow_symlinks: true,
+            },
+            /*sandbox*/ None,
+        )
+        .await?;
+    let process = test
+        .executor_environment()
+        .environment()
+        .get_exec_backend()
+        .start(ExecParams {
+            process_id: ProcessId::from("replace-cached-skill"),
+            metadata: None,
+            argv: vec![
+                "/bin/ln".to_string(),
+                "-s".to_string(),
+                target.inferred_native_path_string(),
+                link.inferred_native_path_string(),
+            ],
+            cwd: executor_cwd.clone(),
+            env_policy: None,
+            shell_snapshot: None,
+            env: Default::default(),
+            tty: false,
+            pipe_stdin: false,
+            arg0: None,
+            sandbox: None,
+            enforce_managed_network: false,
+            managed_network: None,
+            network_proxy: None,
+        })
+        .await?
+        .process;
+    let mut events = process.subscribe_events();
+    loop {
+        match events.recv().await? {
+            ExecProcessEvent::Exited { exit_code, .. } => {
+                assert_eq!(exit_code, 0, "replace the cached skill on its executor");
+                break;
+            }
+            ExecProcessEvent::Output(_) => {}
+            event @ (ExecProcessEvent::Closed { .. } | ExecProcessEvent::Failed(_)) => {
+                panic!("skill symlink process did not exit: {event:?}")
+            }
+        }
+    }
+    test.submit_turn_with_permission_profile(
+        "Use $repo-gated if it is still available.",
+        narrowed_permissions,
+    )
+    .await?;
+
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 3);
+    let first_developer_texts = requests[0].message_input_texts("developer");
+    let first_catalog = catalog_text(&first_developer_texts, "repo");
+    assert!(first_catalog.contains("- repo-revoked:"));
+
+    let second_developer_texts = requests[1].message_input_texts("developer");
+    assert!(
+        second_developer_texts
+            .iter()
+            .any(|text| text == first_catalog)
+    );
+    let latest_catalog = second_developer_texts
+        .iter()
+        .rev()
+        .find(|text| text.contains("- repo-allowed:"))
+        .expect("allowed repository skill remains available after permissions narrow");
+    assert!(!latest_catalog.contains("- repo-revoked:"));
+    assert!(latest_catalog.contains("- repo-gated:"));
+    for request in &requests[1..] {
+        assert!(
+            request
+                .message_input_texts("user")
+                .iter()
+                .all(|text| !text.contains(GATED_BODY))
+        );
+    }
+
+    snapshot
+        .read_skill_text(&gated_skill, &[&restricted])
+        .await
+        .expect_err("old metadata cannot reopen a now-denied skill");
+    let restored = snapshot.read_skill_text(&gated_skill, &[&open]).await?;
+    assert!(restored.contains(GATED_BODY));
+    Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum RepositoryGrant {
+    Turn,
+    Session,
+    NewNestedRepository,
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn repository_skill_discovery_uses_session_grants() -> Result<()> {
+    repository_skill_grant_history(RepositoryGrant::Session)
+        .await
+        .map(drop)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn repository_skill_grant_excludes_a_parent_after_a_nested_repository_is_created()
+-> Result<()> {
+    repository_skill_grant_history(RepositoryGrant::NewNestedRepository)
+        .await
+        .map(drop)
+}
+
+pub(super) async fn repository_skill_grant_history(
+    case: RepositoryGrant,
+) -> Result<Option<(Vec<responses::ResponsesRequest>, PathUri)>> {
+    skip_if_no_network!(Ok(None));
+    skip_if_target_windows!(
+        Ok(None),
+        "restricted reads require the elevated Windows sandbox backend, unavailable in this fixture"
+    );
+    let scope = match case {
+        RepositoryGrant::Turn | RepositoryGrant::NewNestedRepository => PermissionGrantScope::Turn,
+        RepositoryGrant::Session => PermissionGrantScope::Session,
+    };
+    let (extensions, _events) =
+        catalog_extensions(SkillCatalog::default(), /*include_host_provider*/ true);
+    let harness = TestCodexHarness::with_auto_env_builder(
+        test_codex()
+            .with_extensions(extensions)
+            .with_model_info_override("gpt-5.5", |model| {
+                model.include_skills_usage_instructions = false
+            })
+            .with_config(move |config| {
+                configure_catalog_test(config);
+                if scope == PermissionGrantScope::Turn {
+                    config
+                        .features
+                        .enable(Feature::SkillCatalogDeltas)
+                        .expect("catalog deltas");
+                }
+                config
+                    .features
+                    .enable(Feature::RequestPermissionsTool)
+                    .expect("permission tool");
+                config.permissions.approval_policy =
+                    Constrained::allow_any(AskForApproval::OnRequest);
+                config
+                    .permissions
+                    .set_permission_profile(PermissionProfile::from_runtime_permissions(
+                        &FileSystemSandboxPolicy::restricted(Vec::new()),
+                        NetworkSandboxPolicy::Restricted,
+                    ))
+                    .expect("no initial filesystem access");
+            }),
+    )
+    .await?;
+    harness.write_file(
+        ".agents/skills/approved-skill/SKILL.md",
+        "---\nname: approved-skill\ndescription: Approved repository instructions.\n---\n\nApproved skill body.",
+    ).await?;
+    let test = harness.test();
+    let nested = case == RepositoryGrant::NewNestedRepository;
+    let mut workspace = test.executor_environment().request();
+    if nested {
+        // The parent initially owns the skill. Add the inner marker while approval is pending.
+        harness.write_file(".git", "").await?;
+        harness.write_file("nested/README.md", "").await?;
+        workspace.cwd = workspace.cwd.join("nested")?;
+    }
+    let skill_root = test
+        .fs()
+        .canonicalize(
+            &test
+                .executor_environment()
+                .selection()
+                .cwd
+                .join(".agents/skills")?,
+            /*sandbox*/ None,
+        )
+        .await?;
+    let permissions = RequestPermissionProfile {
+        file_system: Some(FileSystemPermissions {
+            entries: vec![FileSystemSandboxEntry::new(
+                FileSystemPath::Path {
+                    path: skill_root.clone(),
+                },
+                FileSystemAccessMode::Read,
+            )],
+            glob_scan_max_depth: None,
+        }),
+        ..Default::default()
+    };
+    let grant = |id| {
+        sse(vec![
+            ev_response_created(id),
+            responses::ev_function_call(
+                id,
+                "request_permissions",
+                &json!({"reason": "Read repository skills", "permissions": permissions})
+                    .to_string(),
+            ),
+            ev_completed(id),
+        ])
+    };
+    let complete = |id| sse(vec![ev_response_created(id), ev_completed(id)]);
+    let reapprove = case == RepositoryGrant::Turn;
+    let mut steps = vec![grant("grant-skills"), complete("granted")];
+    if reapprove {
+        steps.push(grant("reapprove-skills"));
+    }
+    steps.push(complete("next-turn"));
+    let responses = responses::mount_sse_sequence(harness.server(), steps).await;
+    for (text, needs_approval) in [
+        ("Request access to the repository skills.", true),
+        ("Use $approved-skill.", reapprove),
+    ] {
+        let mut turn = TurnInputRequest::user_input(vec![UserInput::Text {
+            text: text.to_string(),
+            text_elements: Vec::new(),
+        }]);
+        if nested {
+            turn.thread_settings.environments = Some(TurnEnvironmentRequests::new(
+                test.config.cwd.clone(),
+                vec![workspace.clone()],
+            ));
+        }
+        test.codex.start_or_steer_turn(turn).await?;
+        if needs_approval {
+            let event = wait_for_event(&test.codex, |event| {
+                matches!(
+                    event,
+                    EventMsg::RequestPermissions(_) | EventMsg::TurnComplete(_)
+                )
+            })
+            .await;
+            let EventMsg::RequestPermissions(request) = event else {
+                panic!("expected permission request: {event:?}");
+            };
+            assert_eq!(request.permissions, permissions);
+            if nested {
+                harness.write_file("nested/.git", "").await?;
+            }
+            test.codex
+                .submit(Op::RequestPermissionsResponse {
+                    id: request.call_id,
+                    response: RequestPermissionsResponse {
+                        permissions: permissions.clone(),
+                        scope,
+                        strict_auto_review: false,
+                    },
+                })
+                .await?;
+        }
+        wait_for_event(&test.codex, |event| {
+            matches!(event, EventMsg::TurnComplete(_))
+        })
+        .await;
+    }
+    let requests = responses.requests();
+    let advertised = requests
+        .iter()
+        .map(|request| {
+            request
+                .message_input_texts("developer")
+                .join("\n")
+                .contains("- approved-skill:")
+        })
+        .collect::<Vec<_>>();
+    // Earlier catalog entries remain in the request history after access expires.
+    let expected: &[bool] = match case {
+        RepositoryGrant::Turn => &[false, true, true, true],
+        RepositoryGrant::Session => &[false, true, true],
+        RepositoryGrant::NewNestedRepository => &[false, false, false],
+    };
+    assert_eq!(advertised, expected);
+    assert_eq!(
+        requests[2]
+            .message_input_texts("user")
+            .join("\n")
+            .contains("Approved skill body."),
+        scope == PermissionGrantScope::Session,
+    );
+    Ok(Some((requests, skill_root)))
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -871,7 +1424,7 @@ async fn explicit_skill_prompt_precedes_plugin_instructions() -> Result<()> {
     )?;
     std::fs::write(
         codex_home.path().join("config.toml"),
-        "[features]\nplugins = true\n\n[plugins.\"sample@test\"]\nenabled = true\n",
+        "[features]\nplugins = true\nsimplified_selection_hints = true\n\n[plugins.\"sample@test\"]\nenabled = true\n",
     )?;
     let skill_path = dunce::canonicalize(skill_dir.join("SKILL.md"))?;
     let (extensions, _) =
@@ -914,7 +1467,8 @@ async fn explicit_skill_prompt_precedes_plugin_instructions() -> Result<()> {
             .unwrap_or_else(|| panic!("missing prompt containing `{expected}`: {input:?}"))
     };
     let skill_position = prompt_position("<skill>\n<name>sample:sample-search</name>");
-    let plugin_position = prompt_position("Capabilities from the `sample` plugin:");
+    let plugin_position = prompt_position("The user selected the `sample` plugin.");
+    assert_eq!(input[plugin_position]["role"], "developer");
     assert!(
         skill_position < plugin_position,
         "host skill prompts should precede plugin instructions: {input:?}"
@@ -935,6 +1489,7 @@ async fn production_turn_aliases_executor_skill_roots() -> Result<()> {
     )
     .await;
     let catalog = SkillCatalog {
+        is_partial: false,
         entries: ["search", "review", "summarize"]
             .into_iter()
             .map(|name| {
@@ -1044,13 +1599,12 @@ async fn opted_in_executor_provider_skips_host_discovery_but_injects_discovered_
     install_with_providers(
         &mut extensions,
         SkillProviders::new().with_executor_provider(Arc::new(
-            ExecutorSkillProvider::new_with_restriction_product(
-                Arc::new(EnvironmentManager::default_for_tests()),
-                /*restriction_product*/ None,
-            ),
+            ExecutorSkillProvider::new_with_restriction_product(/*restriction_product*/ None),
         )),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -1273,13 +1827,12 @@ async fn executor_only_provider_preserves_structured_repo_skill_without_discover
     install_with_providers(
         &mut extensions,
         SkillProviders::new().with_executor_provider(Arc::new(
-            ExecutorSkillProvider::new_with_restriction_product(
-                Arc::new(EnvironmentManager::default_for_tests()),
-                /*restriction_product*/ None,
-            ),
+            ExecutorSkillProvider::new_with_restriction_product(/*restriction_product*/ None),
         )),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -1422,13 +1975,12 @@ async fn executor_skill_tool_reads_references_under_current_permissions(
     install_with_providers(
         &mut extensions,
         SkillProviders::new().with_executor_provider(Arc::new(
-            ExecutorSkillProvider::new_with_restriction_product(
-                Arc::new(EnvironmentManager::default_for_tests()),
-                /*restriction_product*/ None,
-            ),
+            ExecutorSkillProvider::new_with_restriction_product(/*restriction_product*/ None),
         )),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -1831,6 +2383,7 @@ async fn explicit_executor_skill_prompt_rejects_oversized_resource() -> Result<(
         )
         .await?;
     let catalog = SkillCatalog {
+        is_partial: false,
         entries: vec![SkillCatalogEntry::new(
             SkillPackageId("skill://prompt-limit/live".to_string()),
             SkillAuthority::new(SkillSourceKind::Executor, "prompt-limit"),
@@ -1844,16 +2397,6 @@ async fn explicit_executor_skill_prompt_rejects_oversized_resource() -> Result<(
         )],
         warnings: Vec::new(),
     };
-    let environment_manager = match environment.exec_server_url() {
-        Some(url) => {
-            EnvironmentManager::create_for_tests(
-                Some(url.to_string()),
-                /*local_runtime_paths*/ None,
-            )
-            .await
-        }
-        None => EnvironmentManager::default_for_tests(),
-    };
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let mut extensions =
         ExtensionRegistryBuilder::<Config>::with_event_sink(Arc::new(ChannelEventSink(event_tx)));
@@ -1863,12 +2406,13 @@ async fn explicit_executor_skill_prompt_rejects_oversized_resource() -> Result<(
             .with_executor_provider(Arc::new(CatalogSkillProvider { catalog }))
             .with_executor_provider(Arc::new(
                 ExecutorSkillProvider::new_with_restriction_product(
-                    Arc::new(environment_manager),
                     /*restriction_product*/ None,
                 ),
             )),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -1948,6 +2492,7 @@ async fn executor_skill_invocation_is_environment_scoped_and_deduplicated() -> R
     std::fs::write(&skill_path, "executor skill contents\n")?;
     let skill_uri = PathUri::from_host_native_path(&skill_path)?;
     let catalog = SkillCatalog {
+        is_partial: false,
         entries: vec![
             SkillCatalogEntry::new(
                 SkillPackageId("skill://other-root/demo".to_string()),
@@ -2057,6 +2602,7 @@ async fn production_turn_aliases_catalogs_with_separate_cloud_budget() -> Result
 
     let resource_catalog =
         |kind: SkillSourceKind, authority: &str, root: &str, prefix: &str| SkillCatalog {
+            is_partial: false,
             entries: ["search", "review", "summarize"]
                 .into_iter()
                 .map(|suffix| {
@@ -2099,6 +2645,8 @@ async fn production_turn_aliases_catalogs_with_separate_cloud_budget() -> Result
             .with_host_provider(Arc::new(HostSkillProvider::new())),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: true,
@@ -2186,6 +2734,7 @@ async fn assert_catalog_model_switch(max_context_tokens: Option<usize>) -> Resul
     let codex_home = Arc::new(TempDir::new()?);
     // Use the normal metrics sink to verify core's model attribution.
     let telemetry = OtelProvider::try_new(&OtelSettings {
+        headers_helper: None,
         http_client_factory: codex_core::test_support::default_http_client_factory(),
         environment: "test".to_string(),
         service_name: "skills-model-switch".to_string(),
@@ -2207,6 +2756,7 @@ async fn assert_catalog_model_switch(max_context_tokens: Option<usize>) -> Resul
     .expect("metrics provider");
     let skill_count = 800;
     let catalog = SkillCatalog {
+        is_partial: false,
         entries: (0..skill_count)
             .map(|index| {
                 let name = format!("skill-{index:03}");
@@ -2237,6 +2787,8 @@ async fn assert_catalog_model_switch(max_context_tokens: Option<usize>) -> Resul
         SkillProviders::new().with_host_provider(provider.clone()),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -2654,6 +3206,7 @@ async fn production_turn_uses_provider_host_catalog_and_core_snapshot_injection(
     let provider_description = "This skill comes from the extension host provider.";
     let provider_contents = "# Provider instructions that Core must not inject.";
     let provider_catalog = SkillCatalog {
+        is_partial: false,
         entries: vec![
             SkillCatalogEntry::new(
                 SkillPackageId(skill_resource.clone()),
@@ -2675,6 +3228,8 @@ async fn production_turn_uses_provider_host_catalog_and_core_snapshot_injection(
         })),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -2768,6 +3323,7 @@ async fn production_turn_suppresses_only_the_superseded_host_skill_prompt() -> R
     let provider_resource = "skill://test/first-host/SKILL.md";
     let provider_contents = "FIRST_PROVIDER_BODY";
     let catalog = SkillCatalog {
+        is_partial: false,
         entries: vec![
             SkillCatalogEntry::new(
                 SkillPackageId("test/first-host".to_string()),
@@ -2795,6 +3351,8 @@ async fn production_turn_suppresses_only_the_superseded_host_skill_prompt() -> R
         )),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -3026,6 +3584,7 @@ async fn production_turn_keeps_rebalanced_catalogs_stable_after_compaction_and_r
     let skill_description = "Search available company knowledge. ".repeat(40);
     let skill_resource = "skill://codex_apps/cloud-search/SKILL.md";
     let catalog = SkillCatalog {
+        is_partial: false,
         entries: vec![
             SkillCatalogEntry::new(
                 SkillPackageId("cloud/cloud-search".to_string()),
@@ -3048,6 +3607,8 @@ async fn production_turn_keeps_rebalanced_catalogs_stable_after_compaction_and_r
             })),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: config.cloud_skill_enabled,
@@ -3062,10 +3623,6 @@ async fn production_turn_keeps_rebalanced_catalogs_stable_after_compaction_and_r
             model_info.max_context_window = None;
         })
         .with_config(|config| {
-            config
-                .features
-                .enable(Feature::StableEnvironmentTools)
-                .expect("enable stable environment tools");
             configure_catalog_test(config);
             config.cloud_skill_enabled = true;
             config.model_provider.name = "Skills compaction test".to_string();
@@ -3534,6 +4091,7 @@ async fn production_turn_fairly_shortens_extension_catalog_descriptions() -> Res
     let source_kind = SkillSourceKind::Custom("test".to_string());
     let description = "x".repeat(1_025);
     let catalog = SkillCatalog {
+        is_partial: false,
         entries: (0..10)
             .map(|index| {
                 let name = format!("skill-{index:02}");
@@ -3562,6 +4120,8 @@ async fn production_turn_fairly_shortens_extension_catalog_descriptions() -> Res
         )),
         |config: &Config| SkillsExtensionConfig {
             include_instructions: config.include_skill_instructions,
+            catalog_deltas_enabled: config.features.enabled(Feature::SkillCatalogDeltas),
+            omit_descriptions: false,
             max_context_tokens: config.skill_max_context_tokens,
             bundled_skills_enabled: false,
             cloud_skill_enabled: false,
@@ -3608,3 +4168,6 @@ async fn production_turn_fairly_shortens_extension_catalog_descriptions() -> Res
 
     Ok(())
 }
+
+#[path = "skills_extension/discovery_grants_tests.rs"]
+mod discovery_grants_tests;

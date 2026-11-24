@@ -1,4 +1,5 @@
-//! Emits Guardian metrics with bounded tags and the existing telemetry schema.
+//! Calculates per-review token usage and emits Guardian metrics with bounded tags
+//! and the existing telemetry schema.
 
 use std::time::Duration;
 
@@ -21,12 +22,27 @@ use codex_protocol::protocol::GuardianRiskLevel;
 use codex_protocol::protocol::GuardianUserAuthorization;
 use codex_protocol::protocol::TokenUsage;
 
+pub fn token_usage_delta(start: &TokenUsage, end: &TokenUsage) -> TokenUsage {
+    TokenUsage {
+        input_tokens: (end.input_tokens - start.input_tokens).max(0),
+        cached_input_tokens: (end.cached_input_tokens - start.cached_input_tokens).max(0),
+        cache_write_input_tokens: (end.cache_write_input_tokens - start.cache_write_input_tokens)
+            .max(0),
+        output_tokens: (end.output_tokens - start.output_tokens).max(0),
+        reasoning_output_tokens: (end.reasoning_output_tokens - start.reasoning_output_tokens)
+            .max(0),
+        total_tokens: (end.total_tokens - start.total_tokens).max(0),
+        codex_rollout_budget_units: None,
+    }
+}
+
 pub(crate) fn emit_guardian_review_metrics(
     session_telemetry: &SessionTelemetry,
     result: &GuardianReviewAnalyticsResult,
     approval_request_source: GuardianApprovalRequestSource,
     reviewed_action: &GuardianReviewedAction,
-    completion_latency_ms: u64,
+    turn_origin: &'static str,
+    elapsed: Duration,
 ) {
     let tags = guardian_review_metric_tags(result, approval_request_source, reviewed_action);
     let tag_refs: Vec<(&str, &str)> = tags
@@ -46,15 +62,29 @@ pub(crate) fn emit_guardian_review_metrics(
     };
     let mut counter_tag_refs = tag_refs.clone();
     counter_tag_refs.extend(mcp_tags.iter().map(|(key, value)| (*key, value.as_str())));
+    counter_tag_refs.push(("context_changed", bool_tag(result.context_changed)));
+    counter_tag_refs.push(("turn_origin", turn_origin));
     session_telemetry.counter(
         GUARDIAN_REVIEW_COUNT_METRIC,
         /*inc*/ 1,
         &counter_tag_refs,
     );
-    session_telemetry.record_duration(
-        GUARDIAN_REVIEW_DURATION_METRIC,
-        Duration::from_millis(completion_latency_ms),
+    session_telemetry.record_duration(GUARDIAN_REVIEW_DURATION_METRIC, elapsed, &tag_refs);
+
+    // Cached approvals may cancel an in-flight review: retain its attempt count,
+    // but use the final review status to distinguish recovery from async release.
+    session_telemetry.histogram_with_boundaries(
+        "codex.guardian.review.attempt_count",
+        result.attempt_count,
+        &[0.0, 1.0, 2.0, 3.0],
         &tag_refs,
+    );
+    let mut retry_tags = tag_refs.clone();
+    retry_tags.push(("retried", bool_tag(result.attempt_count > 1)));
+    session_telemetry.counter(
+        "codex.guardian.review.retry_outcome",
+        /*inc*/ 1,
+        &retry_tags,
     );
 
     if let Some(time_to_first_token_ms) = result.time_to_first_token_ms {
@@ -182,7 +212,7 @@ fn terminal_status_tag(status: GuardianReviewTerminalStatus) -> &'static str {
     }
 }
 
-fn failure_reason_tag(reason: Option<GuardianReviewFailureReason>) -> &'static str {
+pub(crate) fn failure_reason_tag(reason: Option<GuardianReviewFailureReason>) -> &'static str {
     match reason {
         Some(GuardianReviewFailureReason::Timeout) => "timeout",
         Some(GuardianReviewFailureReason::Cancelled) => "cancelled",
@@ -203,6 +233,7 @@ fn approval_request_source_tag(source: GuardianApprovalRequestSource) -> &'stati
 
 fn reviewed_action_tag(action: &GuardianReviewedAction) -> &'static str {
     match action {
+        GuardianReviewedAction::NativeToolCall {} => "native_tool_call",
         GuardianReviewedAction::Shell { .. } => "shell",
         GuardianReviewedAction::UnifiedExec { .. } => "unified_exec",
         GuardianReviewedAction::WriteStdin { .. } => "write_stdin",
@@ -280,6 +311,41 @@ mod tests {
     use pretty_assertions::assert_eq;
     use std::collections::BTreeMap;
     use test_case::test_case;
+
+    #[test]
+    fn token_usage_delta_never_reports_negative_usage() {
+        let start = TokenUsage {
+            input_tokens: 10,
+            cached_input_tokens: 8,
+            cache_write_input_tokens: 8,
+            output_tokens: 6,
+            reasoning_output_tokens: 4,
+            total_tokens: 28,
+            codex_rollout_budget_units: None,
+        };
+        let end = TokenUsage {
+            input_tokens: 15,
+            cached_input_tokens: 7,
+            cache_write_input_tokens: 7,
+            output_tokens: 10,
+            reasoning_output_tokens: 2,
+            total_tokens: 34,
+            codex_rollout_budget_units: None,
+        };
+
+        assert_eq!(
+            token_usage_delta(&start, &end),
+            TokenUsage {
+                input_tokens: 5,
+                cached_input_tokens: 0,
+                cache_write_input_tokens: 0,
+                output_tokens: 4,
+                reasoning_output_tokens: 0,
+                total_tokens: 6,
+                codex_rollout_budget_units: None,
+            }
+        );
+    }
 
     fn test_session_telemetry() -> SessionTelemetry {
         let exporter = InMemoryMetricExporter::default();
@@ -406,6 +472,7 @@ mod tests {
     ) {
         let session_telemetry = test_session_telemetry();
         let result = GuardianReviewAnalyticsResult {
+            attempt_count: 2,
             decision: GuardianReviewDecision::Approved,
             terminal_status: GuardianReviewTerminalStatus::Approved,
             risk_level: Some(GuardianRiskLevel::Low),
@@ -434,7 +501,8 @@ mod tests {
             &result,
             GuardianApprovalRequestSource::DelegatedSubagent,
             &reviewed_action,
-            /*completion_latency_ms*/ 456,
+            "unknown",
+            Duration::from_millis(456),
         );
 
         let snapshot = session_telemetry
@@ -463,7 +531,32 @@ mod tests {
         ]);
         let mut expected_counter_tags = expected_base_tags.clone();
         expected_counter_tags.extend(expected_mcp_tags);
+        expected_counter_tags.insert("context_changed".to_string(), "false".to_string());
+        expected_counter_tags.insert("turn_origin".to_string(), "unknown".to_string());
         assert_eq!((attrs, value), (expected_counter_tags, 1));
+
+        let AggregatedMetrics::F64(MetricData::Histogram(histogram)) =
+            find_metric(&snapshot, "codex.guardian.review.attempt_count").data()
+        else {
+            panic!("expected attempt count histogram");
+        };
+        let point = histogram
+            .data_points()
+            .next()
+            .expect("attempt count sample");
+        assert_eq!(
+            (
+                point.bounds().collect::<Vec<_>>(),
+                point.bucket_counts().collect::<Vec<_>>()
+            ),
+            (vec![0.0, 1.0, 2.0, 3.0], vec![0, 0, 1, 0, 0])
+        );
+        let mut retry_tags = expected_base_tags.clone();
+        retry_tags.insert("retried".to_string(), "true".to_string());
+        assert_eq!(
+            counter_point(&snapshot, "codex.guardian.review.retry_outcome"),
+            (retry_tags, 1)
+        );
 
         assert_eq!(
             histogram_sums(
@@ -497,5 +590,68 @@ mod tests {
             ),
             BTreeMap::from([("sample".to_string(), 123)])
         );
+    }
+    #[test_case("retry", 2, 2000)]
+    #[test_case("cancelled", 1, 0)]
+    #[test_case("deadline", 1, 1000)]
+    #[tokio::test(start_paused = true)]
+    async fn retry_telemetry_records_waits_and_only_counts_resubmissions(
+        outcome: &str,
+        attempts: i64,
+        wait_ms: u64,
+    ) {
+        let telemetry = test_session_telemetry();
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        if outcome == "cancelled" {
+            cancellation.cancel();
+        }
+        let start = tokio::time::Instant::now();
+        let (_, result, _) = crate::run_with_retry(
+            crate::GuardianReviewSessionLimits {
+                max_attempts: 2,
+                deadline: crate::ReviewDeadline::At(
+                    start + Duration::from_secs(if outcome == "deadline" { 1 } else { 10 }),
+                ),
+            },
+            Some(&cancellation),
+            Some(&telemetry),
+            |_| async {
+                (
+                    crate::GuardianReviewOutcome::Error(crate::GuardianReviewError::Session {
+                        message: "overloaded".into(),
+                        error_info: Some(
+                            codex_protocol::protocol::CodexErrorInfo::ServerOverloaded,
+                        ),
+                        retry_at: Some(start + Duration::from_secs(2)),
+                    }),
+                    GuardianReviewAnalyticsResult::without_session(),
+                    None::<()>,
+                )
+            },
+        )
+        .await;
+        assert_eq!(result.attempt_count, attempts);
+        let snapshot = telemetry.snapshot_metrics().unwrap();
+        let tags = BTreeMap::from([
+            ("failure_reason".to_owned(), "session_error".to_owned()),
+            ("outcome".to_owned(), outcome.to_owned()),
+        ]);
+        assert_eq!(
+            histogram_sums(&snapshot, "codex.guardian.review.retry_wait_ms", &tags),
+            BTreeMap::from([("sample".to_owned(), wait_ms)]),
+        );
+        if outcome == "retry" {
+            assert_eq!(
+                counter_point(&snapshot, "codex.guardian.review.retry"),
+                (tags, 1)
+            );
+        } else {
+            assert!(
+                !snapshot
+                    .scope_metrics()
+                    .flat_map(opentelemetry_sdk::metrics::data::ScopeMetrics::metrics)
+                    .any(|metric| metric.name() == "codex.guardian.review.retry")
+            );
+        }
     }
 }

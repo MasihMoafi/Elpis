@@ -2,19 +2,24 @@
 //! The extension owns review policy and pooling; this module binds runtime operations
 //! to the captured parent action, environments, authorization and context snapshots.
 
+#[path = "feedback.rs"]
+mod feedback;
+
 #[path = "review_session_setup.rs"]
 mod setup;
 pub use setup::PreparedGuardianContext;
 pub use setup::prepare_review_prewarm;
 pub(crate) use setup::run_guardian_review_session;
 
+#[path = "review_session_prompt.rs"]
+mod prompt_builder;
+
 #[path = "review_session_context.rs"]
 mod context_policy;
-use context_policy::ReviewContextPolicy;
+use codex_guardian_reviewer::ReviewContextPolicy;
+use codex_guardian_reviewer::ReviewDeadline;
 
-use std::borrow::Cow;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -25,29 +30,32 @@ use codex_analytics::GuardianReviewAnalyticsResult;
 use codex_analytics::GuardianReviewSessionAnalyticsParams;
 use codex_analytics::GuardianReviewSessionKind;
 use codex_extension_api::Instructions;
-use codex_guardian_reviewer::ConversationCheckpoint;
+#[cfg(test)]
 use codex_guardian_reviewer::ConversationState;
+use codex_guardian_reviewer::GuardianReviewForkSnapshot;
+pub use codex_guardian_reviewer::GuardianReviewState;
+use codex_guardian_reviewer::GuardianTranscriptSource;
+use codex_guardian_reviewer::PendingNodeReplEvidenceAdmission;
 use codex_guardian_reviewer::ReviewModel;
 use codex_guardian_reviewer::ReviewSessionResult;
+use codex_guardian_reviewer::ReviewTurnResult;
 use codex_guardian_reviewer::SessionDisposition;
+use codex_guardian_reviewer::token_usage_delta;
 use codex_history::InitialHistory;
+#[cfg(test)]
 use codex_history::RolloutItem;
-use codex_protocol::ThreadId;
 use codex_protocol::config_types::AutoCompactTokenLimitScope;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ReasoningSummary as ReasoningSummaryConfig;
 use codex_protocol::models::ContentItem;
-use codex_protocol::models::ImageDetail;
-use codex_protocol::models::ImageReference;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::GuardianScope;
-use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::Event;
+#[cfg(test)]
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
-use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::TokenUsage;
 use futures::future::BoxFuture;
@@ -67,9 +75,6 @@ use crate::context::GuardianFollowupReviewReminder;
 use crate::context::GuardianNodeReplPolicy;
 use crate::context_manager::ContextManager;
 use crate::environment_selection::TurnEnvironmentSnapshot;
-use crate::image_preparation::ImagePreparationMode;
-use crate::image_preparation::resize_image;
-use crate::image_preparation::unified_image_budget_enabled;
 use crate::session::SessionIo;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
@@ -80,26 +85,24 @@ use codex_protocol::turn_input::TurnInputMode;
 use codex_protocol::turn_input::TurnInputRequest;
 use codex_protocol::turn_input::TurnInputSubmission;
 use codex_thread_store::PersistContext;
-use codex_tools::normalize_output_image_detail;
 use codex_utils_path_uri::PathUri;
 
 use super::ApprovalRequestReasons;
 use super::GUARDIAN_REVIEWER_NAME;
 use super::GuardianApprovalRequest;
 use super::GuardianReviewContext;
-use super::feedback::record_failed_review;
+use super::input_budget::PendingReviewContext;
 use super::prompt::GUARDIAN_TRANSCRIPT_START;
 use super::prompt::GuardianPromptMode;
 #[cfg(test)]
 use super::prompt::GuardianTranscriptCursor;
 use super::prompt::GuardianTranscriptHistory;
-use super::prompt::build_guardian_prompt_items_with_parent_turn;
+use super::request_budget::ExhaustedReviewBudget;
 use super::review::guardian_review_session_config;
 pub(crate) use super::reviewer_config::build_guardian_review_session_config;
 use codex_guardian_reviewer::run_before_review_deadline;
 use codex_guardian_reviewer::wait_for_guardian_review;
 
-const GUARDIAN_MAX_IMAGE_ITEM_TOKENS: i64 = 10_000;
 pub(crate) use codex_guardian_reviewer::GuardianReviewSessionOutcome;
 
 pub(crate) struct GuardianReviewSessionParams {
@@ -112,12 +115,11 @@ pub(crate) struct GuardianReviewSessionParams {
     pub(crate) request: GuardianApprovalRequest,
     pub(crate) category: GuardianScope,
     pub(crate) reasons: ApprovalRequestReasons,
+    pub(super) authorization: Option<super::review::ReviewAuthorization>,
     pub(crate) schema: Value,
     pub(crate) review_model: ReviewModel,
-    pub(crate) reasoning_summary: ReasoningSummaryConfig,
-    pub(crate) personality: Option<Personality>,
     pub(crate) external_cancel: Option<CancellationToken>,
-    pub(crate) deadline: tokio::time::Instant,
+    pub(crate) deadline: ReviewDeadline,
 }
 
 pub(crate) type GuardianReviewSessionManager =
@@ -132,56 +134,8 @@ pub struct GuardianReviewSession {
     state: Mutex<GuardianReviewState>,
 }
 
-/// Opaque conversation progress retained while ThreadManager starts a reviewer.
-pub struct GuardianReviewState {
-    conversation: ConversationState<GuardianReviewHistory>,
-    // Only the first attempt may use the checkpoint loaded without prior reviewer history.
-    fresh_parent_checkpoint: bool,
-    // The cursor describes evidence admitted before any later reviewer compaction.
-    transcript_history_version: u64,
-    transcript_source: Option<GuardianTranscriptSource>,
-    last_admitted_node_repl_response_sequence: u64,
-    pending_node_repl_evidence_admission: Option<PendingNodeReplEvidenceAdmission>,
-}
-
-// These histories have independent version counters; a cursor must identify its source.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum GuardianTranscriptSource {
-    Retained,
-    LoadedParentCheckpoint,
-}
-
-struct PendingNodeReplEvidenceAdmission {
-    turn_id: String,
-    response_sequence: u64,
-}
-
 fn had_prior_review_context(prompt_mode: &GuardianPromptMode) -> bool {
     matches!(prompt_mode, GuardianPromptMode::Delta { .. })
-}
-
-fn token_usage_delta(start: &TokenUsage, end: &TokenUsage) -> TokenUsage {
-    TokenUsage {
-        input_tokens: (end.input_tokens - start.input_tokens).max(0),
-        cached_input_tokens: (end.cached_input_tokens - start.cached_input_tokens).max(0),
-        cache_write_input_tokens: (end.cache_write_input_tokens - start.cache_write_input_tokens)
-            .max(0),
-        output_tokens: (end.output_tokens - start.output_tokens).max(0),
-        reasoning_output_tokens: (end.reasoning_output_tokens - start.reasoning_output_tokens)
-            .max(0),
-        total_tokens: (end.total_tokens - start.total_tokens).max(0),
-        codex_rollout_budget_units: None,
-    }
-}
-
-type GuardianReviewForkSnapshot = ConversationCheckpoint<GuardianReviewHistory>;
-
-/// Host-owned history and admitted evidence used to seed a private reviewer fork.
-#[derive(Clone)]
-pub struct GuardianReviewHistory {
-    initial_history: InitialHistory,
-    transcript_source: Option<GuardianTranscriptSource>,
-    last_admitted_node_repl_response_sequence: u64,
 }
 
 /// Opaque compatibility key derived by the existing context builder.
@@ -208,12 +162,11 @@ pub struct GuardianReviewSessionReuseKey {
     base_instructions: Option<String>,
     user_instructions: Option<Instructions>,
     thread_instructions: Option<Instructions>,
+    project_instructions: Option<Arc<crate::agents_md::LoadedAgentsMd>>,
     compact_prompt: Option<String>,
     cwd: PathUri,
     mcp_servers: Constrained<HashMap<String, McpServerConfig>>,
     codex_linux_sandbox_exe: Option<PathBuf>,
-    main_execve_wrapper_exe: Option<PathBuf>,
-    zsh_path: Option<PathBuf>,
     features: ManagedFeatures,
     environment_ids: Vec<String>,
 }
@@ -252,12 +205,11 @@ impl GuardianReviewSessionReuseKey {
             base_instructions: spawn_config.base_instructions.clone(),
             user_instructions: instructions.user,
             thread_instructions: instructions.thread,
+            project_instructions: instructions.project_snapshot,
             compact_prompt: spawn_config.compact_prompt.clone(),
             cwd: PathUri::from_abs_path(&spawn_config.cwd),
             mcp_servers: spawn_config.mcp_servers.clone(),
             codex_linux_sandbox_exe: spawn_config.codex_linux_sandbox_exe.clone(),
-            main_execve_wrapper_exe: spawn_config.main_execve_wrapper_exe.clone(),
-            zsh_path: spawn_config.zsh_path.clone(),
             features: spawn_config.features.clone(),
             environment_ids: Vec::new(),
         }
@@ -278,62 +230,70 @@ impl GuardianReviewSessionReuseKey {
     }
 
     fn with_node_repl_policy(mut self, policy: &GuardianNodeReplPolicy) -> Self {
-        self.node_repl_policy = policy.body();
+        self.node_repl_policy = policy.body().into_text().unwrap_or_default();
         self
     }
 }
 
-pub(crate) fn prompt_cache_key_override_for_review_session(
-    session_source: &SessionSource,
-    parent_thread_id: Option<ThreadId>,
-) -> Option<String> {
-    let SessionSource::SubAgent(SubAgentSource::Other(name)) = session_source else {
-        return None;
-    };
-    if name != GUARDIAN_REVIEWER_NAME {
-        return None;
-    }
-    let parent_thread_id = parent_thread_id?;
-    Some(format!("guardian:{parent_thread_id}"))
-}
+pub(super) fn review_turn(
+    session: &Session,
+    context: &GuardianReviewContext,
+    config: &Config,
+    review_model: &ReviewModel,
+    items: Vec<codex_protocol::user_input::UserInput>,
+    schema: Value,
+) -> TurnInputRequest {
+    let parent_turn_environments = context
+        .environments()
+        .turn_environments()
+        .map(|environment| {
+            let mut selection = environment.selection();
+            selection.config = codex_protocol::protocol::EnvironmentConfigState::Ready(
+                environment.config().clone(),
+            );
+            selection
+        })
+        .collect();
+    // TODO(anp): Migrate guardian review thread settings to a PathUri fallback cwd so foreign
+    // parent environments do not fall back to the host-native config cwd.
+    let parent_turn_legacy_fallback_cwd = context
+        .environments()
+        .primary()
+        .and_then(|environment| environment.cwd().to_abs_path().ok())
+        .unwrap_or_else(|| context.turn().config.cwd.clone());
 
-impl GuardianReviewSession {
-    async fn admit_node_repl_evidence(&self, event: &Event) {
-        // Annotated review inputs are recorded as response items without UI turn
-        // items. Both input paths emit this event after history admission.
-        let EventMsg::RawResponseItem(recorded) = &event.msg else {
-            return;
-        };
-        let ResponseItem::Message { role, content, .. } = &recorded.item else {
-            return;
-        };
-        if role != "user"
-            || !content.iter().any(|item| {
-                matches!(item, ContentItem::InputText { text }
-                    if text == GUARDIAN_TRANSCRIPT_START || text == ">>> TRANSCRIPT DELTA START\n")
-            })
-        {
-            return;
-        }
-
-        let mut state = self.state.lock().await;
-        let Some(pending) = state.pending_node_repl_evidence_admission.as_ref() else {
-            return;
-        };
-        if event.id == pending.turn_id {
-            state.last_admitted_node_repl_response_sequence = state
-                .last_admitted_node_repl_response_sequence
-                .max(pending.response_sequence);
-            state.pending_node_repl_evidence_admission = None;
-        }
+    let parent_turn = context.turn();
+    codex_guardian_reviewer::ReviewerTurn {
+        items,
+        environments: codex_protocol::protocol::TurnEnvironmentSelections::new(
+            parent_turn_legacy_fallback_cwd,
+            parent_turn_environments,
+        ),
+        permission_profile: config.permissions.permission_profile().clone(),
+        reasoning_summary: context.reasoning_summary,
+        personality: context.personality,
+        model: review_model.model.clone(),
+        reasoning_effort: review_model.reasoning_effort.clone(),
+        cyber_access_program: parent_turn.cyber_access_program.filter(|_| {
+            crate::RequiredCyberAccessPrograms::for_thread(&session.services.thread_extension_data)
+                .is_none()
+        }),
+        parent_response_id: context
+            .parent_response
+            .as_ref()
+            .map(|parent| parent.id.clone()),
+        schema,
+        parent_turn_id: parent_turn.sub_id.clone(),
+        root_turn_id: parent_turn.turn_metadata_state.root_turn_id(),
     }
+    .into_request()
 }
 
 async fn run_review_on_session(
     review_session: &GuardianReviewSession,
     params: &GuardianReviewSessionParams,
     guardian_session_kind: GuardianReviewSessionKind,
-    deadline: tokio::time::Instant,
+    deadline: ReviewDeadline,
 ) -> ReviewSessionResult {
     let review_model = &params.review_model;
     let model_info = params
@@ -345,10 +305,6 @@ async fn run_review_on_session(
             &params.spawn_config.to_models_manager_config(),
         )
         .await;
-    let guardian_reasoning_effort = review_model
-        .reasoning_effort
-        .clone()
-        .or_else(|| model_info.default_reasoning_level.clone());
     let (prior_review_count, had_prior_context) = {
         let state = review_session.state.lock().await;
         (
@@ -356,19 +312,13 @@ async fn run_review_on_session(
             state.conversation.cursor().is_some(),
         )
     };
-    let mut analytics_result =
-        GuardianReviewAnalyticsResult::from_session(GuardianReviewSessionAnalyticsParams {
-            guardian_thread_id: review_session.session.thread_id().to_string(),
-            guardian_session_kind,
-            guardian_model: review_model.model.clone(),
-            guardian_reasoning_effort: guardian_reasoning_effort.map(|effort| effort.to_string()),
-            guardian_default_review_model_id: review_model.default_review_model_id.clone(),
-            guardian_catalog_contains_auto_review: review_model.catalog_contains_auto_review,
-            guardian_review_model_overridden: review_model.model_overridden,
-            guardian_review_model_override: review_model.model_override.clone(),
-            guardian_model_provider_id: params.spawn_config.model_provider_id.clone(),
-            had_prior_review_context: had_prior_context,
-        });
+    let mut analytics_result = review_session.analytics(
+        review_model,
+        model_info.default_reasoning_level.as_ref(),
+        &params.spawn_config.model_provider_id,
+        guardian_session_kind,
+        had_prior_context,
+    );
     if prior_review_count > 0 {
         ensure_guardian_followup_reminder(review_session).await;
     }
@@ -376,7 +326,12 @@ async fn run_review_on_session(
     match run_before_review_deadline(
         deadline,
         params.external_cancel.as_ref(),
-        Box::pin(ensure_guardian_node_repl_policy(review_session, params)),
+        Box::pin(prepare_verdict_session(
+            review_session,
+            &params.parent_context,
+            params.category,
+            &params.node_repl_policy,
+        )),
     )
     .await
     {
@@ -425,6 +380,11 @@ async fn run_review_on_session(
         false
     };
     if should_compact {
+        let mut execution_attempt =
+            crate::turn_timing::review_execution::ReviewExecutionObservation::install(
+                Arc::clone(&review_session.session),
+                params.parent_context.review_execution.clone(),
+            );
         let compact_submission = run_before_review_deadline(
             deadline,
             params.external_cancel.as_ref(),
@@ -460,6 +420,7 @@ async fn run_review_on_session(
             &mut analytics_result,
         )
         .await;
+        execution_attempt.finish(result.turn_completed);
         if !matches!(
             result.outcome,
             GuardianReviewSessionOutcome::Completed(Ok(_))
@@ -539,7 +500,7 @@ async fn run_review_on_session(
                 &params.spawn_config.features,
             );
             let loaded_parent_checkpoint = policy
-                .parent_compaction(&params.parent_history)?
+                .parent_compaction(params.parent_history.annotated_items())?
                 .as_ref()
                 .zip(codex_history::CompactionCheckpoint::latest(
                     reviewer_history.annotated_items(),
@@ -565,118 +526,24 @@ async fn run_review_on_session(
             };
             analytics_result.had_prior_review_context =
                 Some(had_prior_review_context(&prompt_mode));
-            let mut prompt_items = build_guardian_prompt_items_with_parent_turn(
-                params.parent_session.as_ref(),
+            let prompt_items = prompt_builder::build_guardian_prompt_items(
+                params,
+                review_session,
+                &model_info,
+                &reviewer_history,
                 history,
-                Some(&params.parent_context),
-                params.reasons.clone(),
-                params.request.clone(),
                 prompt_mode,
                 last_admitted_node_repl_response_sequence,
             )
             .await?;
 
-            if prompt_items
-                .context
-                .section_costs()
-                .any(|(_, cost)| cost.image_count > 0)
-            {
-                let reviewer_history = review_session.session.clone_history().await;
-                let mut reviewer_image_urls = HashSet::new();
-                let mut reviewer_file_ids = HashSet::new();
-                for item in reviewer_history.raw_items() {
-                    let ResponseItem::Message { content, .. } = item else {
-                        continue;
-                    };
-                    for item in content {
-                        let ContentItem::InputImage { image, .. } = item else {
-                            continue;
-                        };
-                        match image {
-                            ImageReference::Inline { image_url } => {
-                                reviewer_image_urls.insert(image_url.as_str());
-                            }
-                            ImageReference::File { file_id } => {
-                                reviewer_file_ids.insert(file_id.as_str());
-                            }
-                        }
-                    }
-                }
-                let context_window = model_info.resolved_context_window().map(|supported| {
-                    params
-                        .spawn_config
-                        .model_context_window
-                        .unwrap_or(supported)
-                        .min(supported)
-                        .saturating_mul(model_info.effective_context_window_percent.clamp(0, 100))
-                        / 100
-                });
-                let admit_images = if let Some(context_window) = context_window.filter(|limit| {
-                    *limit > 0
-                        && !model_info.used_fallback_model_metadata
-                        && model_info.input_modalities.contains(&InputModality::Image)
-                }) {
-                    let features = &params.spawn_config.features;
-                    let mode = if unified_image_budget_enabled(features, &model_info) {
-                        ImagePreparationMode::UnifiedBudget
-                    } else {
-                        ImagePreparationMode::DetailBased
-                    };
-                    prompt_items.context.retain_images(|image, detail| {
-                        *detail = match normalize_output_image_detail(&model_info, *detail) {
-                            _ if mode == ImagePreparationMode::UnifiedBudget => {
-                                Some(ImageDetail::Original)
-                            }
-                            Some(ImageDetail::Low) => Some(ImageDetail::High),
-                            detail => detail,
-                        };
-                        match image {
-                            ImageReference::Inline { image_url } => {
-                                let prepared_image_url = match resize_image(image_url, detail, mode)
-                                {
-                                    Ok(Some(prepared)) => Cow::Owned(prepared.into_data_url()),
-                                    Ok(None) => Cow::Borrowed(image_url),
-                                    Err(error) => {
-                                        warn!(%error, "failed to prepare guardian review image");
-                                        return false;
-                                    }
-                                };
-                                !reviewer_image_urls.contains(prepared_image_url.as_str())
-                            }
-                            ImageReference::File { file_id } => {
-                                !reviewer_file_ids.contains(file_id.as_str())
-                            }
-                        }
-                    });
-                    let prompt_tokens = prompt_items
-                        .context
-                        .clone()
-                        .into_messages()
-                        .iter()
-                        .map(crate::context_manager::estimate_item_token_count)
-                        .fold(0i64, i64::saturating_add);
-                    let base_instructions = review_session.session.get_base_instructions().await;
-                    let history_tokens = reviewer_history
-                        .estimate_token_count_with_base_instructions(&base_instructions)
-                        .unwrap_or(i64::MAX)
-                        .max(review_session.session.get_total_token_usage().await);
-                    prompt_tokens <= GUARDIAN_MAX_IMAGE_ITEM_TOKENS
-                        && prompt_tokens.saturating_add(history_tokens) <= context_window
-                } else {
-                    false
-                };
-                if !admit_images {
-                    prompt_items.context.retain_images(|_, _| false);
-                }
-            }
-
             let items = match prompt_items.context.clone().into_user_inputs() {
                 Ok(items) => items,
                 Err(codex_guardian_context::SectionError::UnsupportedDelivery {
-                    section: "conversation_transcript",
+                    section: "conversation_transcript" | "planned_action",
                 }) => {
                     // Final admission replaces this turn-start marker with the complete,
-                    // budgeted context, including native encrypted agent-message evidence.
+                    // budgeted context, including native encrypted messages and tool calls.
                     vec![codex_protocol::user_input::UserInput::Text {
                         text: super::prompt::GUARDIAN_TRANSCRIPT_START.to_owned(),
                         text_elements: Vec::new(),
@@ -715,72 +582,34 @@ async fn run_review_on_session(
     let node_repl_evidence_admission = (prompt_items.node_repl_evidence_sequence
         > last_admitted_node_repl_response_sequence)
         .then_some(prompt_items.node_repl_evidence_sequence);
-    let token_usage_at_review_start = review_session
-        .session
-        .total_token_usage()
-        .await
-        .unwrap_or_default();
-    let parent_turn_environments = params
-        .parent_context
-        .environments()
-        .turn_environments()
-        .map(|environment| {
-            let mut selection = environment.selection();
-            selection.config = codex_protocol::protocol::EnvironmentConfigState::Ready(
-                environment.config().clone(),
-            );
-            selection
-        })
-        .collect();
-    // TODO(anp): Migrate guardian review thread settings to a PathUri fallback cwd so foreign
-    // parent environments do not fall back to the host-native config cwd.
-    let parent_turn_legacy_fallback_cwd = params
-        .parent_context
-        .environments()
-        .primary()
-        .and_then(|environment| environment.cwd().to_abs_path().ok())
-        .unwrap_or_else(|| params.parent_context.turn().config.cwd.clone());
-
-    let parent_turn = params.parent_context.turn();
-    review_session
-        .session
-        .services
-        .thread_extension_data
-        .insert(super::input_budget::PendingReviewContext(
-            prompt_items.context,
-        ));
-    let request = codex_guardian_reviewer::ReviewerTurn {
+    let token_usage_at_review_start = review_session.token_usage_baseline().await;
+    let request = review_turn(
+        &params.parent_session,
+        &params.parent_context,
+        &params.spawn_config,
+        review_model,
         items,
-        environments: codex_protocol::protocol::TurnEnvironmentSelections::new(
-            parent_turn_legacy_fallback_cwd,
-            parent_turn_environments,
-        ),
-        permission_profile: params.spawn_config.permissions.permission_profile().clone(),
-        reasoning_summary: params.reasoning_summary,
-        personality: params.personality,
-        model: review_model.model.clone(),
-        reasoning_effort: review_model.reasoning_effort.clone(),
-        parent_response_id: params.parent_context.parent_response_id.clone(),
-        schema: params.schema.clone(),
-        parent_turn_id: parent_turn.sub_id.clone(),
-        root_turn_id: parent_turn.turn_metadata_state.root_turn_id(),
-    }
-    .into_request();
-    let child_turn_id = match codex_guardian_reviewer::start_review_turn(
-        review_session,
-        request,
-        deadline,
-        params.external_cancel.as_ref(),
-    )
-    .await
-    {
-        Ok(turn_id) => turn_id,
+        params.schema.clone(),
+    );
+    let result = review_session
+        .run_sync_verdict(
+            &params.parent_context,
+            PreparedVerdictTurn {
+                request,
+                evidence: PendingReviewContext {
+                    context: prompt_items.context,
+                    elastic: params.spawn_config.guardian_sync_elastic_budget.clone(),
+                },
+                node_repl_evidence_sequence: node_repl_evidence_admission,
+            },
+            deadline,
+            params.external_cancel.as_ref(),
+            &mut analytics_result,
+        )
+        .await;
+    let (turn_result, transcript_admitted) = match result {
+        Ok(completed) => completed,
         Err(outcome) => {
-            review_session
-                .session
-                .services
-                .thread_extension_data
-                .remove::<super::input_budget::PendingReviewContext>();
             return ReviewSessionResult {
                 outcome,
                 disposition: SessionDisposition::Discard,
@@ -788,75 +617,41 @@ async fn run_review_on_session(
             };
         }
     };
-    if let Some(response_sequence) = node_repl_evidence_admission {
-        let mut state = review_session.state.lock().await;
-        state.pending_node_repl_evidence_admission = Some(PendingNodeReplEvidenceAdmission {
-            turn_id: child_turn_id.clone(),
-            response_sequence,
-        });
-    }
-
-    let turn_result = wait_for_guardian_review(
-        review_session,
-        child_turn_id.as_str(),
-        deadline,
-        params.external_cancel.as_ref(),
-        &mut analytics_result,
-    )
-    .await;
-    review_session
-        .session
-        .services
-        .thread_extension_data
-        .remove::<super::input_budget::PendingReviewContext>();
-    if matches!(
+    let completed_review = matches!(
         turn_result.outcome,
         GuardianReviewSessionOutcome::Completed(_)
-    ) {
-        if turn_result.turn_completed
-            && let Some(total_token_usage) = review_session.session.total_token_usage().await
-        {
-            analytics_result.token_usage = Some(token_usage_delta(
-                &token_usage_at_review_start,
-                &total_token_usage,
-            ));
-        }
+    );
+    review_session
+        .record_verdict_usage(&token_usage_at_review_start, &mut analytics_result)
+        .await;
+    if completed_review
+        || (transcript_admitted
+            && turn_result.turn_completed
+            && turn_result.disposition == SessionDisposition::Reusable)
+    {
         let mut state = review_session.state.lock().await;
-        state.conversation.complete_review(transcript_cursor);
+        if completed_review {
+            state.conversation.complete_review(transcript_cursor);
+        } else {
+            // A failed inference still retains its input. Keep admission progress
+            // in sync without counting the failure as a completed review.
+            state.conversation.admit_transcript(transcript_cursor);
+        }
         state.transcript_history_version = reviewer_history_version;
         state.transcript_source = Some(transcript_source);
     }
-    let budget_exhausted = review_session
-        .session
-        .services
-        .thread_extension_data
-        .remove::<super::request_budget::ExhaustedReviewBudget>();
-    let result = match turn_result.outcome {
-        GuardianReviewSessionOutcome::SessionFailed {
-            error_info: Some(CodexErrorInfo::ContextWindowExceeded),
-            ..
-        } if matches!(
-            budget_exhausted.as_deref(),
-            Some(super::request_budget::ExhaustedReviewBudget::Detected)
-        ) =>
-        {
-            GuardianReviewSessionOutcome::InputBudgetExceeded
-        }
-        result => result,
-    };
     ReviewSessionResult {
-        outcome: result,
-        disposition: if budget_exhausted.is_some() {
-            SessionDisposition::Discard
-        } else {
-            turn_result.disposition
-        },
+        outcome: turn_result.outcome,
+        disposition: turn_result.disposition,
         analytics: analytics_result,
     }
 }
 
-async fn ensure_guardian_followup_reminder(review_session: &GuardianReviewSession) {
-    let followup_reminder = GuardianFollowupReviewReminder.body();
+pub(super) async fn ensure_guardian_followup_reminder(review_session: &GuardianReviewSession) {
+    let followup_reminder = GuardianFollowupReviewReminder
+        .body()
+        .into_text()
+        .unwrap_or_default();
     let already_injected = review_session
         .session
         .clone_history()
@@ -881,22 +676,28 @@ async fn ensure_guardian_followup_reminder(review_session: &GuardianReviewSessio
         .await;
 }
 
-async fn ensure_guardian_node_repl_policy(
+pub(super) async fn prepare_verdict_session(
     review_session: &GuardianReviewSession,
-    params: &GuardianReviewSessionParams,
+    context: &GuardianReviewContext,
+    category: GuardianScope,
+    policy: &GuardianNodeReplPolicy,
 ) -> anyhow::Result<()> {
-    if !params
-        .parent_context
-        .turn()
-        .model_info()
-        .computer_use_review_required()
-        || params.category != GuardianScope::ComputerUse
+    review_session
+        .session
+        .update_settings(crate::session::session::SessionSettingsUpdate {
+            step_settings: crate::session::step_settings::StepSettingsUpdate {
+                request_country: Some(context.request_country.clone()),
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .await?;
+    if !context.turn().model_info().computer_use_review_required()
+        || category != GuardianScope::ComputerUse
     {
         return Ok(());
     }
-
-    let policy = &params.node_repl_policy;
-    let policy_body = policy.body();
+    let policy_body = policy.body().into_text().unwrap_or_default();
     if policy_body.is_empty() {
         return Ok(());
     }
@@ -946,11 +747,138 @@ async fn ensure_guardian_node_repl_policy(
     Ok(())
 }
 
+fn finish_budgeted_verdict(
+    mut turn: ReviewTurnResult,
+    budget: Option<&ExhaustedReviewBudget>,
+) -> ReviewTurnResult {
+    let Some(budget) = budget else { return turn };
+    turn.disposition = SessionDisposition::Discard;
+    if matches!(budget, ExhaustedReviewBudget::Detected)
+        && matches!(
+            turn.outcome,
+            GuardianReviewSessionOutcome::SessionFailed {
+                error_info: Some(CodexErrorInfo::ContextWindowExceeded),
+                ..
+            }
+        )
+    {
+        turn.outcome = GuardianReviewSessionOutcome::InputBudgetExceeded;
+    }
+    turn
+}
+
+/// Input for one verdict, with the evidence that replaces the prompt marker at admission.
+pub(super) struct PreparedVerdictTurn {
+    pub(super) request: TurnInputRequest,
+    pub(super) evidence: PendingReviewContext,
+    pub(super) node_repl_evidence_sequence: Option<u64>,
+}
+
+impl GuardianReviewSession {
+    /// Returns the turn result and whether prompt finalization consumed its evidence.
+    pub(super) async fn run_sync_verdict(
+        &self,
+        context: &GuardianReviewContext,
+        turn: PreparedVerdictTurn,
+        deadline: ReviewDeadline,
+        cancel: Option<&CancellationToken>,
+        analytics: &mut GuardianReviewAnalyticsResult,
+    ) -> Result<(ReviewTurnResult, bool), GuardianReviewSessionOutcome> {
+        let store = &self.session.services.thread_extension_data;
+        if self
+            .reuse_key
+            .features
+            .enabled(Feature::GuardianDenialReconsideration)
+        {
+            store.insert(codex_guardian_reviewer::DenialResample::default());
+        }
+        store.insert(turn.evidence);
+        store.insert(super::PendingReviewRouting(context.parent_response.clone()));
+        let mut observation =
+            crate::turn_timing::review_execution::ReviewExecutionObservation::install(
+                Arc::clone(&self.session),
+                context.review_execution.clone(),
+            );
+        let result = async {
+            let id =
+                codex_guardian_reviewer::start_review_turn(self, turn.request, deadline, cancel)
+                    .await?;
+            if let Some(response_sequence) = turn.node_repl_evidence_sequence {
+                self.state.lock().await.pending_node_repl_evidence_admission =
+                    Some(PendingNodeReplEvidenceAdmission {
+                        turn_id: id.clone(),
+                        response_sequence,
+                    });
+            }
+            let result = wait_for_guardian_review(self, &id, deadline, cancel, analytics).await;
+            observation.finish(result.turn_completed);
+            let budget = store.remove::<ExhaustedReviewBudget>();
+            Ok(finish_budgeted_verdict(result, budget.as_deref()))
+        }
+        .await;
+        store.remove::<super::PendingReviewRouting>();
+        let admitted = store.remove::<PendingReviewContext>().is_none();
+        let resample = store.remove::<codex_guardian_reviewer::DenialResample>();
+        result.map(|turn| {
+            let turn = match resample {
+                Some(resample) => resample.finish(turn, &context.turn().session_telemetry),
+                None => turn,
+            };
+            (turn, admitted)
+        })
+    }
+
+    pub(super) fn analytics(
+        &self,
+        review_model: &ReviewModel,
+        default_effort: Option<&ReasoningEffortConfig>,
+        provider_id: &str,
+        guardian_session_kind: GuardianReviewSessionKind,
+        had_prior_context: bool,
+    ) -> GuardianReviewAnalyticsResult {
+        GuardianReviewAnalyticsResult::from_session(GuardianReviewSessionAnalyticsParams {
+            guardian_thread_id: self.session.thread_id().to_string(),
+            guardian_session_kind,
+            guardian_model: review_model.model.clone(),
+            guardian_reasoning_effort: review_model
+                .reasoning_effort
+                .as_ref()
+                .or(default_effort)
+                .map(ToString::to_string),
+            guardian_default_review_model_id: review_model.default_review_model_id.clone(),
+            guardian_catalog_contains_auto_review: review_model.catalog_contains_auto_review,
+            guardian_review_model_overridden: review_model.model_overridden,
+            guardian_review_model_override: review_model.model_override.clone(),
+            guardian_model_provider_id: provider_id.to_owned(),
+            had_prior_review_context: had_prior_context,
+        })
+    }
+
+    pub(super) async fn token_usage_baseline(&self) -> TokenUsage {
+        self.session.total_token_usage().await.unwrap_or_default()
+    }
+
+    /// Count only usage reported on the verdict thread since this attempt started.
+    /// A failed attempt may still have completed one or more model requests.
+    pub(super) async fn record_verdict_usage(
+        &self,
+        start: &TokenUsage,
+        analytics: &mut GuardianReviewAnalyticsResult,
+    ) {
+        if let Some(end) = self.session.total_token_usage().await {
+            analytics.token_usage = Some(token_usage_delta(start, &end));
+        }
+    }
+}
+
 impl codex_guardian_reviewer::ReviewerRuntime for GuardianReviewSession {
     async fn submit_turn(&self, request: TurnInputRequest) -> anyhow::Result<TurnInputSubmission> {
         Ok(self
             .io
-            .submit_turn_input(request, TurnInputMode::StartIfIdle)
+            .submit_turn_input(
+                crate::codex_thread::resolve_client_turn_input(request).await?,
+                TurnInputMode::StartIfIdle,
+            )
             .await?)
     }
 
@@ -959,7 +887,7 @@ impl codex_guardian_reviewer::ReviewerRuntime for GuardianReviewSession {
     }
 
     async fn admit_context(&self, event: &Event) {
-        self.admit_node_repl_evidence(event).await;
+        codex_guardian_reviewer::admit_node_repl_evidence(&self.state, event).await;
     }
 
     async fn interrupt(&self) -> anyhow::Result<()> {
@@ -991,35 +919,6 @@ impl codex_guardian_reviewer::ReviewerSession for GuardianReviewSession {
     }
     async fn snapshot(&self) -> Option<GuardianReviewForkSnapshot> {
         self.state.lock().await.conversation.snapshot().cloned()
-    }
-
-    async fn commit_snapshot(&self) {
-        // The pool holds the review lock until this checkpoint is published. Capture the
-        // completed model context directly; saving and reloading the transcript adds no state.
-        let items = self.session.guardian_fork_history().await;
-        let history_version = self.session.clone_history().await.history_version();
-        let mut state = self.state.lock().await;
-        // Forks must not inherit a cursor for evidence a completed turn compacted away.
-        if state.transcript_history_version != history_version
-            && self
-                .session
-                .services
-                .thread_extension_data
-                .get::<super::input_budget::CheckpointRecovery>()
-                .is_some()
-        {
-            state.conversation.reset_transcript();
-            state.transcript_source = None;
-            state.last_admitted_node_repl_response_sequence = 0;
-        }
-        let last_admitted_node_repl_response_sequence =
-            state.last_admitted_node_repl_response_sequence;
-        let transcript_source = state.transcript_source;
-        state.conversation.commit_snapshot(GuardianReviewHistory {
-            initial_history: InitialHistory::Forked(items),
-            transcript_source,
-            last_admitted_node_repl_response_sequence,
-        });
     }
 }
 

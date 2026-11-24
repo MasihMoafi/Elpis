@@ -1,5 +1,7 @@
+use super::session_lifecycle_requests::HistoryCapabilities;
 use super::session_lifecycle_requests::recorded_params;
 use super::session_lifecycle_requests::start_recording_app_server;
+use super::session_lifecycle_requests::start_recording_app_server_with_history;
 use super::*;
 use codex_app_server_protocol::MisalignmentErrorDetails;
 use codex_app_server_protocol::MisalignmentSteer;
@@ -40,22 +42,41 @@ fn error_notification(
 
 #[tokio::test]
 async fn misalignment_continuation_requires_current_review_and_submits_once() -> Result<()> {
-    for (reject, preserve, daybreak, rollout_enabled) in [
-        (false, false, false, true),
-        (false, true, true, true),
-        (true, false, false, true),
-        (false, false, false, false),
-        (false, true, true, false),
+    for (reject, preserve, daybreak, rollout_enabled, has_chatgpt_account, server_owned) in [
+        (false, false, false, true, true, false),
+        (false, true, true, true, true, false),
+        (true, false, false, true, true, false),
+        (false, false, false, false, true, false),
+        (false, true, true, false, true, false),
+        // Continuations submit directly rather than via the normal turn-start path.
+        (false, false, false, true, false, false),
+        (false, true, true, true, false, false),
+        // Server-owned continuations preserve the acknowledgement without local overrides.
+        (false, false, false, true, true, true),
     ] {
         let (mut app, mut rx, _) = make_test_app_with_channels().await;
         app.chat_widget
             .set_feature_enabled(Feature::CliDaybreak, rollout_enabled);
-        let (mut server, requests, proxy) = start_recording_app_server(
-            &app.config,
-            /*blocked_thread_list*/ None,
-            /*failed_thread_name*/ None,
-        )
-        .await?;
+        app.chat_widget
+            .set_feature_enabled(Feature::ApiKeyCyberAccessPrograms, !has_chatgpt_account);
+        let (mut server, requests, proxy) = if server_owned {
+            start_recording_app_server_with_history(
+                &app.config,
+                HistoryCapabilities::Current,
+                /*blocked_thread_list*/ None,
+                /*failed_thread_name*/ None,
+                crate::app_server_session::ThreadParamsMode::Cloud,
+                codex_config::LoaderOverrides::without_managed_config_for_tests(),
+            )
+            .await?
+        } else {
+            start_recording_app_server(
+                &app.config,
+                /*blocked_thread_list*/ None,
+                /*failed_thread_name*/ None,
+            )
+            .await?
+        };
         let mut session = if reject {
             test_thread_session(ThreadId::new(), app.config.cwd.to_path_buf())
         } else {
@@ -70,19 +91,23 @@ async fn misalignment_continuation_requires_current_review_and_submits_once() ->
         app.chat_widget.handle_thread_session(session);
         if !reject {
             app.chat_widget.update_account_state(
-                /*status_account_display*/ None, /*plan_type*/ None,
-                /*has_chatgpt_account*/ true, /*has_codex_backend_auth*/ true,
+                (!has_chatgpt_account).then_some(crate::status::StatusAccountDisplay::ApiKey),
+                /*plan_type*/ None,
+                has_chatgpt_account,
+                /*has_codex_backend_auth*/ has_chatgpt_account,
             );
             app.chat_widget.open_model_popup();
             let request_id = std::iter::from_fn(|| rx.try_recv().ok())
-                .find_map(|event| match event {
+                .filter_map(|event| match event {
                     AppEvent::FetchModels { request_id } => Some(request_id),
                     _ => None,
                 })
+                .last()
                 .expect("model catalog request");
             let mut model = crate::test_support::TEST_MODEL_PRESETS[0].clone();
             model.model = app.chat_widget.current_model().to_string();
             model.available_access_programs = Some(ModelAccessPrograms {
+                daybreak_availability: Default::default(),
                 cyber: vec![
                     CyberAccessProgram::Standard,
                     CyberAccessProgram::DaybreakBlue,
@@ -224,13 +249,17 @@ async fn misalignment_continuation_requires_current_review_and_submits_once() ->
             params,
             codex_app_server_protocol::TurnStartParams {
                 thread_id: thread_id.to_string(),
-                cwd: Some(config.cwd.to_path_buf()),
-                runtime_workspace_roots: Some(
-                    config.permissions.user_visible_workspace_roots().to_vec()
-                ),
-                approval_policy: Some(AskForApproval::OnRequest),
-                approvals_reviewer: Some(config.approvals_reviewer.into()),
-                sandbox_policy: (!preserve).then(|| config.legacy_sandbox_policy().into()),
+                cwd: (!server_owned).then(|| config.cwd.to_path_buf()),
+                runtime_workspace_roots: (!server_owned)
+                    .then(|| config.permissions.user_visible_workspace_roots().to_vec()),
+                approval_policy: (!server_owned).then_some(AskForApproval::OnRequest),
+                approvals_reviewer: None,
+                sandbox_policy: (!server_owned && !preserve).then(|| config
+                    .permissions
+                    .effective_permission_profile()
+                    .to_legacy_sandbox_policy(config.cwd.as_path())
+                    .expect("test permissions fit the legacy wire format")
+                    .into()),
                 cyber_access_program: rollout_enabled.then_some(if daybreak {
                     CyberAccessProgram::DaybreakBlue.into()
                 } else {

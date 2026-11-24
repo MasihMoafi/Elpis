@@ -2,6 +2,82 @@ use super::*;
 use pretty_assertions::assert_eq;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
+use tokio::time::Instant;
+
+#[tokio::test]
+async fn tracked_review_stays_reserved_until_cleanup_finishes() {
+    let runtime = Arc::new(ReviewerTasks::default());
+    let next_id = Arc::new(AtomicUsize::new(/*v*/ 0));
+    let pool = Arc::new(ReviewerPool::new(
+        Arc::clone(&runtime),
+        move |_, _, _, _, _| {
+            let id = next_id.fetch_add(/*val*/ 1, Ordering::SeqCst);
+            Box::pin(async move { Ok(Session(id)) })
+        },
+    ));
+    let (selected, mut selections) = tokio::sync::mpsc::unbounded_channel();
+    let release = Arc::new(Semaphore::new(/*permits*/ 0));
+    let (finished, done) = tokio::sync::oneshot::channel();
+    let pending = {
+        let pool = Arc::clone(&pool);
+        let request = Request {
+            fresh: false,
+            selected: selected.clone(),
+            release: Some(Arc::clone(&release)),
+        };
+        runtime.tasks.spawn(async move {
+            pool.review(request).await;
+            finished.send(()).unwrap();
+        })
+    };
+    assert_eq!(selections.recv().await, Some(0));
+    drop(pending);
+    assert_eq!(runtime.tasks.len(), 1);
+
+    // A concurrent request must fork while the original attempt is still draining.
+    pool.review(Request {
+        fresh: false,
+        selected: selected.clone(),
+        release: None,
+    })
+    .await;
+    assert_eq!(selections.recv().await, Some(1));
+    release.add_permits(/*n*/ 1);
+    done.await.unwrap();
+    pool.review(Request {
+        fresh: false,
+        selected: selected.clone(),
+        release: None,
+    })
+    .await;
+    assert_eq!(selections.recv().await, Some(0));
+
+    // Shutdown must also join an attempt whose caller has stopped waiting.
+    let release = Arc::new(Semaphore::new(/*permits*/ 0));
+    let pending = {
+        let pool = Arc::clone(&pool);
+        let request = Request {
+            fresh: false,
+            selected,
+            release: Some(Arc::clone(&release)),
+        };
+        runtime.tasks.spawn(async move {
+            pool.review(request).await;
+        })
+    };
+    assert_eq!(selections.recv().await, Some(0));
+    drop(pending);
+    let shutdown = pool.shutdown();
+    tokio::pin!(shutdown);
+    tokio::select! {
+        biased;
+        () = &mut shutdown => panic!("shutdown must join the pending attempt"),
+        () = std::future::ready(()) => {}
+    }
+    release.add_permits(/*n*/ 1);
+    shutdown.await;
+    assert_eq!(runtime.tasks.len(), 0);
+}
 
 struct Session(usize);
 
@@ -16,7 +92,6 @@ impl ReviewerSession for Session {
     async fn snapshot(&self) -> Option<usize> {
         Some(self.0)
     }
-    async fn commit_snapshot(&self) {}
 }
 
 struct Request {
@@ -35,8 +110,8 @@ impl ReviewerRequest for Request {
     fn requires_fresh_session(&self) -> bool {
         self.fresh
     }
-    fn deadline(&self) -> Instant {
-        Instant::now() + std::time::Duration::from_secs(5)
+    fn deadline(&self) -> crate::ReviewDeadline {
+        crate::ReviewDeadline::At(Instant::now() + std::time::Duration::from_secs(5))
     }
     fn cancellation(&self) -> Option<&CancellationToken> {
         None

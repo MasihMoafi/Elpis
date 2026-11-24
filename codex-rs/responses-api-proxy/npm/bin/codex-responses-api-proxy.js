@@ -3,6 +3,7 @@
 // Entry point for the Codex responses API proxy binary.
 
 import { spawn } from "node:child_process";
+import { closeSync } from "node:fs";
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -60,6 +61,12 @@ const binaryPath = path.join(
 
 const child = spawn(binaryPath, process.argv.slice(2), {
   stdio: "inherit",
+});
+
+child.once("spawn", () => {
+  // The child has inherited stdin. Close our copy so credential input
+  // cannot be reread through the long-lived Node launcher.
+  closeSync(0);
 });
 
 child.on("error", (err) => {

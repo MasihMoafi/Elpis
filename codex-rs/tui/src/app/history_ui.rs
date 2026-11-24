@@ -22,7 +22,24 @@ pub(super) struct ThreadUsageStatusHistory {
 }
 
 impl App {
-    pub(super) fn insert_history_cell(&mut self, tui: &mut tui::Tui, cell: Box<dyn HistoryCell>) {
+    pub(super) fn link_viewed_image(&self, cell: &mut dyn HistoryCell) {
+        if let Some(image) = cell
+            .as_any_mut()
+            .downcast_mut::<history_cell::ViewImageHistoryCell>()
+            && !self.app_server_target.uses_remote_workspace()
+            && crate::projectless::has_only_local_environments(&self.environment_manager)
+            && !crate::clipboard_copy::is_ssh_session()
+        {
+            image.link_local_image();
+        }
+    }
+
+    pub(super) fn insert_history_cell(
+        &mut self,
+        tui: &mut tui::Tui,
+        mut cell: Box<dyn HistoryCell>,
+    ) {
+        self.link_viewed_image(cell.as_mut());
         if let Some(prune) = cell
             .as_any()
             .downcast_ref::<crate::chatwidget::smart_prune_log::SmartPruneCell>()
@@ -130,7 +147,7 @@ impl App {
         &mut self,
         tui: &mut tui::Tui,
         thread_id: ThreadId,
-        request_id: u64,
+        request_id: Uuid,
         result: std::result::Result<crate::chatwidget::ThreadUsageOutcome, String>,
     ) -> Result<()> {
         let may_update_status = match &result {
@@ -287,6 +304,11 @@ impl App {
     }
 
     pub(crate) fn open_url_in_browser(&mut self, url: String) {
+        if let Some(thread_id) = crate::thread_links::thread_id(&url) {
+            self.app_event_tx
+                .send(AppEvent::OpenThreadLink { thread_id });
+            return;
+        }
         if let Some(target) =
             url.strip_prefix(crate::chatwidget::smart_prune_log::INLINE_LINK_PREFIX)
         {
@@ -369,6 +391,14 @@ impl App {
         self.clear_ui_header_lines_with_version(width, CODEX_CLI_VERSION)
     }
 
+    pub(super) fn start_cleared_display(&mut self, tui: &mut tui::Tui) {
+        self.reset_terminal_display_state();
+        self.transcript_cells
+            .retain(|cell| !cell.as_any().is::<history_cell::ClearScreenHeader>());
+        let header = history_cell::ClearScreenHeader(self.clear_ui_header_cell(CODEX_CLI_VERSION));
+        self.insert_history_cell(tui, Box::new(header));
+    }
+
     pub(super) fn queue_clear_ui_header(&mut self, tui: &mut tui::Tui) {
         if tui.is_owned_screen() {
             if !self.transcript_cells.iter().any(|cell| {
@@ -433,8 +463,12 @@ impl App {
     }
 
     pub(super) fn reset_transcript_state_after_clear(&mut self) {
-        self.overlay = None;
         self.transcript_cells.clear();
+        self.reset_terminal_display_state();
+    }
+
+    fn reset_terminal_display_state(&mut self) {
+        self.overlay = None;
         self.turn_tips.dismiss();
         self.chat_widget.warning_display_state.dismissed.clear();
         self.chat_widget.warning_display_state.transcript = Arc::default();
@@ -442,6 +476,7 @@ impl App {
         self.native_history = Default::default();
         self.cancel_pending_key_chord();
         self.transcript_view = Default::default();
+        *self.chat_widget.rendered_selection.borrow_mut() = Default::default();
         self.last_rendered_history_tail = None;
         self.last_thread_usage_status_cell = None;
         self.pending_thread_usage_history_refresh = false;
@@ -510,40 +545,15 @@ fn windows_desktop_app_launch_script(url: &str) -> String {
 $ErrorActionPreference = 'Stop'
 $url = {url}
 
-$package = Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue
+$package = Get-AppxPackage -Name OpenAI.Codex -ErrorAction SilentlyContinue |
+    Where-Object {{ $_.PublisherId -in @('2p2nqsd0c76g0', '3k8sg7r9htsxt') }} |
+    Select-Object -First 1
 if ($null -eq $package) {{
     Write-Error 'Desktop app package is not installed'
     exit 1
 }}
 
-$manifest = Get-AppxPackageManifest -Package $package.PackageFullName
-$application = $manifest.Package.Applications.Application |
-    Where-Object {{
-        @($_.Extensions.Extension) | Where-Object {{
-            $_.Category -eq 'windows.protocol' -and $_.Protocol.Name -eq 'codex'
-        }}
-    }} |
-    Select-Object -First 1
-if ($null -eq $application -or [string]::IsNullOrWhiteSpace($application.Executable)) {{
-    Write-Error 'Desktop app package does not declare a codex protocol executable'
-    exit 1
-}}
-
-# Launch the package-declared protocol executable rather than an internal Electron shim.
-# Windows can deny direct starts of internal executables under WindowsApps.
-$exe = Join-Path $package.InstallLocation $application.Executable
-$appDir = Split-Path -Parent $exe
-$app = Join-Path $appDir 'resources\app.asar'
-if (-not (Test-Path $exe)) {{
-    Write-Error "Desktop app executable not found at $exe"
-    exit 1
-}}
-if (-not (Test-Path $app)) {{
-    Write-Error "Desktop app bundle not found at $app"
-    exit 1
-}}
-
-Start-Process -FilePath $exe -WorkingDirectory $appDir -ArgumentList @('resources\app.asar', $url)
+Start-Process -FilePath $url
 "#
     )
 }

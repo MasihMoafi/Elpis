@@ -10,16 +10,54 @@ use crate::WithTurnExtensionData;
 use crate::config::ConstraintResult;
 use codex_history::RolloutItem;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
+use codex_protocol::error::CodexErr;
+use codex_protocol::error::Result as CodexResult;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ThreadSettingsAppliedEvent;
 use codex_protocol::protocol::ThreadSettingsOverrides;
 use codex_protocol::protocol::ThreadSettingsSnapshot;
+use codex_thread_store::ThreadStoreError;
 use codex_thread_store::ThreadStoreResult;
 use std::sync::Arc;
 use tokio::sync::SemaphorePermit;
 
 impl Session {
+    /// Persist before publishing so a failed write cannot change the running catalog.
+    pub(crate) async fn replace_dynamic_tools(
+        &self,
+        tools: Vec<codex_protocol::dynamic_tools::DynamicToolSpec>,
+    ) -> CodexResult<()> {
+        let _settings_guard = acquire_persistence_lock(self).await;
+        if let Some(live_thread) = self.live_thread() {
+            let config = self.get_config().await;
+            if !config.allow_persistent_dynamic_tool_updates {
+                return Err(CodexErr::UnsupportedOperation(
+                    "The host has disabled dynamic tool updates for persistent threads.".into(),
+                ));
+            }
+            let persistence_error = |error: ThreadStoreError| match error {
+                ThreadStoreError::Unsupported { .. } => {
+                    CodexErr::UnsupportedOperation(error.to_string())
+                }
+                _ => CodexErr::Fatal(format!("failed to replace dynamic tools: {error}")),
+            };
+            live_thread
+                .append_items(&[RolloutItem::DynamicToolsUpdated {
+                    thread_id: self.thread_id(),
+                    tools: tools.clone(),
+                }])
+                .await
+                .map_err(persistence_error)?;
+            live_thread.flush().await.map_err(persistence_error)?;
+        }
+        let tools = Arc::from(tools);
+        let mut state = self.state.lock().await;
+        state.persisted_dynamic_tools = Arc::clone(&tools);
+        state.session_configuration.dynamic_tools = tools;
+        Ok(())
+    }
+
     /// Captures and flushes current settings under the shared persistence permit.
     pub(crate) async fn checkpoint_thread_settings(&self) -> ThreadStoreResult<()> {
         let _settings_guard = acquire_persistence_lock(self).await;
@@ -34,15 +72,28 @@ impl Session {
 }
 
 /// Applies standalone thread settings. The caller holds the persistence permit through notification.
+#[expect(
+    clippy::await_holding_invalid_type,
+    reason = "the active-turn guard makes continuation invalidation atomic with turn admission"
+)]
 pub(super) async fn update(
     session: &Session,
     overrides: impl Into<WithTurnExtensionData<ThreadSettingsOverrides>>,
-) -> ConstraintResult<ThreadSettingsSnapshot> {
-    let updates = prepare_update(overrides, &session.services.selected_capability_roots);
+    reply_requested: bool,
+) -> ConstraintResult<SessionSettingsCommit> {
+    let mut updates = prepare_update(overrides, &session.services.selected_capability_roots);
+    updates.host_acceptance_in_reply = reply_requested;
     let commit = commit_update(session, updates).await?;
-    // Standalone settings changes supersede a pending automatic continuation.
-    session.state.lock().await.last_started_turn_id = None;
-    Ok(commit.snapshot)
+    let active_turn = session.active_turn.lock().await;
+    // A registered running task retains its lineage so it can be recovered after a daemon
+    // restart. Reservations and finishing turns have no interrupted work to continue.
+    if active_turn
+        .as_ref()
+        .is_none_or(|active_turn| active_turn.task.is_none())
+    {
+        session.state.lock().await.last_started_turn_id = None;
+    }
+    Ok(commit)
 }
 
 /// Elpis: commits settings, then gives accepted permission changes to the running turn so
@@ -141,6 +192,7 @@ pub(super) fn prepare_update(
         turn_extension_init,
     } = overrides.into();
     let ThreadSettingsOverrides {
+        request_country,
         environments: environment_requests,
         runtime_workspace_roots,
         profile_workspace_roots,
@@ -161,6 +213,7 @@ pub(super) fn prepare_update(
     SessionSettingsUpdate {
         turn_extension_init,
         step_settings: StepSettingsUpdate {
+            request_country,
             model,
             effort,
             collaboration_mode,

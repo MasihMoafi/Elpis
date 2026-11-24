@@ -1103,6 +1103,8 @@ async fn active_model_switch_updates_core_context_from_captured_settings(
                     on_request_auto_review: None,
                     never: None,
                     unless_trusted: None,
+                    granular: None,
+                    ..Default::default()
                 });
                 messages.token_budget =
                     (initial_model || destination_has_guidance).then(|| ModelTokenBudgetConfig {
@@ -1653,15 +1655,23 @@ async fn captured_model_replans_tools_and_retains_the_issuing_request_router() -
         requests
             .iter()
             .map(|request| {
-                core_test_support::responses::namespace_child_tool(
-                    &request["input"][0],
-                    "functions",
-                    "apply_patch",
-                )
-                .is_some()
+                let declaration = request["input"]
+                    .as_array()
+                    .expect("provider input")
+                    .iter()
+                    .rfind(|item| item["type"] == "additional_tools")
+                    .expect("latest tool declaration");
+                ["apply_patch", "exec_command", "write_stdin"]
+                    .into_iter()
+                    .filter(|name| namespace_child_tool(declaration, "functions", name).is_some())
+                    .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>(),
-        vec![false, true, false],
+        vec![
+            vec!["exec_command", "write_stdin"],
+            vec!["apply_patch"],
+            vec!["exec_command", "write_stdin"]
+        ],
     );
     let metadata = requests
         .iter()
@@ -1683,29 +1693,6 @@ async fn captured_model_replans_tools_and_retains_the_issuing_request_router() -
             })
             .collect::<Vec<_>>(),
         vec![false, true, false],
-    );
-    assert_eq!(
-        requests
-            .iter()
-            .map(|request| {
-                ["exec_command", "write_stdin"]
-                    .into_iter()
-                    .filter(|name| {
-                        core_test_support::responses::namespace_child_tool(
-                            &request["input"][0],
-                            "functions",
-                            name,
-                        )
-                        .is_some()
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>(),
-        vec![
-            vec!["exec_command", "write_stdin"],
-            vec![],
-            vec!["exec_command", "write_stdin"]
-        ],
     );
     assert!(
         requests[2]["input"]

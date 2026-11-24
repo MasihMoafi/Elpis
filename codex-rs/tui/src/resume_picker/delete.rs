@@ -61,6 +61,12 @@ impl PickerState {
         let Some(row) = self.filtered_rows.get(self.selected) else {
             return;
         };
+        if row.backend_id.is_some_and(|owner| owner != self.backend_id) {
+            self.inline_error =
+                Some("Open the session on its own connection before deleting it.".into());
+            self.request_frame();
+            return;
+        }
         let Some(thread_id) = row.thread_id else {
             self.inline_error = Some("Selected session does not have a thread ID.".into());
             self.request_frame();
@@ -134,8 +140,7 @@ impl PickerState {
         self.delete_state = DeleteState::Idle;
         match result {
             Ok(()) => {
-                self.thread_history_modes.remove(&thread_id);
-                self.remove_session_row(thread_id);
+                self.remove_session_row(self.backend_id, thread_id);
             }
             Err(error) => {
                 self.inline_error = Some(format!("Failed to delete session: {error}"));

@@ -11,7 +11,7 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use pretty_assertions::assert_eq;
 
-fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
+pub(super) fn buffer_text(buffer: &ratatui::buffer::Buffer) -> String {
     buffer
         .content()
         .chunks(usize::from(buffer.area.width))
@@ -237,7 +237,7 @@ async fn transcript_flag_off_preserves_viewer_and_backtracking() -> Result<()> {
                 text_elements: Vec::new(),
                 local_image_paths: Vec::new(),
                 remote_image_urls: Vec::new(),
-                spoken: false,
+                presentation: Default::default(),
             }) as Arc<dyn HistoryCell>
         })
         .to_vec();

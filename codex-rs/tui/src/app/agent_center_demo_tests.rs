@@ -243,7 +243,9 @@ async fn demo_list_selected_conversation_shows_delegate_tools_reply_steer_and_li
     Also check thread/inject_items.
     ◐ working
     "###);
-    if let ThreadItem::CommandExecution { status, .. } = &mut child.turns[0].items[1] {
+    if let codex_app_server_protocol::ThreadItemPayload::CommandExecution { status, .. } =
+        &mut child.turns[0].items[1].payload
+    {
         *status = codex_app_server_protocol::CommandExecutionStatus::Declined;
     }
     let declined = app.agents_overview_view(
@@ -339,13 +341,16 @@ async fn demo_list_refresh_keeps_the_fetched_conversation_on_the_real_projection
         ]),
     ));
     let request_id = Uuid::new_v4();
-    app.agents_overview.request_id = Some(request_id);
+    app.agents_overview.active_refresh = Some((request_id, app_server.backend_id()));
+    app.app_server_backend_id = Some(app_server.backend_id());
+    app.backend_registry.connect(&app_server);
     app.apply_agents_overview_thread_refresh(
         &app_server,
         request_id,
         Ok(crate::app_event::AgentsOverviewThreadRefresh {
             unmaterialized_threads: HashSet::new(),
-            threads: HashMap::from([(id, Some(thread))]),
+            cleared_unread: Vec::new(),
+            threads: HashMap::from([(id, Some((thread, false, None)))]),
             last_messages: HashMap::new(),
             recent_seed_complete: true,
             discovery: None,
@@ -483,8 +488,8 @@ async fn demo_list_conversation_preserves_the_sender_of_human_steers() {
         Some(ThreadId::from_u128(43)),
     );
     insta::assert_snapshot!(evidence(&view, &["you → GPT-6.1 Sol steer"]), @"you → GPT-6.1 Sol steer");
-    if let codex_app_server_protocol::ThreadItem::UserMessage { client_id, .. } =
-        &mut child.turns[0].items[0]
+    if let codex_app_server_protocol::ThreadItemPayload::UserMessage { client_id, .. } =
+        &mut child.turns[0].items[0].payload
     {
         *client_id = None;
     }

@@ -18,6 +18,7 @@ impl ChatWidget {
 
     pub(crate) fn park_voice(&mut self) {
         self.app_event_tx.voice_only.store(true, Ordering::Relaxed);
+        self.statusline_read = None;
         self.set_queue_autosend_suppressed(/*suppressed*/ true);
         self.stop_rate_limit_poller();
     }
@@ -37,7 +38,7 @@ impl ChatWidget {
             .pending_speech
             .iter()
             .filter_map(|pending| match &pending.item {
-                codex_app_server_protocol::ThreadItem::AgentMessage { text, .. } => {
+                codex_app_server_protocol::ThreadItemPayload::AgentMessage { text, .. } => {
                     Some(text.as_str())
                 }
                 _ => None,

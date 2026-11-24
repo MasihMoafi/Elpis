@@ -9,6 +9,7 @@ mod render;
 mod rows;
 
 use super::*;
+pub(super) use navigation::SectionDirection;
 
 // Counts and filtering use the same status groups.
 pub(super) const TASK_FILTERS: &[(&str, Option<AgentsOverviewGroup>)] = &[
@@ -23,7 +24,7 @@ pub(super) const TASK_FILTERS: &[(&str, Option<AgentsOverviewGroup>)] = &[
 impl AgentsOverviewView {
     pub(in crate::app::agents_overview_view) fn selectable_indices(&self) -> Vec<usize> {
         let mut indices = self.visible_indices();
-        if self.state().has_more {
+        if self.state().more_available() {
             indices.push(usize::MAX);
         }
         indices

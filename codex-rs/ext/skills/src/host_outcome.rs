@@ -4,13 +4,21 @@ use std::fmt;
 use std::io;
 use std::sync::Arc;
 
-use codex_exec_server::ExecutorFileSystem;
+use codex_exec_server::EnvironmentAccess;
+use codex_exec_server::EnvironmentAccessExt;
+use codex_exec_server::EnvironmentAccessKey;
+use codex_exec_server::FileSystemEnvironmentAccessor;
 use codex_exec_server::LOCAL_FS;
 use codex_exec_server::ReadFileOptions;
+use codex_protocol::protocol::SkillScope;
 use codex_skills::SkillError;
 use codex_skills::SkillMetadata;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use futures::StreamExt;
+
+use crate::loader::MAX_CONCURRENT_SKILL_LOADS;
+use crate::loader::canonicalize_for_skill_identity;
 
 #[derive(Debug, Clone, Default)]
 pub struct SkillLoadOutcome {
@@ -35,7 +43,7 @@ impl SkillLoadOutcome {
         skill_root_by_path: HashMap<PathUri, AbsolutePathBuf>,
         skill_discovery_path_by_path: HashMap<PathUri, PathUri>,
         agent_plugin_skill_paths: HashSet<PathUri>,
-        file_systems_by_skill_path: HashMap<PathUri, Arc<dyn ExecutorFileSystem>>,
+        file_systems_by_skill_path: HashMap<PathUri, EnvironmentAccessKey>,
     ) -> Self {
         Self {
             skills,
@@ -59,27 +67,53 @@ impl SkillLoadOutcome {
             .map(|skill| (skill, self.is_skill_enabled(skill)))
     }
 
-    pub(crate) fn with_disabled_paths(mut self, disabled_paths: HashSet<PathUri>) -> Self {
+    pub(crate) async fn with_disabled_paths(
+        mut self,
+        disabled_paths: HashSet<PathUri>,
+        accessors: &[&dyn EnvironmentAccess],
+    ) -> Self {
         self.disabled_paths = disabled_paths;
         let mut by_scripts_dir = HashMap::new();
         let mut by_doc_path = HashMap::new();
+        let mut scans = Vec::new();
         for skill in self
             .skills
             .iter()
             .filter(|skill| self.is_skill_enabled(skill))
         {
-            // Implicit command detection probes the host filesystem only.
+            let Some(source) = self.file_system_for_skill(skill) else {
+                continue;
+            };
+            let Some(access) = accessors
+                .iter()
+                .copied()
+                .find(|access| source == &access.cache_key())
+            else {
+                continue;
+            };
+            // Only native paths participate in implicit command detection.
             let Ok(path) = skill.path_to_skills_md.to_abs_path() else {
                 continue;
             };
-            let skill_doc_path = canonicalize_if_exists(&path);
-            by_doc_path.insert(PathUri::from_abs_path(&skill_doc_path), skill.clone());
-
-            if let Some(skill_dir) = path.parent() {
-                let scripts_dir = canonicalize_if_exists(&skill_dir.join("scripts"));
+            scans.push(async move {
+                let skill_doc_path = canonicalize_for_skill_identity(access, &path).await;
+                let scripts_dir = match path.parent() {
+                    Some(skill_dir) => Some(
+                        canonicalize_for_skill_identity(access, &skill_dir.join("scripts")).await,
+                    ),
+                    None => None,
+                };
+                (skill, skill_doc_path, scripts_dir)
+            });
+        }
+        let mut scans = futures::stream::iter(scans).buffered(MAX_CONCURRENT_SKILL_LOADS);
+        while let Some((skill, doc_path, scripts_dir)) = scans.next().await {
+            by_doc_path.insert(PathUri::from_abs_path(&doc_path), skill.clone());
+            if let Some(scripts_dir) = scripts_dir {
                 by_scripts_dir.insert(PathUri::from_abs_path(&scripts_dir), skill.clone());
             }
         }
+        drop(scans);
         self.implicit_skills_by_scripts_dir = Arc::new(by_scripts_dir);
         self.implicit_skills_by_doc_path = Arc::new(by_doc_path);
         self
@@ -108,22 +142,38 @@ impl SkillLoadOutcome {
     pub(crate) fn file_system_for_skill(
         &self,
         skill: &SkillMetadata,
-    ) -> Option<Arc<dyn ExecutorFileSystem>> {
+    ) -> Option<&EnvironmentAccessKey> {
         self.file_systems_by_skill_path
             .get(&skill.path_to_skills_md)
     }
 
-    /// Reads one loaded skill through the filesystem that discovered it.
-    pub(crate) async fn read_skill_text(&self, skill: &SkillMetadata) -> io::Result<String> {
-        let fs = self
-            .file_system_for_skill(skill)
-            .unwrap_or_else(|| Arc::clone(&LOCAL_FS));
-        fs.read_file_text(
-            &skill.path_to_skills_md,
-            ReadFileOptions::default(),
-            /*sandbox*/ None,
-        )
-        .await
+    /// Reads through current access to the original filesystem; cached metadata grants no access.
+    pub(crate) async fn read_skill_text(
+        &self,
+        skill: &SkillMetadata,
+        accessors: &[&dyn EnvironmentAccess],
+    ) -> io::Result<String> {
+        let host = FileSystemEnvironmentAccessor::unrestricted(&LOCAL_FS);
+        let access: &dyn EnvironmentAccess = match skill.scope {
+            SkillScope::Repo => self
+                .file_system_for_skill(skill)
+                .and_then(|source| {
+                    accessors
+                        .iter()
+                        .copied()
+                        .find(|access| source.same_file_system(&access.cache_key()))
+                })
+                .ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "skill discovery filesystem is unavailable for this callback",
+                    )
+                })?,
+            SkillScope::User | SkillScope::System | SkillScope::Admin => &host,
+        };
+        access
+            .read_file_text(&skill.path_to_skills_md, ReadFileOptions::default())
+            .await
     }
 }
 
@@ -159,18 +209,18 @@ impl codex_skills::ExplicitSkillLookup for SkillLoadOutcome {
 
 #[derive(Clone, Default)]
 pub(crate) struct SkillFileSystemsByPath {
-    values: Arc<HashMap<PathUri, Arc<dyn ExecutorFileSystem>>>,
+    values: Arc<HashMap<PathUri, EnvironmentAccessKey>>,
 }
 
 impl SkillFileSystemsByPath {
-    pub(crate) fn new(values: HashMap<PathUri, Arc<dyn ExecutorFileSystem>>) -> Self {
+    pub(crate) fn new(values: HashMap<PathUri, EnvironmentAccessKey>) -> Self {
         Self {
             values: Arc::new(values),
         }
     }
 
-    fn get(&self, path: &PathUri) -> Option<Arc<dyn ExecutorFileSystem>> {
-        self.values.get(path).map(Arc::clone)
+    fn get(&self, path: &PathUri) -> Option<&EnvironmentAccessKey> {
+        self.values.get(path)
     }
 }
 
@@ -180,8 +230,4 @@ impl fmt::Debug for SkillFileSystemsByPath {
             .field("len", &self.values.len())
             .finish()
     }
-}
-
-fn canonicalize_if_exists(path: &AbsolutePathBuf) -> AbsolutePathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.clone())
 }

@@ -7,9 +7,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 use std::num::NonZeroUsize;
 
-/// Connection to a board provisioned by the research host.
+/// Connection settings for a remote message board.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RemoteMessageBoardConfigToml {
@@ -145,14 +146,40 @@ pub struct GuardianV2ReviewScopeConfigToml {
     pub sandboxed_exec_commands: Option<bool>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GuardianElasticSectionConfigToml {
+    /// Exact Code Mode tool names for the transcript_selected_exec_results section.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub nested_tool_names: Vec<String>,
+    pub min_total_section_tokens: usize,
+    pub max_section_entry_tokens: usize,
+    /// Upper bound for the section's allocation.
+    /// Omit to use the global request budget as the upper bound.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_total_section_tokens: Option<usize>,
+}
+
 /// User-configurable prompt, approval, and context settings for Guardian v2.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GuardianV2ConfigToml {
+    /// Enable elastic allocation for asynchronous Guardian requests. Defaults to false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub async_elastic_budgeting: Option<bool>,
+    /// Section limits validated when asynchronous elastic budgeting is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub async_elastic_sections: Option<BTreeMap<String, GuardianElasticSectionConfigToml>>,
+    /// Enable elastic allocation for synchronous Guardian requests. Defaults to false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_elastic_budgeting: Option<bool>,
+    /// Named section limits, decoded and validated by Guardian when the switch is enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sync_elastic_sections: Option<BTreeMap<String, GuardianElasticSectionConfigToml>>,
     /// Transcript encoding for synchronous Guardian review and asynchronous scoring. Defaults to line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transcript_mode: Option<codex_protocol::TranscriptFormat>,
-    /// Classifier experiment override. Otherwise use the model default, then snapshots.
+    /// Deprecated and ignored; asynchronous classification always uses conversations.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub async_classifier_mode: Option<codex_protocol::openai_models::AsyncClassifierMode>,
     /// Reset retained async history when the next request exceeds this token estimate.
@@ -284,6 +311,49 @@ where
     Ok(feature)
 }
 
+/// User-configurable settings for Guardian V3.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GuardianV3ConfigToml {
+    /// Keep each fresh root's Guardian board in memory until the runtime closes. Defaults to false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_board_in_memory: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub housekeeper: Option<GuardianV3HousekeeperConfigToml>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reviewer: Option<GuardianV3ReviewerConfigToml>,
+    /// Maximum estimated tokens per custom routing or retrieval prompt. Unset means uncapped. Ignored in project config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_instruction_tokens: Option<usize>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GuardianV3HousekeeperConfigToml {
+    /// Guidance for grouping originals into channels and describing their topics. Ignored in project config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub routing_instructions: Option<String>,
+    /// Time budget for routing one batch, in milliseconds. Defaults to 90,000.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub batch_timeout_ms: Option<NonZeroU32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GuardianV3ReviewerConfigToml {
+    /// Guidance for searching the Guardian board and managing channel subscriptions. Ignored in project config.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retrieval_instructions: Option<String>,
+}
+
+impl FeatureConfig for GuardianV3ConfigToml {
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MultiAgentV2ConfigToml {
@@ -313,6 +383,10 @@ pub struct MultiAgentV2ConfigToml {
     /// Overrides inherited developer instructions for subagents without role-specific instructions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subagent_developer_instructions: Option<String>,
+    /// Preserve the parent's model-visible history on full forks and append child instructions.
+    /// Defaults to true. Legacy compaction without a reusable context baseline still rebuilds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preserve_fork_prefix: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multi_agent_mode_hint_text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -327,6 +401,12 @@ pub struct MultiAgentV2ConfigToml {
     /// Expose the multi-agent v2 `wait_agent` tool.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wait_agent_enabled: Option<bool>,
+    /// Let a subagent finish its current output item while cancelling tools immediately.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interrupt_at_item_boundary: Option<bool>,
+    /// Hide native multi-agent tools while retaining the V2 runtime for host-provided tools.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disable_native_tools: Option<bool>,
     /// Disable the model's direct-message tools; spawning and automatic child results remain available.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub disable_direct_message: Option<bool>,
@@ -368,6 +448,9 @@ pub struct TokenBudgetConfigToml {
     /// Whether to expose the built-in history and notes extension.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub use_history_notes_extension: Option<bool>,
+    /// Render the context window and its hints as an agent.thread_hint tool output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context_window_as_tool_output: Option<bool>,
     /// Number of tokens remaining before auto-compaction when the wrap-up reminder is emitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1))]
@@ -400,11 +483,25 @@ impl FeatureConfig for TokenBudgetConfigToml {
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RolloutBudgetConfigToml {
+    /// Stop when the shared budget is exhausted. Defaults to true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enforce_limit: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
+    // TODO: Remove limit_tokens once clients write limit_budget and persisted thread configs have migrated.
+    /// Positive whole-token allowance. Set either limit_tokens or limit_budget.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1))]
     pub limit_tokens: Option<i64>,
+    /// Positive, finite allowance in budget units. Set either limit_tokens or limit_budget.
+    /// Spending exactly this amount is allowed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "positive_budget_limit_schema")]
+    pub limit_budget: Option<f64>,
+    /// Restate the balance when a thread starts or its context is compacted.
+    /// Defaults to true. Set false with an empty threshold list for no budget reminders.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reminder_at_context_start: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     /// Remaining weighted-token values that trigger reminders when crossed.
     pub reminder_at_remaining_tokens: Option<Vec<i64>>,
@@ -414,6 +511,14 @@ pub struct RolloutBudgetConfigToml {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 0.0))]
     pub prefill_token_weight: Option<f64>,
+}
+
+fn positive_budget_limit_schema(
+    generator: &mut schemars::r#gen::SchemaGenerator,
+) -> schemars::schema::Schema {
+    let mut schema = f64::json_schema(generator).into_object();
+    schema.number().exclusive_minimum = Some(0.0);
+    schema.into()
 }
 
 impl FeatureConfig for RolloutBudgetConfigToml {
@@ -507,6 +612,9 @@ pub struct NetworkProxyConfigToml {
     pub proxy_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub enable_socks5: Option<bool>,
+    /// Route outbound TCP from managed Linux sandbox commands through the managed SOCKS5 proxy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transparent_tcp: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub socks_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -559,4 +667,23 @@ pub enum NetworkProxyDomainPermissionToml {
 pub enum NetworkProxyUnixSocketPermissionToml {
     Allow,
     Deny,
+}
+
+/// Background compaction settings. A threshold alone does not enable the feature.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AsyncCompactionConfigToml {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+    /// Percentage of the model's full context window that starts background compaction.
+    /// Defaults to 65; valid values are 1–100, including when disabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[schemars(range(min = 1, max = 100))]
+    pub model_async_compact_threshold_percent: Option<u8>,
+}
+
+impl FeatureConfig for AsyncCompactionConfigToml {
+    fn enabled(&self) -> Option<bool> {
+        self.enabled
+    }
 }

@@ -3,7 +3,9 @@
 
 use super::ContextualUserFragment;
 use codex_protocol::error::CodexErr;
+use codex_protocol::models::ContentItem;
 use codex_protocol::models::ContentItemKind;
+use codex_protocol::models::input_text;
 use codex_protocol::protocol::TruncationPolicy;
 
 pub(crate) struct GuardianRetainedInstructions(String);
@@ -42,7 +44,7 @@ impl ContextualUserFragment for GuardianRetainedInstructions {
         ("", "")
     }
 
-    fn body(&self) -> String {
-        self.0.clone()
+    fn body(&self) -> ContentItem {
+        input_text(self.0.clone())
     }
 }

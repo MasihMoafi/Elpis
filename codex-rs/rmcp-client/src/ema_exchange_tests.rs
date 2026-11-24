@@ -19,6 +19,9 @@ use wiremock::matchers::method;
 use wiremock::matchers::path;
 
 use super::*;
+use crate::EmaCredentialKind;
+use crate::EmaErrorDetail;
+use crate::EmaTokenSourceError;
 use crate::ema_auth_policy::validate_ema_oauth_endpoint;
 use crate::ema_claims::ID_JAG_TOKEN_TYPE;
 use crate::ema_claims::validate_oidc_identity_assertion;
@@ -75,32 +78,68 @@ fn token_response() -> Value {
 async fn exchange(server: &MockServer, refresh_token: &str) -> Result<EmaAccessToken> {
     let issuer = format!("{}/idp", server.uri());
     let audience = format!("{}/as", server.uri());
-    exchange_id_jag(EmaIdJagExchangeRequest {
-        resource: &format!("{}/mcp", server.uri()),
-        scopes: &[],
-        mcp_client_id: "mcp-client",
-        authorization_server_issuer: &audience,
-        authorization_server_token_endpoint: &format!("{audience}/token"),
-        idp_token_endpoint: &format!("{issuer}/token"),
-        idp_issuer: &issuer,
-        idp_client_id: "idp-client",
-        refresh_token: refresh_token.to_string(),
-        idp_http_client: http_client(),
-        resource_http_client: http_client(),
-    })
+    exchange_id_jag(
+        EmaIdJagExchangeRequest {
+            idp_client_authentication: EmaClientAuthentication::None,
+            resource_client_authentication: EmaClientAuthentication::None,
+            resource: &format!("{}/mcp", server.uri()),
+            scopes: &[],
+            mcp_client_id: "mcp-client",
+            authorization_server_issuer: &audience,
+            authorization_server_token_endpoint: &format!("{audience}/token"),
+            idp_token_endpoint: &format!("{issuer}/token"),
+            idp_issuer: &issuer,
+            idp_client_id: "idp-client",
+            subject_token: EmaSubjectToken::RefreshToken(RefreshToken::new(
+                refresh_token.to_string(),
+            )),
+            idp_http_client: http_client(),
+            resource_http_client: http_client(),
+        },
+        (),
+        std::convert::identity,
+    )
     .await
+    .map(|(token, ())| token)
 }
 
 #[tokio::test]
-async fn public_client_round_trip_preserves_signed_narrowing() -> Result<()> {
+async fn client_round_trip_preserves_signed_narrowing() -> Result<()> {
     let requested_scopes = ["files.read".to_string(), "files.write".to_string()];
     let client = http_client();
-    for (scopes, echo_scope, refresh_token) in [
-        (requested_scopes.as_slice(), true, "opaque-refresh-token"),
-        (&[], true, "opaque-refresh-token"),
-        (&[], false, "opaque-refresh-token"),
-        (requested_scopes.as_slice(), true, ""),
-        (requested_scopes.as_slice(), true, " \t"),
+    use codex_config::McpEmaTokenEndpointAuthMethod::ClientSecretBasic;
+    use codex_config::McpEmaTokenEndpointAuthMethod::ClientSecretPost;
+    for (scopes, echo_scope, subject_token, subject_type, idp_method) in [
+        (
+            requested_scopes.as_slice(),
+            true,
+            "opaque-refresh-token",
+            "refresh_token",
+            None,
+        ),
+        (
+            &[],
+            true,
+            "opaque-refresh-token",
+            "refresh_token",
+            Some(ClientSecretBasic),
+        ),
+        (
+            &[],
+            false,
+            "opaque-refresh-token",
+            "refresh_token",
+            Some(ClientSecretPost),
+        ),
+        (&[], true, "test-id-token", "id_token", None),
+        (requested_scopes.as_slice(), true, "", "refresh_token", None),
+        (
+            requested_scopes.as_slice(),
+            true,
+            " \t",
+            "refresh_token",
+            None,
+        ),
     ] {
         let server = MockServer::start().await;
         let issuer = format!("{}/idp", server.uri());
@@ -112,7 +151,7 @@ async fn public_client_round_trip_preserves_signed_narrowing() -> Result<()> {
                 .expect("ID-JAG response")
                 .remove("scope");
         }
-        let valid = !refresh_token.trim().is_empty();
+        let valid = !subject_token.trim().is_empty();
         for (endpoint, response) in [("/idp/token", jag.clone()), ("/as/token", token_response())] {
             Mock::given(method("POST"))
                 .and(path(endpoint))
@@ -121,22 +160,51 @@ async fn public_client_round_trip_preserves_signed_narrowing() -> Result<()> {
                 .mount(&server)
                 .await;
         }
-        let expected_subject = refresh_token.to_string();
-        let result = exchange_id_jag(EmaIdJagExchangeRequest {
-            resource: &resource,
-            scopes,
-            mcp_client_id: "mcp-client",
-            authorization_server_issuer: &audience,
-            authorization_server_token_endpoint: &format!("{audience}/token"),
-            idp_token_endpoint: &format!("{issuer}/token"),
-            idp_issuer: &issuer,
-            idp_client_id: "idp-client",
-            refresh_token: refresh_token.to_string(),
-            idp_http_client: Arc::clone(&client),
-            resource_http_client: Arc::clone(&client),
-        })
+        let expected_subject = subject_token.to_string();
+        let resource_method = idp_method.map(|method| match method {
+            ClientSecretBasic => ClientSecretPost,
+            ClientSecretPost => ClientSecretBasic,
+        });
+        let authentication = |method: Option<_>, secret| {
+            crate::ema_auth_policy::resolve_ema_client_auth(
+                Some(&json!([
+                    "none",
+                    "client_secret_basic",
+                    "client_secret_post"
+                ])),
+                method.map(|_| secret),
+                method,
+                "test issuer",
+            )
+        };
+        let idp_secret = "idp:+ /%secret";
+        let resource_secret = "resource:+ /%secret";
+        let result = exchange_id_jag(
+            EmaIdJagExchangeRequest {
+                idp_client_authentication: authentication(idp_method, idp_secret)?,
+                resource_client_authentication: authentication(resource_method, resource_secret)?,
+                resource: &resource,
+                scopes,
+                mcp_client_id: "mcp-client",
+                authorization_server_issuer: &audience,
+                authorization_server_token_endpoint: &format!("{audience}/token"),
+                idp_token_endpoint: &format!("{issuer}/token"),
+                idp_issuer: &issuer,
+                idp_client_id: "idp-client",
+                subject_token: if subject_type == "id_token" {
+                    EmaSubjectToken::IdToken(subject_token.to_owned())
+                } else {
+                    EmaSubjectToken::RefreshToken(RefreshToken::new(subject_token.to_owned()))
+                },
+                idp_http_client: Arc::clone(&client),
+                resource_http_client: Arc::clone(&client),
+            },
+            (),
+            std::convert::identity,
+        )
         .boxed()
-        .await;
+        .await
+        .map(|(token, ())| token);
         if !valid {
             assert!(result.is_err(), "invalid subject must fail before HTTP");
             assert!(
@@ -159,15 +227,41 @@ async fn public_client_round_trip_preserves_signed_narrowing() -> Result<()> {
         );
         let requests = server.received_requests().await.expect("requests");
         assert_eq!(requests.len(), 2);
-        assert!(
-            requests
-                .iter()
-                .all(|request| request.headers.get("authorization").is_none())
-        );
         let mut forms = requests
             .iter()
             .map(|request| unique_form_fields(&request.body))
             .collect::<Vec<_>>();
+        for (index, (method, client_id, secret)) in [
+            (idp_method, "idp-client", idp_secret),
+            (resource_method, "mcp-client", resource_secret),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let authorization = requests[index]
+                .headers
+                .get("authorization")
+                .map(|value| value.to_str().unwrap());
+            let encoded = url::form_urlencoded::byte_serialize(secret.as_bytes())
+                .collect::<String>()
+                .replace("%20", "+");
+            let basic = format!(
+                "Basic {}",
+                base64::engine::general_purpose::STANDARD.encode(format!("{client_id}:{encoded}"))
+            );
+            assert_eq!(
+                authorization,
+                (method == Some(ClientSecretBasic)).then_some(basic.as_str())
+            );
+            assert_eq!(
+                forms[index].remove("client_secret").as_deref(),
+                (method == Some(ClientSecretPost)).then_some(secret)
+            );
+            assert_eq!(
+                forms[index].remove("client_id").as_deref(),
+                (method != Some(ClientSecretBasic)).then_some(client_id)
+            );
+        }
         assert_eq!(
             forms[0].remove("scope"),
             (!scopes.is_empty()).then(|| scopes.join(" "))
@@ -186,11 +280,10 @@ async fn public_client_round_trip_preserves_signed_narrowing() -> Result<()> {
                 ("subject_token".to_string(), expected_subject),
                 (
                     "subject_token_type".to_string(),
-                    "urn:ietf:params:oauth:token-type:refresh_token".to_string(),
+                    format!("urn:ietf:params:oauth:token-type:{subject_type}"),
                 ),
                 ("audience".to_string(), audience.clone()),
                 ("resource".to_string(), resource.clone()),
-                ("client_id".to_string(), "idp-client".to_string()),
             ])
         );
         assert_eq!(
@@ -201,7 +294,6 @@ async fn public_client_round_trip_preserves_signed_narrowing() -> Result<()> {
                     "assertion".to_string(),
                     jag["access_token"].as_str().expect("JAG").to_string()
                 ),
-                ("client_id".to_string(), "mcp-client".to_string()),
             ])
         );
     }
@@ -322,6 +414,9 @@ async fn provider_errors_preserve_credential_policy_without_reflecting_credentia
             SENTINEL,
             "invalid_grant",
             "insufficient_user_authentication",
+            "unauthorized_client",
+            "invalid_client",
+            "invalid_scope",
             "malformed",
         ] {
             let server = MockServer::builder().start().await;
@@ -357,7 +452,12 @@ async fn provider_errors_preserve_credential_policy_without_reflecting_credentia
             let expected = match code {
                 "invalid_grant" => Some(EmaAuthFailure::InvalidGrant { grant_source }),
                 "insufficient_user_authentication" => {
-                    Some(EmaAuthFailure::InsufficientUserAuthentication)
+                    Some(EmaAuthFailure::InsufficientUserAuthentication { grant_source })
+                }
+                "unauthorized_client" | "invalid_client"
+                    if grant_source == EmaInvalidGrantSource::EnterpriseIdentity =>
+                {
+                    Some(EmaAuthFailure::IdentityClientRejected)
                 }
                 _ => None,
             };
@@ -366,6 +466,24 @@ async fn provider_errors_preserve_credential_policy_without_reflecting_credentia
                 !format!("{error:#?}").contains(SENTINEL),
                 "provider reflected a credential"
             );
+            // Even an unsafe outer context must not reach the transport diagnostic.
+            let detail = EmaErrorDetail::from_error(&error.context(SENTINEL));
+            let transport_error = EmaTokenSourceError::Unexpected {
+                credential: EmaCredentialKind::Keyring,
+                detail,
+            };
+            assert!(!format!("{transport_error:#?} {transport_error}").contains(SENTINEL));
+            if code == "invalid_scope" {
+                let stage = if endpoint == "/idp/token" {
+                    "IdentityProvider"
+                } else {
+                    "ResourceAuthorizationServer"
+                };
+                assert_eq!(
+                    transport_error.to_string(),
+                    format!("{stage}: HTTP 400: invalid_scope")
+                );
+            }
             assert_eq!(
                 server.received_requests().await.expect("requests").len(),
                 if endpoint == "/as/token" { 2 } else { 1 },
