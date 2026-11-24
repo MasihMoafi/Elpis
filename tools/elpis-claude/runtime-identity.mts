@@ -18,7 +18,7 @@ export const ENV_NAMES = [
     "CLAUDE_CODE_EXECUTABLE", "CLAUDE_CONFIG_DIR", "ELPIS_CLAUDE_PRUNE", "ELPIS_CLAUDE_USAGE_URL",
     "ELPIS_NO_AGY", "AGY_BIN", "AGY_DEFAULT_MODEL", "ACP_ADAPTER", "ACP_BRIDGE_STORE", "ACP_BRIDGE_NO_AGENTS", "ELPIS_AGENT_TOOLS",
     "CODEX_HOME", "CODEX_AUTH_HOME",
-    "ELPIS_OPENAI_CREDITS_ONLY", "OPENAI_CREDITS_API_KEY",
+    "OPENAI_CREDITS_API_KEY",
 ];
 // The proxy bypass list as a set, without the loopback hosts the desktop launcher adds: a
 // terminal and the app with the same proxy then share one bridge. Empty means unset.
