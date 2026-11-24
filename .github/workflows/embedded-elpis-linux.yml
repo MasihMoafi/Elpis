@@ -8,11 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, follow-check, ui, full, build]
-      bootstrap_lock:
-        description: Resolve the provisional integration lock before checking
-        type: boolean
-        default: false
+        options: [check, follow-check, ui, full, build, lock]
   push:
     tags: ['v*']
     branches: [next]
@@ -31,7 +27,7 @@ concurrency:
 
 jobs:
   schemas:
-    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
+    if: github.event_name == 'workflow_dispatch' && (inputs.verification == 'check' || inputs.verification == 'lock')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -52,13 +48,25 @@ jobs:
             ~/.cargo/git
             codex-rs/target
           key: elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
-      - name: Resolve provisional Cargo lock
-        if: inputs.bootstrap_lock
+          restore-keys: |
+            elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            elpis-parity-schema-${{ runner.os }}-
+      - name: Carry the security update into the integrated lock
+        if: inputs.verification == 'lock'
         working-directory: codex-rs
-        run: cargo update --workspace
+        run: |
+          cargo update -p rustix@1.1.4 --precise 1.1.6
+          cargo update -p clipboard-win --precise 5.4.3
+          cargo update -p cookie --precise 0.18.3
+          cargo update -p event-listener --precise 5.4.2
+          cargo update -p form_urlencoded --precise 1.2.3
+          cargo update -p memmap2 --precise 0.9.12
+          cargo update -p serial_test --precise 3.5.0
+          cargo update -p spin --precise 0.9.9
+          cargo update -p tokio --precise 1.54.1
+          cargo update -p url --precise 2.5.9
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: inputs.bootstrap_lock
+        if: inputs.verification == 'lock'
         with:
           name: candidate-cargo-lock
           path: codex-rs/Cargo.lock
@@ -144,10 +152,6 @@ jobs:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
         run: |
           bash scripts/restore-cargo-cache-source-times.sh "$CACHE_KEY"
-      - name: Resolve provisional Cargo lock
-        if: inputs.bootstrap_lock
-        working-directory: codex-rs
-        run: cargo update --workspace
       - name: Check core, UI, CLI and their tests
         if: inputs.verification == 'check'
         working-directory: codex-rs
