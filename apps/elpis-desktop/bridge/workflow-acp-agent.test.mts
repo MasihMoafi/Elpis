@@ -124,20 +124,20 @@ test(
       return rename(from, to);
     };
     try {
-      assert.equal(await app.canRestart(), true);
+      assert.equal(app.canRestart(), true);
       run = f.run([task("restart-evidence")]);
       await admitting.promise;
-      assert.equal(await app.canRestart(), false, "workflow admission has not reached its active runner yet");
+      assert.equal(app.canRestart(), false, "workflow admission has not reached its active runner yet");
       holdRead = false;
       admission.resolve();
       await run;
-      assert.equal(await app.canRestart(), false, "local ACP execution is running despite an idle native thread");
+      assert.equal(app.canRestart(), false, "local ACP execution is running despite an idle native thread");
       await finishing.promise;
-      assert.equal(await app.canRestart(), false, "the last durable workflow result is still pending");
+      assert.equal(app.canRestart(), false, "the last durable workflow result is still pending");
       finish.resolve();
       assert.equal((await f.finished((await run).graphId)).status, "succeeded");
       assert.equal(f.root.status.type, "idle");
-      assert.equal(await app.canRestart(), true);
+      assert.equal(app.canRestart(), true);
     } finally {
       holdRead = false;
       admission.resolve();
