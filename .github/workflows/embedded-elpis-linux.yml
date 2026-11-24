@@ -146,7 +146,9 @@ jobs:
             ~/.cargo/git
             codex-rs/target
           key: elpis-parity-check-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: elpis-parity-check-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+          restore-keys: |
+            elpis-parity-check-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            elpis-parity-check-${{ runner.os }}-
       - name: Reuse only unchanged cached Rust sources
         env:
           CACHE_KEY: ${{ steps.cargo_cache.outputs.cache-matched-key }}
