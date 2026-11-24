@@ -1226,7 +1226,7 @@ impl ThreadRequestProcessor {
             stored_thread,
             &self.config.model_provider_id,
             /*include_turns*/ false,
-        );
+        )?;
         Ok(Some(ThreadRegisterResponse { thread }.into()))
     }
 
@@ -3687,6 +3687,7 @@ impl ThreadRequestProcessor {
             thread.can_accept_direct_input = Some(can_accept_direct_input(
                 loaded_thread.multi_agent_version(),
                 &config_snapshot.session_source,
+                config_snapshot.thread_source.as_ref(),
             ));
             apply_live_thread_settings(&mut thread, loaded_thread, &config_snapshot);
             if !include_turns {
@@ -3712,7 +3713,11 @@ impl ThreadRequestProcessor {
                     loaded_thread
                         .persist_rollout()
                         .await
-                        .map_err(|err| thread_read_history_load_error(thread_id, err))?;
+                        .map_err(|err| {
+                            ThreadReadViewError::Internal(format!(
+                                "failed to persist thread {thread_id} before reading its history: {err}"
+                            ))
+                        })?;
                     self.paginated_thread_full_turns(thread_id)
                         .await
                         .map_err(ThreadReadViewError::JsonRpc)?
