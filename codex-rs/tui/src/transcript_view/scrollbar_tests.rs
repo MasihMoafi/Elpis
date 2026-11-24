@@ -270,6 +270,7 @@ fn thumb_moves_steadily_while_scrolling_through_tall_history() {
         .collect();
     let height = 24;
     let mut view = TranscriptView::default();
+    view.mouse_scroll_speed = DEFAULT_MOUSE_SCROLL_SPEED;
     assert!(draw_at_height(&mut view, &cells, height).1);
     let mut previous_top = height;
 
