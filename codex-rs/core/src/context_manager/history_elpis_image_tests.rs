@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::context_manager::normalize::OLD_SCREENSHOT_NOTE;
+use codex_attachment_store::InlineAttachmentStore;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
 use codex_protocol::models::FunctionCallOutputContentItem;
@@ -16,6 +17,7 @@ fn screenshot_call(n: usize) -> [ResponseItem; 2] {
     let call_id = format!("shot-{n}");
     [
         ResponseItem::CustomToolCall {
+            encrypted_content: None,
             id: None,
             status: None,
             call_id: call_id.clone(),
@@ -54,20 +56,24 @@ fn user_image_message() -> ResponseItem {
             },
             detail: Some(DEFAULT_IMAGE_DETAIL),
         }],
+        encrypted_content: None,
+        status: None,
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     }
 }
 
 /// Screenshot numbers still sent as images, and the number replaced by the note.
-fn prompt_screenshots(screenshots: usize) -> (Vec<usize>, usize) {
+async fn prompt_screenshots(screenshots: usize) -> (Vec<usize>, usize) {
     let mut items = vec![user_image_message()];
     for n in 0..screenshots {
         items.extend(screenshot_call(n));
     }
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     history.record_items(items.iter(), TruncationPolicy::Tokens(10_000));
-    let prompt = history.for_prompt(&default_input_modalities());
+    let prompt = history
+        .for_prompt(&default_input_modalities(), &InlineAttachmentStore)
+        .await;
 
     assert!(
         matches!(&prompt[0], ResponseItem::Message { content, .. }
@@ -102,25 +108,25 @@ fn prompt_screenshots(screenshots: usize) -> (Vec<usize>, usize) {
     (kept, notes)
 }
 
-#[test]
-fn a_few_screenshots_all_stay() {
-    assert_eq!(prompt_screenshots(7), ((0..7).collect(), 0));
+#[tokio::test]
+async fn a_few_screenshots_all_stay() {
+    assert_eq!(prompt_screenshots(7).await, ((0..7).collect(), 0));
 }
 
-#[test]
-fn old_screenshots_become_a_note_and_the_newest_stay() {
+#[tokio::test]
+async fn old_screenshots_become_a_note_and_the_newest_stay() {
     // 30 screenshots: the 24 oldest leave in blocks of 4 and the newest 6 stay. Between 4 and 7
     // screenshots are always sent.
-    let (kept, notes) = prompt_screenshots(30);
+    let (kept, notes) = prompt_screenshots(30).await;
     assert_eq!(kept, (24..30).collect::<Vec<_>>());
     assert_eq!(notes, 24);
 }
 
-#[test]
-fn the_cut_moves_in_blocks_so_the_cached_prefix_survives_most_requests() {
+#[tokio::test]
+async fn the_cut_moves_in_blocks_so_the_cached_prefix_survives_most_requests() {
     // From 8 to 11 screenshots the same 4 leave; the prompt prefix does not change between them.
     for screenshots in 8..12 {
-        assert_eq!(prompt_screenshots(screenshots).1, 4, "{screenshots}");
+        assert_eq!(prompt_screenshots(screenshots).await.1, 4, "{screenshots}");
     }
-    assert_eq!(prompt_screenshots(12).1, 8);
+    assert_eq!(prompt_screenshots(12).await.1, 8);
 }

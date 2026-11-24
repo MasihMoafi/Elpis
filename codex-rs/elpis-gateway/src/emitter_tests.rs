@@ -43,7 +43,9 @@ fn text_opens_its_message_before_the_first_delta() {
             assert_eq!(
                 content,
                 &vec![ContentItem::OutputText {
-                    text: "Hello".to_string()
+                    text: "Hello".to_string(),
+                    annotations: None,
+                    logprobs: None,
                 }]
             );
         }

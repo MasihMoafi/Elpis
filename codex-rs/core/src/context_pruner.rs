@@ -109,6 +109,8 @@ mod tests {
             content: vec![ContentItem::InputText {
                 text: text.to_string(),
             }],
+            encrypted_content: None,
+            status: None,
             phase: None,
             internal_chat_message_metadata_passthrough: None,
         }

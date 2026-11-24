@@ -49,7 +49,7 @@ fn history_texts(history: &ContextManager) -> Vec<String> {
         })
         .flatten()
         .filter_map(|content| match content {
-            ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+            ContentItem::InputText { text } | ContentItem::OutputText { text, .. } => {
                 Some(text.clone())
             }
             _ => None,
@@ -82,7 +82,7 @@ fn raw_history(history: &ContextManager) -> Vec<ResponseItem> {
 /// cache keeps it (Masih, 5 Nov). The copy and the note leave at the next compaction.
 #[test]
 fn withdrawing_instructions_appends_a_note_and_keeps_the_earlier_history() {
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     apply_world_state(&mut history, &agents_md_world_state(Some("project rule")));
     let before = raw_history(&history);
     let version_before_withdrawal = history.history_version();
@@ -122,7 +122,7 @@ fn withdrawing_instructions_appends_a_note_and_keeps_the_earlier_history() {
 /// A change appends the new text after the history; the old copy stays until compaction.
 #[test]
 fn changed_instructions_are_appended_after_the_earlier_history() {
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     apply_world_state(&mut history, &agents_md_world_state(Some("old rule")));
     let before = raw_history(&history);
     assert_eq!(
@@ -142,7 +142,7 @@ fn changed_instructions_are_appended_after_the_earlier_history() {
 /// without touching the history, and persists the change only once the step's baseline commits.
 #[test]
 fn step_withdrawal_renders_a_note_without_rewriting_history() {
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     apply_world_state(&mut history, &agents_md_world_state(Some("project rule")));
     let before = raw_history(&history);
 
@@ -169,7 +169,7 @@ fn step_withdrawal_renders_a_note_without_rewriting_history() {
 /// compacted history, and neighbouring content stays.
 #[test]
 fn compaction_removes_every_single_slot_copy() {
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     apply_world_state(&mut history, &agents_md_world_state(Some("old rule")));
     apply_world_state(&mut history, &agents_md_world_state(/*instructions*/ None));
     apply_world_state(&mut history, &agents_md_world_state(Some("new rule")));
@@ -199,7 +199,7 @@ fn compaction_removes_every_single_slot_copy() {
 /// section may resupply its text, but the request still carries exactly one copy.
 #[test]
 fn history_rewrites_keep_exactly_one_instruction_copy() {
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     apply_world_state(&mut history, &agents_md_world_state(Some("project rule")));
     for pass in 0..3 {
         let retained = history.raw_items().cloned().collect::<Vec<_>>();
@@ -229,9 +229,13 @@ fn extension_single_slot(body: Option<&str>) -> WorldState {
             ) {
                 return (snapshot, None);
             }
-            let fragment = body
-                .as_ref()
-                .map(|body| RenderedWorldStateFragment::new("developer", ("", ""), body.clone()));
+            let fragment = body.as_ref().map(|body| {
+                RenderedWorldStateFragment::new(
+                    "developer",
+                    ("", ""),
+                    ContentItem::InputText { text: body.clone() },
+                )
+            });
             (snapshot, fragment)
         })
         .with_retained_fragment_matcher(|role, text| {
@@ -252,6 +256,8 @@ fn developer_msg(texts: &[&str]) -> ResponseItem {
                 text: (*text).to_string(),
             })
             .collect(),
+        encrypted_content: None,
+        status: None,
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     }
@@ -273,7 +279,7 @@ fn first_message_kinds(history: &ContextManager) -> Option<Vec<ContentItemKind>>
 /// text in the same message survives, with its content kind still aligned.
 #[test]
 fn extension_single_slot_replaces_then_removes_only_its_own_content() {
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     let (updates, _) = history.update_world_state(&extension_single_slot(Some("extension before")));
     let mut initial_items = crate::context_manager::updates::merge_world_state_updates(updates);
     let ResponseItem::Message {
@@ -316,8 +322,8 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
 
     // After a rewrite there is no baseline and no cached prefix to keep: restored copies are
     // reconciled to the newest, removing only the slot's own content and its content kind.
-    let (updates, _) =
-        ContextManager::new().update_world_state(&extension_single_slot(Some("extension before")));
+    let (updates, _) = ContextManager::default()
+        .update_world_state(&extension_single_slot(Some("extension before")));
     let mut restored = crate::context_manager::updates::merge_world_state_updates(updates);
     let ResponseItem::Message {
         content,
@@ -383,7 +389,7 @@ fn extension_single_slot_replaces_then_removes_only_its_own_content() {
 /// A section that does not own a slot keeps upstream's append-only behaviour.
 #[test]
 fn sections_without_a_slot_are_never_removed() {
-    let mut history = ContextManager::new();
+    let mut history = ContextManager::default();
     history.replace(vec![
         developer_msg(&["extension before"]),
         developer_msg(&["extension after"]),

@@ -741,9 +741,8 @@ fn resolve_task_spawn_config(
     Ok(config)
 }
 
-/// Elpis: gives one task's worker the reasoning effort it asked for. Refused, with the efforts the
-/// model does offer, when the task's model does not offer it. A model with no catalog entry
-/// (`used_fallback_model_metadata`) cannot be checked, so its provider decides, as for a role.
+/// Validates a worker's requested effort against its model's catalog entry.
+/// Models with synthetic metadata leave validation to the provider.
 fn apply_task_reasoning_effort(
     config: &mut Config,
     requested: Option<&ReasoningEffort>,
