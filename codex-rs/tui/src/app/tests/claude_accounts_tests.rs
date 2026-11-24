@@ -1,6 +1,7 @@
 //! Exercise picker keys through App dispatch and inspect the actual JSON-RPC wire payload.
 
 use super::*;
+use crate::backend_id::BackendId;
 use codex_app_server_protocol::JSONRPCMessage;
 use futures::SinkExt;
 use futures::StreamExt;
