@@ -65,7 +65,8 @@ async fn create_thread(
             history_mode: ThreadHistoryMode::Paginated,
             history_base: None,
             subagent_history_start_ordinal: None,
-            initial_window_id: Uuid::now_v7().to_string(),
+            attached_thread: false,
+            initial_window_id: codex_protocol::ContextWindowId::new_uuid_v7(),
             runtime_workspace_roots: None,
             metadata: ThreadPersistenceMetadata {
                 cwd: Some(home.to_path_buf()),
@@ -100,6 +101,7 @@ async fn create_thread(
                 }),
                 started_at_ms: Some(0),
                 completed_at_ms: 1,
+                content_token_count: None,
             })),
         ])
         .await?;
@@ -126,6 +128,7 @@ async fn items_request(mcp: &mut TestAppServer, id: ThreadId) -> Result<i64> {
             cursor: None,
             limit: Some(20),
             sort_direction: Some(SortDirection::Desc),
+            defer_output: None,
         })
         .await?)
 }

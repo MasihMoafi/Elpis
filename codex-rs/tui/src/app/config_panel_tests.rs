@@ -304,7 +304,11 @@ async fn notification_test_delay_rejects_cancelled_and_rescheduled_timers() -> R
         codex_config::types::NotificationMethod::Bel,
         codex_config::types::NotificationCondition::Unfocused,
     );
-    app.chat_widget.open_config_panel();
+    let server = codex_app_server_client::AppServerClient::InProcess(
+        crate::tests::start_test_embedded_app_server(app.config.clone()).await?,
+    );
+    app.chat_widget
+        .open_config_panel(server.request_handle(), None);
     app.chat_widget.handle_key_event(KeyCode::Right.into());
     app.chat_widget.handle_key_event(KeyCode::Char('/').into());
     app.chat_widget.handle_paste("test notification".into());

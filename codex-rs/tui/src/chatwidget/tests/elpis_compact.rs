@@ -434,6 +434,7 @@ async fn empty_enter_does_not_force_compact_during_mcp_startup_without_a_reply()
     chat.on_mcp_server_status_updated(McpServerStatusUpdatedNotification {
         thread_id: None,
         name: "test-mcp".to_string(),
+        environment_id: None,
         status: McpServerStartupState::Starting,
         error: None,
         failure_reason: None,

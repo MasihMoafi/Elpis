@@ -35,7 +35,8 @@ async fn loading_survives_initial_attachment_and_refreshes_under_an_overlay() ->
     let (mut app, mut events, _ops) = make_test_app_with_channels().await;
     let mut tui = make_test_tui()?;
     let mut server = Box::pin(crate::start_embedded_app_server_for_picker(&app.config)).await?;
-    app.chat_widget.open_config_panel();
+    app.chat_widget
+        .open_config_panel(server.request_handle(), None);
     let handoff = ConfigEditorHandoff::new(
         ConfigEditor::ModelProviders,
         crate::key_hint::plain(KeyCode::Enter),

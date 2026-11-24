@@ -5680,10 +5680,11 @@ mod tests {
             assert_eq!(
                 display_permission_profile_from_thread_response(
                     &sandbox,
-                    cwd.as_path(),
+                    &PathUri::from_abs_path(&cwd),
                     &legacy,
                     ThreadParamsMode::Embedded,
-                ),
+                )
+                .unwrap(),
                 expected
             );
         }

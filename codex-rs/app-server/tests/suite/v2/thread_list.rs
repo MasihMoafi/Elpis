@@ -1584,6 +1584,10 @@ sqlite = true
         .request(|request_id| ClientRequest::ThreadList {
             request_id,
             params: codex_app_server_protocol::ThreadListParams {
+                include_attached_threads: false,
+                current_account_only: false,
+                included_thread_ids: None,
+                excluded_thread_ids: None,
                 model_providers: Some(vec!["mock_provider".to_string()]),
                 use_state_db_only: true,
                 cursor: None,
@@ -1599,6 +1603,7 @@ sqlite = true
                 search_term: None,
                 parent_thread_id: None,
                 ancestor_thread_id: None,
+                attached_to_thread_id: None,
             },
         })
         .await?;
@@ -1884,8 +1889,12 @@ async fn thread_list_imports_desktop_helper_ancestry() -> Result<()> {
     let mut mcp = init_mcp(codex_home.path()).await?;
     let request_id = mcp
         .send_thread_list_request(codex_app_server_protocol::ThreadListParams {
+            include_attached_threads: false,
+            current_account_only: false,
             cursor: None,
             limit: Some(10),
+            included_thread_ids: None,
+            excluded_thread_ids: None,
             sort_key: None,
             sort_direction: None,
             model_providers: Some(vec!["mock_provider".to_string()]),
@@ -1899,6 +1908,7 @@ async fn thread_list_imports_desktop_helper_ancestry() -> Result<()> {
             search_term: None,
             parent_thread_id: None,
             ancestor_thread_id: Some(parent_id.clone()),
+            attached_to_thread_id: None,
         })
         .await?;
     let response: ThreadListResponse =

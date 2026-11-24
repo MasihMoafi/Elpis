@@ -353,7 +353,8 @@ async fn config_editor_chord_preserves_physical_completion_key_until_release() -
     app.reconnect.offline = true;
     let mut app_server = start_config_write_test_app_server(&app).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    app.chat_widget.open_config_panel();
+    app.chat_widget
+        .open_config_panel(app_server.request_handle(), None);
     press(
         &mut app,
         &mut tui,
@@ -418,7 +419,8 @@ async fn queued_config_handoff_observes_a_consumed_chord_prefix() -> Result<()> 
     app.keymap = runtime;
     let mut app_server = start_config_write_test_app_server(&app).await?;
     let mut tui = crate::tui::test_support::make_test_tui()?;
-    app.chat_widget.open_config_panel();
+    app.chat_widget
+        .open_config_panel(app_server.request_handle(), None);
     app.handle_tui_event(
         &mut tui,
         &mut app_server,

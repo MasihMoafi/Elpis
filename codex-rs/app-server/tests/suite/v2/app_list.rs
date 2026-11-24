@@ -1134,6 +1134,7 @@ async fn list_apps_force_refetch_preserves_previous_cache_on_failure() -> Result
     let account_request = mcp
         .send_get_account_request(GetAccountParams {
             refresh_token: false,
+            skip_workspace_routing: false,
         })
         .await?;
     let initial_account: GetAccountResponse =
@@ -1159,6 +1160,7 @@ async fn list_apps_force_refetch_preserves_previous_cache_on_failure() -> Result
     let account_request = mcp
         .send_get_account_request(GetAccountParams {
             refresh_token: false,
+            skip_workspace_routing: false,
         })
         .await?;
     let account: GetAccountResponse =

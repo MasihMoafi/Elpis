@@ -1642,7 +1642,7 @@ async fn thread_read_paginated_carrier_persists_before_first_turn() -> Result<()
             include_turns: true,
         })
         .await?;
-    let ThreadReadResponse { thread: saved } =
+    let ThreadReadResponse { thread: saved, .. } =
         timeout(DEFAULT_READ_TIMEOUT, mcp.read_response(read_id)).await??;
     assert_eq!(saved.id, thread.id);
     assert_eq!(saved.history_mode, ThreadHistoryMode::Paginated);

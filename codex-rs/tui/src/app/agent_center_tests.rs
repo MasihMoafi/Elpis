@@ -1190,7 +1190,7 @@ async fn child_rows_stay_with_root_across_groupings_and_open_their_own_chat() {
     parent.model = Some("aaa-parent".into());
     let mut worker = overview_thread(child, Some(root), "Worker chat", ThreadStatus::Idle);
     worker.model = Some("zzz-worker".into());
-    worker.cwd = test_path_buf("/tmp/other-project").abs();
+    worker.cwd = test_path_buf("/tmp/other-project").abs().into();
     let nested = overview_thread(
         grandchild,
         Some(child),

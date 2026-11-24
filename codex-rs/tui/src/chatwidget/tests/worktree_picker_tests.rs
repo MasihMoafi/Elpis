@@ -1,6 +1,8 @@
 //! Worktree picker behavior and rendered choices.
 
 use super::*;
+use crate::worktree_browser::Entry;
+use crate::worktree_browser::Owner;
 
 #[tokio::test]
 async fn slash_new_and_fork_offer_checkout_choices_inside_local_git_repository() {

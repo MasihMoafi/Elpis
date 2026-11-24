@@ -1311,7 +1311,9 @@ mod tests {
         let mut unsafe_turn = turn("selected", TurnStatus::Completed, 2);
         if let ThreadItemPayload::UserMessage { content, .. } = &mut unsafe_turn.items[0].payload {
             content.push(UserInput::Audio {
-                url: "data:audio/wav;base64,AA==".into(),
+                audio: codex_app_server_protocol::AudioReference::Inline {
+                    url: "data:audio/wav;base64,AA==".into(),
+                },
             });
         }
         assert!(

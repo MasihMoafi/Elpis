@@ -64,6 +64,7 @@ async fn claude_accounts_picker_sends_bridge_payload_and_preserves_selection_on_
             Ok::<_, color_eyre::Report>(())
         });
         let mut server = AppServerSession::new(
+            BackendId::new(),
             crate::connect_remote_app_server(endpoint).await?,
             crate::app_server_session::ThreadParamsMode::Remote,
         );

@@ -6329,7 +6329,8 @@ async fn change_directory_scenario() -> Result<()> {
             &untrusted_permissions
         )
     );
-    app.chat_widget.open_config_panel();
+    app.chat_widget
+        .open_config_panel(server.request_handle(), None);
     app.chat_widget.handle_key_event(KeyCode::Char('/').into());
     app.chat_widget.handle_paste("mouse scroll speed".into());
     let panel = render_bottom_popup(&app.chat_widget, /*width*/ 120);

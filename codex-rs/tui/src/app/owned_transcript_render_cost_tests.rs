@@ -151,11 +151,11 @@ async fn full_screen_ledger_keeps_mouse_selection_in_the_transcript_column() -> 
     };
 
     app.transcript_view
-        .handle_selection_mouse(click, &app.transcript_cells);
+        .handle_selection_mouse(click, &app.transcript_cells, None);
     assert!(!app.transcript_view.has_active_interaction());
     click.column = 0;
     app.transcript_view
-        .handle_selection_mouse(click, &app.transcript_cells);
+        .handle_selection_mouse(click, &app.transcript_cells, None);
     assert!(app.transcript_view.has_active_interaction());
     tui.set_owned_screen(/*owned*/ false)?;
     Ok(())

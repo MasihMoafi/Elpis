@@ -40,7 +40,10 @@ async fn gcp_account_is_reported_without_resolving_credentials(overrides: &str) 
 
     for refresh_token in [false, true] {
         let request_id = app_server
-            .send_get_account_request(GetAccountParams { refresh_token })
+            .send_get_account_request(GetAccountParams {
+                refresh_token,
+                skip_workspace_routing: false,
+            })
             .await?;
         let received: Value = timeout(READ_TIMEOUT, app_server.read_response(request_id)).await??;
         assert_eq!(
@@ -92,6 +95,7 @@ async fn gcp_account_tracks_provider_changes_with_saved_chatgpt_credentials() ->
         let request_id = app_server
             .send_get_account_request(GetAccountParams {
                 refresh_token: false,
+                skip_workspace_routing: false,
             })
             .await?;
         let received: Value = timeout(READ_TIMEOUT, app_server.read_response(request_id)).await??;

@@ -954,6 +954,7 @@ async fn status_names_the_subscription_account_of_a_bridged_chat() {
     chat.status_account_display = Some(StatusAccountDisplay::ChatGpt {
         email: Some("gpt@example.com".to_string()),
         plan: Some("Pro".to_string()),
+        workspace: None,
     });
     let bridge_dir = chat.config.codex_home.join("elpis-claude");
     std::fs::create_dir_all(&bridge_dir).expect("bridge dir");

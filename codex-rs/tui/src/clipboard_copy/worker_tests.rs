@@ -90,7 +90,7 @@ async fn rewind_copy_key_copies_first_middle_last_user_message_exactly() {
                     copied.send((text.to_owned(), format)).unwrap();
                     (Ok(CopyOutcome::Copied(None)), None)
                 },
-                |_| unreachable!("copy-only backend"),
+                || |_| unreachable!("copy-only backend"),
             )
             .unwrap();
         for key in [KeyCode::Esc, KeyCode::Esc] {

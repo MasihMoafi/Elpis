@@ -464,6 +464,7 @@ async fn overview_return_to_current_chat_cancels_the_cloud_list_and_allows_reope
     finish_overview_refresh(&mut app, &cloud, &mut events).await;
     assert!(app.chat_widget.active_view_is(AGENTS_OVERVIEW_VIEW_ID));
     assert!(!app.agents_overview.refresh_failed_backends.contains(&owner));
+    Ok(())
 }
 
 #[tokio::test]

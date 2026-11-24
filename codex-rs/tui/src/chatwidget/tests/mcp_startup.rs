@@ -345,7 +345,6 @@ async fn pending_mcp_startup_does_not_block_queued_follow_up() {
 #[tokio::test]
 async fn pending_mcp_startup_dispatches_queued_slash_commands() {
     let (mut chat, mut rx, mut op_rx) = make_chatwidget_manual(/*model_override*/ None).await;
-    chat.set_mcp_startup_expected_servers(["slow".to_string()]);
     notify_mcp_status(&mut chat, "slow", McpServerStartupState::Starting);
     chat.thread_id = Some(ThreadId::new());
     chat.bottom_pane

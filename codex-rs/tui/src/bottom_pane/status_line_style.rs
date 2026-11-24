@@ -419,11 +419,13 @@ mod tests {
                     ],
                     use_theme_colors,
                     /*thread_id*/ None,
+                    /*pull_request_url*/ None,
                     |_| None,
                 )
                 .expect("status line");
                 let color_of = |text: &str| {
-                    line.spans
+                    line.line
+                        .spans
                         .iter()
                         .find(|span| span.content == text)
                         .unwrap_or_else(|| panic!("{text:?} is in the status line"))
