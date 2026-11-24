@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { redactSecrets } from "./log-redaction.mts";
 export const homeDir = () => process.env.ELPIS_HOME || `${process.env.HOME}/.elpis-next`;
 export const engineBin = () => process.env.ELPIS_ENGINE_BIN ?? `${process.env.HOME}/.local/bin/elpis`;
+export const CREDIT_METADATA_PROVIDER = "elpis-credits-metadata";
 export const note = (s: string) => process.stderr.write(`[shared-runtime] ${redactSecrets(s)}\n`);
 export const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 export const exists = (p: string) => { try {

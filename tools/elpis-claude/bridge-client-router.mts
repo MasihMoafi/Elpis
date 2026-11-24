@@ -3,6 +3,7 @@ import type WebSocket from "ws";
 import { SIGNED_OUT_MESSAGE } from "./anthropic-signout.mts";
 import { redactSecrets } from "./log-redaction.mts";
 import { addSubscriptionModels } from "./bridge-model-list.mts";
+import { CREDIT_METADATA_PROVIDER } from "./runtime-process.mts";
 import { isStartRequest,isThreadRequest,readClientRequest } from "./bridge-client-protocol.mts";
 import { wireId,wireObject } from "./bridge-wire.mts";
 import type { GlobalRequest } from "./bridge-types.mts";
@@ -25,7 +26,7 @@ export function createClientRouter({ AGENTS, catalogFor, HOME, acps, activeTurns
     }
   }
   function handleMessage(data: WebSocket.RawData | string, recovered = false, policyChecked = false) {
-    const line = data.toString();
+    let line = data.toString();
     let value: unknown;
     try { value = JSON.parse(line); } catch { engine.stdin.write(line + "\n"); return; }
     if (wireObject(value) && wireId(value.id) && !value.method && String(value.id).startsWith("relay-")) {
@@ -49,6 +50,16 @@ export function createClientRouter({ AGENTS, catalogFor, HOME, acps, activeTurns
     const msg = request;
     if (process.env.ELPIS_OPENAI_CREDITS_ONLY === "1") {
       const provider = AGENTS.find(agent => agent.key === "openai-credits");
+      if (msg.method === "thread/list" && msg.params.modelProviders === undefined) {
+        msg.params.modelProviders = [];
+        line = JSON.stringify(msg);
+      }
+      // Existing credit threads may have the old native provider in their persisted metadata.
+      if (["thread/start", "thread/resume", "thread/fork"].includes(msg.method)) {
+        msg.params.modelProvider = CREDIT_METADATA_PROVIDER;
+        if (msg.method !== "thread/start" && provider && msg.params.model?.startsWith(provider.prefix)) delete msg.params.model;
+        line = JSON.stringify(msg);
+      }
       if (msg.method === "account/read") {
         toTui({ id: msg.id, result: { account: null, requiresOpenaiAuth: false } });
         return;

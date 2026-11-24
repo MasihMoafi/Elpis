@@ -1,4 +1,4 @@
-import { homeDir, engineBin, note, pause, exists, isSocket, startToken, alive, terminate, usable } from './runtime-process.mts';
+import { homeDir, engineBin, note, pause, exists, isSocket, startToken, alive, terminate, usable, CREDIT_METADATA_PROVIDER } from './runtime-process.mts';
 import type { SocketProbe, Listener, EngineInfo, PrivateChild, EngineEntry, ProxyInput } from './runtime-types.mts';
 import { WebSocketServer, WebSocket } from "ws";
 import { spawn } from "node:child_process";
@@ -216,12 +216,13 @@ export const spawnEngine = (args: string[], options: SpawnOptions) => {
     if (direct.env.ELPIS_OPENAI_CREDITS_ONLY === "1") {
         // The native engine stores thread metadata. The credit client owns inference.
         delete direct.env.OPENAI_CREDITS_API_KEY;
+        const provider = `model_providers.${CREDIT_METADATA_PROVIDER}`;
         args = [...args,
-            "-c", 'model_provider="elpis-credits-metadata"',
-            "-c", 'model_providers.elpis-credits-metadata.name="Elpis credit thread metadata"',
-            "-c", 'model_providers.elpis-credits-metadata.base_url="http://127.0.0.1:0/v1"',
-            "-c", 'model_providers.elpis-credits-metadata.requires_openai_auth=false',
-            "-c", 'model_providers.elpis-credits-metadata.supports_websockets=false',
+            "-c", `model_provider="${CREDIT_METADATA_PROVIDER}"`,
+            "-c", `${provider}.name="Elpis credit thread metadata"`,
+            "-c", `${provider}.base_url="http://127.0.0.1:0/v1"`,
+            "-c", `${provider}.requires_openai_auth=false`,
+            "-c", `${provider}.supports_websockets=false`,
         ];
     }
     return setpriv
