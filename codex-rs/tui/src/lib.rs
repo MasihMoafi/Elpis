@@ -1315,6 +1315,37 @@ async fn run_ratatui_app(
     #[cfg(target_os = "windows")]
     let mut trust_decision_was_made = false;
     let startup_model_provider = initial_config.model_provider_id.clone();
+    let credit_model_is_available = if let Some(model) =
+        startup_credit_model(&app_server_target, initial_config.model.as_deref())
+    {
+        let request_handle = app_server
+            .as_ref()
+            .expect("startup app server is available")
+            .request_handle();
+        match startup_draft
+            .run_until(
+                &mut tui,
+                app_server_session::list_live_models(
+                    request_handle,
+                    Uuid::new_v4(),
+                    /*model_provider*/ None,
+                ),
+            )
+            .await
+        {
+            Ok(Ok(models)) => credit_model_in_catalog(model, &models),
+            Ok(Err(error)) => {
+                warn!(%error, "Could not verify the OpenAI API credits model");
+                false
+            }
+            Err(error) => {
+                shutdown_startup_session(app_server.take(), &mut terminal_restore_guard).await;
+                return Err(error.into());
+            }
+        }
+    } else {
+        false
+    };
     let (login_status, mut startup_account) = if workload_identity_selected {
         (LoginStatus::AuthMode(AuthMode::Chatgpt), None)
     } else {
@@ -1337,9 +1368,10 @@ async fn run_ratatui_app(
         }
     };
     // Workload identity bypasses interactive login; every other provider uses account/read.
-    let requires_openai_auth = startup_account
-        .as_ref()
-        .is_some_and(|account| account.requires_openai_auth);
+    let requires_openai_auth = !credit_model_is_available
+        && startup_account
+            .as_ref()
+            .is_some_and(|account| account.requires_openai_auth);
     let should_show_onboarding = should_show_onboarding(
         login_status,
         requires_openai_auth,
@@ -2368,6 +2400,23 @@ async fn load_bootstrap_config_or_exit(
     }
 }
 
+fn startup_credit_model<'a>(target: &AppServerTarget, model: Option<&'a str>) -> Option<&'a str> {
+    let model = model?;
+    (matches!(target, AppServerTarget::LocalBridge { .. })
+        && chatwidget::bridged_provider_of_model(model)
+            .is_some_and(|provider| provider.id == chatwidget::OPENAI_CREDITS_PROVIDER_ID))
+    .then_some(model)
+}
+
+fn credit_model_in_catalog(
+    model: &str,
+    models: &[codex_protocol::openai_models::ModelPreset],
+) -> bool {
+    models
+        .iter()
+        .any(|preset| preset.show_in_picker && preset.model == model)
+}
+
 fn should_show_onboarding(
     login_status: LoginStatus,
     requires_openai_auth: bool,
@@ -2512,6 +2561,63 @@ requires_openai_auth = {requires_openai_auth}
             server.shutdown().await?;
         }
         Ok(())
+    }
+
+    #[test]
+    fn credits_onboarding_only_skips_chatgpt_login_for_an_available_local_route() {
+        use codex_models_manager::bundled_models_response;
+        use codex_protocol::openai_models::ModelPreset;
+
+        let endpoint = RemoteAppServerEndpoint::WebSocket {
+            websocket_url: "ws://127.0.0.1:1".to_string(),
+            auth_token: None,
+        };
+        let bridge = AppServerTarget::LocalBridge {
+            endpoint: endpoint.clone(),
+        };
+        let remote = AppServerTarget::Remote { endpoint };
+        let mut preset = ModelPreset::from(
+            bundled_models_response()
+                .unwrap()
+                .models
+                .into_iter()
+                .next()
+                .unwrap(),
+        );
+        preset.model = "openai-credits/gpt-6.2-sol".to_string();
+        preset.show_in_picker = true;
+        let credit_model = preset.model.as_str();
+        let catalog = [preset.clone()];
+
+        for (target, model, models, skips_login) in [
+            (&bridge, Some(credit_model), catalog.as_slice(), true),
+            (&bridge, Some(credit_model), &[], false),
+            (&bridge, Some("gpt-6.2-sol"), catalog.as_slice(), false),
+            (&bridge, None, catalog.as_slice(), false),
+            (&remote, Some(credit_model), catalog.as_slice(), false),
+            (
+                &AppServerTarget::Embedded,
+                Some(credit_model),
+                catalog.as_slice(),
+                false,
+            ),
+        ] {
+            let available = startup_credit_model(target, model)
+                .is_some_and(|model| credit_model_in_catalog(model, models));
+            assert_eq!(
+                should_show_onboarding(
+                    LoginStatus::NotAuthenticated,
+                    !available,
+                    /*show_trust_screen*/ false
+                ),
+                !skips_login,
+            );
+            assert!(should_show_onboarding(
+                LoginStatus::NotAuthenticated,
+                !available,
+                /*show_trust_screen*/ true
+            ));
+        }
     }
 
     #[tokio::test]
