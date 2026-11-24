@@ -106,9 +106,14 @@ impl TranscriptView {
             for row in &self.visible {
                 measured.insert(row.index, (row.key, row.layout.row_count().max(1)));
             }
-            let measured_rows: usize = measured.values().map(|(_, rows)| rows).sum();
-            // Limit the influence of an unusually tall answer on every unseen message.
-            self.scrollbar.estimate = (measured_rows / measured.len()).clamp(1, 16);
+            // The live answer's current height is known, but its growth tells us nothing
+            // about the unseen history. Limit the influence of tall committed entries too.
+            let (rows, samples) = measured
+                .range(..cells.len())
+                .fold((0_usize, 0_usize), |(sum, count), (_, (_, height))| {
+                    (sum + height, count + 1)
+                });
+            self.scrollbar.estimate = rows.checked_div(samples).unwrap_or(1).clamp(1, 16);
         }
         let at = |row: &VisibleRow, past: usize| {
             (self.scrollbar.rows_before(row.index) + row.row + past) as f64
