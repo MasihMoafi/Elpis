@@ -1,9 +1,11 @@
 apps/elpis-desktop/scripts/ui-lint.generated.mjs
 apps/elpis-trajectory/dist/assets/index-D1-S_WPB.js
+codex-rs/code-mode-runtime/src/runtime/content.js
 codex-rs/code-mode-runtime/src/runtime/settled.js
 codex-rs/responses-api-proxy/npm/bin/codex-responses-api-proxy.js
 codex-rs/skills/src/assets/samples/openai-docs/scripts/fetch-codex-manual.mjs
 codex-rs/skills/src/assets/samples/openai-docs/scripts/resolve-latest-model-info.cjs
+codex-rs/skills/tests/openai_docs_downloads.test.mjs
 docs/evals/tasks/task3_agent_grep_efficiency/fixtures/vendor/vendor_bundle.js
 packaging/obsidian/elpis-workflows/main.js
 packaging/obsidian/love-spot/main.js

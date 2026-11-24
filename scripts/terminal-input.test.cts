@@ -94,7 +94,7 @@ function threadSettings() {
 }
 async function startAppServer(env: NodeJS.ProcessEnv) {
   const bridgeLog = path.join(root, 'bridge.log');
-  appServer = useBridge
+  const child = useBridge
     ? spawn(process.execPath, [process.env.ELPIS_BRIDGE_ENTRY ?? path.resolve(__dirname, '../tools/elpis-claude/acp-bridge.mts')], {
       cwd, env: { ...env, PORT: '0', ELPIS_ENGINE_BIN: binary, ELPIS_NO_AGY: '1', ACP_BRIDGE_LOG: bridgeLog,
         ACP_ADAPTER: path.resolve(__dirname, queueClaude ? 'queue-steer-cancel.test.cts' : 'permissions-bridge.test.cts'),
