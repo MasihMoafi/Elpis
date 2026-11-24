@@ -30,6 +30,7 @@ function launch(script: string, args: string[], extra: NodeJS.ProcessEnv = {}) {
 }
 async function main() {
   const standaloneHome = path.join(root, 'standalone');
+  const creditsHome = path.join(root, 'credits');
   fs.mkdirSync(standaloneHome);
   try {
     let output = launch('elpis-wrapper', ['resume', 'fixture-session']);
@@ -47,6 +48,10 @@ async function main() {
     assert(output.includes('fallback'), output);
     assert(!output.includes('selected:'), output);
     console.log('PASS standalone bridge launcher retains the default command when no runtime is selected');
+    output = launch('elpis-credits', ['resume', 'credit-session'], { ELPIS_CREDITS_HOME: creditsHome, ELPIS_CREDITS_ENGINE: expected });
+    assert.match(output, /arg:--remote\narg:unix:\/\/[^\n]+\narg:--model\narg:openai-credits\/gpt-6\.2-sol\narg:resume\narg:credit-session/);
+    assert(!output.includes('fallback'), output);
+    console.log('PASS the private credit launcher selects the credit model on the shared local transport');
     fs.writeFileSync(expected, `#!${process.execPath}\nimport readline from 'node:readline';\nif (process.argv.includes('app-server')) readline.createInterface({input:process.stdin}).on('line', line => { const m=JSON.parse(line); if (m.id !== undefined) process.stdout.write(JSON.stringify({id:m.id,result:m.method==='config/read'?{config:{}}:m.method==='configRequirements/read'?{requirements:null}:{}})+'\\n'); });\nelse for (const arg of process.argv.slice(2)) process.stdout.write('arg:'+arg+'\\n');\n`, { mode: 0o755 });
     output = launch('elpis-wrapper', ['exec', 'Run a local test']);
     assert.match(output, /arg:approval_policy="never"/);
@@ -56,7 +61,7 @@ async function main() {
     console.log('PASS headless wrapper uses the shared Full access policy without Bypass');
   } finally {
     const { runtimeDir, startToken } = await import('../tools/elpis-claude/shared-runtime.mts');
-    for (const home of [root, standaloneHome]) {
+    for (const home of [root, standaloneHome, creditsHome]) {
       const stateFile = runtimeDir(home).state;
       if (fs.existsSync(stateFile)) {
         const state: { pid: number; token: string } = JSON.parse(fs.readFileSync(stateFile, 'utf8'));

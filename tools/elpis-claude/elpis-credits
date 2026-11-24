@@ -8,6 +8,4 @@ export ELPIS_OPENAI_CREDITS_ONLY=1
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY FTP_PROXY http_proxy https_proxy all_proxy ftp_proxy NODE_USE_ENV_PROXY
 mkdir -p -m 700 -- "$ELPIS_HOME"
 export ELPIS_ENGINE_BIN="${ELPIS_CREDITS_ENGINE:-$(command -v elpis-next)}"
-socket=$(node "$runtime_dir/shared-runtime.mts" "$runtime_dir/acp-bridge.mts")
-case "$socket" in unix:///*) ;; *) echo "The Elpis credit profile could not start its local bridge." >&2; exit 1 ;; esac
-exec "$ELPIS_ENGINE_BIN" --elpis-local-bridge --remote "$socket" --model "openai-credits/${ELPIS_CREDITS_MODEL:-gpt-6.2-sol}" "$@"
+exec "$runtime_dir/elpis-claude" --model "openai-credits/${ELPIS_CREDITS_MODEL:-gpt-6.2-sol}" "$@"
