@@ -135,10 +135,21 @@ jobs:
         if: inputs.verification == 'check'
         working-directory: codex-rs
         run: cargo check --locked --tests -p codex-core -p codex-tui -p codex-cli -p codex-app-server
-      - name: Read-only child follow across app-server connections
+      - name: Verify the scrollbar regressions and reproduce the original jump
         if: inputs.verification == 'follow-check'
         working-directory: codex-rs
-        run: cargo test --profile dev-small --locked -p codex-core --lib -- disabled_delegate_stays_disabled_when_v2_is_enabled_at_startup
+        shell: bash
+        run: |
+          cargo test --profile dev-small --locked -p codex-tui --lib transcript_view::scrollbar_tests
+          path=codex-rs/tui/src/transcript_view/scrollbar.rs
+          git show "HEAD~2:$path" > "${path#codex-rs/}"
+          if cargo test --profile dev-small --locked -p codex-tui --lib transcript_view::scrollbar_tests::thumb_moves_steadily_while_scrolling_through_tall_history > "$RUNNER_TEMP/scrollbar-baseline.log" 2>&1; then
+            cat "$RUNNER_TEMP/scrollbar-baseline.log"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/scrollbar-baseline.log"
+          rg -F 'thumb rows:' "$RUNNER_TEMP/scrollbar-baseline.log"
+          git restore -- "${path#codex-rs/}"
       - name: Retain compiler outputs
         if: always() && steps.cargo_cache.outputs.cache-hit != 'true' && steps.cargo_cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7
