@@ -184,6 +184,11 @@ test("openai-credits ACP restores shell/file tools on new and resumed sessions, 
   await acp.call("session/set_config_option", { sessionId, configId: "model", value: "gpt-6.2-astra" });
   await acp.call("session/set_config_option", { sessionId, configId: "effort", value: "high" });
 
+  // The bridge must be told to retain a follow-up, not treat an absent RPC as uncertain delivery.
+  const steer = await acp.call("_session/steering", { sessionId, prompt: [{ type: "text", text: "waiting follow-up" }] });
+  assert.equal(steer.outcome, "promptRequired");
+  assert.equal(mock.requests.length, 0, "steering must not issue another Responses request");
+
   await acp.call("session/prompt", { sessionId, prompt: [{ type: "text", text: "run shell and edit" }] });
   assert.equal(fs.readFileSync(path.join(ws, "hello.txt"), "utf8"), "hi two\n");
   assert.equal(acp.permissions.length, 3);

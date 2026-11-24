@@ -222,6 +222,11 @@ const app = agent({ name: "elpis-openai-credits" })
       delete s.pending;
     }
   })
+  // Responses cannot take new input mid-stream. Keep the follow-up cancellable in the bridge.
+  .onRequest("_session/steering", params => params as { sessionId: string }, async ({ params }) => {
+    if (!sessions.has(params.sessionId)) throw RequestError.invalidParams(undefined, "Unknown credit session.");
+    return { outcome: "promptRequired" };
+  })
   .onNotification("session/cancel", ({ params }) => { sessions.get(params.sessionId)?.pending?.abort(); })
   .onRequest("session/delete", async ({ params }) => {
     // The bridge uses a disposable session for catalog discovery.
