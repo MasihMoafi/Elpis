@@ -117,6 +117,12 @@ while IFS= read -r -d '' file; do
     mkdir -p "$(dirname "$NEW/$file")"
     cp -a "$R/$file" "$NEW/$file"
 done < <(git -C "$R" ls-files -z tools/elpis-claude)
+BRIDGE=tools/elpis-claude
+if ! cmp -s "$OLD/$BRIDGE/package-lock.json" "$NEW/$BRIDGE/package-lock.json"; then
+    # A copied symlink still points into the previous installation.
+    if [ -L "$NEW/$BRIDGE/node_modules" ]; then unlink "$NEW/$BRIDGE/node_modules"; fi
+    npm ci --prefix "$NEW/$BRIDGE" --omit=dev --ignore-scripts --no-fund --no-audit
+fi
 mkdir -p "$NEW/tools/elpis-claude/matilda"
 cp "$R/apps/elpis-desktop/bridge/matilda-goals.mts" "$NEW/tools/elpis-claude/matilda/"
 cp "$R/apps/elpis-desktop/bridge/router/executor/discovery.mts" "$NEW/tools/elpis-claude/matilda/matilda-sessions.mts"
@@ -212,6 +218,13 @@ fi
     printf 'mv "$HOME/.local/bin/elpis.new" "$HOME/.local/bin/elpis"\n'
     # shellcheck disable=SC2016
     printf 'ln -sfn %q "$HOME/.local/bin/elpis-next"\n' "$OLD/elpis-next"
+    if [ -x "$OLD/tools/elpis-claude/elpis-credits" ]; then
+        printf 'ln -sfn %q "$HOME/.local/bin/elpis-credits"\n' "$OLD/tools/elpis-claude/elpis-credits"
+    elif [ -L "$HOME/.local/bin/elpis-credits" ]; then
+        printf 'ln -sfn %q "$HOME/.local/bin/elpis-credits"\n' "$(readlink "$HOME/.local/bin/elpis-credits")"
+    else
+        printf 'if [ "$(readlink "$HOME/.local/bin/elpis-credits")" = %q ]; then unlink "$HOME/.local/bin/elpis-credits"; fi\n' "$NEW/$BRIDGE/elpis-credits"
+    fi
     # shellcheck disable=SC2016
     printf 'readlink "$HOME/.local/bin/elpis-next"\n'
 } > "$NEW/rollback.sh"
@@ -222,6 +235,9 @@ activated=true
 cp "$NEW/elpis-wrapper" "$HOME/.local/bin/elpis.new"
 mv "$HOME/.local/bin/elpis.new" "$HOME/.local/bin/elpis"
 ln -sfn "$NEW/elpis-next" "$HOME/.local/bin/elpis-next"
+if [ -x "$NEW/$BRIDGE/elpis-credits" ] && { [ -L "$HOME/.local/bin/elpis-credits" ] || [ ! -e "$HOME/.local/bin/elpis-credits" ]; }; then
+    ln -sfn "$NEW/$BRIDGE/elpis-credits" "$HOME/.local/bin/elpis-credits"
+fi
 # Old bundles go to the trash: the newest five stay, with this one, its rollback and any the live launcher names.
 node "$HERE/prune-versions.mts" "$V" --keep "$NEW" --keep "$OLD" ${SRC:+--keep "$SRC"} --named-in "$HOME/.local/bin/elpis" ||
     printf 'could not move old engine bundles to the trash\n' >&2

@@ -1,3 +1,4 @@
+import { directEnv } from "./proxy-env.mts";
 import { spawn } from "node:child_process";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { endGroup } from "./worker-lifecycle.mts";
@@ -56,7 +57,7 @@ export class Acp {
     this.log = log;
     this.closing = false;
     this.discovering = 0;
-    this.proc = spawn("node", [agent.adapter], { env: { ...process.env, ...agent.env }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
+    this.proc = spawn("node", [agent.adapter], { env: { ...(agent.key === "openai-credits" ? directEnv() : process.env), ...agent.env }, detached: true, stdio: ["pipe", "pipe", "pipe"] });
     this.proc.stdin.on("error", () => {});
     redactedLines(this.proc.stderr, clean => log(`${agent.key} acp stderr: ${clean.trim().slice(0, 300)}`));
     this.nextId = 1;
