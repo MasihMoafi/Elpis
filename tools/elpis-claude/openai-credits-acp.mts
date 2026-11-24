@@ -168,10 +168,14 @@ const app = agent({ name: "elpis-openai-credits" })
     s.pending = pending;
     const tools = new CreditTools();
     const readOnly = s.mode === "plan" || s.sandbox === "read-only";
+    const items: ResponseInputItem[] = [...s.history.items, { role: "user", content }];
+    const inputLength = items.length;
+    let complete = inputLength;
     try {
+      // Persist the accepted input even if the provider never returns a response.
+      if (!s.ephemeral) await saveHistory(id, s, items.slice());
       tools.registerWorkspace({ cwd: s.cwd, sandbox: s.sandbox, readOnly, disabled: s.noBuiltinTools });
       if (!readOnly || (s.noBuiltinTools && s.mode !== "plan")) await tools.connect(s.servers, s.cwd, signal);
-      const items: ResponseInputItem[] = [...s.history.items, { role: "user", content }];
       let inputTokens = 0, outputTokens = 0;
       for (;;) {
         const requestParams = buildCreditRequestParams({ model: s.model, effort: s.effort, instructions: s.instructions, input: items, tools: tools.definitions });
@@ -213,8 +217,13 @@ const app = agent({ name: "elpis-openai-credits" })
             });
           }
         }
+        // Only complete call/result batches are valid input to a resumed request.
+        complete = items.length;
       }
     } catch (error) {
+      if (!s.ephemeral && complete > inputLength) {
+        await saveHistory(id, s, items.slice(0, complete));
+      }
       if (signal.aborted) return { stopReason: "cancelled" };
       throw RequestError.internalError(undefined, redactSecrets(error instanceof Error ? error.message : "Credit request failed.").slice(0, 500));
     } finally {

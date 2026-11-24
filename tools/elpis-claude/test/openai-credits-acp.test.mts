@@ -34,7 +34,7 @@ type RecordedRequest = {
   input?: unknown[];
 };
 
-async function startMockOpenAI(t: TestContext, responder: (body: RecordedRequest, index: number) => Record<string, unknown>[]) {
+async function startMockOpenAI(t: TestContext, responder: (body: RecordedRequest, index: number) => Record<string, unknown>[] | null) {
   const requests: RecordedRequest[] = [];
   const server = createServer(async (req, res) => {
     if (req.headers.authorization !== "Bearer fixture-only") {
@@ -55,6 +55,7 @@ async function startMockOpenAI(t: TestContext, responder: (body: RecordedRequest
       const idx = requests.length;
       requests.push(body);
       const output = responder(body, idx);
+      if (output === null) { res.destroy(); return; }
       const textDeltas = output
         .filter((item): item is { type: string; content?: { text?: string }[] } => item.type === "message")
         .flatMap(item => (item.content ?? []).map(part => part.text ?? ""))
@@ -224,6 +225,28 @@ test("openai-credits ACP restores shell/file tools on new and resumed sessions, 
   const none = await acp.call("session/new", { cwd: ws, mcpServers: [], _meta: { claudeCode: { options: { tools: [] } } } });
   await acp.call("session/prompt", { sessionId: none.sessionId, prompt: [{ type: "text", text: "no tools" }] });
   assert.deepEqual(mock.requests[8]!.tools, []);
+});
+
+test("a failed credit turn keeps its prompt and finished tool result on resume without repeating the tool", { timeout: 15_000 }, async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), "elpis-credit-recovery-"));
+  t.after(() => removeTestTempDir(root));
+  const mock = await startMockOpenAI(t, (_, index) => {
+    if (index === 0) return [{ type: "function_call", id: "fc_once", call_id: "call_once", name: "write_file", arguments: JSON.stringify({ path: "marker.txt", content: "saved" }) }];
+    return index === 1 ? null : [answerMessage("resumed")];
+  });
+  const acp = new AcpClient({ PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, OPENAI_CREDITS_API_KEY: "fixture", OPENAI_CREDITS_BASE_URL: mock.baseUrl }, root);
+  t.after(() => acp.close());
+  await acp.call("initialize", { protocolVersion: 1 });
+  const args = { cwd: root, mcpServers: [] };
+  const { sessionId } = await acp.call("session/new", args);
+  await assert.rejects(acp.call("session/prompt", { sessionId, prompt: [{ type: "text", text: "remember the missing request" }] }));
+  assert.equal(fs.readFileSync(path.join(root, "marker.txt"), "utf8"), "saved");
+  await acp.call("session/load", { sessionId, ...args });
+  await acp.call("session/prompt", { sessionId, prompt: [{ type: "text", text: "continue" }] });
+  const input = mock.requests[2]!.input ?? [];
+  assert.deepEqual(input.slice(0, -1), mock.requests[1]!.input);
+  assert.equal(input.filter(i => JSON.stringify(i).includes("remember the missing request")).length, 1);
+  assert.equal(acp.permissions.length, 1);
 });
 
 test("bridge model/list exposes credit efforts without ultra, preserves sign-in models, and refreshes stale agy catalog", { timeout: 25_000 }, async t => {
