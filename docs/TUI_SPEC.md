@@ -4,7 +4,7 @@ The required behaviors of the terminal app (`elpis`), numbered 1–43 without ga
 
 ## Foundation
 
-1. Shared terminal behavior and layout follow Codex; Elpis keeps only its own controls and per-agent model labels. A difference from Codex in shared behavior is a defect. (Product scope decisions in [GUIDE](GUIDE.md#product-scope-decisions))
+1. Shared terminal behavior and layout follow Codex; Elpis uses its gold identity for session titles, selected rows and text accents, alongside its own controls and per-agent model labels. A difference from Codex in shared behavior is a defect. (Product scope decisions in [GUIDE](GUIDE.md#product-scope-decisions))
 2. Elpis owns the interface, provider and runtime selection, context projection, durable memory, continuity, behavioral policy, permissions and evidence; the selected runtime may own its model loop and native tools. Authentication alone never selects a runtime. (R1; [runtime architecture](GUIDE.md#runtime-architecture))
 3. Commands and file changes follow explicit permission and sandbox policies, and the interface keeps changed paths, diffs, command status, failures and verification evidence visible. (R2)
 4. Add no slash command unless Masih selects it. (Product scope decisions in [GUIDE](GUIDE.md#product-scope-decisions))

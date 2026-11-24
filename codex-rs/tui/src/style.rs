@@ -30,16 +30,8 @@ use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::style::Style;
 
-const LIGHT_BG_ACCENT_RGB: (u8, u8, u8) = (28, 100, 200);
-
-/// ChatGPT Blue 100 (#A4CDFB), used for selection fills on light backgrounds.
-pub(crate) const CHATGPT_BLUE_100: (u8, u8, u8) = (164, 205, 251);
-
-/// ChatGPT Blue 200 (#63A8F8).
-pub(crate) const CHATGPT_BLUE_200: (u8, u8, u8) = (99, 168, 248);
-
-/// Shared accent for picker selection backgrounds and transcript foreground emphasis.
-pub(crate) const UI_ACCENT: (u8, u8, u8) = CHATGPT_BLUE_200;
+use elpis::DARK_BG_PRIMARY_RGB;
+use elpis::LIGHT_BG_PRIMARY_RGB;
 
 /// Informative accents resolve against the surface they are painted on, including selections.
 pub(crate) fn readable_color(preferred: (u8, u8, u8), background: Option<(u8, u8, u8)>) -> Color {
@@ -296,9 +288,9 @@ fn user_message_accent_color_for(
     level: StdoutColorLevel,
 ) -> Color {
     let preferred = if background.is_some_and(is_light) {
-        LIGHT_BG_ACCENT_RGB
+        LIGHT_BG_PRIMARY_RGB
     } else {
-        UI_ACCENT
+        DARK_BG_PRIMARY_RGB
     };
     let surface = background.and_then(|background| {
         match crate::terminal_palette::best_color_for_level(user_message_bg_rgb(background), level)
@@ -355,9 +347,9 @@ pub(crate) fn accent_style_for(terminal_bg: Option<(u8, u8, u8)>) -> Style {
 
 fn accent_color_for(terminal_bg: Option<(u8, u8, u8)>) -> Color {
     let preferred = if terminal_bg.is_some_and(is_light) {
-        LIGHT_BG_ACCENT_RGB
+        LIGHT_BG_PRIMARY_RGB
     } else {
-        UI_ACCENT
+        DARK_BG_PRIMARY_RGB
     };
     contrast::foreground(preferred, terminal_bg, effective_stdout_color_level())
 }

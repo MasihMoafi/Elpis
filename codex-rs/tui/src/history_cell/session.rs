@@ -50,7 +50,10 @@ pub(crate) fn codex_title(version: &str) -> Vec<Span<'static>> {
     };
     vec![
         ">_ ".fg(accent_color()),
-        crate::branding::CODEX_RUNTIME_TITLE.fg(Color::Reset).bold(),
+        Span::styled(
+            crate::branding::CODEX_RUNTIME_TITLE,
+            crate::style::brand_style(),
+        ),
         format!(" (v{version})").dim(),
     ]
 }

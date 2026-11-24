@@ -43,9 +43,15 @@ pub(super) fn selection_style(background: Option<(u8, u8, u8)>, level: StdoutCol
         return fallback;
     };
     let (preferred, alternate) = if is_light(background) {
-        (super::CHATGPT_BLUE_100, super::CHATGPT_BLUE_200)
+        (
+            blend(super::elpis::DARK_BG_PRIMARY_RGB, background, 0.45),
+            super::elpis::LIGHT_BG_PRIMARY_RGB,
+        )
     } else {
-        (super::CHATGPT_BLUE_200, super::CHATGPT_BLUE_100)
+        (
+            super::elpis::DARK_BG_PRIMARY_RGB,
+            super::elpis::LIGHT_BG_PRIMARY_RGB,
+        )
     };
     let mut fill = best_color_for_level(preferred, level);
     let resolve = |color| match color {
@@ -56,7 +62,7 @@ pub(super) fn selection_style(background: Option<(u8, u8, u8)>, level: StdoutCol
     let Some(mut fill_rgb) = resolve(fill) else {
         return fallback;
     };
-    // A subtle fill is intentional, but it must not disappear into a similarly blue canvas.
+    // A subtle fill is intentional, but it must not disappear into a similarly colored canvas.
     if ratio(fill_rgb, background) < 1.25 {
         let alternate_fill = best_color_for_level(alternate, level);
         let alternate_rgb = resolve(alternate_fill).unwrap_or(alternate);
