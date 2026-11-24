@@ -261,7 +261,7 @@ test("Restart refuses active work and a later idle retry preserves standalone Lo
   );
   await assert.rejects(
     f.restart("/selected/new/launch"),
-    /Wait for Elpis, the voice call, Love Spot, Lab or workflow run in this window to finish/,
+    /End the voice call to restart/,
   );
   assert.ok(!f.calls.includes("board-close"));
   active = false;

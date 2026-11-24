@@ -53,7 +53,7 @@ const load = (name: string) => {
   return localRequire(name);
 };
 const context = vm.createContext({ __dirname: fakeDirectory, console, process, require: load,
-  testServer: { url: process.env.SESSION_WINDOW_URL, canRestart: async () => control.canRestart,
+  testServer: { url: process.env.SESSION_WINDOW_URL, restartBlocker: async () => control.canRestart ? null : "End the voice call to restart.",
     close: async () => { if (!control.store) throw Error('State store missing'); log({ type: 'server-close', values: control.store.read() }); } },
 });
 vm.runInContext(stripTypeScriptTypes(fs.readFileSync(mainFile, 'utf8')), context, { filename: mainFile });
