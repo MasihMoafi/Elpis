@@ -102,7 +102,7 @@ async function launch(
     sessions,
     openers,
     testStore: { get: () => null, flush: async () => calls.push("workspace-flush") },
-    testServer: { canRestart, close: async () => calls.push("board-close") },
+    testServer: { restartBlocker: async () => await canRestart() ? null : "End the voice call to restart.", close: async () => calls.push("board-close") },
     require: (name: string) =>
       name === "./app-updates.cts"
         ? { executableLauncher: (file: string) => file, createAppUpdates: () => ({ setRunningEngine() {} }) }

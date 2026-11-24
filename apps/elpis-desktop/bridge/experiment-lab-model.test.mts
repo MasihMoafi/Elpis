@@ -63,11 +63,13 @@ test(
       client.listThreads = async () => ({ data: [{ id: "busy-chat", status: { type: "active" } }], nextCursor: null });
       assert.equal(await app.canRestart(), true, "a running chat keeps running across the restart");
       motherBusy = true;
+      assert.match(app.restartBlocker()!, /router task/);
       assert.equal(await app.canRestart(), false, "Mother's held work prevents the bridge from closing");
       motherBusy = false;
       assert.equal(await app.canRestart(), true, "completed Mother work permits restart");
       starting = post({ ...input(), repetitions: 1 });
       await admitting;
+      assert.match(app.restartBlocker()!, /Lab run/);
       assert.equal(await app.canRestart(), false, "Lab is admitting a run before any model thread exists");
       release();
       const response = await starting;

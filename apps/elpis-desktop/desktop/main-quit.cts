@@ -24,14 +24,15 @@ function createMainQuitImpl({
     quitAttempt = (async () => {
       const sessionWindows = state.getSessionWindows();
       const server = state.getServer();
+      const checkRestart = async () => {
+        const reason = pendingRestartTarget && await server?.restartBlocker?.();
+        if (reason) throw Error(reason);
+      };
       const quickEntry = state.getQuickEntry();
       const hosts = [...(sessionWindows?.windows ?? [])].filter(host => !host.isDestroyed());
       if (!hosts.every(host => mayClose(host))) return false;
       try {
-        if (pendingRestartTarget && server?.canRestart && !(await server.canRestart()))
-          throw Error(
-            "Wait for Elpis, the voice call, Love Spot, Lab or workflow run in this window to finish, then restart.",
-          );
+        await checkRestart();
         // Freeze input until every final draft is acknowledged. Failed saves restore editing below.
         await Promise.all(
           hosts.map(host => host.webContents.executeJavaScript?.("document.documentElement.inert = true; true")),
@@ -69,10 +70,7 @@ function createMainQuitImpl({
         );
         await sessionWindows?.flushBrowsers();
         await state.getStore()?.flush();
-        if (pendingRestartTarget && server?.canRestart && !(await server.canRestart()))
-          throw Error(
-            "Elpis, a voice call, Love Spot, Lab or workflow run started while preparing the update. Restart when it finishes.",
-          );
+        await checkRestart();
         if (pendingRestartTarget) executableLauncher(pendingRestartTarget);
         state.setClosing(true);
         state.getSleepBlocker()?.dispose();

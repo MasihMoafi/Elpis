@@ -14,7 +14,7 @@ const { createSleepBlocker }: typeof import("./sleep-blocker.cts") = require("./
 export type MainServer = {
   url: string;
   automationAccess?: unknown;
-  canRestart?: () => Promise<boolean> | boolean;
+  restartBlocker?: () => Promise<string | null> | string | null;
   close: () => Promise<void> | void;
 };
 export type BrowserAgentSocket = {

@@ -49,6 +49,7 @@ function createAppUpdatesImpl({
     pending: Promise<void> | null = null,
     scheduled = false,
     disposed = false;
+  let notice: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<(state: State) => void>(),
     watchers: FSWatcher[] = [];
   function refresh(extra: Partial<State> = {}): State {
@@ -95,18 +96,16 @@ function createAppUpdatesImpl({
       if (!refresh().available) return;
       const target = executableLauncherImpl(desktopLauncher);
       refresh({ restarting: true, error: null });
-      try {
-        await restart(target);
-        scheduled = true;
-      } catch (error) {
-        refresh({ restarting: false, error: (error as Error).message || String(error) });
-        throw error;
-      }
+      await restart(target);
+      scheduled = true;
     })();
     try {
       await pending;
     } catch (error) {
       refresh({ restarting: false, error: (error as Error).message || String(error) });
+      clearTimeout(notice);
+      notice = setTimeout(() => refresh({ error: null }), 6000);
+      notice.unref();
       throw error;
     } finally {
       pending = null;
@@ -114,6 +113,7 @@ function createAppUpdatesImpl({
   }
   function dispose() {
     disposed = true;
+    clearTimeout(notice);
     for (const watcher of watchers) watcher.close();
     listeners.clear();
     app.removeListener("will-quit", dispose);

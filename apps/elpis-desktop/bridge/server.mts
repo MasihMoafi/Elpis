@@ -323,26 +323,26 @@ export async function startDesktopServer(rawOptions: Record<string, unknown> = {
     for (const response of listeners) response.write(": heartbeat\n\n");
   }, 15000);
   heartbeat.unref();
+  // Chat turns live in the shared service. Only work owned by this desktop process holds a restart.
+  function restartBlocker() {
+    if (voice.busy()) return "End the voice call to restart.";
+    if (loveTalk.busy()) return "Finish the Love Spot conversation to restart.";
+    if (loveAgents.busy()) return "Wait for the Love Spot agents to finish.";
+    if (experimentLab.busy()) return "Wait for the Lab run to finish.";
+    if (automations?.busy()) return "Wait for the scheduled task to finish.";
+    if (mother.busy()) return "Wait for the Elpis router task to finish.";
+    if (client.hasLocalActivity?.()) return "Wait for the desktop operation to finish.";
+    return null;
+  }
   return {
     url: `${origin}/#token=${capability}`,
     /** What bridge/schedule-mcp.mts needs to reach Automations, or null when they are off. */
     get automationAccess() {
       return automations ? { url: origin, key: automationKey } : null;
     },
-    /** Chats and their agents run in the background service, which outlives this window, so they keep running across
-     * an update restart; only work this process runs itself (voice, Love Spot, Lab, local workflow runs) waits. */
+    restartBlocker,
     canRestart() {
-      return Promise.resolve(
-        !(
-          voice.busy() ||
-          loveTalk.busy() ||
-          loveAgents.busy() ||
-          experimentLab.busy() ||
-          automations?.busy() ||
-          mother.busy() ||
-          client.hasLocalActivity?.()
-        ),
-      );
+      return restartBlocker() === null;
     },
     async close() {
       if (closed) return;

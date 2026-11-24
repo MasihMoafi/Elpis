@@ -91,7 +91,7 @@ test("an engine-only selection change is visible and uses the current desktop la
   }
 });
 
-test("a refused save keeps every window open and permits one later restart", async () => {
+test("a refused save clears the notice and permits one later restart", async t => {
   let refuse = true;
   const f = fixture({
     restart: async () => {
@@ -102,9 +102,13 @@ test("a refused save keeps every window open and permits one later restart", asy
     const wait = changed(f.updates);
     f.select(f.desktop, "launch");
     await wait;
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     await assert.rejects(f.updates.restart(), /draft save failed/);
     assert.equal(f.updates.status().restarting, false);
     assert.match(f.updates.status().error!, /draft save failed/);
+    t.mock.timers.tick(6000);
+    assert.equal(f.updates.status().error, null);
+    assert.equal(f.updates.status().available, true);
     refuse = false;
     await f.updates.restart();
     await f.updates.restart();
