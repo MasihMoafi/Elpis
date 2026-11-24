@@ -1,6 +1,6 @@
 import type { createThreadState } from './bridge-thread-state.mts';
 import type { createHelperPermissions } from "./bridge-helper-permissions.mts";
-import type { BridgeClient, AccessSettings } from "./bridge-types.mts";
+import type { BridgeClient, AccessSettings, Ceiling } from "./bridge-types.mts";
 import type { BridgeEnvironment } from "./bridge-server.mts";
 export function createConnectionAccess({ resumeResults, threadPolicy, chatAccess, relayed, ws, settleRelay, fullFor, explicitChatChoices, threadSandbox, confirmations }: Pick<BridgeEnvironment, 'chatAccess' | 'relayed' | 'settleRelay' | 'fullFor' | 'explicitChatChoices'> & Pick<ReturnType<typeof createThreadState>, 'resumeResults' | 'threadPolicy' | 'threadSandbox'> & {
     ws: BridgeClient;
@@ -61,6 +61,13 @@ export function createConnectionAccess({ resumeResults, threadPolicy, chatAccess
             return "default";
         return reviewer === "auto_review" ? "auto" : "acceptEdits";
     };
+    const sandboxOf = (threadId: string): Ceiling => {
+        const profile = threadAccess.get(threadId)?.profile;
+        const readOnly = (!explicitChatChoices.has(threadId) && threadSandbox.get(threadId) === "read-only") || !!profile?.includes("read-only");
+        if (readOnly)
+            return "read-only";
+        return fullFor(threadId) ? "danger-full-access" : "workspace-write";
+    };
     const sessionMode = new Map<string, string>();
-    return { sessionModel, threadCollab, threadAccess, noteAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode };
+    return { sessionModel, threadCollab, threadAccess, noteAccess, MODE_NAMES, claudeModeOf, accessModeOf, sandboxOf, sessionMode };
 }

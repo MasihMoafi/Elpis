@@ -202,7 +202,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     startingProviders.set(key, { ready, resolve: () => { clearTimeout(timer); release(); } });
   }
   const connectionId = randomUUID();
-  const { sessionModel, threadCollab, threadAccess, noteAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode } = createConnectionAccess({ resumeResults, threadPolicy, chatAccess, relayed, ws, settleRelay, fullFor, explicitChatChoices, threadSandbox, confirmations: () => confirmations });
+  const { sessionModel, threadCollab, threadAccess, noteAccess, MODE_NAMES, claudeModeOf, accessModeOf, sandboxOf, sessionMode } = createConnectionAccess({ resumeResults, threadPolicy, chatAccess, relayed, ws, settleRelay, fullFor, explicitChatChoices, threadSandbox, confirmations: () => confirmations });
   const { tokenSums, ctxChars, devChars, addChars, transcriptOf, lastContext, lastTurnUsage, sendUsage } = createUsageTracker({ sessions, threadCwd, claudeAccounts, notify });
   async function recoverClaudeTurn(threadId: string) {
     const running = activeTurns.get(threadId);
@@ -514,7 +514,7 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
     acpErrorMessage, RECONNECT_MS, RECONNECT_NOTE, connectionDropped, announceLimits, smartPruneProxy,
     recordAccounts, fullFor, cancelRelays, ws, toTui, notify, threadCwd, threadSeen, childThreads,
     childIds, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort,
-    materializedProviders, sessionModel, threadAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode,
+    materializedProviders, sessionModel, threadAccess, MODE_NAMES, claudeModeOf, accessModeOf, sandboxOf, sessionMode,
     tokenSums, ctxChars, devChars, addChars, transcriptOf, lastTurnUsage, sendUsage, ensureAcp, catalogFor,
     engineCall, assertSubscriptionAllowed, elpisInstructions, subagentsAllowed, activeTurns, reconnects, pendingMirrors, priorTranscript,
     askTui, newLane, runNext: threadId => runNext(threadId), dropThreadSession, releaseUnusedAcps,

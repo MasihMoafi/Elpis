@@ -6,18 +6,36 @@ import { Readable, Writable } from "node:stream";
 import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 import type { McpServer, NewSessionRequest, RequestPermissionResponse, SessionConfigOption, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { ResponseInputItem } from "openai/resources/responses/responses";
+import type { Ceiling } from "./bridge-types.mts";
 import { withFileLock } from "./file-lock.mts";
 import { redactSecrets } from "./log-redaction.mts";
-import { createCreditClient, creditModels, promptContent, streamCreditResponse } from "./openai-credits.mts";
+import { buildCreditRequestParams, createCreditClient, creditEffortsForModel, creditModels, parseCreditEffort, promptContent, streamCreditResponse, type CreditReasoningEffort } from "./openai-credits.mts";
 import { CreditTools } from "./openai-credits-tools.mts";
 
 const api = createCreditClient();
 const directory = join(process.env.ELPIS_HOME || join(homedir(), ".elpis-next"), "openai-credits");
 type History = { version: number; cwd: string; items: ResponseInputItem[] };
-type Session = { cwd: string; instructions: string; servers: McpServer[]; model: string; models: string[];
-  plan: boolean; ephemeral: boolean; history: History; pending?: AbortController };
+type Session = {
+  cwd: string;
+  instructions: string;
+  servers: McpServer[];
+  model: string;
+  models: string[];
+  effort?: CreditReasoningEffort;
+  mode: string;
+  sandbox: Ceiling;
+  noBuiltinTools: boolean;
+  ephemeral: boolean;
+  history: History;
+  pending?: AbortController;
+};
 const sessions = new Map<string, Session>();
 const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+const AVAILABLE_MODES = [
+  { id: "default", name: "Default" },
+  { id: "plan", name: "Plan" },
+  { id: "bypassPermissions", name: "Bypass permissions" },
+];
 
 async function readHistory(id: string): Promise<History | null> {
   if (!uuid.test(id)) throw new Error("Invalid credit session ID.");
@@ -53,7 +71,35 @@ function session(id: string) {
 }
 
 function config(s: Session): SessionConfigOption[] {
-  return [{ type: "select", id: "model", name: "Model", currentValue: s.model, options: s.models.map(value => ({ name: value, value })) }];
+  const options: SessionConfigOption[] = [
+    { type: "select", id: "model", name: "Model", currentValue: s.model, options: s.models.map(value => ({ name: value, value })) },
+  ];
+  const { levels, defaultEffort } = creditEffortsForModel(s.model);
+  if (levels.length) {
+    options.push({
+      type: "select",
+      id: "effort",
+      name: "Reasoning effort",
+      currentValue: s.effort ?? defaultEffort ?? levels[0]!.value,
+      options: levels.map(level => ({ value: level.value, name: level.name, description: level.description })),
+    });
+  }
+  return options;
+}
+
+function readSandbox(meta: Record<string, unknown> | null | undefined): Ceiling {
+  const elpis = meta?.elpis;
+  const raw = elpis && typeof elpis === "object" && "sandbox" in elpis ? elpis.sandbox : undefined;
+  return raw === "read-only" || raw === "workspace-write" || raw === "danger-full-access" ? raw : "workspace-write";
+}
+
+function readToolsDisabled(meta: Record<string, unknown> | null | undefined): boolean {
+  if (meta?.ephemeral === true) return true;
+  const cc = meta?.claudeCode;
+  if (!cc || typeof cc !== "object" || !("options" in cc)) return false;
+  const options = cc.options;
+  if (!options || typeof options !== "object" || !("tools" in options)) return false;
+  return Array.isArray(options.tools) && options.tools.length === 0;
 }
 
 let inventory: Promise<string[]> | undefined;
@@ -63,10 +109,20 @@ async function start(params: Pick<NewSessionRequest, "cwd" | "mcpServers" | "_me
   if (!models.length) throw new Error("The credit organization has no supported GPT models.");
   const extra = params._meta?.systemPrompt;
   const instructions = typeof extra === "string" ? extra : extra && typeof extra === "object" && "append" in extra && typeof extra.append === "string" ? extra.append : "";
-  const s: Session = { cwd: params.cwd, servers: params.mcpServers, instructions, model: models[0]!, models, plan: false, ephemeral: params._meta?.ephemeral === true,
-    history: history ?? { version: 0, cwd: params.cwd, items: [] } };
+  const s: Session = {
+    cwd: params.cwd,
+    servers: params.mcpServers,
+    instructions,
+    model: models[0]!,
+    models,
+    mode: "default",
+    sandbox: readSandbox(params._meta),
+    noBuiltinTools: readToolsDisabled(params._meta),
+    ephemeral: params._meta?.ephemeral === true,
+    history: history ?? { version: 0, cwd: params.cwd, items: [] },
+  };
   sessions.set(id, s);
-  return { sessionId: id, configOptions: config(s) };
+  return { sessionId: id, configOptions: config(s), modes: { currentModeId: s.mode, availableModes: AVAILABLE_MODES } };
 }
 
 const notify = (id: string, update: SessionUpdate): Promise<void> => connection.client.notify("session/update", { sessionId: id, update });
@@ -81,14 +137,26 @@ const app = agent({ name: "elpis-openai-credits" })
   })
   .onRequest("session/set_config_option", async ({ params }) => {
     const s = session(params.sessionId);
-    if (s.pending || params.configId !== "model" || typeof params.value !== "string" || !s.models.includes(params.value)) throw RequestError.invalidParams(undefined, "Unavailable credit model.");
-    s.model = params.value;
-    return { configOptions: config(s) };
+    if (params.configId === "model") {
+      if (s.pending || typeof params.value !== "string" || !s.models.includes(params.value)) throw RequestError.invalidParams(undefined, "Unavailable credit model.");
+      s.model = params.value;
+      if (s.effort && !parseCreditEffort(s.model, s.effort).ok) delete s.effort;
+      return { configOptions: config(s) };
+    }
+    if (params.configId === "effort") {
+      const parsed = parseCreditEffort(s.model, params.value);
+      if (!parsed.ok) throw RequestError.invalidParams(undefined, "Unsupported reasoning effort for this credit model.");
+      if (parsed.effort) s.effort = parsed.effort;
+      else delete s.effort;
+      return { configOptions: config(s) };
+    }
+    throw RequestError.invalidParams(undefined, "Unavailable credit setting.");
   })
   .onRequest("session/set_mode", async ({ params }) => {
     const s = session(params.sessionId);
     if (s.pending) throw RequestError.invalidRequest(undefined, "Finish or cancel the active turn before changing mode.");
-    s.plan = params.modeId === "plan";
+    if (typeof params.modeId !== "string" || !params.modeId) throw RequestError.invalidParams(undefined, "Invalid session mode.");
+    s.mode = params.modeId;
     return {};
   })
   .onRequest("session/prompt", async ({ params }) => {
@@ -99,13 +167,15 @@ const app = agent({ name: "elpis-openai-credits" })
     const signal = pending.signal;
     s.pending = pending;
     const tools = new CreditTools();
+    const readOnly = s.mode === "plan" || s.sandbox === "read-only";
     try {
-      if (!s.plan) await tools.connect(s.servers, s.cwd, signal);
+      tools.registerWorkspace({ cwd: s.cwd, sandbox: s.sandbox, readOnly, disabled: s.noBuiltinTools });
+      if (!readOnly || (s.noBuiltinTools && s.mode !== "plan")) await tools.connect(s.servers, s.cwd, signal);
       const items: ResponseInputItem[] = [...s.history.items, { role: "user", content }];
       let inputTokens = 0, outputTokens = 0;
       for (;;) {
-        const response = await streamCreditResponse(api, { model: s.model, instructions: s.instructions || undefined, stream: true, store: false,
-          include: ["reasoning.encrypted_content"], input: items, tools: tools.definitions }, signal,
+        const requestParams = buildCreditRequestParams({ model: s.model, effort: s.effort, instructions: s.instructions, input: items, tools: tools.definitions });
+        const response = await streamCreditResponse(api, requestParams, signal,
           text => notify(id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } }));
         inputTokens += response.usage?.input_tokens ?? 0;
         outputTokens += response.usage?.output_tokens ?? 0;
@@ -119,15 +189,29 @@ const app = agent({ name: "elpis-openai-credits" })
           return { stopReason: "end_turn", usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } };
         }
         for (const call of calls) {
-          const output = await tools.run(call.name, call.arguments, async (title, rawInput) => {
-            const toolCall = { toolCallId: call.call_id, title, kind: "other" as const, rawInput };
+          let announced: { title: string; toolName: string; rawInput: Record<string, unknown> } | undefined;
+          const result = await tools.run(call.name, call.arguments, async ({ title, kind, toolName, rawInput, requiresApproval }) => {
+            const raw = rawInput as Record<string, unknown>;
+            announced = { title, toolName, rawInput: raw };
+            const toolCall = { toolCallId: call.call_id, title, kind, rawInput, _meta: { claudeCode: { toolName } } };
             await notify(id, { sessionUpdate: "tool_call", ...toolCall, status: "pending" });
+            if (!requiresApproval || s.mode === "bypassPermissions") return true;
             const decision = await connection.client.request<RequestPermissionResponse>("session/request_permission", {
               sessionId: id, toolCall, options: [{ optionId: "allow", kind: "allow_once", name: "Allow once" }, { optionId: "deny", kind: "reject_once", name: "Decline" }] });
             return decision.outcome.outcome === "selected" && decision.outcome.optionId === "allow";
           }, signal);
-          items.push({ type: "function_call_output", call_id: call.call_id, output });
-          await notify(id, { sessionUpdate: "tool_call_update", toolCallId: call.call_id, status: "completed" });
+          items.push({ type: "function_call_output", call_id: call.call_id, output: result.output });
+          if (announced) {
+            await notify(id, {
+              sessionUpdate: "tool_call_update",
+              toolCallId: call.call_id,
+              title: announced.title,
+              rawInput: announced.rawInput,
+              status: result.failed ? "failed" : "completed",
+              ...(result.text ? { content: [{ type: "content", content: { type: "text", text: result.text } }] } : {}),
+              _meta: { claudeCode: { toolName: announced.toolName, ...(result.toolResponse ? { toolResponse: result.toolResponse } : {}) } },
+            });
+          }
         }
       }
     } catch (error) {
