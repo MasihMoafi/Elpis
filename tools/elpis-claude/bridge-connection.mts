@@ -25,6 +25,7 @@ import { Acp, lineReader } from "./bridge-acp.mts";
 import type { BridgeError, RequestId, BridgeClient, BridgeMessage, NoticeParams, ResumeResult, HelperScope, ProviderOwner, StartPick, BridgeContext, PromptInput, TranscriptTurn, SavedSession, SavedHelper, Store, ProviderAgent, EngineThread, BridgeResponses, ChildThread, ThreadParams, ThreadRequest, GlobalRequest, ProviderTurn, Ceiling } from "./bridge-types.mts";
 import type WebSocket from "ws";
 import { createEngine } from "./shared-runtime.mts";
+import { CREDIT_METADATA_PROVIDER } from "./runtime-process.mts";
 import { drainProxy, trackRequests, handoverMessage } from "./handover.mts";
 import { setSignedOut } from "./anthropic-signout.mts";
 import { recordedClaudeEnd } from "./claude-turn-record.mts";
@@ -378,6 +379,9 @@ function createConnectionState(socket: WebSocket, { HOME, permissionChoices, log
       resolve: (result) => { if (timer) clearTimeout(timer); resolve(result); },
       reject: (error) => { if (timer) clearTimeout(timer); reject(error); },
     });
+    if (method === "thread/resume" && process.env.ELPIS_OPENAI_CREDITS_ONLY === "1") {
+      params = { ...params, modelProvider: CREDIT_METADATA_PROVIDER };
+    }
     engine.stdin.write(JSON.stringify({ id, method, params }) + "\n");
   }); }
   async function assertSubscriptionAllowed() {

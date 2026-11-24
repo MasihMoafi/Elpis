@@ -1,4 +1,4 @@
-import { homeDir, engineBin, note, pause, exists, isSocket, startToken, alive, terminate, usable } from './runtime-process.mts';
+import { homeDir, engineBin, note, pause, exists, isSocket, startToken, alive, terminate, usable, CREDIT_METADATA_PROVIDER } from './runtime-process.mts';
 import type { SocketProbe, Listener, EngineInfo, PrivateChild, EngineEntry, ProxyInput } from './runtime-types.mts';
 import { WebSocketServer, WebSocket } from "ws";
 import { spawn } from "node:child_process";
@@ -12,6 +12,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { redactedLines } from "./log-redaction.mts";
+import { directEnv } from "./proxy-env.mts";
 export const shared = () => Boolean(process.env.ELPIS_SHARED_BRIDGE);
 // A unix socket path must fit sockaddr_un (108 bytes, with the terminator).
 export const SOCKET_PATH_MAX = 100;
@@ -214,15 +215,16 @@ export const spawnEngine = (args: string[], options: SpawnOptions) => {
     const env = options.env ?? process.env;
     if (env.ELPIS_OPENAI_CREDITS_ONLY === "1") {
         // The native engine stores thread metadata. The credit client owns inference.
-        const metadataEnv = { ...env };
+        const metadataEnv = directEnv(env);
         delete metadataEnv.OPENAI_CREDITS_API_KEY;
         options = { ...options, env: metadataEnv };
+        const provider = `model_providers.${CREDIT_METADATA_PROVIDER}`;
         args = [...args,
-            "-c", 'model_provider="elpis-credits-metadata"',
-            "-c", 'model_providers.elpis-credits-metadata.name="Elpis credit thread metadata"',
-            "-c", 'model_providers.elpis-credits-metadata.base_url="http://127.0.0.1:0/v1"',
-            "-c", 'model_providers.elpis-credits-metadata.requires_openai_auth=false',
-            "-c", 'model_providers.elpis-credits-metadata.supports_websockets=false',
+            "-c", `model_provider="${CREDIT_METADATA_PROVIDER}"`,
+            "-c", `${provider}.name="Elpis credit thread metadata"`,
+            "-c", `${provider}.base_url="http://127.0.0.1:0/v1"`,
+            "-c", `${provider}.requires_openai_auth=false`,
+            "-c", `${provider}.supports_websockets=false`,
         ];
     }
     return setpriv
