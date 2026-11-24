@@ -1388,6 +1388,37 @@ async fn run_ratatui_app(
     #[cfg(target_os = "windows")]
     let mut trust_decision_was_made = false;
     let mut startup_model_provider = initial_config.model_provider_id.clone();
+    let credit_model_is_available = if let Some(model) =
+        startup_credit_model(&app_server_target, initial_config.model.as_deref())
+    {
+        let request_handle = app_server
+            .as_ref()
+            .expect("startup app server is available")
+            .request_handle();
+        match startup_draft
+            .run_until(
+                &mut tui,
+                app_server_session::list_live_models(
+                    request_handle,
+                    Uuid::new_v4(),
+                    /*model_provider*/ None,
+                ),
+            )
+            .await
+        {
+            Ok(Ok(models)) => credit_model_in_catalog(model, &models),
+            Ok(Err(error)) => {
+                warn!(%error, "Could not verify the OpenAI API credits model");
+                false
+            }
+            Err(error) => {
+                shutdown_startup_session(app_server.take(), &mut terminal_restore_guard).await;
+                return Err(error.into());
+            }
+        }
+    } else {
+        false
+    };
     let Some(active_app_server) = app_server.as_mut() else {
         unreachable!("app server should exist when auth is required");
     };
@@ -1405,9 +1436,10 @@ async fn run_ratatui_app(
             return Err(err.into());
         }
     };
-    let requires_openai_auth = startup_account
-        .as_ref()
-        .is_some_and(|account| account.requires_openai_auth);
+    let requires_openai_auth = !credit_model_is_available
+        && startup_account
+            .as_ref()
+            .is_some_and(|account| account.requires_openai_auth);
     let should_show_onboarding = should_show_onboarding(
         login_status,
         requires_openai_auth,
@@ -2621,6 +2653,23 @@ async fn load_bootstrap_config_or_exit(
             std::process::exit(1);
         }
     }
+}
+
+fn startup_credit_model<'a>(target: &AppServerTarget, model: Option<&'a str>) -> Option<&'a str> {
+    let model = model?;
+    (matches!(target, AppServerTarget::LocalBridge { .. })
+        && chatwidget::bridged_provider_of_model(model)
+            .is_some_and(|provider| provider.id == chatwidget::OPENAI_CREDITS_PROVIDER_ID))
+    .then_some(model)
+}
+
+fn credit_model_in_catalog(
+    model: &str,
+    models: &[codex_protocol::openai_models::ModelPreset],
+) -> bool {
+    models
+        .iter()
+        .any(|preset| preset.show_in_picker && preset.model == model)
 }
 
 fn should_show_onboarding(

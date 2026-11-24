@@ -23,7 +23,7 @@ pub(super) const ELPIS_PROVIDER_LOADING_VIEW_ID: &str = "elpis-provider-loading"
 /// The pickers' id for the Claude subscription.
 pub(crate) const CLAUDE_SUBSCRIPTION_PROVIDER_ID: &str = "claude-subscription";
 pub(super) const ANTIGRAVITY_PROVIDER_ID: &str = "antigravity";
-const OPENAI_CREDITS_PROVIDER_ID: &str = "openai-credits";
+pub(crate) const OPENAI_CREDITS_PROVIDER_ID: &str = "openai-credits";
 
 /// The providers the pickers offer first, in this order. Configured vendors
 /// follow; other built-ins (Gemini, Ollama, LM Studio, Bedrock) appear only while active.

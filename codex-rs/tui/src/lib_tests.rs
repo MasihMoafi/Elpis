@@ -1755,3 +1755,223 @@ mod daemon_startup_tests;
 pub(crate) mod test_backend;
 #[path = "test_support.rs"]
 pub(crate) mod test_support;
+
+#[test]
+fn credits_onboarding_only_skips_chatgpt_login_for_an_available_local_route() {
+    use codex_models_manager::bundled_models_response;
+    use codex_protocol::openai_models::ModelPreset;
+
+    let endpoint = RemoteAppServerEndpoint::WebSocket {
+        websocket_url: "ws://127.0.0.1:1".to_string(),
+        auth_token: None,
+    };
+    let bridge = AppServerTarget::LocalBridge {
+        endpoint: endpoint.clone(),
+    };
+    let remote = AppServerTarget::Remote { endpoint };
+    let mut preset = ModelPreset::from(
+        bundled_models_response()
+            .unwrap()
+            .models
+            .into_iter()
+            .next()
+            .unwrap(),
+    );
+    preset.model = "openai-credits/gpt-6.2-sol".to_string();
+    preset.show_in_picker = true;
+    let credit_model = preset.model.as_str();
+    let catalog = [preset.clone()];
+
+    for (target, model, models, skips_login) in [
+        (&bridge, Some(credit_model), catalog.as_slice(), true),
+        (&bridge, Some(credit_model), &[], false),
+        (&bridge, Some("gpt-6.2-sol"), catalog.as_slice(), false),
+        (&bridge, None, catalog.as_slice(), false),
+        (&remote, Some(credit_model), catalog.as_slice(), false),
+        (
+            &AppServerTarget::Embedded,
+            Some(credit_model),
+            catalog.as_slice(),
+            false,
+        ),
+    ] {
+        let available = startup_credit_model(target, model)
+            .is_some_and(|model| credit_model_in_catalog(model, models));
+        assert_eq!(
+            should_show_onboarding(
+                LoginStatus::NotAuthenticated,
+                !available,
+                /*show_trust_screen*/ false
+            ),
+            !skips_login,
+        );
+        assert!(should_show_onboarding(
+            LoginStatus::NotAuthenticated,
+            !available,
+            /*show_trust_screen*/ true
+        ));
+    }
+}
+
+#[tokio::test]
+async fn bedrock_setup_wizard_requires_eligible_onboarding() -> color_eyre::Result<()> {
+    let shared_endpoint = RemoteAppServerEndpoint::WebSocket {
+        websocket_url: "ws://127.0.0.1:4500/".to_string(),
+        auth_token: None,
+    };
+    let enabled = "[features]\nbedrock_setup_wizard = true\n";
+
+    for (label, config_toml, login_status, target, expected) in [
+        (
+            "disabled by default",
+            "",
+            LoginStatus::NotAuthenticated,
+            AppServerTarget::Embedded,
+            false,
+        ),
+        (
+            "enabled for the default provider",
+            enabled,
+            LoginStatus::NotAuthenticated,
+            AppServerTarget::Embedded,
+            true,
+        ),
+        (
+            "explicit provider",
+            "model_provider = \"openai\"\n[features]\nbedrock_setup_wizard = true\n",
+            LoginStatus::NotAuthenticated,
+            AppServerTarget::Embedded,
+            false,
+        ),
+        (
+            "forced ChatGPT login",
+            "forced_login_method = \"chatgpt\"\n[features]\nbedrock_setup_wizard = true\n",
+            LoginStatus::NotAuthenticated,
+            AppServerTarget::Embedded,
+            false,
+        ),
+        (
+            "existing authentication",
+            enabled,
+            LoginStatus::AuthMode(AuthMode::Chatgpt),
+            AppServerTarget::Embedded,
+            false,
+        ),
+        (
+            "shared local daemon",
+            enabled,
+            LoginStatus::NotAuthenticated,
+            AppServerTarget::LocalDaemon {
+                allow_embedded_fallback: true,
+                endpoint: shared_endpoint.clone(),
+            },
+            false,
+        ),
+        (
+            "remote app server",
+            enabled,
+            LoginStatus::NotAuthenticated,
+            AppServerTarget::Remote {
+                endpoint: shared_endpoint,
+            },
+            false,
+        ),
+    ] {
+        let codex_home = TempDir::new()?;
+        std::fs::write(codex_home.path().join("config.toml"), config_toml)?;
+        let config = build_config(&codex_home).await?;
+
+        assert_eq!(
+            should_show_bedrock_setup_wizard(
+                login_status,
+                /*requires_openai_auth*/ true,
+                &config,
+                &target
+            ),
+            expected,
+            "{label}"
+        );
+    }
+
+    Ok(())
+}
+
+pub(crate) fn write_session_rollout(
+    codex_home: &Path,
+    filename_ts: &str,
+    meta_rfc3339: &str,
+    preview: &str,
+    model_provider: &str,
+    cwd: &Path,
+) -> color_eyre::Result<ThreadId> {
+    let uuid = Uuid::new_v4();
+    let uuid_str = uuid.to_string();
+    let thread_id = ThreadId::from_string(&uuid_str)?;
+    let year = &filename_ts[0..4];
+    let month = &filename_ts[5..7];
+    let day = &filename_ts[8..10];
+    let rollout_path = codex_home
+        .join("sessions")
+        .join(year)
+        .join(month)
+        .join(day)
+        .join(format!("rollout-{filename_ts}-{uuid_str}.jsonl"));
+    let parent = rollout_path
+        .parent()
+        .ok_or_else(|| color_eyre::eyre::eyre!("rollout path is missing a parent directory"))?;
+    std::fs::create_dir_all(parent)?;
+
+    let session_meta = codex_protocol::protocol::SessionMeta {
+        session_id: thread_id.into(),
+        id: thread_id,
+        timestamp: meta_rfc3339.to_string(),
+        cwd: cwd.to_path_buf(),
+        originator: "codex".to_string(),
+        cli_version: "0.0.0".to_string(),
+        source: codex_protocol::protocol::SessionSource::Cli,
+        model_provider: Some(model_provider.to_string()),
+        ..Default::default()
+    };
+    let session_meta = serde_json::to_value(codex_protocol::protocol::SessionMetaLine {
+        meta: session_meta,
+        git: None,
+    })?;
+    let lines = [
+        serde_json::json!({
+            "timestamp": meta_rfc3339,
+            "type": "session_meta",
+            "payload": session_meta,
+        })
+        .to_string(),
+        serde_json::json!({
+            "timestamp": meta_rfc3339,
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": preview}],
+            },
+        })
+        .to_string(),
+        serde_json::json!({
+            "timestamp": meta_rfc3339,
+            "type": "event_msg",
+            "payload": {
+                "type": "user_message",
+                "message": preview,
+                "kind": "plain",
+            },
+        })
+        .to_string(),
+    ];
+    std::fs::write(&rollout_path, lines.join("\n") + "\n")?;
+    let updated_at =
+        chrono::DateTime::parse_from_rfc3339(meta_rfc3339)?.with_timezone(&chrono::Utc);
+    let times = std::fs::FileTimes::new().set_modified(updated_at.into());
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(rollout_path)?
+        .set_times(times)?;
+
+    Ok(thread_id)
+}

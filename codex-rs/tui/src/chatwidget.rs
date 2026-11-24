@@ -349,6 +349,7 @@ mod elpis_effort;
 #[cfg(test)]
 pub(crate) use self::elpis_providers::CLAUDE_SUBSCRIPTION_PROVIDER_ID;
 pub(crate) use self::elpis_providers::ElpisProviderEvent;
+pub(crate) use self::elpis_providers::OPENAI_CREDITS_PROVIDER_ID;
 pub(crate) use self::elpis_providers::bridged_provider;
 pub(crate) use self::elpis_providers::bridged_provider_of_model;
 pub(crate) use self::elpis_providers::elpis_catalog_provider;
