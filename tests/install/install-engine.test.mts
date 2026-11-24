@@ -107,6 +107,24 @@ test('engine bundle takes tracked ACP tools from the selected source', (t) => {
   assert.ok(!existsSync(`${tools}/untracked.mjs`));
 });
 
+test('a changed bridge lock installs the new dependency and credit launcher without altering the previous bundle', t => {
+  const f = fixture(t);
+  const bridge = `${f.source}/tools/elpis-claude`;
+  mkdirSync(`${bridge}/fixture-dep`);
+  writeFileSync(`${bridge}/fixture-dep/package.json`, JSON.stringify({ name: 'fixture-dep', version: '1.0.0' }));
+  writeFileSync(`${bridge}/package.json`, JSON.stringify({ name: 'bridge', version: '1.0.0', dependencies: { 'fixture-dep': 'file:fixture-dep' } }));
+  execFileSync('npm', ['install', '--package-lock-only', '--offline', '--ignore-scripts', '--no-fund', '--no-audit'], { cwd: bridge });
+  writeFileSync(`${bridge}/elpis-credits`, '#!/bin/sh\necho fixture\n', { mode: 0o755 });
+  f.git('add', 'tools/elpis-claude/package.json', 'tools/elpis-claude/package-lock.json', 'tools/elpis-claude/fixture-dep/package.json', 'tools/elpis-claude/elpis-credits');
+  const result = f.run('credit-dependencies');
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readlinkSync(`${f.old}/tools/elpis-claude/node_modules`), f.source);
+  assert.ok(existsSync(`${f.bundle()}/tools/elpis-claude/node_modules/fixture-dep/package.json`));
+  assert.equal(execFileSync(`${f.bin}/elpis-credits`, { encoding: 'utf8' }).trim(), 'fixture');
+  execFileSync('bash', [`${f.bundle()}/rollback.sh`], { env: { ...process.env, HOME: f.home } });
+  assert.equal(lstatSync(`${f.bin}/elpis-credits`, { throwIfNoEntry: false }), undefined);
+});
+
 test('the live launcher is kept, with only its engine and bridge paths moved to the new bundle', (t) => {
   const f = fixture(t);
   // 21 Oct: the bundle's own wrapper copy was older than the live launcher and lacked its pinned TUI frontend.

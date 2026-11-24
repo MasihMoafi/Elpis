@@ -118,7 +118,7 @@ while IFS= read -r -d '' file; do
     cp -a "$R/$file" "$NEW/$file"
 done < <(git -C "$R" ls-files -z tools/elpis-claude)
 BRIDGE=tools/elpis-claude
-if ! cmp -s "$OLD/$BRIDGE/package-lock.json" "$NEW/$BRIDGE/package-lock.json"; then
+if [ -f "$NEW/$BRIDGE/package-lock.json" ] && ! cmp -s "$OLD/$BRIDGE/package-lock.json" "$NEW/$BRIDGE/package-lock.json"; then
     # A copied symlink still points into the previous installation.
     if [ -L "$NEW/$BRIDGE/node_modules" ]; then unlink "$NEW/$BRIDGE/node_modules"; fi
     npm ci --prefix "$NEW/$BRIDGE" --omit=dev --ignore-scripts --no-fund --no-audit
