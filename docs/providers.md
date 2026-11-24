@@ -49,6 +49,7 @@ and asks permission before calling an MCP tool. Its credential comes from
 `OPENAI_CREDITS_API_KEY` or an `OPENAI_API_KEY` entry in the owner-only
 `~/.config/elpis/openai-credits.env` file. Billing and balance information is
 available in the organization's OpenAI Platform dashboard.
+While a credit turn runs, **Up** recalls waiting follow-ups for editing before the next turn starts.
 
 ## 3. Wire translation
 
