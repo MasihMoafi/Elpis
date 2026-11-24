@@ -64,8 +64,7 @@ const child = spawn(binaryPath, process.argv.slice(2), {
 });
 
 child.once("spawn", () => {
-  // The child has inherited stdin. Close our copy so credential input
-  // cannot be reread through the long-lived Node launcher.
+  // The native child owns stdin after launch, including credential input.
   closeSync(0);
 });
 

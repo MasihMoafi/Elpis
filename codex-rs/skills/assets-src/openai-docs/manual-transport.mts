@@ -23,14 +23,15 @@ export const proxyConfigured = () => process.env.HTTP_PROXY ||
     process.env.HTTPS_PROXY ||
     process.env.http_proxy ||
     process.env.https_proxy;
-export const responseHeaders = (headers: Map<string, string>) => ({
+type SourceHeaders = { get(name: string): string | null | undefined };
+export const responseHeaders = (headers: SourceHeaders) => ({
     get(name: string) {
         return headers.get(name.toLowerCase()) ?? null;
     },
 });
 export const makeResponse = ({ body, headers, status }: {
     body: string;
-    headers: Map<string, string>;
+    headers: SourceHeaders;
     status: number;
 }) => ({
     headers: responseHeaders(headers),
@@ -128,11 +129,20 @@ export const requestManualWithFetch = async (url: string, { method, timeoutMs }:
     if (typeof fetch !== "function") {
         throw new ManualFetchError("Native fetch is unavailable in this Node runtime.");
     }
-    return withTimeout((signal) => fetch(url, {
-        method,
-        headers: { "User-Agent": USER_AGENT },
-        signal,
-    }), timeoutMs);
+    return withTimeout(async (signal) => {
+        const response = await fetch(url, {
+            method,
+            headers: { "User-Agent": USER_AGENT },
+            signal,
+        });
+        if (!response.ok || method === "HEAD") return response;
+        // Keep body reads inside the timeout so failures can use the next transport.
+        return makeResponse({
+            body: await response.text(),
+            headers: response.headers,
+            status: response.status,
+        });
+    }, timeoutMs);
 };
 export const requestManual = async (url: string, { cacheDir, method, timeoutMs }: RequestOptions): Promise<ResponseLike> => {
     const preferCurl = Boolean(proxyConfigured()) || typeof fetch !== "function";

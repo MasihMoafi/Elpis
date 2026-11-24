@@ -49,7 +49,8 @@ async function readSource(source: string | undefined) {
       });
 
       if (response.ok) {
-        return response.text();
+        // Keep body failures in this attempt's retry handler.
+        return await response.text();
       }
 
       lastError = new Error("failed to fetch " + source + ": " + response.status);

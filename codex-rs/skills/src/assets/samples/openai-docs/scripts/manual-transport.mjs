@@ -24,7 +24,8 @@ export const proxyConfigured = () => process.env.HTTP_PROXY ||
     process.env.HTTPS_PROXY ||
     process.env.http_proxy ||
     process.env.https_proxy;
-export const responseHeaders = (headers                     ) => ({
+
+export const responseHeaders = (headers               ) => ({
     get(name        ) {
         return headers.get(name.toLowerCase()) ?? null;
     },
@@ -129,11 +130,20 @@ export const requestManualWithFetch = async (url        , { method, timeoutMs } 
     if (typeof fetch !== "function") {
         throw new ManualFetchError("Native fetch is unavailable in this Node runtime.");
     }
-    return withTimeout((signal) => fetch(url, {
-        method,
-        headers: { "User-Agent": USER_AGENT },
-        signal,
-    }), timeoutMs);
+    return withTimeout(async (signal) => {
+        const response = await fetch(url, {
+            method,
+            headers: { "User-Agent": USER_AGENT },
+            signal,
+        });
+        if (!response.ok || method === "HEAD") return response;
+        // Keep body reads inside the timeout so failures can use the next transport.
+        return makeResponse({
+            body: await response.text(),
+            headers: response.headers,
+            status: response.status,
+        });
+    }, timeoutMs);
 };
 export const requestManual = async (url        , { cacheDir, method, timeoutMs }                )                        => {
     const preferCurl = Boolean(proxyConfigured()) || typeof fetch !== "function";
