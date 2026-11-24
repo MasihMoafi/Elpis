@@ -56,7 +56,6 @@ static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 mod app_cmd;
 mod app_server_proxy;
 mod claude_cmd;
-mod cloud_config;
 mod config_override_args;
 mod daemon_install;
 mod daemon_telemetry;
@@ -1241,7 +1240,7 @@ async fn dispatch_cli(
                         "`elpis agents` cannot apply local provider or additional-directory overrides to a remote server"
                     );
                 }
-                if is_workload_identity_selected() {
+                if codex_login::is_workload_identity_selected() {
                     anyhow::bail!(
                         "`elpis agents` is unavailable while workload identity is active"
                     );
