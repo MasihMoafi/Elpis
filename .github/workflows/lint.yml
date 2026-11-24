@@ -77,9 +77,13 @@ jobs:
         with:
           node-version: '26.1.0'
           cache: npm
-          cache-dependency-path: apps/elpis-desktop/package-lock.json
+          cache-dependency-path: |
+            apps/elpis-desktop/package-lock.json
+            tools/elpis-claude/package-lock.json
       - name: Install the locked dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm ci --prefix ../../tools/elpis-claude --ignore-scripts --no-audit --no-fund
       - name: Build the bridge resources the bridge imports
         run: node bridge/build-resources.mts
       - name: Renderer typecheck (clean)

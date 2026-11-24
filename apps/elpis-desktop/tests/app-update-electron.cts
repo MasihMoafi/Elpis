@@ -82,7 +82,7 @@ electron.app.whenReady().then(async () => {
   const settled = () => !document.querySelector('.startup-splash') && !!document.querySelector('.excalidraw canvas, textarea[aria-label="Message Elpis"]');
   const readComposer = () => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Elpis"]')?.value ?? null;
   await until(() => host.webContents.executeJavaScript(`(${settled.toString()})()`));
-  const draft = control.store?.read()["elpis-draft-v1:new"];
+  const draft = control.store?.snapshot().values?.["elpis-draft-v1:new"];
   const composer = draft && !process.argv.includes('--love-spot-app')
     ? await until(async () => {
       const value = await host.webContents.executeJavaScript(`(${readComposer.toString()})()`);
