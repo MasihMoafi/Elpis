@@ -102,6 +102,7 @@ fn profile_id(environments: &TurnEnvironmentSnapshot) -> Option<String> {
 /// An empty form elicitation, which Full Access approves without review.
 fn empty_elicitation() -> ElicitationReviewRequest {
     ElicitationReviewRequest {
+        server_key: codex_mcp::McpServerKey::unscoped("permission-test"),
         server_name: "permission-test".to_string(),
         request_id: rmcp::model::NumberOrString::Number(1),
         elicitation: codex_rmcp_client::Elicitation::Mcp(
@@ -117,7 +118,7 @@ fn empty_elicitation() -> ElicitationReviewRequest {
 }
 
 async fn elicitation_action(session: &Arc<Session>) -> Option<ElicitationAction> {
-    session.mark_mcp_runtime_dirty();
+    session.mark_mcp_runtime_dirty(crate::thread_manager::McpRefreshReason::ExplicitInvalidation);
     session.refresh_mcp_if_dirty().await;
     session
         .mcp_elicitation_reviewer()
@@ -442,7 +443,7 @@ async fn context_recorded_without_a_turn_saves_accepted_permissions(revoke: bool
         (
             item.approval_policy,
             item.active_permission_profile.map(|profile| profile.id),
-            matches!(item.permission_profile, Some(PermissionProfile::Disabled)),
+            matches!(item.permission_profile, PermissionProfile::Disabled),
         ),
         expected
     );

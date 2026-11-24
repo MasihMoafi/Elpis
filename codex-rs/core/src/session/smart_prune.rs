@@ -2103,6 +2103,7 @@ mod tests {
             token_usage: None,
             usage_metadata: None,
             end_turn: Some(true),
+            reasoning_removals: None,
         }
     }
 

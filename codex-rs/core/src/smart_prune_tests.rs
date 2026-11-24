@@ -1,3 +1,4 @@
+use codex_protocol::models::AudioReference;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
@@ -294,7 +295,9 @@ fn outputs_without_a_call_id_or_with_audio_are_not_eligible() {
                     text: "x".repeat(8_000),
                 },
                 FunctionCallOutputContentItem::InputAudio {
-                    audio_url: "data:audio/wav;base64,AAA".to_string(),
+                    audio: AudioReference::Inline {
+                        audio_url: "data:audio/wav;base64,AAA".to_string(),
+                    },
                 },
             ]),
             success: Some(true),

@@ -8,7 +8,7 @@ fn work_graph_tool_requires_name_and_tasks() {
     assert_eq!(tool.name, "run_agent_work_graph");
     assert_eq!(
         tool.parameters.required,
-        Some(vec!["name".to_string(), "tasks".to_string()])
+        Some(vec!["name".to_string(), "tasks".to_string()].into_boxed_slice())
     );
     let task_schema = tool
         .parameters

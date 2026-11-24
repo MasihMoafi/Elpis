@@ -576,7 +576,7 @@ impl ContextManager {
         world_state: &WorldState,
     ) -> (Vec<WorldStateUpdate>, Option<WorldStateItem>) {
         let (snapshot, fragments, rollout_item) = self.render_step_world_state(world_state);
-        self.world_state_baseline = Some(snapshot);
+        self.set_world_state_baseline(snapshot);
         (fragments, rollout_item)
     }
 

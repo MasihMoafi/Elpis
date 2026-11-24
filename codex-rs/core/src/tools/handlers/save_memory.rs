@@ -304,6 +304,8 @@ mod tests {
             content: vec![codex_protocol::models::ContentItem::InputText {
                 text: text.to_string(),
             }],
+            encrypted_content: None,
+            status: None,
             phase: None,
             internal_chat_message_metadata_passthrough: None,
         };
@@ -323,6 +325,8 @@ mod tests {
             conversation_history: ConversationHistory::new(history),
             turn_item_emitter: Arc::new(NoopTurnItemEmitter),
             environments: Vec::new(),
+            attachment_store: Arc::new(codex_attachment_store::InlineAttachmentStore),
+            ephemeral: false,
             payload: ToolPayload::Function {
                 arguments: arguments.to_string(),
             },

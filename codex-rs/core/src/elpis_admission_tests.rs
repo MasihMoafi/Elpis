@@ -5,6 +5,7 @@ use crate::elpis_context::workspace_context_dir;
 use codex_extension_api::Instructions;
 use codex_protocol::protocol::InternalSessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol_test_support::ContentItemTestExt;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -112,7 +113,7 @@ fn continuity_section_owns_one_slot_and_resends_only_changes() {
     assert!(filled.has_model_visible_content());
     let (snapshot, fragment) = filled.render_diff(PreviousWorldStateSection::Absent);
     assert_eq!(
-        fragment.map(|fragment| (fragment.role(), fragment.body().to_string())),
+        fragment.map(|fragment| (fragment.role(), fragment.body().clone().expect_text())),
         Some(("developer", body.clone()))
     );
     let snapshot = snapshot.expect("a filled section persists its body");
@@ -205,8 +206,6 @@ async fn native_and_bridge_admission_follow_the_same_thread_and_explicit_handoff
                     turn_id: "turn",
                     model_info: &model_info,
                     environments: &[],
-                    ready_selected_capability_roots: &[],
-                    executor_capability_discovery: None,
                     extension_metrics: None,
                     session_store: &session_store,
                     thread_store: &thread_store,
@@ -216,7 +215,14 @@ async fn native_and_bridge_admission_follow_the_same_thread_and_explicit_handoff
                 })
                 .await;
             let (_, fragment) = native[0].render_diff(PreviousWorldStateSection::Absent);
-            assert_eq!(fragment.expect("native fragment").body(), bridge);
+            assert_eq!(
+                fragment
+                    .expect("native fragment")
+                    .body()
+                    .clone()
+                    .expect_text(),
+                bridge
+            );
         }
     }
     assert_eq!(
@@ -266,7 +272,8 @@ fn a_continuity_change_appends_only_the_changed_sources_and_names_withdrawals() 
     let text = fragment
         .expect("a change renders an update")
         .body()
-        .to_string();
+        .clone()
+        .expect_text();
     assert!(text.starts_with(ELPIS_CONTINUITY_UPDATE_PREFIX), "{text}");
     assert!(
         text.contains("- /w/MEMORY.md"),
@@ -295,7 +302,8 @@ fn a_continuity_change_appends_only_the_changed_sources_and_names_withdrawals() 
     let text = fragment
         .expect("a withdrawal renders a note")
         .body()
-        .to_string();
+        .clone()
+        .expect_text();
     assert!(
         text.contains("- /w/MEMORY.md") && text.contains("- /w/rules.md"),
         "{text}"
