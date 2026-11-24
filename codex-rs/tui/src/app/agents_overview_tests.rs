@@ -758,7 +758,10 @@ async fn delegated_helper_notifications_group_only_under_their_chat() -> Result<
     let helper = ThreadId::from_string("01a158d9-0850-70c1-9241-c4ccb3e5e037")?;
     let [other_chat, other_helper] = std::array::from_fn(|_| ThreadId::new());
     app.primary_thread_id = Some(chat);
-    app.agents_overview.initialized = true;
+    let owner = app_server.backend_id();
+    app.app_server_backend_id = Some(owner);
+    app.backend_registry.connect(&app_server);
+    app.agents_overview.initialized.insert(owner);
     app.agents_overview.threads.insert(
         chat,
         Some(overview_thread(chat, None, "Chat", ThreadStatus::Idle)),
