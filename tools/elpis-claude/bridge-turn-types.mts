@@ -1,7 +1,7 @@
 import type { AskForApproval } from '../../codex-rs/app-server-protocol/schema/typescript/v2/AskForApproval.ts';
 import type { Acp } from "./bridge-acp.mts";
 import type { ClaudeAccounts } from "./claude-accounts.mts";
-import type { EngineCall, BridgeClient, BridgeMessage, CatalogResult, ChildThread, ContextChars, EngineThread, Lane, LiveSession, McpConfig, NoticeParams, ProviderAgent, ProviderTurn, RateLimit, Store, UsageTotals } from "./bridge-types.mts";
+import type { EngineCall, BridgeClient, BridgeMessage, CatalogResult, Ceiling, ChildThread, ContextChars, EngineThread, Lane, LiveSession, McpConfig, NoticeParams, ProviderAgent, ProviderTurn, RateLimit, Store, UsageTotals } from "./bridge-types.mts";
 export type Mode = "plan" | "bypassPermissions" | "default" | "auto" | "acceptEdits";
 export type McpServer = {
     name: string;
@@ -71,6 +71,7 @@ export type Dependencies = {
     MODE_NAMES: Record<Mode, string>;
     claudeModeOf: (threadId: string, agent: string, ask: boolean) => Mode;
     accessModeOf: (threadId: string, agent: string, ask: boolean) => Mode;
+    sandboxOf: (threadId: string) => Ceiling;
     sessionMode: Map<string, string>;
     tokenSums: Map<string, UsageTotals>;
     ctxChars: Map<string, ContextChars>;

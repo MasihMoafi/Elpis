@@ -1,7 +1,7 @@
 import type { Dependencies } from './bridge-turn-types.mts';
 import type { Acp } from "./bridge-acp.mts";
 import type { BridgeError, ClaudeTurnRequest, ProviderAgent, ProviderTurn } from "./bridge-types.mts";
-export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sessionMode, devChars, ensureAcp, catalogFor, dropThreadSession, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd }: Pick<Dependencies, "log" | "SUBAGENT_TOOLS" | "SUBAGENTS_DISABLED" | "mcpServersFor" | "acpServersFrom" | "loadStore" | "storeChain" | "updateStore" | "refuseSignedOut" | "smartPruneProxy" | "threadCwd" | "threadSeen" | "threadPolicy" | "smartPrune" | "sessions" | "threadMcp" | "threadEnvironment" | "claudeModel" | "claudeEffort" | "materializedProviders" | "sessionModel" | "MODE_NAMES" | "claudeModeOf" | "sessionMode" | "devChars" | "ensureAcp" | "catalogFor" | "dropThreadSession" | "engineCall" | "elpisInstructions" | "subagentsAllowed" | "pendingMirrors"> & {
+export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sandboxOf, sessionMode, devChars, ensureAcp, catalogFor, dropThreadSession, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd }: Pick<Dependencies, "log" | "SUBAGENT_TOOLS" | "SUBAGENTS_DISABLED" | "mcpServersFor" | "acpServersFrom" | "loadStore" | "storeChain" | "updateStore" | "refuseSignedOut" | "smartPruneProxy" | "threadCwd" | "threadSeen" | "threadPolicy" | "smartPrune" | "sessions" | "threadMcp" | "threadEnvironment" | "claudeModel" | "claudeEffort" | "materializedProviders" | "sessionModel" | "MODE_NAMES" | "claudeModeOf" | "accessModeOf" | "sandboxOf" | "sessionMode" | "devChars" | "ensureAcp" | "catalogFor" | "dropThreadSession" | "engineCall" | "elpisInstructions" | "subagentsAllowed" | "pendingMirrors"> & {
     threadId: string;
     req: ClaudeTurnRequest;
     followup: boolean;
@@ -33,6 +33,7 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
     const policy = threadPolicy.get(threadId) ?? "on-request";
     const ask = policy !== "never";
     const mode = ask ? "ask" : "full";
+    const sandbox = sandboxOf(threadId);
     const appServers = acpServersFrom(threadMcp.get(threadId), threadId);
     const managed = appServers.some(server => server.name === 'elpis_mother');
     const environment: Record<string, string> = managed ? { ...threadEnvironment.get(threadId), GH_TOKEN: '', GITHUB_TOKEN: '' } : {};
@@ -51,14 +52,14 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
     const environmentKey = JSON.stringify(environment);
     if (followup)
         sessionId = req.sessionId as string;
-    else if (live && (live.accountId ?? null) === accountId && live.mode === mode && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions && (live.mcp ?? "[]") === mcp && (live.environment ?? '{}') === environmentKey)
+    else if (live && (live.accountId ?? null) === accountId && live.mode === mode && live.sandbox === sandbox && live.subagents === subagents && live.agent === agent.key && live.prune === prune && live.instructions === instructions && (live.mcp ?? "[]") === mcp && (live.environment ?? '{}') === environmentKey)
         sessionId = live.id;
     else {
         const cwd = threadCwd.get(threadId) ?? process.cwd();
         const proxy = prune ? await smartPruneProxy() : null;
         const browser = appServers.some((s) => s.name === "elpis_browser");
         const options = { ...(ask && { settingSources: ["project", "local"] }), ...(browser && { allowedTools: ["mcp__elpis_browser"] }), ...(managedMain && { tools: [] }), ...(!subagents && { disallowedTools: SUBAGENT_TOOLS }), ...((managed || proxy) && { env: { ...environment, ...(proxy && { ANTHROPIC_BASE_URL: proxy, NO_PROXY: [process.env.NO_PROXY, "127.0.0.1", "localhost"].filter(Boolean).join(",") }) } }) };
-        const _meta = { systemPrompt: { append: instructions }, claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
+        const _meta = { systemPrompt: { append: instructions }, elpis: { sandbox }, claudeCode: { options, emitRawSDKMessages: [{ type: "system", subtype: "init" }] } };
         devChars.set(threadId, instructions.length);
         log(`Elpis instructions for ${agent.speaker}: ${instructions.length} chars`);
         await storeChain();
@@ -86,7 +87,7 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
             freshSession = true;
             log(`session ${sessionId} for thread ${threadId} in ${cwd} (${ask ? "Elpis asks" : "full access"}, policy ${policy}, subagents ${subagents ? "on" : "off"})`);
         }
-        live = { id: sessionId, mode, subagents, agent: agent.key, accountId, prune, instructions, mcp, environment: environmentKey };
+        live = { id: sessionId, mode, sandbox, subagents, agent: agent.key, accountId, prune, instructions, mcp, environment: environmentKey };
         sessions.set(threadId, live);
         const sid = sessionId;
         updateStore((st) => { st[threadId] = { ...st[threadId], session: sid, mode, agent: agent.key, ...(agent.key === "claude" && { claudeAccountId: accountId }) }; });
@@ -117,7 +118,7 @@ export async function prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DI
         }
         const effort = claudeEffort.get(threadId);
         const known = (await catalogFor(agent)).efforts[want as string];
-        if (effort && (!known || known.levels.some((l) => l.reasoningEffort === effort)))
+        if (effort && (!known || known.levels.some((l) => l.reasoningEffort === effort) || (agent.key === "openai-credits" && effort === "default")))
             await acp.call("session/set_config_option", { sessionId, configId: "effort", value: effort }).catch((e) => log(`effort ${effort}: ${e.message}`));
     }
     turnState.sessionId = sessionId;

@@ -12,7 +12,7 @@ export type ResumeResult = { thread: EngineThread; model?: string | undefined; [
 export type HelperScope = SavedHelper & { requested: string; ceiling: Ceiling; owners: Set<(id: string) => Promise<boolean>>; activeOwner?: ((id: string) => Promise<boolean>) | null; lastTurn?: TranscriptTurn };
 export type ProviderOwner = { ws: BridgeClient; nativeHelper?: boolean; model: () => string | null | undefined; effort: () => string | null; status: () => { type: string; activeFlags?: string[] }; decorate: (thread: EngineThread) => void; lastTurn?: () => TranscriptTurn | undefined; dispatch: (message: BridgeMessage & { id: RequestId }, client: BridgeClient) => void };
 export type StartPick = { model?: string | undefined; effort?: string | null; forkOf?: ForkLink; forkTurns?: TranscriptTurn[] };
-export type LiveSession = { id: string; mode: string; subagents: boolean; agent: string; accountId: string | null; prune: boolean; instructions: string; mcp: string; environment: string };
+export type LiveSession = { id: string; mode: string; sandbox?: Ceiling; subagents: boolean; agent: string; accountId: string | null; prune: boolean; instructions: string; mcp: string; environment: string };
 export type RelayReply = { result?: unknown; error?: unknown };
 export type Relay = { answer: (reply: RelayReply) => void; origin: BridgeClient; upstreamId: RequestId | undefined; toolPermission: boolean; clients: Set<BridgeClient>; message: BridgeMessage & { params: { threadId: string; turnId?: string; [key: string]: unknown } }; threadId: string };
 export type BridgeContext = {

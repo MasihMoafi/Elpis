@@ -21,7 +21,7 @@ export function createProviderTurn({
   acpErrorMessage, RECONNECT_MS, RECONNECT_NOTE, connectionDropped, announceLimits, smartPruneProxy,
   recordAccounts, fullFor, cancelRelays, ws, toTui, notify, threadCwd, threadSeen, childThreads,
   childIds, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort,
-  materializedProviders, sessionModel, threadAccess, MODE_NAMES, claudeModeOf, accessModeOf, sessionMode,
+  materializedProviders, sessionModel, threadAccess, MODE_NAMES, claudeModeOf, accessModeOf, sandboxOf, sessionMode,
   tokenSums, ctxChars, devChars, addChars, transcriptOf, lastTurnUsage, sendUsage, ensureAcp, catalogFor, dropThreadSession, releaseUnusedAcps,
   engineCall, assertSubscriptionAllowed, elpisInstructions, subagentsAllowed, activeTurns, reconnects, pendingMirrors, priorTranscript,
   askTui, newLane, runNext,
@@ -100,7 +100,7 @@ export function createProviderTurn({
     try {
       // A follow-up only records events from an already-running provider session.
       if (!followup) await assertSubscriptionAllowed();
-      const { acp, sessionId, freshSession, ask, subagents, policy } = await prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, sessionMode, devChars, ensureAcp, catalogFor, dropThreadSession, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd });
+      const { acp, sessionId, freshSession, ask, subagents, policy } = await prepareProviderSession({ log, SUBAGENT_TOOLS, SUBAGENTS_DISABLED, mcpServersFor, acpServersFrom, loadStore, storeChain, updateStore, refuseSignedOut, smartPruneProxy, threadCwd, threadSeen, threadPolicy, smartPrune, sessions, threadMcp, threadEnvironment, claudeModel, claudeEffort, materializedProviders, sessionModel, MODE_NAMES, claudeModeOf, accessModeOf, sandboxOf, sessionMode, devChars, ensureAcp, catalogFor, dropThreadSession, engineCall, elpisInstructions, subagentsAllowed, pendingMirrors, threadId, req, followup, agent, accountId, turnState, cwd });
       sessionReady(sessionId);
       // The chat's updates draw into this turn; a subagent's come under its own ACP session and
       // draw into its child thread (see spawnSubagent). The turn hears only its own sessions.

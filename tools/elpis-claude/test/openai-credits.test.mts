@@ -1,9 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import OpenAI from "openai";
-import { promptContent, creditModels, streamCreditResponse } from "../openai-credits.mts";
+import { buildCreditRequestParams, creditEffortsForModel, creditModels, parseCreditEffort, promptContent, streamCreditResponse } from "../openai-credits.mts";
 import { CreditTools } from "../openai-credits-tools.mts";
+import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
 test("credit models come from the selected API organization", async () => {
   const client = new OpenAI({ apiKey: "fixture", fetch: async (url, init) => {
@@ -12,6 +16,25 @@ test("credit models come from the selected API organization", async () => {
     return Response.json({ data: ["gpt-6.2-sol", "gpt-image-1", "gpt-6.2-sol", "gpt-6.2-astra"].map(id => ({ id, object: "model" })) });
   } });
   assert.deepEqual(await creditModels(client), ["gpt-6.2-sol", "gpt-6.2-astra"]);
+});
+
+test("credit effort metadata excludes sign-in-only ultra and builds validated requests", () => {
+  const astra = creditEffortsForModel("gpt-6.2-astra");
+  assert.deepEqual(astra.levels.map(l => l.value), ["low", "medium", "high", "xhigh", "max"]);
+  assert.equal(astra.defaultEffort, "low");
+  assert.equal(creditEffortsForModel("gpt-6-sol").defaultEffort, "medium");
+  assert.deepEqual(creditEffortsForModel("gpt-unknown"), { levels: [], defaultEffort: null });
+
+  assert.deepEqual(parseCreditEffort("gpt-6.2-astra", "high"), { ok: true, effort: "high" });
+  assert.deepEqual(parseCreditEffort("gpt-6.2-astra", "default"), { ok: true, effort: undefined });
+  assert.deepEqual(parseCreditEffort("gpt-6.2-astra", null), { ok: true, effort: undefined });
+  assert.deepEqual(parseCreditEffort("gpt-6.2-astra", "ultra"), { ok: false });
+  assert.deepEqual(parseCreditEffort("gpt-6.2-astra", "none"), { ok: false });
+
+  const supported = buildCreditRequestParams({ model: "gpt-6.2-astra", effort: "xhigh", input: [], tools: [] });
+  assert.deepEqual(supported.reasoning, { effort: "xhigh" });
+  const unsupported = buildCreditRequestParams({ model: "gpt-6.2-astra", effort: "ultra", input: [], tools: [] });
+  assert.equal(unsupported.reasoning, undefined);
 });
 
 test("the API receives the attached image and the accompanying text", () => {
@@ -61,14 +84,97 @@ test("an advertised MCP tool executes only after permission for its arguments", 
   try {
     await tools.connect([{ type: "http", name: "local", url: `http://127.0.0.1:${address.port}`, headers: [] }], process.cwd(), signal);
     const name = tools.definitions[0]!.name;
-    assert.equal(await tools.run(name, '{"n":2}', async () => false, signal), "Permission denied.");
+    const denied = await tools.run(name, '{"n":2}', async () => false, signal);
+    assert.equal(denied.output, "Permission denied.");
+    assert.equal(denied.failed, true);
     assert.equal(calls, 0);
-    const output = await tools.run(name, '{"n":2}', async (title, args) => { assert.equal(title, "local / sample"); assert.deepEqual(args, { n: 2 }); return true; }, signal);
-    assert.match(output, /"text":"1"/);
+    const executed = await tools.run(name, '{"n":2}', async ({ title, rawInput, requiresApproval }) => {
+      assert.equal(title, "local / sample");
+      assert.equal(requiresApproval, true);
+      assert.deepEqual(rawInput, { n: 2 });
+      return true;
+    }, signal);
+    assert.match(executed.output, /"text":"1"/);
+    assert.equal(executed.failed, false);
     assert.equal(calls, 1);
   } finally {
     await tools.close();
     server.closeAllConnections();
     await new Promise<void>(r => server.close(() => r()));
   }
+});
+
+test("workspace tools run bash and file edits inside cwd and enforce sandbox and read-only restrictions", async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), "elpis-credit-ws-"));
+  t.after(() => removeTestTempDir(root));
+  const cwd = path.join(root, "ws");
+  const outside = path.join(root, "outside");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(outside, { recursive: true });
+  symlinkSync(outside, path.join(cwd, "escape-link"));
+
+  const signal = AbortSignal.timeout(10_000);
+  const wsTools = new CreditTools();
+  wsTools.registerWorkspace({ cwd, sandbox: "workspace-write", readOnly: false, disabled: false });
+  assert.deepEqual(wsTools.definitions.map(d => d.name), [
+    "read_file", "list_directory", "glob_files", "grep_search", "bash", "write_file", "edit_file",
+  ]);
+
+  let approvalCount = 0;
+  const approveAll = async ({ requiresApproval }: { requiresApproval: boolean }) => {
+    if (requiresApproval) approvalCount++;
+    return true;
+  };
+  const writeRes = await wsTools.run("write_file", JSON.stringify({ path: "scratch.txt", content: "alpha\nbeta\n" }), approveAll, signal);
+  assert.equal(writeRes.failed, false);
+  const editRes = await wsTools.run("edit_file", JSON.stringify({ path: "scratch.txt", old_string: "beta", new_string: "gamma" }), approveAll, signal);
+  assert.equal(editRes.failed, false);
+  assert.equal(readFileSync(path.join(cwd, "scratch.txt"), "utf8"), "alpha\ngamma\n");
+  const readRes = await wsTools.run("read_file", JSON.stringify({ path: "scratch.txt" }), approveAll, signal);
+  assert.equal(readRes.failed, false);
+  assert.match(readRes.output, /gamma/);
+
+  const previousKey = process.env.OPENAI_CREDITS_API_KEY;
+  process.env.OPENAI_CREDITS_API_KEY = "fixture-not-for-child";
+  t.after(() => {
+    if (previousKey === undefined) delete process.env.OPENAI_CREDITS_API_KEY;
+    else process.env.OPENAI_CREDITS_API_KEY = previousKey;
+  });
+  const bashRes = await wsTools.run("bash", JSON.stringify({ command: 'test -z "${OPENAI_CREDITS_API_KEY+x}" && echo credits-ok && pwd' }), approveAll, signal);
+  assert.equal(bashRes.failed, false);
+  assert.match(bashRes.toolResponse?.stdout ?? "", /credits-ok/);
+  assert.equal(approvalCount, 3);
+
+  // Declining approval must not modify disk.
+  const deniedWrite = await wsTools.run("write_file", JSON.stringify({ path: "scratch.txt", content: "overwritten" }), async () => false, signal);
+  assert.equal(deniedWrite.failed, true);
+  assert.equal(readFileSync(path.join(cwd, "scratch.txt"), "utf8"), "alpha\ngamma\n");
+
+  // Workspace-write blocks ../ and symlink escapes before approval, and bwrap blocks bash writes outside cwd.
+  let escapePrompted = false;
+  const escaped = await wsTools.run("write_file", JSON.stringify({ path: "../outside/pwn.txt", content: "no" }), async () => { escapePrompted = true; return true; }, signal);
+  assert.equal(escaped.failed, true);
+  assert.equal(escapePrompted, false);
+  const symlinkEscaped = await wsTools.run("write_file", JSON.stringify({ path: "escape-link/pwn.txt", content: "no" }), async () => { escapePrompted = true; return true; }, signal);
+  assert.equal(symlinkEscaped.failed, true);
+  assert.equal(escapePrompted, false);
+
+  const outsideHostDir = createTestTempDir(path.join(os.homedir(), ".cache", "elpis-tests", "bwrap-ro-"));
+  t.after(() => removeTestTempDir(outsideHostDir));
+  const blockedBash = await wsTools.run("bash", JSON.stringify({ command: `touch ${JSON.stringify(path.join(outsideHostDir, "nope.txt"))}` }), approveAll, signal);
+  assert.equal(blockedBash.failed, true);
+  assert.match(blockedBash.toolResponse?.stderr ?? "", /Read-only file system/i);
+
+  // Read-only session omits mutating tools and rejects direct execution attempts.
+  writeFileSync(path.join(cwd, "ro.txt"), "safe", "utf8");
+  const roTools = new CreditTools();
+  roTools.registerWorkspace({ cwd, sandbox: "read-only", readOnly: true, disabled: false });
+  assert.deepEqual(roTools.definitions.map(d => d.name), ["read_file", "list_directory", "glob_files", "grep_search"]);
+  const blockedEdit = await roTools.run("edit_file", JSON.stringify({ path: "ro.txt", old_string: "safe", new_string: "bad" }), approveAll, signal);
+  assert.equal(blockedEdit.failed, true);
+  assert.equal(readFileSync(path.join(cwd, "ro.txt"), "utf8"), "safe");
+
+  const emptyTools = new CreditTools();
+  emptyTools.registerWorkspace({ cwd, sandbox: "danger-full-access", readOnly: false, disabled: true });
+  assert.equal(emptyTools.definitions.length, 0);
 });

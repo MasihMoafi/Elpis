@@ -101,8 +101,10 @@ function models() {
   // `agy models` prints "id<TAB>name" lines (and a progress line without a tab).
   modelList ??= new Promise<Model[]>((resolve) => execFile(AGY, ["models"], { timeout: 60_000 }, (err, out) => {
     if (err) process.stderr.write(`agy models: ${err.message}\n`);
-    resolve(String(out ?? "").split("\n").map((l) => l.split("\t")).filter((p): p is [string, string] => p.length === 2 && Boolean(p[0]?.trim()))
-      .map(([value, name]) => ({ value: value.trim(), name: name.trim(), description: "Antigravity, your Google sign-in" })));
+    const list = String(out ?? "").split("\n").map((l) => l.split("\t")).filter((p): p is [string, string] => p.length === 2 && Boolean(p[0]?.trim()))
+      .map(([value, name]) => ({ value: value.trim(), name: name.trim(), description: "Antigravity, your Google sign-in" }));
+    if (!list.length) modelList = null;
+    resolve(list);
   }));
   return modelList;
 }
