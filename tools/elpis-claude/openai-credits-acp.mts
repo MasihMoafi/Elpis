@@ -7,7 +7,8 @@ import { agent, ndJsonStream, RequestError } from "@agentclientprotocol/sdk";
 import type { McpServer, NewSessionRequest, RequestPermissionResponse, SessionConfigOption, SessionUpdate } from "@agentclientprotocol/sdk";
 import type { ResponseInputItem } from "openai/resources/responses/responses";
 import { withFileLock } from "./file-lock.mts";
-import { createCreditClient, creditModels, promptContent } from "./openai-credits.mts";
+import { redactSecrets } from "./log-redaction.mts";
+import { createCreditClient, creditModels, promptContent, streamCreditResponse } from "./openai-credits.mts";
 import { CreditTools } from "./openai-credits-tools.mts";
 
 const api = createCreditClient();
@@ -21,7 +22,9 @@ const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 async function readHistory(id: string): Promise<History | null> {
   if (!uuid.test(id)) throw new Error("Invalid credit session ID.");
   try {
-    const saved = JSON.parse(await readFile(join(directory, id + ".json"), "utf8"));
+    // Earlier sessions stored SDK-only parse metadata alongside output items.
+    const saved = JSON.parse(await readFile(join(directory, id + ".json"), "utf8"), (key, value) =>
+      key === "parsed" || key === "parsed_arguments" ? undefined : value);
     if (!Number.isSafeInteger(saved.version) || typeof saved.cwd !== "string" || !Array.isArray(saved.items)) throw new Error("Invalid credit session history.");
     return saved;
   } catch (e) {
@@ -101,15 +104,9 @@ const app = agent({ name: "elpis-openai-credits" })
       const items: ResponseInputItem[] = [...s.history.items, { role: "user", content }];
       let inputTokens = 0, outputTokens = 0;
       for (;;) {
-        const stream = api.responses.stream({ model: s.model, instructions: s.instructions || undefined, store: false, include: ["reasoning.encrypted_content"],
-          input: items, tools: tools.definitions }, { signal });
-        for await (const event of stream) {
-          if (event.type === "response.output_text.delta" || event.type === "response.refusal.delta") {
-            await notify(id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: event.delta } });
-          }
-        }
-        const response = await stream.finalResponse();
-        if (response.status !== "completed") throw new Error(response.error?.message || `OpenAI response ${response.status}: ${response.incomplete_details?.reason || "no complete answer"}`);
+        const response = await streamCreditResponse(api, { model: s.model, instructions: s.instructions || undefined, stream: true, store: false,
+          include: ["reasoning.encrypted_content"], input: items, tools: tools.definitions }, signal,
+          text => notify(id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } }));
         inputTokens += response.usage?.input_tokens ?? 0;
         outputTokens += response.usage?.output_tokens ?? 0;
         for (const item of response.output) {
@@ -135,7 +132,7 @@ const app = agent({ name: "elpis-openai-credits" })
       }
     } catch (error) {
       if (signal.aborted) return { stopReason: "cancelled" };
-      throw error;
+      throw RequestError.internalError(undefined, redactSecrets(error instanceof Error ? error.message : "Credit request failed.").slice(0, 500));
     } finally {
       await tools.close();
       delete s.pending;

@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import OpenAI from "openai";
-import { promptContent, creditModels } from "../openai-credits.mts";
+import { promptContent, creditModels, streamCreditResponse } from "../openai-credits.mts";
 import { CreditTools } from "../openai-credits-tools.mts";
 
 test("credit models come from the selected API organization", async () => {
@@ -19,6 +19,26 @@ test("the API receives the attached image and the accompanying text", () => {
     { type: "input_text", text: "Describe" }, { type: "input_image", image_url: "data:image/png;base64,YXNk", detail: "auto" },
   ]);
   assert.throws(() => promptContent([{ type: "audio", data: "YQ==", mimeType: "audio/wav" }]), /Unsupported/);
+});
+
+test("streamed function calls can be sent back with a tool result", async () => {
+  const call = { type: "function_call", id: "fc_1", call_id: "call_1", name: "read", arguments: "{}" };
+  const answer = { type: "message", role: "assistant", id: "msg_1", status: "completed", content: [{ type: "output_text", text: "mint", annotations: [] }] };
+  const result = { type: "function_call_output" as const, call_id: "call_1", output: "mint" };
+  let requests = 0;
+  const client = new OpenAI({ apiKey: "fixture", fetch: async (_, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (++requests === 2) assert.deepEqual(body.input, [call, result]);
+    const response = { type: "response.completed", response: { status: "completed", output: [requests === 1 ? call : answer] } };
+    return new Response(`data: ${JSON.stringify(response)}\n\ndata: [DONE]\n\n`, { headers: { "content-type": "text/event-stream" } });
+  } });
+  const options = { model: "fixture", stream: true as const };
+  const signal = AbortSignal.timeout(3000);
+  const first = await streamCreditResponse(client, { ...options, input: "read" }, signal, async () => {});
+  const item = first.output[0];
+  assert.ok(item?.type === "function_call");
+  const second = await streamCreditResponse(client, { ...options, input: [item, result] }, signal, async () => {});
+  assert.deepEqual(second.output, [answer]);
 });
 
 test("an advertised MCP tool executes only after permission for its arguments", async () => {
