@@ -69,6 +69,10 @@ function tailOf(file: string, from: number) {
   try { return fs.readFileSync(file, "utf8").slice(from).trim().split("\n").slice(-20).join("\n"); } catch { return ""; }
 }
 
+const PROXY_CONFIG_NAMES: readonly string[] = [...PROXY_ENV_NAMES, "NODE_USE_ENV_PROXY"];
+const isProxyOnlyDiff = (names: string[]) => names.every(name => PROXY_CONFIG_NAMES.includes(name));
+const bridgeWaitMs = () => Math.max(200, Number(process.env.ELPIS_BRIDGE_WAIT_MS) || 10_000);
+
 // Older bundles have no control RPC. Linux's socket table can still tell whether their
 // listener has accepted connections, without attaching a new terminal to that bridge.
 // The launch lock prevents another launcher from joining between this check and SIGTERM.
@@ -83,9 +87,17 @@ async function retireUnattachedBridge(rt: Runtime, state: BridgeState) {
     note(`stopping unattached bridge ${state.pid} gracefully before switching installations`);
     try { process.kill(state.pid, "SIGTERM"); } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw e; }
   }
-  // Never force-kill a bridge or start its replacement before its save/shutdown completes.
-  for (let i = 0; i < 100 && alive(state.pid, state.token); i++) await pause(100);
-  if (alive(state.pid, state.token)) throw new Error(`the unattached Elpis bridge (pid ${state.pid}) has not finished saving and stopping; try again in a few seconds; see ${rt.log}`);
+  const deadline = Date.now() + bridgeWaitMs();
+  while (Date.now() < deadline && alive(state.pid, state.token)) await pause(100);
+  if (alive(state.pid, state.token)) {
+    note(`unattached bridge ${state.pid} did not exit in time; terminating it`);
+    await terminatePid(state.pid, state.token, 2000);
+  }
+  if (alive(state.pid, state.token)) throw new Error(`the unattached Elpis bridge (pid ${state.pid}) could not be stopped; see ${rt.log}`);
+  fs.rmSync(rt.state, { force: true });
+  fs.rmSync(rt.successor, { force: true });
+  await removeStaleSocket(rt.sock);
+  await reapOrphans(rt);
   return true;
 }
 
@@ -104,12 +116,12 @@ async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIde
         return { engine: state.engine, running: state.script, deferred: true };
       // Same installation, only proxy settings differ: never refuse (1 Nov, Masih: "I hate such errs"). An idle bridge
       // restarts with this launch's settings; one in use is joined and keeps its own until its terminals close.
-      if (state.identity === identity.hash && config.every(name => PROXY_ENV_NAMES.includes(name))) {
+      if (state.identity === identity.hash && isProxyOnlyDiff(config)) {
         if (await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
         note(`joining the running Elpis bridge (pid ${state.pid}); it keeps its proxy settings until its other terminals close`);
         return;
       }
-      const directHandover = config.length > 0 && config.every(name => PROXY_ENV_NAMES.includes(name))
+      const directHandover = config.length > 0 && isProxyOnlyDiff(config)
         && PROXY_ENV_NAMES.every(name => process.env[name] === undefined);
       if (state.identity !== identity.hash && directHandover && usable(state.engine) && await managedSuccessorPair(state, identity)) {
         if (draining) return { engine: state.engine, running: state.script, deferred: true };
@@ -117,11 +129,14 @@ async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIde
         fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
         return { engine: state.engine, running: state.script };
       }
-      if (state.identity !== identity.hash && !config.length && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
+      if (state.identity !== identity.hash && isProxyOnlyDiff(config) && draining) {
+        return { engine: state.engine, running: state.script, deferred: true };
+      }
+      if (state.identity !== identity.hash && (!config.length || isProxyOnlyDiff(config)) && await retireUnattachedBridge(rt, state)) return ensureBridge(rt, bridgeScript, identity);
       // Like the desktop app, a terminal joins the Elpis that is already running instead of refusing (19 Oct: every
       // install made while the app was open stopped `elpis` from starting). It uses that installation's engine, so the
       // pair matches. The running bridge hands over to this installation within seconds; chats working then finish in it (acp-bridge.mts startDrain).
-      if (state.identity !== identity.hash && !config.length && usable(state.engine)) {
+      if (state.identity !== identity.hash && (!config.length || isProxyOnlyDiff(config)) && usable(state.engine)) {
         fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
         return { engine: state.engine, running: state.script };
       }
@@ -138,8 +153,22 @@ async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIde
       lines.push("Close the Elpis terminals that use the running bridge; it exits once they are closed and it is idle. No sessions are lost. Then start Elpis again.");
       throw new Error(lines.join("\n"));
     }
-    for (let i = 0; i < 100 && alive(state.pid, state.token); i++) { await pause(100); if ((await probe(rt.sock)).ok) return ensureBridge(rt, bridgeScript, identity); }
-    if (alive(state.pid, state.token)) throw new Error(`the Elpis bridge (pid ${state.pid}) is running but does not accept connections at ${rt.sock} (it may be shutting down; try again in a few seconds); see ${rt.log}`);
+    const waitDeadline = Date.now() + bridgeWaitMs();
+    while (Date.now() < waitDeadline && alive(state.pid, state.token)) {
+      await pause(100);
+      if ((await probe(rt.sock)).ok) return ensureBridge(rt, bridgeScript, identity);
+    }
+    if (alive(state.pid, state.token)) {
+      const drain = readJson<Pick<BridgeState, "pid" | "token">>(path.join(rt.dir, "drain.json"));
+      if (drain?.pid === state.pid && alive(drain.pid, drain.token)) {
+        throw new Error(`the Elpis bridge (pid ${state.pid}) is running but does not accept connections at ${rt.sock} (it is handing over; try again in a few seconds); see ${rt.log}`);
+      }
+      note(`stopping unresponsive Elpis bridge (pid ${state.pid}) at ${rt.sock}`);
+      await terminatePid(state.pid, state.token, 2000);
+      if (alive(state.pid, state.token)) {
+        throw new Error(`the unresponsive Elpis bridge (pid ${state.pid}) could not be stopped; see ${rt.log}`);
+      }
+    }
   } else if (reachable.ok) {
     throw new Error(`${rt.sock} is served by a process this launcher did not record; close the Elpis terminals using it and start again`);
   }
@@ -186,7 +215,78 @@ async function ensureBridge(rt: Runtime, bridgeScript: string, identity: CodeIde
   }
 }
 
-async function launcherMain(bridgeScript: string | undefined) {
+async function handoverBridge(bridgeScript: string) {
+  bridgeScript = path.resolve(bridgeScript);
+  const rt = runtimeDir();
+  const release = await acquireLock(rt.lock);
+  let state: BridgeState | null = null;
+  let identity: CodeIdentity | null = null;
+  let waitForSwitch = false;
+  try {
+    state = readJson<BridgeState>(rt.state);
+    if (!state || !alive(state.pid, state.token)) {
+      fs.rmSync(rt.state, { force: true });
+      fs.rmSync(rt.successor, { force: true });
+      await removeStaleSocket(rt.sock);
+      await reapOrphans(rt);
+      return;
+    }
+    identity = codeIdentity(bridgeScript);
+    const reachable = await probe(rt.sock);
+    if (!reachable.ok) {
+      const drain = readJson<Pick<BridgeState, "pid" | "token">>(path.join(rt.dir, "drain.json"));
+      if (drain?.pid === state.pid && alive(drain.pid, drain.token)) {
+        note(`bridge ${state.pid} is already handing over; skipping`);
+        return;
+      }
+      note(`stopping unresponsive bridge ${state.pid} left at ${rt.sock}`);
+      await terminatePid(state.pid, state.token, 2000);
+      if (!alive(state.pid, state.token)) {
+        fs.rmSync(rt.state, { force: true });
+        fs.rmSync(rt.successor, { force: true });
+        await removeStaleSocket(rt.sock);
+        await reapOrphans(rt);
+      }
+      return;
+    }
+    if (state.identity === identity.hash) return;
+    if (await retireUnattachedBridge(rt, state)) return;
+    const predecessor = readJson<Pick<BridgeState, "pid" | "token">>(path.join(rt.dir, "drain.json"));
+    if (predecessor && predecessor.pid !== state.pid && alive(predecessor.pid, predecessor.token)) {
+      note(`another handover (${predecessor.pid}) is still finishing; skipping`);
+      return;
+    }
+    fs.writeFileSync(rt.successor, identity.script, { mode: 0o600 });
+    note(`handing over running bridge ${state.pid} (${versionOf(state.script)}) -> ${versionOf(identity.script)}`);
+    waitForSwitch = true;
+  } finally {
+    release();
+  }
+  if (!waitForSwitch || !state || !identity) return;
+  const deadline = Date.now() + 20_000;
+  let oldExitedAt = 0;
+  while (Date.now() < deadline) {
+    const next = readJson<BridgeState>(rt.state);
+    if (next?.identity === identity.hash && alive(next.pid, next.token) && (await probe(rt.sock)).ok) {
+      note(`handover complete: bridge ${next.pid} now serves ${rt.home}`);
+      return;
+    }
+    if (!alive(state.pid, state.token)) {
+      oldExitedAt ||= Date.now();
+      if (Date.now() - oldExitedAt > 5_000) break;
+    }
+    await pause(100);
+  }
+  note(`handover scheduled for ${rt.home}; see ${rt.log}`);
+}
+
+async function launcherMain(args: string[]) {
+  if (args[0] === "--handover") {
+    if (!args[1]) throw new Error("usage: node shared-runtime.mts --handover <bridge script>");
+    await handoverBridge(args[1]);
+    return;
+  }
+  let bridgeScript = args[0];
   if (!bridgeScript) throw new Error("usage: node shared-runtime.mts <bridge script>");
   bridgeScript = path.resolve(bridgeScript);
   const rt = runtimeDir();
@@ -219,5 +319,5 @@ async function launcherMain(bridgeScript: string | undefined) {
 
 const runAsLauncher = (() => { try { return fs.realpathSync(process.argv[1] as string) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; } })();
 if (runAsLauncher) {
-  launcherMain(process.argv[2]).then(() => process.exit(0), (e) => { process.stderr.write(`elpis-claude: ${redactSecrets(e.message)}\n`); process.exit(1); });
+  launcherMain(process.argv.slice(2)).then(() => process.exit(0), (e) => { process.stderr.write(`elpis-claude: ${redactSecrets(e.message)}\n`); process.exit(1); });
 }

@@ -238,6 +238,11 @@ ln -sfn "$NEW/elpis-next" "$HOME/.local/bin/elpis-next"
 if [ -x "$NEW/$BRIDGE/elpis-credits" ] && { [ -L "$HOME/.local/bin/elpis-credits" ] || [ ! -e "$HOME/.local/bin/elpis-credits" ]; }; then
     ln -sfn "$NEW/$BRIDGE/elpis-credits" "$HOME/.local/bin/elpis-credits"
 fi
+if [ -z "${ELPIS_SKIP_HANDOVER:-}" ] && [ -f "$NEW/$BRIDGE/shared-runtime.mts" ] && [ -f "$NEW/$BRIDGE/acp-bridge.mts" ] && command -v node >/dev/null; then
+    for target_home in "${ELPIS_HOME:-$HOME/.elpis-next}" "${ELPIS_CREDITS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/elpis/openai-api-credits}"; do
+        ELPIS_HOME="$target_home" ELPIS_ENGINE_BIN="$NEW/elpis-next" node "$NEW/$BRIDGE/shared-runtime.mts" --handover "$NEW/$BRIDGE/acp-bridge.mts" || true
+    done
+fi
 # Old bundles go to the trash: the newest five stay, with this one, its rollback and any the live launcher names.
 node "$HERE/prune-versions.mts" "$V" --keep "$NEW" --keep "$OLD" ${SRC:+--keep "$SRC"} --named-in "$HOME/.local/bin/elpis" ||
     printf 'could not move old engine bundles to the trash\n' >&2
