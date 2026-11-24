@@ -3,9 +3,11 @@ use super::runtime::ReviewRuntime;
 use super::*;
 use codex_guardian_reviewer::GuardianReviewOutcome;
 use codex_guardian_reviewer::GuardianReviewSessionLimits;
+use codex_guardian_reviewer::ReviewDeadline;
 use codex_guardian_reviewer::ReviewHost;
 use codex_protocol::approvals::GuardianReviewReason;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::GuardianAssessmentOutcome;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 
@@ -43,7 +45,13 @@ pub(crate) async fn review(
     let (_, history_reset) = session.history_reset().await;
     let cancellation = history_reset.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
+    let attached_reviewer = session
+        .services
+        .thread_extension_data
+        .get::<Arc<dyn crate::guardian_review::AttachedReviewer>>()
+        .map(|reviewer| Arc::clone(reviewer.as_ref()).bind());
     let host = ReviewRuntime {
+        attached_reviewer,
         session: Arc::clone(&session),
         history_reset,
         context: context.clone(),
@@ -60,7 +68,7 @@ pub(crate) async fn review(
             require_synchronous_review: true,
         },
     };
-    let deadline = tokio::time::Instant::now() + GUARDIAN_REVIEW_TIMEOUT;
+    let deadline = ReviewDeadline::from_timeout(Some(GUARDIAN_REVIEW_TIMEOUT));
     let (prepared, report) = host
         .prepare(
             &new_guardian_review_id(),
@@ -70,14 +78,17 @@ pub(crate) async fn review(
         )
         .await
         .map_err(|decision| anyhow::anyhow!("cannot prepare automatic review: {decision:?}"))?;
-    host.emit(EventMsg::GuardianAssessment(report.started_event()))
-        .await;
+    if let Some(event) = report.started_event() {
+        host.emit(EventMsg::GuardianAssessment(event)).await;
+    }
+    let telemetry = &context.turn().session_telemetry;
     let (outcome, analytics, evidence) = codex_guardian_reviewer::run_with_retry(
         GuardianReviewSessionLimits {
             max_attempts: codex_guardian_reviewer::MAX_REVIEW_ATTEMPTS,
             deadline,
         },
         Some(&cancellation),
+        Some(telemetry),
         |deadline| host.attempt(&prepared, deadline, &cancellation),
     )
     .await;
@@ -90,20 +101,26 @@ pub(crate) async fn review(
             "automatic approval review failed: {other:?}"
         )),
     };
-    let completed = report.complete(
+    let completed_at = codex_analytics::now_unix_millis();
+    let (completed, elapsed) = report.complete(
         outcome,
         &context.model_info,
         true,
         analytics,
-        codex_analytics::now_unix_millis()
-            .try_into()
-            .unwrap_or_default(),
+        completed_at.try_into().unwrap_or_default(),
     );
-    if let Some(evidence) = evidence {
-        host.record_evidence(&prepared, evidence, &completed.event)
-            .await;
+    report.track(
+        telemetry,
+        &session.services.analytics_events_client,
+        completed.analytics,
+        completed_at,
+        elapsed,
+    );
+    if let Some(event) = completed.event {
+        if let Some(evidence) = evidence {
+            host.record_evidence(&prepared, evidence, &event).await;
+        }
+        host.emit(EventMsg::GuardianAssessment(event)).await;
     }
-    host.emit(EventMsg::GuardianAssessment(completed.event))
-        .await;
     result
 }
