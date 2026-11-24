@@ -8,7 +8,7 @@ on:
         required: true
         default: full
         type: choice
-        options: [check, follow-check, ui, full, build, lock]
+        options: [check, follow-check, ui, full, build]
   push:
     tags: ['v*']
     branches: [next]
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   schemas:
-    if: github.event_name == 'workflow_dispatch' && (inputs.verification == 'check' || inputs.verification == 'lock')
+    if: github.event_name == 'workflow_dispatch' && inputs.verification == 'check'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -51,20 +51,6 @@ jobs:
           restore-keys: |
             elpis-parity-schema-${{ runner.os }}-${{ hashFiles('codex-rs/Cargo.lock') }}-
             elpis-parity-schema-${{ runner.os }}-
-      - name: Resolve the patched security dependencies
-        if: inputs.verification == 'lock'
-        working-directory: codex-rs
-        run: |
-          cargo update -p etherparse --precise 0.21.1
-          cargo update -p zstd@0.13.3 --precise 0.13.4
-          cargo metadata --locked --no-deps --format-version 1 >/dev/null
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        if: inputs.verification == 'lock'
-        with:
-          name: candidate-cargo-lock
-          path: codex-rs/Cargo.lock
-          if-no-files-found: error
-          retention-days: 7
       - name: Regenerate protocol and configuration schemas from the candidate
         working-directory: codex-rs
         run: |
