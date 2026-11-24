@@ -86,7 +86,7 @@ pub(crate) fn latest_user_message_text<'a>(
         let text = content
             .iter()
             .filter_map(|content| match content {
-                ContentItem::InputText { text } | ContentItem::OutputText { text } => {
+                ContentItem::InputText { text } | ContentItem::OutputText { text, .. } => {
                     Some(text.as_str())
                 }
                 _ => None,

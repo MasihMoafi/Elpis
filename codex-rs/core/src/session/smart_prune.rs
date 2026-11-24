@@ -1246,7 +1246,7 @@ async fn run_model_admission(
         )
         .await;
     let model_slug = model_info.slug.clone();
-    let prompt = optimizer_prompt(input.clone(), instructions);
+    let prompt = Arc::new(optimizer_prompt(input.clone(), instructions));
     let metadata = turn_context.turn_metadata_state.to_responses_metadata(
         sess.installation_id.clone(),
         "smart-prune".to_string(),
@@ -1303,6 +1303,8 @@ fn optimizer_prompt(input: String, instructions: &str) -> Prompt {
             id: None,
             role: "user".to_string(),
             content: vec![ContentItem::InputText { text: input }],
+            encrypted_content: None,
+            status: None,
             phase: None,
             internal_chat_message_metadata_passthrough: None,
         }],
@@ -1336,7 +1338,8 @@ impl StandaloneOptimizer {
         config: Arc<crate::config::Config>,
         auth_manager: Arc<codex_login::AuthManager>,
     ) -> Self {
-        let models_manager = crate::build_models_manager(&config, Arc::clone(&auth_manager));
+        let models_manager =
+            crate::build_models_manager(&config, Arc::clone(&auth_manager), /*runtime*/ None);
         Self {
             config,
             auth_manager,
@@ -1386,11 +1389,15 @@ impl StandaloneOptimizer {
             .await;
         let session_source = codex_protocol::protocol::SessionSource::Exec;
         let originator = codex_login::default_client::originator().value;
-        let model_client = crate::ModelClient::new(
+        let model_provider = codex_model_provider::create_model_provider(
+            optimizer_provider_with_timeouts(provider, ADMISSION_TIMEOUT),
             Some(Arc::clone(&self.auth_manager)),
+        );
+        let model_client = crate::ModelClient::new(
+            model_provider,
             codex_login::AgentIdentityAuthPolicy::JwtOnly,
             self.thread_id,
-            optimizer_provider_with_timeouts(provider, ADMISSION_TIMEOUT),
+            Session::new_item_id_generator(),
             session_source.clone(),
             originator.clone(),
             config.model_verbosity,
@@ -1400,6 +1407,7 @@ impl StandaloneOptimizer {
             config.features.enabled(Feature::RuntimeMetrics),
             /*beta_features_header*/ None,
             /*concurrent_reasoning_summaries_enabled*/ false,
+            config.features.enabled(Feature::OutputTokenReplay),
             /*attestation_provider*/ None,
             config.http_client_factory(),
             config.workspace_routing_context(),
@@ -1427,7 +1435,7 @@ impl StandaloneOptimizer {
                 format!("{thread_id}:0"),
             )
         };
-        let prompt = optimizer_prompt(input, instructions);
+        let prompt = Arc::new(optimizer_prompt(input, instructions));
         let mut client_session = model_client.new_session();
         let mut stream = tokio::time::timeout(
             ADMISSION_TIMEOUT,

@@ -730,51 +730,34 @@ impl ModelClient {
     /// request settings but keeps its own websocket cache and sends no session events.
     /// Smart Prune's optimizer uses it, as in v0.3.0 (core/src/session/smart_prune.rs).
     pub(crate) fn with_provider(&self, provider_info: ModelProviderInfo) -> Self {
-        let model_provider =
-            create_model_provider(provider_info, self.state.provider.auth_manager());
-        let codex_api_key_env_enabled = model_provider
-            .auth_manager()
-            .as_ref()
-            .is_some_and(|manager| manager.codex_api_key_env_enabled());
-        let auth_env_telemetry =
-            collect_auth_env_telemetry(model_provider.info(), codex_api_key_env_enabled);
-        let include_attestation = model_provider.supports_attestation();
-        Self {
-            state: Arc::new(ModelClientState {
-                thread_id: self.state.thread_id,
-                provider: model_provider,
-                workspace_routing: self.state.workspace_routing.clone(),
-                auth_env_telemetry,
-                session_source: self.state.session_source.clone(),
-                originator: self.state.originator.clone(),
-                model_verbosity: self.state.model_verbosity,
-                content_item_kinds_enabled: self.state.content_item_kinds_enabled,
-                reasoning_effort_override_enabled: self.state.reasoning_effort_override_enabled,
-                enable_request_compression: self.state.enable_request_compression,
-                include_timing_metrics: self.state.include_timing_metrics,
-                beta_features_header: self.state.beta_features_header.clone(),
-                concurrent_reasoning_summaries_enabled: self
-                    .state
-                    .concurrent_reasoning_summaries_enabled,
-                include_attestation,
-                attestation_provider: self.state.attestation_provider.clone(),
-                disable_websockets: AtomicBool::new(false),
-                agent_identity_session_fallback: AgentIdentitySessionFallback::default(),
-                cached_websocket_session: StdMutex::new(WebsocketSession::default()),
-                last_inference_tools: StdMutex::new(None),
-            }),
-            agent_identity_policy: self.agent_identity_policy,
-            prompt_cache_key_override: self.prompt_cache_key_override.clone(),
-            codex_responses_headers: self.codex_responses_headers.clone(),
-            event_sender: None,
-            http_client_factory: self.http_client_factory.clone(),
-            restored_history: false,
-            request_contributors: self.request_contributors.clone(),
-            executed_tool_calls: None,
-            // The session resolved its program for its own provider; the optimizer asks for none.
-            api_key_cyber_access_programs:
-                cyber_access_program::ApiKeyCyberAccessPrograms::UnsupportedProvider,
-        }
+        let state = &self.state;
+        let provider = codex_model_provider::create_model_provider(
+            provider_info,
+            state.provider.auth_manager(),
+        );
+        let mut client = Self::new(
+            provider,
+            self.agent_identity_policy,
+            state.thread_id,
+            Arc::clone(&state.item_id_generator),
+            state.session_source.clone(),
+            state.originator.clone(),
+            state.model_verbosity,
+            state.content_item_kinds_enabled,
+            state.reasoning_effort_override_enabled,
+            state.enable_request_compression,
+            state.include_timing_metrics,
+            state.beta_features_header.clone(),
+            state.concurrent_reasoning_summaries_enabled,
+            state.output_token_replay_enabled,
+            state.attestation_provider.clone(),
+            self.http_client_factory.clone(),
+            state.workspace_routing.clone(),
+            self.request_contributors.clone(),
+        );
+        client.prompt_cache_key_policy = self.prompt_cache_key_policy.clone();
+        client.codex_responses_headers = self.codex_responses_headers.clone();
+        client
     }
 
     pub(crate) fn with_executed_tool_calls(mut self, recorder: ExecutedToolCalls) -> Self {

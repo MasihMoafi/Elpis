@@ -322,7 +322,7 @@ impl Session {
         task: T,
     ) -> TurnInputSubmission {
         self.start_task_with_reservation(turn_context, input, task, None)
-            .await;
+            .await
     }
 
     #[expect(

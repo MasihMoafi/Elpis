@@ -1222,6 +1222,7 @@ impl CodexThread {
                 None => self.session.resolve_multi_agent_version_for_model(
                     self.selected_model_info().await.as_ref(),
                     &config,
+                    self.session_source(),
                 ),
             } == MultiAgentVersion::V2
         {

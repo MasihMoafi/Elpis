@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use codex_extension_api::ConfigContributor;
+use codex_extension_api::ContentItem;
 use codex_extension_api::ContextContributor;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionFuture;
@@ -99,7 +100,7 @@ impl ContextContributor for PersonalExtension {
                 if matches!(previous, PreviousWorldStateSection::Known(previous) if previous.get("body").and_then(serde_json::Value::as_str) == body.as_deref()) {
                     return (snapshot, None);
                 }
-                let fragment = body.as_ref().map(|body| RenderedWorldStateFragment::new("user", ("", ""), body.clone()));
+                let fragment = body.as_ref().map(|body| RenderedWorldStateFragment::new("user", ("", ""), ContentItem::InputText { text: body.clone() }));
                 (snapshot, fragment)
             }).with_retained_fragment_matcher(|role, text| role == "user" && text.starts_with(PREFIX))
                 .with_single_history_slot(visible)]

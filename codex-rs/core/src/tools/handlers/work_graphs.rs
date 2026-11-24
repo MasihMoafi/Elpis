@@ -27,7 +27,8 @@ use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErrorDetails;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
-use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::openai_models::CatalogModel;
+use codex_protocol::openai_models::ModelOrigin;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
@@ -39,9 +40,9 @@ use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::TurnEnvironmentSelection;
-use codex_protocol::user_input::UserInput;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
+use codex_user_input::ResolvedUserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use serde::Deserialize;
@@ -746,12 +747,12 @@ fn resolve_task_spawn_config(
 fn apply_task_reasoning_effort(
     config: &mut Config,
     requested: Option<&ReasoningEffort>,
-    model_info: &ModelInfo,
+    model_info: &CatalogModel,
 ) -> Result<(), String> {
     let Some(requested) = requested else {
         return Ok(());
     };
-    if !model_info.used_fallback_model_metadata {
+    if model_info.origin != ModelOrigin::Synthetic {
         let model = config.model.as_deref().unwrap_or(model_info.slug.as_str());
         validate_spawn_agent_reasoning_effort(
             model,
@@ -1041,7 +1042,7 @@ async fn run_scheduler(
                 .spawn(SpawnRequest {
                     caller: session.thread_id,
                     config: spawn_config,
-                    input: AgentInput::UserInput(vec![UserInput::Text {
+                    input: AgentInput::UserInput(vec![ResolvedUserInput::Text {
                         text: prompt,
                         text_elements: Vec::new(),
                     }]),

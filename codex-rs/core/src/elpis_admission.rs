@@ -19,6 +19,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use codex_extension_api::ConfigContributor;
+use codex_extension_api::ContentItem;
 use codex_extension_api::ContextContributor;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionFuture;
@@ -182,8 +183,9 @@ fn continuity_section(body: Option<String>) -> WorldStateSectionContribution {
             Some(earlier) => continuity_update(earlier, body.as_deref()),
             None => body.clone(),
         };
-        let fragment =
-            text.map(|text| RenderedWorldStateFragment::new("developer", ("", ""), text));
+        let fragment = text.map(|text| {
+            RenderedWorldStateFragment::new("developer", ("", ""), ContentItem::InputText { text })
+        });
         (snapshot, fragment)
     })
     .with_retained_fragment_matcher(is_elpis_continuity_fragment)

@@ -112,9 +112,8 @@ async fn task_provider_routes_retain_managed_provider_requirements() {
     );
 }
 
-fn model_offering(levels: &[ReasoningEffort], known: bool) -> ModelInfo {
+fn model_offering(levels: &[ReasoningEffort], known: bool) -> CatalogModel {
     let mut info = codex_models_manager::model_info::model_info_from_slug("effort-model");
-    info.used_fallback_model_metadata = !known;
     info.supported_reasoning_levels = levels
         .iter()
         .map(|effort| ReasoningEffortPreset {
@@ -122,7 +121,14 @@ fn model_offering(levels: &[ReasoningEffort], known: bool) -> ModelInfo {
             description: effort.to_string(),
         })
         .collect();
-    info
+    CatalogModel {
+        model: Arc::new(info),
+        origin: if known {
+            ModelOrigin::Provider
+        } else {
+            ModelOrigin::Synthetic
+        },
+    }
 }
 
 #[test]
