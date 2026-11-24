@@ -181,7 +181,7 @@ fn roots_from_layer_stack<'a>(
                         skills
                             .extra_roots
                             .into_iter()
-                            .map(|path| local_root(path, SkillScope::User)),
+                            .map(|path| HostSkillRoot::host(path, SkillScope::User, host)),
                     );
                 }
             }
