@@ -156,7 +156,7 @@ pub async fn extract_metadata_from_rollout(
                 if first.is_none()
                     && let RolloutItem::SessionMeta(meta) = item
                 {
-                    *first = Some(meta);
+                    *first = Some(*meta);
                 }
             })
             .await?
