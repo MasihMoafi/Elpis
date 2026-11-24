@@ -197,6 +197,20 @@ async function launcherMain(bridgeScript: string | undefined) {
     identity = codeIdentity(bridgeScript);
     joined = await ensureBridge(rt, bridgeScript, identity);
   } finally { release(); }
+  // A new credit terminal must bootstrap on the successor. It cannot recover a
+  // disconnect during its initial config read, before the TUI reconnect loop starts.
+  if (process.env.ELPIS_OPENAI_CREDITS_ONLY === "1" && joined && !joined.deferred) {
+    const deadline = Date.now() + 35_000;
+    while (Date.now() < deadline) {
+      const state = readJson<BridgeState>(rt.state);
+      if (state?.identity === identity.hash && alive(state.pid, state.token) && (await probe(rt.sock)).ok) {
+        joined = undefined;
+        break;
+      }
+      await pause(100);
+    }
+    if (joined) throw new Error(`The credit session backend is still changing. Try again shortly. See ${rt.log}`);
+  }
   if (joined) process.stderr.write(joined.deferred
     ? `elpis: using the Elpis already running (${versionOf(joined.running)}); an earlier handover is still finishing. This installation (${versionOf(identity.script)}) can take over on a later launch.\n`
     : `elpis: using the Elpis already running (${versionOf(joined.running)}); this installation (${versionOf(identity.script)}) takes over in a few seconds; chats working now finish first.\n`);

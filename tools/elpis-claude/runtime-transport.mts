@@ -211,6 +211,20 @@ export let sharedEngine: EngineEntry | null = null;
 // from the memory guard (setpriv --pdeathsig execs the engine in place, so its pid and command line stay the engine's).
 export const setpriv = process.platform === "linux" ? ["/usr/bin/setpriv", "/bin/setpriv"].find(usable) : undefined;
 export const spawnEngine = (args: string[], options: SpawnOptions) => {
+    const env = options.env ?? process.env;
+    if (env.ELPIS_OPENAI_CREDITS_ONLY === "1") {
+        // The native engine stores thread metadata. The credit client owns inference.
+        const metadataEnv = { ...env };
+        delete metadataEnv.OPENAI_CREDITS_API_KEY;
+        options = { ...options, env: metadataEnv };
+        args = [...args,
+            "-c", 'model_provider="elpis-credits-metadata"',
+            "-c", 'model_providers.elpis-credits-metadata.name="Elpis credit thread metadata"',
+            "-c", 'model_providers.elpis-credits-metadata.base_url="http://127.0.0.1:0/v1"',
+            "-c", 'model_providers.elpis-credits-metadata.requires_openai_auth=false',
+            "-c", 'model_providers.elpis-credits-metadata.supports_websockets=false',
+        ];
+    }
     return setpriv
         ? spawn(setpriv, ["--pdeathsig", "TERM", "--", engineBin(), ...args], options)
         : spawn(engineBin(), args, options);
