@@ -82,7 +82,13 @@ electron.app.whenReady().then(async () => {
   const settled = () => !document.querySelector('.startup-splash') && !!document.querySelector('.excalidraw canvas, textarea[aria-label="Message Elpis"]');
   const readComposer = () => document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Message Elpis"]')?.value ?? null;
   await until(() => host.webContents.executeJavaScript(`(${settled.toString()})()`));
-  const composer = await host.webContents.executeJavaScript(`(${readComposer.toString()})()`);
+  const draft = control.store?.read()["elpis-draft-v1:new"];
+  const composer = draft && !process.argv.includes('--love-spot-app')
+    ? await until(async () => {
+      const value = await host.webContents.executeJavaScript(`(${readComposer.toString()})()`);
+      return value === draft ? value : null;
+    })
+    : await host.webContents.executeJavaScript(`(${readComposer.toString()})()`);
   let quickEntry = null;
   if (!process.argv.includes('--love-spot-app')) await until(() => control.trayMenu);
   if (control.trayMenu) {
