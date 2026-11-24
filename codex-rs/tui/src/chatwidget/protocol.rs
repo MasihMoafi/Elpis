@@ -500,10 +500,10 @@ impl ChatWidget {
         self.thread_usage.replaying_turn_completion = replay_kind.is_some();
         match notification.turn.status {
             TurnStatus::Completed => {
-                let last_agent_message = final_agent_message(
-                    &notification.turn,
-                    self.is_realtime_delegated_reasoning_turn(&notification.turn.id),
-                );
+                let realtime_delegated =
+                    self.is_realtime_delegated_reasoning_turn(&notification.turn.id);
+                let last_agent_message =
+                    final_agent_message(&notification.turn, realtime_delegated);
                 if let Some((item, _)) = last_agent_message
                     && needs_agent_message(
                         self.transcript.last_completed_agent_message.as_ref(),
@@ -523,7 +523,25 @@ impl ChatWidget {
                 {
                     self.speak_completed_realtime_delegation(&notification.turn.id, item);
                 }
-                if replay_kind.is_none() {
+                // A completed turn can end by asking the user a question. Its answer
+                // editor remains actionable even while another view covers the chat.
+                let awaiting_answer = !realtime_delegated
+                    && last_agent_message
+                        .map(|(item, _)| item.id())
+                        .or_else(|| {
+                            self.transcript
+                                .last_completed_agent_message
+                                .as_ref()
+                                .filter(|(turn_id, _)| turn_id == &notification.turn.id)
+                                .map(|(_, item_id)| item_id.as_str())
+                        })
+                        .is_some_and(|item_id| {
+                            self.bottom_pane
+                                .questions
+                                .as_ref()
+                                .is_some_and(|questions| questions.has_pending_message(item_id))
+                        });
+                if replay_kind.is_none() && !awaiting_answer {
                     question_drafts = self.take_question_drafts();
                 }
                 self.last_non_retry_error = None;

@@ -11,6 +11,13 @@ use codex_utils_string::take_bytes_at_char_boundary;
 const MAX_RECOVERED_QUESTION_TITLE_BYTES: usize = 512;
 
 impl AsyncQuestions {
+    pub(crate) fn has_pending_message(&self, message_id: &str) -> bool {
+        self.state
+            .pending
+            .iter()
+            .any(|question| question.message_id == message_id)
+    }
+
     pub(crate) fn append(&mut self, message_id: &str, questions: &[AsyncUserInputQuestion]) {
         if questions.is_empty() || !self.state.seen_ids.insert(message_id.to_string()) {
             return;

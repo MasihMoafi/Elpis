@@ -15,6 +15,90 @@ use core_test_support::streaming_sse::start_streaming_sse_server;
 use pretty_assertions::assert_eq;
 
 #[tokio::test]
+async fn completed_async_question_survives_command_center_and_thread_restore() -> Result<()> {
+    use crate::app::tests::test_turn;
+    use codex_app_server_protocol::AsyncUserInputQuestion;
+    use codex_app_server_protocol::ItemCompletedNotification;
+    use codex_app_server_protocol::TurnCompletedNotification;
+
+    for items_in_completion in [false, true] {
+        let mut app = make_test_app().await;
+        let id = ThreadId::new();
+        attach_thread(&mut app, id);
+        let server = crate::start_embedded_app_server_for_picker(&app.config).await?;
+        let item = ThreadItemPayload::AgentMessage {
+            id: "space-question".into(),
+            moderation: None,
+            text: "Which workspace?".into(),
+            phase: None,
+            memory_citation: None,
+            delivery: None,
+            questions: Some(vec![AsyncUserInputQuestion {
+                title: "Which workspace?".into(),
+                options: Some(vec!["Space A".into(), "Space B".into()]),
+            }]),
+        };
+        let question = ServerNotification::ItemCompleted(ItemCompletedNotification::new(
+            id.to_string(),
+            "turn".into(),
+            item.clone(),
+            /*started_at_ms*/ None,
+            /*completed_at_ms*/ 1,
+        ));
+        let chat = &mut app.chat_widget;
+        chat.handle_server_notification(question.clone(), /*replay_kind*/ None);
+        chat.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::ALT));
+        let expected = if items_in_completion {
+            chat.handle_key_event(KeyCode::Char('3').into());
+            chat.handle_paste("Draft for Space B".into());
+            "Draft for Space B"
+        } else {
+            chat.handle_key_event(KeyCode::Down.into());
+            "› 2. Space B"
+        };
+        assert!(render_bottom_popup(chat, 80).contains(expected));
+        let question_state = chat.capture_thread_input_state().unwrap().questions;
+        assert!(question_state.is_some());
+
+        app.open_agents_overview(&server);
+        assert!(app.chat_widget.active_view_is(AGENTS_OVERVIEW_VIEW_ID));
+        app.chat_widget.handle_server_notification(
+            ServerNotification::TurnCompleted(TurnCompletedNotification {
+                thread_id: id.to_string(),
+                turn: test_turn(
+                    "turn",
+                    TurnStatus::Completed,
+                    items_in_completion.then_some(item).into_iter().collect(),
+                ),
+            }),
+            /*replay_kind*/ None,
+        );
+        app.chat_widget.handle_key_event(KeyCode::Esc.into());
+        assert!(!app.chat_widget.active_view_is(AGENTS_OVERVIEW_VIEW_ID));
+        let saved = app.chat_widget.capture_thread_input_state().unwrap();
+        assert_eq!(saved.questions, question_state);
+        assert!(render_bottom_popup(&app.chat_widget, 80).contains(expected));
+
+        let mut destination = make_test_app().await;
+        attach_thread(&mut destination, ThreadId::new());
+        assert!(!render_bottom_popup(&destination.chat_widget, 80).contains("Which workspace?"));
+        attach_thread(&mut destination, id);
+        destination.restore_session_draft(id, saved, None).await;
+        let chat = &mut destination.chat_widget;
+        assert!(render_bottom_popup(chat, 80).contains(expected));
+        chat.handle_key_event(KeyCode::Enter.into());
+        chat.handle_server_notification(
+            question,
+            Some(crate::chatwidget::ReplayKind::ThreadSnapshot),
+        );
+        assert!(!render_bottom_popup(chat, 80).contains(expected));
+        assert!(!render_bottom_popup(chat, 80).contains("1 question"));
+        server.shutdown().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn pin_action_updates_shared_section_state() -> Result<()> {
     let mut app = make_test_app().await;
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
