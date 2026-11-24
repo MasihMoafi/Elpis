@@ -161,7 +161,6 @@ impl Renderable for AgentsOverviewView {
             inset(layout.header),
             buf,
         );
-        let history = state.history.as_ref();
         let labels = TASK_FILTERS
             .iter()
             .map(|(label, group)| {
@@ -257,7 +256,8 @@ impl Renderable for AgentsOverviewView {
                 })
             })
             .or_else(|| {
-                let failed = state.refresh_failed || history.is_some_and(|s| s.failed);
+                let failed = state.refresh_failed
+                    || state.history.as_ref().is_some_and(|s| s.failed);
                 (failed && !state.loading).then(|| "Error loading tasks".to_owned())
             })
             .or_else(|| state.server_version_notice.clone());
