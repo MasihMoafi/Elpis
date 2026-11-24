@@ -19,3 +19,13 @@ test("an account rejection outweighs cached models and never selects a disconnec
   );
   assert.equal(availableDefault({ model: "claude/opus", provider: "openai" }, models, { ...providers, openai: { auth: { state: "signedOut" } } }), null);
 });
+test("OpenAI API credits are independent of ChatGPT sign-in and never become an automatic fallback", () => {
+  const credits = { model: "openai-credits/gpt-6.2-sol" };
+  const catalog = [...models, credits];
+  const signedOut = { ...providers, openai: { auth: { state: "signedOut" } } };
+  assert.equal(availableDefault({ model: credits.model, provider: "openai" }, catalog, signedOut), null);
+  assert.equal(
+    availableDefault({ model: "gpt-6.1-sol", provider: "openai" }, catalog, { ...signedOut, gemini: { state: "connected" } }),
+    null,
+  );
+});

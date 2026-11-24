@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { providerLabel, providerChoices, choiceOf, connectionOrder, isListedProvider } from '../lib/api.ts';
+import { chatProvider, providerLabel, providerChoices, choiceOf, connectionOrder, isListedProvider } from '../lib/api.ts';
 
 const required = <T,>(value: T | null | undefined): T => { assert.ok(value); return value; };
 
@@ -49,6 +49,28 @@ test('subscription identity comes from the actual route and does not borrow the 
   assert.equal(providerLabel('claude/opus', 'openai', providers), 'Anthropic');
   assert.equal(providerLabel('agy/gpt-oss-120b-medium', 'openai', providers), 'Antigravity');
   assert.equal(providerLabel('gpt-6.1-sol', 'openai', providers), 'OpenAI');
+});
+
+test('OpenAI API credits are selectable only from the bridged catalog and retain their provider identity', () => {
+  const credits = {
+    id: 'openai-credits/gpt-6.2-sol',
+    model: 'openai-credits/gpt-6.2-sol',
+    displayName: 'GPT-6.2 Sol',
+    description: 'Elpis using the OpenAI API',
+  };
+  const choiceId = 'openai-credits/';
+  assert(!providerChoices(models, settings).some(choice => choice.id === choiceId));
+  const available = [...models, credits];
+  const choices = providerChoices(available, settings);
+  const choice = required(choices.find(item => item.id === choiceId));
+  assert.deepEqual(choice, { id: choiceId, label: 'OpenAI API credits', models: [credits] });
+  assert.equal(choices[0]?.provider, 'openai');
+  assert.equal(choiceOf({ id: 'credits-chat', model: credits.model, modelProvider: 'openai' }, choices), choice);
+  assert.equal(providerLabel(credits.model, 'openai', providers), 'OpenAI API credits');
+  assert.equal(chatProvider(credits.model, 'openai', 'openai'), 'openai-credits');
+  assert.equal(chatProvider('gpt-6.2-sol', 'openai', 'openai'), 'openai');
+  const managed = providerChoices(available, { ...settings, managed: { modelProvider: 'openai' } });
+  assert(!managed.some(item => item.id === choiceId));
 });
 
 test('a provider without a catalog never receives another provider’s models or bypasses managed policy', () => {

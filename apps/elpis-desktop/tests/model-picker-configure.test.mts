@@ -83,7 +83,12 @@ test('optional setup callback is absent safely; retry recovers without changing 
 
 test('inherited subscription defaults retain their provider identity while exact route matches take precedence', () => {
   const choices = [{ id: '', label: 'OpenAI', models }];
-  for (const [defaultModel, provider] of [['claude/opus', 'Anthropic'], ['agy/gpt-oss', 'Antigravity'], ['sol', 'OpenAI']]) {
+  for (const [defaultModel, provider] of [
+    ['claude/opus', 'Anthropic'],
+    ['agy/gpt-oss', 'Antigravity'],
+    ['openai-credits/gpt-6.2-sol', 'OpenAI API credits'],
+    ['sol', 'OpenAI'],
+  ]) {
     const view = fixture('components/model-picker.tsx', 'ModelPicker', { ...pickerProps, choices, models, choiceId: '', model: '', defaultModel });
     const trigger = elements(view.render()).find(element => element.props['aria-label'] === 'Model');
     assert.ok(trigger); assert.ok(trigger.props.title.endsWith(` · ${provider}`), trigger.props.title);

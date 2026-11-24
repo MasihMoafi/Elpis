@@ -1,6 +1,8 @@
 import { agentParentId } from "./agent-runs.mts";
+import { BRIDGED_PROVIDERS as SUBSCRIPTIONS, bridgedProviderOf as subscriptionOf } from "./bridged-models.mts";
 import { errorText } from "./error-text.mts";
 export { isAgentRun, AGENT_RUN_NOTICE } from "./agent-runs.mts";
+export { SUBSCRIPTIONS, subscriptionOf };
 export type Thread = {
   motherAgent?: boolean;
   id: string;
@@ -285,14 +287,6 @@ export const isUnlinkedAgent = (thread: Thread, threads: Thread[]) =>
   agentParentId(thread) ? !threads.some(parent => parent.id === agentParentId(thread)) : subAgentSource(thread);
 export const isAgent = (thread: Thread) => !!agentParentId(thread) || subAgentSource(thread);
 
-// Subscription models reach Elpis through its bridge by a model-ID prefix while the engine still
-// reports its own provider, so the model is the truthful source of the provider.
-export const SUBSCRIPTIONS = [
-  { prefix: "claude/", id: "claude", label: "Anthropic" },
-  { prefix: "agy/", id: "gemini", label: "Antigravity" },
-] as const;
-export const subscriptionOf = (model?: string | null) =>
-  SUBSCRIPTIONS.find(item => model?.startsWith(item.prefix)) ?? null;
 const providerNames: Record<string, string> = {
   openai: "OpenAI",
   lmstudio: "LM Studio",
@@ -378,7 +372,7 @@ export type ProviderChoice = {
 /** Engine providers the model list leaves out: the local gpt-oss servers and Amazon Bedrock. */
 const UNLISTED = new Set(["ollama", "lmstudio", "amazon-bedrock", "amazon-bedrock-runtime"]);
 /** Where each connection sits in every list, by what Masih has: the OpenAI and subscription connections, then OpenRouter, then API-key providers; any other after them, by name. */
-const ORDER = ["claude/", "openai", "agy/", "openrouter", "anthropic", "anthropic-credits", "google-gemini"];
+const ORDER = ["claude/", "openai", "openai-credits/", "agy/", "openrouter", "anthropic", "anthropic-credits", "google-gemini"];
 const rank = (id: string) => {
   const index = ORDER.indexOf(id);
   return index < 0 ? ORDER.length : index;
