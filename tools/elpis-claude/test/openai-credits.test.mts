@@ -5,7 +5,7 @@ import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import OpenAI from "openai";
-import { buildCreditRequestParams, creditEffortsForModel, creditModels, parseCreditEffort, promptContent, streamCreditResponse } from "../openai-credits.mts";
+import { buildCreditRequestParams, creditContextWindowForModel, creditEffortsForModel, creditModels, parseCreditEffort, promptContent, streamCreditResponse } from "../openai-credits.mts";
 import { CreditTools } from "../openai-credits-tools.mts";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
@@ -35,6 +35,12 @@ test("credit effort metadata excludes sign-in-only ultra and builds validated re
   assert.deepEqual(supported.reasoning, { effort: "xhigh" });
   const unsupported = buildCreditRequestParams({ model: "gpt-6.2-astra", effort: "ultra", input: [], tools: [] });
   assert.equal(unsupported.reasoning, undefined);
+
+  assert.equal(creditContextWindowForModel("gpt-6-sol"), 272_000);
+  assert.equal(creditContextWindowForModel("gpt-5.6-sol"), 272_000);
+  assert.equal(creditContextWindowForModel("gpt-6-astra"), 272_000);
+  assert.equal(creditContextWindowForModel("gpt-6.2-sol"), 500_000);
+  assert.equal(creditContextWindowForModel("gpt-unknown"), null);
 });
 
 test("the API receives the attached image and the accompanying text", () => {

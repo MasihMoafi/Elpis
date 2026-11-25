@@ -3,7 +3,24 @@ import { EDIT_TOOLS,toolItem } from "./bridge-transcript.mts";
 import type { ContextChars,Lane,NoticeParams,ToolState,UsageTotals } from "./bridge-types.mts";
 import { wireObject } from "./bridge-wire.mts";
 
-type Dependencies = { notify: (method: string, params: NoticeParams) => void; addChars: (threadId: string, part: keyof ContextChars, n: number) => void; lastContext: Map<string, { used?: number; size?: number | null }>; sendUsage: (threadId: string, turnId: string, last: UsageTotals | null) => void; now: () => number };
+type LastUsage = { totalTokens: number; inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningOutputTokens: number };
+type LastContextEntry = { used?: number; size?: number | null; last?: LastUsage | null };
+type Dependencies = { notify: (method: string, params: NoticeParams) => void; addChars: (threadId: string, part: keyof ContextChars, n: number) => void; lastContext: Map<string, LastContextEntry>; sendUsage: (threadId: string, turnId: string, last: UsageTotals | null) => void; now: () => number };
+
+function readLastUsage(raw: unknown): LastUsage | null {
+  if (!wireObject(raw)) return null;
+  const num = (key: string, required = false) => {
+    const value = raw[key];
+    if (value === undefined && !required) return 0;
+    return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null;
+  };
+  const totalTokens = num("totalTokens", true), inputTokens = num("inputTokens", true),
+    cachedInputTokens = num("cachedInputTokens", true), outputTokens = num("outputTokens", true),
+    cacheWriteInputTokens = num("cacheWriteInputTokens"), reasoningOutputTokens = num("reasoningOutputTokens");
+  if (totalTokens === null || inputTokens === null || cachedInputTokens === null
+    || outputTokens === null || cacheWriteInputTokens === null || reasoningOutputTokens === null) return null;
+  return { totalTokens, inputTokens, cachedInputTokens, cacheWriteInputTokens, outputTokens, reasoningOutputTokens };
+}
 
 /** Draw one provider or subagent transcript lane from ACP updates. */
 export function createLaneBuilder({ notify, addChars, lastContext, sendUsage, now }: Dependencies) {
@@ -53,7 +70,8 @@ export function createLaneBuilder({ notify, addChars, lastContext, sendUsage, no
         const window = u._meta?.["elpis/contextWindow"];
         const actual = u.cost || (wireObject(window) && window.actual === true);
         const size = actual && typeof u.size === "number" ? u.size : known;
-        lastContext.set(threadId, { used: u.used, size });
+        const last = readLastUsage(u._meta?.["elpis/lastUsage"]);
+        lastContext.set(threadId, { used: u.used, size, last });
         sendUsage(threadId, turnId, null);
       } else if (u.sessionUpdate === "plan" && Array.isArray(u.entries)) {
         const step: Record<string, string> = { pending: "pending", in_progress: "inProgress", completed: "completed" };

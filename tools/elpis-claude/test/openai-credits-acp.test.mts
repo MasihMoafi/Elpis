@@ -9,6 +9,9 @@ import { test } from "node:test";
 import type { TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
+import { createLaneBuilder } from "../bridge-lane.mts";
+import { createUsageTracker } from "../bridge-usage.mts";
+import type { AcpEvent, LiveSession, NoticeParams } from "../bridge-types.mts";
 import { createTestTempDir, removeTestTempDir } from "./temp-root.mts";
 
 const source = fileURLToPath(new URL("..", import.meta.url));
@@ -34,7 +37,15 @@ type RecordedRequest = {
   input?: unknown[];
 };
 
-async function startMockOpenAI(t: TestContext, responder: (body: RecordedRequest, index: number) => Record<string, unknown>[] | null) {
+type MockUsage = {
+  input_tokens: number;
+  output_tokens: number;
+  input_tokens_details?: { cached_tokens: number };
+  output_tokens_details?: { reasoning_tokens: number };
+};
+type MockReply = Record<string, unknown>[] | { output: Record<string, unknown>[]; usage?: MockUsage } | null;
+
+async function startMockOpenAI(t: TestContext, responder: (body: RecordedRequest, index: number) => MockReply) {
   const requests: RecordedRequest[] = [];
   const server = createServer(async (req, res) => {
     if (req.headers.authorization !== "Bearer fixture-only") {
@@ -54,13 +65,15 @@ async function startMockOpenAI(t: TestContext, responder: (body: RecordedRequest
       const body = JSON.parse(raw) as RecordedRequest;
       const idx = requests.length;
       requests.push(body);
-      const output = responder(body, idx);
-      if (output === null) { res.destroy(); return; }
+      const reply = responder(body, idx);
+      if (reply === null) { res.destroy(); return; }
+      const output = Array.isArray(reply) ? reply : reply.output;
+      const usage = Array.isArray(reply) ? { input_tokens: 10, output_tokens: 5 } : (reply.usage ?? { input_tokens: 10, output_tokens: 5 });
       const textDeltas = output
         .filter((item): item is { type: string; content?: { text?: string }[] } => item.type === "message")
         .flatMap(item => (item.content ?? []).map(part => part.text ?? ""))
         .map(delta => `data: ${JSON.stringify({ type: "response.output_text.delta", delta })}\n\n`);
-      const completed = `data: ${JSON.stringify({ type: "response.completed", response: { id: `resp_${idx}`, status: "completed", output, usage: { input_tokens: 10, output_tokens: 5 } } })}\n\n`;
+      const completed = `data: ${JSON.stringify({ type: "response.completed", response: { id: `resp_${idx}`, status: "completed", output, usage } })}\n\n`;
       res.writeHead(200, { "content-type": "text/event-stream" }).end([...textDeltas, completed, "data: [DONE]\n\n"].join(""));
       return;
     }
@@ -369,4 +382,90 @@ test("bridge model/list exposes credit efforts without ultra, preserves sign-in 
   // Stale agy catalog refreshed with current fake-agy models.
   assert.ok(models.some(m => m.id === "agy/gemini-3.8-flash-medium"));
   assert.ok(!models.some(m => m.id === "agy/gemini-old"));
+});
+
+test("openai-credits reports latest active context, prompt cache, window size, and attribution across tool round trips", { timeout: 20_000 }, async t => {
+  const root = createTestTempDir(path.join(os.tmpdir(), "elpis-credit-usage-"));
+  t.after(() => removeTestTempDir(root));
+  const mock = await startMockOpenAI(t, (_, index) => index === 0
+    ? {
+        output: [{ type: "function_call", id: "fc_u1", call_id: "call_u1", name: "list_directory", arguments: "{}" }],
+        usage: { input_tokens: 50_000, output_tokens: 1_000, input_tokens_details: { cached_tokens: 0 } },
+      }
+    : {
+        output: [answerMessage("usage ok")],
+        usage: { input_tokens: 70_000, output_tokens: 2_000, input_tokens_details: { cached_tokens: 55_000 }, output_tokens_details: { reasoning_tokens: 500 } },
+      });
+
+  const acp = new AcpClient({ PATH: process.env.PATH, HOME: root, ELPIS_HOME: root, OPENAI_CREDITS_API_KEY: "fixture", OPENAI_CREDITS_BASE_URL: mock.baseUrl }, root);
+  t.after(() => acp.close());
+  await acp.call("initialize", { protocolVersion: 1 });
+  const { sessionId } = await acp.call("session/new", { cwd: root, mcpServers: [], _meta: { elpis: { sandbox: "read-only" } } });
+  const promptResult = await acp.call("session/prompt", { sessionId, prompt: [{ type: "text", text: "measure context" }] }) as {
+    usage?: { inputTokens: number; cachedReadTokens: number; outputTokens: number; totalTokens: number };
+  };
+
+  const usageUpdates = acp.updates
+    .map(u => u.update as AcpEvent | undefined)
+    .filter((u): u is Extract<AcpEvent, { sessionUpdate: "usage_update" }> => u?.sessionUpdate === "usage_update");
+  assert.equal(usageUpdates.length, 2);
+  assert.equal(usageUpdates[0]!.used, 51_000);
+  assert.equal(usageUpdates[1]!.used, 72_000);
+  assert.equal(usageUpdates[1]!.size, 500_000);
+  assert.deepEqual(usageUpdates[1]!._meta?.["elpis/contextWindow"], { actual: true });
+  assert.deepEqual(usageUpdates[1]!._meta?.["elpis/lastUsage"], {
+    totalTokens: 72_000,
+    inputTokens: 70_000,
+    cachedInputTokens: 55_000,
+    cacheWriteInputTokens: 0,
+    outputTokens: 2_000,
+    reasoningOutputTokens: 500,
+  });
+  assert.deepEqual(promptResult.usage, { inputTokens: 65_000, cachedReadTokens: 55_000, outputTokens: 3_000, totalTokens: 123_000 });
+
+  // Verify the bridge tracker turns those ACP updates into exact TUI Context Ledger fields.
+  const notices: { method: string; params: NoticeParams }[] = [];
+  const sessions = new Map<string, LiveSession>([["t1", {
+    id: sessionId as string, mode: "default", subagents: false, agent: "openai-credits", accountId: null,
+    prune: false, instructions: "", mcp: "{}", environment: "",
+  }]]);
+  const tracker = createUsageTracker({
+    sessions,
+    threadCwd: new Map([["t1", root]]),
+    claudeAccounts: { configDir: () => root } as never,
+    notify: (method, params) => notices.push({ method, params }),
+  });
+  const lane = createLaneBuilder({
+    notify: (method, params) => notices.push({ method, params }),
+    addChars: tracker.addChars,
+    lastContext: tracker.lastContext,
+    sendUsage: tracker.sendUsage,
+    now: () => 1,
+  })("t1", "turn1", root, true);
+  tracker.addChars("t1", "user", 400);
+  for (const params of acp.updates) lane.update(params.update as AcpEvent);
+  const turnTotals = {
+    input: promptResult.usage!.inputTokens,
+    output: promptResult.usage!.outputTokens,
+    cachedRead: promptResult.usage!.cachedReadTokens,
+    cachedWrite: 0,
+    total: promptResult.usage!.totalTokens,
+  };
+  tracker.tokenSums.set("t1", turnTotals);
+  tracker.sendUsage("t1", "turn1", turnTotals);
+
+  const lastNotice = notices.filter(n => n.method === "thread/tokenUsage/updated").at(-1)?.params.tokenUsage as {
+    total: { inputTokens: number; cachedInputTokens: number; outputTokens: number; totalTokens: number };
+    last: { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number; totalTokens: number };
+    modelContextWindow: number | null;
+    contextAttribution?: { estimatedTotal: number; systemInstructions: number };
+  };
+  assert.equal(lastNotice.last.totalTokens, 72_000);
+  assert.equal(lastNotice.last.inputTokens, 70_000);
+  assert.equal(lastNotice.last.cachedInputTokens, 55_000);
+  assert.equal(lastNotice.total.inputTokens, 120_000);
+  assert.equal(lastNotice.total.cachedInputTokens, 55_000);
+  assert.equal(lastNotice.modelContextWindow, 500_000);
+  assert.equal(lastNotice.contextAttribution?.estimatedTotal, 72_000);
+  assert.ok((lastNotice.contextAttribution?.systemInstructions ?? 0) > 0);
 });

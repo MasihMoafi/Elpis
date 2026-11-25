@@ -23,6 +23,24 @@ export const CREDIT_REASONING_EFFORTS: readonly CreditEffortOption[] = [
 
 const CREDIT_MODEL_RE = /^gpt-\d+(?:\.\d+)?-(?:sol|astra)$/;
 
+const CREDIT_CONTEXT_WINDOWS: Record<string, number> = {
+  "gpt-6.2-sol": 500_000,
+  "gpt-6.1-sol": 500_000,
+  "gpt-6.1-terra": 500_000,
+  "gpt-6-sol": 272_000,
+  "gpt-6-astra": 272_000,
+  "gpt-6.2-astra": 272_000,
+  "gpt-6-luna": 272_000,
+  "gpt-5.6-sol": 272_000,
+  "gpt-5.6-astra": 272_000,
+  "gpt-5.6-luna": 272_000,
+  "gpt-5.6-terra": 272_000,
+};
+
+export function creditContextWindowForModel(model: string): number | null {
+  return CREDIT_CONTEXT_WINDOWS[model] ?? null;
+}
+
 export function creditEffortsForModel(model: string): { levels: readonly CreditEffortOption[]; defaultEffort: CreditReasoningEffort | null } {
   if (!CREDIT_MODEL_RE.test(model)) return { levels: [], defaultEffort: null };
   return { levels: CREDIT_REASONING_EFFORTS, defaultEffort: model === "gpt-6-sol" ? "medium" : "low" };

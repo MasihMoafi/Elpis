@@ -34,7 +34,7 @@ export function createUsageTracker({ sessions, threadCwd, claudeAccounts, notify
     }
     return splitContext(ctxChars.get(threadId), devChars.get(threadId), used);
   };
-  const lastContext = new Map<string, { used?: number; size?: number | null }>();
+  const lastContext = new Map<string, { used?: number; size?: number | null; last?: { totalTokens: number; inputTokens: number; cachedInputTokens: number; cacheWriteInputTokens: number; outputTokens: number; reasoningOutputTokens: number } | null }>();
   const lastTurnUsage = new Map<string, UsageTotals>(); // thread id -> its latest finished turn's usage
   // Anthropic reports cache reads and writes apart from input; Elpis (like OpenAI) counts them as input.
   const usageBreakdown = (u: Partial<UsageTotals>) => {
@@ -44,10 +44,10 @@ export function createUsageTracker({ sessions, threadCwd, claudeAccounts, notify
   const sendUsage = (threadId: string, turnId: string, last: UsageTotals | null) => {
     const sum = tokenSums.get(threadId) ?? {};
     const ctx = lastContext.get(threadId) ?? {};
-    // Elpis reads `last` as the latest request, whose total is the context now. Claude reports
-    // a whole turn (or nothing yet): its output stays, the rest of the context is input.
-    const lastB = usageBreakdown(last ?? lastTurnUsage.get(threadId) ?? {});
-    if (typeof ctx.used === "number") {
+    // Elpis reads `last` as the latest request, whose total is the context now. Providers that
+    // track exact request usage send `ctx.last`; others report a whole turn and clamp to `ctx.used`.
+    const lastB = ctx.last ? { ...ctx.last } : usageBreakdown(last ?? lastTurnUsage.get(threadId) ?? {});
+    if (!ctx.last && typeof ctx.used === "number") {
       const output = Math.min(lastB.outputTokens, ctx.used);
       const input = ctx.used - output;
       const cached = Math.min(lastB.cachedInputTokens, input);

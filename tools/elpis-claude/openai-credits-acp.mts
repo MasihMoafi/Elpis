@@ -9,7 +9,7 @@ import type { ResponseInputItem } from "openai/resources/responses/responses";
 import type { Ceiling } from "./bridge-types.mts";
 import { withFileLock } from "./file-lock.mts";
 import { redactSecrets } from "./log-redaction.mts";
-import { buildCreditRequestParams, createCreditClient, creditEffortsForModel, creditModels, parseCreditEffort, promptContent, streamCreditResponse, type CreditReasoningEffort } from "./openai-credits.mts";
+import { buildCreditRequestParams, createCreditClient, creditContextWindowForModel, creditEffortsForModel, creditModels, parseCreditEffort, promptContent, streamCreditResponse, type CreditReasoningEffort } from "./openai-credits.mts";
 import { CreditTools } from "./openai-credits-tools.mts";
 
 const api = createCreditClient();
@@ -176,13 +176,40 @@ const app = agent({ name: "elpis-openai-credits" })
       if (!s.ephemeral) await saveHistory(id, s, items.slice());
       tools.registerWorkspace({ cwd: s.cwd, sandbox: s.sandbox, readOnly, disabled: s.noBuiltinTools });
       if (!readOnly || (s.noBuiltinTools && s.mode !== "plan")) await tools.connect(s.servers, s.cwd, signal);
-      let inputTokens = 0, outputTokens = 0;
+      let inputTokens = 0, cachedReadTokens = 0, outputTokens = 0;
       for (;;) {
         const requestParams = buildCreditRequestParams({ model: s.model, effort: s.effort, instructions: s.instructions, input: items, tools: tools.definitions });
         const response = await streamCreditResponse(api, requestParams, signal,
           text => notify(id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text } }));
-        inputTokens += response.usage?.input_tokens ?? 0;
-        outputTokens += response.usage?.output_tokens ?? 0;
+        if (response.usage) {
+          const rawInput = response.usage.input_tokens ?? 0;
+          const cached = Math.min(rawInput, response.usage.input_tokens_details?.cached_tokens ?? 0);
+          // bridge-usage counts inputTokens + cachedReadTokens as total input, so separate uncached from cached.
+          const uncached = rawInput - cached;
+          const output = response.usage.output_tokens ?? 0;
+          const reasoning = response.usage.output_tokens_details?.reasoning_tokens ?? 0;
+          inputTokens += uncached;
+          cachedReadTokens += cached;
+          outputTokens += output;
+          const used = rawInput + output;
+          const size = creditContextWindowForModel(s.model);
+          await notify(id, {
+            sessionUpdate: "usage_update",
+            used,
+            ...(size ? { size } : {}),
+            _meta: {
+              ...(size ? { "elpis/contextWindow": { actual: true } } : {}),
+              "elpis/lastUsage": {
+                totalTokens: used,
+                inputTokens: rawInput,
+                cachedInputTokens: cached,
+                cacheWriteInputTokens: 0,
+                outputTokens: output,
+                reasoningOutputTokens: reasoning,
+              },
+            },
+          });
+        }
         for (const item of response.output) {
           if (item.type === "message" || item.type === "reasoning" || item.type === "function_call") items.push(item);
           else throw new Error(`Unexpected output from the OpenAI API: ${item.type}`);
@@ -190,7 +217,7 @@ const app = agent({ name: "elpis-openai-credits" })
         const calls = response.output.filter(item => item.type === "function_call");
         if (!calls.length) {
           if (!s.ephemeral) await saveHistory(id, s, items);
-          return { stopReason: "end_turn", usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens } };
+          return { stopReason: "end_turn", usage: { inputTokens, outputTokens, cachedReadTokens, totalTokens: inputTokens + cachedReadTokens + outputTokens } };
         }
         for (const call of calls) {
           let announced: { title: string; toolName: string; rawInput: Record<string, unknown> } | undefined;
