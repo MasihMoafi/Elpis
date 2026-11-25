@@ -26,6 +26,7 @@ async fn closed_ledger_returns_the_full_width_to_the_transcript() -> Result<()> 
         for height in 10..=40 {
             let size = Size::new(width, height);
             tui.terminal.resize(size)?;
+            tui.screen_size_for_event(&TuiEvent::Resize(size))?;
             // Settle the transcript's own scrollbar before measuring its last text cell.
             app.render_owned_transcript(&mut tui, size)?;
             let bottom = app.render_owned_transcript(&mut tui, size)?;
@@ -45,6 +46,7 @@ async fn closed_ledger_returns_the_full_width_to_the_transcript() -> Result<()> 
         crate::chatwidget::tests::helpers::show_context_ledger(&mut app.chat_widget);
         let size = Size::new(width, 40);
         tui.terminal.resize(size)?;
+        tui.screen_size_for_event(&TuiEvent::Resize(size))?;
         app.render_owned_transcript(&mut tui, size)?;
         let bottom = app.render_owned_transcript(&mut tui, size)?;
         let buffer = crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal);

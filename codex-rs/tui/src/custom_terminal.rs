@@ -612,6 +612,10 @@ where
     /// This is the position of the cursor after the last draw call.
     #[allow(dead_code)]
     pub fn get_cursor_position(&mut self) -> io::Result<Position> {
+        #[cfg(test)]
+        if self.screen_size_override.is_some() {
+            return Ok(self.last_known_cursor_pos);
+        }
         self.backend.get_cursor_position()
     }
 
