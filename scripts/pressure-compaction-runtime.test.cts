@@ -38,7 +38,9 @@ const server = http.createServer(async (req, res) => {
   let item;
   if (optimizer) {
     item = {type:'compaction',id:'fixture_compact',encrypted_content:
-      mode==='ineffective' ? 'a'.repeat(384000) : 'fixture-pressure-state'};
+      // Replay-cache ciphertext contributes about one estimated token per 12 bytes.
+      // Keep this checkpoint above the 70% pressure mark but below the 90k native limit.
+      mode==='ineffective' ? 'a'.repeat(72_000 * 12) : 'fixture-pressure-state'};
   } else if (mainCalls++ < (mode==='ineffective'?2:1)) {
     item = {type:'function_call', id:'fc_fixture_'+mainCalls, call_id:'pressure-fixture-'+mainCalls, name:'shell_command',
       arguments:JSON.stringify({command:'printf tool-completed', timeout_ms:2000, login:false})};

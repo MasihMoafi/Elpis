@@ -218,7 +218,7 @@ async fn full_screen_composer_click_returns_focus_from_the_ledger() -> Result<()
         .await?;
     assert!(!chat.app.chat_widget.context_ledger_has_focus());
     assert!(chat.app.chat_widget.context_ledger_width(SCREEN.width) > 0);
-    chat.tui.set_owned_screen(/*owned*/ false)?;
+    chat.close().await?;
     Ok(())
 }
 

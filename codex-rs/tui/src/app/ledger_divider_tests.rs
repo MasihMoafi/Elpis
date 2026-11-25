@@ -245,6 +245,7 @@ async fn dragging_the_rule_resizes_the_ledger_and_the_transcript_follows() -> Re
         &tui.terminal,
     ));
     assert!(screen.contains("a question for the transcript"), "{screen}");
+    app_server.shutdown().await?;
     tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }
@@ -279,6 +280,7 @@ async fn only_the_rule_drags_the_ledger_including_its_top_row() -> Result<()> {
     )
     .await?;
     assert_eq!(ledger_width_on_screen(&tui), original + 4);
+    app_server.shutdown().await?;
     tui.set_owned_screen(/*owned*/ false)?;
     Ok(())
 }

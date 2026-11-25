@@ -75,7 +75,7 @@ async function checkLedgerShortcuts(draft: string, label: string) {
   // Give the focused Ledger enough rows to expose its controls and selected source.
   tmux('resize-window', '-t', 'test', '-x', '150', '-y', '90');
   type(draft); await pause(250);
-  for (const [open, close] of [['C-x', 'M-c'], ['M-c', 'C-x'], ['Tab', 'Tab']] as const) {
+  for (const [open, close] of [['M-c', 'M-c'], ['Tab', 'Tab']] as const) {
     key(open);
     await screenWhen(s => s.includes('CONTEXT LEDGER') && s.includes('Space/Enter'), `${label}-${open}-focused`);
     key(close);
@@ -83,7 +83,7 @@ async function checkLedgerShortcuts(draft: string, label: string) {
   }
   assert.equal(provider.requests.length, requests, 'Ledger shortcuts must not submit the draft');
   tmux('resize-window', '-t', 'test', '-x', '80', '-y', '32');
-  pass(`Tab, Ctrl+X and Alt+C open and close the Ledger ${label}, preserving the draft`);
+  pass(`Tab and Alt+C open and close the Ledger ${label}, preserving the draft`);
 }
 function threadSettings() {
   const filename = fs.readdirSync(home).find(name => /^state_\d+\.sqlite$/.test(name));

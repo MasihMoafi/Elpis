@@ -17,11 +17,45 @@ async function main() {
   const engineHome = path.join(root, 'engine'), cwd = path.join(root, 'project');
   fs.mkdirSync(engineHome); fs.mkdirSync(cwd);
   const events = [], requests = [], spawned = new Set();
-  const offeredTools = request => [
-    ...(request.tools || []),
-    ...(request.input || []).filter(item => item.type === 'additional_tools').flatMap(item => item.tools || []),
-  ].flatMap(tool => tool.type === 'namespace'
-    ? (tool.tools || []).map(child => ({ ...child, namespace: tool.name })) : [tool]);
+  const offeredTools = request => {
+    const flatten = list => (list || []).flatMap(tool => tool.type === 'namespace'
+      ? (tool.tools || []).map(child => ({ ...child, namespace: tool.name })) : [tool]);
+    const keyFor = tool => tool.namespace ? `${tool.namespace}.${tool.name}` : (tool.name ?? tool.type);
+    const active = new Map();
+    for (const tool of flatten(request.tools)) active.set(keyFor(tool), tool);
+    for (const item of request.input || []) {
+      if (item.type === 'additional_tools') {
+        for (const tool of flatten(item.tools)) active.set(keyFor(tool), tool);
+      } else if (item.type === 'message' && item.role === 'developer') {
+        const texts = typeof item.content === 'string'
+          ? [item.content]
+          : (item.content || []).map(part => part?.text).filter(Boolean);
+        for (const text of texts) {
+          let section = null;
+          for (const rawLine of text.split('\n')) {
+            const line = rawLine.trim();
+            if (!line) { section = null; continue; }
+            if (line.startsWith('The following tools are no longer available.')) { section = 'tools'; continue; }
+            if (line.startsWith('The following namespaces are no longer available')) { section = 'namespaces'; continue; }
+            if (section && line.startsWith('- ')) {
+              const name = line.slice(2).trim();
+              if (section === 'tools') {
+                active.delete(name);
+                for (const [key, tool] of active) {
+                  if (key === name || tool.name === name) active.delete(key);
+                }
+              } else if (section === 'namespaces') {
+                for (const [key, tool] of active) {
+                  if (tool.namespace === name) active.delete(key);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return [...active.values()];
+  };
   const server = http.createServer(async (request, response) => {
     if (!request.url.includes('/responses')) { response.writeHead(404); response.end(); return; }
     let body = '';

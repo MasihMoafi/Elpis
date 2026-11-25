@@ -50,7 +50,7 @@ The runtime check is `node scripts/memory-runtime.test.cts /absolute/path/to/bin
 
 ## 4. Context Ledger and admission
 
-The [TUI Ledger](../codex-rs/tui/src/chatwidget/context_ledger.rs) is visible by default. Its default width is at most 52 columns and narrows with the terminal; the divider can resize it. `Alt+C`, `Ctrl+X` or `Tab` focuses it; the same key or `Esc` closes it while focused. Voice mute, menus, completions, configured shortcuts and pasted text retain their applicable keys; Tab queues a draft only when configured to do so.
+The [TUI Ledger](../codex-rs/tui/src/chatwidget/context_ledger.rs) is visible by default. Its default width is at most 52 columns and narrows with the terminal; the divider can resize it. `Alt+C`, `Ctrl+X` or `Tab` focuses it; the same key or `Esc` closes it while focused. Voice mute, menus, completions, configured shortcuts, pasted text, and the default `global.leader` chord prefix retain their applicable keys (`Ctrl+X` toggles the Ledger when `global.leader` is remapped or unbound); Tab queues a draft only when configured to do so.
 
 While focused, Up/Down or `j`/`k` move; Space or Enter toggles a row; `i` toggles all eligible rows; `p` toggles Smart Prune; `s` toggles subagents; `m` picks the pruning model; `w` shows row reasons. Typing returns to the draft. [Keys](../codex-rs/tui/src/chatwidget/context_ledger.rs).
 

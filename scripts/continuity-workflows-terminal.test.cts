@@ -121,7 +121,10 @@ async function worktreeMenu(label: string) {
   await screenWhen(screen => screen.includes('Select a review preset'), 'review-parent-after-commit');
   key('Down'); key('Enter');
   await screenWhen(screen => screen.includes('Custom review instructions') && screen.includes('Type instructions and press Enter'), 'review-custom');
-  key('Escape'); key('Escape');
+  key('Escape');
+  await screenWhen(screen => screen.includes('Select a review preset'), 'review-parent-after-custom');
+  key('Escape');
+  await screenWhen(screen => !screen.includes('Select a review preset') && !screen.includes('Type instructions and press Enter'), 'review-back-to-chat');
   pass('review is discoverable with all four inherited presets and native child pickers');
   await reviewMenu('review-run');
   const beforeReview = provider.requests.length;

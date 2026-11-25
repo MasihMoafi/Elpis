@@ -164,7 +164,7 @@ async fn resume_places_interruption_before_searches_split_across_pages() {
         rows,
         [
             "• Searched the web for canceled",
-            "■ Conversation interrupted - use /feedback if something went wrong",
+            "■ Conversation interrupted - tell the model what to do differently",
             "• Searched the web for older",
             "• Searched the web for newer",
         ]
@@ -244,7 +244,7 @@ async fn generated_image_from_an_older_page_follows_its_answer() {
                 if completed {
                     "  Worked for 2s"
                 } else {
-                    "■ Conversation interrupted - use /feedback if something went wrong"
+                    "■ Conversation interrupted - tell the model what to do differently"
                 }
             ]
         );

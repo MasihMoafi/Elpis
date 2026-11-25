@@ -5,6 +5,7 @@ use codex_http_client::OutboundProxyPolicy;
 use codex_login::CodexAuth;
 use pretty_assertions::assert_eq;
 use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 const FACTORY: HttpClientFactory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
 
