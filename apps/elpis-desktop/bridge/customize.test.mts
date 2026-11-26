@@ -37,12 +37,26 @@ test("skills: each once, named by their interface when they have one, by name, w
   assert.deepEqual(
     snapshot.data.map(item => [item.name, item.scope, item.enabled, item.description, item.plugin]),
     [
-      ["PDF", "system", false, "Read PDFs", "docs@x"],
       ["web-dev", "user", true, "web-dev long", null],
+      ["PDF", "system", false, "Read PDFs", "docs@x"],
     ],
   );
   assert.deepEqual(snapshot.errors, [{ path: "/s/bad/SKILL.md", message: "missing name" }]);
   assert.deepEqual(skillsSnapshot(null), { data: [], errors: [] });
+});
+
+test("skills stay together by owner and plugin, with names sorted within each group", () => {
+  const skill = (name: string, scope: string, pluginId?: string) => ({
+    name, path: `/s/${name}/SKILL.md`, scope, ...(pluginId ? { pluginId } : {}),
+  });
+  const result = skillsSnapshot({ data: [{ skills: [
+    skill("Alpha built-in", "system"), skill("Zulu mine", "user"), skill("Plugin B", "user", "b@market"),
+    skill("Project", "repo"), skill("Alpha mine", "user"), skill("Plugin A2", "user", "a@market"),
+    skill("Plugin A1", "user", "a@market"),
+  ] }] });
+  assert.deepEqual(result.data.map(item => item.name), [
+    "Alpha mine", "Zulu mine", "Project", "Plugin A1", "Plugin A2", "Plugin B", "Alpha built-in",
+  ]);
 });
 
 test("catalog keeps marketplace identities, empty sources, search cursors, installed state and policy reasons", () => {

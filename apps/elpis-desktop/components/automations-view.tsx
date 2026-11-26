@@ -410,29 +410,43 @@ export function AutomationsView({
                   route = modelOf(task, models, threads);
                 return (
                   <div key={task.id} className="automation" data-automation-id={task.id} data-status={task.status}>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="automation-summary"
-                      aria-expanded={expanded}
-                      onClick={() => setOpen(expanded ? null : task.id)}
-                    >
-                      <CalendarClock size={16} aria-hidden="true" />
-                      <span className="automation-title">{task.title}</span>
-                      {task.workflow && <span className="settings-badge">Workflow</span>}
-                      {!task.workflow && route.badge && (
-                        <span className="settings-badge" data-automation-model={task.model ?? ""}>
-                          {route.badge}
+                    <div className="automation-heading">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="automation-summary"
+                        aria-expanded={expanded}
+                        onClick={() => setOpen(expanded ? null : task.id)}
+                      >
+                        <CalendarClock size={16} aria-hidden="true" />
+                        <span className="automation-title">{task.title}</span>
+                        {task.workflow && <span className="settings-badge">Workflow</span>}
+                        {!task.workflow && route.badge && (
+                          <span className="settings-badge" data-automation-model={task.model ?? ""}>
+                            {route.badge}
+                          </span>
+                        )}
+                        {task.status !== "active" && (
+                          <span className="settings-badge">{task.status === "paused" ? "Paused" : "Ended"}</span>
+                        )}
+                        <span className="automation-when">
+                          {task.description}
+                          {task.nextRunAt ? ` · next ${when(task.nextRunAt)}` : ""}
                         </span>
-                      )}
-                      {task.status !== "active" && (
-                        <span className="settings-badge">{task.status === "paused" ? "Paused" : "Ended"}</span>
-                      )}
-                      <span className="automation-when">
-                        {task.description}
-                        {task.nextRunAt ? ` · next ${when(task.nextRunAt)}` : ""}
-                      </span>
-                    </Button>
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        className="automation-delete"
+                        aria-label={`Delete ${task.title}`}
+                        title="Delete automation"
+                        disabled={working}
+                        onClick={() => setDeleting(task)}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </Button>
+                    </div>
                     {expanded && (
                       <div className="automation-detail">
                         <p className="automation-prompt">{task.prompt}</p>

@@ -220,7 +220,7 @@ export function CustomizeView({
       setError(message(cause));
     }
   };
-  const skills = [...(data?.skills.data ?? [])].sort((a, b) => a.name.localeCompare(b.name)),
+  const skills = data?.skills.data ?? [],
     plugins = data?.plugins.data ?? [],
     connectors = data?.connectors.data ?? [];
   const own = skills.find(skill => skill.scope === "user");

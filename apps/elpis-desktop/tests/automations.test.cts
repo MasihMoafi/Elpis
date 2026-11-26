@@ -4,6 +4,44 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { loveSpotFixture } = require('./love-spot-fixture.cts');
 
+test('delete is available from the row for active and paused automations, and cancel keeps the task', async () => {
+  const f = await loveSpotFixture({ automations: true });
+  try {
+    const { page } = f;
+    await page.locator('.nav-list').getByRole('button', { name: 'Workflows', exact: true }).click();
+    await page.getByRole('radio', { name: 'Scheduled', exact: true }).click();
+    async function create(name: string) {
+      await page.getByRole('button', { name: 'New automation', exact: true }).click();
+      await page.getByLabel('Automation name', { exact: true }).fill(name);
+      await page.getByLabel('Automation instruction', { exact: true }).fill('A scheduled test');
+      await page.getByRole('button', { name: 'Create', exact: true }).click();
+      await page.locator('.automation').filter({ hasText: name }).waitFor();
+    }
+    await create('Active task');
+    const active = page.locator('.automation').filter({ hasText: 'Active task' });
+    await active.hover();
+    await active.getByRole('button', { name: 'Delete Active task' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Cancel' }).click();
+    assert.equal(await active.count(), 1);
+    await active.hover();
+    await active.getByRole('button', { name: 'Delete Active task' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await active.waitFor({ state: 'detached' });
+
+    await create('Paused task');
+    const paused = page.locator('.automation').filter({ hasText: 'Paused task' });
+    await paused.locator('.automation-summary').click();
+    await paused.getByRole('button', { name: 'Pause', exact: true }).click();
+    await page.getByRole('radio', { name: 'Paused', exact: true }).click();
+    await paused.waitFor();
+    await paused.hover();
+    await paused.getByRole('button', { name: 'Delete Paused task' }).click();
+    await page.getByRole('alertdialog').getByRole('button', { name: 'Delete', exact: true }).click();
+    await paused.waitFor({ state: 'detached' });
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 test('a new automation is listed with its schedule; Run now sends it and its run opens the chat', async () => {
   const f = await loveSpotFixture({ automations: true, reply: 'All builds are green.' });
   try {

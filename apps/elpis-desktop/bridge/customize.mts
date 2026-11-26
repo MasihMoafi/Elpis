@@ -37,7 +37,7 @@ const SCOPES = new Set(["user", "repo", "system", "admin"]);
 const list = <T,>(value: T[] | null | undefined): T[] => (Array.isArray(value) ? value : []);
 const words = (value: unknown) => (typeof value === "string" ? value : "");
 
-/** Each skill once (a skill found under several folders is one), by name; and the files that failed to load. */
+/** Each skill once, grouped by origin and named by its interface; and files that failed to load. */
 export function skillsSnapshot(response: Response | null) {
   const seen = new Set(),
     data = [],
@@ -61,7 +61,9 @@ export function skillsSnapshot(response: Response | null) {
     for (const error of list(entry?.errors))
       if (typeof error?.message === "string") errors.push({ path: words(error.path), message: error.message });
   }
-  return { data: data.sort((a, b) => a.name.localeCompare(b.name)), errors };
+  const origin = (skill: (typeof data)[number]) =>
+    skill.plugin ? `2:${skill.plugin}` : { user: "0", repo: "1", system: "3", admin: "4" }[skill.scope as "user" | "repo" | "system" | "admin"];
+  return { data: data.sort((a, b) => origin(a).localeCompare(origin(b)) || a.name.localeCompare(b.name)), errors };
 }
 
 /** The installed plugins, by name, with the marketplace each came from. */

@@ -4,6 +4,9 @@
 .automation-filter { margin-bottom:12px; }
 .automation-list { display:flex; flex-direction:column; }
 .automation + .automation { border-top:1px solid var(--hairline); }
+.automation-heading { position:relative; }
+.automation-delete { position:absolute; inset-inline-end:8px; top:12px; opacity:0; background:var(--background); }
+.automation-heading:hover .automation-delete, .automation-heading:focus-within .automation-delete { opacity:1; }
 .automation-summary { display:flex; justify-content:flex-start; align-items:center; gap:10px; width:100%; height:auto; min-width:0; padding:12px 16px; color:var(--foreground); text-align:start; }
 .automation-summary:hover { background:var(--selected); }
 .automation-summary:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
