@@ -6,8 +6,8 @@ const path = require('node:path');
 const React = require('react');
 const ts = require('typescript');
 
-type AudioContext = { play(id: string, text: string): Promise<void>; stop(): void; speed: number; setSpeed(speed: number): void; error: { message: string } | null };
-type StreamPlayer = (audio: HTMLAudioElement, url: string, signal: AbortSignal, response?: Promise<Response>) => Promise<void>;
+type AudioContext = { active: string | null; paused: boolean; play(id: string, text: string): Promise<void>; pause(): void; resume(): void; stop(): void; speed: number; setSpeed(speed: number): void; error: { message: string } | null };
+type StreamPlayer = (audio: HTMLAudioElement, url: string, signal: AbortSignal, response?: Promise<Response>, shouldPlay?: () => boolean) => Promise<void>;
 function fixture(streamPlayer?: StreamPlayer, preferredSpeed?: number) {
   const slots: unknown[] = [], effects: (() => void)[] = [], listeners = new Map<string, () => void>(); let cursor = 0, available = true;
   const hooks = { ...React,
@@ -83,6 +83,69 @@ test('read aloud plays an MP3 response through the shared audio player', async (
     assert.deepEqual(played, ['blob:fixture']);
     assert.equal(view.render().props.value?.error, null);
   } finally { view.dispose(); global.fetch = originalFetch; global.Audio = originalAudio; URL.createObjectURL = create; URL.revokeObjectURL = revoke; }
+});
+
+test('pausing a reply resumes the same audio position, and stop still cancels it', async () => {
+  const view = fixture(), originalFetch = global.fetch, originalAudio = global.Audio;
+  const create = URL.createObjectURL, revoke = URL.revokeObjectURL;
+  let audio: { src: string; currentTime: number; playCount: number; paused: boolean; onended?: () => void } | undefined;
+  URL.createObjectURL = () => 'blob:fixture'; URL.revokeObjectURL = () => {};
+  Reflect.set(global, 'Audio', class {
+    src = ''; currentTime = 0; playCount = 0; paused = false; onended?: () => void;
+    constructor() { audio = this; }
+    pause() { this.paused = true; }
+    play() { this.paused = false; this.playCount++; return Promise.resolve(); }
+    getAttribute(name: string) { return name === 'src' ? this.src : null; }
+    removeAttribute(name: string) { if (name === 'src') this.src = ''; }
+  });
+  global.fetch = async () => new Response('audio', { headers: { 'content-type': 'audio/mpeg' } });
+  try {
+    view.render(); view.start(); await tick();
+    const done = view.render().props.value!.play('reply', 'One two three.');
+    await tick(); await tick(); assert.ok(audio); audio.currentTime = 1.25;
+    view.render().props.value!.pause();
+    assert.equal(view.render().props.value!.active, 'reply');
+    assert.equal(view.render().props.value!.paused, true);
+    assert.equal(audio.paused, true);
+    view.render().props.value!.resume();
+    assert.equal(audio.currentTime, 1.25);
+    assert.equal(audio.playCount, 2);
+    assert.equal(view.render().props.value!.paused, false);
+    view.render().props.value!.pause(); view.render().props.value!.stop(); await done;
+    assert.equal(view.render().props.value!.active, null);
+  } finally { view.dispose(); global.fetch = originalFetch; global.Audio = originalAudio; URL.createObjectURL = create; URL.revokeObjectURL = revoke; }
+});
+
+test('pausing while the streaming voice is preparing waits for resume before playing', async () => {
+  const originalFetch = global.fetch, originalAudio = global.Audio;
+  let supply: (response: Response) => void = () => {}, played = 0;
+  const response = new Promise<Response>(resolve => { supply = resolve; });
+  const view = fixture(async (audio, _url, signal, prefetched, shouldPlay) => {
+    await prefetched;
+    audio.src = 'blob:stream';
+    if (shouldPlay?.()) await audio.play();
+    await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }));
+  });
+  Reflect.set(global, 'Audio', class {
+    src = '';
+    pause() {}
+    play() { played++; return Promise.resolve(); }
+    getAttribute(name: string) { return name === 'src' ? this.src : null; }
+    removeAttribute(name: string) { if (name === 'src') this.src = ''; }
+  });
+  global.fetch = async (_url, options) => options?.method === 'DELETE' ? new Response(null, { status: 204 }) : response;
+  try {
+    view.render(); view.start(); await tick();
+    const done = view.render().props.value!.play('reply', 'The beginning must wait.');
+    await tick();
+    view.render().props.value!.pause();
+    supply(new Response('audio')); await tick();
+    assert.equal(played, 0);
+    assert.equal(view.render().props.value!.paused, true);
+    view.render().props.value!.resume();
+    assert.equal(played, 1);
+    view.render().props.value!.stop(); await done;
+  } finally { supply(new Response('audio')); view.render().props.value?.stop(); view.dispose(); global.fetch = originalFetch; global.Audio = originalAudio; }
 });
 
 test('streaming generates a bounded next queue before playback ends and Stop aborts every fetch', async () => {

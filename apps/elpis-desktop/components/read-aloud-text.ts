@@ -25,11 +25,15 @@ export type LiveSpeech = { feed: (text: string) => void; end: () => void; done: 
 
 export type Speech = {
   active: string | null;
+  paused: boolean;
+  canPause: boolean;
   error: { id: string; message: string } | null;
   play: (id: string, text: string, literal?: boolean) => Promise<void>;
   stream: (id: string) => void;
   live: (id: string) => LiveSpeech | null;
   stop: () => void;
+  pause: () => void;
+  resume: () => void;
   warm: () => void;
   speed: number;
   setSpeed: (speed: number) => void;

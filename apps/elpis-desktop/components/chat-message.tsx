@@ -35,7 +35,7 @@ import { useRef } from "react";
 import { BranchIcon, PlanIcon, StopIcon } from "@/components/elpis-icons";
 import { BrowserComments } from "@/components/browser-comments";
 import { BROWSER_COMMENTS, DRAWING_NOTE } from "@/lib/browser-notes";
-import { CircleCheck, CircleX, Signpost, RefreshCw, Volume2 } from "lucide-react";
+import { CircleCheck, CircleX, Signpost, RefreshCw, Volume2, Pause, Play } from "lucide-react";
 import { RightClickMenu } from "@/components/action-menu";
 
 import { MarkdownText } from "@/components/markdown-text";
@@ -250,18 +250,25 @@ export function ChatMessage({
         ? [
             {
               id: "read-aloud",
-              label: speaking ? "Stop" : "Read aloud",
-              title: speaking ? "Stop reading aloud" : "Read aloud · selected voice",
-              icon: speaking ? <StopIcon size={14} /> : <Volume2 size={14} />,
+              label: speaking ? (speech.canPause ? (speech.paused ? "Resume" : "Pause") : "Stop") : "Read aloud",
+              title: speaking ? (speech.canPause ? (speech.paused ? "Resume reading aloud" : "Pause reading aloud") : "Stop reading aloud") : "Read aloud · selected voice",
+              icon: speaking ? (speech.canPause ? (speech.paused ? <Play size={14} /> : <Pause size={14} />) : <StopIcon size={14} />) : <Volume2 size={14} />,
               run: () => {
                 const selected = selectedSpeech.current;
                 selectedSpeech.current = "";
-                if (speaking) speech.stop();
+                if (speaking) {
+                  if (!speech.canPause) speech.stop();
+                  else if (speech.paused) speech.resume();
+                  else speech.pause();
+                }
                 else void speech.play(speechId, selected || spokenText, !!selected);
               },
             },
           ]
         : [];
+    if (speaking && speech?.canPause) speechAction.push({
+      id: "stop-read-aloud", label: "Stop reading aloud", icon: <StopIcon size={14} />, run: speech.stop,
+    });
     const modelAction: MessageAction[] = model ? [{ id: "model", label: model, icon: null, run: () => {} }] : [];
     const actions: MessageAction[] = item.text
       ? [
@@ -354,7 +361,7 @@ export function ChatMessage({
           <InkRow className="message-actions">
             <MessageButtons actions={actions} />
             {speaking && speech && (
-              <OptionSelect aria-label="Read aloud speed" value={String(speech.speed)} onChange={event => speech.setSpeed(Number(event.target.value))}>
+              <OptionSelect size="sm" aria-label="Read aloud speed" value={String(speech.speed)} onChange={event => speech.setSpeed(Number(event.target.value))}>
                 {[0.5, 0.75, 1, 1.25, 1.3, 1.4, 1.5, 1.75, 2].map(value => <option key={value} value={String(value)}>{value}×</option>)}
               </OptionSelect>
             )}

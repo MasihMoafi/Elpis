@@ -14,6 +14,57 @@ function silentWav(seconds = 0.3, rate = 24000) {
   return Buffer.concat([header, data]);
 }
 
+for (const recordedModel of [true, false]) test(`Read aloud pauses and resumes without moving its action row ${recordedModel ? 'with' : 'without'} a model label`, async () => {
+  const f = await fixture({ routes: {
+    '/api/threads/chat-a': () => ({ thread: { id: 'chat-a', name: 'Fix the parser', cwd: '/tmp/parity-fixture', status: { type: 'idle' } }, nextCursor: null, data: [
+      { turnId: 'tail', item: { id: 'tail-reply', type: 'agentMessage', text: 'All green.' } },
+      { turnId: 'read', ...(recordedModel ? { model: 'gpt-6.1-sol' } : {}), item: { id: 'read-reply', type: 'agentMessage', text: 'The beginning must remain audible.' } },
+    ] }),
+  } });
+  const voiced: string[] = [];
+  try {
+    await f.page.route('**/api/read-aloud', async (route: { request(): { method(): string; postData(): string }; fulfill(options: { contentType: string; body: string | Buffer }): Promise<unknown> }) => {
+      if (route.request().method() === 'GET') return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ available: true }) });
+      voiced.push(JSON.parse(route.request().postData()).text);
+      return route.fulfill({ contentType: 'audio/wav', body: silentWav(8) });
+    });
+    await f.page.addInitScript(() => {
+      const Original = window.Audio;
+      window.Audio = function(src?: string) {
+        const audio = new Original(src);
+        (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio = audio;
+        return audio;
+      } as unknown as typeof Audio;
+    });
+    await f.page.reload(); await f.open('chat-a');
+    const reply = f.page.locator('.message.agent').filter({ hasText: 'The beginning must remain audible.' });
+    await reply.scrollIntoViewIfNeeded();
+    const bounds = () => reply.locator('.message-actions').evaluate((element: HTMLElement) => {
+      const measure = (node: Element | null) => node ? { top: node.getBoundingClientRect().top, height: node.getBoundingClientRect().height } : null;
+      return { row: measure(element), model: measure(element.querySelector('.message-model')), first: measure(element.querySelector('button')) };
+    });
+    const before = await bounds();
+    await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
+    await reply.getByRole('button', { name: 'Pause', exact: true }).waitFor();
+    await f.page.waitForFunction(() => ((window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio?.currentTime ?? 0) > 0.1);
+    assert.deepEqual(await bounds(), before);
+    await reply.getByRole('button', { name: 'Pause', exact: true }).click();
+    await reply.getByRole('button', { name: 'Resume', exact: true }).waitFor();
+    const paused = await f.page.evaluate(() => (window as Window & { __readingAudio: HTMLAudioElement }).__readingAudio.currentTime);
+    await f.page.waitForTimeout(250);
+    const stillPaused = await f.page.evaluate(() => (window as Window & { __readingAudio: HTMLAudioElement }).__readingAudio.currentTime);
+    assert.ok(Math.abs(stillPaused - paused) < 0.05);
+    assert.deepEqual(await bounds(), before);
+    await reply.getByRole('button', { name: 'Resume', exact: true }).click();
+    await f.page.waitForFunction((time: number) => (window as Window & { __readingAudio: HTMLAudioElement }).__readingAudio.currentTime > time + 0.1, paused);
+    assert.deepEqual(await bounds(), before);
+    await reply.getByRole('button', { name: 'Stop reading aloud', exact: true }).click();
+    await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor();
+    assert.deepEqual(voiced, ['The beginning must remain audible.']);
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+
 for (const available of [true, false]) test(`Read aloud ${available ? 'voices a reply with local Kokoro, piece by piece' : 'does not show without Kokoro'}`, async () => {
   const f = await fixture(), voiced: string[] = [];
   try {
@@ -29,7 +80,7 @@ for (const available of [true, false]) test(`Read aloud ${available ? 'voices a 
     const read = reply.getByRole('button', { name: 'Read aloud', exact: true });
     if (!available) { await f.page.waitForTimeout(500); assert.equal(await read.count(), 0); assert.deepEqual(voiced, []); return; }
     await read.click();
-    await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+    await reply.getByRole('button', { name: 'Pause', exact: true }).waitFor();
     const end = Date.now() + 10000; while (Date.now() < end && !(await read.count())) await f.page.waitForTimeout(100);
     assert.ok(await read.count(), 'Read aloud comes back once the reply has been read');
     assert.deepEqual(voiced, ['The parser has two passes. lexing parsing See the guide.'], 'one piece, without Markdown marks or the address');
@@ -59,7 +110,7 @@ for (const action of ['toolbar', 'more menu', 'context menu']) test(`Read aloud 
         if (!voiced.length) await f.page.evaluate(() => getSelection()!.removeAllRanges());
         await f.page.getByRole('menuitem', { name: 'Read aloud', exact: true }).click();
       }
-      await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+      await reply.getByRole('button', { name: 'Pause', exact: true }).waitFor();
       await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor();
     };
     await invoke(); assert.deepEqual(voiced, ['two passes']);
@@ -88,7 +139,7 @@ for (const [selection, selected] of [
       const selection = getSelection()!; selection.removeAllRanges(); selection.addRange(range);
     });
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
-    await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor(); await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor({ timeout: 15000 });
+    await reply.getByRole('button', { name: 'Pause', exact: true }).waitFor(); await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor({ timeout: 15000 });
     const normalized = (text: string) => selection ? text : text.replace(/\s+/gu, '');
     assert.ok(normalized(voiced.join('')) === normalized(selected), 'every character is retained in order');
     assert.ok(voiced.every(piece => piece.isWellFormed() && piece.length <= 280));
@@ -120,7 +171,7 @@ for (const activation of ['mouse', 'keyboard']) test(`Read aloud accepts a selec
       assert.equal(await f.page.evaluate(() => getSelection()!.toString()), 'selected words');
       await f.page.keyboard.press('Enter');
     }
-    await reply.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+    await reply.getByRole('button', { name: 'Pause', exact: true }).waitFor();
     assert.deepEqual(voiced, ['selected words']);
   } finally { await f.close(); }
 });

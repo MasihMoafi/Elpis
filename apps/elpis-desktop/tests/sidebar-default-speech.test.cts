@@ -133,11 +133,11 @@ test('streaming Read aloud begins before synthesis finishes and speed changes du
       return { rate: audio.playbackRate, pitch: audio.preservesPitch };
     });
     assert.deepEqual(playback, { rate: 1.5, pitch: true });
-    await reply.getByRole('button', { name: 'Stop', exact: true }).click();
+    await reply.getByRole('button', { name: 'Stop reading aloud', exact: true }).click();
     await f.page.reload(); await f.open('chat-a');
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).click();
     assert.equal(await f.page.evaluate(() => (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio!.playbackRate), 1.5);
-    await reply.getByRole('button', { name: 'Stop', exact: true }).click();
+    await reply.getByRole('button', { name: 'Stop reading aloud', exact: true }).click();
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });

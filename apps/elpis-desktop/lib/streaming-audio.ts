@@ -1,5 +1,5 @@
 /** Feed MPEG frames to the media buffer as they arrive. A plain media URL waits for the complete response in Chromium. */
-export async function playStreamingAudio(audio: HTMLAudioElement, url: string, signal: AbortSignal, prefetched?: Promise<Response>) {
+export async function playStreamingAudio(audio: HTMLAudioElement, url: string, signal: AbortSignal, prefetched?: Promise<Response>, shouldPlay = () => true) {
   if (!MediaSource.isTypeSupported("audio/mpeg")) throw new Error("This browser cannot play the local streaming voice.");
   const media = new MediaSource(), address = URL.createObjectURL(media);
   const transfer = new AbortController(), combined = AbortSignal.any([signal, transfer.signal]);
@@ -23,7 +23,10 @@ export async function playStreamingAudio(audio: HTMLAudioElement, url: string, s
     audio.src = address;
     audio.playbackRate = speed;
     audio.preservesPitch = true;
-    void audio.play().catch(error => { failure = error; transfer.abort(); });
+    if (shouldPlay()) void audio.play().catch(error => {
+      if (error?.name === "AbortError" && !combined.aborted) return;
+      failure = error; transfer.abort();
+    });
     await opened;
     const buffer = media.addSourceBuffer("audio/mpeg");
     const failed = () => { failure = new Error("The local speech stream is invalid."); transfer.abort(); };

@@ -29,6 +29,8 @@ export function ReadAloud({
   children: ReactNode;
 }) {
   const [active, setActive] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
   const [error, setError] = useState<Speech["error"]>(null);
   const source = useReadAloudSource();
   const speedKey = "elpis-read-aloud-speed";
@@ -123,7 +125,7 @@ export function ReadAloud({
           mine.generatedSpeed = generatedSpeeds.get(url) ?? 1;
           audio.playbackRate = speedRef.current / mine.generatedSpeed;
           if (source.streaming) {
-            await playStreamingAudio(audio, url, controller.signal, streams.get(url));
+            await playStreamingAudio(audio, url, controller.signal, streams.get(url), () => !pausedRef.current);
             streams.delete(url);
             generatedSpeeds.delete(url);
           }
@@ -134,9 +136,12 @@ export function ReadAloud({
               audio.onended = () => resolve();
               audio.onerror = () => reject(new Error("This reply could not be played."));
               controller.signal.addEventListener("abort", () => resolve(), { once: true });
-              void audio.play().catch(reject);
+              if (!pausedRef.current) void audio.play().catch(error => {
+                if (error?.name !== "AbortError") reject(error instanceof Error ? error : new Error("This reply could not be played."));
+              });
             });
           }
+          audio.removeAttribute("src");
           if (url.startsWith("blob:")) URL.revokeObjectURL(url);
           played++;
         }
@@ -179,6 +184,8 @@ export function ReadAloud({
   /** The selected file source warms itself when its status is read. */
   function warm() {}
   function stop() {
+    pausedRef.current = false;
+    setPaused(false);
     const spoken = local.current;
     local.current = null;
     if (spoken) {
@@ -206,6 +213,24 @@ export function ReadAloud({
       if (current.soundTimeout) clearTimeout(current.soundTimeout);
     }
     setActive(null);
+  }
+  function pause() {
+    if (!local.current) return;
+    pausedRef.current = true;
+    setPaused(true);
+    local.current.audio.pause();
+  }
+  function resume() {
+    const reading = local.current;
+    if (!reading) return;
+    pausedRef.current = false;
+    setPaused(false);
+    if (reading.audio.getAttribute("src")) void reading.audio.play().catch(cause => {
+      if (cause?.name === "AbortError" || local.current !== reading) return;
+      const id = active;
+      stop();
+      if (id) setError({ id, message: errorText(cause, "Read aloud could not resume.") });
+    });
   }
   useEffect(() => {
     setError(null);
@@ -483,6 +508,8 @@ export function ReadAloud({
           ? null
           : {
               active,
+              paused,
+              canPause: !!local.current,
               error,
               play: (id, text, literal) => play(id, text, literal),
               stream: id => void play(id),
@@ -492,6 +519,8 @@ export function ReadAloud({
                 return null;
               },
               stop,
+              pause,
+              resume,
               warm,
               speed,
               setSpeed,
