@@ -5,6 +5,7 @@ import type { useBrowser } from "@/components/browser-panel";
 import { GroupAndSortMenu } from "@/components/chat-groups";
 import { AgentsIcon, BrowserIcon, PinIcon } from "@/components/elpis-icons";
 import { LoadOnScroll } from "@/components/load-on-scroll";
+import { PendingImprovements } from "@/components/improvement-activity";
 import type { useReorder } from "@/components/reorder";
 import { SidebarProjects } from "@/components/sidebar-projects";
 import { Button } from "@/components/ui/button";
@@ -122,6 +123,7 @@ export function SidebarChatList({
   );
   return (
     <div className="thread-list" ref={threadList} tabIndex={-1} onKeyDown={listKeys} {...chatListOrder.pointer}>
+      {!searchTerm && <PendingImprovements />}
       {!recentChats.length && markRead && <div className="section-label-row justify-end">{markRead}</div>}
       {workflowCatalog.error && (
         <p role="alert" className="px-2 text-xs text-destructive">

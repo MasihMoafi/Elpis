@@ -27,6 +27,7 @@ import { WorkspaceOrganizationDialogs } from "@/components/workspace-organizatio
 import { WorkspaceCommandDialogs } from "@/components/workspace-command-dialogs";
 import type { WorkspaceController } from "@/components/use-workspace-controller";
 import { WorkspaceChatPage } from "@/components/workspace-chat-page";
+import { ImprovementActivityProvider } from "@/components/improvement-activity";
 
 /** The workspace page's layout. */
 export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }) {
@@ -73,6 +74,7 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
           available={LOVE_SPOT_AUDIO.readAloudAvailable}
           unavailableReason={LOVE_SPOT_AUDIO.available ? undefined : LOVE_SPOT_AUDIO.reason}
         >
+          <ImprovementActivityProvider onCreated={workspace.conversations.upsertThread}>
           <div
             data-workspace={workspace.view}
             data-desktop={workspace.desktop || undefined}
@@ -414,6 +416,7 @@ export function WorkspaceShell({ workspace }: { workspace: WorkspaceController }
               )}
             </main>
           </div>
+          </ImprovementActivityProvider>
         </ReadAloud>
       </LiveVoiceProvider>
     </DocumentReviewProvider>

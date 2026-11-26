@@ -103,7 +103,7 @@ export function WorkspaceHeader({
     source = find(selected?.forkedFromId);
   return (
     <header className={`workspace-header${heading ? "" : " untitled"}`}>
-      <ImproveElpis {...(view === "chat" && selected ? { threadId: selected.id } : {})} onChat={loadThread} />
+      <ImproveElpis {...(view === "chat" && selected ? { threadId: selected.id } : {})} />
       {outsideChatApprovals.length > 0 && (
         <PendingInputTrigger
           approvals={outsideChatApprovals}

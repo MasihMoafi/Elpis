@@ -11,12 +11,12 @@ const path: typeof import('node:path') = require('node:path');
 const { fixture }: { fixture(options: Options): Promise<Fixture> } = require('./parity-fixture.cts');
 const { assertDialogActionsExplained }: { assertDialogActionsExplained(dialog: Locator, reason: RegExp): Promise<void> } = require('./controls.cts');
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
-const row = { id: 'change-1', branch: 'improve/20261018-button', cwd: '/tmp/change', status: 'review', head: 'abc', dirty: false, diff: 'diff --git a/button b/button\n--- a/button\n+++ b/button\n@@ -1 +1 @@\n-Send\n+Go', checks: null, thread: { id: 'chat-a' } };
+const row = { id: 'change-1', branch: 'improve/20261018-button', cwd: '/tmp/change', status: 'review', head: 'abc', dirty: false, diff: 'diff --git a/button b/button\n--- a/button\n+++ b/button\n@@ -1 +1 @@\n-Send\n+Go', checks: null, thread: { id: 'chat-b' } };
 const checkedRow = { ...row, checks: { passed: true, head: 'abc', commands: [{ command: 'node --test', code: 0, output: 'tests 1\npass 1' }] } };
 async function setup(colorScheme = 'light', failCapture = false, result = checkedRow) {
   let started = false, current: typeof row | typeof checkedRow = row;
   const f = await fixture({ colorScheme, width: 1200, height: 800, routes: {
-    '/api/improvements': body => { if (body) { started = true; return row; } return { data: started ? [{ id: row.id, threadId: 'chat-a' }] : [] }; },
+    '/api/improvements': body => { if (body) { started = true; return row; } return { data: started ? [{ id: row.id, threadId: 'chat-b' }] : [] }; },
     '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
     '/api/improvements/change-1': () => current,
     '/api/improvements/change-1/check': () => current = result,
@@ -25,9 +25,10 @@ async function setup(colorScheme = 'light', failCapture = false, result = checke
   await f.page.locator('.startup-splash').waitFor({ state: 'detached' });
   return f;
 }
-for (const colorScheme of ['light']) test(`Ctrl+K improvement opens a pointed chat and review with measured tests and no Try it or Keep (${colorScheme})`, async () => {
+for (const colorScheme of ['light']) test(`Ctrl+K improvement keeps the current chat and opens its review when selected (${colorScheme})`, async () => {
   const f = await setup(colorScheme), { page } = f;
   try {
+    await page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
     await page.keyboard.press('Control+k'); await page.getByRole('combobox', { name: 'Search or start a chat' }).fill('Improve Elpis');
     await page.keyboard.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Improve Elpis' }); await dialog.waitFor();
@@ -39,6 +40,9 @@ for (const colorScheme of ['light']) test(`Ctrl+K improvement opens a pointed ch
     assert.ok(sent);
     assert.equal(sent.body.request, 'Rename Send to Go'); assert.equal(sent.body.target.image, PNG);
     assert.match(sent.body.target.id, /components\/workspace-shell.tsx#WorkspaceShell/);
+    await page.locator('.thread-row[data-thread-id="chat-b"] [aria-label="Elpis change"]').waitFor();
+    assert.equal(await page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+    await page.locator('.thread-row[data-thread-id="chat-b"] .thread-link').click();
     const review = page.getByRole('dialog', { name: 'Review Elpis change' });
     await review.getByText('Run build and tests on this commit.', { exact: true }).waitFor();
     // Masih, 22 Oct (the review dialog): "keep and try it should be deleted."
@@ -55,6 +59,73 @@ for (const colorScheme of ['light']) test(`Ctrl+K improvement opens a pointed ch
     const overlap = await page.evaluate(() => { const first = document.querySelector('.elpis-improve-review-button'), second = document.querySelector('[aria-label="Show side panel"]'); if (!first || !second) throw Error('Header controls missing'); const a = first.getBoundingClientRect(), b = second.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; });
     assert.equal(overlap, false, 'review action shares the header layout without covering the panel control');
     assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
+test('a slow change appears immediately while the current chat stays selected', async () => {
+  let finish: (value: typeof row) => void = () => {};
+  const response = new Promise<typeof row>(resolve => { finish = resolve; });
+  const f = await fixture({ routes: {
+    '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
+    '/api/improvements': body => body ? response : { data: [] },
+  } });
+  try {
+    await f.page.evaluate(PNG => { (window as ImproveWindow).elpisDesktop.improve = { capture: async () => ({ image: PNG }) }; }, PNG);
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await f.page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
+    const dialog = f.page.getByRole('dialog', { name: 'Improve Elpis' });
+    await dialog.getByText('/tmp/elpis-source', { exact: true }).waitFor();
+    await dialog.getByRole('textbox', { name: 'What should change?' }).fill('Keep this visible while starting');
+    await dialog.getByRole('button', { name: 'Start change' }).click();
+    await dialog.waitFor({ state: 'detached' });
+    await f.page.locator('[data-slot="pending-improvement"]').getByText('Keep this visible while starting').waitFor();
+    assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+    assert.equal(await f.page.getByRole('dialog', { name: 'Review Elpis change' }).count(), 0);
+    finish(row);
+    await f.page.locator('.thread-row[data-thread-id="chat-b"] [aria-label="Elpis change"]').waitFor();
+    assert.equal(await f.page.locator('[data-slot="pending-improvement"]').count(), 0);
+    assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+  } finally { finish(row); await f.close(); }
+});
+
+test('a failed start keeps the request and permits a deliberate retry', async () => {
+  let attempts = 0;
+  const f = await fixture({ routes: {
+    '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
+    '/api/improvements': body => body ? (++attempts === 1 ? { __http: 503, error: 'Start unavailable' } : row) : { data: [] },
+  } });
+  try {
+    await f.page.evaluate(PNG => { (window as ImproveWindow).elpisDesktop.improve = { capture: async () => ({ image: PNG }) }; }, PNG);
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await f.page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
+    const dialog = f.page.getByRole('dialog', { name: 'Improve Elpis' });
+    await dialog.getByText('/tmp/elpis-source', { exact: true }).waitFor();
+    await dialog.getByRole('textbox', { name: 'What should change?' }).fill('Preserve this request');
+    await dialog.getByRole('button', { name: 'Start change' }).click();
+    await f.page.getByRole('alert').filter({ hasText: 'Check the chat list before retrying' }).waitFor();
+    assert.equal(await f.page.locator('[data-slot="pending-improvement"]').getByText('Preserve this request').count(), 1);
+    assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+    await f.page.getByRole('button', { name: 'Retry starting change' }).click();
+    await f.page.locator('.thread-row[data-thread-id="chat-b"] [aria-label="Elpis change"]').waitFor();
+    assert.equal(attempts, 2);
+    assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+  } finally { await f.close(); }
+});
+test('an unconfirmed first message points to the created chat without offering a duplicate start', async () => {
+  const f = await fixture({ routes: {
+    '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
+    '/api/improvements': body => body ? { ...row, error: 'First message was not confirmed.' } : { data: [] },
+  } });
+  try {
+    await f.page.evaluate(PNG => { (window as ImproveWindow).elpisDesktop.improve = { capture: async () => ({ image: PNG }) }; }, PNG);
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await f.page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
+    const dialog = f.page.getByRole('dialog', { name: 'Improve Elpis' });
+    await dialog.getByText('/tmp/elpis-source', { exact: true }).waitFor();
+    await dialog.getByRole('textbox', { name: 'What should change?' }).fill('Keep the new chat');
+    await dialog.getByRole('button', { name: 'Start change' }).click();
+    await f.page.getByRole('alert').filter({ hasText: 'Open the change chat to inspect it' }).waitFor();
+    assert.equal(await f.page.getByRole('button', { name: 'Retry starting change' }).count(), 0);
+    assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
   } finally { await f.close(); }
 });
 test('the source folder chooser repairs setup without losing the requested change or starting a model', async () => {

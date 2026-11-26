@@ -5,6 +5,7 @@ import { ReorderItem, type useReorder } from "@/components/reorder";
 import { ThreadActions } from "@/components/thread-actions";
 import { Button } from "@/components/ui/button";
 import { WorkingMark } from "@/components/working-mark";
+import { ImprovementMark } from "@/components/improvement-activity";
 import { agentState, attentionLine, stateLabels } from "@/lib/agents";
 import { isAgent, isAgentRun, title, type Thread } from "@/lib/api";
 import { chatOrigin, originLabel } from "@/lib/love-activity";
@@ -257,6 +258,7 @@ export function createSidebarThreadRow({
               onClick={event => clickRow(thread, event, () => model.setOpenedRunId(run?.id))}
               title={name}
             >
+              <ImprovementMark threadId={thread.id} />
               <>
                 {isAgent(thread) || workflowSteps.has(thread.id) || run ? (
                   <AgentIdentity

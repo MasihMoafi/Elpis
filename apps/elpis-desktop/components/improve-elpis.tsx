@@ -20,6 +20,7 @@ import { parseDiff } from "@/lib/diff";
 import "./improve-elpis.css";
 import { errorText } from "@/lib/error-text.mts";
 import { changeBlockedReason } from "@/lib/improve-reason";
+import { useImprovementActivity } from "@/components/improvement-activity";
 
 type Target = { id: string; label: string; image: string; component: string; file: string };
 type Change = {
@@ -40,7 +41,8 @@ const message = (error: unknown) => errorText(error);
 const paint = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
 
 /** Pointing and review live alongside the ordinary chat; the engine and chat store stay the existing ones. */
-export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: (thread: Thread) => Promise<void> }) {
+export function ImproveElpis({ threadId }: { threadId?: string }) {
+  const activity = useImprovementActivity();
   const [open, setOpen] = useState(false),
     [request, setRequest] = useState("");
   const [target, setTarget] = useState<Target | null>(null),
@@ -243,27 +245,11 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
       setReviewOpen(true);
     }
   }, [change]);
-  async function start() {
+  function start() {
     if (startReason || !target) return;
-    setBusy(true);
     setError("");
-    try {
-      const next = await api<Change>("/improvements", {
-        request,
-        target: { id: target.id, label: target.label, image: target.image },
-      });
-      setOpen(false);
-      await onChat(next.thread);
-      setChange(next);
-      if (next.error) {
-        setError(next.error);
-        setReviewOpen(true);
-      }
-    } catch (cause) {
-      setError(message(cause));
-    } finally {
-      setBusy(false);
-    }
+    activity.start({ request, target: { id: target.id, label: target.label, image: target.image } });
+    setOpen(false);
   }
   async function check() {
     if (!change) return;
@@ -402,7 +388,7 @@ export function ImproveElpis({ threadId, onChat }: { threadId?: string; onChat: 
             <Button variant="outline" disabled={busy} onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button disabled={!!startReason} disabledReason={startReason} onClick={() => void start()}>
+            <Button disabled={!!startReason} disabledReason={startReason} onClick={start}>
               {busy ? "Starting…" : "Start change"}
             </Button>
           </AlertDialogFooter>
