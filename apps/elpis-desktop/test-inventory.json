@@ -323,6 +323,7 @@
     "tests/page-frame.test.cts",
     "tests/codebase-page.test.cts",
     "tests/chat-scroll-follow.test.cts",
+    "tests/chat-working-layout.test.cts",
     "tests/chat-switch-rendering.test.cts",
     "tests/sidebar-working-mark.test.cts",
     "tests/sidebar-move.test.cts",
