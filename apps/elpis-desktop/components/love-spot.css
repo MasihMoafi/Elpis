@@ -33,6 +33,7 @@
 .love-spot-tools .dictation-control { margin: 0; }
 .love-spot-writing { min-width: 11.5em; justify-content: center; visibility: hidden; }
 .love-spot-writing[data-active="true"] { visibility: visible; }
+@media (max-width: 1100px) { .love-spot-writing[data-active="false"] { display: none; } }
 .love-spot-pages { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; margin-right: auto; min-width: 0; }
 /* Renaming is brief; its field may take a line of its own. */
 .love-spot-pages:has(> form) { flex-wrap: wrap; }
