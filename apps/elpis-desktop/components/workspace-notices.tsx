@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from "react";
-import { X } from "lucide-react";
+import { Hammer, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useImprovementActivity } from "@/components/improvement-activity";
 import { plainMessage } from "@/lib/use-workspace-notices";
 
 /** One quiet line: the text and its close button. Every notice under the chat is this shape (globals.css .error-banner). */
@@ -148,7 +149,8 @@ export function ActionNotices({
   onDismissWorktree: () => void;
 }) {
   const stack = useRef<HTMLDivElement>(null);
-  const shown = !!(deleted || history || worktree);
+  const { announcement } = useImprovementActivity();
+  const shown = !!(announcement || deleted || history || worktree);
   // The sidebar opens, closes and resizes through the shell's own renders, so every render places the stack again.
   useLayoutEffect(() => {
     if (shown && stack.current) place(stack.current);
@@ -182,6 +184,14 @@ export function ActionNotices({
         <Notice tone="notice" className="worktree-notice" label="Dismiss worktree notice" onDismiss={onDismissWorktree}>
           {worktree}
         </Notice>
+      )}
+      {announcement && (
+        <div className="error-banner notice" role="status" title={announcement.request}>
+          <Hammer size={14} aria-hidden="true" className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {announcement.phase === "starting" ? "Starting change" : announcement.phase === "started" ? "Change started" : "Change needs attention"}: {announcement.request}
+          </span>
+        </div>
       )}
     </div>
   );

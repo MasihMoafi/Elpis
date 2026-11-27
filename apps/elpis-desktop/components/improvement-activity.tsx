@@ -9,9 +9,11 @@ import { errorText } from "@/lib/error-text.mts";
 
 type Request = { request: string; target: { id: string; label: string; image: string } };
 type Pending = Request & { id: string; error?: string; threadId?: string };
+type Announcement = { request: string; phase: "starting" | "started" | "failed" };
 type Activity = {
   start: (request: Request) => void;
   pending: Pending[];
+  announcement: Announcement | null;
   retry: (job: Pending) => void;
   dismiss: (id: string) => void;
   isChange: (id: string) => boolean;
@@ -21,8 +23,14 @@ const ActivityContext = createContext<Activity | null>(null);
 /** Start the work without navigating away; retain an unconfirmed request for the user to recover. */
 export function ImprovementActivityProvider({ onCreated, children }: { onCreated: (thread: Thread) => void; children: ReactNode }) {
   const [pending, setPending] = useState<Pending[]>([]);
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [changes, setChanges] = useState<Set<string>>(() => new Set());
   const running = useRef(new Set<string>());
+  useEffect(() => {
+    if (!announcement) return;
+    const timer = setTimeout(() => setAnnouncement(null), 4000);
+    return () => clearTimeout(timer);
+  }, [announcement]);
   useEffect(() => {
     let active = true;
     void api<{ data?: { threadId?: string }[] }>("/improvements").then(result => {
@@ -34,6 +42,7 @@ export function ImprovementActivityProvider({ onCreated, children }: { onCreated
   const run = useCallback((job: Pending) => {
     if (running.current.has(job.id)) return;
     running.current.add(job.id);
+    setAnnouncement({ request: job.request, phase: "starting" });
     setPending(previous => previous.map(item => item.id === job.id ? { ...item, error: "" } : item));
     void api<{ thread: Thread; error?: string }>("/improvements", { request: job.request, target: job.target })
       .then(result => {
@@ -41,13 +50,17 @@ export function ImprovementActivityProvider({ onCreated, children }: { onCreated
         setChanges(previous => new Set(previous).add(result.thread.id));
         onCreated(result.thread);
         const error = result.error;
+        setAnnouncement({ request: job.request, phase: error ? "failed" : "started" });
         setPending(previous => error
           ? previous.map(item => item.id === job.id ? { ...item, error, threadId: result.thread.id } : item)
           : previous.filter(item => item.id !== job.id));
       })
-      .catch(cause => setPending(previous => previous.map(item => item.id === job.id
-        ? { ...item, error: errorText(cause, "The change could not be started.") }
-        : item)))
+      .catch(cause => {
+        setAnnouncement({ request: job.request, phase: "failed" });
+        setPending(previous => previous.map(item => item.id === job.id
+          ? { ...item, error: errorText(cause, "The change could not be started.") }
+          : item));
+      })
       .finally(() => running.current.delete(job.id));
   }, [onCreated]);
   const start = useCallback((request: Request) => {
@@ -56,7 +69,7 @@ export function ImprovementActivityProvider({ onCreated, children }: { onCreated
     run(job);
   }, [run]);
   return <ActivityContext.Provider value={{
-    start, pending, retry: run,
+    start, pending, announcement, retry: run,
     dismiss: id => setPending(previous => previous.filter(job => job.id !== id)),
     isChange: id => changes.has(id),
   }}>{children}</ActivityContext.Provider>;
