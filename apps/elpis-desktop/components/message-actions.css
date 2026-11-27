@@ -10,7 +10,7 @@
 .turn .message.agent:not([data-reply-end] .message.agent) > .message-actions { display:none; }
 /* InkRow spaces the actions by their ink: 16px between what the eye sees, not between boxes. */
 .user-turn .message-actions, .message.agent .message-actions { --ink-gap:16px; gap:0; margin-top:6px; }
-.message.agent .message-actions { min-height:var(--control-sm); }
+.message.agent .message-actions { min-height:var(--control-h); }
 /* ‹ 2 / 2 ›: an edited message's versions, before its other actions. */
 .message-versions { display:inline-flex; align-items:center; gap:2px; }
 

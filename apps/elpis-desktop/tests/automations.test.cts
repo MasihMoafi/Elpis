@@ -30,7 +30,7 @@ test('delete is available from the row for active and paused automations, and ca
 
     await create('Paused task');
     const paused = page.locator('.automation').filter({ hasText: 'Paused task' });
-    await paused.locator('.automation-summary').click();
+    if (await paused.locator('.automation-summary').getAttribute('aria-expanded') === 'false') await paused.locator('.automation-summary').click();
     await paused.getByRole('button', { name: 'Pause', exact: true }).click();
     await page.getByRole('radio', { name: 'Paused', exact: true }).click();
     await paused.waitFor();

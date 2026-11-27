@@ -440,7 +440,7 @@ span.model-select { display:inline-flex; align-items:center; background-image:no
 .activity-heading > span { min-width:0; overflow:hidden; text-overflow:ellipsis; }
 /* The action buttons hang in the room their message keeps under it (components/message-actions.css). */
 .message-actions { display:flex; align-items:center; gap:2px; position:absolute; top:100%; left:0; color:var(--subtle-foreground); }
-.message-model { padding-inline:4px; font-size:var(--text-xs); line-height:var(--control-sm); white-space:nowrap; }
+.message-model { padding-inline:4px; font-size:var(--text-xs); line-height:var(--control-h); white-space:nowrap; }
 
 .activity-title { flex-shrink:0; font-weight:500; color:var(--foreground); }
 .activity-preview { flex:1; color:var(--muted-foreground); white-space:nowrap; font:var(--text-xs) var(--mono); }

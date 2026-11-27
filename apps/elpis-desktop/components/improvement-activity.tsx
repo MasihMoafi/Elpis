@@ -25,8 +25,9 @@ export function ImprovementActivityProvider({ onCreated, children }: { onCreated
   const running = useRef(new Set<string>());
   useEffect(() => {
     let active = true;
-    void api<{ data: { threadId?: string }[] }>("/improvements").then(result => {
-      if (active) setChanges(previous => new Set([...previous, ...result.data.flatMap(row => row.threadId ? [row.threadId] : [])]));
+    void api<{ data?: { threadId?: string }[] }>("/improvements").then(result => {
+      const ids = Array.isArray(result.data) ? result.data.flatMap(row => row.threadId ? [row.threadId] : []) : [];
+      if (active) setChanges(previous => new Set([...previous, ...ids]));
     }).catch(() => { /* Ordinary chats do not depend on the change catalog. */ });
     return () => { active = false; };
   }, []);
@@ -74,28 +75,40 @@ export function ImprovementMark({ threadId }: { threadId: string }) {
     : null;
 }
 
+function ChangeErrorNotice({ message }: { message: string }) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(false), 6000);
+    return () => clearTimeout(timer);
+  }, []);
+  return visible ? <p role="alert" className="thread-row px-2 text-xs text-destructive" title={message}>
+    <span className="truncate">{message}</span>
+  </p> : null;
+}
+
 export function PendingImprovements() {
   const { pending, retry, dismiss } = useImprovementActivity();
   if (!pending.length) return null;
   return <section aria-label="Starting changes">
-    {pending.map(job => <div key={job.id}>
-      <div className="thread-row" data-slot="pending-improvement">
-        <span className="conversation-state-slot" aria-hidden="true">
-          {job.error ? <span className="thread-dot" data-state="error" /> : <WorkingMark animatedEdges={false} />}
-        </span>
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm" role="status" title={job.request}>
-          <Hammer size={14} aria-hidden="true" className="shrink-0" />
-          <span className="thread-title">{job.request}</span>
+    {pending.map(job => {
+      const errorMessage = job.error && `${job.error} ${job.threadId ? "Open the change chat to inspect it." : "Check the chat list before retrying; the start may have completed."}`;
+      return <div key={job.id}>
+        <div className="thread-row" data-slot="pending-improvement">
+          <span className="conversation-state-slot" aria-hidden="true">
+            {job.error ? <span className="thread-dot" data-state="error" /> : <WorkingMark animatedEdges={false} />}
+          </span>
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-2 text-sm" role="status" title={errorMessage || job.request}
+            aria-label={errorMessage ? `${job.request}. ${errorMessage}` : undefined}>
+            <Hammer size={14} aria-hidden="true" className="shrink-0" />
+            <span className="thread-title">{job.request}</span>
+          </div>
+          {job.error && !job.threadId && <Button variant="ghost" size="icon-xs" aria-label="Retry starting change"
+            title="Check the chat list for this change before retrying" onClick={() => retry(job)}><RotateCw size={14} /></Button>}
+          {job.error && <Button variant="ghost" size="icon-xs" aria-label="Dismiss change error"
+            title="Dismiss" onClick={() => dismiss(job.id)}><X size={14} /></Button>}
         </div>
-        {job.error && !job.threadId && <Button variant="ghost" size="icon-xs" aria-label="Retry starting change"
-          title="Check the chat list for this change before retrying" onClick={() => retry(job)}><RotateCw size={14} /></Button>}
-        {job.error && <Button variant="ghost" size="icon-xs" aria-label="Dismiss change error"
-          title="Dismiss" onClick={() => dismiss(job.id)}><X size={14} /></Button>}
-      </div>
-      {job.error && <p role="alert" className="thread-row px-2 text-xs text-destructive"
-        title={`${job.error} ${job.threadId ? "Open the change chat to inspect it." : "Check the chat list before retrying; the start may have completed."}`}>
-        <span className="truncate">{job.error} {job.threadId ? "Open the change chat to inspect it." : "Check the chat list before retrying; the start may have completed."}</span>
-      </p>}
-    </div>)}
+        {errorMessage && <ChangeErrorNotice message={errorMessage} />}
+      </div>;
+    })}
   </section>;
 }

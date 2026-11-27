@@ -13,6 +13,14 @@ const { assertDialogActionsExplained }: { assertDialogActionsExplained(dialog: L
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGM4o6SEFTEMLQkAvM5EAT6yk8sAAAAASUVORK5CYII=';
 const row = { id: 'change-1', branch: 'improve/20261018-button', cwd: '/tmp/change', status: 'review', head: 'abc', dirty: false, diff: 'diff --git a/button b/button\n--- a/button\n+++ b/button\n@@ -1 +1 @@\n-Send\n+Go', checks: null, thread: { id: 'chat-b' } };
 const checkedRow = { ...row, checks: { passed: true, head: 'abc', commands: [{ command: 'node --test', code: 0, output: 'tests 1\npass 1' }] } };
+test('an empty change catalog does not prevent ordinary chats from opening', async () => {
+  const f = await fixture({ routes: { '/api/improvements': () => ({}) } });
+  try {
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
 async function setup(colorScheme = 'light', failCapture = false, result = checkedRow) {
   let started = false, current: typeof row | typeof checkedRow = row;
   const f = await fixture({ colorScheme, width: 1200, height: 800, routes: {
@@ -96,6 +104,7 @@ test('a failed start keeps the request and permits a deliberate retry', async ()
   try {
     await f.page.evaluate(PNG => { (window as ImproveWindow).elpisDesktop.improve = { capture: async () => ({ image: PNG }) }; }, PNG);
     await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await f.page.clock.install();
     await f.page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
     const dialog = f.page.getByRole('dialog', { name: 'Improve Elpis' });
     await dialog.getByText('/tmp/elpis-source', { exact: true }).waitFor();
@@ -104,6 +113,9 @@ test('a failed start keeps the request and permits a deliberate retry', async ()
     await f.page.getByRole('alert').filter({ hasText: 'Check the chat list before retrying' }).waitFor();
     assert.equal(await f.page.locator('[data-slot="pending-improvement"]').getByText('Preserve this request').count(), 1);
     assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+    await f.page.clock.fastForward(6500);
+    assert.equal(await f.page.getByRole('alert').filter({ hasText: 'Check the chat list before retrying' }).count(), 0);
+    assert.match(await f.page.locator('[data-slot="pending-improvement"] [role="status"]').getAttribute('aria-label') || '', /Start unavailable/);
     await f.page.getByRole('button', { name: 'Retry starting change' }).click();
     await f.page.locator('.thread-row[data-thread-id="chat-b"] [aria-label="Elpis change"]').waitFor();
     assert.equal(attempts, 2);
