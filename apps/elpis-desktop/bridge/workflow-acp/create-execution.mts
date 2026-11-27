@@ -193,7 +193,10 @@ export function createExecution({
                   out,
                   `${texts.reduce((all, part) => (!all ? part : `${all}${task.flow && !/[.!?:;"”’)\]]$/.test(all) ? " " : "\n\n"}${part}`), "")}\n`,
                 );
-                return { result: { answer: `Joined ${task.parts!.length} parts into ${task.output}.` }, changes: {} };
+                const changes = isolation
+                  ? await isolation.complete({ ...task, writeScopes: [path.dirname(task.output!)] }, round)
+                  : {};
+                return { result: { answer: `Joined ${task.parts!.length} parts into ${task.output}.` }, changes };
               }
               const result = await runNode(
                 record,

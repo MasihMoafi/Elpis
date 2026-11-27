@@ -8,6 +8,22 @@ import { startDesktopServer } from "./server.mts";
 import type { WorkflowRecord } from "./workflow-acp/types.mts";
 import { required, logParams, logPrompt, FAKE, pause, task, until, fixture, desktopClient } from "./workflow-coding.fixtures.mts";
 
+test("isolated join output reaches dependent steps and the final review", { timeout: 20000 }, async t => {
+  const f = fixture(t, { env: { check: { FAKE_ACP_ANSWER: JSON.stringify({ passed: true, summary: "Checked" }) } } });
+  fs.writeFileSync(path.join(f.cwd, "src/part.txt"), "First part.");
+  f.git("add", "src/part.txt");
+  f.git("commit", "-qm", "add part");
+  const join = task("join", { kind: "join", parts: ["src/part.txt"], output: "combined.txt" });
+  const check = task("check", { kind: "verify", dependsOn: ["join"] });
+  const started = await f.start([join, check], { isolation: "worktree" });
+  const result = await f.finished(started.graphId);
+  assert.equal(result.status, "succeeded", result.error ?? undefined);
+  assert.equal(result.review?.status, "ready");
+  assert.equal(fs.readFileSync(path.join(required(result.review?.path), "combined.txt"), "utf8"), "First part.\n");
+  const checked = required(result.tasks.find(node => node.id === "check"));
+  assert.equal(fs.readFileSync(path.join(required(checked.cwd), "combined.txt"), "utf8"), "First part.\n");
+});
+
 test(
   "node models and advertised effort are applied before prompting; unavailable effort fails before work",
   { timeout: 20000 },
