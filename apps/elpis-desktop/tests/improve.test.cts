@@ -120,6 +120,27 @@ test('starting a change is acknowledged even with the sidebar closed', async () 
   } finally { finish(row); await f.close(); }
 });
 
+test('a failed background start points to the sidebar when it is closed', async () => {
+  const f = await fixture({ routes: {
+    '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
+    '/api/improvements': body => body ? { __http: 503, error: 'Start unavailable' } : { data: [] },
+  } });
+  try {
+    await f.page.evaluate(PNG => { (window as ImproveWindow).elpisDesktop.improve = { capture: async () => ({ image: PNG }) }; }, PNG);
+    await f.page.locator('.thread-row[data-thread-id="chat-a"] .thread-link').click();
+    await f.page.getByRole('button', { name: 'Close sidebar', exact: true }).click();
+    await f.page.evaluate(() => dispatchEvent(new Event('elpis:improve')));
+    const dialog = f.page.getByRole('dialog', { name: 'Improve Elpis' });
+    await dialog.getByText('/tmp/elpis-source', { exact: true }).waitFor();
+    await dialog.getByRole('textbox', { name: 'What should change?' }).fill('Keep this request');
+    await dialog.getByRole('button', { name: 'Start change' }).click();
+    await f.page.locator('.action-notices').getByRole('status').getByText('Check change in sidebar: Keep this request').waitFor();
+    await f.page.getByRole('button', { name: 'Open sidebar', exact: true }).click();
+    await f.page.getByRole('button', { name: 'Retry starting change' }).waitFor();
+    assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
+  } finally { await f.close(); }
+});
+
 test('a failed start keeps the request and permits a deliberate retry', async () => {
   let attempts = 0;
   const f = await fixture({ routes: {

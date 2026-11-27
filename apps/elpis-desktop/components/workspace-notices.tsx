@@ -189,7 +189,7 @@ export function ActionNotices({
         <div className="error-banner notice" role="status" title={announcement.request}>
           <Hammer size={14} aria-hidden="true" className="shrink-0" />
           <span className="min-w-0 flex-1 truncate">
-            {announcement.phase === "starting" ? "Starting change" : announcement.phase === "started" ? "Change started" : "Change needs attention"}: {announcement.request}
+            {announcement.phase === "starting" ? "Starting change" : announcement.phase === "started" ? "Change started" : "Check change in sidebar"}: {announcement.request}
           </span>
         </div>
       )}
