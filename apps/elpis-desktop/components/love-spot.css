@@ -1,17 +1,21 @@
 .love-spot { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; height: 100%; }
+:root .love-spot.accent-scope, :root .love-spot-tools.accent-scope { --primary: var(--accent-light); --primary-foreground: var(--palette-light-accent-foreground, #fff); }
+:root.dark .love-spot.accent-scope, :root.dark .love-spot-tools.accent-scope { --primary: var(--accent-dark); --primary-foreground: var(--palette-dark-accent-foreground, var(--background)); }
 .love-spot .excalidraw, .love-spot .excalidraw.theme--dark {
-  --color-selection: var(--love-red);
-  --color-primary: var(--love-red);
-  --color-primary-darker: var(--love-red);
-  --color-primary-darkest: var(--love-red);
-  --color-primary-light: color-mix(in oklab, var(--love-red) 14%, var(--card));
-  --color-primary-light-darker: color-mix(in oklab, var(--love-red) 22%, var(--card));
+  --color-selection: var(--primary);
+  --color-primary: var(--primary);
+  --color-primary-darker: var(--primary);
+  --color-primary-darkest: var(--primary);
+  --color-primary-light: color-mix(in oklab, var(--primary) 14%, var(--card));
+  --color-primary-light-darker: color-mix(in oklab, var(--primary) 22%, var(--card));
   --color-surface-primary-container: var(--color-primary-light);
-  --color-on-primary-container: var(--love-red);
-  --color-primary-hover: color-mix(in oklab, var(--love-red) 85%, var(--foreground));
+  --color-on-primary-container: var(--primary);
+  --color-primary-hover: color-mix(in oklab, var(--primary) 85%, var(--foreground));
   --color-brand-hover: var(--color-primary-hover);
-  --color-brand-active: var(--love-red);
+  --color-brand-active: var(--primary);
 }
+.love-spot .excalidraw .context-menu-item:hover, .love-spot .excalidraw .context-menu-item:focus-visible { background: var(--hover); color: var(--foreground); }
+.love-spot .excalidraw .context-menu-item:hover.dangerous .context-menu-item__label { color: var(--destructive); }
 .love-spot > [role="status"] { padding: 24px; color: var(--muted-foreground); }
 .love-spot-status { position: absolute; bottom: 58px; left: 50%; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 12px; max-width: calc(100% - 32px); padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); color: var(--foreground); }
 .love-spot-content { display: flex; flex: 1; min-width: 0; min-height: 0; }
@@ -27,6 +31,8 @@
 .love-spot-toolbar-host { flex: 1; min-width: 0; order: 2; }
 .love-spot-toolbar-host .love-spot-tools { padding-inline: 0; border: 0; }
 .love-spot-tools .dictation-control { margin: 0; }
+.love-spot-writing { visibility: hidden; }
+.love-spot-writing[data-active="true"] { visibility: visible; }
 .love-spot-pages { display: flex; align-items: center; flex-wrap: nowrap; gap: 8px; margin-right: auto; min-width: 0; }
 /* Renaming is brief; its field may take a line of its own. */
 .love-spot-pages:has(> form) { flex-wrap: wrap; }

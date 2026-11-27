@@ -342,6 +342,7 @@
     "tests/send-feedback-ui.test.cts",
     "tests/experiment-lab.test.cts",
     "tests/love-spot-screenshots.test.cts",
+    "tests/love-spot-theme.test.cts",
     "tests/view-boundaries.test.cts",
     "tests/night-themes.test.cts",
     "tests/custom-themes.test.cts",

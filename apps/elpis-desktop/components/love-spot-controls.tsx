@@ -278,11 +278,9 @@ export function LoveSpotControls({
           <span className="love-spot-label">Models &amp; accounts</span>
         </Button>
       )}
-      {replying && (
-        <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Matilda status">
-          Matilda is writing…
-        </span>
-      )}
+      <span className="badge badge-sm badge-ghost shrink-0 love-spot-writing" role="status" aria-label="Matilda status" data-active={replying} aria-hidden={!replying}>
+        Matilda is writing…
+      </span>
       {saveStatus && (
         <span className="badge badge-sm badge-ghost shrink-0" role="status" aria-label="Drawing save status">
           {saveStatus}

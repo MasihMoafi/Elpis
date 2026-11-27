@@ -249,9 +249,7 @@ export function useLoveSpotBoardSync(previous: LoveSpotSaveState) {
           Object.entries(files).some(([id, file]) => before.files[id]?.dataURL !== file.dataURL));
       const drawingChanged =
         before &&
-        (filesChanged ||
-          versions(before.elements) !== versions(all) ||
-          JSON.stringify(before.appState) !== JSON.stringify(latest.current.appState));
+        (filesChanged || versions(before.elements) !== versions(all));
       if (!remote.current && (drawingChanged || editChanged))
         notice(drawingChanged ? noticed(before.elements, all) : [], !!endedEdit);
       if (!remote.current && drawingChanged) {
