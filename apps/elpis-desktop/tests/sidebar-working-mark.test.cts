@@ -50,6 +50,10 @@ for (const colorScheme of ['light', 'dark']) {
     const page = f.page as unknown as Page;
     try {
       await f.page.locator('[data-thread-id="chat-a"] .elpis-working-mark').waitFor({ timeout: 2000 });
+      const working = page.locator('[data-thread-id="chat-a"] .thread-dot[data-state="working"]');
+      assert.equal(await working.getAttribute('aria-label'), 'Working', 'the working state remains accessible');
+      assert.equal(await working.getAttribute('title'), null, 'the working icon must not show a native tooltip over another row');
+      assert.equal(await page.locator('[data-thread-id="chat-c"] .thread-dot').getAttribute('title'), 'Needs input', 'other status labels remain available');
       const states = await f.page.evaluate(() =>
         [...document.querySelectorAll('aside.sidebar .thread-row')].map(row => ({
           id: row.getAttribute('data-thread-id'),

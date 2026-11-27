@@ -235,7 +235,7 @@ export function createSidebarThreadRow({
                   role="img"
                   data-state={state}
                   aria-label={stateLabels[state]}
-                  title={stateLabels[state]}
+                  title={state === "working" ? undefined : stateLabels[state]}
                 >
                   {state === "working" && <WorkingMark animatedEdges={false} />}
                 </span>
