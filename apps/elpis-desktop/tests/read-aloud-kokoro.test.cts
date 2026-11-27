@@ -50,13 +50,13 @@ for (const recordedModel of [true, false]) test(`Read aloud pauses and resumes w
     assert.deepEqual(await bounds(), before);
     await reply.getByRole('button', { name: 'Pause', exact: true }).click();
     await reply.getByRole('button', { name: 'Resume', exact: true }).waitFor();
-    const paused = await f.page.evaluate(() => (window as Window & { __readingAudio: HTMLAudioElement }).__readingAudio.currentTime);
+    const paused = await f.page.evaluate(() => (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio!.currentTime);
     await f.page.waitForTimeout(250);
-    const stillPaused = await f.page.evaluate(() => (window as Window & { __readingAudio: HTMLAudioElement }).__readingAudio.currentTime);
+    const stillPaused = await f.page.evaluate(() => (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio!.currentTime);
     assert.ok(Math.abs(stillPaused - paused) < 0.05);
     assert.deepEqual(await bounds(), before);
     await reply.getByRole('button', { name: 'Resume', exact: true }).click();
-    await f.page.waitForFunction((time: number) => (window as Window & { __readingAudio: HTMLAudioElement }).__readingAudio.currentTime > time + 0.1, paused);
+    await f.page.waitForFunction((time: number) => (window as Window & { __readingAudio?: HTMLAudioElement }).__readingAudio!.currentTime > time + 0.1, paused);
     assert.deepEqual(await bounds(), before);
     await reply.getByRole('button', { name: 'Stop reading aloud', exact: true }).click();
     await reply.getByRole('button', { name: 'Read aloud', exact: true }).waitFor();

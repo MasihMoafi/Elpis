@@ -61,7 +61,7 @@ export function skillsSnapshot(response: Response | null) {
     for (const error of list(entry?.errors))
       if (typeof error?.message === "string") errors.push({ path: words(error.path), message: error.message });
   }
-  const origin = (skill: (typeof data)[number]) =>
+  const origin = (skill: { scope: Skill["scope"]; plugin: string | null }) =>
     skill.plugin ? `2:${skill.plugin}` : { user: "0", repo: "1", system: "3", admin: "4" }[skill.scope as "user" | "repo" | "system" | "admin"];
   return { data: data.sort((a, b) => origin(a).localeCompare(origin(b)) || a.name.localeCompare(b.name)), errors };
 }

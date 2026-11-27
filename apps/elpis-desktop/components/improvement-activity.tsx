@@ -104,7 +104,8 @@ export function PendingImprovements() {
   if (!pending.length) return null;
   return <section aria-label="Starting changes">
     {pending.map(job => {
-      const errorMessage = job.error && `${job.error} ${job.threadId ? "Open the change chat to inspect it." : "Check the chat list before retrying; the start may have completed."}`;
+      const guidance = job.threadId ? "Open the change chat to inspect it." : "Check the chat list before retrying; the start may have completed.";
+      const errorMessage = job.error && `${job.error} ${guidance}`;
       return <div key={job.id}>
         <div className="thread-row" data-slot="pending-improvement">
           <span className="conversation-state-slot" aria-hidden="true">
