@@ -98,7 +98,7 @@ test('a slow change appears immediately while the current chat stays selected', 
 test('starting a change is acknowledged even with the sidebar closed', async () => {
   let finish: (value: typeof row) => void = () => {};
   const response = new Promise<typeof row>(resolve => { finish = resolve; });
-  const f = await fixture({ routes: {
+  const f = await fixture({ width: 1200, height: 818, routes: {
     '/api/improvements/source': () => ({ configured: true, path: '/tmp/elpis-source' }),
     '/api/improvements': body => body ? response : { data: [] },
   } });
@@ -113,6 +113,17 @@ test('starting a change is acknowledged even with the sidebar closed', async () 
     await dialog.getByRole('button', { name: 'Start change' }).click();
     const notice = f.page.locator('.action-notices').getByRole('status');
     await notice.getByText('Starting change: Keep me in this chat').waitFor();
+    for (const width of [1440, 1200, 720]) {
+      await f.page.setViewportSize({ width, height: 818 });
+      await f.page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+      const clearOfProject = await f.page.evaluate(() => {
+        const status = document.querySelector('.action-notices')?.getBoundingClientRect();
+        const meta = document.querySelector('.composer-meta')?.getBoundingClientRect();
+        if (!status || !meta) throw Error('Notice or project controls missing');
+        return status.right <= meta.left || meta.right <= status.left || status.bottom <= meta.top || meta.bottom <= status.top;
+      });
+      assert.ok(clearOfProject, `the change notice does not cover the project controls at ${width}px`);
+    }
     assert.equal(await f.page.locator('.thread-row.active').first().getAttribute('data-thread-id'), 'chat-a');
     finish(row);
     await notice.getByText('Change started: Keep me in this chat').waitFor();

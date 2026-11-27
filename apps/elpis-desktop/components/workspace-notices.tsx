@@ -93,7 +93,7 @@ const visible = (element: Element | null | undefined): element is HTMLElement =>
 
 /** Where the chat-action notices go (Masih, 13 Nov: they sat "on top of the last message of any conversation"): at the foot of
  * the sidebar, above its footer, where the row he acted on was; with the sidebar closed, small in the window's bottom left
- * corner; where that corner would touch the message box or the transcript (a narrow window), in the title bar's free middle. */
+ * corner; where that corner would touch the message box, project controls or transcript, in the title bar's free middle. */
 function place(stack: HTMLElement) {
   const shell = stack.closest(".app-shell"),
     sidebar = shell?.querySelector<HTMLElement>(":scope > .sidebar"),
@@ -112,7 +112,7 @@ function place(stack: HTMLElement) {
   const height = stack.offsetHeight,
     bottom = () => innerHeight - GAP - height;
   const corner = { left: GAP, right: GAP + CORNER_WIDTH, bottom: innerHeight - GAP, top: bottom() };
-  const keepClear = [...(shell?.querySelectorAll(".composer, .chat-scroll") ?? [])].filter(visible);
+  const keepClear = [...(shell?.querySelectorAll(".composer, .composer-meta, .chat-scroll") ?? [])].filter(visible);
   if (!keepClear.some(element => overlaps(corner, element.getBoundingClientRect())))
     return set("corner", corner.left, CORNER_WIDTH, bottom);
   const bar = shell?.querySelector<HTMLElement>(":scope > .title-bar");
