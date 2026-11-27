@@ -1,7 +1,7 @@
 /* Room for a message's actions (Copy, More): they hang under the message, so the gap to the next row (a "Thought" or
    "Worked for" line, the next prompt) holds the whole 28px button plus air, and neighbouring buttons do not touch. */
 .turn .user-turn { margin-bottom:44px; }
-.turn .message.agent, .chat-content .message.agent { margin-bottom:40px; }
+.turn .message.agent, .chat-content .message.agent, .side-chat-content .message.agent:has(> .message-actions) { margin-bottom:40px; }
 /* Inside a turn, rows sit 12px apart from text to text (Masih, 29 Oct: "too much empty space here."): a reply, an activity
    row ("Ran a command", "Thought") and the next reply alike. Only the turn's final reply ([data-reply-end]) keeps the room
    its hanging actions need; a reply mid-turn offers them in its right-click menu, so they never cover the row after it. */
