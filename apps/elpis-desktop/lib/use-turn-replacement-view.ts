@@ -25,9 +25,9 @@ export function useTurnReplacementView({
   loading,
   itemCursor,
 }: Inputs) {
-  // Elpis can replace turns only in chats it lets this app write directly, and not while one is running.
-  const replaceable =
-    !!selected && !continues && !activeTurn && selected.status?.type !== "active" && connected && !busy;
+  const editable = !!selected && !continues && connected && !busy;
+  // Rewind, delete and version navigation still require an idle chat.
+  const replaceable = editable && !activeTurn && selected.status?.type !== "active";
   const { turnEntries, replacementOptions, replacementOptionsKey } = useMemo(() => {
     const turnEntries = new Map<string, Entry[]>();
     // Live items may arrive out of order; target the first message the transcript actually shows.
@@ -65,5 +65,5 @@ export function useTurnReplacementView({
     const reply = turn.filter(entry => entry.item.type === "agentMessage").at(-1);
     return prompt && reply ? { turnId: last.turnId, prompt, replyId: reply.item.id } : null;
   })();
-  return { replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate };
+  return { editable, replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate };
 }

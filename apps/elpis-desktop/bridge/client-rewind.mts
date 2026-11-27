@@ -40,13 +40,13 @@ export async function impl_revert(this: DesktopClient, clientState: ClientState,
       : [{ type: "text", text: ragMessage(text(body.text, "message")), text_elements: [] }];
   const effort = internal_effort.call(this, clientState, body.effort);
   return internal_mutate(clientState, id, async () => {
-    const thread = await internal_current.call(this, clientState, id);
+    let thread = await internal_current.call(this, clientState, id);
     if (thread.desktopAccess.mode === "continue")
       throw new BridgeError(
         "Elpis takes turns for this agent only from its parent, so its earlier messages cannot be replaced here.",
         409,
       );
-    if (thread.status?.type === "active")
+    if (rewind && thread.status?.type === "active")
       throw new BridgeError("Stop the running turn before replacing an earlier message.", 409);
     if (rewind) {
       await internal_rpc(this, clientState, "thread/revert", { threadId: id, beforeTurnId });
@@ -87,6 +87,20 @@ export async function impl_revert(this: DesktopClient, clientState: ClientState,
     // The edited text goes first; the message's files, images and quoted replies go with it, unchanged.
     const input = [...typed, ...eligibility.kept];
     if (!input.length) throw new BridgeError("Write a message");
+    if (thread.status?.type === "active") {
+      const turns = await internal_rpc(this, clientState, "thread/turns/list", {
+        threadId: id, limit: 1, sortDirection: "desc", itemsView: "notLoaded",
+      });
+      const running = turns.data?.find((turn: { status?: string }) => turn.status === "inProgress");
+      if (running) await internal_rpc(this, clientState, "turn/interrupt", { threadId: id, turnId: running.id });
+      for (let attempt = 0; attempt < 30; attempt++) {
+        thread = await internal_current.call(this, clientState, id);
+        if (thread.status?.type !== "active") break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      if (thread.status?.type === "active")
+        throw new BridgeError("The running turn has not stopped. Try editing again.", 409);
+    }
     // As ChatGPT does, the chat as it was stays one click away (‹ 1/2 ›): an archived copy keeps it.
     const moved = await internal_turnIdsFrom.call(this, clientState, id, beforeTurnId);
     const copy = await internal_keepVersion.call(this, clientState, thread);

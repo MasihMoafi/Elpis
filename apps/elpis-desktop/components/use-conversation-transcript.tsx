@@ -45,6 +45,7 @@ type Inputs = {
   threads: Thread[];
   messageEdits: Record<string, string>;
   pendingDrafts: Record<string, boolean>;
+  editable: boolean;
   replaceable: boolean;
   replacementOptions: Map<string, ReturnType<typeof replacementEligibility>>;
   replacementOptionsKey: string;
@@ -67,6 +68,7 @@ export function useConversationTranscript({
   threads,
   messageEdits,
   pendingDrafts,
+  editable,
   replaceable,
   replacementOptions,
   replacementOptionsKey,
@@ -127,13 +129,13 @@ export function useConversationTranscript({
             const editDraft = messageEdits[editKey];
             const onEdit =
               !e.clientPending &&
-              replaceable &&
+              editable &&
               e.item.type === "userMessage" &&
               editableMessage(replacementOptions.get(e.turnId), e.item.id)
                 ? (text: string) => live.current.replaceFrom(e.turnId, text, editKey)
                 : undefined;
             const editBlockedReason =
-              replaceable && e.item.type === "userMessage"
+              editable && e.item.type === "userMessage"
                 ? editBlocked(replacementOptions.get(e.turnId), e.item.id)
                 : undefined;
             const version =
@@ -225,6 +227,7 @@ export function useConversationTranscript({
       threads,
       messageEdits,
       pendingDrafts,
+      editable,
       replaceable,
       replacementOptionsKey,
       readOnlyRun,

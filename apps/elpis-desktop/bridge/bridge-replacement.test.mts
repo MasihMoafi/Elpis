@@ -5,6 +5,45 @@ import os from "node:os";
 import path from "node:path";
 import { required, ROOT, CHILD, FORK, fixture } from "./bridge.fixtures.mts";
 
+test("editing while working interrupts before replacing the selected turn", async () => {
+  const { client, socket, threads } = fixture();
+  try {
+    await client.initialize();
+    required(threads.get(ROOT)).status = { type: "active" };
+    const result = await client.revert(ROOT, { beforeTurnId: "turn-1", text: "Edited prompt" });
+    assert.ok(result && "turn" in result);
+    const calls = socket.sent.filter(row =>
+      ["turn/interrupt", "thread/revert", "turn/start"].includes(row.method ?? ""),
+    );
+    assert.deepEqual(calls.map(row => row.method), ["turn/interrupt", "thread/revert", "turn/start"]);
+    assert.equal(required(required(calls[0]).params).turnId, "running-turn");
+    assert.equal(required(required(calls[1]).params).beforeTurnId, "turn-1");
+  } finally {
+    client.close();
+  }
+});
+
+test("a failed interrupt leaves the original conversation untouched", async () => {
+  const { client, socket, threads } = fixture();
+  const send = socket.send;
+  socket.send = raw => {
+    const request = JSON.parse(raw) as { id: number; method: string };
+    if (request.method !== "turn/interrupt") return send(raw);
+    socket.sent.push(request);
+    queueMicrotask(() => socket.emit("message", JSON.stringify({
+      id: request.id, error: { code: -32000, message: "Interrupt failed" },
+    })));
+  };
+  try {
+    await client.initialize();
+    required(threads.get(ROOT)).status = { type: "active" };
+    await assert.rejects(client.revert(ROOT, { beforeTurnId: "turn-1", text: "Edited" }), /Interrupt failed/);
+    assert.equal(socket.sent.some(row => ["thread/revert", "turn/start"].includes(row.method ?? "")), false);
+  } finally {
+    client.close();
+  }
+});
+
 test("replacement checks every native page of the selected turn before reverting", async () => {
   const prompt = {
     turnId: "turn-1",

@@ -225,7 +225,7 @@ export function useWorkspaceConversation(previous: WorkspaceState) {
     loading,
     itemCursor,
   });
-  const { replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate } = replacement;
+  const { editable, replaceable, turnEntries, replacementOptions, replacementOptionsKey, regenerate } = replacement;
   const { writePrompt, editLastMessage } = createPromptEditing({
     composer,
     session,
@@ -362,6 +362,7 @@ export function useWorkspaceConversation(previous: WorkspaceState) {
     find,
     navHistory,
     replacement,
+    editable,
     replaceable,
     turnEntries,
     replacementOptions,

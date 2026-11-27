@@ -77,7 +77,7 @@ test('the version control shows on the edited message only, and moves only when 
 
 // Load the actual client component in memory: no Next server, browser, files written or remote images.
 const require = createRequire(import.meta.url);
-const { transpileModule, ModuleKind, JsxEmit } = require('typescript');
+const { transpileModule, ModuleKind, JsxEmit, ScriptTarget } = require('typescript');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { createElement } = require('react');
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -95,11 +95,41 @@ function loadComponent(file: string): ReturnType<NodeJS.Require> {
     if (!source) throw Error(`Missing component source: ${id}`);
     return loadComponent(source);
   };
-  const { outputText } = transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX } });
+  const { outputText } = transpileModule(readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ModuleKind.CommonJS, jsx: JsxEmit.ReactJSX, target: ScriptTarget.ESNext },
+  });
   compileFunction(outputText, ['require', 'module', 'exports'])(load, module, module.exports);
   return module.exports;
 }
 const { ChatMessage } = loadComponent(path.join(root, 'components/chat-message.tsx'));
+const { useTurnReplacementView } = loadComponent(path.join(root, 'lib/use-turn-replacement-view.ts'));
+
+test('a prior message offers Edit while working, but not when pending or the chat is unavailable', () => {
+  const item = { id: 'prior', type: 'userMessage', content: [text('Original')] };
+  function render(connected: boolean, continues: boolean, pending: boolean): string {
+    const entries = [{ turnId: 'prior-turn', item, clientPending: pending }];
+    function View() {
+      const view = useTurnReplacementView({
+        selected: { id: 'chat', status: { type: 'active' } }, entries, shownEntries: entries,
+        continues, activeTurn: 'running-turn', connected, busy: false, loading: false, itemCursor: null,
+      });
+      if (connected && !continues && !pending) {
+        assert.equal(view.editable, true);
+        assert.deepEqual(view.replacementOptions.get('prior-turn'), {
+          allowed: true, prompt: 'Original', kept: [], messageId: 'prior',
+        });
+      }
+      const onEdit = view.editable && !pending && editableMessage(view.replacementOptions.get('prior-turn'), item.id)
+        ? async () => {} : undefined;
+      return createElement(ChatMessage, { item, onEdit });
+    }
+    return renderToStaticMarkup(createElement(View));
+  }
+  assert.match(render(true, false, false), /aria-label="Edit message"/);
+  assert.doesNotMatch(render(true, false, true), /aria-label="Edit message"/);
+  assert.doesNotMatch(render(false, false, false), /aria-label="Edit message"/);
+  assert.doesNotMatch(render(true, true, false), /aria-label="Edit message"/);
+});
 
 test('actual user-message renderer shows attachment identity without requesting remote content', () => {
   const originalFetch = globalThis.fetch;
