@@ -80,10 +80,8 @@ export function useCanvasBoardModel(previous: CanvasState) {
       states[node.data.join || node.data.check === false ? node.id : checkOf(node.id)]?.status === "succeeded" &&
       !clashes[node.id],
   ).length;
-  const runState: MotherData["run"] = recordedRun
-    ? workflowThreadActive(liveTeam.mother)
-      ? "running"
-      : "idle"
+  const runState: MotherData["run"] = recordedRun && workflowThreadActive(liveTeam.mother)
+    ? "running"
     : run
       ? ended(run.status)
       : "idle";
