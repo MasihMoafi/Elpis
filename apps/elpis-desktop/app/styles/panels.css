@@ -23,6 +23,7 @@
 /* The mark retains its status shape while using the conversation's chosen colour. */
 .thread-row[data-conversation-colour] .conversation-state-slot .thread-dot:not([data-state="working"]) { border-color:var(--workflow-colour); background:var(--workflow-colour); }
 .thread-row[data-conversation-colour] .conversation-state-slot .elpis-working-mark { color:var(--workflow-colour); }
+[data-conversation-colour] .turn-working .elpis-working-mark { color:var(--workflow-colour); }
 .thread-row.active[data-conversation-colour]::before, .task-tab.chat-tab.active[data-conversation-colour]::before { border-color:var(--workflow-colour); }
 .task-tab.chat-tab[data-conversation-colour] > button[role="tab"] svg { color:var(--workflow-colour); }
 /* A collapsible group of chats (components/sidebar-group.tsx): a project, or a group the person made. */

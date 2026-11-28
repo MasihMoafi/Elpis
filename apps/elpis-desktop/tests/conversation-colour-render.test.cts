@@ -14,7 +14,9 @@ for (const state of ['idle', 'unread', 'working', 'waiting', 'error']) test(`con
     const mark = state === 'working' ? '<svg class="elpis-working-mark"><path></path></svg>' : '';
     await page.setContent(`<style>${styles}</style><div class="thread-row active"><div class="conversation-state-slot">
       <span class="thread-dot" data-state="${state}">${mark}</span></div></div>
-      <div class="task-tab chat-tab active"><button role="tab"><svg></svg></button></div>`);
+      <div class="task-tab chat-tab active"><button role="tab"><svg></svg></button></div>
+      <div class="chat-view"><div class="chat-scroll"><div class="turn-working"><svg class="elpis-working-mark"></svg></div></div>
+      <div class="composer-working"><div class="turn-working"><svg class="elpis-working-mark"></svg></div></div></div>`);
     await page.evaluate(() => document.documentElement.setAttribute('data-accent', 'teal'));
     const sample = () => page.evaluate(() => {
       const row = document.querySelector('.thread-row')!, tab = document.querySelector('.task-tab')!;
@@ -24,14 +26,18 @@ for (const state of ['idle', 'unread', 'working', 'waiting', 'error']) test(`con
         row: getComputedStyle(row, '::before').borderColor,
         tab: getComputedStyle(tab.querySelector('svg')!).color,
         outline: getComputedStyle(tab, '::before').borderColor,
+        transcript: getComputedStyle(document.querySelector('.chat-scroll .elpis-working-mark')!).color,
+        composer: getComputedStyle(document.querySelector('.composer-working .elpis-working-mark')!).color,
       };
     });
     const before = await sample();
-    await page.evaluate(() => document.querySelectorAll('.thread-row, .task-tab').forEach(element => element.setAttribute('data-conversation-colour', 'amber')));
+    await page.evaluate(() => document.querySelectorAll('.thread-row, .task-tab, .chat-view').forEach(element => element.setAttribute('data-conversation-colour', 'amber')));
     const amber = await sample();
     for (const key of ['dot', 'row', 'tab', 'outline'] as const) assert.notEqual(amber[key], before[key], `${state}: ${key} uses the chosen colour`);
     assert.equal(amber.dot, amber.tab, 'the indicator and tab use the same colour');
-    await page.evaluate(() => document.querySelectorAll('.thread-row, .task-tab').forEach(element => element.removeAttribute('data-conversation-colour')));
+    assert.equal(amber.transcript, amber.tab, 'the transcript working mark uses the chosen colour');
+    assert.equal(amber.composer, amber.tab, 'the composer working mark uses the chosen colour');
+    await page.evaluate(() => document.querySelectorAll('.thread-row, .task-tab, .chat-view').forEach(element => element.removeAttribute('data-conversation-colour')));
     assert.deepEqual(await sample(), before, 'reset restores the original appearance');
   } finally { await page.close(); }
 });

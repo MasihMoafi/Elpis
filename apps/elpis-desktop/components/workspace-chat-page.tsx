@@ -1,6 +1,7 @@
 "use client";
 
 import { ElpisBand } from "@/components/elpis-band";
+import { useConversationColour } from "@/components/conversation-colour";
 import type { ReactNode } from "react";
 import { ViewBoundary } from "@/components/view-boundary";
 import { WorkspaceTranscript } from "@/components/workspace-transcript";
@@ -107,11 +108,13 @@ export function WorkspaceChatPage({
     workingHost,
     workingTeam,
   } = workspace;
+  const { colour } = useConversationColour(selected?.id ?? "");
   return (
     <ViewBoundary label="Chat" resetKey={selected?.id}>
       <div className="chat-split">
         <div
           className={`chat-view${!selected && !shownEntries.length ? " empty-chat" : ""}`}
+          data-conversation-colour={colour}
           data-team-loading={awaitingTeam || undefined}
         >
           {selected?.motherAgent && <ElpisBand threads={workspace.threads} />}
