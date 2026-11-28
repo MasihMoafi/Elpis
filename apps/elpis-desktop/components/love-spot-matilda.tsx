@@ -44,30 +44,31 @@ function finishHandover(context: string | undefined, handover: Handover) {
 // Notes still waiting for her, per board page, outlive the board: leaving Love Spot unmounts it (27 Oct: a note written
 // just before leaving was never answered).
 const PENDING = "elpis-matilda-pending-v1";
-function pendingNotes(): Record<string, string[]> {
+const UNFINISHED = "elpis-matilda-unfinished-v1";
+function pendingNotes(key = PENDING): Record<string, string[]> {
   try {
-    const value = JSON.parse(appStorage().getItem(PENDING) || "{}");
+    const value = JSON.parse(appStorage().getItem(key) || "{}");
     return value && typeof value === "object" ? value : {};
   } catch {
     return {};
   }
 }
-function keepPending(context: string | undefined, ids: ReadonlySet<string>) {
+function keepPending(context: string | undefined, ids: ReadonlySet<string>, key = PENDING) {
   if (!context) return;
   try {
-    const all = pendingNotes();
+    const all = pendingNotes(key);
     if (ids.size) all[context] = [...ids];
     else delete all[context];
-    appStorage().setItem(PENDING, JSON.stringify(all));
+    appStorage().setItem(key, JSON.stringify(all));
   } catch {
     /* kept for this visit only */
   }
 }
-function addPending(context: string | undefined, ids: ReadonlySet<string>) {
-  if (context) keepPending(context, new Set([...(pendingNotes()[context] ?? []), ...ids]));
+function addPending(context: string | undefined, ids: ReadonlySet<string>, key = PENDING) {
+  if (context) keepPending(context, new Set([...(pendingNotes(key)[context] ?? []), ...ids]), key);
 }
-function removePending(context: string | undefined, ids: ReadonlySet<string>) {
-  if (context) keepPending(context, new Set((pendingNotes()[context] ?? []).filter(id => !ids.has(id))));
+function removePending(context: string | undefined, ids: ReadonlySet<string>, key = PENDING) {
+  if (context) keepPending(context, new Set((pendingNotes(key)[context] ?? []).filter(id => !ids.has(id))), key);
 }
 
 /** Matilda reads the board once it has been quiet for a moment, then answers on it; the bridge places the reply (bridge/love-spot-talk.mts). */
@@ -112,6 +113,7 @@ export function useMatilda({
     poll = useRef(0),
     generation = useRef(0),
     held = useRef(false);
+  const editingId = useRef<string | undefined>(undefined);
   // What she would be told now; the editor is already gone when the board unmounts.
   const waiting = useRef(""),
     waitingDrawingOnly = useRef(false);
@@ -119,6 +121,7 @@ export function useMatilda({
     generation.current++;
     ids.current.clear();
     held.current = false;
+    editingId.current = undefined;
     clearTimeout(timer.current);
   }, [context]);
   /** Fallback when the shared live conversation stream disconnects. */
@@ -196,10 +199,11 @@ export function useMatilda({
       latest.current.ready();
     const hold = () => {
       if (!now.enabled() || handover.cancelled) return;
+      const pending = new Set([...batch].filter(id => mounted.current || id !== editingId.current));
       if (now.context === latest.current.context) {
-        for (const id of batch) ids.current.add(id);
+        for (const id of pending) ids.current.add(id);
         held.current = generation.current === token;
-      } else addPending(now.context, batch);
+      } else addPending(now.context, pending);
     };
     working.current = true;
     said.current = "";
@@ -211,7 +215,7 @@ export function useMatilda({
       } else if (result === "wait") hold();
       // Left while she was being told (the board's send gives up once it unmounts): send it as leaving does, or it is lost
       // (5 Nov: on a slower machine a note written just before leaving never reached her).
-      else if (!mounted.current && now.enabled()) {
+      else if (!mounted.current && now.enabled() && !editingId.current) {
         const reply = await api<{ waitingForPicture?: boolean }>("/love-spot/talk", {
           text,
           persona: now.persona.trim() || PROTOCOL,
@@ -245,7 +249,14 @@ export function useMatilda({
     }
   }, [ask]);
   const notice = useCallback(
-    (found: string[], finished = false) => {
+    (found: string[], finished = false, editing?: string) => {
+      const previousEdit = editingId.current;
+      const context = latest.current.context;
+      if (finished && previousEdit && context && pendingNotes(UNFINISHED)[context]?.includes(previousEdit)) {
+        found = [...found, previousEdit];
+        removePending(context, new Set([previousEdit]), UNFINISHED);
+      }
+      editingId.current = editing;
       generation.current++;
       held.current = false;
       const current = latest.current.context ? handovers.get(latest.current.context) : undefined;
@@ -299,10 +310,18 @@ export function useMatilda({
       // Leaving the board sends what she has not been told yet; if she is still writing, it waits for the next visit.
       const now = latest.current,
         batch = new Set(ids.current);
+      if (editingId.current) {
+        if (now.context && pendingNotes()[now.context]?.includes(editingId.current))
+          addPending(now.context, new Set([editingId.current]), UNFINISHED);
+        batch.delete(editingId.current);
+        ids.current.delete(editingId.current);
+        removePending(now.context, new Set([editingId.current]));
+      }
       if (!now.enabled()) {
         keepPending(now.context, new Set());
         return;
       }
+      if (editingId.current) return;
       if (!batch.size || busy.current || working.current) return;
       if (held.current) {
         keepPending(now.context, batch);
@@ -353,6 +372,7 @@ export function useMatilda({
     const handover = latest.current.context ? handovers.get(latest.current.context) : undefined;
     if (handover) handover.cancelled = true;
     keepPending(latest.current.context, new Set());
+    keepPending(latest.current.context, new Set(), UNFINISHED);
     try {
       await api("/love-spot/talk/stop", {});
     } catch (cause) {

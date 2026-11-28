@@ -1,5 +1,6 @@
 {
   "fast": [
+    "tests/love-spot-leave.test.cts",
     "tests/router-history.test.mts",
     "lib/router-message-text.test.mts",
     "lib/imported-tools.test.mts",

@@ -224,7 +224,7 @@ export function useLoveSpotBoardSync(previous: LoveSpotSaveState) {
       elements: readonly ExcalidrawElement[],
       appState: AppState,
       files: BinaryFiles,
-      notice: (ids: ReturnType<typeof noticed>, ended: boolean) => void,
+      notice: (ids: ReturnType<typeof noticed>, ended: boolean, editingId?: string) => void,
     ) => {
       const before = latest.current;
       // onChange contains only live elements. Persist the API's tombstones too, or a stale
@@ -251,7 +251,7 @@ export function useLoveSpotBoardSync(previous: LoveSpotSaveState) {
         before &&
         (filesChanged || versions(before.elements) !== versions(all));
       if (!remote.current && (drawingChanged || editChanged))
-        notice(drawingChanged ? noticed(before.elements, all) : [], !!endedEdit);
+        notice(drawingChanged ? noticed(before.elements, all) : [], !!endedEdit, editing?.id);
       if (!remote.current && drawingChanged) {
         setSaveStatus("Unsaved");
         clearTimeout(saveTimer.current);
