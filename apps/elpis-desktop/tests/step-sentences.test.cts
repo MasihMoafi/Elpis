@@ -27,7 +27,7 @@ const seconds = (text: string) => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/)
 const captures = process.env.ELPIS_APP_SCREENSHOTS || '/tmp';
 
 type Bounds = { x: number; y: number; width: number; height: number };
-type Locator = { locator(selector: string): Locator; filter(options: object): Locator; getByText(text: string, options: object): Locator; all(): Promise<Locator[]>; allInnerTexts(): Promise<string[]>; click(): Promise<void>; waitFor(): Promise<void>; innerText(): Promise<string>; count(): Promise<number>; evaluate<T>(fn: (node: HTMLElement) => T): Promise<T>; boundingBox(): Promise<Bounds | null>; first(): Locator; last(): Locator };
+type Locator = { locator(selector: string): Locator; filter(options: object): Locator; getByText(text: string, options: object): Locator; all(): Promise<Locator[]>; allInnerTexts(): Promise<string[]>; click(): Promise<void>; waitFor(): Promise<void>; innerText(): Promise<string>; count(): Promise<number>; evaluate<T>(fn: (node: HTMLElement) => T): Promise<T>; boundingBox(): Promise<Bounds | null>; last(): Locator };
 type Page = { locator(selector: string): Locator; waitForTimeout(ms: number): Promise<void>; emulateMedia(options: object): Promise<void>; screenshot(options: object): Promise<void> };
 async function using(run: (f: { page: Page }) => Promise<void>) {
   const f = await fixture({ running: true, chat: CHAT, height: 760 });
@@ -76,13 +76,12 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
   assert.ok(later >= first + 2, `the timer ticks (${first}s, then ${later}s)`);
   // The working mark has one place, the turn's foot (29 Oct, Masih: "you can see the working animation changes its place!").
   assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
-  const triangles = page.locator('.turn-working .elpis-working-mark path');
-  assert.equal(await triangles.count(), 3);
-  const opacity = () => triangles.first().evaluate(node => getComputedStyle(node).opacity);
-  assert.notEqual(await triangles.first().evaluate(node => getComputedStyle(node).animationName), 'none');
-  const firstOpacity = await opacity();
+  const rotor = page.locator('.turn-working .elpis-working-rotor');
+  const rotation = () => rotor.evaluate(node => getComputedStyle(node).transform);
+  assert.notEqual(await rotor.evaluate(node => getComputedStyle(node).animationName), 'none');
+  const firstRotation = await rotation();
   await page.waitForTimeout(700);
-  assert.notEqual(await opacity(), firstOpacity, 'triangle visibility changes smoothly');
+  assert.notEqual(await rotation(), firstRotation, 'the filled shape rotates smoothly');
   assert.equal(await page.locator('.turn-working .elpis-working-mark image').count(), 0, 'the working mark has no E');
   // Light, then dark: the row is fully inside the chat column and legible.
   for (const scheme of ['light']) {
@@ -94,7 +93,7 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
     await page.screenshot({ path: path.join(captures, `step-sentences-${scheme}.png`) });
   }
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
-  assert.equal(await triangles.first().evaluate(node => getComputedStyle(node).animationName), 'none', 'reduced motion keeps triangles visible');
+  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
 }));
 
 for (const input of ['pointer', 'keyboard']) {
