@@ -26,6 +26,7 @@ test('saved workflow board folds checker chats into their agent while retaining 
     await board.locator('.react-flow__node[data-id="live:helper-chat"]').waitFor();
     assert.equal(await board.locator('.react-flow__node[data-id="writer"]').count(), 1);
     assert.equal(await board.locator('.react-flow__node[data-id="live:check-chat"]').count(), 0);
+    await eventually(async () => assert.match(await board.locator('.mother-node').innerText(), /finished/));
   } finally { await f.close(); }
 });
 
@@ -148,6 +149,8 @@ test('failed workflow follows a resumed agent and paginated descendants without 
     await board.getByRole('button', { name: 'Refresh live progress', exact: true }).click();
     await board.getByRole('region', { name: 'Live workflow progress', exact: true }).getByText(/Live: 0 working/).waitFor();
     assert.match(await board.locator('details.canvas-log-panel > summary').innerText(), /Previous attempt.*failed/, 'a live idle transition does not invent workflow success');
+    await page.getByRole('radio', { name: 'Flat', exact: true }).click();
+    await eventually(async () => assert.match(await board.locator('.mother-node').innerText(), /failed/));
     assert.equal(f.posts.some(post => /^\/api\/workflows\/(?:run|[^/]+\/resume)$/.test(post.path)), false, 'viewing and refreshing never starts a model request');
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
