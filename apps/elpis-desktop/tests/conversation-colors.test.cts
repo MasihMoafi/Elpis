@@ -171,7 +171,8 @@ test('a working chat and its tab show the saved colour and reset together', asyn
     const amber = await mark.evaluate(element => getComputedStyle(element).color);
     assert.notEqual(amber, original, 'the working indicator changes colour');
     assert.equal(await tab.locator('button[role="tab"] svg').evaluate(element => getComputedStyle(element).color), amber);
-    await page.reload(); await page.evaluate(() => document.documentElement.setAttribute('data-accent', 'teal')); await expand(page); await mark.waitFor();
+    await page.reload(); await expand(page); await mark.waitFor();
+    await page.evaluate(() => document.documentElement.setAttribute('data-accent', 'teal'));
     assert.equal(await mark.evaluate(element => getComputedStyle(element).color), amber, 'the colour survives reload');
     await choose(page, 'workflow-agent', 'Reset colour');
     assert.equal(await mark.evaluate(element => getComputedStyle(element).color), original, 'reset restores the working indicator');

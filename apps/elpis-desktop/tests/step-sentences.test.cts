@@ -30,7 +30,10 @@ type Bounds = { x: number; y: number; width: number; height: number };
 type Locator = { locator(selector: string): Locator; filter(options: object): Locator; getByText(text: string, options: object): Locator; all(): Promise<Locator[]>; allInnerTexts(): Promise<string[]>; click(): Promise<void>; waitFor(): Promise<void>; innerText(): Promise<string>; count(): Promise<number>; evaluate<T>(fn: (node: HTMLElement) => T): Promise<T>; boundingBox(): Promise<Bounds | null>; last(): Locator };
 type Page = { locator(selector: string): Locator; waitForTimeout(ms: number): Promise<void>; emulateMedia(options: object): Promise<void>; screenshot(options: object): Promise<void> };
 async function using(run: (f: { page: Page }) => Promise<void>) {
-  const f = await fixture({ running: true, chat: CHAT, height: 760 });
+  const threads = [
+    { id: 'chat-a', name: 'Fix the parser', preview: 'Fix the parser', cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } },
+  ];
+  const f = await fixture({ running: true, chat: CHAT, threads, height: 760 });
   try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); }
 }
 
