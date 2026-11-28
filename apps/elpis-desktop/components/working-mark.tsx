@@ -10,8 +10,18 @@ const edges = [
 ] as const;
 
 const shapes = ["hexagon", "pentagon", "circle", "square", "octagon", "hourglass"] as const;
+type Shape = (typeof shapes)[number];
 
-function shapeFor(threadId: string | undefined) {
+const spokes: Record<Shape, readonly (readonly [number, number])[]> = {
+  hexagon: edges.map(([x, y]) => [x, y] as const),
+  pentagon: [[32, 4], [58.6, 23.3], [48.5, 54.5], [15.5, 54.5], [5.4, 23.3]],
+  circle: [[32, 5], [59, 32], [32, 59], [5, 32]],
+  square: [[10, 10], [54, 10], [54, 54], [10, 54]],
+  octagon: [[21, 5], [43, 5], [59, 21], [59, 43], [43, 59], [21, 59], [5, 43], [5, 21]],
+  hourglass: [[32, 10], [32, 54]],
+};
+
+function shapeFor(threadId: string | undefined): Shape {
   if (threadId === undefined) return "hexagon";
   let hash = 0;
   for (let index = 0; index < threadId.length; index++) hash = (Math.imul(hash, 31) + threadId.charCodeAt(index)) >>> 0;
@@ -48,13 +58,11 @@ export function WorkingMark({
         </defs>
       )}
       <g className="elpis-working-rotor">
+        <g stroke="currentColor" strokeWidth="2.5">
+          {spokes[shape].map(([x, y], index) => <line key={index} x1={x} y1={y} x2="32" y2="32" />)}
+        </g>
         {shape === "hexagon" ? (
-          <>
-            <g stroke="currentColor" strokeWidth="2.5">
-              {edges.map(([x, y], index) => <line key={index} x1={x} y1={y} x2="32" y2="32" />)}
-            </g>
-            <path d="M32 4 56.25 18V46L32 60 7.75 46V18Z" mask={animatedEdges ? `url(#${maskId})` : undefined} />
-          </>
+          <path d="M32 4 56.25 18V46L32 60 7.75 46V18Z" mask={animatedEdges ? `url(#${maskId})` : undefined} />
         ) : shape === "pentagon" ? (
           <path d="M32 4 58.6 23.3 48.5 54.5 15.5 54.5 5.4 23.3Z" />
         ) : shape === "circle" ? (
