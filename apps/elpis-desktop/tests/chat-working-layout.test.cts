@@ -4,18 +4,34 @@ const { test }: typeof import('node:test') = require('node:test');
 const assert: typeof import('node:assert/strict') = require('node:assert/strict');
 const { fixture }: typeof import('./parity-fixture.cts') = require('./parity-fixture.cts');
 
-for (const [name, width, atBottom] of [['reading', 1100, false], ['latest message', 1100, true], ['narrow window', 800, false]] as const) test(`working status keeps the layout steady: ${name}`, async () => {
-  const chat: [string, string, string][] = Array.from({ length: 20 }, (_, i) => [`t${i}`, `Prompt ${i}`, `Reply ${i}: ${'text '.repeat(80)}`]);
+const cases = [
+  ['reading', 1100, false],
+  ['latest message', 1100, true],
+  ['narrow window', 800, false],
+] as const;
+
+for (const [name, width, atBottom] of cases) test(`working status keeps the layout steady: ${name}`, async () => {
+  const chat: [string, string, string][] = Array.from(
+    { length: 20 },
+    (_, i) => [`t${i}`, `Prompt ${i}`, `Reply ${i}: ${'text '.repeat(80)}`],
+  );
   const f = await fixture({ chat, width, height: 750 });
   try {
     await f.open('chat-a');
     const page = f.page as unknown as Page;
-    await page.locator('.chat-scroll').evaluate((element: HTMLElement, bottom: boolean) => { element.scrollTop = bottom ? element.scrollHeight : element.scrollHeight / 2; }, atBottom);
+    await page.locator('.chat-scroll').evaluate((element: HTMLElement, bottom: boolean) => {
+      element.scrollTop = bottom ? element.scrollHeight : element.scrollHeight / 2;
+    }, atBottom);
     await page.waitForTimeout(300);
     const geometry = () => page.evaluate(() => {
       const scroll = document.querySelector<HTMLElement>('.chat-scroll')!;
       const composer = document.querySelector<HTMLElement>('.composer')!;
-      return { height: scroll.clientHeight, top: scroll.scrollTop, gap: scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight, composer: composer.getBoundingClientRect().top };
+      return {
+        height: scroll.clientHeight,
+        top: scroll.scrollTop,
+        gap: scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight,
+        composer: composer.getBoundingClientRect().top,
+      };
     });
     const before = await geometry();
     f.emit('message', { method: 'turn/started', params: { threadId: 'chat-a', turn: { id: 't19' } } });
