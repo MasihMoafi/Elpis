@@ -511,6 +511,7 @@
     "tests/canvas-editing.test.cts",
     "tests/love-spot-saving.test.cts",
     "tests/browser-sessions-electron.test.cts",
+    "tests/conversation-colour-render.test.cts",
     "tests/conversation-colors.test.cts",
     "tests/message-replies.test.cts",
     "tests/love-spot-voice.test.cts",

@@ -155,3 +155,27 @@ test('an unread chat shows its chosen colour in its circle and keeps its bold ti
     assert.deepEqual(f.errors, []);
   } finally { await f.close(); }
 });
+
+test('a working chat and its tab show the saved colour and reset together', async () => {
+  const f = await open(), { page } = f;
+  try {
+    await page.evaluate(() => document.documentElement.setAttribute('data-accent', 'teal'));
+    await f.open('chat-a'); await expand(page);
+    await row(page, 'workflow-agent').locator('.thread-link').click();
+    const target = row(page, 'workflow-agent');
+    const tab = page.locator('.task-tab.chat-tab.active');
+    const mark = target.locator('.elpis-working-mark');
+    await mark.waitFor();
+    const original = await mark.evaluate(element => getComputedStyle(element).color);
+    await choose(page, 'workflow-agent', 'Amber');
+    const amber = await mark.evaluate(element => getComputedStyle(element).color);
+    assert.notEqual(amber, original, 'the working indicator changes colour');
+    assert.equal(await tab.locator('button[role="tab"] svg').evaluate(element => getComputedStyle(element).color), amber);
+    await page.reload(); await page.evaluate(() => document.documentElement.setAttribute('data-accent', 'teal')); await expand(page); await mark.waitFor();
+    assert.equal(await mark.evaluate(element => getComputedStyle(element).color), amber, 'the colour survives reload');
+    await choose(page, 'workflow-agent', 'Reset colour');
+    assert.equal(await mark.evaluate(element => getComputedStyle(element).color), original, 'reset restores the working indicator');
+    assert.equal(await tab.getAttribute('data-conversation-colour'), null, 'reset clears the tab colour');
+    assert.deepEqual(f.errors, []);
+  } finally { await f.close(); }
+});
