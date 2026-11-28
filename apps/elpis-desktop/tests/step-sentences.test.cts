@@ -31,7 +31,11 @@ type Locator = { locator(selector: string): Locator; filter(options: object): Lo
 type Page = { locator(selector: string): Locator; waitForTimeout(ms: number): Promise<void>; emulateMedia(options: object): Promise<void>; screenshot(options: object): Promise<void> };
 async function using(run: (f: { page: Page }) => Promise<void>) {
   const threads = [
-    { id: 'chat-a', name: 'Fix the parser', preview: 'Fix the parser', cwd: CWD, model: 'sol', modelProvider: 'openai', status: { type: 'active' }, desktopAccess: { writable: true, mode: 'direct' } },
+    {
+      id: 'chat-a', name: 'Fix the parser', preview: 'Fix the parser', cwd: CWD,
+      model: 'sol', modelProvider: 'openai', status: { type: 'active' },
+      desktopAccess: { writable: true, mode: 'direct' },
+    },
   ];
   const f = await fixture({ running: true, chat: CHAT, threads, height: 760 });
   try { await f.open('chat-a'); await run(f); assert.deepEqual(f.errors, []); } finally { await f.close(); }
