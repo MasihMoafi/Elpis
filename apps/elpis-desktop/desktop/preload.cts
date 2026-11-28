@@ -253,6 +253,7 @@ contextBridge.exposeInMainWorld("elpisDesktop", {
         name: String(shot?.name ?? ""),
         dataURL: String(shot?.dataURL ?? ""),
         count: Number.isInteger(shot?.count) ? shot.count : 1,
+        colors: shot?.colors,
       }),
     onOpen: callback => {
       const open = (_event: IpcRendererEvent, id: unknown) => {

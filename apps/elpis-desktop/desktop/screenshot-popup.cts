@@ -69,7 +69,7 @@ function createScreenshotPopupImpl({
     ready = new Promise<void>(resolve => own.webContents.once("did-finish-load", resolve));
     void own.loadFile(path.join(__dirname, "screenshot-popup.html"));
   }
-  async function show(host: Window, shot: { id: string; dataURL: string; name: string; count: number }) {
+  async function show(host: Window, shot: { id: string; dataURL: string; name: string; count: number; colors: Record<string, string> }) {
     if (!open()) create();
     const own = window!;
     await ready;
@@ -80,6 +80,7 @@ function createScreenshotPopupImpl({
       name: shot.name,
       dark: dark(),
       count: shot.count,
+      colors: shot.colors,
     });
     own.showInactive();
   }
@@ -111,7 +112,7 @@ function createScreenshotPopupImpl({
       ipcMain: import("./browser-policy.cts").IpcListeners;
     }) {
       const request = (event: IpcMainEvent, raw: unknown) => {
-        const shot = raw as { id?: unknown; name?: unknown; dataURL?: unknown; count?: number } | null | undefined;
+        const shot = raw as { id?: unknown; name?: unknown; dataURL?: unknown; count?: number; colors?: unknown } | null | undefined;
         if (!trustedBrowserSender(event, host.webContents, origin)) return;
         if (
           typeof shot?.id !== "string" ||
@@ -124,7 +125,12 @@ function createScreenshotPopupImpl({
           Number.isInteger(shot.count) && (shot.count as number) > 0 && (shot.count as number) <= 50
             ? (shot.count as number)
             : 1;
-        void show(host, { id: shot.id, name: shot.name.slice(0, 200), dataURL: shot.dataURL, count });
+        const source = shot.colors && typeof shot.colors === "object" ? shot.colors as Record<string, unknown> : {};
+        const colors: Record<string, string> = {};
+        for (const key of ["card", "foreground", "muted-foreground", "border"]) {
+          if (typeof source[key] === "string" && source[key].length <= 256) colors[key] = source[key];
+        }
+        void show(host, { id: shot.id, name: shot.name.slice(0, 200), dataURL: shot.dataURL, count, colors });
       };
       windowIpc.on("elpis:screenshot-popup:request", request);
       return () => {

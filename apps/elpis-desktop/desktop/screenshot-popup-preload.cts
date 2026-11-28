@@ -4,15 +4,16 @@ const { contextBridge, ipcRenderer }: typeof import("electron") = require("elect
 contextBridge.exposeInMainWorld("elpisScreenshot", {
   choose: () => ipcRenderer.send("elpis:screenshot-popup:choose"),
   dismiss: () => ipcRenderer.send("elpis:screenshot-popup:dismiss"),
-  onShow: (callback: (shot: { image: string; name: string; dark: boolean; count: number }) => void) => {
+  onShow: (callback: (shot: { image: string; name: string; dark: boolean; count: number; colors: Record<string, string> | undefined }) => void) => {
     ipcRenderer.on(
       "elpis:screenshot-popup:show",
-      (_event, shot: { image?: string; name?: string; dark?: boolean; count?: number } | undefined) =>
+      (_event, shot: { image?: string; name?: string; dark?: boolean; count?: number; colors?: Record<string, string> } | undefined) =>
         callback({
           image: String(shot?.image ?? ""),
           name: String(shot?.name ?? ""),
           dark: shot?.dark === true,
           count: Number.isInteger(shot?.count) && (shot?.count ?? 0) > 0 ? (shot?.count ?? 1) : 1,
+          colors: shot?.colors,
         }),
     );
   },

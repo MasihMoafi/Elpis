@@ -18,7 +18,7 @@
     .shot.in { opacity:1; transform:none; }
     .shot:focus-visible { outline:2px solid var(--love); outline-offset:-2px; }
     img { display:block; width:100%; height:136px; object-fit:contain; border-radius:7px; background:color-mix(in oklch, var(--foreground) 6%, transparent); }
-    .hint { display:flex; align-items:center; gap:6px; padding:8px 4px 9px; color:var(--muted); }
+    .hint { display:flex; align-items:center; gap:6px; padding:8px 4px 9px; color:var(--muted-foreground, var(--muted)); }
     .hint svg { flex:none; width:14px; height:14px; color:var(--love); }
     .close { position:absolute; top:10px; right:10px; display:none; width:22px; height:22px; padding:0; border:1px solid var(--border); border-radius:50%;
       background:var(--card); color:var(--foreground); font:14px/1 system-ui, sans-serif; cursor:pointer; }
@@ -45,6 +45,11 @@
     document.querySelector('.close').addEventListener('click', () => window.elpisScreenshot.dismiss());
     window.elpisScreenshot.onShow(shot => {
       document.documentElement.classList.toggle('dark', shot.dark);
+      for (const key of ['card', 'foreground', 'muted-foreground', 'border']) {
+        const value = shot.colors?.[key];
+        if (typeof value === 'string' && CSS.supports('color', value)) document.documentElement.style.setProperty(`--${key}`, value);
+        else document.documentElement.style.removeProperty(`--${key}`);
+      }
       image.src = shot.image; image.alt = shot.name;
       // Several screenshots in a row open together, in the order they were taken (Masih, 31 Oct).
       const many = shot.count > 1, label = many ? `Open all ${shot.count} in Love Spot` : 'Click to draw on it in Love Spot';

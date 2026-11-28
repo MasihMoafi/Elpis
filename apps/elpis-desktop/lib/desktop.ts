@@ -175,7 +175,7 @@ declare global {
       };
       onNewChat?: (callback: (text: string) => void) => () => void;
       screenshotPopup?: {
-        show: (shot: { id: string; name: string; dataURL: string; count?: number }) => void;
+        show: (shot: { id: string; name: string; dataURL: string; count?: number; colors?: Record<string, string> }) => void;
         onOpen: (callback: (id: string) => void) => () => void;
       };
       quickEntry?: DesktopQuickEntry;

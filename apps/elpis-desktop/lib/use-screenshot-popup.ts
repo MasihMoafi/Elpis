@@ -38,7 +38,11 @@ export function useScreenshotPopup(ready: boolean, open: (ids: string[]) => void
       for (const shot of fresh) taken.add(shot.id);
       waiting.current = data.screenshots.filter(shot => taken.has(shot.id)).map(shot => shot.id);
       // The list is newest first; the thumbnail shows the newest one, with how many wait to open together.
-      if (fresh[0]) window.elpisDesktop?.screenshotPopup?.show({ ...fresh[0], count: waiting.current.length });
+      if (fresh[0]) {
+        const style = getComputedStyle(document.querySelector(".app-shell") ?? document.documentElement);
+        const colors = Object.fromEntries(["card", "foreground", "muted-foreground", "border"].map(name => [name, style.getPropertyValue(`--${name}`).trim()]));
+        window.elpisDesktop?.screenshotPopup?.show({ ...fresh[0], count: waiting.current.length, colors });
+      }
     });
   }, [ready]);
 }
