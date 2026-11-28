@@ -9,7 +9,7 @@ const edges = [
   [7.75, 18, 32, 4],
 ] as const;
 
-const shapes = ["hexagon", "pentagon", "circle", "square", "octagon", "hourglass"] as const;
+const shapes = ["hexagon", "pentagon", "circle", "square", "octagon", "triangle"] as const;
 type Shape = (typeof shapes)[number];
 
 const spokes: Record<Shape, readonly (readonly [number, number])[]> = {
@@ -18,7 +18,7 @@ const spokes: Record<Shape, readonly (readonly [number, number])[]> = {
   circle: [[32, 5], [59, 32], [32, 59], [5, 32]],
   square: [[10, 10], [54, 10], [54, 54], [10, 54]],
   octagon: [[21, 5], [43, 5], [59, 21], [59, 43], [43, 59], [21, 59], [5, 43], [5, 21]],
-  hourglass: [[32, 10], [32, 54]],
+  triangle: [[32, 4], [56.25, 46], [7.75, 46]],
 };
 
 function shapeFor(threadId: string | undefined): Shape {
@@ -66,13 +66,13 @@ export function WorkingMark({
         ) : shape === "pentagon" ? (
           <path d="M32 4 58.6 23.3 48.5 54.5 15.5 54.5 5.4 23.3Z" />
         ) : shape === "circle" ? (
-          <circle cx="32" cy="32" r="27" strokeDasharray="135 35" />
+          <circle cx="32" cy="32" r="27" />
         ) : shape === "square" ? (
           <rect x="7" y="7" width="50" height="50" rx="8" />
         ) : shape === "octagon" ? (
           <path d="M21 5H43L59 21V43L43 59H21L5 43V21Z" />
         ) : (
-          <path d="M16 10 L48 10 L32 32 L48 54 L16 54 L32 32 Z M12 10H52 M12 54H52" />
+          <path d="M32 4 56.25 46 7.75 46Z" />
         )}
       </g>
       <circle className="elpis-working-dot" cx="32" cy="32" r="7" />
