@@ -21,8 +21,10 @@ for (const state of ['idle', 'unread', 'working', 'waiting', 'error']) test(`con
     const sample = () => page.evaluate(() => {
       const row = document.querySelector('.thread-row')!, tab = document.querySelector('.task-tab')!;
       const dot = row.querySelector('.thread-dot')!, mark = dot.querySelector('svg');
+      const idle = dot.getAttribute('data-state') === 'idle';
       return {
-        dot: getComputedStyle(mark || dot)[mark ? 'color' : 'backgroundColor'],
+        dot: getComputedStyle(mark || dot)[mark ? 'color' : idle ? 'borderColor' : 'backgroundColor'],
+        dotFill: idle ? getComputedStyle(dot).backgroundColor : null,
         row: getComputedStyle(row, '::before').borderColor,
         tab: getComputedStyle(tab.querySelector('svg')!).color,
         outline: getComputedStyle(tab, '::before').borderColor,
@@ -34,6 +36,7 @@ for (const state of ['idle', 'unread', 'working', 'waiting', 'error']) test(`con
     await page.evaluate(() => document.querySelectorAll('.thread-row, .task-tab, .chat-view').forEach(element => element.setAttribute('data-conversation-colour', 'amber')));
     const amber = await sample();
     for (const key of ['dot', 'row', 'tab', 'outline'] as const) assert.notEqual(amber[key], before[key], `${state}: ${key} uses the chosen colour`);
+    if (state === 'idle') assert.equal(amber.dotFill, 'rgba(0, 0, 0, 0)', 'read/idle coloured chat uses a hollow ring');
     assert.equal(amber.dot, amber.tab, 'the indicator and tab use the same colour');
     assert.equal(amber.transcript, amber.tab, 'the transcript working mark uses the chosen colour');
     assert.equal(amber.composer, amber.tab, 'the composer working mark uses the chosen colour');

@@ -21,7 +21,8 @@
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="green"], [data-conversation-colour="green"] { --workflow-colour:light-dark(#29683f,#8bd49f); }
 :is(.workflow-mark, .conversation-colour-swatch)[data-colour="amber"], [data-conversation-colour="amber"] { --workflow-colour:var(--brand-accent); }
 /* The mark retains its status shape while using the conversation's chosen colour. */
-.thread-row[data-conversation-colour] .conversation-state-slot .thread-dot:not([data-state="working"]) { border-color:var(--workflow-colour); background:var(--workflow-colour); }
+.thread-row[data-conversation-colour] .conversation-state-slot .thread-dot[data-state="idle"] { border-color:var(--workflow-colour); background:transparent; }
+.thread-row[data-conversation-colour] .conversation-state-slot .thread-dot:not([data-state="working"]):not([data-state="idle"]) { border-color:var(--workflow-colour); background:var(--workflow-colour); }
 .thread-row[data-conversation-colour] .conversation-state-slot .elpis-working-mark { color:var(--workflow-colour); }
 [data-conversation-colour] .turn-working .elpis-working-mark { color:var(--workflow-colour); }
 .thread-row.active[data-conversation-colour]::before, .task-tab.chat-tab.active[data-conversation-colour]::before { --active-edge:var(--workflow-colour); }
