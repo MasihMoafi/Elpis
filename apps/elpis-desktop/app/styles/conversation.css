@@ -451,7 +451,9 @@
 /* Both navigation surfaces identify the current chat with the same line. */
 :root { --edge-line:2px; }
 .thread-row.active::before, .task-tab.chat-tab.active::before {
-  content:""; position:absolute; inset:0; border:var(--edge-line) solid var(--primary);
+  content:""; position:absolute; inset:0;
+  border:1px solid color-mix(in srgb, var(--active-edge, var(--primary)) 45%, var(--composer-edge));
+  box-shadow:0 0 4px color-mix(in srgb, var(--active-edge, var(--primary)) 65%, transparent);
   border-radius:inherit; corner-shape:inherit; pointer-events:none;
 }
 .task-tab.chat-tab.active { border-color:transparent; }

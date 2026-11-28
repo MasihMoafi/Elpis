@@ -107,10 +107,10 @@ for (const colorScheme of ['light', 'dark']) {
           animation: getComputedStyle(row, '::before').animationName,
         }));
         assert.deepEqual(edge,
-          { shadow: 'none', rowShadow: 'none', inset: '0px', left: '0px', border: '2px', inheritsShape: true,
+          { shadow: 'none', rowShadow: 'none', inset: '0px', left: '0px', border: '1px', inheritsShape: true,
             spansRow: true, fill: 'rgba(0, 0, 0, 0)',
             animation: id === 'chat-a' ? 'elpis-selection-pulse' : 'none' },
-          `${id}: the angled outline pulses only while working, without a shadow`);
+          `${id}: the angled outline matches the composer edge and pulses only while working`);
         const outlines = await page.locator('.thread-row.active, .task-tab.chat-tab.active').evaluateAll(rows => rows.map(row => {
           const line = getComputedStyle(row, '::before');
           return [line.borderWidth, line.borderColor, line.borderRadius, line.getPropertyValue('corner-shape')];
