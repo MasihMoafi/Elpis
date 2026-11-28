@@ -42,9 +42,10 @@ function WorkingStatus({ children }: { children: ReactNode }) {
 export function Transcript({
   entries,
   activeTurnId,
+  threadId,
   onViewChanges,
   ...draw
-}: { entries: Entry[]; activeTurnId: string | null; onViewChanges?: () => void } & Draw) {
+}: { entries: Entry[]; activeTurnId: string | null; threadId?: string | undefined; onViewChanges?: () => void } & Draw) {
   const viewport = useRef<HTMLElement | null>(null);
   const targets = useRef(new Map<Element, (visible: boolean) => boolean>());
   const shown = useRef(new Set<Element>());
@@ -144,6 +145,7 @@ export function Transcript({
             )}
             <Turn
               turn={turn}
+              threadId={threadId}
               active={turn.id === activeTurnId}
               defer={turns.length > 40 && index < turns.length - 1}
               observe={observe}
@@ -155,7 +157,7 @@ export function Transcript({
       })}
       {activeTurnId && !turns.some(turn => turn.id === activeTurnId) && (
         <WorkingStatus>
-          <LiveStep key={activeTurnId} label="Working" />
+          <LiveStep key={activeTurnId} label="Working" threadId={threadId} />
         </WorkingStatus>
       )}
     </>
@@ -195,6 +197,7 @@ function createdFiles(entries: Entry[]): string[] {
 
 function Turn({
   turn,
+  threadId,
   active,
   defer,
   observe,
@@ -202,7 +205,7 @@ function Turn({
   renderItem,
   mediaOf,
   wrapItem,
-}: { turn: TurnEntries; active: boolean; defer: boolean; observe: ObserveTurn; onViewChanges?: () => void } & Draw) {
+}: { turn: TurnEntries; threadId?: string | undefined; active: boolean; defer: boolean; observe: ObserveTurn; onViewChanges?: () => void } & Draw) {
   const [workOpen, setWorkOpen] = useState(false);
   const [shown, setShown] = useState(!defer || active);
   const height = useRef(320);
@@ -351,7 +354,7 @@ function Turn({
         timer without a mark (29 Oct, Masih: "you can see the working animation changes its place!"). */}
       {active && (
         <WorkingStatus>
-          <LiveStep label="Working" since={earliest(turn.entries)} />
+          <LiveStep label="Working" since={earliest(turn.entries)} threadId={threadId} />
         </WorkingStatus>
       )}
     </section>

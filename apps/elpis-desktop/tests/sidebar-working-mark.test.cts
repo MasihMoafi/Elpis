@@ -69,6 +69,7 @@ for (const colorScheme of ['light', 'dark']) {
         const rotor = mark?.querySelector('.elpis-working-rotor');
         const dot = mark?.querySelector('.elpis-working-dot');
         return {
+          shape: mark?.getAttribute('data-shape'),
           rotation: rotor && getComputedStyle(rotor).animationDuration,
           blink: dot && getComputedStyle(dot).animationDuration,
           masks: mark?.querySelectorAll('mask').length,
@@ -79,9 +80,9 @@ for (const colorScheme of ['light', 'dark']) {
           })) : [],
         };
       });
-      const { spokes, ...timing } = animation;
+      const { spokes, shape, ...timing } = animation;
       assert.deepEqual(timing, { rotation: '4s', blink: '2s', masks: 0 });
-      assert.deepEqual(spokes.map(spoke => spoke.vertex), [[32, 4], [56.25, 18], [56.25, 46], [32, 60], [7.75, 46], [7.75, 18]]);
+      if (shape === 'hexagon') assert.deepEqual(spokes.map(spoke => spoke.vertex), [[32, 4], [56.25, 18], [56.25, 46], [32, 60], [7.75, 46], [7.75, 18]]);
       for (const spoke of spokes) {
         assert.deepEqual(spoke.center, [32, 32], 'every vertex connects to the center inside the rotating group');
         assert.equal(spoke.width, '2.5px', 'spokes remain thinner than the outline but visible at sidebar size');

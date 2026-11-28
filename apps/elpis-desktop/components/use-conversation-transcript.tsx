@@ -95,6 +95,7 @@ export function useConversationTranscript({
         )}
         <Transcript
           entries={shownEntries}
+          threadId={selected?.id}
           activeTurnId={activeTurn ?? null}
           wrapItem={(entry, node) => (
             <ImageReplyProvider

@@ -246,7 +246,7 @@
 .live-label { color:var(--foreground); }
 .live-timer { flex-shrink:0; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
 .elpis-working-mark { width:18px; height:18px; flex-shrink:0; vertical-align:middle; color:var(--primary-action, var(--primary)); }
-.elpis-working-mark path { fill:none; stroke:currentColor; stroke-width:4; stroke-linejoin:round; }
+.elpis-working-rotor > path, .elpis-working-rotor > circle, .elpis-working-rotor > rect { fill:none; stroke:currentColor; stroke-width:4; stroke-linejoin:round; }
 .elpis-working-rotor { transform-origin:32px 32px; animation:spin 4s linear infinite; }
 .elpis-working-dot { fill:currentColor; animation:elpis-blink 2s ease-in-out infinite; }
 .elpis-working-edge { animation:elpis-working-edge-opacity 4s ease-in-out infinite; }

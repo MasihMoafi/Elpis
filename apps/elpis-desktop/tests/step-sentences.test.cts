@@ -76,6 +76,9 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
   assert.ok(later >= first + 2, `the timer ticks (${first}s, then ${later}s)`);
   // The working mark has one place, the turn's foot (29 Oct, Masih: "you can see the working animation changes its place!").
   assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
+  assert.equal(await page.locator('.turn-working .elpis-working-mark').evaluate(node => node.getAttribute('data-shape')),
+    await page.locator('[data-thread-id="chat-a"] .elpis-working-mark').evaluate(node => node.getAttribute('data-shape')),
+    'the chat and sidebar show the same working shape');
   const rotor = page.locator('.turn-working .elpis-working-rotor');
   const rotation = () => rotor.evaluate(node => getComputedStyle(node).transform);
   assert.notEqual(await rotor.evaluate(node => getComputedStyle(node).animationName), 'none');

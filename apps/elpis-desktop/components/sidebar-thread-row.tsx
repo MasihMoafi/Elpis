@@ -237,7 +237,7 @@ export function createSidebarThreadRow({
                   aria-label={stateLabels[state]}
                   title={state === "working" ? undefined : stateLabels[state]}
                 >
-                  {state === "working" && <WorkingMark animatedEdges={false} />}
+                  {state === "working" && <WorkingMark threadId={thread.id} animatedEdges={false} />}
                 </span>
               )}
             </span>

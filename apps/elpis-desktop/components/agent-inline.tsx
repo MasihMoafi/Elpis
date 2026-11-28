@@ -61,6 +61,7 @@ export function AgentInline({ id, threads }: { id: string; threads: Thread[] }) 
           ) : (
             <Transcript
               entries={entries}
+              threadId={id}
               activeTurnId={null}
               renderItem={entry => (
                 <ChatMessage

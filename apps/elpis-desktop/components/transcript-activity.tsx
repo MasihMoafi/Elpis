@@ -135,7 +135,7 @@ export function ActivityGroup({
 export const TIMER_FROM_MS = 2000;
 
 /** Something in progress, as a sentence with animated dots and a timer counting from `since` (else from now). */
-export function LiveStep({ label, since, mark = true }: { label: string; since?: number | undefined; mark?: boolean }) {
+export function LiveStep({ label, since, mark = true, threadId }: { label: string; since?: number | undefined; mark?: boolean; threadId?: string | undefined }) {
   const [start] = useState(() => since ?? Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -144,7 +144,7 @@ export function LiveStep({ label, since, mark = true }: { label: string; since?:
   }, []);
   return (
     <>
-      {mark && <WorkingMark />}
+      {mark && <WorkingMark threadId={threadId} />}
       <span className="live-label">{label}</span>
       {now - start >= TIMER_FROM_MS && (
         <>
