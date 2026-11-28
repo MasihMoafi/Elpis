@@ -275,8 +275,9 @@ export function PromptRail({
         railTop = rail.current.getBoundingClientRect().top;
       const half = card.current.getBoundingClientRect().height / 2;
       // The card never covers the live "Working" row (R24): it stays above it while that row is in view.
+      const scope = scroller.current.closest(".chat-view") ?? scroller.current;
       const live = [
-        ...scroller.current.querySelectorAll(".turn-working, .activity-group:has(.elpis-working-mark) > summary"),
+        ...scope.querySelectorAll(".turn-working, .activity-group:has(.elpis-working-mark) > summary"),
       ]
         .at(-1)
         ?.getBoundingClientRect();
