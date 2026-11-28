@@ -34,14 +34,13 @@ test('working marks select six stable shapes and keep the shared SVG animations'
     assert.ok(svg.querySelector('.elpis-working-rotor'));
     assert.ok(svg.querySelector('.elpis-working-dot'));
   }
-  assert.deepEqual(shapes, new Set(['hexagon', 'pentagon', 'circle', 'square', 'octagon', 'triangle']));
+  assert.deepEqual(shapes, new Set(['hexagon', 'pentagon', 'circle', 'square', 'octagon']));
   assert.match(render().querySelector('.elpis-working-rotor path')?.getAttribute('d') ?? '', /^M32 4 56\.25 18/);
   assert.equal(render().querySelectorAll('.elpis-working-rotor line').length, 6);
-  const spokeCounts = { hexagon: 6, pentagon: 5, circle: 4, square: 4, octagon: 8, triangle: 3 } as const;
+  const spokeCounts = { hexagon: 6, pentagon: 5, circle: 4, square: 4, octagon: 8 } as const;
   for (const [name, count] of Object.entries(spokeCounts)) {
     assert.equal(samples.get(name)!.querySelectorAll('.elpis-working-rotor line').length, count, `${name} spokes`);
   }
-  assert.equal(samples.get('triangle')!.querySelector('path')!.getAttribute('d'), 'M32 4 56.25 46 7.75 46Z');
   assert.equal(samples.get('circle')!.querySelector('.elpis-working-rotor circle')!.getAttribute('stroke-dasharray'), null);
   assert.ok(samples.get('square')!.querySelector('rect[rx]'));
 });

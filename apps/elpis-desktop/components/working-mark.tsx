@@ -9,16 +9,18 @@ const edges = [
   [7.75, 18, 32, 4],
 ] as const;
 
-const shapes = ["hexagon", "pentagon", "circle", "square", "octagon", "triangle"] as const;
+const shapes = ["hexagon", "pentagon", "circle", "square", "octagon"] as const;
 type Shape = (typeof shapes)[number];
 
 const spokes: Record<Shape, readonly (readonly [number, number])[]> = {
   hexagon: edges.map(([x, y]) => [x, y] as const),
-  pentagon: [[32, 4], [58.6, 23.3], [48.5, 54.5], [15.5, 54.5], [5.4, 23.3]],
-  circle: [[32, 5], [59, 32], [32, 59], [5, 32]],
-  square: [[10, 10], [54, 10], [54, 54], [10, 54]],
-  octagon: [[21, 5], [43, 5], [59, 21], [59, 43], [43, 59], [21, 59], [5, 43], [5, 21]],
-  triangle: [[32, 4], [56.25, 46], [7.75, 46]],
+  pentagon: [[32, 4], [58.63, 23.35], [48.46, 54.65], [15.54, 54.65], [5.37, 23.35]],
+  circle: [[32, 5.5], [58.5, 32], [32, 58.5], [5.5, 32]],
+  square: [[12, 12], [52, 12], [52, 52], [12, 52]],
+  octagon: [
+    [21.28, 6.13], [42.72, 6.13], [57.87, 21.28], [57.87, 42.72],
+    [42.72, 57.87], [21.28, 57.87], [6.13, 42.72], [6.13, 21.28],
+  ],
 };
 
 function shapeFor(threadId: string | undefined): Shape {
@@ -64,15 +66,13 @@ export function WorkingMark({
         {shape === "hexagon" ? (
           <path d="M32 4 56.25 18V46L32 60 7.75 46V18Z" mask={animatedEdges ? `url(#${maskId})` : undefined} />
         ) : shape === "pentagon" ? (
-          <path d="M32 4 58.6 23.3 48.5 54.5 15.5 54.5 5.4 23.3Z" />
+          <path d="M32 4 58.63 23.35 48.46 54.65 15.54 54.65 5.37 23.35Z" />
         ) : shape === "circle" ? (
-          <circle cx="32" cy="32" r="27" />
+          <circle cx="32" cy="32" r="26.5" />
         ) : shape === "square" ? (
-          <rect x="7" y="7" width="50" height="50" rx="8" />
-        ) : shape === "octagon" ? (
-          <path d="M21 5H43L59 21V43L43 59H21L5 43V21Z" />
+          <rect x="10" y="10" width="44" height="44" rx="6" />
         ) : (
-          <path d="M32 4 56.25 46 7.75 46Z" />
+          <path d="M21.28 6.13H42.72L57.87 21.28V42.72L42.72 57.87H21.28L6.13 42.72V21.28Z" />
         )}
       </g>
       <circle className="elpis-working-dot" cx="32" cy="32" r="7" />
