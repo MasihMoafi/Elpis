@@ -63,7 +63,7 @@ export async function handleLoveSpotRoutes(
     return true;
   }
   if (url.pathname === "/api/love-spot/talk") {
-    json(response, 200, method === "GET" ? await loveTalk.read() : await loveTalk.send(await body(request)));
+    json(response, 200, method === "GET" ? await loveTalk.read() : await loveTalk.send(await body(request, 800000)));
     return true;
   }
   if (url.pathname === "/api/love-spot/voice/settings" && ["GET", "POST"].includes(method)) {

@@ -373,7 +373,7 @@ function createLoveSpotImpl({
     agentColor: (color: string, id?: string) => boolean,
     page?: Page,
     shapes: ReturnType<typeof splitPainting>["shapes"] = [],
-    arg5 = {},
+    arg5: { preview?: boolean; characterPortrait?: string } = {},
   ) {
     return replyMoved({ locked, read, samePage, persist }, turnId, text, agentColor, page, shapes, arg5);
   }

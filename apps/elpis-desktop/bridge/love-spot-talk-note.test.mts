@@ -8,6 +8,25 @@ import { createLoveSpot } from "./love-spot-store.cts";
 import { createLoveSpotTalk, SUBSCRIPTION_BLOCKED } from "./love-spot-talk.mts";
 import { enabledAudio, note, fixture, flower, delta } from "./love-spot-talk.fixtures.mts";
 import type { SpeechEvent } from "./love-spot-talk.fixtures.mts";
+import { THEME_CHARACTER_IMAGES } from "../lib/theme-character-images.ts";
+
+test("board replies retain the selected character portrait across turns", async t => {
+  const f = await fixture(t);
+  await f.talk.send({ text: "Hello", model: "text", portrait: THEME_CHARACTER_IMAGES.teal });
+  f.client.emit("event", { type: "message", data: { method: "item/agentMessage/delta", params: { threadId: "chat", turnId: "turn-1", itemId: "reply", delta: "Hello there." } } });
+  f.finish();
+  await f.talk.idle();
+  await f.talk.send({ text: "Again", model: "text" });
+  f.finish("turn-2");
+  await f.talk.idle();
+  const { scene } = await f.store.read();
+  const first = scene.elements.find(e => e.id === "love-face-turn-1")!;
+  const second = scene.elements.find(e => e.id === "love-face-turn-2")!;
+  assert.equal(scene.files[first.fileId!].dataURL, THEME_CHARACTER_IMAGES.teal);
+  assert.notEqual(scene.files[second.fileId!].dataURL, THEME_CHARACTER_IMAGES.teal);
+  assert.notEqual(first.fileId, second.fileId);
+  await assert.rejects(f.talk.send({ text: "Invalid", portrait: "https://example.com/portrait.png" }), /portrait/);
+});
 
 test("her face sits beside every reply as one image of one file, moves with the note and the painting, and stays clear of the board", async t => {
   const f = await fixture(t);

@@ -1,6 +1,6 @@
-import { usePreferences } from "@/lib/preferences";
+import { readPreferences, usePreferences } from "@/lib/preferences";
 import { THEME_CHARACTER_IMAGES } from "@/lib/theme-character-images";
-import { useCustomCharacters } from "@/lib/custom-characters";
+import { readCustomCharacters, useCustomCharacters } from "@/lib/custom-characters";
 import { BUILT_IN_THEMES, parseCustomThemes } from "@/lib/theme-palettes";
 import { MATILDA_SHOTS } from "../bridge/matilda-face.cts";
 import type { CustomCharacter } from "./custom-character-types.mts";
@@ -31,6 +31,23 @@ export const THEME_CHARACTERS: Record<string, { name: string; image: string; the
 export const OPEN_CHARACTER_PICKER = "elpis-open-character-picker";
 export function customCharacterImage(character: CustomCharacter) {
   return "url" in character.portrait ? character.portrait.url : THEME_CHARACTERS[character.portrait.builtin]?.image ?? MATILDA_SHOTS.softSmile;
+}
+/** Embed the same chosen picture on the board, including a locally stored custom portrait. */
+export async function selectedBoardPortrait(): Promise<string | undefined> {
+  const { selectedCharacter, selectedPalette } = readPreferences();
+  const custom = readCustomCharacters().find(item => item.id === selectedCharacter);
+  const source = custom ? customCharacterImage(custom) : THEME_CHARACTERS[selectedCharacter || selectedPalette]?.image;
+  if (source?.startsWith("data:image/svg+xml")) return undefined;
+  if (!source || source.startsWith("data:")) return source;
+  const response = await fetch(source);
+  if (!response.ok) throw new Error("Character portrait could not be loaded.");
+  const blob = await response.blob();
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Character portrait could not be read."));
+    reader.onerror = () => reject(new Error("Character portrait could not be read."));
+    reader.readAsDataURL(blob);
+  });
 }
 /** The selected palette's character, or null for Matilda herself. */
 export function useThemeCharacter() {

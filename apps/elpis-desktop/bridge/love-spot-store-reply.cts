@@ -169,7 +169,7 @@ async function replyMoved(
   agentColor: (color: string, id?: string) => boolean,
   page?: Page,
   shapes: ReturnType<typeof splitPainting>["shapes"] = [],
-  { preview = false } = {},
+  { preview = false, characterPortrait }: { preview?: boolean; characterPortrait?: string } = {},
 ) {
   const { locked, read, samePage, persist } = context;
   if (typeof text === "string") text = text.replaceAll("💙", "❤️");
@@ -237,7 +237,9 @@ async function replyMoved(
       y = Math.max(...hits.map(e => e.y + e.height)) + 40;
     }
     const now = Date.now(),
-      file = { id: `matilda-face-${portrait.expression}`, ...portrait.board, created: now, lastRetrieved: now };
+      file = characterPortrait
+        ? { id: `love-character-${turnId}`, mimeType: characterPortrait.slice(5, characterPortrait.indexOf(";")), dataURL: characterPortrait, created: now, lastRetrieved: now }
+        : { id: `matilda-face-${portrait.expression}`, ...portrait.board, created: now, lastRetrieved: now };
     const drawn = {
       angle: 0,
       backgroundColor: "transparent",

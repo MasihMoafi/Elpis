@@ -76,12 +76,13 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
   assert.ok(later >= first + 2, `the timer ticks (${first}s, then ${later}s)`);
   // The working mark has one place, the turn's foot (29 Oct, Masih: "you can see the working animation changes its place!").
   assert.equal(await live.locator('.elpis-working-mark').count(), 0, 'the running row has no mark of its own');
-  const rotor = page.locator('.turn-working .elpis-working-rotor');
-  const rotation = () => rotor.evaluate(node => getComputedStyle(node).transform);
-  assert.notEqual(await rotor.evaluate(node => getComputedStyle(node).animationName), 'none');
-  const firstRotation = await rotation();
+  const triangles = page.locator('.turn-working .elpis-working-mark path');
+  assert.equal(await triangles.count(), 3);
+  const opacity = () => triangles.first().evaluate(node => getComputedStyle(node).opacity);
+  assert.notEqual(await triangles.first().evaluate(node => getComputedStyle(node).animationName), 'none');
+  const firstOpacity = await opacity();
   await page.waitForTimeout(700);
-  assert.notEqual(await rotation(), firstRotation, 'the filled shape rotates smoothly');
+  assert.notEqual(await opacity(), firstOpacity, 'triangle visibility changes smoothly');
   assert.equal(await page.locator('.turn-working .elpis-working-mark image').count(), 0, 'the working mark has no E');
   // Light, then dark: the row is fully inside the chat column and legible.
   for (const scheme of ['light']) {
@@ -93,7 +94,7 @@ test('a running step has its sentence, ticking timer and filled rotor, in both t
     await page.screenshot({ path: path.join(captures, `step-sentences-${scheme}.png`) });
   }
   await page.emulateMedia({ reducedMotion: 'reduce' }); await page.waitForTimeout(100);
-  assert.equal(await rotor.evaluate(node => getComputedStyle(node).animationDuration), '4s', 'the approved hexagon (d5fc7f16c) keeps its speed under reduced motion');
+  assert.equal(await triangles.first().evaluate(node => getComputedStyle(node).animationName), 'none', 'reduced motion keeps triangles visible');
 }));
 
 for (const input of ['pointer', 'keyboard']) {

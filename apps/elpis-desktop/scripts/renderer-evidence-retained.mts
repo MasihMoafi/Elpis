@@ -207,9 +207,9 @@ export const retainedUpdates: Record<string, Record<string, Pin>> = {
             "reason": "Masih 27 Oct: \"it's ugly; showing all sorts of things it shouldn't. The workflow particularly.\" then \"Please fix them all\". Workflows drops Kahn's order, the critical path, the reading list, the key strip and wave labels (SPEC.md Workflows, Removed); the minimap starts hidden; the run clock is a small time in the header; patterns open from the pattern menu and the guide sits under the board. Only assertions on removed elements changed; the rest are kept."
         },
         "tests/step-sentences.test.cts": {
-            "blob": "35c9d36d67b257d1e3a40ad72e26c3fc76cbdf81",
+            "blob": "12f26065cda10ecb48736933a26e6987d79b9ab7",
             "approval": "dcf3b67c6df4340a3edbe285658f3069be456e83",
-            "reason": "Wait for each opened lazy activity body before reading all finished sentences; every sentence and pointer/keyboard disclosure assertion remains. S36/R74, Masih 26 Oct: hide empty Reasoning and missing-summary placeholders. Replace obsolete empty-disclosure pointer/keyboard cases with saved-empty to streamed-summary to recorded-content lifecycle proof; preserve real-summary pointer/keyboard in both themes, working status, disclosure and exact code-copy assertions. Raw history remains unchanged. Masih 29 Oct: \"you can see the working animation changes its place!\". The working mark has one place, the turn's foot; a running row keeps its sentence and ticking timer without a mark. Every other assertion remains."
+            "reason": "Keep the sentence, timer, placement, disclosure and copy checks. Masih: \"it shouldn't be a hexagon fully, it should be its three triangles, changing the visibility.\" Check the three pulsing triangles and reduced motion instead of rotor rotation."
         },
         "tests/night-workflows.test.cts": {
             "blob": "b7a51ea7c95482c50d29d9c0fd67ee0e360eece7",

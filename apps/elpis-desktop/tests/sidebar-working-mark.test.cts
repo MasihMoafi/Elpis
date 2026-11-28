@@ -64,27 +64,20 @@ for (const colorScheme of ['light', 'dark']) {
       assert.deepEqual(states.find(row => row.id === 'chat-a'), { id: 'chat-a', state: 'working', animated: true });
       assert.deepEqual(states.find(row => row.id === 'chat-b'), { id: 'chat-b', state: 'idle', animated: false });
       assert.deepEqual(states.find(row => row.id === 'chat-c'), { id: 'chat-c', state: 'waiting', animated: false });
-      const animation = await f.page.evaluate(() => {
+      const geometry = await f.page.evaluate(() => {
         const mark = document.querySelector('[data-thread-id="chat-a"] .elpis-working-mark');
-        const rotor = mark?.querySelector('.elpis-working-rotor');
-        const dot = mark?.querySelector('.elpis-working-dot');
         return {
-          rotation: rotor && getComputedStyle(rotor).animationDuration,
-          blink: dot && getComputedStyle(dot).animationDuration,
-          masks: mark?.querySelectorAll('mask').length,
-          spokes: rotor ? [...rotor.querySelectorAll('line')].map(line => ({
-            vertex: [line.x1.baseVal.value, line.y1.baseVal.value],
-            center: [line.x2.baseVal.value, line.y2.baseVal.value],
-            width: getComputedStyle(line).strokeWidth,
-          })) : [],
+          polygons: mark?.querySelectorAll('polygon, line, circle').length,
+          triangles: [...mark?.querySelectorAll('path') ?? []].map(path => ({ d: path.getAttribute('d'),
+            width: getComputedStyle(path).strokeWidth, animation: getComputedStyle(path).animationName })),
         };
       });
-      const { spokes, ...timing } = animation;
-      assert.deepEqual(timing, { rotation: '4s', blink: '2s', masks: 0 });
-      assert.deepEqual(spokes.map(spoke => spoke.vertex), [[32, 4], [56.25, 18], [56.25, 46], [32, 60], [7.75, 46], [7.75, 18]]);
-      for (const spoke of spokes) {
-        assert.deepEqual(spoke.center, [32, 32], 'every vertex connects to the center inside the rotating group');
-        assert.equal(spoke.width, '2.5px', 'spokes remain thinner than the outline but visible at sidebar size');
+      assert.equal(geometry.polygons, 0);
+      assert.equal(geometry.triangles.length, 3);
+      for (const triangle of geometry.triangles) {
+        assert.match(triangle.d!, /^M[\d.]+ [\d.]+ [\d.]+ [\d.]+ [\d.]+ [\d.]+Z$/);
+        assert.equal(triangle.width, '2.5px');
+        assert.equal(triangle.animation, 'none', 'the sidebar mark is static');
       }
       for (const id of ['chat-a', 'chat-b', 'chat-c']) {
         await f.open(id);

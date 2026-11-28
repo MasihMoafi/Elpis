@@ -17,6 +17,7 @@ import { appStorage } from "@/lib/projects";
 import { errorText } from "@/lib/error-text.mts";
 import { useCustomCharacters } from "@/lib/custom-characters";
 import { usePreferences } from "@/lib/preferences";
+import { selectedBoardPortrait } from "@/lib/theme-characters";
 
 /** How long the board stays quiet before she looks at what was written or drawn (ms). */
 const QUIET = 300;
@@ -218,6 +219,7 @@ export function useMatilda({
       else if (!mounted.current && now.enabled() && !editingId.current) {
         const reply = await api<{ waitingForPicture?: boolean }>("/love-spot/talk", {
           text,
+          portrait: await selectedBoardPortrait(),
           persona: now.persona.trim() || PROTOCOL,
           drawingOnly: onlyDrawing,
           ...(now.context ? { pageSession: now.context } : {}),
@@ -345,12 +347,13 @@ export function useMatilda({
       }
       if (!text) return;
       const handover = startHandover(now.context);
-      void api<{ waitingForPicture?: boolean }>("/love-spot/talk", {
+      void selectedBoardPortrait().then(portrait => api<{ waitingForPicture?: boolean }>("/love-spot/talk", {
         text,
+        portrait,
         persona: now.persona.trim() || PROTOCOL,
         drawingOnly: onlyDrawing,
         ...(now.context ? { pageSession: now.context } : {}),
-      })
+      }))
         .then(reply => {
           if (reply.waitingForPicture) {
             if (now.enabled() && !handover.cancelled) addPending(now.context, batch);

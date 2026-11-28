@@ -7,6 +7,7 @@ import { convertToExcalidrawElements, viewportCoordsToSceneCoords } from "@excal
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import type { AppState, BinaryFiles } from "@excalidraw/excalidraw/types";
 import { appStorage } from "@/lib/projects";
+import { selectedBoardPortrait } from "@/lib/theme-characters";
 import { useMatilda } from "@/components/love-spot-matilda";
 import { api, chatProvider, providerChoices } from "@/lib/api";
 import { MATILDA_CHANGED } from "@/lib/matilda";
@@ -148,6 +149,7 @@ export function useLoveBoardMatilda(previous: LoveBoardPages) {
         const reply = await api<{ voice: MatildaVoice; waitingForPicture?: boolean }>("/love-spot/talk", {
           text,
           persona,
+          portrait: await selectedBoardPortrait(),
           revision,
           drawingOnly,
           ...(pageSession ? { pageSession } : {}),

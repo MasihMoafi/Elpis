@@ -20,6 +20,7 @@ import { LoadOnScroll } from "@/components/load-on-scroll";
 import { MatildaFace } from "@/components/matilda-face";
 import "@/components/matilda-mini-chat.css";
 import { errorText } from "@/lib/error-text.mts";
+import { selectedBoardPortrait } from "@/lib/theme-characters";
 
 /** Earlier messages shown when the history icon opens them, and how many more each scroll to the top reveals (31 Oct: "when I
  * hover up load them"; 1 Nov: none until the icon is pressed). */
@@ -149,7 +150,7 @@ export function useMatildaMiniChat(open: boolean) {
     latestRead.current++;
     try {
       const response = received(
-        await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona(), pinned: true }),
+        await api<Conversation>("/love-spot/talk", { text: sent, persona: savedPersona(), pinned: true, portrait: await selectedBoardPortrait() }),
       );
       if (!mounted.current) return;
       const responseTurn = response.entries.at(-1)?.turnId;

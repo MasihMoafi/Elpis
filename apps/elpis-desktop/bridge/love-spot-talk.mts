@@ -49,7 +49,8 @@ export function createLoveSpotTalk({
     stale: string | null | undefined;
   let work = Promise.resolve(),
     loading: Promise<void> | null | undefined,
-    sendingPage: Page | undefined;
+    sendingPage: Page | undefined,
+    sendingPortrait: string | undefined;
   let matilda: {
     replies: boolean;
     model: string | null;
@@ -113,7 +114,7 @@ export function createLoveSpotTalk({
     finished,
     page: () => sendingPage,
     preview: (turnId, note, page) => {
-      queueReply([turnId, note, agentColor, page ?? turnPages.get(turnId), [], { preview: true }]);
+      queueReply([turnId, note, agentColor, page ?? turnPages.get(turnId), [], { preview: true, characterPortrait: sendingPortrait }]);
     },
   });
   function upsert(turnId: string, item: Item) {
@@ -241,10 +242,10 @@ export function createLoveSpotTalk({
       const { note, shapes } = splitPainting(final);
       if (turn.status === "completed" && !turn.error && (note || shapes.length)) {
         const page = turnPages.get(turn.id) ?? sendingPage;
-        queueReply([turn.id, note, agentColor, page, shapes], "The reply could not be added to the board.");
+        queueReply([turn.id, note, agentColor, page, shapes, { characterPortrait: sendingPortrait }], "The reply could not be added to the board.");
       } else if (!completed && partial) {
         const page = turnPages.get(turn.id) ?? sendingPage;
-        queueReply([turn.id, partial, agentColor, page]);
+        queueReply([turn.id, partial, agentColor, page, [], { characterPortrait: sendingPortrait }]);
       }
       turnPages.delete(turn.id);
     }
@@ -448,6 +449,7 @@ export function createLoveSpotTalk({
             .catch(cause => console.warn(`Love Spot stays at normal speed: ${cause.message}`));
         }
         sendingPage = board.scene.page;
+        sendingPortrait = body.portrait;
         writer.begin(null);
         const result = (await client.send(threadId, {
           text: body.text,
