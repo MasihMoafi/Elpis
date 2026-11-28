@@ -24,6 +24,7 @@ export type RecordedTask = {
   dependsOn?: string[];
   feedbackFrom?: string[];
   assignedThreadId?: string | null;
+  threads?: string[];
   /** "mother": the Mother added it during the run. */ addedBy?: string;
   model?: string;
   provider?: string;
@@ -117,9 +118,10 @@ export function graphForWorkflow(run: RecordedWorkflow, liveAgents: readonly Thr
       .map(source => ({ id: `${source}->${task.id}`, source, target: task.id })),
   );
   const assigned = new Map(
-    agents.flatMap(task => (task.assignedThreadId ? [[task.assignedThreadId, task.id] as const] : [])),
+    agents.flatMap(task => [task.assignedThreadId, ...(task.threads ?? [])].flatMap(id => id ? [[id, task.id] as const] : [])),
   );
-  const extra = liveAgents.filter(thread => !assigned.has(thread.id));
+  const checks = new Set(tasks.filter(task => task.kind === "verify").flatMap(task => [task.assignedThreadId, ...(task.threads ?? [])]));
+  const extra = liveAgents.filter(thread => !assigned.has(thread.id) && !checks.has(thread.id));
   for (const thread of extra) assigned.set(thread.id, `live:${thread.id}`);
   for (const thread of extra) {
     const id = assigned.get(thread.id)!;
