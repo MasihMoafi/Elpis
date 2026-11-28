@@ -12,28 +12,33 @@ const { createRoot } = require('react-dom/client');
 test('leaving an open edit never sends it on leave or return, but completion sends it', async () => {
   const dom = new JSDOM('<div id="root"></div>', { url: 'http://localhost' });
   global.window = dom.window; global.document = dom.window.document;
-  global.IS_REACT_ACT_ENVIRONMENT = true;
-  const storage = new Map(), posts = [];
-  const mocks = {
-    '@/lib/api': { api: async (_url, body) => { if (body) posts.push(body.text); return {}; } },
-    '@/lib/projects': { appStorage: () => ({ getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) }) },
+  (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  const storage = new Map<string, string>(), posts: string[] = [];
+  const mocks: Record<string, unknown> = {
+    '@/lib/api': { api: async (_url: string, body: { text: string }) => { if (body) posts.push(body.text); return {}; } },
+    '@/lib/projects': { appStorage: () => ({ getItem: (key: string) => storage.get(key), setItem: (key: string, value: string) => storage.set(key, value) }) },
     '@/lib/matilda': { PROTOCOL: 'persona', savedPersona: () => 'persona', keepPersona: async () => {} },
     '@/lib/preferences': { usePreferences: () => ({}) },
     '@/lib/custom-characters': { useCustomCharacters: () => ({ characters: [] }) },
+    '@/lib/theme-characters': { selectedBoardPortrait: async () => undefined },
     '@/lib/error-text.mts': { errorText: String },
   };
   const file = path.join(__dirname, '../components/love-spot-matilda.tsx');
-  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 } }).outputText;
-  const module = { exports: {} };
-  compileFunction(code, ['require', 'exports', 'module'])((id) => mocks[id] || (id.startsWith('@/components/') ? {} : require(id)), module.exports, module);
+  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const module = { exports: {} as { useMatilda: (options: { context: string; ready: () => boolean; enabled: () => boolean;
+    told: (ids: Set<string>) => string; drawingOnly: () => boolean; send: (value: string) => Promise<string>;
+    onError: (error: string) => void }) => { notice: (ids: string[], done: boolean, active?: string) => void } } };
+  compileFunction(code, ['require', 'exports', 'module'])((id: string) => mocks[id] || (id.startsWith('@/components/') ? {} : require(id)), module.exports, module);
   const { useMatilda } = module.exports;
-  let hook, editing = true, text = 'unfinished', send = async value => { posts.push(value); return 'sent'; };
+  let hook!: ReturnType<typeof useMatilda>, editing = true, text = 'unfinished', send = async (value: string) => { posts.push(value); return 'sent'; };
   function Board() {
     hook = useMatilda({ context: 'page', ready: () => !editing, enabled: () => true, told: ids => ids.size ? text : '', drawingOnly: () => false,
       send: value => send(value), onError: error => { throw Error(error); } });
     return null;
   }
-  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+  const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   let root = createRoot(document.getElementById('root'));
   try {
     await act(async () => root.render(React.createElement(Board)));
@@ -60,8 +65,8 @@ test('leaving an open edit never sends it on leave or return, but completion sen
     await act(async () => root.unmount());
     assert.deepEqual(posts, ['finished thought', 'completed before leaving'], 'a completed note is sent on leave');
 
-    let release;
-    send = () => new Promise(resolve => { release = resolve; });
+    let release!: (value: string) => void;
+    send = () => new Promise<string>(resolve => { release = resolve; });
     root = createRoot(document.getElementById('root'));
     await act(async () => root.render(React.createElement(Board)));
     text = 'being handed over';

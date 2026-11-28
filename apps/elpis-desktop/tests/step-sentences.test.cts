@@ -27,7 +27,7 @@ const seconds = (text: string) => { const m = text.match(/^(?:(\d+)m )?(\d+)s$/)
 const captures = process.env.ELPIS_APP_SCREENSHOTS || '/tmp';
 
 type Bounds = { x: number; y: number; width: number; height: number };
-type Locator = { locator(selector: string): Locator; filter(options: object): Locator; getByText(text: string, options: object): Locator; all(): Promise<Locator[]>; allInnerTexts(): Promise<string[]>; click(): Promise<void>; waitFor(): Promise<void>; innerText(): Promise<string>; count(): Promise<number>; evaluate<T>(fn: (node: HTMLElement) => T): Promise<T>; boundingBox(): Promise<Bounds | null>; last(): Locator };
+type Locator = { locator(selector: string): Locator; filter(options: object): Locator; getByText(text: string, options: object): Locator; all(): Promise<Locator[]>; allInnerTexts(): Promise<string[]>; click(): Promise<void>; waitFor(): Promise<void>; innerText(): Promise<string>; count(): Promise<number>; evaluate<T>(fn: (node: HTMLElement) => T): Promise<T>; boundingBox(): Promise<Bounds | null>; first(): Locator; last(): Locator };
 type Page = { locator(selector: string): Locator; waitForTimeout(ms: number): Promise<void>; emulateMedia(options: object): Promise<void>; screenshot(options: object): Promise<void> };
 async function using(run: (f: { page: Page }) => Promise<void>) {
   const f = await fixture({ running: true, chat: CHAT, height: 760 });

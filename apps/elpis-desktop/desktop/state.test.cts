@@ -56,6 +56,20 @@ test("prompt bookmarks survive reopening the desktop store", async () => {
   await assert.rejects(() => createStateStore(file).set("elpis:prompt-rail-bookmarks:../config", "[]"), /Unsupported/);
 });
 
+test("Matilda's pending and unfinished workspace values survive reopening and reject unknown keys", async t => {
+  const f = windows(t), a = f.open(1), b = f.open(2);
+  for (const key of ["elpis-matilda-pending-v1", "elpis-matilda-unfinished-v1"]) {
+    await a.storage.saveItem(key, '["note"]');
+    await f.settle();
+    assert.equal(b.storage.getItem(key), '["note"]');
+    assert.equal(createStateStore(f.file).read()[key], '["note"]');
+    await b.storage.saveItem(key, '[]');
+    await f.settle();
+    assert.equal(createStateStore(f.file).read()[key], '[]');
+  }
+  await assert.rejects(f.store.set("elpis-matilda-unfinished-v2", "[]"), /Unsupported/);
+});
+
 test("saved project chat assignments preserve the workspace and remain writable after restart", async () => {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "elpis-project-chat-state-")), "workspace.json");
   const assignments = JSON.stringify({ "chat-1": "project-1" });

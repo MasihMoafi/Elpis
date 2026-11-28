@@ -22,8 +22,11 @@ test("board replies retain the selected character portrait across turns", async 
   const { scene } = await f.store.read();
   const first = scene.elements.find(e => e.id === "love-face-turn-1")!;
   const second = scene.elements.find(e => e.id === "love-face-turn-2")!;
-  assert.equal(scene.files[first.fileId!].dataURL, THEME_CHARACTER_IMAGES.teal);
-  assert.notEqual(scene.files[second.fileId!].dataURL, THEME_CHARACTER_IMAGES.teal);
+  assert.ok(first.fileId && second.fileId);
+  const firstFile = scene.files[first.fileId], secondFile = scene.files[second.fileId];
+  assert.ok(firstFile && secondFile);
+  assert.equal(firstFile.dataURL, THEME_CHARACTER_IMAGES.teal);
+  assert.notEqual(secondFile.dataURL, THEME_CHARACTER_IMAGES.teal);
   assert.notEqual(first.fileId, second.fileId);
   await assert.rejects(f.talk.send({ text: "Invalid", portrait: "https://example.com/portrait.png" }), /portrait/);
 });

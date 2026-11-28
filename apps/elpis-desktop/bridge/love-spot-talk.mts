@@ -109,12 +109,13 @@ export function createLoveSpotTalk({
     threadId: () => threadId,
     publish,
   });
+  const portraitOptions = () => sendingPortrait === undefined ? {} : { characterPortrait: sendingPortrait };
   const writer = createTalkWriting({
     voice: talkVoice,
     finished,
     page: () => sendingPage,
     preview: (turnId, note, page) => {
-      queueReply([turnId, note, agentColor, page ?? turnPages.get(turnId), [], { preview: true, characterPortrait: sendingPortrait }]);
+      queueReply([turnId, note, agentColor, page ?? turnPages.get(turnId), [], { preview: true, ...portraitOptions() }]);
     },
   });
   function upsert(turnId: string, item: Item) {
@@ -242,10 +243,10 @@ export function createLoveSpotTalk({
       const { note, shapes } = splitPainting(final);
       if (turn.status === "completed" && !turn.error && (note || shapes.length)) {
         const page = turnPages.get(turn.id) ?? sendingPage;
-        queueReply([turn.id, note, agentColor, page, shapes, { characterPortrait: sendingPortrait }], "The reply could not be added to the board.");
+        queueReply([turn.id, note, agentColor, page, shapes, portraitOptions()], "The reply could not be added to the board.");
       } else if (!completed && partial) {
         const page = turnPages.get(turn.id) ?? sendingPage;
-        queueReply([turn.id, partial, agentColor, page, [], { characterPortrait: sendingPortrait }]);
+        queueReply([turn.id, partial, agentColor, page, [], portraitOptions()]);
       }
       turnPages.delete(turn.id);
     }

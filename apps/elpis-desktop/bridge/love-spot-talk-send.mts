@@ -17,7 +17,9 @@ export type SendBody = {
 
 export function validateSendBody(body: SendBody) {
   object(body, ["text", "model", "provider", "revision", "persona", "pinned", "drawingOnly", "pageSession", "portrait"]);
-  if (body.portrait !== undefined && (typeof body.portrait !== "string" || body.portrait.length > 700000 || !/^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(body.portrait)))
+  if (body.portrait !== undefined &&
+    (typeof body.portrait !== "string" || body.portrait.length > 700000 ||
+      !/^data:image\/(webp|png|jpeg);base64,[A-Za-z0-9+/]+=*$/.test(body.portrait)))
     throw new BridgeError("Invalid character portrait");
   text(body.text, "message");
   if (body.pinned !== undefined && typeof body.pinned !== "boolean")
