@@ -257,9 +257,9 @@
 .turn-working { display:flex; align-items:center; gap:8px; width:fit-content; max-width:100%; margin-top:7px; padding:3px 0; font-size:var(--text-base); color:var(--muted-foreground); }
 .background-processes, .composer-working { width:100%; max-width:var(--transcript-width,740px); margin-inline:auto; }
 /* Keep the transcript viewport the same height when the working status starts or finishes. */
-.composer-working, .composer-working:empty { display:block; height:46px; }
+.composer-working, .composer-working:empty { display:block; height:28px; }
 .composer-tray + .composer-working:empty { display:none; }
-.composer-working > .turn-working { box-sizing:border-box; height:28px; margin:0 0 18px; }
+.composer-working > .turn-working { box-sizing:border-box; height:22px; margin:0 0 6px; }
 /* Raised about 1 mm after the 31 October preview; the composer remains its anchor. */
 .turn:has(> .turn-working) { margin-bottom:0; }
 .chat-scroll:has(.turn-working) { padding-bottom:8px; }
