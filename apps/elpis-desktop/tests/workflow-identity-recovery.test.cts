@@ -4,6 +4,31 @@ const assert: typeof import('node:assert/strict') = require('node:assert/strict'
 const { chooseTheme } = require('./controls.cts');
 const { base, open, row, eventually, shot }: import("./workflow-identity.fixtures.cts").Fixtures = require("./workflow-identity.fixtures.cts");
 
+test('saved workflow board folds checker chats into their agent while retaining real helpers', async () => {
+  const saved = { id: 'checks-run', rootThreadId: 'chat-a', name: 'Checks', status: 'succeeded', tasks: [
+    { id: 'writer', title: 'Writer', kind: 'implement', assignedThreadId: 'writer-chat', status: 'succeeded' },
+    { id: 'writer-check', title: 'Check: Writer', kind: 'verify', assignedThreadId: 'check-chat', status: 'succeeded', dependsOn: ['writer'] },
+  ] };
+  const children = [
+    { ...base('writer-chat', 'Writer'), parentThreadId: 'chat-a' },
+    { ...base('check-chat', 'Check: Writer'), parentThreadId: 'chat-a' },
+    { ...base('helper-chat', 'Real helper'), parentThreadId: 'writer-chat' },
+  ];
+  const f = await open('light', [saved], {}, {}, {
+    '/api/workflows': () => ({ data: [saved] }),
+    '/api/threads': (_body, url) => ({ data: url.searchParams.has('ancestorThreadId') ? children : [base('chat-a', saved.name), ...children], nextCursor: null }),
+    '/api/threads/chat-a': () => ({ thread: base('chat-a', saved.name), data: [], nextCursor: null }),
+  });
+  try {
+    await row(f.page, 'chat-a').locator('.thread-link').click();
+    await f.page.getByRole('button', { name: 'Open workflow canvas', exact: true }).click();
+    const board = f.page.getByRole('application', { name: 'Workflow board' });
+    await board.locator('.react-flow__node[data-id="live:helper-chat"]').waitFor();
+    assert.equal(await board.locator('.react-flow__node[data-id="writer"]').count(), 1);
+    assert.equal(await board.locator('.react-flow__node[data-id="live:check-chat"]').count(), 0);
+  } finally { await f.close(); }
+});
+
 test('workflow chat recovers from a failed read and stops polling once the run succeeds', async () => {
   const run = { id: 'recover-read', rootThreadId: 'chat-a', name: 'Saved run', status: 'running', tasks: [] };
   let reads = 0;
